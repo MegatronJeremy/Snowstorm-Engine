@@ -57,7 +57,6 @@ namespace Snowstorm
 
 		// Framebuffer setup
 		{
-			// TODO set this up with the current screen size (from the window, and make it resizable in some core system)
 			const auto& window = Application::Get().GetWindow();
 
 			const uint32_t windowWidth = window.GetWidth();

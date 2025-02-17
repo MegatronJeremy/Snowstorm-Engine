@@ -13,12 +13,24 @@ namespace Snowstorm
 	{
 		auto& eventsHandler = SingletonView<EventsHandlerSingleton>();
 
-		for (const auto cameraControllerView = View<CameraComponent, TransformComponent, CameraControllerComponent>();
-		     const auto entity : cameraControllerView)
-		{
-			auto [camera, transform, controller] = cameraControllerView.get(entity);
+		const auto cameraControllerView = View<CameraComponent, TransformComponent, CameraControllerComponent, RenderTargetComponent>();
+		const auto framebufferView = View<ViewportComponent>();
 
-			if (!camera.Primary) continue;
+		for (const auto entity : cameraControllerView)
+		{
+			auto [camera, transform, controller, renderTarget] = cameraControllerView.get(entity);
+			auto [viewport] = framebufferView.get(renderTarget.TargetFramebuffer);
+
+			if (!camera.Primary)
+			{
+				continue;
+			}
+
+			if (!viewport.Focused)
+			{
+				Input::SetCursorMode(CursorMode::Normal);
+				continue;
+			}
 
 			bool isPerspective = camera.Camera.GetProjectionType() == SceneCamera::ProjectionType::Perspective;
 			bool rightClickHeld = Input::IsMouseButtonPressed(Mouse::ButtonRight);
