@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Snowstorm/Core/KeyCodes.h"
-#include "Snowstorm/Core/MouseCodes.h"
+#include "Snowstorm/Core/KeyCodes.hpp"
+#include "Snowstorm/Core/MouseCodes.hpp"
 
 namespace Snowstorm
 {

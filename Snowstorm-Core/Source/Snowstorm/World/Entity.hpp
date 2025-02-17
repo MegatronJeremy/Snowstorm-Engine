@@ -1,7 +1,7 @@
 #pragma once
 
 #include "World.hpp"
-#include <Snowstorm/Core/Log.h>
+#include <Snowstorm/Core/Log.hpp>
 
 #include <entt/entt.hpp>
 
@@ -13,7 +13,7 @@ namespace Snowstorm
 		Entity() = default;
 		~Entity() = default;
 
-		Entity(entt::entity handle, World* scene);
+		Entity(entt::entity handle, World* world);
 
 		Entity(const Entity&) = default;
 		Entity(Entity&&) = default;
@@ -24,28 +24,28 @@ namespace Snowstorm
 		template <typename T, typename... Args>
 		T& AddComponent(Args&&... args)
 		{
-			SS_CORE_ASSERT(!hasComponent<T>(), "Entity already has component!");
-			return m_Scene->GetRegistry().emplace<T>(m_EntityHandle, std::forward<Args>(args)...);
+			SS_CORE_ASSERT(!HasComponent<T>(), "Entity already has component!");
+			return m_World->GetRegistry().emplace<T>(m_EntityHandle, std::forward<Args>(args)...);
 		}
 
 		template <typename T>
 		T& GetComponent()
 		{
-			SS_CORE_ASSERT(hasComponent<T>(), "Entity does not have component!");
-			return m_Scene->GetRegistry().get<T>(m_EntityHandle);
+			SS_CORE_ASSERT(HasComponent<T>(), "Entity does not have component!");
+			return m_World->GetRegistry().get<T>(m_EntityHandle);
 		}
 
 		template <typename T>
-		[[nodiscard]] bool hasComponent() const
+		[[nodiscard]] bool HasComponent() const
 		{
-			return m_Scene->GetRegistry().any_of<T>(m_EntityHandle);
+			return m_World->GetRegistry().any_of<T>(m_EntityHandle);
 		}
 
 		template <typename T>
-		void removeComponent() const
+		void RemoveComponent() const
 		{
-			SS_CORE_ASSERT(hasComponent<T>(), "Entity does not have component!");
-			m_Scene->GetRegistry().remove<T>(m_EntityHandle);
+			SS_CORE_ASSERT(HasComponent<T>(), "Entity does not have component!");
+			m_World->GetRegistry().remove<T>(m_EntityHandle);
 		}
 
 		operator bool() const { return m_EntityHandle != entt::null; }
@@ -54,7 +54,7 @@ namespace Snowstorm
 
 		bool operator==(const Entity& other) const
 		{
-			return m_EntityHandle == other.m_EntityHandle && m_Scene == other.m_Scene;
+			return m_EntityHandle == other.m_EntityHandle && m_World == other.m_World;
 		}
 
 		bool operator!=(const Entity& other) const
@@ -64,6 +64,6 @@ namespace Snowstorm
 
 	private:
 		entt::entity m_EntityHandle = entt::null;
-		World* m_Scene = nullptr;
+		World* m_World = nullptr;
 	};
 }

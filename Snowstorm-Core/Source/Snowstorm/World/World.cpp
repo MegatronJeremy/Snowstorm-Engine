@@ -3,7 +3,7 @@
 
 #include "Components.hpp"
 
-#include "Entity.h"
+#include "Entity.hpp"
 #include <Snowstorm/ECS/SystemManager.hpp>
 
 #include "Snowstorm/Events/Event.h"
@@ -15,22 +15,13 @@
 #include "Snowstorm/System/RenderSystem.hpp"
 #include "Snowstorm/System/ScriptSystem.hpp"
 #include "Snowstorm/System/ShaderReloadSystem.hpp"
-#include "Snowstorm/System/ViewportResizeSystem.hpp"
 
 namespace Snowstorm
 {
 	World::World()
 	{
-		m_SystemManager = CreateScope<SystemManager>();
+		m_SystemManager = CreateScope<SystemManager>(this);
 		m_SingletonManager = CreateScope<SingletonManager>();
-
-		// TODO order of execution here is important, create some sort of execution graph
-		// TODO also, don't hardcode this. This should be modifiable for all worlds and read from the world settings
-		m_SystemManager->RegisterSystem<ScriptSystem>(this);
-		m_SystemManager->RegisterSystem<ViewportResizeSystem>(this);
-		m_SystemManager->RegisterSystem<CameraControllerSystem>(this);
-		m_SystemManager->RegisterSystem<ShaderReloadSystem>(this);
-		m_SystemManager->RegisterSystem<RenderSystem>(this);
 
 		m_SingletonManager->RegisterSingleton<EventsHandlerSingleton>();
 		m_SingletonManager->RegisterSingleton<ShaderLibrarySingleton>();
@@ -51,6 +42,11 @@ namespace Snowstorm
 	TrackedRegistry& World::GetRegistry() const
 	{
 		return m_SystemManager->GetRegistry();
+	}
+
+	SystemManager& World::GetSystemManager() const
+	{
+		return *m_SystemManager;
 	}
 
 	void World::OnUpdate(const Timestep ts) const

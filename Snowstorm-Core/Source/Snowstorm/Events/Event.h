@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Snowstorm/Core/Base.h"
+#include "Snowstorm/Core/Base.hpp"
 
 #include <string>
 #include <queue>

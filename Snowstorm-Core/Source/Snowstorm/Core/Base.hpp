@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Snowstorm/Core/PlatformDetection.h"
+#include "Snowstorm/Core/PlatformDetection.hpp"
 
 #include <memory>
 #include <filesystem>

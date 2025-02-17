@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Snowstorm/Core/PlatformDetection.h"
+#include "Snowstorm/Core/PlatformDetection.hpp"
 
 #ifdef SS_PLATFORM_WINDOWS
 #ifndef NOMINMAX
@@ -24,13 +24,12 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "Snowstorm/Core/Base.h"
+#include "Snowstorm/Core/Base.hpp"
 
-#include "Snowstorm/Core/Log.h"
+#include "Snowstorm/Core/Log.hpp"
 
 #include "Snowstorm/Debug/Instrumentor.h"
 
 #ifdef SS_PLATFORM_WINDOWS
 #include <Windows.h>
 #endif
-

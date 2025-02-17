@@ -1,8 +1,8 @@
 #pragma once
 
-#include "Snowstorm/Core/Base.h"
+#include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/World/World.hpp"
-#include "Snowstorm/World/Entity.h"
+#include "Snowstorm/World/Entity.hpp"
 
 namespace Snowstorm
 {
@@ -10,9 +10,9 @@ namespace Snowstorm
 	{
 	public:
 		SceneHierarchyPanel() = default;
-		explicit SceneHierarchyPanel(const Ref<World>& context);
+		explicit SceneHierarchyPanel(World* context);
 
-		void setContext(const Ref<World>& context);
+		void SetContext(World* context);
 
 		void onImGuiRender();
 
@@ -21,7 +21,7 @@ namespace Snowstorm
 
 		static void drawComponents(Entity entity);
 
-		Ref<World> m_Context = nullptr;
+		World* m_World{};
 		Entity m_SelectionContext;
 	};
 }

@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include "Snowstorm/Core/Base.h"
+#include "Snowstorm/Core/Base.hpp"
 
 namespace Snowstorm
 {

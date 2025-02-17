@@ -2,7 +2,7 @@
 
 #include <glm/detail/type_quat.hpp>
 
-#include "Snowstorm/Core/Input.h"
+#include "Snowstorm/Core/Input.hpp"
 #include "Snowstorm/Events/Event.h"
 #include "Snowstorm/Events/MouseEvent.h"
 #include "Snowstorm/World/Components.hpp"

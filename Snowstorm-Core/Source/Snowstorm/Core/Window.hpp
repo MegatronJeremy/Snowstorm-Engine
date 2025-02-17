@@ -2,7 +2,7 @@
 
 #include "pch.h"
 
-#include "Snowstorm/Core/Base.h"
+#include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Events/Event.h"
 
 namespace Snowstorm
@@ -46,6 +46,7 @@ namespace Snowstorm
 		// Window attributes
 		virtual void SetEventCallback(const EventCallbackFn& callback) = 0;
 		virtual void SetVSync(bool enabled) = 0;
+		virtual void Resize(uint32_t width, uint32_t height) = 0;
 		virtual bool IsVSync() const = 0;
 
 		virtual void* GetNativeWindow() const = 0;

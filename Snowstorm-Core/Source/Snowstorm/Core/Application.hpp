@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Window.hpp"
-#include "Snowstorm/Core/LayerStack.h"
+#include "Snowstorm/Core/LayerStack.hpp"
 #include "Snowstorm/Events/Event.h"
 #include "Snowstorm/Events/ApplicationEvent.h"
 #include "Snowstorm/Service/ServiceManager.hpp"
@@ -26,6 +26,11 @@ namespace Snowstorm
 
 		static Application& Get() { return *s_Instance; }
 
+		ServiceManager& GetServiceManager() const { return *m_ServiceManager; }
+
+	protected:
+		Scope<ServiceManager> m_ServiceManager;
+
 	private:
 		bool OnWindowClose(WindowCloseEvent& e);
 		bool OnWindowResize(WindowResizeEvent& e);
@@ -35,8 +40,6 @@ namespace Snowstorm
 		bool m_Minimized = false;
 		LayerStack m_LayerStack;
 		float m_LastFrameTime = 0.0f;
-
-		Scope<ServiceManager> m_ServiceManager;
 
 		static Application* s_Instance;
 	};

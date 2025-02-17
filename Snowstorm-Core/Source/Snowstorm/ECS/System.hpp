@@ -2,7 +2,7 @@
 
 #include <entt/entt.hpp>
 
-#include <Snowstorm/Core/Timestep.h>
+#include <Snowstorm/Core/Timestep.hpp>
 #include <Snowstorm/Utility/NonCopyable.hpp>
 #include <Snowstorm/World/World.hpp>
 
@@ -13,8 +13,8 @@ namespace Snowstorm
 	public:
 		using WorldRef = World*;
 
-		explicit System(const WorldRef world)
-			: m_World(world)
+		explicit System(WorldRef world)
+			: m_World(std::move(world))
 		{
 		}
 

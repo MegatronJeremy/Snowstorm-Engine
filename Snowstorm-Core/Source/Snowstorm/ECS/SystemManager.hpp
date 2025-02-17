@@ -3,18 +3,23 @@
 #include "System.hpp"
 #include "TrackedRegistry.hpp"
 
-#include "Snowstorm/Core/Base.h"
+#include "Snowstorm/Core/Base.hpp"
 
 namespace Snowstorm
 {
 	class SystemManager final : public NonCopyable
 	{
 	public:
-		template <typename T, typename... Args>
-		void RegisterSystem(Args&&... args)
+		explicit SystemManager(const System::WorldRef world)
+			: m_World(world)
+		{
+		}
+
+		template <typename T>
+		void RegisterSystem()
 		{
 			static_assert(std::is_base_of_v<System, T>, "T must inherit from System");
-			m_Systems.emplace_back(CreateScope<T>(std::forward<Args>(args)...));
+			m_Systems.emplace_back(CreateScope<T>(m_World));
 		}
 
 		void ExecuteSystems(const Timestep ts)
@@ -32,5 +37,7 @@ namespace Snowstorm
 	private:
 		TrackedRegistry m_Registry;
 		std::vector<Scope<System>> m_Systems;
+
+		const System::WorldRef m_World;
 	};
 }

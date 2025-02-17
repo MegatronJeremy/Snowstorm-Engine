@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "Application.h"
+#include "Application.hpp"
 
 #include <GLFW/glfw3.h>
 
@@ -7,7 +7,8 @@
 
 #include "Snowstorm/Render/RenderCommand.hpp"
 #include "Snowstorm/Render/Renderer2D.hpp"
-#include "Snowstorm/Service/ImGuiService.hpp"
+
+#pragma optimize("", off)
 
 namespace Snowstorm
 {
@@ -25,9 +26,8 @@ namespace Snowstorm
 		m_Window = Window::Create(WindowProps(name));
 		m_Window->SetEventCallback(BIND_EVENT_FN(Application::OnEvent));
 
-		// TODO think about this
+		// TODO think about this (but it's probably fine)
 		m_ServiceManager = CreateScope<ServiceManager>();
-		m_ServiceManager->RegisterService<ImGuiService>();
 
 		// TODO these should be services (which have callable methods -> sort of like singletons, you can globally fetch a service through instance())
 		Renderer2D::Init();
@@ -63,7 +63,6 @@ namespace Snowstorm
 				for (Layer* layer : m_LayerStack)
 				{
 					layer->OnUpdate(ts);
-					layer->OnImGuiRender();
 				}
 
 				m_ServiceManager->ExecutePostUpdate(ts);
@@ -114,6 +113,8 @@ namespace Snowstorm
 	bool Application::OnWindowResize(WindowResizeEvent& e)
 	{
 		SS_PROFILE_FUNCTION();
+
+		m_Window->Resize(e.Width, e.Height);
 
 		e.Handled = true;
 		if (e.Width == 0 || e.Height == 0)

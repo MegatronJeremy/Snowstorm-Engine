@@ -6,7 +6,7 @@
 #include "Platform/OpenGL/backends/imgui_impl_opengl3.h"
 #include "Platform/Windows/WindowsWindow.hpp"
 
-#include "Snowstorm/Core/Application.h"
+#include "Snowstorm/Core/Application.hpp"
 
 namespace Snowstorm
 {
@@ -47,7 +47,6 @@ namespace Snowstorm
 	ImGuiService::~ImGuiService()
 	{
 		ImGui_ImplOpenGL3_Shutdown();
-		ImGui_ImplGlfw_Shutdown();
 		ImGui::DestroyContext();
 	}
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Snowstorm/Core/Base.h"
-#include "Snowstorm/Core/Timestep.h"
+#include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Core/Timestep.hpp"
 #include "Snowstorm/Events/Event.h"
 
 namespace Snowstorm
@@ -27,14 +27,6 @@ namespace Snowstorm
 		}
 
 		virtual void OnUpdate(Timestep ts)
-		{
-		}
-
-		virtual void PostUpdate(Timestep ts)
-		{
-		}
-
-		virtual void OnImGuiRender()
 		{
 		}
 

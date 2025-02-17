@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Service.hpp"
+#include "Snowstorm/Service/Service.hpp"
 
 namespace Snowstorm
 {

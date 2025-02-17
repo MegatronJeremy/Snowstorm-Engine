@@ -27,6 +27,7 @@ namespace Snowstorm
 		// Window attributes
 		void SetEventCallback(const EventCallbackFn& callback) override { m_Data.EventCallback = callback; }
 		void SetVSync(bool enabled) override;
+		void Resize(uint32_t width, uint32_t height) override;
 		bool IsVSync() const override;
 
 		void* GetNativeWindow() const override { return m_Window; }

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Snowstorm/Core/Base.h"
-#include "Layer.h"
+#include "Snowstorm/Core/Base.hpp"
+#include "Layer.hpp"
 
 #include <vector>
 

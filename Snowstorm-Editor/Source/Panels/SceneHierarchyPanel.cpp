@@ -2,29 +2,29 @@
 #include <imgui.h>
 
 #include "SceneHieararchyPanel.hpp"
-#include "Snowstorm/Core/Log.h"
+#include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/World/Components.hpp"
 
 namespace Snowstorm
 {
-	SceneHierarchyPanel::SceneHierarchyPanel(const Ref<World>& context)
+	SceneHierarchyPanel::SceneHierarchyPanel(World* context)
 	{
-		setContext(context);
+		SetContext(context);
 	}
 
-	void SceneHierarchyPanel::setContext(const Ref<World>& context)
+	void SceneHierarchyPanel::SetContext(World* context)
 	{
-		m_Context = context;
+		m_World = context;
 	}
 
 	void SceneHierarchyPanel::onImGuiRender()
 	{
 		ImGui::Begin("Scene Hierarchy");
 
-		// TODO fix this
-		for (const auto [entityID] : m_Context->GetRegistry().m_Registry.storage<entt::entity>().each())
+		// TODO fix this (move it to the system)
+		for (const auto [entityID] : m_World->GetRegistry().m_Registry.storage<entt::entity>().each())
 		{
-			const Entity entity{entityID, m_Context.get()};
+			const Entity entity{entityID, m_World};
 			drawEntityNode(entity);
 		}
 
@@ -69,7 +69,7 @@ namespace Snowstorm
 
 	void SceneHierarchyPanel::drawComponents(Entity entity)
 	{
-		if (entity.hasComponent<TagComponent>())
+		if (entity.HasComponent<TagComponent>())
 		{
 			auto& tag = entity.GetComponent<TagComponent>().Tag;
 
@@ -81,7 +81,7 @@ namespace Snowstorm
 			}
 		}
 
-		if (entity.hasComponent<TransformComponent>())
+		if (entity.HasComponent<TransformComponent>())
 		{
 			if (ImGui::TreeNodeEx(reinterpret_cast<void*>(typeid(TransformComponent).hash_code()),
 			                      ImGuiTreeNodeFlags_DefaultOpen,
@@ -94,7 +94,7 @@ namespace Snowstorm
 			}
 		}
 
-		if (entity.hasComponent<CameraComponent>())
+		if (entity.HasComponent<CameraComponent>())
 		{
 			if (ImGui::TreeNodeEx(reinterpret_cast<void*>(typeid(CameraComponent).hash_code()),
 			                      ImGuiTreeNodeFlags_DefaultOpen,

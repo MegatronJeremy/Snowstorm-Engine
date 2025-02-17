@@ -7,7 +7,7 @@
 #include <glm/glm.hpp>
 
 #include "Snowstorm/ECS/Singleton.hpp"
-#include <Snowstorm/Core/Base.h>
+#include <Snowstorm/Core/Base.hpp>
 
 namespace Snowstorm
 {

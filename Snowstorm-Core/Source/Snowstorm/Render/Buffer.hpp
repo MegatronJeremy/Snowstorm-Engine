@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Snowstorm/Core/Log.h"
+#include "Snowstorm/Core/Log.hpp"
 
 namespace Snowstorm
 {

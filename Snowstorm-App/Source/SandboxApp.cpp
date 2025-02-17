@@ -1,5 +1,5 @@
 #include <Snowstorm.h>
-#include <Snowstorm/Core/EntryPoint.h>
+#include <Snowstorm/Core/EntryPoint.hpp>
 
 #include <imgui.h>
 

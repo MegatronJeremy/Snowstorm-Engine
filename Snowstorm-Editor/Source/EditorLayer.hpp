@@ -15,19 +15,11 @@ namespace Snowstorm
 		void OnDetach() override;
 
 		void OnUpdate(Timestep ts) override;
-		void OnImGuiRender() override;
 		void OnEvent(Event& event) override;
 
 	private:
 		Ref<World> m_ActiveWorld;
+
 		Entity m_FramebufferEntity;
-		Entity m_SquareEntity;
-		Entity m_CameraEntity;
-		Entity m_SecondCamera;
-
-		bool m_PrimaryCamera = true;
-
-		// Panels (shouldn't be in world)
-		SceneHierarchyPanel m_SceneHierarchyPanel;
 	};
 }

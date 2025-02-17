@@ -1,10 +1,10 @@
 #include "pch.h"
-#include "Entity.h"
+#include "Entity.hpp"
 
 namespace Snowstorm
 {
-	Entity::Entity(const entt::entity handle, World* scene)
-		: m_EntityHandle(handle), m_Scene(scene)
+	Entity::Entity(const entt::entity handle, World* world)
+		: m_EntityHandle(handle), m_World(std::move(world))
 	{
 	}
 }

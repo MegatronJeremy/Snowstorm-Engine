@@ -1,6 +1,6 @@
 #include "pch.h"
-#include "Snowstorm/Core/Input.h"
-#include "Snowstorm/Core/Application.h"
+#include "Snowstorm/Core/Input.hpp"
+#include "Snowstorm/Core/Application.hpp"
 
 #include <GLFW/glfw3.h>
 

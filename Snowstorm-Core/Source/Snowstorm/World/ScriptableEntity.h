@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Entity.h"
+#include "Entity.hpp"
 
 namespace Snowstorm
 {

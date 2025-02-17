@@ -4,8 +4,8 @@
 
 #include "Singleton.hpp"
 
-#include "Snowstorm/Core/Base.h"
-#include "Snowstorm/Core/Log.h"
+#include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Core/Log.hpp"
 
 namespace Snowstorm
 {

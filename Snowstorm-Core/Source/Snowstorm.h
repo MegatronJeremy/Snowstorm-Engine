@@ -2,19 +2,19 @@
 
 // For use by Snowstorm applications
 
-#include "Snowstorm/Core/Base.h"
+#include "Snowstorm/Core/Base.hpp"
 
-#include "Snowstorm/Core/Application.h"
-#include "Snowstorm/Core/Layer.h"
+#include "Snowstorm/Core/Application.hpp"
+#include "Snowstorm/Core/Layer.hpp"
 
-#include "Snowstorm/Core/Timestep.h"
+#include "Snowstorm/Core/Timestep.hpp"
 
-#include "Snowstorm/Core/Input.h"
-#include "Snowstorm/Core/KeyCodes.h"
-#include "Snowstorm/Core/MouseCodes.h"
+#include "Snowstorm/Core/Input.hpp"
+#include "Snowstorm/Core/KeyCodes.hpp"
+#include "Snowstorm/Core/MouseCodes.hpp"
 
 #include "Snowstorm/World/World.hpp"
-#include "Snowstorm/World/Entity.h"
+#include "Snowstorm/World/Entity.hpp"
 #include "Snowstorm/World/ScriptableEntity.h"
 #include "Snowstorm/World/Components.hpp"
 

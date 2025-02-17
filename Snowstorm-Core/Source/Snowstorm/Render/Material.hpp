@@ -7,7 +7,7 @@
 #include "Buffer.hpp"
 #include "Shader.hpp"
 #include "Texture.hpp"
-#include "Snowstorm/Core/Base.h"
+#include "Snowstorm/Core/Base.hpp"
 
 namespace Snowstorm
 {

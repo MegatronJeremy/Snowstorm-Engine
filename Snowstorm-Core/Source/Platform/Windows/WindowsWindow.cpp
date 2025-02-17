@@ -56,6 +56,12 @@ namespace Snowstorm
 		m_Data.VSync = enabled;
 	}
 
+	void WindowsWindow::Resize(const uint32_t width, const uint32_t height)
+	{
+		m_Data.Width = width;
+		m_Data.Height = height;
+	}
+
 	bool WindowsWindow::IsVSync() const
 	{
 		return m_Data.VSync;
@@ -101,6 +107,15 @@ namespace Snowstorm
 			                            m_Data.Title.c_str(),
 			                            nullptr, nullptr);
 			s_GLFWWindowCount++;
+		}
+
+		if (props.Maximized)
+		{
+			// Get actual window size after GLFW applies maximization
+			int width, height;
+			glfwGetWindowSize(m_Window, &width, &height);
+			m_Data.Width = width;
+			m_Data.Height = height;
 		}
 
 		m_Context = GraphicsContext::Create(m_Window);

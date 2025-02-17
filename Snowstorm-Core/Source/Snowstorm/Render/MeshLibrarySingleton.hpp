@@ -3,7 +3,7 @@
 #include <unordered_map>
 #include "Mesh.hpp"
 
-#include "Snowstorm/Core/Base.h"
+#include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/ECS/Singleton.hpp"
 
 namespace Snowstorm

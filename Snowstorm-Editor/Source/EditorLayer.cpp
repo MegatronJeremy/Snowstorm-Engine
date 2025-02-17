@@ -11,6 +11,16 @@
 #include "Snowstorm/Events/KeyEvent.h"
 #include "Snowstorm/Events/MouseEvent.h"
 #include "Snowstorm/Render/MeshLibrarySingleton.hpp"
+#include "Snowstorm/System/CameraControllerSystem.hpp"
+#include "Snowstorm/System/RenderSystem.hpp"
+#include "Snowstorm/System/ShaderReloadSystem.hpp"
+#include "Snowstorm/System/ScriptSystem.hpp"
+
+#include "System/DockspaceSetupSystem.hpp"
+#include "System/EditorMenuSystem.hpp"
+#include "System/SceneHierarchySystem.hpp"
+#include "System/ViewportDisplaySystem.hpp"
+#include "System/ViewportResizeSystem.hpp"
 
 namespace Snowstorm
 {
@@ -25,21 +35,41 @@ namespace Snowstorm
 
 		m_ActiveWorld = CreateRef<World>();
 
-		m_SceneHierarchyPanel.setContext(m_ActiveWorld);
-
 		auto& shaderLibrary = m_ActiveWorld->GetSingleton<ShaderLibrarySingleton>();
 		auto& meshLibrary = m_ActiveWorld->GetSingleton<MeshLibrarySingleton>();
 
+		auto& systemManager = m_ActiveWorld->GetSystemManager();
+
+		// TODO order of execution here is important, create some sort of execution graph
+		// TODO also, don't hardcode this. This should be modifiable for all worlds and read from the world settings
+		systemManager.RegisterSystem<ScriptSystem>();
+		systemManager.RegisterSystem<CameraControllerSystem>();
+		systemManager.RegisterSystem<ShaderReloadSystem>();
+		systemManager.RegisterSystem<ViewportResizeSystem>();
+		systemManager.RegisterSystem<RenderSystem>();
+		systemManager.RegisterSystem<MandelbrotControllerSystem>();
+
+		// TODO make this some sort of ImGui module (along with the ImGui service)
+		systemManager.RegisterSystem<DockspaceSetupSystem>();
+		systemManager.RegisterSystem<EditorMenuSystem>();
+		systemManager.RegisterSystem<SceneHierarchySystem>();
+		systemManager.RegisterSystem<ViewportDisplaySystem>();
+
 		// Framebuffer setup
 		{
-			// TODO set this up with the current screen size
+			// TODO set this up with the current screen size (from the window, and make it resizable in some core system)
+			const auto& window = Application::Get().GetWindow();
+
+			const uint32_t windowWidth = window.GetWidth();
+			const uint32_t windowHeight = window.GetHeight();
+
 			m_FramebufferEntity = m_ActiveWorld->CreateEntity("Framebuffer");
-			m_FramebufferEntity.AddComponent<ViewportComponent>(glm::vec2{1280.0f, 720.0f});
 
 			FramebufferSpecification fbSpec;
-			fbSpec.Width = 1280;
-			fbSpec.Height = 720;
+			fbSpec.Width = windowWidth;
+			fbSpec.Height = windowHeight;
 			m_FramebufferEntity.AddComponent<FramebufferComponent>(Framebuffer::Create(fbSpec));
+			m_FramebufferEntity.AddComponent<ViewportComponent>(glm::vec2{windowWidth, windowHeight});
 		}
 
 		// 3D Entities
@@ -98,22 +128,21 @@ namespace Snowstorm
 
 		// Camera Entities
 		{
-			m_CameraEntity = m_ActiveWorld->CreateEntity("Camera Entity");
-			m_CameraEntity.AddComponent<TransformComponent>();
-			m_CameraEntity.AddComponent<CameraComponent>();
-			m_CameraEntity.AddComponent<CameraControllerComponent>();
-			m_CameraEntity.AddComponent<RenderTargetComponent>(m_FramebufferEntity);
+			auto cameraEntity = m_ActiveWorld->CreateEntity("Camera Entity");
+			cameraEntity.AddComponent<TransformComponent>();
+			cameraEntity.AddComponent<CameraComponent>();
+			cameraEntity.AddComponent<CameraControllerComponent>();
+			cameraEntity.AddComponent<RenderTargetComponent>(m_FramebufferEntity);
 
-			m_CameraEntity.GetComponent<CameraComponent>().Camera.SetProjectionType(
-				SceneCamera::ProjectionType::Perspective);
-			m_CameraEntity.GetComponent<CameraComponent>().Camera.SetOrthographicFarClip(1000.0f);
-			m_CameraEntity.GetComponent<TransformComponent>().Position.z = 15.0f;
+			cameraEntity.GetComponent<CameraComponent>().Camera.SetProjectionType(SceneCamera::ProjectionType::Perspective);
+			cameraEntity.GetComponent<CameraComponent>().Camera.SetOrthographicFarClip(1000.0f);
+			cameraEntity.GetComponent<TransformComponent>().Position.z = 15.0f;
 
-			m_SecondCamera = m_ActiveWorld->CreateEntity("Clip-Space Entity");
-			m_SecondCamera.AddComponent<TransformComponent>();
-			auto& cc = m_SecondCamera.AddComponent<CameraComponent>();
-			m_SecondCamera.AddComponent<CameraControllerComponent>();
-			m_SecondCamera.AddComponent<RenderTargetComponent>(m_FramebufferEntity);
+			auto secondCamera = m_ActiveWorld->CreateEntity("Clip-Space Entity");
+			secondCamera.AddComponent<TransformComponent>();
+			auto& cc = secondCamera.AddComponent<CameraComponent>();
+			secondCamera.AddComponent<CameraControllerComponent>();
+			secondCamera.AddComponent<RenderTargetComponent>(m_FramebufferEntity);
 			cc.Primary = false;
 		}
 	}
@@ -128,145 +157,6 @@ namespace Snowstorm
 		SS_PROFILE_FUNCTION();
 
 		m_ActiveWorld->OnUpdate(ts);
-	}
-
-	void EditorLayer::OnImGuiRender()
-	{
-		SS_PROFILE_FUNCTION();
-
-		static bool dockspaceOpen = true;
-		static bool optFullscreen = true;
-		static bool optPadding = false;
-		static ImGuiDockNodeFlags dockspaceFlags = ImGuiDockNodeFlags_None;
-
-		// We are using the ImGuiWindowFlags_NoDocking flag to make the parent window not dockable into,
-		// because it would be confusing to have two docking targets within each others.
-		ImGuiWindowFlags windowFlags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
-		if (optFullscreen)
-		{
-			const ImGuiViewport* viewport = ImGui::GetMainViewport();
-			ImGui::SetNextWindowPos(viewport->WorkPos);
-			ImGui::SetNextWindowSize(viewport->WorkSize);
-			ImGui::SetNextWindowViewport(viewport->ID);
-			ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-			ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-			windowFlags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
-			ImGuiWindowFlags_NoMove;
-			windowFlags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
-		}
-		else
-		{
-			dockspaceFlags &= ~ImGuiDockNodeFlags_PassthruCentralNode;
-		}
-
-		// When using ImGuiDockNodeFlags_PassthruCentralNode, DockSpace() will render our background
-		// and handle the pass-thru hole, so we ask Begin() to not render a background.
-		if (dockspaceFlags & ImGuiDockNodeFlags_PassthruCentralNode)
-			windowFlags |= ImGuiWindowFlags_NoBackground;
-
-		// Important: note that we proceed even if Begin() returns false (aka window is collapsed).
-		// This is because we want to keep our DockSpace() active. If a DockSpace() is inactive,
-		// all active windows docked into it will lose their parent and become undocked.
-		// We cannot preserve the docking relationship between an active window and an inactive docking, otherwise
-		// any change of dockspace/settings would lead to windows being stuck in limbo and never being visible.
-		if (!optPadding)
-		{
-			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-		}
-		ImGui::Begin("DockSpace Demo", &dockspaceOpen, windowFlags);
-		if (!optPadding)
-		{
-			ImGui::PopStyleVar();
-		}
-
-		if (optFullscreen)
-		{
-			ImGui::PopStyleVar(2);
-		}
-
-		// Submit the DockSpace
-		if (const ImGuiIO& io = ImGui::GetIO(); io.ConfigFlags & ImGuiConfigFlags_DockingEnable)
-		{
-			const ImGuiID dockspaceID = ImGui::GetID("MyDockSpace");
-			ImGui::DockSpace(dockspaceID, ImVec2(0.0f, 0.0f), dockspaceFlags);
-		}
-
-		if (ImGui::BeginMenuBar())
-		{
-			if (ImGui::BeginMenu("File"))
-			{
-				if (ImGui::MenuItem("Exit"))
-				{
-					Application::Get().Close();
-				}
-
-				ImGui::EndMenu();
-			}
-
-			ImGui::EndMenuBar();
-		}
-
-		ImGui::End();
-
-		m_SceneHierarchyPanel.onImGuiRender();
-
-		ImGui::Begin("Settings");
-
-		const auto stats = Renderer2D::GetStats();
-		ImGui::Text("Renderer2D Stats:");
-		ImGui::Text("Draw Calls: %d", stats.DrawCalls);
-		ImGui::Text("Quads: %d", stats.QuadCount);
-		ImGui::Text("Vertices: %d", stats.GetTotalVertexCount());
-		ImGui::Text("Indices: %d", stats.GetTotalIndexCount());
-
-		if (m_SquareEntity)
-		{
-			ImGui::Separator();
-			ImGui::Text("%s", m_SquareEntity.GetComponent<TagComponent>().Tag.c_str());
-
-			auto& squareColor = m_SquareEntity.GetComponent<SpriteComponent>().TintColor;
-			ImGui::ColorEdit4("Square Color", value_ptr(squareColor));
-			ImGui::Separator();
-		}
-
-		ImGui::DragFloat3("Camera Position", value_ptr(
-			                  m_CameraEntity.GetComponent<TransformComponent>().Position));
-
-		if (ImGui::Checkbox("Camera A", &m_PrimaryCamera))
-		{
-			m_CameraEntity.GetComponent<CameraComponent>().Primary = m_PrimaryCamera;
-			m_SecondCamera.GetComponent<CameraComponent>().Primary = !m_PrimaryCamera;
-		}
-
-		{
-			auto& camera = m_SecondCamera.GetComponent<CameraComponent>().Camera;
-			float orthoSize = camera.GetOrthographicSize();
-			if (ImGui::DragFloat("Second Camera Ortho Size", &orthoSize))
-				camera.SetOrthographicSize(orthoSize);
-		}
-
-		ImGui::End();
-
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0, 0});
-		ImGui::Begin("Viewport");
-
-		// TODO move this to some sort of event system?
-		auto& viewportComponent = m_FramebufferEntity.GetComponent<ViewportComponent>();
-		const auto& framebufferComponent = m_FramebufferEntity.GetComponent<FramebufferComponent>();
-
-		viewportComponent.Focused = ImGui::IsWindowFocused();
-		viewportComponent.Hovered = ImGui::IsWindowHovered();
-		// Application::BlockEvents(!viewportComponent.Focused || !viewportComponent.Hovered);
-
-		ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
-		viewportComponent.Size = {viewportPanelSize.x, viewportPanelSize.y};
-
-		const uint32_t textureID = framebufferComponent.Framebuffer->GetColorAttachmentRendererID();
-		ImGui::Image(reinterpret_cast<ImTextureID>(textureID),
-		             ImVec2{viewportComponent.Size.x, viewportComponent.Size.y}, ImVec2{0, 1},
-		             ImVec2{1, 0});
-		ImGui::End();
-		ImGui::PopStyleVar();
 	}
 
 	void EditorLayer::OnEvent(Event& event)

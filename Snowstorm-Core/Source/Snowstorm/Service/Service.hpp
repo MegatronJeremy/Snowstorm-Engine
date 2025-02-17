@@ -1,5 +1,5 @@
 #pragma once
-#include "Snowstorm/Core/Timestep.h"
+#include "Snowstorm/Core/Timestep.hpp"
 #include "Snowstorm/Utility/NonCopyable.hpp"
 
 namespace Snowstorm

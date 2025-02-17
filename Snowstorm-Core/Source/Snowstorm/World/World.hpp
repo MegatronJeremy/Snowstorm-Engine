@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Snowstorm/Core/Timestep.h"
+#include "Snowstorm/Core/Timestep.hpp"
 #include "Snowstorm/ECS/SingletonManager.hpp"
 #include "Snowstorm/ECS/TrackedRegistry.hpp"
 #include "Snowstorm/Utility/NonCopyable.hpp"
@@ -16,6 +16,8 @@ namespace Snowstorm
 		World();
 
 		Entity CreateEntity(const std::string& name = std::string());
+
+		[[nodiscard]] SystemManager& GetSystemManager() const;
 
 		[[nodiscard]] TrackedRegistry& GetRegistry() const;
 

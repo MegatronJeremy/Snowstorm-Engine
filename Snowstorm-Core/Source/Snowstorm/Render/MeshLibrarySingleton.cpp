@@ -4,7 +4,7 @@
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 
-#include "Snowstorm/Core/Log.h"
+#include "Snowstorm/Core/Log.hpp"
 
 namespace Snowstorm
 {

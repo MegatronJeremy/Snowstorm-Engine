@@ -1,12 +1,13 @@
 #pragma once
+
 #include "Snowstorm/ECS/System.hpp"
 
 namespace Snowstorm
 {
-	class ViewportResizeSystem final : public System
+	class ViewportDisplaySystem final : public System
 	{
 	public:
-		explicit ViewportResizeSystem(const WorldRef world)
+		explicit ViewportDisplaySystem(const WorldRef world)
 			: System(world)
 		{
 		}
