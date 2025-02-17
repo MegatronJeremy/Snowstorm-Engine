@@ -74,7 +74,7 @@ def configure_cmake():
     """
     Configure the CMake project for the specified build type using presets.
     """
-    cmake_preset = f"conan-default"
+    cmake_preset = "conan-default"
     cmake_command = f'cmake --preset {cmake_preset}'
     print(f"Configuring the CMake project using preset: {cmake_preset}...")
     run_command(cmake_command)
@@ -84,7 +84,7 @@ def main():
     # Paths
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     build_dir = os.path.join(project_root, "build")
-    venv_dir = os.path.join(project_root, "venv")
+    venv_dir = os.path.join(project_root, ".venv")
     conan_executable = os.path.join(
         venv_dir, "Scripts", "conan.exe" if os.name == "nt" else "bin/conan"
     )
