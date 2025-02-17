@@ -44,8 +44,8 @@ namespace Snowstorm
 	struct ViewportComponent
 	{
 		glm::vec2 Size{};
-		bool Focused = false;
-		bool Hovered = false;
+		bool Focused = true;
+		bool Hovered = true;
 	};
 
 	struct FramebufferComponent
