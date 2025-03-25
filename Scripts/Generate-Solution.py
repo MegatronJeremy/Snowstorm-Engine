@@ -62,10 +62,10 @@ def install_conan(conan_executable, project_root, build_type):
     print(f"Running Conan install for {build_type} configuration...")
     conan_install_command = (
         f'"{conan_executable}" install "{project_root}" '
-        f'--build=missing '
         f'-s os=Windows -s arch=x86_64 -s build_type={build_type} '
         f'-s compiler=msvc -s compiler.version=193 -s compiler.runtime=dynamic '
-        f'-s compiler.cppstd=20'
+        f'-s compiler.cppstd=20 '
+        f'--build=missing'
     )
     run_command(conan_install_command)
 
