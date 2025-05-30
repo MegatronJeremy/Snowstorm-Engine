@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/World/World.hpp"
 #include "Snowstorm/World/Entity.hpp"
 
@@ -14,12 +13,12 @@ namespace Snowstorm
 
 		void SetContext(World* context);
 
-		void onImGuiRender();
+		void OnImGuiRender();
 
 	private:
-		void drawEntityNode(Entity entity);
+		void DrawEntityNode(Entity entity);
 
-		static void drawComponents(Entity entity);
+		void DrawComponents(Entity entity) const;
 
 		World* m_World{};
 		Entity m_SelectionContext;

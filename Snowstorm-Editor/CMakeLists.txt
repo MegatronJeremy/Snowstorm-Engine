@@ -26,6 +26,6 @@ target_include_directories(Snowstorm-Editor PUBLIC
 )
 
 # Link libraries
-target_link_libraries(Snowstorm-Editor PRIVATE
+target_link_libraries(Snowstorm-Editor PUBLIC
     Snowstorm-Core  # Link the core library
 )

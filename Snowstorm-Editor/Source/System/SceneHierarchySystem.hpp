@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Panels/SceneHieararchyPanel.hpp"
+#include "Panels/SceneHierarchyPanel.hpp"
 
 #include "Snowstorm/ECS/System.hpp"
 

@@ -9,7 +9,7 @@ namespace Snowstorm
 		static float timeSinceLastCheck = 0.0f;
 		timeSinceLastCheck += ts.GetSeconds();
 
-		// Check for updates every 1 second
+		//-- check for updates every 1 second
 		if (timeSinceLastCheck > 1.0f)
 		{
 			auto& shaderLibrary = SingletonView<ShaderLibrarySingleton>();

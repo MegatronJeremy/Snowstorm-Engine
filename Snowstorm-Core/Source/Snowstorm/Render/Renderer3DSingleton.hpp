@@ -34,7 +34,7 @@ namespace Snowstorm
 		void Flush();
 
 	private:
-		void FlushBatch(BatchData& batch) const;
+		static void FlushBatch(BatchData& batch);
 
 		Ref<UniformBuffer> m_CameraUBO;
 		std::vector<BatchData> m_Batches;

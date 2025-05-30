@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Snowstorm.h>
-#include "Panels/SceneHieararchyPanel.hpp"
+#include "Panels/SceneHierarchyPanel.hpp"
 
 namespace Snowstorm
 {

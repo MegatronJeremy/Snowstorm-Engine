@@ -1,20 +1,16 @@
 #include "pch.h"
 #include "World.hpp"
 
-#include "Components.hpp"
-
 #include "Entity.hpp"
 #include <Snowstorm/ECS/SystemManager.hpp>
 
+#include "Snowstorm/Components/TagComponent.hpp"
 #include "Snowstorm/Events/Event.h"
 #include "Snowstorm/Render/MeshLibrarySingleton.hpp"
 #include "Snowstorm/Render/Renderer3DSingleton.hpp"
 #include "Snowstorm/Render/Shader.hpp"
 
 #include "Snowstorm/System/CameraControllerSystem.hpp"
-#include "Snowstorm/System/RenderSystem.hpp"
-#include "Snowstorm/System/ScriptSystem.hpp"
-#include "Snowstorm/System/ShaderReloadSystem.hpp"
 
 namespace Snowstorm
 {

@@ -16,7 +16,6 @@
 #include "Snowstorm/World/World.hpp"
 #include "Snowstorm/World/Entity.hpp"
 #include "Snowstorm/World/ScriptableEntity.h"
-#include "Snowstorm/World/Components.hpp"
 
 // ---Renderer------------------------
 #include "Snowstorm/Render/Renderer2D.hpp"

@@ -84,7 +84,7 @@ namespace Snowstorm
 		}
 	}
 
-	void Renderer3DSingleton::FlushBatch(BatchData& batch) const
+	void Renderer3DSingleton::FlushBatch(BatchData& batch)
 	{
 		if (batch.Instances.empty()) return;
 

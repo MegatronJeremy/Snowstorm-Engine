@@ -1,5 +1,7 @@
 #include "DockspaceSetupSystem.hpp"
 
+#include "Snowstorm/Core/Timestep.hpp"
+
 #include <imgui.h>
 
 namespace Snowstorm

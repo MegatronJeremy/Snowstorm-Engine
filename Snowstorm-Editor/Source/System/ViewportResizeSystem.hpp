@@ -6,8 +6,8 @@ namespace Snowstorm
 	class ViewportResizeSystem final : public System
 	{
 	public:
-		explicit ViewportResizeSystem(WorldRef world)
-			: System(std::move(world))
+		explicit ViewportResizeSystem(const WorldRef world)
+			: System(world)
 		{
 		}
 

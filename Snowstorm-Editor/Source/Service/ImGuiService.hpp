@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Snowstorm/Core/Timestep.hpp"
 #include "Snowstorm/Service/Service.hpp"
 
 namespace Snowstorm

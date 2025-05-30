@@ -2,10 +2,14 @@
 
 #include <glm/detail/type_quat.hpp>
 
+#include "Snowstorm/Components/CameraComponent.hpp"
+#include "Snowstorm/Components/CameraControllerComponent.hpp"
+#include "Snowstorm/Components/RenderTargetComponent.hpp"
+#include "Snowstorm/Components/TransformComponent.hpp"
+#include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Core/Input.hpp"
 #include "Snowstorm/Events/Event.h"
 #include "Snowstorm/Events/MouseEvent.h"
-#include "Snowstorm/World/Components.hpp"
 
 namespace Snowstorm
 {

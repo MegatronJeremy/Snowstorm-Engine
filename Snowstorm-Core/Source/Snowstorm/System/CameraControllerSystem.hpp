@@ -1,4 +1,5 @@
 #pragma once
+
 #include "Snowstorm/ECS/System.hpp"
 
 namespace Snowstorm

@@ -2,9 +2,11 @@
 
 #include "Service/ImGuiService.hpp"
 
+#include "Snowstorm/Components/CameraComponent.hpp"
+#include "Snowstorm/Components/FramebufferComponent.hpp"
+#include "Snowstorm/Components/RenderTargetComponent.hpp"
+#include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Core/Application.hpp"
-#include "Snowstorm/Events/ApplicationEvent.h"
-#include "Snowstorm/World/Components.hpp"
 
 namespace Snowstorm
 {

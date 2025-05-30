@@ -1,10 +1,17 @@
 #include "RenderSystem.hpp"
 
+#include "Snowstorm/Components/CameraComponent.hpp"
+#include "Snowstorm/Components/FramebufferComponent.hpp"
+#include "Snowstorm/Components/MaterialComponent.hpp"
+#include "Snowstorm/Components/MeshComponent.hpp"
+#include "Snowstorm/Components/RenderTargetComponent.hpp"
+#include "Snowstorm/Components/SpriteComponent.hpp"
+#include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Events/ApplicationEvent.h"
+#include "Snowstorm/Render/Framebuffer.hpp"
 #include "Snowstorm/Render/RenderCommand.hpp"
 #include "Snowstorm/Render/Renderer2D.hpp"
 #include "Snowstorm/Render/Renderer3DSingleton.hpp"
-#include "Snowstorm/World/Components.hpp"
 
 namespace Snowstorm
 {

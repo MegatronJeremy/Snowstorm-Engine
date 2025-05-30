@@ -7,9 +7,18 @@
 #include "Examples/MandelbrotSet/MandelbrotMaterial.hpp"
 #include "Examples/MandelbrotSet/MandelbrotControllerSystem.hpp"
 
+#include "Snowstorm/Components/CameraComponent.hpp"
+#include "Snowstorm/Components/CameraControllerComponent.hpp"
+#include "Snowstorm/Components/FramebufferComponent.hpp"
+#include "Snowstorm/Components/MaterialComponent.hpp"
+#include "Snowstorm/Components/MeshComponent.hpp"
+#include "Snowstorm/Components/RenderTargetComponent.hpp"
+#include "Snowstorm/Components/TransformComponent.hpp"
+#include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/ECS/SystemManager.hpp"
 #include "Snowstorm/Events/KeyEvent.h"
 #include "Snowstorm/Events/MouseEvent.h"
+#include "Snowstorm/Render/Material.hpp"
 #include "Snowstorm/Render/MeshLibrarySingleton.hpp"
 #include "Snowstorm/System/CameraControllerSystem.hpp"
 #include "Snowstorm/System/RenderSystem.hpp"
@@ -55,6 +64,7 @@ namespace Snowstorm
 		systemManager.RegisterSystem<SceneHierarchySystem>();
 		systemManager.RegisterSystem<ViewportDisplaySystem>();
 
+		// TODO setup the following as part of a serializable world setup
 		// Framebuffer setup
 		{
 			const auto& window = Application::Get().GetWindow();

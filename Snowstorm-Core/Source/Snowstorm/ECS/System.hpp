@@ -26,7 +26,7 @@ namespace Snowstorm
 		template <typename... Components>
 		[[nodiscard]] auto View() const
 		{
-			static_assert(sizeof...(Components) > 0, "view requires at least one component type.");
+			static_assert(sizeof...(Components) > 0, "View requires at least one component type.");
 
 			return m_World->GetRegistry().m_Registry.view<Components...>();
 		}
@@ -35,7 +35,7 @@ namespace Snowstorm
 		template <typename... Components>
 		[[nodiscard]] auto InitView() const
 		{
-			static_assert(sizeof...(Components) > 0, "initView requires at least one component type.");
+			static_assert(sizeof...(Components) > 0, "InitView requires at least one component type.");
 
 			std::unordered_set<entt::entity> entitiesWithAddedComponents;
 

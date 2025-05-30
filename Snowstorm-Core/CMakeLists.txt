@@ -19,31 +19,29 @@ target_include_directories(Snowstorm-Core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
 )
 
-find_package(spdlog REQUIRED CONFIG)
-find_package(fmt REQUIRED CONFIG)
-find_package(stb REQUIRED CONFIG)
-find_package(glm REQUIRED CONFIG)
-find_package(EnTT REQUIRED CONFIG)
-find_package(glfw3 REQUIRED CONFIG)
-find_package(glew REQUIRED CONFIG)
-find_package(imgui REQUIRED CONFIG)
-find_package(VulkanLoader REQUIRED CONFIG)
-find_package(VulkanHeaders REQUIRED CONFIG)
-find_package(vulkan-validationlayers REQUIRED CONFIG)
-find_package(assimp REQUIRED CONFIG)
+find_package(assimp CONFIG REQUIRED)
+find_package(EnTT CONFIG REQUIRED)
+find_package(fmt CONFIG REQUIRED)
+find_package(GLEW REQUIRED)
+find_package(glfw3 CONFIG REQUIRED)
+find_package(glm CONFIG REQUIRED)
+find_package(imgui CONFIG REQUIRED)
+find_package(rttr CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
+find_package(Stb REQUIRED)
+find_package(Vulkan REQUIRED)
 
 target_link_libraries(Snowstorm-Core PUBLIC
-    spdlog::spdlog
-    fmt::fmt
-    stb::stb
-    glm::glm
-    EnTT::EnTT
-    glfw
-    GLEW::GLEW
-    imgui::imgui
-    Vulkan::Loader
-    vulkan-headers::vulkan-headers
-    vulkan-validationlayers::vulkan-validationlayers
-    opengl32 
     assimp::assimp
+    EnTT::EnTT
+    fmt::fmt
+    GLEW::GLEW
+    glfw
+    glm::glm
+    imgui::imgui
+    RTTR::Core
+    spdlog::spdlog
+    ${Stb_INCLUDE_DIR}
+    Vulkan::Vulkan
+    opengl32 
 )

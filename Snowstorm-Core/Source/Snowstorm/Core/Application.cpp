@@ -5,10 +5,9 @@
 
 #include <ranges>
 
+#include "Snowstorm/Components/ComponentRegistration.hpp"
 #include "Snowstorm/Render/RenderCommand.hpp"
 #include "Snowstorm/Render/Renderer2D.hpp"
-
-#pragma optimize("", off)
 
 namespace Snowstorm
 {
@@ -32,6 +31,8 @@ namespace Snowstorm
 		// TODO these should be services (which have callable methods -> sort of like singletons, you can globally fetch a service through instance())
 		Renderer2D::Init();
 		RenderCommand::Init();
+
+		InitializeRTTR();
 	}
 
 	Application::~Application()
@@ -39,6 +40,9 @@ namespace Snowstorm
 		SS_PROFILE_FUNCTION();
 
 		Renderer2D::Shutdown();
+
+		m_ServiceManager.reset(); // TODO kind of a hack in order to guarantee correct shutdown order
+		m_Window.reset();
 	}
 
 	void Application::Run()

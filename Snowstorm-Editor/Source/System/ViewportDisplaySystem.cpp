@@ -2,8 +2,9 @@
 
 #include <imgui.h>
 
+#include "Snowstorm/Components/FramebufferComponent.hpp"
+#include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Core/Application.hpp"
-#include "Snowstorm/World/Components.hpp"
 
 namespace Snowstorm
 {
@@ -24,7 +25,7 @@ namespace Snowstorm
 			viewportComponent.Size = {viewportPanelSize.x, viewportPanelSize.y};
 
 			const uint32_t textureID = framebufferComponent.Framebuffer->GetColorAttachmentRendererID();
-			ImGui::Image(reinterpret_cast<ImTextureID>(textureID),
+			ImGui::Image(textureID,
 			             ImVec2{viewportComponent.Size.x, viewportComponent.Size.y}, ImVec2{0, 1},
 			             ImVec2{1, 0});
 			// TODO make some sort of access view -> just accesses one (first) entity from the view
