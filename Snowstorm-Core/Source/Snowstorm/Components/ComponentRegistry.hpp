@@ -25,7 +25,7 @@ namespace Snowstorm
 		return s_ComponentRegistry;
 	}
 
-	void RenderProperty(const rttr::property& prop, const rttr::instance& instance);
+	bool RenderProperty(const rttr::property& prop, const rttr::instance& instance);
 
 	template <typename T>
 	void RegisterComponent()

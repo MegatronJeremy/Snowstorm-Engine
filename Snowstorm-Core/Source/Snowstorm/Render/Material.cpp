@@ -15,6 +15,8 @@ namespace Snowstorm
 
 		// Set albedo texture to checkerboard texture
 		m_Textures[0] = Texture2D::Create("assets/textures/Checkerboard.png");
+
+		m_ShaderReloadPath = m_Shader->GetShaderPath();
 	}
 
 	void Material::Bind() const

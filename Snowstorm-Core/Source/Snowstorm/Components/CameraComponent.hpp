@@ -2,8 +2,6 @@
 
 #include "Snowstorm/World/SceneCamera.h"
 
-#include <rttr/registration.h>
-
 namespace Snowstorm
 {
 	struct CameraComponent
@@ -11,7 +9,7 @@ namespace Snowstorm
 		SceneCamera Camera;
 		bool Primary = true; // TODO: think about moving to scene
 		bool FixedAspectRatio = false;
-
-		RTTR_ENABLE()
 	};
+
+	void RegisterCameraComponent();
 }

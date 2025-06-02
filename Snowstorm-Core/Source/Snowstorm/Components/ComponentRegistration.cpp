@@ -19,24 +19,11 @@ namespace Snowstorm
 
 	void InitializeRTTR()
 	{
-		registration::class_<CameraComponent>("Snowstorm::CameraComponent")
-			.property("Camera", &CameraComponent::Camera)
-			.property("Primary", &CameraComponent::Primary)
-			.property("FixedAspectRatio", &CameraComponent::FixedAspectRatio);
-		Snowstorm::RegisterComponent<CameraComponent>();
+		RegisterCameraComponent();
 
-		registration::class_<CameraControllerComponent>("Snowstorm::CameraControllerComponent")
-			.property("LookSensitivity", &CameraControllerComponent::LookSensitivity)
-			.property("MoveSpeed", &CameraControllerComponent::MoveSpeed)
-			.property("RotationEnabled", &CameraControllerComponent::RotationEnabled)
-			.property("RotationSpeed", &CameraControllerComponent::RotationSpeed)
-			.property("ZoomSpeed", &CameraControllerComponent::ZoomSpeed);
-		Snowstorm::RegisterComponent<CameraControllerComponent>();
+		RegisterCameraControllerComponent();
 
-		registration::class_<MaterialComponent>("Snowstorm::MaterialComponent")
-			.constructor()
-			.property("MaterialInstance", &MaterialComponent::MaterialInstance);
-		Snowstorm::RegisterComponent<MaterialComponent>();
+		RegisterMaterialComponent();
 
 		registration::class_<MeshComponent>("Snowstorm::MeshComponent")
 			.constructor()

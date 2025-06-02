@@ -56,6 +56,8 @@ namespace Snowstorm
 			m_UniformCache.clear();
 		}
 
+		virtual std::string GetShaderPath() = 0;
+
 	protected:
 		// Virtual methods for GPU upload
 		virtual void UploadUniform(const std::string& name, int value) = 0;

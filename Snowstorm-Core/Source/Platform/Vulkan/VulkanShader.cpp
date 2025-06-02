@@ -96,4 +96,9 @@ namespace Snowstorm
 	void VulkanShader::Compile()
 	{
 	}
+
+	std::string VulkanShader::GetShaderPath()
+	{
+		return m_Filepath;
+	}
 }

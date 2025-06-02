@@ -45,6 +45,8 @@ namespace Snowstorm
 		void UploadUniformMat3(const std::string& name, const glm::mat3& matrix) const;
 		void UploadUniformMat4(const std::string& name, const glm::mat4& matrix) const;
 
+		std::string GetShaderPath() override;
+
 	private:
 		static std::string ReadFile(const std::string& filepath);
 		static std::unordered_map<GLenum, std::string> PreProcess(const std::string& source);

@@ -49,8 +49,8 @@ namespace Snowstorm
 		void SetTexture(const uint32_t slot, Ref<Texture> texture) { m_Textures[slot] = std::move(texture); }
 		[[nodiscard]] Ref<Texture> GetTexture(const uint32_t slot) { return m_Textures[slot]; }
 
-		void SetColor(const glm::vec4& color) { m_Uniforms["u_Color"] = color; }
-		[[nodiscard]] glm::vec4& GetColor() { return std::get<glm::vec4>(m_Uniforms["u_Color"]); }
+		void SetColor(const glm::vec4 color) { m_Uniforms["u_Color"] = color; }
+		[[nodiscard]] glm::vec4 GetColor() { return std::get<glm::vec4>(m_Uniforms["u_Color"]); }
 
 		[[nodiscard]] Ref<Shader> GetShader() const { return m_Shader; }
 
@@ -61,10 +61,17 @@ namespace Snowstorm
 		void AddVertexAttribute(const BufferElement& attribute) { m_ExtraVertexAttributes.push_back(attribute); }
 		void AddInstanceAttribute(const BufferElement& attribute) { m_ExtraInstanceAttributes.push_back(attribute); }
 
+		// Sets the shader path for lazy loading in ShaderReloadSystem
+		void SetShaderPath(std::string path) { m_ShaderReloadPath = std::move(path); }
+		[[nodiscard]] std::string GetShaderPath() const { return m_Shader->GetShaderPath(); }
+
+		[[nodiscard]] bool RequiresReload() const { return !m_ShaderReloadPath.empty(); }
+
 	private:
 		static constexpr uint32_t MAX_TEXTURE_SLOTS = 32;
 
 		Ref<Shader> m_Shader;
+		std::string m_ShaderReloadPath;
 		std::unordered_map<std::string, Shader::UniformValue> m_Uniforms;
 		std::vector<BufferElement> m_ExtraVertexAttributes;
 		std::vector<BufferElement> m_ExtraInstanceAttributes;

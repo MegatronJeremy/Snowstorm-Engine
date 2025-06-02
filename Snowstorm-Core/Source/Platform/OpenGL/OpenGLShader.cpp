@@ -293,4 +293,9 @@ namespace Snowstorm
 		const GLint location = glGetUniformLocation(m_RendererID, name.c_str());
 		glUniformMatrix4fv(location, 1, GL_FALSE, value_ptr(matrix));
 	}
+
+	std::string OpenGLShader::GetShaderPath()
+	{
+		return m_Filepath;
+	}
 }

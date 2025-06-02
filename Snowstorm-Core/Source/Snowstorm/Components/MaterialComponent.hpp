@@ -9,4 +9,6 @@ namespace Snowstorm
 	{
 		Ref<Material> MaterialInstance;
 	};
+
+	void RegisterMaterialComponent();
 }

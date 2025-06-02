@@ -30,6 +30,8 @@ namespace Snowstorm
 
 		void Compile() override;
 
+		std::string GetShaderPath() override;
+
 	private:
 		VkDevice m_Device;
 
