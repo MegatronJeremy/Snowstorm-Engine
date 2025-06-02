@@ -3,7 +3,6 @@
 #include "CameraComponent.hpp"
 #include "CameraControllerComponent.hpp"
 #include "ComponentRegistry.hpp"
-#include "FramebufferComponent.hpp"
 #include "MaterialComponent.hpp"
 #include "MeshComponent.hpp"
 #include "NativeScriptComponent.hpp"
