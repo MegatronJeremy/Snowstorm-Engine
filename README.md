@@ -1,6 +1,6 @@
 # Megatron Engine
 
-Next generation Vulkan/OpenGL game engine.
+Vulkan/OpenGL game engine. Will support DirectX12 in the future.
 
 There are three included projects - __Core__, __App__ and __Editor__. __CMake__ in conjunction with __Conan2__ is used to generate project files.
 
