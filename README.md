@@ -1,4 +1,7 @@
-# Megatron Engine
+# Snowstorm Engine
+
+![image](https://github.com/user-attachments/assets/6fc4c33b-fe00-4a78-911f-7565fae1bf15)
+(Work in progress)
 
 Vulkan/OpenGL game engine. Will support DirectX12 in the future.
 
