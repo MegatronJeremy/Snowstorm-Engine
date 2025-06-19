@@ -38,4 +38,33 @@ namespace Snowstorm
 		uint32_t m_RendererID;
 		GLenum m_InternalFormat, m_DataFormat;
 	};
+
+	class OpenGLTextureCube final : public TextureCube
+	{
+	public:
+		explicit OpenGLTextureCube(const std::array<std::string, 6>& faces);
+		explicit OpenGLTextureCube(const std::string& path);
+		~OpenGLTextureCube() override;
+
+		OpenGLTextureCube(const OpenGLTextureCube&) = delete;
+		OpenGLTextureCube(OpenGLTextureCube&&) = delete;
+		OpenGLTextureCube& operator=(const OpenGLTextureCube&) = delete;
+		OpenGLTextureCube& operator=(OpenGLTextureCube&&) = delete;
+
+		uint32_t GetWidth() const override { return m_Width; }
+		uint32_t GetHeight() const override { return m_Height; }
+		uint32_t GetRendererID() const override { return m_RendererID; }
+
+		void SetData(void* data, uint32_t size) override {} // not used
+		void Bind(uint32_t slot = 0) const override;
+
+		bool operator==(const Texture& other) const override
+		{
+			return m_RendererID == other.GetRendererID();
+		}
+
+	private:
+		uint32_t m_RendererID{0};
+		uint32_t m_Width{0}, m_Height{0};
+	};
 }

@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 
+#include "RenderEnums.hpp"
 #include "VertexArray.hpp"
 
 namespace Snowstorm
@@ -27,10 +28,14 @@ namespace Snowstorm
 
 		virtual void Init() = 0;
 
+		virtual void SetDepthFunction(DepthFunction func) = 0;
+		virtual void SetDepthMask(bool enable) = 0;
+
 		virtual void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) = 0;
 		virtual void SetClearColor(const glm::vec4& color) = 0;
 		virtual void Clear() = 0;
 
+		virtual void DrawArrays(const Ref<VertexArray>& vertexArray, uint32_t vertexCount) = 0;
 		virtual void DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount = 0) = 0;
 		virtual void DrawIndexedInstanced(const Ref<VertexArray>& vertexArray, uint32_t indexCount, uint32_t instanceCount) = 0;
 

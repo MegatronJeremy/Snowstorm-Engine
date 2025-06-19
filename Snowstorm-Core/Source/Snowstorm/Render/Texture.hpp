@@ -36,4 +36,10 @@ namespace Snowstorm
 		static Ref<Texture2D> Create(const std::string& path);
 	};
 
+	class TextureCube : public Texture
+	{
+	public:
+		static Ref<TextureCube> Create(const std::array<std::string, 6>& paths);
+		static Ref<TextureCube> Create(const std::string& path);
+	};
 }

@@ -22,6 +22,7 @@
 #include "Snowstorm/Lighting/LightingSystem.hpp"
 #include "Snowstorm/Render/Material.hpp"
 #include "Snowstorm/Render/MeshLibrarySingleton.hpp"
+#include "Snowstorm/Render/Renderer3DSingleton.hpp"
 #include "Snowstorm/Systems/CameraControllerSystem.hpp"
 #include "Snowstorm/Systems/RenderSystem.hpp"
 #include "Snowstorm/Systems/ShaderReloadSystem.hpp"
@@ -48,6 +49,7 @@ namespace Snowstorm
 
 		auto& shaderLibrary = m_ActiveWorld->GetSingleton<ShaderLibrarySingleton>();
 		auto& meshLibrary = m_ActiveWorld->GetSingleton<MeshLibrarySingleton>();
+		auto& renderer3DSingleton = m_ActiveWorld->GetSingleton<Renderer3DSingleton>();
 
 		auto& systemManager = m_ActiveWorld->GetSystemManager();
 
@@ -82,6 +84,16 @@ namespace Snowstorm
 			fbSpec.Height = windowHeight;
 			m_FramebufferEntity.AddComponent<FramebufferComponent>(Framebuffer::Create(fbSpec));
 			m_FramebufferEntity.AddComponent<ViewportComponent>(glm::vec2{windowWidth, windowHeight});
+		}
+
+		// Environment setup
+		{
+			const Ref<Shader> skyboxShader = shaderLibrary.Load("assets/shaders/Skybox.glsl");
+			const Ref<Material> skyboxMaterial = CreateRef<Material>(skyboxShader);
+
+			const Ref<TextureCube> skyboxTexture = TextureCube::Create("assets/textures/skybox.dds");
+
+			renderer3DSingleton.SetSkybox(skyboxMaterial, skyboxTexture);
 		}
 
 		// 3D Entities

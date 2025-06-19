@@ -24,9 +24,9 @@ namespace Snowstorm
 		m_Shader->Bind();
 
 		// Bind all stored uniforms
-		for (const auto& [name, value] : m_Uniforms)
+		for (const auto& [name, val] : m_Uniforms)
 		{
-			ApplyUniform(name, value);
+			ApplyUniform(name, val);
 		}
 
 		for (uint32_t i = 0; i < m_Textures.size(); i++)

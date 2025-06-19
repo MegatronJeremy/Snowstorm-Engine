@@ -2,18 +2,77 @@
 
 #include "RenderCommand.hpp"
 
+namespace
+{
+	// TODO move this somewhere else, like static helpers for creating meshes?
+	float skyboxVertices[] = {
+		-1.0f,  1.0f, -1.0f,
+		-1.0f, -1.0f, -1.0f,
+		 1.0f, -1.0f, -1.0f,
+		 1.0f, -1.0f, -1.0f,
+		 1.0f,  1.0f, -1.0f,
+		-1.0f,  1.0f, -1.0f,
+
+		-1.0f, -1.0f,  1.0f,
+		-1.0f, -1.0f, -1.0f,
+		-1.0f,  1.0f, -1.0f,
+		-1.0f,  1.0f, -1.0f,
+		-1.0f,  1.0f,  1.0f,
+		-1.0f, -1.0f,  1.0f,
+
+		 1.0f, -1.0f, -1.0f,
+		 1.0f, -1.0f,  1.0f,
+		 1.0f,  1.0f,  1.0f,
+		 1.0f,  1.0f,  1.0f,
+		 1.0f,  1.0f, -1.0f,
+		 1.0f, -1.0f, -1.0f,
+
+		-1.0f, -1.0f,  1.0f,
+		-1.0f,  1.0f,  1.0f,
+		 1.0f,  1.0f,  1.0f,
+		 1.0f,  1.0f,  1.0f,
+		 1.0f, -1.0f,  1.0f,
+		-1.0f, -1.0f,  1.0f,
+
+		-1.0f,  1.0f, -1.0f,
+		 1.0f,  1.0f, -1.0f,
+		 1.0f,  1.0f,  1.0f,
+		 1.0f,  1.0f,  1.0f,
+		-1.0f,  1.0f,  1.0f,
+		-1.0f,  1.0f, -1.0f,
+
+		-1.0f, -1.0f, -1.0f,
+		-1.0f, -1.0f,  1.0f,
+		 1.0f, -1.0f, -1.0f,
+		 1.0f, -1.0f, -1.0f,
+		-1.0f, -1.0f,  1.0f,
+		 1.0f, -1.0f,  1.0f
+	};
+}
+
 namespace Snowstorm
 {
 	Renderer3DSingleton::Renderer3DSingleton()
 	{
 		m_CameraUBO = UniformBuffer::Create(sizeof(glm::mat4), 0);
 		m_LightUBO = UniformBuffer::Create(sizeof(LightDataBlock), 1);
+
+		m_SkyboxVAO = VertexArray::Create();
+
+		Ref<VertexBuffer> vbo = VertexBuffer::Create(skyboxVertices, sizeof(skyboxVertices));
+		vbo->SetLayout({ { ShaderDataType::Float3, "a_Position" } });
+
+		m_SkyboxVAO->AddVertexBuffer(vbo);
 	}
 
 	void Renderer3DSingleton::BeginScene(const Camera& camera, const glm::mat4& transform)
 	{
-		const glm::mat4 viewProj = camera.GetProjection() * inverse(transform);
+		const glm::mat4 view = glm::inverse(transform);
+		const glm::mat4 proj = camera.GetProjection();
+		const glm::mat4 viewProj = proj * view;
 		m_CameraUBO->SetData(&viewProj, sizeof(glm::mat4));
+
+		DrawSkybox(view, proj);
 
 		m_Batches.clear();
 	}
@@ -82,6 +141,13 @@ namespace Snowstorm
 		m_LightUBO->SetData(&lightData, sizeof(LightDataBlock));
 	}
 
+	void Renderer3DSingleton::SetSkybox(const Ref<Material>& skyboxMaterial, const Ref<TextureCube>& texture)
+	{
+		m_SkyboxMaterial = skyboxMaterial;
+		m_SkyboxMaterial->SetUniform("u_Skybox", 0);
+		m_SkyboxMaterial->SetTexture(0, texture);
+	}
+
 	void Renderer3DSingleton::Flush()
 	{
 		for (auto& batch : m_Batches)
@@ -102,5 +168,21 @@ namespace Snowstorm
 		RenderCommand::DrawIndexedInstanced(batch.VAO, batch.Mesh->GetIndexCount(), static_cast<uint32_t>(batch.Instances.size()));
 
 		batch.Instances.clear();
+	}
+
+	void Renderer3DSingleton::DrawSkybox(const glm::mat4& view, const glm::mat4& proj) const
+	{
+		if (!m_SkyboxMaterial || !m_SkyboxVAO)
+			return;
+
+		m_SkyboxMaterial->SetUniform("u_View", glm::mat4(glm::mat3(view))); // strip translation
+		m_SkyboxMaterial->SetUniform("u_Projection", proj);
+
+		m_SkyboxMaterial->Bind();
+		m_SkyboxVAO->Bind();
+
+		RenderCommand::SetDepthMask(false); // prevent skybox from writing depth
+		RenderCommand::DrawArrays(m_SkyboxVAO, 36);
+		RenderCommand::SetDepthMask(true);
 	}
 }

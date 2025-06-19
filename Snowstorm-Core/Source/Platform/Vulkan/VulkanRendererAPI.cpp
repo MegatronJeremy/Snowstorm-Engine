@@ -23,6 +23,16 @@ namespace Snowstorm
 		m_VulkanCommandBuffer = CreateScope<VulkanCommandBuffers>(device, commandPool, 1);
 	}
 
+	void VulkanRendererAPI::SetDepthFunction(DepthFunction func)
+	{
+		// TODO implement this
+	}
+
+	void VulkanRendererAPI::SetDepthMask(const bool enable)
+	{
+		// TODO implement this
+	}
+
 	void VulkanRendererAPI::SetViewport(const uint32_t x, const uint32_t y, const uint32_t width, const uint32_t height)
 	{
 		// this is a delayed submission of a render command
@@ -50,6 +60,11 @@ namespace Snowstorm
 		// TODO this should not actually exist - move it to swap buffers in OpenGl
 	}
 
+	void VulkanRendererAPI::DrawArrays(const Ref<VertexArray>& vertexArray, uint32_t vertexCount)
+	{
+		// TODO implement
+	}
+
 	void VulkanRendererAPI::DrawIndexed(const Ref<VertexArray>& vertexArray, const uint32_t indexCount)
 	{
 		const VulkanDrawCallCommand drawCallCommand{
@@ -63,5 +78,6 @@ namespace Snowstorm
 
 	void VulkanRendererAPI::DrawIndexedInstanced(const Ref<VertexArray>& vertexArray, const uint32_t indexCount, const uint32_t instanceCount)
 	{
+		// TODO implement
 	}
 }
