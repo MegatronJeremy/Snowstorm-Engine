@@ -6,6 +6,8 @@
 #include "UniformBuffer.hpp"
 #include "VertexArray.hpp"
 
+#include "Snowstorm/Lighting/LightingUniforms.hpp"
+
 namespace Snowstorm
 {
 	struct MeshInstanceData
@@ -31,12 +33,14 @@ namespace Snowstorm
 		void BeginScene(const Camera& camera, const glm::mat4& transform);
 		void EndScene();
 		void DrawMesh(const glm::mat4& transform, const Ref<Mesh>& mesh, const Ref<Material>& material);
+		void UploadLights(const LightDataBlock& lightData) const;
 		void Flush();
 
 	private:
 		static void FlushBatch(BatchData& batch);
 
 		Ref<UniformBuffer> m_CameraUBO;
+		Ref<UniformBuffer> m_LightUBO;
 		std::vector<BatchData> m_Batches;
 	};
 }

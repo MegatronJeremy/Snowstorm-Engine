@@ -6,7 +6,8 @@ namespace Snowstorm
 {
 	Renderer3DSingleton::Renderer3DSingleton()
 	{
-		m_CameraUBO = UniformBuffer::Create(sizeof(glm::mat4), 0); // Binding = 0
+		m_CameraUBO = UniformBuffer::Create(sizeof(glm::mat4), 0);
+		m_LightUBO = UniformBuffer::Create(sizeof(LightDataBlock), 1);
 	}
 
 	void Renderer3DSingleton::BeginScene(const Camera& camera, const glm::mat4& transform)
@@ -74,6 +75,11 @@ namespace Snowstorm
 			FlushBatch(*batch);
 			batch->Instances.clear();
 		}
+	}
+
+	void Renderer3DSingleton::UploadLights(const LightDataBlock& lightData) const
+	{
+		m_LightUBO->SetData(&lightData, sizeof(LightDataBlock));
 	}
 
 	void Renderer3DSingleton::Flush()

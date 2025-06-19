@@ -18,12 +18,14 @@
 #include "Snowstorm/ECS/SystemManager.hpp"
 #include "Snowstorm/Events/KeyEvent.h"
 #include "Snowstorm/Events/MouseEvent.h"
+#include "Snowstorm/Lighting/LightingComponents.hpp"
+#include "Snowstorm/Lighting/LightingSystem.hpp"
 #include "Snowstorm/Render/Material.hpp"
 #include "Snowstorm/Render/MeshLibrarySingleton.hpp"
-#include "Snowstorm/System/CameraControllerSystem.hpp"
-#include "Snowstorm/System/RenderSystem.hpp"
-#include "Snowstorm/System/ShaderReloadSystem.hpp"
-#include "Snowstorm/System/ScriptSystem.hpp"
+#include "Snowstorm/Systems/CameraControllerSystem.hpp"
+#include "Snowstorm/Systems/RenderSystem.hpp"
+#include "Snowstorm/Systems/ShaderReloadSystem.hpp"
+#include "Snowstorm/Systems/ScriptSystem.hpp"
 
 #include "System/DockspaceSetupSystem.hpp"
 #include "System/EditorMenuSystem.hpp"
@@ -55,6 +57,7 @@ namespace Snowstorm
 		systemManager.RegisterSystem<CameraControllerSystem>();
 		systemManager.RegisterSystem<ShaderReloadSystem>();
 		systemManager.RegisterSystem<ViewportResizeSystem>();
+		systemManager.RegisterSystem<LightingSystem>();
 		systemManager.RegisterSystem<RenderSystem>();
 		systemManager.RegisterSystem<MandelbrotControllerSystem>();
 
@@ -84,9 +87,10 @@ namespace Snowstorm
 		// 3D Entities
 		{
 			const Ref<Shader> mandelbrotShader = shaderLibrary.Load("assets/shaders/Mandelbrot.glsl");
-			const Ref<Shader> basicShader = shaderLibrary.Load("assets/shaders/Material.glsl");
+			const Ref<Shader> basicShader = shaderLibrary.Load("assets/shaders/DefaultLit.glsl");
 
 			const Ref<MandelbrotMaterial> mandelbrotMaterial = CreateRef<MandelbrotMaterial>(mandelbrotShader);
+			const Ref<Material> whiteMaterial = CreateRef<Material>(basicShader);
 			const Ref<Material> redMaterial = CreateRef<Material>(basicShader);
 			const Ref<Material> blueMaterial = CreateRef<Material>(basicShader);
 
@@ -96,32 +100,48 @@ namespace Snowstorm
 			redMaterial->SetColor({1.0f, 0.0f, 0.0f, 1.0f});
 			blueMaterial->SetColor({0.0f, 0.0f, 1.0f, 1.0f});
 
-			auto blueCube = m_ActiveWorld->CreateEntity("Blue Cube");
+			auto directionalLightA = m_ActiveWorld->CreateEntity("Directional Light A");
+			auto& lightA = directionalLightA.AddComponent<DirectionalLightComponent>();
+			lightA.Direction = glm::normalize(glm::vec3(1.0f, -1.0f, 0.5f)); // Comes from upper-right front
+			lightA.Color = glm::vec3(1.0f, 0.9f, 0.8f); // Warm
+			lightA.Intensity = 1.0f;
 
-			blueCube.AddComponent<TransformComponent>();
-			blueCube.AddComponent<MaterialComponent>(blueMaterial);
-			blueCube.AddComponent<MeshComponent>(girlMesh);
-			blueCube.AddComponent<RenderTargetComponent>(m_FramebufferEntity);
+			auto directionalLightB = m_ActiveWorld->CreateEntity("Directional Light B");
+			auto& lightB = directionalLightB.AddComponent<DirectionalLightComponent>();
+			lightB.Direction = glm::normalize(glm::vec3(-0.8f, -0.6f, -0.5f)); // Comes from back upper-left
+			lightB.Color = glm::vec3(0.7f, 0.8f, 1.0f); // Cool
+			lightB.Intensity = 0.8f;
 
-			blueCube.GetComponent<TransformComponent>().Position -= 3.0f;
+			auto blueGirl = m_ActiveWorld->CreateEntity("Blue Girl");
 
-			auto redCube = m_ActiveWorld->CreateEntity("Red Cube");
+			blueGirl.AddComponent<TransformComponent>();
+			blueGirl.AddComponent<MaterialComponent>(blueMaterial);
+			blueGirl.AddComponent<MeshComponent>(girlMesh);
+			blueGirl.AddComponent<RenderTargetComponent>(m_FramebufferEntity);
 
-			redCube.AddComponent<TransformComponent>();
-			redCube.AddComponent<MaterialComponent>(mandelbrotMaterial);
-			redCube.AddComponent<MeshComponent>(girlMesh);
-			redCube.AddComponent<RenderTargetComponent>(m_FramebufferEntity);
+			blueGirl.GetComponent<TransformComponent>().Position.x += 2.0f;
+			blueGirl.GetComponent<TransformComponent>().Position.y += 2.0f;
+			blueGirl.GetComponent<TransformComponent>().Position.z += 6.0f;
 
-			redCube.GetComponent<TransformComponent>().Position += 3.0f;
+			auto mandelbrotGirl = m_ActiveWorld->CreateEntity("Mandelbrot Girl");
 
-			auto girlCube = m_ActiveWorld->CreateEntity("Girl Cube");
+			mandelbrotGirl.AddComponent<TransformComponent>();
+			mandelbrotGirl.AddComponent<MaterialComponent>(mandelbrotMaterial);
+			mandelbrotGirl.AddComponent<MeshComponent>(girlMesh);
+			mandelbrotGirl.AddComponent<RenderTargetComponent>(m_FramebufferEntity);
 
-			girlCube.AddComponent<TransformComponent>();
-			girlCube.AddComponent<MaterialComponent>(redMaterial);
-			girlCube.AddComponent<MeshComponent>(cubeMesh);
-			girlCube.AddComponent<RenderTargetComponent>(m_FramebufferEntity);
+			mandelbrotGirl.GetComponent<TransformComponent>().Position += 3.0f;
 
-			girlCube.GetComponent<TransformComponent>().Position -= 6.0f;
+			auto whiteCube = m_ActiveWorld->CreateEntity("White Cube");
+
+			whiteCube.AddComponent<TransformComponent>();
+			whiteCube.AddComponent<MaterialComponent>(whiteMaterial);
+			whiteCube.AddComponent<MeshComponent>(cubeMesh);
+			whiteCube.AddComponent<RenderTargetComponent>(m_FramebufferEntity);
+
+			whiteCube.GetComponent<TransformComponent>().Position.x -= 2.0f;
+			whiteCube.GetComponent<TransformComponent>().Position.y -= 2.0f;
+			whiteCube.GetComponent<TransformComponent>().Position.z += 6.0f;
 
 			auto mandelbrotQuad = m_ActiveWorld->CreateEntity("Mandelbrot Quad");
 			mandelbrotQuad.AddComponent<TransformComponent>();

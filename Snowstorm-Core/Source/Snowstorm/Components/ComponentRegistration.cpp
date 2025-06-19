@@ -12,17 +12,19 @@
 #include "TransformComponent.hpp"
 #include "ViewportComponent.hpp"
 
+#include "Snowstorm/Lighting/LightingComponents.hpp"
+
 namespace Snowstorm
 {
 	using namespace rttr;
 
 	void InitializeRTTR()
 	{
+		// TODO move all of these to functions (and automate it somehow)
 		RegisterCameraComponent();
-
 		RegisterCameraControllerComponent();
-
 		RegisterMaterialComponent();
+		RegisterLightingComponents();
 
 		registration::class_<MeshComponent>("Snowstorm::MeshComponent")
 			.constructor()

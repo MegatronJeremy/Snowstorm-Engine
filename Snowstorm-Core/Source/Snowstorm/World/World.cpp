@@ -10,7 +10,7 @@
 #include "Snowstorm/Render/Renderer3DSingleton.hpp"
 #include "Snowstorm/Render/Shader.hpp"
 
-#include "Snowstorm/System/CameraControllerSystem.hpp"
+#include "Snowstorm/Systems/CameraControllerSystem.hpp"
 
 namespace Snowstorm
 {
