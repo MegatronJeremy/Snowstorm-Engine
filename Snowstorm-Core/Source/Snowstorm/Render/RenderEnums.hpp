@@ -15,5 +15,4 @@ namespace Snowstorm
 		GreaterEqual,
 		Always
 	};
-
 }

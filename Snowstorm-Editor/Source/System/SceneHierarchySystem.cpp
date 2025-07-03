@@ -19,6 +19,8 @@ namespace Snowstorm
 		ImGui::Text("Vertices: %d", stats.GetTotalVertexCount());
 		ImGui::Text("Indices: %d", stats.GetTotalIndexCount());
 
+		ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+
 		ImGui::End();
 	}
 }

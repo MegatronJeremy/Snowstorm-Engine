@@ -21,8 +21,8 @@ namespace Snowstorm
 			}
 
 			// Exponential Zoom-In for Deep Fractal Exploration
-			constexpr float zoomDecay = 0.9995f; // Fine control of zoom speed
-			mandelbrotComponent.Zoom *= zoomDecay;
+			constexpr float zoomDecayRate = 0.9f;
+			mandelbrotComponent.Zoom *= std::pow(zoomDecayRate, ts.GetSeconds());
 
 			// Adaptive Iterations for Detail Resolution
 			mandelbrotComponent.MaxIterations = static_cast<int>(100 + 80.0 * std::log10(4.0f / mandelbrotComponent.Zoom));
