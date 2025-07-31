@@ -2,7 +2,7 @@
 #include "RenderCommand.hpp"
 
 #include "Platform/OpenGL/OpenGLRendererAPI.h"
-#include "Platform/Vulkan/VulkanRendererAPI.h"
+#include "Platform/Vulkan/VulkanRendererAPI.hpp"
 
 namespace Snowstorm
 {

@@ -30,7 +30,9 @@ find_package(rttr CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 find_package(Vulkan REQUIRED)
+find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(gli CONFIG REQUIRED)
+find_package(volk CONFIG REQUIRED)
 
 target_link_libraries(Snowstorm-Core PUBLIC
     assimp::assimp
@@ -44,7 +46,10 @@ target_link_libraries(Snowstorm-Core PUBLIC
     spdlog::spdlog
     ${Stb_INCLUDE_DIR}
     Vulkan::Vulkan
-    opengl32 
+    Vulkan::Headers 
+    volk::volk 
+    volk::volk_headers
+    GPUOpen::VulkanMemoryAllocator
     gli
 )
 

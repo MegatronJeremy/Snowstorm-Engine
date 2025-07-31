@@ -5,7 +5,7 @@
 #include <queue>
 #include <GLFW/glfw3.h>
 
-#include "VulkanContext.h"
+#include "VulkanContext.hpp"
 #include "VulkanQueueFamilyIndices.h"
 
 namespace Snowstorm

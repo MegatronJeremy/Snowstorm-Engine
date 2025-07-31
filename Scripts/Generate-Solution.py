@@ -34,7 +34,7 @@ def main():
     packages = (
         "vulkan vulkan-validationlayers glfw3 glew spdlog fmt "
         "assimp glm stb entt imgui[opengl3-binding,glfw-binding,docking-experimental] rttr "
-        "gli"
+        "gli volk vulkan-memory-allocator"
     )
     run_command(f"{os.path.join(vcpkg_dir, 'vcpkg')} install {packages} --triplet x64-windows", cwd=project_root)
 

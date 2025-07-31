@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "Platform/Vulkan/VulkanRendererAPI.h"
+#include "Platform/Vulkan/VulkanRendererAPI.hpp"
 
 #include <vulkan/vulkan_core.h>
 
@@ -9,7 +9,7 @@
 #include "VulkanInstance.h"
 #include "VulkanSwapChain.h"
 #include "VulkanCommandPool.h"
-#include "VulkanContext.h"
+#include "VulkanContext.hpp"
 
 namespace Snowstorm
 {
@@ -21,16 +21,6 @@ namespace Snowstorm
 		VkCommandPool commandPool = *VulkanInstance::GetInstance()->GetVulkanCommandPool();
 
 		m_VulkanCommandBuffer = CreateScope<VulkanCommandBuffers>(device, commandPool, 1);
-	}
-
-	void VulkanRendererAPI::SetDepthFunction(DepthFunction func)
-	{
-		// TODO implement this
-	}
-
-	void VulkanRendererAPI::SetDepthMask(const bool enable)
-	{
-		// TODO implement this
 	}
 
 	void VulkanRendererAPI::SetViewport(const uint32_t x, const uint32_t y, const uint32_t width, const uint32_t height)
@@ -46,38 +36,5 @@ namespace Snowstorm
 		viewport.maxDepth = 1.0f;
 
 		VulkanSwapChain::SetViewport(viewport);
-	}
-
-	void VulkanRendererAPI::SetClearColor(const glm::vec4& color)
-	{
-		const VkClearValue clearColor = {{color.r, color.g, color.b, color.a}};
-
-		VulkanSwapChain::SetClearValue(clearColor);
-	}
-
-	void VulkanRendererAPI::Clear()
-	{
-		// TODO this should not actually exist - move it to swap buffers in OpenGl
-	}
-
-	void VulkanRendererAPI::DrawArrays(const Ref<VertexArray>& vertexArray, uint32_t vertexCount)
-	{
-		// TODO implement
-	}
-
-	void VulkanRendererAPI::DrawIndexed(const Ref<VertexArray>& vertexArray, const uint32_t indexCount)
-	{
-		const VulkanDrawCallCommand drawCallCommand{
-			vertexArray,
-			indexCount,
-			VulkanContext::GetUniformBufferObject()
-		};
-
-		VulkanSwapChainQueue::GetInstance()->AddDrawCall(drawCallCommand);
-	}
-
-	void VulkanRendererAPI::DrawIndexedInstanced(const Ref<VertexArray>& vertexArray, const uint32_t indexCount, const uint32_t instanceCount)
-	{
-		// TODO implement
 	}
 }

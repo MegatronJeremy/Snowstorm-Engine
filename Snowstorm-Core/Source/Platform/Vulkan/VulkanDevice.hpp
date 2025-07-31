@@ -1,4 +1,6 @@
 #pragma once
+#include <vector>
+
 #include "VulkanInstance.h"
 
 namespace Snowstorm
@@ -59,7 +61,8 @@ namespace Snowstorm
 		VkQueue m_PresentQueue;
 
 		std::vector<const char*> m_DeviceExtensions = {
-			VK_KHR_SWAPCHAIN_EXTENSION_NAME
+			VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+			VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
 		};
 	};
 }

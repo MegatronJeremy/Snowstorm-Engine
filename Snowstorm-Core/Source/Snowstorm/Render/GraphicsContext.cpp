@@ -4,7 +4,7 @@
 
 #include "Renderer2D.hpp"
 #include "Platform/OpenGL/OpenGLContext.h"
-#include "Platform/Vulkan/VulkanContext.h"
+#include "Platform/Vulkan/VulkanContext.hpp"
 
 namespace Snowstorm
 {

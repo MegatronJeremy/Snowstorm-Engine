@@ -2,7 +2,7 @@
 #include <queue>
 #include <vulkan/vulkan_core.h>
 
-#include "VulkanBuffer.h"
+#include "VulkanBuffer.hpp"
 #include "VulkanGraphicsPipeline.h"
 #include "VulkanRenderPass.h"
 #include "VulkanVertexArray.h"

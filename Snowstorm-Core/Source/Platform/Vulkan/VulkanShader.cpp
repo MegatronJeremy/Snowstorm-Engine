@@ -2,7 +2,7 @@
 
 #include "VulkanShader.h"
 
-#include "VulkanContext.h"
+#include "VulkanContext.hpp"
 #include "VulkanSwapChain.h"
 
 namespace Snowstorm

@@ -1,5 +1,5 @@
 #pragma once
-#include "VulkanDevice.h"
+#include "VulkanDevice.hpp"
 #include "Snowstorm/Render/Shader.hpp"
 
 namespace Snowstorm

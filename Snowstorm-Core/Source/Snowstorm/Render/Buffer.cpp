@@ -3,69 +3,20 @@
 
 #include "Renderer2D.hpp"
 
-#include "Platform/OpenGL/OpenGLBuffer.h"
-#include "Platform/Vulkan/VulkanBuffer.h"
+#include "Platform/Vulkan/VulkanBuffer.hpp"
 
 namespace Snowstorm
 {
-	uint64_t VertexBuffer::GetHandle() const
+	Ref<Buffer> Buffer::Create(size_t size, BufferUsage usage, const void* data, bool hostVisible)
 	{
-		return 0;
-	}
-
-	Ref<VertexBuffer> VertexBuffer::Create(uint32_t size)
-	{
-		switch (Renderer2D::GetAPI())
+		switch (RendererAPI::GetAPI())
 		{
-		case RendererAPI::API::None:
-			SS_CORE_ASSERT(false, "RendererAPI::None is currently not supported!");
-			return nullptr;
-		case RendererAPI::API::OpenGL:
-			return CreateRef<OpenGLVertexBuffer>(size);
 		case RendererAPI::API::Vulkan:
-			return CreateRef<VulkanVertexBuffer>(size);
-		}
-
-		SS_CORE_ASSERT(false, "Unknown RendererAPI!");
-		return nullptr;
-	}
-
-	Ref<VertexBuffer> VertexBuffer::Create(const void* data, const uint32_t size)
-	{
-		switch (Renderer2D::GetAPI())
-		{
-		case RendererAPI::API::None:
-			SS_CORE_ASSERT(false, "RendererAPI::None is currently not supported!");
+			return CreateRef<VulkanBuffer>(size, usage, data, hostVisible);
+		case RendererAPI::API::DX12:
+			// return CreateRef<DX12Buffer>(...);
+		default:
 			return nullptr;
-		case RendererAPI::API::OpenGL:
-			return CreateRef<OpenGLVertexBuffer>(data, size);
-		case RendererAPI::API::Vulkan:
-			return CreateRef<VulkanVertexBuffer>(data, size);
 		}
-
-		SS_CORE_ASSERT(false, "Unknown RendererAPI!");
-		return nullptr;
-	}
-
-	uint64_t IndexBuffer::GetHandle() const
-	{
-		return 0;
-	}
-
-	Ref<IndexBuffer> IndexBuffer::Create(const uint32_t* indices, const uint32_t count)
-	{
-		switch (Renderer2D::GetAPI())
-		{
-		case RendererAPI::API::None:
-			SS_CORE_ASSERT(false, "RendererAPI::None is currently not supported!");
-			return nullptr;
-		case RendererAPI::API::OpenGL:
-			return CreateRef<OpenGLIndexBuffer>(indices, count);
-		case RendererAPI::API::Vulkan:
-			return CreateRef<VulkanIndexBuffer>(indices, count);
-		}
-
-		SS_CORE_ASSERT(false, "Unknown RendererAPI!");
-		return nullptr;
 	}
 }

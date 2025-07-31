@@ -1,6 +1,6 @@
 #include "pch.h"
 
-#include "VulkanDevice.h"
+#include "VulkanDevice.hpp"
 
 #include <set>
 
@@ -51,7 +51,7 @@ namespace Snowstorm
 		}
 	}
 
-	void VulkanDevice::CreateLogicalDevice() 
+	void VulkanDevice::CreateLogicalDevice()
 	{
 		const VulkanQueueFamilyIndices indices = VulkanQueueFamilyIndices::FindQueueFamilies(
 			m_PhysicalDevice, m_Surface);
@@ -80,10 +80,15 @@ namespace Snowstorm
 
 		// next specify the set of device features that you'll be using
 		VkPhysicalDeviceFeatures deviceFeatures{};
-		// right now we don't need anything special, so leave it empty
+
+		// add dynamic rendering feature
+		VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeature{};
+		dynamicRenderingFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
+		dynamicRenderingFeature.dynamicRendering = VK_TRUE;
 
 		VkDeviceCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+		createInfo.pNext = &dynamicRenderingFeature;
 
 		createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
 		createInfo.pQueueCreateInfos = queueCreateInfos.data();
@@ -177,5 +182,4 @@ namespace Snowstorm
 
 		return score;
 	}
-
 }

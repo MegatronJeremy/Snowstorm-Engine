@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Camera.hpp"
-#include "RendererAPI.h"
+#include "RendererAPI.hpp"
 #include "Texture.hpp"
 
 namespace Snowstorm

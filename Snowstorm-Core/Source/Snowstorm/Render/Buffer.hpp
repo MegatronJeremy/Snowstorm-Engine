@@ -1,178 +1,34 @@
 #pragma once
 
-#include "Snowstorm/Core/Log.hpp"
+#include <cstdint>
+#include <memory>
 
 namespace Snowstorm
 {
-	enum class ShaderDataType : uint8_t
+	enum class BufferUsage
 	{
 		None = 0,
-		Float,
-		Float2,
-		Float3,
-		Float4,
-		Mat3,
-		Mat4,
-		Int,
-		Int2,
-		Int3,
-		Int4,
-		Bool
+		Vertex,
+		Index,
+		Uniform,
+		Storage
 	};
 
-	static uint32_t ShaderDataTypeSize(const ShaderDataType type)
-	{
-		switch (type)
-		{
-		case ShaderDataType::Float: return 4;
-		case ShaderDataType::Float2: return 4 * 2;
-		case ShaderDataType::Float3: return 4 * 3;
-		case ShaderDataType::Float4: return 4 * 4;
-		case ShaderDataType::Mat3: return 4 * 3 * 3;
-		case ShaderDataType::Mat4: return 4 * 4 * 4;
-		case ShaderDataType::Int: return 4;
-		case ShaderDataType::Int2: return 4 * 2;
-		case ShaderDataType::Int3: return 4 * 3;
-		case ShaderDataType::Int4: return 4 * 4;
-		case ShaderDataType::Bool: return 1;
-		case ShaderDataType::None: break;
-		}
-
-		SS_CORE_ASSERT(false, "Unknown ShaderDataType!");
-		return 0;
-	}
-
-	struct BufferElement
-	{
-		std::string Name;
-		ShaderDataType Type;
-		uint32_t Size;
-		uint32_t Offset;
-		bool Instanced;
-		bool Normalized;
-
-		BufferElement() = default;
-
-		BufferElement(const ShaderDataType type, std::string name, const bool instanced = false,
-		              const bool normalized = false)
-			: Name(std::move(name)), Type(type), Size(ShaderDataTypeSize(type)), Offset(0), Instanced(instanced),
-			  Normalized(normalized)
-		{
-		}
-
-		[[nodiscard]] uint32_t GetComponentCount() const
-		{
-			switch (Type)
-			{
-			case ShaderDataType::Float: return 1;
-			case ShaderDataType::Float2: return 2;
-			case ShaderDataType::Float3: return 3;
-			case ShaderDataType::Float4: return 4;
-			case ShaderDataType::Mat3: return 3;
-			case ShaderDataType::Mat4: return 4;
-			case ShaderDataType::Int: return 1;
-			case ShaderDataType::Int2: return 2;
-			case ShaderDataType::Int3: return 3;
-			case ShaderDataType::Int4: return 4;
-			case ShaderDataType::Bool: return 1;
-			case ShaderDataType::None: break;
-			}
-
-			SS_CORE_ASSERT(false, "Unknown ShaderDataType!");
-			return 0;
-		}
-	};
-
-	class BufferLayout
+	class Buffer
 	{
 	public:
-		BufferLayout() = default;
+		virtual ~Buffer() = default;
 
-		BufferLayout(const std::initializer_list<BufferElement>& elements)
-			: m_Elements(elements)
-		{
-			CalculateOffsetsAndStride();
-		}
+		virtual void* Map() = 0;
+		virtual void Unmap() = 0;
 
-		BufferLayout(const std::vector<BufferElement>& elements)
-			: m_Elements(elements)
-		{
-			CalculateOffsetsAndStride();
-		}
+		virtual void SetData(const void* data, size_t size, size_t offset = 0) = 0;
 
-		[[nodiscard]] uint32_t GetStride() const { return m_Stride; }
-		const std::vector<BufferElement>& GetElements() const { return m_Elements; }
+		virtual uint64_t GetGPUAddress() const = 0;
+		virtual size_t GetSize() const = 0;
 
-		std::vector<BufferElement>::iterator begin() { return m_Elements.begin(); }
-		std::vector<BufferElement>::iterator end() { return m_Elements.end(); }
-		std::vector<BufferElement>::const_iterator begin() const { return m_Elements.begin(); }
-		std::vector<BufferElement>::const_iterator end() const { return m_Elements.end(); }
+		virtual BufferUsage GetUsage() const = 0;
 
-	private:
-		void CalculateOffsetsAndStride()
-		{
-			uint32_t offset = 0;
-			m_Stride = 0;
-			for (auto& element : m_Elements)
-			{
-				element.Offset = offset;
-				offset += element.Size;
-				m_Stride += element.Size;
-			}
-		}
-
-		std::vector<BufferElement> m_Elements;
-		uint32_t m_Stride = 0;
-	};
-
-	class VertexBuffer
-	{
-	public:
-		VertexBuffer() = default;
-		virtual ~VertexBuffer() = default;
-
-		VertexBuffer(const VertexBuffer& other) = delete;
-		VertexBuffer(VertexBuffer&& other) = delete;
-		VertexBuffer& operator=(const VertexBuffer& other) = delete;
-		VertexBuffer& operator=(VertexBuffer&& other) = delete;
-
-		virtual void Bind() const = 0;
-		virtual void Unbind() const = 0;
-
-		virtual void SetData(const void* data, uint32_t size) = 0;
-		virtual void SetSubData(const void* data, uint32_t size, uint32_t offset) = 0;
-
-		virtual const BufferLayout& GetLayout() const = 0;
-		virtual void SetLayout(const BufferLayout& layout) = 0;
-
-		virtual uint64_t GetHandle() const;
-
-		static Ref<VertexBuffer> Create(uint32_t size);
-		static Ref<VertexBuffer> Create(const void* data, uint32_t size);
-	};
-
-	// Currently Snowstorm only supports 32-bit index buffers
-	class IndexBuffer
-	{
-	public:
-		IndexBuffer() = default;
-		virtual ~IndexBuffer() = default;
-
-		IndexBuffer(const IndexBuffer& other) = delete;
-		IndexBuffer(IndexBuffer&& other) = delete;
-		IndexBuffer& operator=(const IndexBuffer& other) = delete;
-		IndexBuffer& operator=(IndexBuffer&& other) = delete;
-
-		virtual void Bind() const = 0;
-		virtual void Unbind() const = 0;
-
-		virtual void SetData(const void* data, uint32_t size) = 0;
-		virtual void SetSubData(const void* data, uint32_t size, uint32_t offset) = 0;
-
-		virtual uint32_t GetCount() const = 0;
-
-		virtual uint64_t GetHandle() const;
-
-		static Ref<IndexBuffer> Create(const uint32_t* indices, uint32_t count);
+		static std::shared_ptr<Buffer> Create(size_t size, BufferUsage usage, const void* initialData = nullptr, bool hostVisible = false);
 	};
 }

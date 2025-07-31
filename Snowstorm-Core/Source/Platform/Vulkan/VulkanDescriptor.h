@@ -1,6 +1,6 @@
 #pragma once
-#include "VulkanBuffer.h"
-#include "VulkanDevice.h"
+#include "VulkanBuffer.hpp"
+#include "VulkanDevice.hpp"
 
 namespace Snowstorm
 {
