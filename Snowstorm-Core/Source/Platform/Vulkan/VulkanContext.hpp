@@ -1,10 +1,13 @@
 #pragma once
 
 // --- Volk: function pointer loading ---
-#include <volk.h> // Only if you use volk
+#define VK_NO_PROTOTYPES // tell vulkan headers not to include function declarations
+#include <volk.h>
 
 // --- VMA: Vulkan Memory Allocator ---
-#include <vk_mem_alloc.h> // VMA header
+#define VMA_STATIC_VULKAN_FUNCTIONS 0
+#define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
+#include <vk_mem_alloc.h>
 
 // --- Stdlib ---
 #include <cassert>

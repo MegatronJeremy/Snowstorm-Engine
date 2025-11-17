@@ -39,16 +39,21 @@ namespace Snowstorm
 		{
 			int score = RateDeviceSuitability(device);
 			candidates.insert(std::make_pair(score, device));
-
-			if (candidates.rbegin()->first > 0)
-			{
-				m_PhysicalDevice = candidates.rbegin()->second;
-			}
-			else
-			{
-				SS_CORE_ASSERT(false, "Failed to find a suitable GPU!");
-			}
 		}
+
+		if (candidates.rbegin()->first > 0)
+		{
+			m_PhysicalDevice = candidates.rbegin()->second;
+		}
+		else
+		{
+			SS_CORE_ASSERT(false, "Failed to find a suitable GPU!");
+		}
+
+// TODO-VK: Add #if ENABLE_LOGGING or something like that
+		VkehysicalDeviceProperties props;
+		vkGetPhysicalDeviceProperties(m_PhysicalDevice, &props);
+		SS_CORE_INFO("Selected GPU: {}", props.deviceName);
 	}
 
 	void VulkanDevice::CreateLogicalDevice()
@@ -80,10 +85,25 @@ namespace Snowstorm
 
 		// next specify the set of device features that you'll be using
 		VkPhysicalDeviceFeatures deviceFeatures{};
+		// query available features
+		VkPhysicalDeviceFeatures supportedFeatures;
+		vkGetPhysicalDeviceFeatures(m_PhysicalDevice, &supportedFeatures);
+		// enable physical device features (maybe in some sort of array)
+		// TODO-VK: will be supported in the future (maybe through some array defined in devices)
+		// if (supportedFeatures.samplerAnisotropy)
+		// {
+		// 	deviceFeatures.samplerAnisotropy = VK_TRUE;
+		// }
 
 		// add dynamic rendering feature
 		VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeature{};
 		dynamicRenderingFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
+		// query dynamic rendering support (must be supported)
+		VkPhysicalDeviceFeatures2 features2{}; // Features2 for extension features (1 is for core features only)
+		features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+		features2.pNext = &dynamicRenderingFeature;
+		vkGetPhysicalDeviceFeatures2(m_PhysicalDevice, &features2);
+		SS_CORE_ASSERT(dynamicRenderingFeature.dynamicRendering, "Dynamic rendering not supported by GPU");
 		dynamicRenderingFeature.dynamicRendering = VK_TRUE;
 
 		VkDeviceCreateInfo createInfo{};
@@ -172,10 +192,9 @@ namespace Snowstorm
 			swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
 		}
 
-		// Application can't function without geometry shaders or valid queue families
-		// Or if swap chain is not supported (needed device extensions)
-		if (!physicalDeviceFeatures.geometryShader || !indices.IsComplete() || !extensionsSupported || !
-			swapChainAdequate)
+		// application can't function without valid queue families
+		// or if swapchain is not supported (required device extensions)
+		if (!indices.IsComplete() || !extensionsSupported || !swapChainAdequate)
 		{
 			return 0;
 		}

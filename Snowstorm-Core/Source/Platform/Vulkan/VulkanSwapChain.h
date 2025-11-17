@@ -1,6 +1,5 @@
 #pragma once
 #include <queue>
-#include <vulkan/vulkan_core.h>
 
 #include "VulkanBuffer.hpp"
 #include "VulkanGraphicsPipeline.h"

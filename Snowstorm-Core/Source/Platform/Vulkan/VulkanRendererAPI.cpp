@@ -1,7 +1,8 @@
 #include "pch.h"
 #include "Platform/Vulkan/VulkanRendererAPI.hpp"
 
-#include <vulkan/vulkan_core.h>
+#include "VulkanCommon.hpp"
+
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>

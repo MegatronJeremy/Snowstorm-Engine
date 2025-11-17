@@ -52,7 +52,7 @@ namespace Snowstorm
 		int RateDeviceSuitability(VkPhysicalDevice device) const;
 
 	private:
-		VkPhysicalDevice m_PhysicalDevice;
+		VkPhysicalDevice m_PhysicalDevice = VK_NULL_HANDLE;
 		VkDevice m_Device; // logical device - to interface with the physical device
 
 		VkSurfaceKHR m_Surface;

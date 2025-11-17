@@ -1,8 +1,6 @@
 #include "pch.h"
 #include "VulkanGraphicsPipeline.h"
 
-#include <vulkan/vulkan_core.h>
-
 #include "VulkanSwapChain.h"
 #include "VulkanVertexArray.h"
 

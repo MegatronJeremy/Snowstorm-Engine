@@ -5,6 +5,8 @@
 Binaries/
 build/
 Snowstorm-Core/Source/Platform/OpenGL/backends
+Vendor/Binaries
+vcpkg/
 
 # Files
 *.vcxproj
@@ -18,6 +20,3 @@ Snowstorm-Core/Source/Platform/OpenGL/backends
 *.DotSettings.user
 *.ini
 Makefile
-
-# Exclude
-!Vendor/Binaries

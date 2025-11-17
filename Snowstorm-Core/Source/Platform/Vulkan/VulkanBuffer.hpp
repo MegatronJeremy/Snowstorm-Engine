@@ -1,14 +1,11 @@
 #pragma once
 
-#include <vk_mem_alloc.h>
+#include "VulkanCommon.hpp"
 
-#include "VulkanDevice.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
 
 namespace Snowstorm
 {
-#pragma once
-
 	class VulkanBuffer : public Buffer
 	{
 	public:
