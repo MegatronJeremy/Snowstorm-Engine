@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "Buffer.hpp"
 
-#include "Renderer2D.hpp"
+#include "RendererAPI.hpp"
 
 #include "Platform/Vulkan/VulkanBuffer.hpp"
 
@@ -11,10 +11,21 @@ namespace Snowstorm
 	{
 		switch (RendererAPI::GetAPI())
 		{
+		case RendererAPI::API::None:
+			SS_CORE_ASSERT(false, "RendererAPI::None is currently not supported!");
+			return nullptr;
+
+		case RendererAPI::API::OpenGL:
+			SS_CORE_ASSERT(false, "RendererAPI::OpenGL is currently not supported!");
+			return nullptr;
+
 		case RendererAPI::API::Vulkan:
 			return CreateRef<VulkanBuffer>(size, usage, data, hostVisible);
+
 		case RendererAPI::API::DX12:
-			// return CreateRef<DX12Buffer>(...);
+			SS_CORE_ASSERT(false, "RendererAPI::DX12 is currently not supported!");
+			return nullptr;
+
 		default:
 			return nullptr;
 		}

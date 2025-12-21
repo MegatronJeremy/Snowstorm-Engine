@@ -1,0 +1,10 @@
+^C:\DEV\SNOWSTORM-ENGINE\CMAKEFILES\D088E085CE2FF741F8BF77EB6610DEFE\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Dev/Snowstorm-Engine -BC:/Dev/Snowstorm-Engine --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/Dev/Snowstorm-Engine/Snowstorm.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

@@ -1,21 +1,25 @@
 #pragma once
 
 #include <unordered_map>
-#include <variant>
-#include <Snowstorm/Utility/Math.hpp>
+#include <filesystem>
+#include <string>
+#include <unordered_map>
 
-#include <glm/glm.hpp>
-
+#include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/ECS/Singleton.hpp"
-#include <Snowstorm/Core/Base.hpp>
 
 namespace Snowstorm
 {
+	enum class ShaderStageKind : uint8_t
+	{
+		Vertex = 0,
+		Fragment = 1,
+		Compute = 2
+	};
+
 	class Shader
 	{
 	public:
-		using UniformValue = std::variant<int, float, glm::vec2, glm::vec3, glm::vec4, glm::mat4, std::vector<int>>;
-
 		Shader() = default;
 		virtual ~Shader() = default;
 
@@ -24,55 +28,27 @@ namespace Snowstorm
 		Shader& operator=(const Shader& other) = delete;
 		Shader& operator=(Shader&& other) = delete;
 
-		// Binding
-		virtual void Bind() const = 0;
-		virtual void Unbind() const = 0;
-
-		// Public API with unified caching
-		template <typename T>
-		void SetUniform(const std::string& name, const T& value)
-		{
-			const auto it = m_UniformCache.find(name);
-
-			// Check if the value is already cached and matches the new value
-			if (it != m_UniformCache.end() && std::holds_alternative<T>(it->second) &&
-				isEqual(std::get<T>(it->second), value))
-			{
-				return;
-			}
-
-			// Update the cache and upload the uniform to the GPU
-			m_UniformCache[name] = value;
-			UploadUniform(name, value);
-		}
-
+		// Asset identity (source path)
 		[[nodiscard]] virtual const std::string& GetPath() const = 0;
 
-		static Ref<Shader> Create(const std::string& filepath);
+		// Optional: return original source path
+		[[nodiscard]] virtual std::string GetShaderPath() = 0;
+
+		// Compiled artifact path in cache folder (e.g. assets/cache/shaders/X_<hash>.vert.spv)
+		[[nodiscard]] virtual std::string GetCompiledPath(ShaderStageKind stage) const = 0;
+
+		// Changes whenever recompilation produced new artifacts
+		[[nodiscard]] virtual uint64_t GetVersion() const = 0;
 
 		void Recompile()
 		{
 			Compile();
-			m_UniformCache.clear();
 		}
 
-		virtual std::string GetShaderPath() = 0;
+		static Ref<Shader> Create(const std::string& filepath);
 
 	protected:
-		// Virtual methods for GPU upload
-		virtual void UploadUniform(const std::string& name, int value) = 0;
-		virtual void UploadUniform(const std::string& name, float value) = 0;
-		virtual void UploadUniform(const std::string& name, const glm::vec2& value) = 0;
-		virtual void UploadUniform(const std::string& name, const glm::vec3& value) = 0;
-		virtual void UploadUniform(const std::string& name, const glm::vec4& value) = 0;
-		virtual void UploadUniform(const std::string& name, const glm::mat4& value) = 0;
-		virtual void UploadUniform(const std::string& name, const std::vector<int>& values) = 0;
-
 		virtual void Compile() = 0;
-
-	private:
-		// Single cache for all uniform types
-		std::unordered_map<std::string, UniformValue> m_UniformCache;
 	};
 
 	class ShaderLibrarySingleton final : public Singleton

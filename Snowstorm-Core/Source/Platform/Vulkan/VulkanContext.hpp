@@ -25,11 +25,20 @@ namespace Snowstorm
 		static VulkanContext& Get();
 
 		VkInstance GetInstance() const { return m_Instance; }
+
 		VkDevice GetDevice() const { return m_Device; }
+
 		VkPhysicalDevice GetPhysicalDevice() const { return m_PhysicalDevice; }
+
 		VkQueue GetGraphicsQueue() const { return m_GraphicsQueue; }
+
 		uint32_t GetGraphicsQueueFamilyIndex() const { return m_GraphicsQueueFamily; }
+
 		VmaAllocator GetAllocator() const { return m_Allocator; }
+
+		VkCommandPool GetGraphicsCommandPool() const { return m_GraphicsCommandPool; }
+
+		VkSwapchainKHR GetSwapchain() const { return m_Swapchain; }
 
 	private:
 		// Vulkan core
@@ -41,6 +50,8 @@ namespace Snowstorm
 		uint32_t m_GraphicsQueueFamily = 0;
 
 		VmaAllocator m_Allocator = nullptr;
+
+		VkCommandPool m_GraphicsCommandPool = VK_NULL_HANDLE;
 
 		// Surface and swapchain
 		VkSurfaceKHR m_Surface = VK_NULL_HANDLE;

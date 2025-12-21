@@ -1,0 +1,11 @@
+C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Source\EditorLayer.cpp;C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Snowstorm-Editor.dir\Debug\EditorLayer.obj
+C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Source\Examples\MandelbrotSet\MandelbrotControllerComponent.cpp;C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Snowstorm-Editor.dir\Debug\MandelbrotControllerComponent.obj
+C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Source\Examples\MandelbrotSet\MandelbrotControllerSystem.cpp;C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Snowstorm-Editor.dir\Debug\MandelbrotControllerSystem.obj
+C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Source\Panels\SceneHierarchyPanel.cpp;C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Snowstorm-Editor.dir\Debug\SceneHierarchyPanel.obj
+C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Source\Service\ImGuiService.cpp;C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Snowstorm-Editor.dir\Debug\ImGuiService.obj
+C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Source\SnowstormEditor.cpp;C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Snowstorm-Editor.dir\Debug\SnowstormEditor.obj
+C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Source\System\DockspaceSetupSystem.cpp;C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Snowstorm-Editor.dir\Debug\DockspaceSetupSystem.obj
+C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Source\System\EditorMenuSystem.cpp;C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Snowstorm-Editor.dir\Debug\EditorMenuSystem.obj
+C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Source\System\SceneHierarchySystem.cpp;C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Snowstorm-Editor.dir\Debug\SceneHierarchySystem.obj
+C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Source\System\ViewportDisplaySystem.cpp;C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Snowstorm-Editor.dir\Debug\ViewportDisplaySystem.obj
+C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Source\System\ViewportResizeSystem.cpp;C:\Dev\Snowstorm-Engine\Snowstorm-Editor\Snowstorm-Editor.dir\Debug\ViewportResizeSystem.obj

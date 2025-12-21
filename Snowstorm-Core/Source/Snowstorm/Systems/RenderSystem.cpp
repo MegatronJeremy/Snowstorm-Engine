@@ -1,128 +1,110 @@
 #include "RenderSystem.hpp"
 
 #include "Snowstorm/Components/CameraComponent.hpp"
-#include "Snowstorm/Components/FramebufferComponent.hpp"
 #include "Snowstorm/Components/MaterialComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/RenderTargetComponent.hpp"
-#include "Snowstorm/Components/SpriteComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
-#include "Snowstorm/Events/ApplicationEvent.h"
-#include "Snowstorm/Render/Framebuffer.hpp"
-#include "Snowstorm/Render/RenderCommand.hpp"
-#include "Snowstorm/Render/Renderer2D.hpp"
-#include "Snowstorm/Render/Renderer3DSingleton.hpp"
+
+#include "Snowstorm/Render/RenderGraph.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
+#include "Snowstorm/Render/RendererSingleton.hpp"
 
 namespace Snowstorm
 {
 	namespace
 	{
-		void PrepareFramebuffer(const Ref<Framebuffer>& framebuffer)
-		{
-			framebuffer->Bind();
-			RenderCommand::SetClearColor({0.1f, 0.1f, 0.1f, 1});
-			RenderCommand::Clear();
-		}
-
-		void FindMainCamera(entt::entity fbEntity, auto& cameraView, const Camera*& outCamera, glm::mat4& outTransform)
+		bool FindPrimaryCameraAndTarget(auto& cameraView,
+		                                const Camera*& outCamera,
+		                                glm::mat4& outCameraTransform,
+		                                Ref<RenderTarget>& outTarget)
 		{
 			for (const auto entity : cameraView)
 			{
-				if (const auto& [TargetFramebuffer] = cameraView.template get<RenderTargetComponent>(entity);
-					TargetFramebuffer == fbEntity)
+				auto [transform, camera, rt] = cameraView.template get<TransformComponent, CameraComponent, RenderTargetComponent>(entity);
+
+				if (!camera.Primary)
 				{
-					auto [transform, camera] = cameraView.template get<TransformComponent, CameraComponent>(entity);
-					if (camera.Primary)
-					{
-						outCamera = &camera.Camera;
-						outTransform = transform;
-						break;
-					}
+					continue;
 				}
+
+				if (!rt.Target)
+				{
+					continue;
+				}
+
+				outCamera = &camera.Camera;
+				outCameraTransform = transform;
+				outTarget = rt.Target;
+				return true;
 			}
+
+			return false;
 		}
 	}
 
-	void RenderSystem::Execute(const Timestep ts)
+	void RenderSystem::Execute(const Timestep /*ts*/)
 	{
-		const auto framebufferView = View<FramebufferComponent>();
 		const auto cameraView = View<TransformComponent, CameraComponent, RenderTargetComponent>();
-		const auto spriteView = View<TransformComponent, SpriteComponent, RenderTargetComponent>();
 		const auto meshView = View<TransformComponent, MeshComponent, MaterialComponent, RenderTargetComponent>();
 
-		auto& renderer3DSingleton = SingletonView<Renderer3DSingleton>();
+		const Camera* mainCamera = nullptr;
+		glm::mat4 cameraTransform{1.0f};
+		Ref<RenderTarget> mainTarget;
 
-		// Loop through each framebuffer
-		for (const auto fbEntity : framebufferView)
-		{
-			const auto& framebufferComp = framebufferView.get<FramebufferComponent>(fbEntity);
-			if (!framebufferComp.Active)
-			{
-				continue;
-			}
+		if (!FindPrimaryCameraAndTarget(cameraView, mainCamera, cameraTransform, mainTarget))
+			return;
 
-			// Start rendering
-			const Ref<Framebuffer> framebuffer = framebufferComp.Framebuffer;
-			PrepareFramebuffer(framebuffer);
+		auto& renderer = SingletonView<RendererSingleton>();
 
-			// Find the main camera linked to this framebuffer
-			const Camera* mainCamera = nullptr;
-			glm::mat4 cameraTransform{};
-			FindMainCamera(fbEntity, cameraView, mainCamera, cameraTransform);
+		Renderer::BeginFrame();
 
-			if (!mainCamera)
-			{
-				framebuffer->Unbind();
-				continue;
-			}
+		const uint32_t frameIndex = Renderer::GetCurrentFrameIndex();
+		const Ref<CommandContext> ctx = Renderer::GetGraphicsCommandContext();
 
-			// Draw sprites
-			{
-				Renderer2D::ResetStats();
-				Renderer2D::BeginScene(*mainCamera, cameraTransform);
+		SS_CORE_ASSERT(ctx, "Renderer returned null CommandContext");
+		SS_CORE_ASSERT(mainTarget, "Main camera has no RenderTarget");
 
-				for (const auto entity : spriteView)
+		RenderGraph graph;
+
+		graph.AddPass({
+				.Name = "MeshPass",
+				.Target = mainTarget,
+				.Execute = [&](CommandContext& c)
 				{
-					if (auto& [targetFramebuffer] = spriteView.get<RenderTargetComponent>(entity); targetFramebuffer ==
-						fbEntity) // Match framebuffer
+					renderer.BeginScene(*mainCamera, cameraTransform, ctx, frameIndex);
+
+					for (const auto entity : meshView)
 					{
-						if (auto [transform, sprite] = spriteView.get<TransformComponent, SpriteComponent>(entity);
-							sprite.TextureInstance)
+						auto [transform, mesh, material, rt] =
+						meshView.get<TransformComponent, MeshComponent, MaterialComponent, RenderTargetComponent>(entity);
+
+						if (rt.Target != mainTarget)
 						{
-							Renderer2D::DrawQuad(transform, sprite.TextureInstance, sprite.TilingFactor,
-							                     sprite.TintColor);
+							continue;
 						}
-						else
-						{
-							Renderer2D::DrawQuad(transform, sprite.TintColor);
-						}
+						renderer.DrawMesh(transform, mesh.MeshInstance, material.MaterialInstance);
 					}
+
+					renderer.Flush();
+					renderer.EndScene();
 				}
+			});
 
-				Renderer2D::EndScene();
-			}
-
-			// Draw meshes
-			{
-				renderer3DSingleton.BeginScene(*mainCamera, cameraTransform);
-
-				for (const auto entity : meshView)
+		graph.AddPass({
+				.Name = "DebugPass",
+				.Target = mainTarget,
+				.Execute = [&](CommandContext& c)
 				{
-					if (auto& [targetFramebuffer] = meshView.get<RenderTargetComponent>(entity); targetFramebuffer ==
-						fbEntity)
-					{
-						auto [transform, mesh, material] = meshView.get<
-							TransformComponent, MeshComponent, MaterialComponent>(entity);
-						renderer3DSingleton.DrawMesh(transform, mesh.MeshInstance, material.MaterialInstance);
-					}
+					// Placeholder debug pass:
+					// - Hook up debug line rendering, GPU markers, ImGui, etc. later.
+					// - Keeping it as a distinct pass is useful even before it draws anything.
+					Renderer::RenderImGuiDrawData(c);
 				}
+			});
 
-				renderer3DSingleton.EndScene();
-			}
+		graph.Execute(*ctx);
 
-			// End rendering
-			framebuffer->Unbind();
-			framebuffer->Blit();
-		}
+		Renderer::EndFrame();
 	}
 }

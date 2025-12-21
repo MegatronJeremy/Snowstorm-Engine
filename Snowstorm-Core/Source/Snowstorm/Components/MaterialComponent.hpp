@@ -1,13 +1,13 @@
 ﻿#pragma once
 
 #include "Snowstorm/Core/Base.hpp"
-#include "Snowstorm/Render/Material.hpp"
+#include "Snowstorm/Render/MaterialInstance.hpp"
 
 namespace Snowstorm
 {
 	struct MaterialComponent
 	{
-		Ref<Material> MaterialInstance;
+		Ref<MaterialInstance> MaterialInstance;
 	};
 
 	void RegisterMaterialComponent();

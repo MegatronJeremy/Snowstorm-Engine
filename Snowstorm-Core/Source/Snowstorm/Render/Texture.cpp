@@ -1,74 +1,55 @@
-#include "pch.h"
 #include "Texture.hpp"
 
-#include "Renderer2D.hpp"
-#include "Platform/OpenGL/OpenGLTexture.hpp"
-#include "Platform/Vulkan/VulkanTexture.h"
+#include "RendererAPI.hpp"
+#include "Snowstorm/Core/Log.hpp"
+#include "Platform/Vulkan/VulkanTexture.hpp"
 
 namespace Snowstorm
 {
-	Ref<Texture2D> Texture2D::Create(uint32_t width, uint32_t height)
+	Ref<Texture> Texture::Create(const TextureDesc& desc)
 	{
-		switch (Renderer2D::GetAPI())
+		switch (RendererAPI::GetAPI())
 		{
 		case RendererAPI::API::None:
 			SS_CORE_ASSERT(false, "RendererAPI::None is currently not supported!");
 			return nullptr;
+
 		case RendererAPI::API::OpenGL:
-			return CreateRef<OpenGLTexture2D>(width, height);
+			SS_CORE_ASSERT(false, "OpenGL textures are not supported by this implementation.");
+			return nullptr;
+
 		case RendererAPI::API::Vulkan:
-			return CreateRef<VulkanTexture2D>(width, height);
+			return CreateRef<VulkanTexture>(desc);
+
+		case RendererAPI::API::DX12:
+			SS_CORE_ASSERT(false, "DX12 textures are not implemented yet.");
+			return nullptr;
 		}
 
 		SS_CORE_ASSERT(false, "Unknown RendererAPI!");
 		return nullptr;
 	}
 
-	Ref<Texture2D> Texture2D::Create(const std::string& path)
+	Ref<TextureView> TextureView::Create(const Ref<Texture>& texture, const TextureViewDesc& desc)
 	{
-		switch (Renderer2D::GetAPI())
+		SS_CORE_ASSERT(texture, "TextureView::Create called with null texture");
+
+		switch (RendererAPI::GetAPI())
 		{
 		case RendererAPI::API::None:
 			SS_CORE_ASSERT(false, "RendererAPI::None is currently not supported!");
 			return nullptr;
+
 		case RendererAPI::API::OpenGL:
-			return CreateRef<OpenGLTexture2D>(path);
-		case RendererAPI::API::Vulkan:
-			return CreateRef<VulkanTexture2D>(path);
-		}
-
-		SS_CORE_ASSERT(false, "Unknown RendererAPI!");
-		return nullptr;
-	}
-
-	Ref<TextureCube> TextureCube::Create(const std::array<std::string, 6>& paths)
-	{
-		switch (Renderer2D::GetAPI())
-		{
-		case RendererAPI::API::None:
-			SS_CORE_ASSERT(false, "RendererAPI::None is currently not supported!");
+			SS_CORE_ASSERT(false, "OpenGL texture views are not supported by this implementation.");
 			return nullptr;
-		case RendererAPI::API::OpenGL:
-			return CreateRef<OpenGLTextureCube>(paths);
+
 		case RendererAPI::API::Vulkan:
-			return CreateRef<VulkanTextureCube>(paths);
-		}
+			return CreateRef<VulkanTextureView>(texture, desc);
 
-		SS_CORE_ASSERT(false, "Unknown RendererAPI!");
-		return nullptr;
-	}
-
-	Ref<TextureCube> TextureCube::Create(const std::string& path)
-	{
-		switch (Renderer2D::GetAPI())
-		{
-		case RendererAPI::API::None:
-			SS_CORE_ASSERT(false, "RendererAPI::None is currently not supported!");
+		case RendererAPI::API::DX12:
+			SS_CORE_ASSERT(false, "DX12 texture views are not implemented yet.");
 			return nullptr;
-		case RendererAPI::API::OpenGL:
-			return CreateRef<OpenGLTextureCube>(path);
-		case RendererAPI::API::Vulkan:
-			return CreateRef<VulkanTextureCube>(path);
 		}
 
 		SS_CORE_ASSERT(false, "Unknown RendererAPI!");

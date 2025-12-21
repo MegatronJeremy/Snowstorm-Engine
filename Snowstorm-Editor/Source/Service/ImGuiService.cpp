@@ -2,11 +2,11 @@
 
 #include <imgui.h>
 
-#include <imgui_impl_glfw.h>
-#include <imgui_impl_opengl3.h>
 #include "Platform/Windows/WindowsWindow.hpp"
 
 #include "Snowstorm/Core/Application.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
+#include "Snowstorm/Render/RendererAPI.hpp"
 
 namespace Snowstorm
 {
@@ -37,25 +37,21 @@ namespace Snowstorm
 		}
 
 		const Application& app = Application::Get();
-		const auto window = static_cast<GLFWwindow*>(app.GetWindow().GetNativeWindow());
+		auto window = static_cast<GLFWwindow*>(app.GetWindow().GetNativeWindow());
 
-		// Setup Platform/Renderer backends
-		ImGui_ImplGlfw_InitForOpenGL(window, true);
-		ImGui_ImplOpenGL3_Init("#version 450");
+		Renderer::InitImGuiBackend(window);
 	}
 
 	ImGuiService::~ImGuiService()
 	{
-		ImGui_ImplOpenGL3_Shutdown();
-		ImGui_ImplGlfw_Shutdown();
+		Renderer::ShutdownImGuiBackend();
 		ImGui::DestroyContext();
 	}
 
 	void ImGuiService::OnUpdate(Timestep ts)
 	{
 		// Start the Dear ImGui frame
-		ImGui_ImplOpenGL3_NewFrame();
-		ImGui_ImplGlfw_NewFrame();
+		Renderer::ImGuiNewFrame();
 		ImGui::NewFrame();
 	}
 
@@ -66,12 +62,12 @@ namespace Snowstorm
 		io.DisplaySize = ImVec2(static_cast<float>(app.GetWindow().GetWidth()),
 		                        static_cast<float>(app.GetWindow().GetHeight()));
 
-		// Rendering
+		// Prepare draw data
 		ImGui::Render();
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+		// RendererAPI::RenderImGuiDrawData(ImGui::GetDrawData());
 
 		// Update and Render additional Platform Windows
-		// (Platform functions may change the current OpenGL context, so we save/restore it to make it easier to paste this code elsewhere.
+		// (Platform functions may change the current context, so we save/restore it to make it easier to paste this code elsewhere.
 		if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
 		{
 			GLFWwindow* backupCurrentContext = glfwGetCurrentContext();

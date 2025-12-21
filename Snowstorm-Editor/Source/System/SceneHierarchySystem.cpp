@@ -2,7 +2,7 @@
 
 #include <imgui.h>
 
-#include "Snowstorm/Render/Renderer2D.hpp"
+#include "Snowstorm/Render/RendererAPI.hpp"
 
 namespace Snowstorm
 {
@@ -12,12 +12,12 @@ namespace Snowstorm
 
 		ImGui::Begin("Settings");
 
-		const auto stats = Renderer2D::GetStats();
-		ImGui::Text("Renderer2D Stats:");
-		ImGui::Text("Draw Calls: %d", stats.DrawCalls);
-		ImGui::Text("Quads: %d", stats.QuadCount);
-		ImGui::Text("Vertices: %d", stats.GetTotalVertexCount());
-		ImGui::Text("Indices: %d", stats.GetTotalIndexCount());
+		// const auto stats = Renderer2D::GetStats();
+		// ImGui::Text("Renderer2D Stats:");
+		// ImGui::Text("Draw Calls: %d", stats.DrawCalls);
+		// ImGui::Text("Quads: %d", stats.QuadCount);
+		// ImGui::Text("Vertices: %d", stats.GetTotalVertexCount());
+		// ImGui::Text("Indices: %d", stats.GetTotalIndexCount());
 
 		ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
 

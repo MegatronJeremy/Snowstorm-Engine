@@ -6,8 +6,7 @@
 #include <ranges>
 
 #include "Snowstorm/Components/ComponentRegistration.hpp"
-#include "Snowstorm/Render/RenderCommand.hpp"
-#include "Snowstorm/Render/Renderer2D.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
 
 namespace Snowstorm
 {
@@ -28,9 +27,7 @@ namespace Snowstorm
 		// TODO think about this (but it's probably fine)
 		m_ServiceManager = CreateScope<ServiceManager>();
 
-		// TODO these should be services (which have callable methods -> sort of like singletons, you can globally fetch a service through instance())
-		Renderer2D::Init();
-		RenderCommand::Init();
+		Renderer::Init(m_Window->GetNativeWindow());
 
 		InitializeRTTR();
 	}
@@ -39,7 +36,7 @@ namespace Snowstorm
 	{
 		SS_PROFILE_FUNCTION();
 
-		Renderer2D::Shutdown();
+		Renderer::Shutdown();
 
 		m_ServiceManager.reset(); // TODO kind of a hack in order to guarantee correct shutdown order
 		m_Window.reset();

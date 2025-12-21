@@ -9,7 +9,7 @@ namespace Snowstorm
 {
 	struct SpriteComponent
 	{
-		Ref<Texture2D> TextureInstance;
+		Ref<TextureView> TextureInstance;
 		float TilingFactor = 1.0f;
 		glm::vec4 TintColor = glm::vec4{1.0f};
 	};

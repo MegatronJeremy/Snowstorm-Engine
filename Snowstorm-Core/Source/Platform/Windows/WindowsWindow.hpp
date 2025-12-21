@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Snowstorm/Core/Window.hpp"
-#include "Snowstorm/Render/GraphicsContext.hpp"
 
 #include <GLFW/glfw3.h>
 
@@ -37,7 +36,6 @@ namespace Snowstorm
 		void Shutdown() const;
 
 		GLFWwindow* m_Window;
-		Scope<GraphicsContext> m_Context;
 
 		struct WindowData
 		{

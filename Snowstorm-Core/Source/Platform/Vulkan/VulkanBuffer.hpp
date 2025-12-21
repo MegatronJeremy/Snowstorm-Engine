@@ -32,5 +32,8 @@ namespace Snowstorm
 		VkBuffer m_Buffer = VK_NULL_HANDLE;
 		VmaAllocation m_Allocation = nullptr;
 		VmaAllocationInfo m_AllocInfo{};
+
+		VkBufferUsageFlags m_UsageFlags = 0;
+		VkMemoryPropertyFlags m_MemoryProperties = 0;
 	};
 }

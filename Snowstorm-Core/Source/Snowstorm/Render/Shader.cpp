@@ -1,9 +1,10 @@
-#include "pch.h"
 #include "Shader.hpp"
 
-#include "Renderer2D.hpp"
-#include "Platform/OpenGL/OpenGLShader.h"
-#include "Platform/Vulkan/VulkanShader.h"
+#include "Platform/Vulkan/VulkanShader.hpp"
+
+#include "Snowstorm/Core/Log.hpp"
+
+#include "RendererAPI.hpp"
 
 #include <filesystem>
 
@@ -11,15 +12,22 @@ namespace Snowstorm
 {
 	Ref<Shader> Shader::Create(const std::string& filepath)
 	{
-		switch (Renderer2D::GetAPI())
+		switch (RendererAPI::GetAPI())
 		{
 		case RendererAPI::API::None:
 			SS_CORE_ASSERT(false, "RendererAPI::None is currently not supported!");
 			return nullptr;
+
 		case RendererAPI::API::OpenGL:
-			return CreateRef<OpenGLShader>(filepath);
+			SS_CORE_ASSERT(false, "OpenGL is not supported by this build/config.");
+			return nullptr;
+
 		case RendererAPI::API::Vulkan:
 			return CreateRef<VulkanShader>(filepath);
+
+		case RendererAPI::API::DX12:
+			SS_CORE_ASSERT(false, "DX12 shader backend not implemented yet.");
+			return nullptr;
 		}
 
 		SS_CORE_ASSERT(false, "Unknown RendererAPI!");
@@ -65,6 +73,7 @@ namespace Snowstorm
 			if (std::filesystem::last_write_time(filepath) > lastModified)
 			{
 				Get(filepath)->Recompile();
+				m_LastModifications[filepath] = std::filesystem::last_write_time(filepath);
 			}
 		}
 	}

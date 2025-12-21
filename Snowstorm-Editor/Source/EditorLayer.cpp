@@ -2,6 +2,7 @@
 
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
+#include <cstddef> // offsetof
 
 #include "Examples/MandelbrotSet/MandelbrotControllerComponent.hpp"
 #include "Examples/MandelbrotSet/MandelbrotMaterial.hpp"
@@ -9,7 +10,6 @@
 
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Components/CameraControllerComponent.hpp"
-#include "Snowstorm/Components/FramebufferComponent.hpp"
 #include "Snowstorm/Components/MaterialComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/RenderTargetComponent.hpp"
@@ -21,8 +21,12 @@
 #include "Snowstorm/Lighting/LightingComponents.hpp"
 #include "Snowstorm/Lighting/LightingSystem.hpp"
 #include "Snowstorm/Render/Material.hpp"
+#include "Snowstorm/Render/Mesh.hpp"
 #include "Snowstorm/Render/MeshLibrarySingleton.hpp"
-#include "Snowstorm/Render/Renderer3DSingleton.hpp"
+#include "Snowstorm/Render/Pipeline.hpp"
+#include "Snowstorm/Render/RendererSingleton.hpp"
+#include "Snowstorm/Render/RenderTarget.hpp"
+#include "Snowstorm/Render/Texture.hpp"
 #include "Snowstorm/Systems/CameraControllerSystem.hpp"
 #include "Snowstorm/Systems/RenderSystem.hpp"
 #include "Snowstorm/Systems/ShaderReloadSystem.hpp"
@@ -49,12 +53,10 @@ namespace Snowstorm
 
 		auto& shaderLibrary = m_ActiveWorld->GetSingleton<ShaderLibrarySingleton>();
 		auto& meshLibrary = m_ActiveWorld->GetSingleton<MeshLibrarySingleton>();
-		auto& renderer3DSingleton = m_ActiveWorld->GetSingleton<Renderer3DSingleton>();
+		auto& renderer = m_ActiveWorld->GetSingleton<RendererSingleton>();
 
 		auto& systemManager = m_ActiveWorld->GetSystemManager();
 
-		// TODO order of execution here is important, create some sort of execution graph
-		// TODO also, don't hardcode this. This should be modifiable for all worlds and read from the world settings
 		systemManager.RegisterSystem<ScriptSystem>();
 		systemManager.RegisterSystem<CameraControllerSystem>();
 		systemManager.RegisterSystem<ShaderReloadSystem>();
@@ -63,93 +65,187 @@ namespace Snowstorm
 		systemManager.RegisterSystem<RenderSystem>();
 		systemManager.RegisterSystem<MandelbrotControllerSystem>();
 
-		// TODO make this some sort of ImGui module (along with the ImGui service)
 		systemManager.RegisterSystem<DockspaceSetupSystem>();
 		systemManager.RegisterSystem<EditorMenuSystem>();
 		systemManager.RegisterSystem<SceneHierarchySystem>();
 		systemManager.RegisterSystem<ViewportDisplaySystem>();
 
-		// TODO setup the following as part of a serializable world setup
-		// Framebuffer setup
+		// Render target setup (replaces old Framebuffer)
 		{
 			const auto& window = Application::Get().GetWindow();
 
 			const uint32_t windowWidth = window.GetWidth();
 			const uint32_t windowHeight = window.GetHeight();
 
-			m_FramebufferEntity = m_ActiveWorld->CreateEntity("Framebuffer");
+			m_RenderTargetEntity = m_ActiveWorld->CreateEntity("MainRenderTarget");
 
-			FramebufferSpecification fbSpec;
-			fbSpec.Width = windowWidth;
-			fbSpec.Height = windowHeight;
-			m_FramebufferEntity.AddComponent<FramebufferComponent>(Framebuffer::Create(fbSpec));
-			m_FramebufferEntity.AddComponent<ViewportComponent>(glm::vec2{windowWidth, windowHeight});
+			TextureDesc colorDesc{};
+			colorDesc.Dimension = TextureDimension::Texture2D;
+			colorDesc.Format = TextureFormat::RGBA8_sRGB;
+			colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled | TextureUsage::TransferDst;
+			colorDesc.Width = windowWidth;
+			colorDesc.Height = windowHeight;
+			colorDesc.DebugName = "MainColor";
+
+			Ref<Texture> colorTex = Texture::Create(colorDesc);
+			Ref<TextureView> colorView = TextureView::Create(colorTex, MakeFullViewDesc(colorDesc));
+
+			RenderTargetDesc rtDesc{};
+			rtDesc.Width = windowWidth;
+			rtDesc.Height = windowHeight;
+			rtDesc.IsSwapchainTarget = false;
+
+			RenderTargetAttachment colorAtt{};
+			colorAtt.View = colorView;
+			colorAtt.AttachmentIndex = 0;
+			colorAtt.ClearColor = {0.1f, 0.1f, 0.1f, 1.0f};
+			colorAtt.LoadOp = RenderTargetLoadOp::Clear;
+			colorAtt.StoreOp = RenderTargetStoreOp::Store;
+			rtDesc.ColorAttachments.push_back(colorAtt);
+
+			Ref<RenderTarget> target = RenderTarget::Create(rtDesc);
+
+			auto& rtc = m_RenderTargetEntity.AddComponent<RenderTargetComponent>();
+			rtc.Target = target;
+
+			m_RenderTargetEntity.AddComponent<ViewportComponent>(glm::vec2{windowWidth, windowHeight});
 		}
 
-		// Environment setup
+		// Environment setup (skybox left for later)
 		{
-			const Ref<Shader> skyboxShader = shaderLibrary.Load("assets/shaders/Skybox.glsl");
-			const Ref<Material> skyboxMaterial = CreateRef<Material>(skyboxShader);
+			(void)renderer;
+		}
 
-			const Ref<TextureCube> skyboxTexture = TextureCube::Create("assets/textures/skybox.dds");
+		// --- Shared defaults (to avoid unbound CombinedImageSampler descriptors) ---
+		Ref<TextureView> defaultWhiteView;
+		{
+			TextureDesc whiteDesc{};
+			whiteDesc.Dimension = TextureDimension::Texture2D;
+			whiteDesc.Format = TextureFormat::RGBA8_UNorm;
+			whiteDesc.Usage = TextureUsage::Sampled | TextureUsage::TransferDst;
+			whiteDesc.Width = 1;
+			whiteDesc.Height = 1;
+			whiteDesc.DebugName = "DefaultWhite";
 
-			renderer3DSingleton.SetSkybox(skyboxMaterial, skyboxTexture);
+			Ref<Texture> whiteTex = Texture::Create(whiteDesc);
+
+			constexpr uint32_t whitePixel = 0xffffffffu;
+			whiteTex->SetData(&whitePixel, sizeof(whitePixel));
+
+			defaultWhiteView = TextureView::Create(whiteTex, MakeFullViewDesc(whiteDesc));
 		}
 
 		// 3D Entities
 		{
-			const Ref<Shader> mandelbrotShader = shaderLibrary.Load("assets/shaders/Mandelbrot.glsl");
-			const Ref<Shader> basicShader = shaderLibrary.Load("assets/shaders/DefaultLit.glsl");
+			const Ref<Shader> mandelbrotShader = shaderLibrary.Load("assets/shaders/Mandelbrot.hlsl");
+			const Ref<Shader> basicShader = shaderLibrary.Load("assets/shaders/DefaultLit.hlsl");
 
-			const Ref<MandelbrotMaterial> mandelbrotMaterial = CreateRef<MandelbrotMaterial>(mandelbrotShader);
-			const Ref<Material> whiteMaterial = CreateRef<Material>(basicShader);
-			const Ref<Material> redMaterial = CreateRef<Material>(basicShader);
-			const Ref<Material> blueMaterial = CreateRef<Material>(basicShader);
+			// Common vertex layout for Mesh::Vertex
+			VertexLayoutDesc vertexLayout{};
+			VertexBufferLayoutDesc vb{};
+			vb.Binding = 0;
+			vb.InputRate = VertexInputRate::PerVertex;
+			vb.Stride = sizeof(Vertex);
+			vb.Attributes = {
+				{ .Location = 0, .Format = VertexFormat::Float3, .Offset = static_cast<uint32_t>(offsetof(Vertex, Position)) },
+				{ .Location = 1, .Format = VertexFormat::Float3, .Offset = static_cast<uint32_t>(offsetof(Vertex, Normal)) },
+				{ .Location = 2, .Format = VertexFormat::Float2, .Offset = static_cast<uint32_t>(offsetof(Vertex, TexCoord)) },
+			};
+			vertexLayout.Buffers = { vb };
+
+			auto MakeLitPipeline = [&](const Ref<Shader>& shader) -> Ref<Pipeline>
+			{
+				PipelineDesc p{};
+				p.Type = PipelineType::Graphics;
+				p.Shader = shader;
+				p.VertexLayout = vertexLayout;
+				p.ColorFormats = { PipelineFormat::RGBA8_sRGB };
+				p.DepthFormat = PipelineFormat::Unknown;
+				p.HasStencil = false;
+
+				p.DebugName = "DefaultLitPipeline";
+				return Pipeline::Create(p);
+			};
+
+			auto MakeMandelbrotPipeline = [&](const Ref<Shader>& shader) -> Ref<Pipeline>
+			{
+				PipelineDesc p{};
+				p.Type = PipelineType::Graphics;
+				p.Shader = shader;
+				p.VertexLayout = vertexLayout;
+				p.ColorFormats = { PipelineFormat::RGBA8_sRGB };
+				p.DepthFormat = PipelineFormat::Unknown;
+				p.HasStencil = false;
+
+				p.DebugName = "MandelbrotPipeline";
+				return Pipeline::Create(p);
+			};
+
+			const Ref<Pipeline> litPipeline = MakeLitPipeline(basicShader);
+			const Ref<Pipeline> mandelbrotPipeline = MakeMandelbrotPipeline(mandelbrotShader);
+
+			SS_CORE_ASSERT(litPipeline, "Failed to create DefaultLit pipeline");
+			SS_CORE_ASSERT(mandelbrotPipeline, "Failed to create Mandelbrot pipeline");
+
+			const Ref<Material> whiteMaterial = CreateRef<Material>(litPipeline);
+			const Ref<Material> redMaterial = CreateRef<Material>(litPipeline);
+			const Ref<Material> blueMaterial = CreateRef<Material>(litPipeline);
+
+			whiteMaterial->SetTextureView(0, defaultWhiteView);
+			redMaterial->SetTextureView(0, defaultWhiteView);
+			blueMaterial->SetTextureView(0, defaultWhiteView);
+
+			redMaterial->SetBaseColor({1.0f, 0.0f, 0.0f, 1.0f});
+			blueMaterial->SetBaseColor({0.0f, 0.0f, 1.0f, 1.0f});
+
+			// Create instances (per-entity)
+			const Ref<MaterialInstance> whiteMI = CreateRef<MaterialInstance>(whiteMaterial);
+			const Ref<MaterialInstance> redMI   = CreateRef<MaterialInstance>(redMaterial);
+			const Ref<MaterialInstance> blueMI  = CreateRef<MaterialInstance>(blueMaterial);
+
+			// Mandelbrot: base material + instance + convenience wrapper
+			const Ref<Material> mandelbrotBaseMaterial = CreateRef<Material>(mandelbrotPipeline);
+			const Ref<MaterialInstance> mandelbrotMI = CreateRef<MaterialInstance>(mandelbrotBaseMaterial);
+			const Ref<MandelbrotMaterial> mandelbrotMaterial = CreateRef<MandelbrotMaterial>(mandelbrotMI);
 
 			auto cubeMesh = meshLibrary.Load("assets/meshes/cube.obj");
 			auto girlMesh = meshLibrary.Load("assets/meshes/girl.obj");
 
-			redMaterial->SetColor({1.0f, 0.0f, 0.0f, 1.0f});
-			blueMaterial->SetColor({0.0f, 0.0f, 1.0f, 1.0f});
-
 			auto directionalLightA = m_ActiveWorld->CreateEntity("Directional Light A");
 			auto& lightA = directionalLightA.AddComponent<DirectionalLightComponent>();
-			lightA.Direction = glm::normalize(glm::vec3(1.0f, -1.0f, 0.5f)); // Comes from upper-right front
-			lightA.Color = glm::vec3(1.0f, 0.9f, 0.8f); // Warm
+			lightA.Direction = glm::normalize(glm::vec3(1.0f, -1.0f, 0.5f));
+			lightA.Color = glm::vec3(1.0f, 0.9f, 0.8f);
 			lightA.Intensity = 1.0f;
 
 			auto directionalLightB = m_ActiveWorld->CreateEntity("Directional Light B");
 			auto& lightB = directionalLightB.AddComponent<DirectionalLightComponent>();
-			lightB.Direction = glm::normalize(glm::vec3(-0.8f, -0.6f, -0.5f)); // Comes from back upper-left
-			lightB.Color = glm::vec3(0.7f, 0.8f, 1.0f); // Cool
+			lightB.Direction = glm::normalize(glm::vec3(-0.8f, -0.6f, -0.5f));
+			lightB.Color = glm::vec3(0.7f, 0.8f, 1.0f);
 			lightB.Intensity = 0.8f;
 
 			auto blueGirl = m_ActiveWorld->CreateEntity("Blue Girl");
-
 			blueGirl.AddComponent<TransformComponent>();
-			blueGirl.AddComponent<MaterialComponent>(blueMaterial);
+			blueGirl.AddComponent<MaterialComponent>(blueMI);
 			blueGirl.AddComponent<MeshComponent>(girlMesh);
-			blueGirl.AddComponent<RenderTargetComponent>(m_FramebufferEntity);
+			blueGirl.AddComponent<RenderTargetComponent>(m_RenderTargetEntity.GetComponent<RenderTargetComponent>().Target);
 
 			blueGirl.GetComponent<TransformComponent>().Position.x += 2.0f;
 			blueGirl.GetComponent<TransformComponent>().Position.y += 2.0f;
 			blueGirl.GetComponent<TransformComponent>().Position.z += 6.0f;
 
 			auto mandelbrotGirl = m_ActiveWorld->CreateEntity("Mandelbrot Girl");
-
 			mandelbrotGirl.AddComponent<TransformComponent>();
-			mandelbrotGirl.AddComponent<MaterialComponent>(mandelbrotMaterial);
+			mandelbrotGirl.AddComponent<MaterialComponent>(mandelbrotMI);
 			mandelbrotGirl.AddComponent<MeshComponent>(girlMesh);
-			mandelbrotGirl.AddComponent<RenderTargetComponent>(m_FramebufferEntity);
+			mandelbrotGirl.AddComponent<RenderTargetComponent>(m_RenderTargetEntity.GetComponent<RenderTargetComponent>().Target);
 
 			mandelbrotGirl.GetComponent<TransformComponent>().Position += 3.0f;
 
 			auto whiteCube = m_ActiveWorld->CreateEntity("White Cube");
-
 			whiteCube.AddComponent<TransformComponent>();
-			whiteCube.AddComponent<MaterialComponent>(whiteMaterial);
+			whiteCube.AddComponent<MaterialComponent>(whiteMI);
 			whiteCube.AddComponent<MeshComponent>(cubeMesh);
-			whiteCube.AddComponent<RenderTargetComponent>(m_FramebufferEntity);
+			whiteCube.AddComponent<RenderTargetComponent>(m_RenderTargetEntity.GetComponent<RenderTargetComponent>().Target);
 
 			whiteCube.GetComponent<TransformComponent>().Position.x -= 2.0f;
 			whiteCube.GetComponent<TransformComponent>().Position.y -= 2.0f;
@@ -157,9 +253,9 @@ namespace Snowstorm
 
 			auto mandelbrotQuad = m_ActiveWorld->CreateEntity("Mandelbrot Quad");
 			mandelbrotQuad.AddComponent<TransformComponent>();
-			mandelbrotQuad.AddComponent<MaterialComponent>(mandelbrotMaterial);
+			mandelbrotQuad.AddComponent<MaterialComponent>(mandelbrotMI);
 			mandelbrotQuad.AddComponent<MeshComponent>(meshLibrary.CreateQuad());
-			mandelbrotQuad.AddComponent<RenderTargetComponent>(m_FramebufferEntity);
+			mandelbrotQuad.AddComponent<RenderTargetComponent>(m_RenderTargetEntity.GetComponent<RenderTargetComponent>().Target);
 
 			mandelbrotQuad.GetComponent<TransformComponent>().Scale *= 10.0f;
 
@@ -173,7 +269,12 @@ namespace Snowstorm
 			cameraEntity.AddComponent<TransformComponent>();
 			cameraEntity.AddComponent<CameraComponent>();
 			cameraEntity.AddComponent<CameraControllerComponent>();
-			cameraEntity.AddComponent<RenderTargetComponent>(m_FramebufferEntity);
+
+			{
+				auto& rtc = cameraEntity.AddComponent<RenderTargetComponent>();
+				rtc.Target = m_RenderTargetEntity.GetComponent<RenderTargetComponent>().Target;
+				rtc.TargetEntity = m_RenderTargetEntity; // link to the viewport entity
+			}
 
 			cameraEntity.GetComponent<CameraComponent>().Camera.SetProjectionType(SceneCamera::ProjectionType::Perspective);
 			cameraEntity.GetComponent<CameraComponent>().Camera.SetOrthographicFarClip(1000.0f);
@@ -183,7 +284,12 @@ namespace Snowstorm
 			secondCamera.AddComponent<TransformComponent>();
 			auto& cc = secondCamera.AddComponent<CameraComponent>();
 			secondCamera.AddComponent<CameraControllerComponent>();
-			secondCamera.AddComponent<RenderTargetComponent>(m_FramebufferEntity);
+
+			{
+				auto& rtc = secondCamera.AddComponent<RenderTargetComponent>();
+				rtc.Target = m_RenderTargetEntity.GetComponent<RenderTargetComponent>().Target;
+			}
+
 			cc.Primary = false;
 		}
 	}

@@ -1,0 +1,64 @@
+# CMake generation dependency list for this directory.
+C:/Dev/Snowstorm-Engine/Snowstorm-Core/CMakeLists.txt
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/VulkanMemoryAllocator/VulkanMemoryAllocatorConfig.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/VulkanMemoryAllocator/VulkanMemoryAllocatorConfigVersion.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/assimp/assimpConfig.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/assimp/assimpConfigVersion.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/assimp/assimpTargets-debug.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/assimp/assimpTargets-release.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/assimp/assimpTargets.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/entt/EnTTConfig.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/entt/EnTTConfigVersion.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/entt/EnTTTargets.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/fmt/fmt-config-version.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/fmt/fmt-config.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/fmt/fmt-targets-debug.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/fmt/fmt-targets-release.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/fmt/fmt-targets.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/glew/CopyImportedTargetProperties.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/glew/glew-config.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/glew/glew-targets-debug.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/glew/glew-targets-release.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/glew/glew-targets.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/glew/vcpkg-cmake-wrapper.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/glfw3/glfw3Config.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/glfw3/glfw3ConfigVersion.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/glfw3/glfw3Targets-debug.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/glfw3/glfw3Targets-release.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/glfw3/glfw3Targets.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/gli/gliConfig.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/gli/gliTargets.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/glm/glmConfig-debug.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/glm/glmConfig-release.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/glm/glmConfig.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/glm/glmConfigVersion.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/imgui/imgui-config.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/imgui/imgui-targets-debug.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/imgui/imgui-targets-release.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/imgui/imgui-targets.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/rttr/rttr-config-debug.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/rttr/rttr-config-release.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/rttr/rttr-config-version.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/rttr/rttr-config.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/spdlog/spdlogConfig.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/spdlog/spdlogConfigTargets-debug.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/spdlog/spdlogConfigTargets-release.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/spdlog/spdlogConfigTargets.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/spdlog/spdlogConfigVersion.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/stb/FindStb.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/stb/vcpkg-cmake-wrapper.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/volk/volkConfig.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/volk/volkConfigVersion.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/volk/volkTargets-debug.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/volk/volkTargets-release.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/volk/volkTargets.cmake
+C:/Program Files/CMake/share/cmake-4.1/Modules/CMakeFindDependencyMacro.cmake
+C:/Program Files/CMake/share/cmake-4.1/Modules/CheckCXXSourceCompiles.cmake
+C:/Program Files/CMake/share/cmake-4.1/Modules/CheckIncludeFileCXX.cmake
+C:/Program Files/CMake/share/cmake-4.1/Modules/CheckLibraryExists.cmake
+C:/Program Files/CMake/share/cmake-4.1/Modules/FindPackageHandleStandardArgs.cmake
+C:/Program Files/CMake/share/cmake-4.1/Modules/FindPackageMessage.cmake
+C:/Program Files/CMake/share/cmake-4.1/Modules/FindThreads.cmake
+C:/Program Files/CMake/share/cmake-4.1/Modules/FindVulkan.cmake
+C:/Program Files/CMake/share/cmake-4.1/Modules/Internal/CheckSourceCompiles.cmake
+C:/Program Files/CMake/share/cmake-4.1/Modules/SelectLibraryConfigurations.cmake

@@ -5,10 +5,7 @@
 #include "Snowstorm/Events/KeyEvent.h"
 #include "Snowstorm/Events/MouseEvent.h"
 
-#include "Platform/OpenGL/OpenGLContext.h"
-
-#include "Snowstorm/Render/RenderCommand.hpp"
-#include "Snowstorm/Render/Renderer2D.hpp"
+#include "Snowstorm/Render/RendererAPI.hpp"
 
 namespace Snowstorm
 {
@@ -41,7 +38,6 @@ namespace Snowstorm
 		SS_PROFILE_FUNCTION();
 
 		glfwPollEvents();
-		m_Context->SwapBuffers();
 	}
 
 	void WindowsWindow::SetVSync(const bool enabled)
@@ -49,9 +45,13 @@ namespace Snowstorm
 		SS_PROFILE_FUNCTION();
 
 		if (enabled)
+		{
 			glfwSwapInterval(1);
+		}
 		else
+		{
 			glfwSwapInterval(0);
+		}
 
 		m_Data.VSync = enabled;
 	}
@@ -83,14 +83,10 @@ namespace Snowstorm
 			const int success = glfwInit();
 			SS_CORE_ASSERT(success, "Could not initialize GLFW!");
 
-			if (Renderer2D::GetAPI() != RendererAPI::API::OpenGL)
+			if (RendererAPI::GetAPI() != RendererAPI::API::OpenGL)
 			{
 				// force it to not use OpenGL (default uses it)
 				glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-
-				// only do this with Vulkan
-				// TODO this is kinda bad
-				RenderCommand::SetViewport(0, 0, props.Width, props.Height);
 			}
 
 			glfwSetErrorCallback(GlfwErrorCallback);
@@ -117,9 +113,6 @@ namespace Snowstorm
 			m_Data.Width = width;
 			m_Data.Height = height;
 		}
-
-		m_Context = GraphicsContext::Create(m_Window);
-		m_Context->Init();
 
 		glfwSetWindowUserPointer(m_Window, &m_Data);
 		SetVSync(false);
@@ -169,7 +162,7 @@ namespace Snowstorm
 					break;
 				}
 			default:
-				SS_CORE_WARN("Uncrecognized key action.");
+				SS_CORE_WARN("Unrecognized key action.");
 			}
 		});
 
@@ -199,7 +192,7 @@ namespace Snowstorm
 					break;
 				}
 			default:
-				SS_CORE_WARN("Uncrecognized mouse action.");
+				SS_CORE_WARN("Unrecognized mouse action.");
 			}
 		});
 

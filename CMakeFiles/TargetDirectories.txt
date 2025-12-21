@@ -1,0 +1,7 @@
+C:/Dev/Snowstorm-Engine/CMakeFiles/ALL_BUILD.dir
+C:/Dev/Snowstorm-Engine/CMakeFiles/ZERO_CHECK.dir
+C:/Dev/Snowstorm-Engine/Snowstorm-Core/CMakeFiles/Snowstorm-Core.dir
+C:/Dev/Snowstorm-Engine/Snowstorm-App/CMakeFiles/Snowstorm-App.dir
+C:/Dev/Snowstorm-Engine/Snowstorm-App/CMakeFiles/ALL_BUILD.dir
+C:/Dev/Snowstorm-Engine/Snowstorm-Editor/CMakeFiles/Snowstorm-Editor.dir
+C:/Dev/Snowstorm-Engine/Snowstorm-Editor/CMakeFiles/ALL_BUILD.dir

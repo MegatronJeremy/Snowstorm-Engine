@@ -3,7 +3,6 @@
 #include "Service/ImGuiService.hpp"
 
 #include "Snowstorm/Components/CameraComponent.hpp"
-#include "Snowstorm/Components/FramebufferComponent.hpp"
 #include "Snowstorm/Components/RenderTargetComponent.hpp"
 #include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Core/Application.hpp"
@@ -12,7 +11,7 @@ namespace Snowstorm
 {
 	void ViewportResizeSystem::Execute(Timestep ts)
 	{
-		const auto viewportView = View<ViewportComponent, FramebufferComponent>();
+		const auto viewportView = View<ViewportComponent, RenderTargetComponent>();
 		const auto cameraInitView = InitView<CameraComponent, RenderTargetComponent>();
 		const auto cameraView = View<CameraComponent, RenderTargetComponent>();
 
@@ -26,7 +25,7 @@ namespace Snowstorm
 
 		for (const auto entity : viewportView)
 		{
-			auto [viewport, framebuffer] = viewportView.get<ViewportComponent, FramebufferComponent>(entity);
+			auto [viewport, renderTarget] = viewportView.get<ViewportComponent, RenderTargetComponent>(entity);
 
 			// Determine viewport size
 			uint32_t viewportWidth, viewportHeight;
@@ -45,34 +44,34 @@ namespace Snowstorm
 				viewportHeight = windowHeight;
 			}
 
-			auto resizeCameraFb = [&](const entt::entity cameraEntity)
+			auto resizeCameraRt = [&](const entt::entity cameraEntity)
 			{
-				if (auto [camera, renderTarget] = cameraView.get<CameraComponent, RenderTargetComponent>(cameraEntity);
-					renderTarget.TargetFramebuffer == entity)
+				if (auto [camera, rt] = cameraView.get<CameraComponent, RenderTargetComponent>(cameraEntity);
+					rt.TargetEntity == entity)
 				{
 					camera.Camera.SetViewportSize(viewportWidth, viewportHeight);
 				}
 			};
 
-			// Set initial viewport size for all new cameras
+			// Set the initial viewport size for all new cameras
 			for (const auto& cameraEntity : cameraInitView)
 			{
-				resizeCameraFb(cameraEntity);
+				resizeCameraRt(cameraEntity);
 			}
 
-			// Check if framebuffer already matches the new size
-			const auto& fbSpec = framebuffer.Framebuffer->GetSpecification();
-			if (fbSpec.Width == viewportWidth && fbSpec.Height == viewportHeight)
+			// Check if the framebuffer already matches the new size
+			const auto& rtDesc = renderTarget.Target->GetDesc();
+			if (rtDesc.Width == viewportWidth && rtDesc.Height == viewportHeight)
 			{
 				continue;
 			}
 
-			framebuffer.Framebuffer->Resize(viewportWidth, viewportHeight);
+			renderTarget.Target->Resize(viewportWidth, viewportHeight);
 
 			// Resize all resized camera viewports within the framebuffer
 			for (const auto& cameraEntity : cameraView)
 			{
-				resizeCameraFb(cameraEntity);
+				resizeCameraRt(cameraEntity);
 			}
 		}
 	}

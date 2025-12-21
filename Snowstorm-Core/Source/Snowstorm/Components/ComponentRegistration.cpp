@@ -38,12 +38,12 @@ namespace Snowstorm
 
 		registration::class_<RenderTargetComponent>("Snowstorm::RenderTargetComponent")
 			.constructor()
-			.property("TargetFramebuffer", &RenderTargetComponent::TargetFramebuffer);
+			.property("RenderTarget", &RenderTargetComponent::Target);
 		Snowstorm::RegisterComponent<RenderTargetComponent>();
 
 		registration::class_<SpriteComponent>("Snowstorm::SpriteComponent")
 			.constructor()
-			.property("TextureInstance", &SpriteComponent::TextureInstance)
+	//		.property("TextureInstance", &SpriteComponent::TextureInstance)
 			.property("TilingFactor", &SpriteComponent::TilingFactor)
 			.property("TintColor", &SpriteComponent::TintColor);
 		Snowstorm::RegisterComponent<SpriteComponent>();

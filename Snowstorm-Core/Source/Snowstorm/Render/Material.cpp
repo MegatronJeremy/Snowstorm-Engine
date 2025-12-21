@@ -1,75 +1,39 @@
 #include "Material.hpp"
 
-#include <numeric>
-#include <ranges>
+#include "Snowstorm/Core/Log.hpp"
 
 namespace Snowstorm
 {
-	Material::Material(Ref<Shader> shader): m_Shader(std::move(shader))
+	Material::Material(const Ref<Pipeline>& pipeline)
+		: m_Pipeline(pipeline)
 	{
-		m_Uniforms["u_Color"] = glm::vec4(1.0f); // Default color
+		SS_CORE_ASSERT(m_Pipeline, "Material requires a Pipeline");
 
-		std::vector<int32_t> samplers(MAX_TEXTURE_SLOTS);
-		std::iota(samplers.begin(), samplers.end(), 0);
-		m_Uniforms["u_Textures"] = samplers;
+		// Default sampler (copied into MaterialInstance, can be overridden per-instance)
+		SamplerDesc samp{};
+		samp.MinFilter = Filter::Linear;
+		samp.MagFilter = Filter::Linear;
+		samp.MipmapMode = SamplerMipmapMode::Linear;
+		samp.AddressU = SamplerAddressMode::Repeat;
+		samp.AddressV = SamplerAddressMode::Repeat;
+		samp.AddressW = SamplerAddressMode::Repeat;
+		samp.EnableAnisotropy = true;
+		samp.MaxAnisotropy = 16.0f;
+		samp.DebugName = "MaterialDefaultSampler";
 
-		// Set albedo texture to checkerboard texture
-		m_Textures[0] = Texture2D::Create("assets/textures/Checkerboard.png");
-
-		m_ShaderReloadPath = m_Shader->GetShaderPath();
+		m_DefaultSampler = Sampler::Create(samp);
+		SS_CORE_ASSERT(m_DefaultSampler, "Failed to create default material sampler");
 	}
 
-	void Material::Bind() const
+	void Material::SetTextureView(const uint32_t slot, const Ref<TextureView>& view)
 	{
-		m_Shader->Bind();
-
-		// Bind all stored uniforms
-		for (const auto& [name, val] : m_Uniforms)
-		{
-			ApplyUniform(name, val);
-		}
-
-		for (uint32_t i = 0; i < m_Textures.size(); i++)
-		{
-			if (!m_Textures[i])
-			{
-				continue;
-			}
-
-			m_Textures[i]->Bind(i);
-		}
+		SS_CORE_ASSERT(slot < MAX_TEXTURE_SLOTS, "Texture slot out of range");
+		m_DefaultTextureViews[slot] = view;
 	}
 
-	std::vector<BufferElement> Material::GetVertexLayout() const
+	Ref<TextureView> Material::GetTextureView(const uint32_t slot) const
 	{
-		// Base attributes (Every mesh should have these)
-		std::vector<BufferElement> layout = {
-			{ShaderDataType::Float3, "a_Position"},
-			{ShaderDataType::Float3, "a_Normal"},
-			{ShaderDataType::Float2, "a_TexCoord"}
-		};
-
-		// Add extra attributes dynamically
-		layout.insert(layout.end(), m_ExtraVertexAttributes.begin(), m_ExtraVertexAttributes.end());
-
-		return layout;
-	}
-
-	std::vector<BufferElement> Material::GetInstanceLayout() const
-	{
-		// Base attributes (Every mesh should have these)
-		std::vector<BufferElement> layout = {
-			{ShaderDataType::Mat4, "a_ModelMatrix", true},
-		};
-
-		// Add extra attributes dynamically
-		layout.insert(layout.end(), m_ExtraInstanceAttributes.begin(), m_ExtraInstanceAttributes.end());
-
-		return layout;
-	}
-
-	void Material::ApplyUniform(const std::string& name, const Shader::UniformValue& value) const
-	{
-		std::visit([&](auto&& v) { m_Shader->SetUniform(name, v); }, value);
+		SS_CORE_ASSERT(slot < MAX_TEXTURE_SLOTS, "Texture slot out of range");
+		return m_DefaultTextureViews[slot];
 	}
 }

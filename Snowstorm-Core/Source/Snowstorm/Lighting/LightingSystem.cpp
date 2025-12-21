@@ -3,14 +3,14 @@
 #include "LightingComponents.hpp"
 #include "LightingUniforms.hpp"
 
-#include "Snowstorm/Render/Renderer3DSingleton.hpp"
+#include "Snowstorm/Render/RendererSingleton.hpp"
 
 namespace Snowstorm
 {
 	void LightingSystem::Execute(Timestep ts)
 	{
 		auto lightView = View<DirectionalLightComponent>();
-		auto& renderer3DSingleton = SingletonView<Renderer3DSingleton>();
+		auto& renderer3DSingleton = SingletonView<RendererSingleton>();
 
 		LightDataBlock lightData;
 		for (auto entity : lightView)

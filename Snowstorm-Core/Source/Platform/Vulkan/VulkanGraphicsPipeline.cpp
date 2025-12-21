@@ -1,288 +1,545 @@
-#include "pch.h"
-#include "VulkanGraphicsPipeline.h"
+#include "VulkanGraphicsPipeline.hpp"
 
-#include "VulkanSwapChain.h"
-#include "VulkanVertexArray.h"
+#include "Snowstorm/Core/Log.hpp"
+
+#include <fstream>
+#include <algorithm>
+#include <numeric>
+
+#include "VulkanDescriptorSetLayout.hpp"
 
 namespace Snowstorm
 {
-    namespace
-    {
-        std::vector<char> ReadFile(const std::string& filename)
-        {
-            // ate: start reading at the end of the file
-            std::ifstream file(filename, std::ios::ate | std::ios::binary);
+	namespace
+	{
+		std::vector<char> ReadFile(const std::string& filename)
+		{
+			std::ifstream file(filename, std::ios::ate | std::ios::binary);
+			SS_CORE_ASSERT(file.is_open(), "Failed to open file!");
 
-            SS_CORE_ASSERT(file.is_open(), "Failed to open file!");
+			const size_t fileSize = file.tellg();
+			std::vector<char> buffer(fileSize);
 
-            // we can use the end position to tell the size of the buffer
-            const size_t fileSize = file.tellg();
-            std::vector<char> buffer(fileSize);
+			file.seekg(0);
+			file.read(buffer.data(), static_cast<std::streamsize>(fileSize));
+			file.close();
 
-            // seek back to the beginning and load the data
-            file.seekg(0);
-            file.read(buffer.data(), static_cast<std::streamsize>(fileSize));
+			return buffer;
+		}
 
-            file.close();
+		std::string StripAllExtensions(const std::string& path)
+		{
+			std::filesystem::path p(path);
+			while (p.has_extension())
+			{
+				p.replace_extension();
+			}
 
-            return buffer;
-        }
+			return p.string();
+		}
 
-        VkShaderModule CreateShaderModule(const VkDevice device, const std::vector<char>& code)
-        {
-            // std::vector -> the default allocator ensures that the data satisfies the worst case alignment requirements
-            VkShaderModuleCreateInfo createInfo{};
-            createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-            createInfo.codeSize = code.size();
-            createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+		VkShaderModule CreateShaderModule(const VkDevice device, const std::vector<char>& code)
+		{
+			VkShaderModuleCreateInfo createInfo{};
+			createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+			createInfo.codeSize = code.size();
+			createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
-            VkShaderModule shaderModule;
-            const VkResult result = vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule);
-            SS_CORE_ASSERT(result == VK_SUCCESS, "Failed to create shader module!");
+			VkShaderModule shaderModule = VK_NULL_HANDLE;
+			const VkResult result = vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule);
+			SS_CORE_ASSERT(result == VK_SUCCESS, "Failed to create shader module!");
 
-            return shaderModule;
-        }
-    }
+			return shaderModule;
+		}
 
-    VulkanGraphicsPipeline::VulkanGraphicsPipeline(VkDevice device, VkRenderPass renderPass)
-        : m_Device(device)
-    {
-        // load the code
-        // TODO move this to shader
-        const auto vertShaderCode = ReadFile("Assets/Shaders/vert.spv");
-        const auto fragShaderCode = ReadFile("Assets/Shaders/frag.spv");
+		VkFormat ToVkFormat(const PipelineFormat fmt)
+		{
+			switch (fmt)
+			{
+			case PipelineFormat::RGBA8_UNorm: return VK_FORMAT_R8G8B8A8_UNORM;
+			case PipelineFormat::RGBA8_sRGB: return VK_FORMAT_R8G8B8A8_SRGB;
+			case PipelineFormat::D32_Float: return VK_FORMAT_D32_SFLOAT;
+			case PipelineFormat::D24_UNorm_S8_UInt: return VK_FORMAT_D24_UNORM_S8_UINT;
+			case PipelineFormat::Unknown: break;
+			}
+			return VK_FORMAT_UNDEFINED;
+		}
 
-        // create the shaders with a wrapper
-        const VkShaderModule vertShaderModule = CreateShaderModule(device, vertShaderCode);
-        const VkShaderModule fragShaderModule = CreateShaderModule(device, fragShaderCode);
+		VkPrimitiveTopology ToVkTopology(const PrimitiveTopology topo)
+		{
+			switch (topo)
+			{
+			case PrimitiveTopology::TriangleList: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+			case PrimitiveTopology::TriangleStrip: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+			case PrimitiveTopology::LineList: return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+			case PrimitiveTopology::LineStrip: return VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
+			}
+			return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+		}
 
-        // assign the actual shaders to a specific pipeline stage
-        VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
-        vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT; // enum for each programmable stage
-        vertShaderStageInfo.module = vertShaderModule;
-        vertShaderStageInfo.pName = "main"; // entry point (we can combine multiple shaders into a single file this way)
-        // pSpecializationInfo -> you can specify values for shader constants
+		VkCullModeFlags ToVkCullMode(const CullMode cull)
+		{
+			switch (cull)
+			{
+			case CullMode::None: return VK_CULL_MODE_NONE;
+			case CullMode::Front: return VK_CULL_MODE_FRONT_BIT;
+			case CullMode::Back: return VK_CULL_MODE_BACK_BIT;
+			}
+			return VK_CULL_MODE_BACK_BIT;
+		}
 
-        VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
-        fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-        fragShaderStageInfo.module = fragShaderModule;
-        fragShaderStageInfo.pName = "main";
+		VkFrontFace ToVkFrontFace(const FrontFace face)
+		{
+			switch (face)
+			{
+			case FrontFace::CounterClockwise: return VK_FRONT_FACE_COUNTER_CLOCKWISE;
+			case FrontFace::Clockwise: return VK_FRONT_FACE_CLOCKWISE;
+			}
+			return VK_FRONT_FACE_COUNTER_CLOCKWISE;
+		}
 
-        VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+		VkCompareOp ToVkCompareOp(const CompareOp op)
+		{
+			switch (op)
+			{
+			case CompareOp::Never: return VK_COMPARE_OP_NEVER;
+			case CompareOp::Less: return VK_COMPARE_OP_LESS;
+			case CompareOp::Equal: return VK_COMPARE_OP_EQUAL;
+			case CompareOp::LessOrEqual: return VK_COMPARE_OP_LESS_OR_EQUAL;
+			case CompareOp::Greater: return VK_COMPARE_OP_GREATER;
+			case CompareOp::NotEqual: return VK_COMPARE_OP_NOT_EQUAL;
+			case CompareOp::GreaterOrEqual: return VK_COMPARE_OP_GREATER_OR_EQUAL;
+			case CompareOp::Always: return VK_COMPARE_OP_ALWAYS;
+			}
+			return VK_COMPARE_OP_LESS_OR_EQUAL;
+		}
 
-        // describe the format of the vertex data that will be passed to the vertex shader
-        // bindings: spacing between data and whether the data is per-vertex or per-instance
-        // attribute descriptions: type of the attributes passed to the vertex shader, which binding
-        // to load them from and at which offset
-        VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
-        vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+		VkFormat ToVkVertexFormat(const VertexFormat fmt)
+		{
+			switch (fmt)
+			{
+			case VertexFormat::Float: return VK_FORMAT_R32_SFLOAT;
+			case VertexFormat::Float2: return VK_FORMAT_R32G32_SFLOAT;
+			case VertexFormat::Float3: return VK_FORMAT_R32G32B32_SFLOAT;
+			case VertexFormat::Float4: return VK_FORMAT_R32G32B32A32_SFLOAT;
 
-        auto bindingDescription = VulkanVertexArray::GetBindingDescription();
-        auto attributeDescriptions = VulkanVertexArray::GetAttributeDescriptions();
+			case VertexFormat::UInt: return VK_FORMAT_R32_UINT;
+			case VertexFormat::UInt2: return VK_FORMAT_R32G32_UINT;
+			case VertexFormat::UInt3: return VK_FORMAT_R32G32B32_UINT;
+			case VertexFormat::UInt4: return VK_FORMAT_R32G32B32A32_UINT;
 
-        vertexInputInfo.vertexBindingDescriptionCount = 1;
-        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
-        vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-        vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+			case VertexFormat::UByte4_Norm: return VK_FORMAT_R8G8B8A8_UNORM;
 
-        // next define the topology - we intend to draw triangles so stick to this structure
-        VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-        inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; // triangle from every 3 vertices without reuse
-        inputAssembly.primitiveRestartEnable = VK_FALSE;
-        // with an element buffer - specify indices to use yourself (reuse vertices - optimization)
+			case VertexFormat::Unknown: break;
+			}
+			return VK_FORMAT_UNDEFINED;
+		}
 
+		VkVertexInputRate ToVkInputRate(const VertexInputRate rate)
+		{
+			switch (rate)
+			{
+			case VertexInputRate::PerVertex: return VK_VERTEX_INPUT_RATE_VERTEX;
+			case VertexInputRate::PerInstance: return VK_VERTEX_INPUT_RATE_INSTANCE;
+			}
+			return VK_VERTEX_INPUT_RATE_VERTEX;
+		}
 
-        // setup the dynamic state, we can change and must specify these properties without recreating the pipeline from scratch
-        // at runtime we can change the viewport and teh scissor state
-        const std::vector<VkDynamicState> dynamicStates = {
-            VK_DYNAMIC_STATE_VIEWPORT,
-            VK_DYNAMIC_STATE_SCISSOR
-        };
+		VkShaderStageFlags ToVkShaderStages(const PipelineShaderStage stages)
+		{
+			VkShaderStageFlags flags = 0;
+			if (HasStage(stages, PipelineShaderStage::Vertex)) flags |= VK_SHADER_STAGE_VERTEX_BIT;
+			if (HasStage(stages, PipelineShaderStage::Fragment)) flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+			if (HasStage(stages, PipelineShaderStage::Compute)) flags |= VK_SHADER_STAGE_COMPUTE_BIT;
+			return flags;
+		}
 
-        VkPipelineDynamicStateCreateInfo dynamicState{};
-        dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-        dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-        dynamicState.pDynamicStates = dynamicStates.data();
+		struct Range
+		{
+			uint32_t Begin = 0;
+			uint32_t End = 0; // exclusive
+			VkShaderStageFlags Stages = 0;
+		};
 
-        // after this only need to specify their count at pipeline creation time
-        VkPipelineViewportStateCreateInfo viewportState{};
-        viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-        viewportState.viewportCount = 1;
-        viewportState.scissorCount = 1;
-        // the actual viewport(s) and scissor rectangle(s) will then later be set up at drawing time
-        // using multiple viewports and scissor rectangles requires enabling a GPU feature
+		void ValidatePushConstantRangesOrAssert(const std::vector<PushConstantRangeDesc>& ranges)
+		{
+			if (ranges.empty())
+				return;
 
-        // rasterizer - turns geometry into fragments to be colored by the fragment shader
-        VkPipelineRasterizationStateCreateInfo rasterizer{};
-        rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+			// Vulkan requires the offset and size to be multiples of 4, and ranges cannot overlap
+			// (different stageFlags doesn't make overlap legal).
+			std::vector<Range> sorted;
+			sorted.reserve(ranges.size());
 
-        rasterizer.depthClampEnable = VK_FALSE;
-        // if set to VK_TRUE, the fragments beyond the near and far planes are clamped as opposed to discarded
-        // useful in some place like shadow maps (need to enable a GPU feature for this)
+			for (const PushConstantRangeDesc& r : ranges)
+			{
+				SS_CORE_ASSERT(r.Size > 0, "PushConstantRangeDesc.Size must be > 0");
+				SS_CORE_ASSERT((r.Offset % 4) == 0 && (r.Size % 4) == 0, "Push constants offset/size must be multiples of 4");
+				SS_CORE_ASSERT(r.Stages != PipelineShaderStage::None, "PushConstantRangeDesc.Stages must not be None");
 
-        rasterizer.rasterizerDiscardEnable = VK_FALSE;
-        // if set to true, the geometry never passes through the rasterizer stage (disables output to framebuffer)
+				Range rr{};
+				rr.Begin = r.Offset;
+				rr.End = r.Offset + r.Size;
+				rr.Stages = ToVkShaderStages(r.Stages);
+				SS_CORE_ASSERT(rr.End > rr.Begin, "Invalid push constant range (end <= begin)");
+				sorted.push_back(rr);
+			}
 
-        rasterizer.polygonMode = VK_POLYGON_MODE_FILL; // fill the area of the polygon with fragments (fill)
-        // determines how fragments are generated for geometry
-        // any other mode requires a GPU feature
+			std::ranges::sort(sorted, [](const Range& a, const Range& b)
+			{
+				if (a.Begin != b.Begin) return a.Begin < b.Begin;
+				return a.End < b.End;
+			});
 
-        rasterizer.lineWidth = 1.0f;
-        // thickness of line in terms of number of fragments
-        // any line thicker than 1.0f requires you to enable the wideLines GPU feature
+			for (size_t i = 1; i < sorted.size(); i++)
+			{
+				const Range& prev = sorted[i - 1];
+				const Range& cur  = sorted[i];
 
-        rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-        rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
-        // cullMode - type of face culling to use
-        // frontFace - vertex order for faces to be considered front-facing
+				// Overlap check: cur begins before prev ends
+				SS_CORE_ASSERT(cur.Begin >= prev.End,
+				               "Overlapping push constant ranges are not allowed (ranges overlap in bytes).");
+			}
+		}
+	}
 
-        rasterizer.depthBiasEnable = VK_FALSE;
-        rasterizer.depthBiasConstantFactor = 0.0f; // optional
-        rasterizer.depthBiasClamp = 0.0f; // optional
-        rasterizer.depthBiasSlopeFactor = 0.0f; // optional
-        // altering depth values by adding a constant or biasing based on the fragment slope - we won't use
-        // sometimes used for shadow mapping
+	VkShaderStageFlags VulkanGraphicsPipeline::GetVkPushConstantStagesFor(const uint32_t offset, const uint32_t size) const
+	{
+		// Find a declared push constant range that fully covers [offset, offset+size)
+		const uint32_t end = offset + size;
 
-        // multisampling - one way to perform anti-aliasing
-        // combines the fragment shader results of multiple polygons that rasterize to the same pixel
-        // mostly along the edges
-        // not expensive - doesn't need to run the fragment shader multiple times if only one polygon maps to a pixel
-        // enabling it requires enabling a GPU feature
-        // TODO we will revisit this later
-        VkPipelineMultisampleStateCreateInfo multisampling{};
-        multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-        multisampling.sampleShadingEnable = VK_FALSE;
-        multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-        multisampling.minSampleShading = 1.0f; // Optional
-        multisampling.pSampleMask = nullptr; // Optional
-        multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
-        multisampling.alphaToOneEnable = VK_FALSE; // Optional
+		for (const VkPushConstantRange& r : m_VkPushConstantRanges)
+		{
+			const uint32_t rEnd = r.offset + r.size;
+			if (offset >= r.offset && end <= rEnd)
+				return r.stageFlags;
+		}
 
-        // if using depth/stencil buffer, need to configure the depth and stencil tests
-        // using VkPipelineDepthStencilStateCreateInfo, we don't have one right now, so we can pass nullptr
+		return 0;
+	}
 
-        // Color blending
-        // after a fragment shader returns a color, it needs to be combined with the color that is already in the
-        // framebuffer -> color blending
-        // Two ways: 1. mix the old and new value; 2. combine using bitwise operation 
-        VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-        // there is another global struct (this one is tied to framebuffer), but we have only one framebuffer
-        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-        // write mask - to determine which channels are passed through -  in this case, all of them
+	void VulkanGraphicsPipeline::CreateDescriptorSetLayouts()
+	{
+		m_SetLayouts.clear();
 
-        // alpha blending:
-        // finalColor.rgb = newAlpha * newColor + (1 - newAlpha) * oldColor;
-        // finalColor.a = newAlpha * a;
-        colorBlendAttachment.blendEnable = VK_TRUE;
-        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+		// --- Set 0: Frame (reserved; bind camera/light globals later) ---
+		DescriptorSetLayoutDesc frame{};
+		frame.SetIndex = 0;
+		frame.DebugName = "Set0_Frame";
+		frame.Bindings = {
+			DescriptorBindingDesc{
+				.Binding = 0,
+				.Type = DescriptorType::UniformBuffer,
+				.Count = 1,
+				.Visibility = ShaderStage::AllGraphics,
+				.DebugName = "FrameCB"
+			},
+		};
+		m_SetLayouts.push_back(DescriptorSetLayout::Create(frame));
+		SS_CORE_ASSERT(m_SetLayouts[0], "Failed to create frame DescriptorSetLayout");
 
-        // global blend factors/constants
-        VkPipelineColorBlendStateCreateInfo colorBlending{};
-        colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-        colorBlending.logicOpEnable = VK_FALSE; // if we were to use bitwise combinations
-        colorBlending.logicOp = VK_LOGIC_OP_COPY; // Optional
-        colorBlending.attachmentCount = 1;
-        colorBlending.pAttachments = &colorBlendAttachment; // array of attachments here for all the framebuffers
-        colorBlending.blendConstants[0] = 0.0f; // Optional
-        colorBlending.blendConstants[1] = 0.0f; // Optional
-        colorBlending.blendConstants[2] = 0.0f; // Optional
-        colorBlending.blendConstants[3] = 0.0f; // Optional
+		// --- Set 1: Material ---
+		DescriptorSetLayoutDesc material{};
+		material.SetIndex = 1;
+		material.DebugName = "Set1_Material";
+		material.Bindings = {
+			DescriptorBindingDesc{
+				.Binding = 0,
+				.Type = DescriptorType::UniformBuffer,
+				.Count = 1,
+				.Visibility = ShaderStage::AllGraphics,
+				.DebugName = "MaterialCB"
+			},
+			DescriptorBindingDesc{
+				.Binding = 1,
+				.Type = DescriptorType::SampledImage,
+				.Count = 32,
+				.Visibility = ShaderStage::Fragment,
+				.DebugName = "Textures[32]"
+			},
+			DescriptorBindingDesc{
+				.Binding = 2,
+				.Type = DescriptorType::Sampler,
+				.Count = 1,
+				.Visibility = ShaderStage::Fragment,
+				.DebugName = "LinearSampler"
+			},
+		};
+		m_SetLayouts.push_back(DescriptorSetLayout::Create(material));
+		SS_CORE_ASSERT(m_SetLayouts[1], "Failed to create material DescriptorSetLayout");
 
-        // uniform values - to be specified by the VkPipelineLayout object
-        CreateDescriptorSetLayout(); // create descriptor set layouts first
+		// --- Set 2: Object (dynamic UBO) ---
+		DescriptorSetLayoutDesc object{};
+		object.SetIndex = 2;
+		object.DebugName = "Set2_Object";
+		object.Bindings = {
+			DescriptorBindingDesc{
+				.Binding = 0,
+				.Type = DescriptorType::UniformBufferDynamic,
+				.Count = 1,
+				.Visibility = ShaderStage::AllGraphics,
+				.DebugName = "ObjectCB"
+			},
+		};
+		m_SetLayouts.push_back(DescriptorSetLayout::Create(object));
+		SS_CORE_ASSERT(m_SetLayouts[2], "Failed to create object DescriptorSetLayout");
+	}
 
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-        VkDescriptorSetLayout descriptorSetLayout = *m_DescriptorSetLayout;
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 1;
-        pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
-        pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
-        pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
-        // push constants -> another way of passing dynamic values to shad
+	VulkanGraphicsPipeline::VulkanGraphicsPipeline(PipelineDesc desc)
+		: m_Desc(std::move(desc))
+	{
+		SS_CORE_ASSERT(m_Desc.Type == PipelineType::Graphics, "VulkanGraphicsPipeline requires PipelineType::Graphics");
+		SS_CORE_ASSERT(!m_Desc.ColorFormats.empty(), "Graphics pipeline requires at least one color format (dynamic rendering)");
+		SS_CORE_ASSERT(m_Desc.Shader, "PipelineDesc.Shader must be set");
 
-        VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &m_PipelineLayout);
-        SS_CORE_ASSERT(result == VK_SUCCESS, "Failed to create pipeline layout!");
+		m_Device = VulkanCommon::GetVulkanDevice();
 
-        // finally, create the graphics pipeline
-        VkGraphicsPipelineCreateInfo pipelineInfo{};
+		// --- Shader modules ---
+		const std::string vertPath = m_Desc.Shader->GetCompiledPath(ShaderStageKind::Vertex);
+		const std::string fragPath = m_Desc.Shader->GetCompiledPath(ShaderStageKind::Fragment);
 
-        // reference the array of structs
-        pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-        pipelineInfo.stageCount = 2;
-        pipelineInfo.pStages = shaderStages;
+		SS_CORE_ASSERT(!vertPath.empty(), "Shader returned empty compiled vertex SPIR-V path");
+		SS_CORE_ASSERT(!fragPath.empty(), "Shader returned empty compiled fragment SPIR-V path");
 
-        // reference all the structures describing the fixed-function state
-        pipelineInfo.pVertexInputState = &vertexInputInfo;
-        pipelineInfo.pInputAssemblyState = &inputAssembly;
-        pipelineInfo.pViewportState = &viewportState;
-        pipelineInfo.pRasterizationState = &rasterizer;
-        pipelineInfo.pMultisampleState = &multisampling;
-        pipelineInfo.pDepthStencilState = nullptr; // Optional
-        pipelineInfo.pColorBlendState = &colorBlending;
-        pipelineInfo.pDynamicState = &dynamicState;
+		const auto vertCode = ReadFile(vertPath);
+		const auto fragCode = ReadFile(fragPath);
 
-        // reference the pipeline layout - Vulkan handle
-        pipelineInfo.layout = m_PipelineLayout;
+		const VkShaderModule vertModule = CreateShaderModule(m_Device, vertCode);
+		const VkShaderModule fragModule = CreateShaderModule(m_Device, fragCode);
 
-        // reference to the render pass and the index of the subpass where this pipeline is used
-        pipelineInfo.renderPass = renderPass;
-        pipelineInfo.subpass = 0;
-        // we can also use other render passes with this pipeline IF COMPATIBLE
-        // we won't be using this now
+		VkPipelineShaderStageCreateInfo vertStage{};
+		vertStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		vertStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
+		vertStage.module = vertModule;
+		vertStage.pName = "main";
 
-        // we can derive from an existing pipeline -> less expensive than creating from scratch
-        // right now there is only a single pipeline
-        // only used if the VK_PIPELINE_CREATE_DERIVATIVE_BIT is set in VkGraphicsPipelineCreateInfo
-        pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // Optional
-        pipelineInfo.basePipelineIndex = -1; // Optional
+		VkPipelineShaderStageCreateInfo fragStage{};
+		fragStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+		fragStage.module = fragModule;
+		fragStage.pName = "main";
 
-        // this function can actually create multiple pipelines immediately
-        // pipeline cache - for storing and reusing data relevant to pipeline creation across multiple calls
-        // TODO we will use a pipeline cache later
-        result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
-                                           &m_GraphicsPipeline);
-        SS_CORE_ASSERT(result == VK_SUCCESS, "Failed to create graphics pipeline!");
+		VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
 
-        vkDestroyShaderModule(device, fragShaderModule, nullptr);
-        vkDestroyShaderModule(device, vertShaderModule, nullptr);
+		// --- Vertex input ---
+		std::vector<VkVertexInputBindingDescription> bindings;
+		std::vector<VkVertexInputAttributeDescription> attributes;
 
-        s_CurrentPipeline = this;
-    }
+		bindings.reserve(m_Desc.VertexLayout.Buffers.size());
 
-    VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
-    {
-        vkDestroyPipeline(m_Device, m_GraphicsPipeline, nullptr);
-        vkDestroyPipelineLayout(m_Device, m_PipelineLayout, nullptr);
-    }
+		for (const VertexBufferLayoutDesc& b : m_Desc.VertexLayout.Buffers)
+		{
+			SS_CORE_ASSERT(b.Stride > 0, "Vertex buffer layout stride must be > 0");
 
-    void VulkanGraphicsPipeline::CreateDescriptorSetLayout()
-    {
-        // TODO make this actually parameterized
-        VkDescriptorSetLayoutBinding uboLayoutBinding{};
-        uboLayoutBinding.binding = 0;
-        uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        uboLayoutBinding.descriptorCount = 1;
-        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
+			VkVertexInputBindingDescription bd{};
+			bd.binding = b.Binding;
+			bd.stride = b.Stride;
+			bd.inputRate = ToVkInputRate(b.InputRate);
+			bindings.push_back(bd);
 
-        // TODO return this
-        // VkDescriptorSetLayoutBinding texLayoutBinding{};
-        // texLayoutBinding.binding = 1;
-        // texLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        // texLayoutBinding.descriptorCount = 32;
-        // texLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        // texLayoutBinding.pImmutableSamplers = nullptr; // Optional
+			for (const VertexAttributeDesc& a : b.Attributes)
+			{
+				const VkFormat fmt = ToVkVertexFormat(a.Format);
+				SS_CORE_ASSERT(fmt != VK_FORMAT_UNDEFINED, "Unknown/unsupported vertex attribute format");
 
-        std::vector bindings = {uboLayoutBinding}; //, texLayoutBinding};
-        m_DescriptorSetLayout = CreateRef<VulkanDescriptorSetLayout>(m_Device, bindings);
-    }
+				VkVertexInputAttributeDescription ad{};
+				ad.location = a.Location;
+				ad.binding = b.Binding;
+				ad.format = fmt;
+				ad.offset = a.Offset;
+				attributes.push_back(ad);
+			}
+		}
+
+		VkPipelineVertexInputStateCreateInfo vertexInput{};
+		vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+		vertexInput.vertexBindingDescriptionCount = static_cast<uint32_t>(bindings.size());
+		vertexInput.pVertexBindingDescriptions = bindings.data();
+		vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes.size());
+		vertexInput.pVertexAttributeDescriptions = attributes.data();
+
+		// --- Input assembly ---
+		VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+		inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+		inputAssembly.topology = ToVkTopology(m_Desc.Raster.Topology);
+		inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+		// --- Dynamic state (viewport/scissor) ---
+		constexpr VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+		VkPipelineDynamicStateCreateInfo dynamicState{};
+		dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+		dynamicState.dynamicStateCount = 2;
+		dynamicState.pDynamicStates = dynamicStates;
+
+		VkPipelineViewportStateCreateInfo viewportState{};
+		viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+		viewportState.viewportCount = 1;
+		viewportState.scissorCount = 1;
+
+		// --- Rasterization ---
+		VkPipelineRasterizationStateCreateInfo raster{};
+		raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+		raster.depthClampEnable = VK_FALSE;
+		raster.rasterizerDiscardEnable = VK_FALSE;
+		raster.polygonMode = m_Desc.Raster.Wireframe ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+		raster.lineWidth = 1.0f;
+		raster.cullMode = ToVkCullMode(m_Desc.Raster.Cull);
+		raster.frontFace = ToVkFrontFace(m_Desc.Raster.Front);
+		raster.depthBiasEnable = VK_FALSE;
+
+		// --- Multisample ---
+		VkPipelineMultisampleStateCreateInfo msaa{};
+		msaa.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+		msaa.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+		msaa.sampleShadingEnable = VK_FALSE;
+
+		// --- Depth/stencil ---
+		VkPipelineDepthStencilStateCreateInfo depthStencil{};
+		depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+		depthStencil.depthTestEnable = m_Desc.DepthStencil.EnableDepthTest ? VK_TRUE : VK_FALSE;
+		depthStencil.depthWriteEnable = m_Desc.DepthStencil.EnableDepthWrite ? VK_TRUE : VK_FALSE;
+		depthStencil.depthCompareOp = ToVkCompareOp(m_Desc.DepthStencil.DepthCompare);
+		depthStencil.depthBoundsTestEnable = VK_FALSE;
+		depthStencil.stencilTestEnable = m_Desc.DepthStencil.EnableStencil ? VK_TRUE : VK_FALSE;
+
+		// --- Color blend ---
+		std::vector<VkPipelineColorBlendAttachmentState> blendAttachments;
+		blendAttachments.resize(m_Desc.ColorFormats.size());
+
+		for (size_t i = 0; i < blendAttachments.size(); i++)
+		{
+			VkPipelineColorBlendAttachmentState a{};
+			a.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+			                   VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+			const bool enableBlend =
+				(i < m_Desc.Blend.Attachments.size()) ? m_Desc.Blend.Attachments[i].EnableBlend : false;
+
+			a.blendEnable = enableBlend ? VK_TRUE : VK_FALSE;
+
+			// Default alpha blend (common for 2D); tweak later per pipeline if desired.
+			a.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+			a.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+			a.colorBlendOp = VK_BLEND_OP_ADD;
+			a.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+			a.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+			a.alphaBlendOp = VK_BLEND_OP_ADD;
+
+			blendAttachments[i] = a;
+		}
+
+		VkPipelineColorBlendStateCreateInfo blend{};
+		blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+		blend.logicOpEnable = VK_FALSE;
+		blend.attachmentCount = static_cast<uint32_t>(blendAttachments.size());
+		blend.pAttachments = blendAttachments.data();
+
+		// --- Pipeline layout / descriptors ---
+		CreateDescriptorSetLayouts();
+
+		// Validate push constant ranges early (better error message than Vulkan validation spam)
+		ValidatePushConstantRangesOrAssert(m_Desc.PushConstants);
+
+		// Build VkPushConstantRange list from PipelineDesc
+		m_VkPushConstantRanges.clear();
+		m_VkPushConstantRanges.reserve(m_Desc.PushConstants.size());
+
+		for (const PushConstantRangeDesc& r : m_Desc.PushConstants)
+		{
+			VkPushConstantRange vkRange{};
+			vkRange.offset = r.Offset;
+			vkRange.size = r.Size;
+			vkRange.stageFlags = ToVkShaderStages(r.Stages);
+
+			SS_CORE_ASSERT(vkRange.stageFlags != 0, "PushConstantRangeDesc.Stages must not be None");
+			m_VkPushConstantRanges.push_back(vkRange);
+		}
+
+		// Pipeline layout: use all set layouts
+		std::vector<VkDescriptorSetLayout> vkSetLayouts;
+		vkSetLayouts.reserve(m_SetLayouts.size());
+		for (const auto& s : m_SetLayouts)
+		{
+			SS_CORE_ASSERT(s, "Null DescriptorSetLayout in pipeline");
+			const auto vkLayout = std::static_pointer_cast<VulkanDescriptorSetLayout>(s);
+			vkSetLayouts.push_back(vkLayout->GetHandle());
+		}
+
+		VkPipelineLayoutCreateInfo layoutCI{};
+		layoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		layoutCI.setLayoutCount = static_cast<uint32_t>(vkSetLayouts.size());
+		layoutCI.pSetLayouts = vkSetLayouts.data();
+		layoutCI.pushConstantRangeCount = static_cast<uint32_t>(m_VkPushConstantRanges.size());
+		layoutCI.pPushConstantRanges = m_VkPushConstantRanges.empty() ? nullptr : m_VkPushConstantRanges.data();
+
+		VkResult res = vkCreatePipelineLayout(m_Device, &layoutCI, nullptr, &m_PipelineLayout);
+		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to create VkPipelineLayout");
+
+		// --- Dynamic rendering formats ---
+		std::vector<VkFormat> colorVkFormats;
+		colorVkFormats.reserve(m_Desc.ColorFormats.size());
+		for (PipelineFormat f : m_Desc.ColorFormats)
+		{
+			const VkFormat vkf = ToVkFormat(f);
+			SS_CORE_ASSERT(vkf != VK_FORMAT_UNDEFINED, "Unknown/unsupported color format in pipeline");
+			colorVkFormats.push_back(vkf);
+		}
+
+		const VkFormat depthVkFormat = (m_Desc.DepthFormat != PipelineFormat::Unknown) ? ToVkFormat(m_Desc.DepthFormat) : VK_FORMAT_UNDEFINED;
+		if (m_Desc.DepthFormat != PipelineFormat::Unknown)
+		{
+			SS_CORE_ASSERT(depthVkFormat != VK_FORMAT_UNDEFINED, "Unknown/unsupported depth format in pipeline");
+		}
+
+		const VkFormat stencilVkFormat = (m_Desc.HasStencil) ? depthVkFormat : VK_FORMAT_UNDEFINED;
+
+		VkPipelineRenderingCreateInfo renderingCI{};
+		renderingCI.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+		renderingCI.colorAttachmentCount = static_cast<uint32_t>(colorVkFormats.size());
+		renderingCI.pColorAttachmentFormats = colorVkFormats.data();
+		renderingCI.depthAttachmentFormat = depthVkFormat;
+		renderingCI.stencilAttachmentFormat = stencilVkFormat;
+
+		// --- Create pipeline ---
+		VkGraphicsPipelineCreateInfo pipeCI{};
+		pipeCI.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+		pipeCI.pNext = &renderingCI;
+
+		pipeCI.stageCount = 2;
+		pipeCI.pStages = stages;
+
+		pipeCI.pVertexInputState = &vertexInput;
+		pipeCI.pInputAssemblyState = &inputAssembly;
+		pipeCI.pViewportState = &viewportState;
+		pipeCI.pRasterizationState = &raster;
+		pipeCI.pMultisampleState = &msaa;
+		pipeCI.pDepthStencilState = (m_Desc.DepthFormat != PipelineFormat::Unknown) ? &depthStencil : nullptr;
+		pipeCI.pColorBlendState = &blend;
+		pipeCI.pDynamicState = &dynamicState;
+
+		pipeCI.layout = m_PipelineLayout;
+		pipeCI.renderPass = VK_NULL_HANDLE; // dynamic rendering
+		pipeCI.subpass = 0;
+
+		res = vkCreateGraphicsPipelines(m_Device, VK_NULL_HANDLE, 1, &pipeCI, nullptr, &m_Pipeline);
+		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to create Vulkan graphics pipeline");
+
+		vkDestroyShaderModule(m_Device, fragModule, nullptr);
+		vkDestroyShaderModule(m_Device, vertModule, nullptr);
+	}
+
+	VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
+	{
+		if (m_Pipeline != VK_NULL_HANDLE)
+		{
+			vkDestroyPipeline(m_Device, m_Pipeline, nullptr);
+			m_Pipeline = VK_NULL_HANDLE;
+		}
+
+		if (m_PipelineLayout != VK_NULL_HANDLE)
+		{
+			vkDestroyPipelineLayout(m_Device, m_PipelineLayout, nullptr);
+			m_PipelineLayout = VK_NULL_HANDLE;
+		}
+	}
 }

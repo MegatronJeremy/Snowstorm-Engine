@@ -18,12 +18,11 @@
 #include "Snowstorm/World/ScriptableEntity.h"
 
 // ---Renderer------------------------
-#include "Snowstorm/Render/Renderer2D.hpp"
-#include "Snowstorm/Render/RenderCommand.hpp"
+#include "Snowstorm/Render/RendererAPI.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
 
 #include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/Shader.hpp"
-#include "Snowstorm/Render/Framebuffer.hpp"
+#include "Snowstorm/Render/RenderTarget.hpp"
 #include "Snowstorm/Render/Texture.hpp"
-#include "Snowstorm/Render/VertexArray.hpp"
 // -----------------------------------

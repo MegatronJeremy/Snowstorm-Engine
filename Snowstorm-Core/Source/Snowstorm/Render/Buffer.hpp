@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <memory>
 
+#include "Snowstorm/Core/Base.hpp"
+
 namespace Snowstorm
 {
 	enum class BufferUsage
@@ -29,6 +31,6 @@ namespace Snowstorm
 
 		virtual BufferUsage GetUsage() const = 0;
 
-		static std::shared_ptr<Buffer> Create(size_t size, BufferUsage usage, const void* initialData = nullptr, bool hostVisible = false);
+		static Ref<Buffer> Create(size_t size, BufferUsage usage, const void* initialData = nullptr, bool hostVisible = false);
 	};
 }

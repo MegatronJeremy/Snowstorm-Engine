@@ -18,12 +18,18 @@ namespace Snowstorm
 		auto& eventsHandler = SingletonView<EventsHandlerSingleton>();
 
 		const auto cameraControllerView = View<CameraComponent, TransformComponent, CameraControllerComponent, RenderTargetComponent>();
-		const auto framebufferView = View<ViewportComponent>();
+		const auto viewportView = View<ViewportComponent>();
 
 		for (const auto entity : cameraControllerView)
 		{
 			auto [camera, transform, controller, renderTarget] = cameraControllerView.get(entity);
-			auto [viewport] = framebufferView.get(renderTarget.TargetFramebuffer);
+
+			if (!viewportView.contains(renderTarget.TargetEntity))
+			{
+				continue;
+			}
+
+			auto [viewport] = viewportView.get(renderTarget.TargetEntity);
 
 			if (!camera.Primary)
 			{

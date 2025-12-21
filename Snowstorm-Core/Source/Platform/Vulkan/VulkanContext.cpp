@@ -1,8 +1,24 @@
 #include "VulkanContext.hpp"
+
+#include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Core/Log.hpp"
+
+#define GLFW_INCLUDE_NONE
+#define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <iostream>
 
-#define VK_CHECK(x) do { VkResult err = x; if (err) { std::cerr << "Vulkan error: " << err << std::endl; abort(); } } while (0)
+//-- compile the actual implementation in this file
+#define VOLK_IMPLEMENTATION
+#include <volk.h>
+#define VMA_IMPLEMENTATION
+#include <vk_mem_alloc.h>
+
+#define VK_CHECK(expr)                               \
+{                                                    \
+	VkResult _vk_result = (expr);                    \
+	SS_CORE_ASSERT(_vk_result == VK_SUCCESS);        \
+}
 
 namespace Snowstorm
 {
@@ -16,6 +32,14 @@ namespace Snowstorm
 	{
 		m_WindowHandle = windowHandle;
 
+		// 0. Initialize Volk
+		// We use a local check to ensure we don't re-init if already done
+		if (volkGetLoadedInstance() == VK_NULL_HANDLE)
+		{
+			VkResult volkRes = volkInitialize();
+			SS_CORE_ASSERT(volkRes == VK_SUCCESS, "Failed to initialize Volk loader");
+		}
+
 		// 1. Instance
 		VkApplicationInfo appInfo{};
 		appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -26,13 +50,13 @@ namespace Snowstorm
 		appInfo.apiVersion = VK_API_VERSION_1_3;
 
 		uint32_t glfwExtCount = 0;
-		const char** glfwExts = glfwGetRequiredInstanceExtensions(&glfwExtCount);
+		const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtCount);
 
 		VkInstanceCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 		createInfo.pApplicationInfo = &appInfo;
 		createInfo.enabledExtensionCount = glfwExtCount;
-		createInfo.ppEnabledExtensionNames = glfwExts;
+		createInfo.ppEnabledExtensionNames = glfwExtensions;
 
 		VK_CHECK(vkCreateInstance(&createInfo, nullptr, &m_Instance));
 		volkLoadInstance(m_Instance);
@@ -78,25 +102,63 @@ namespace Snowstorm
 		queueCreate.queueCount = 1;
 		queueCreate.pQueuePriorities = &queuePriority;
 
+		// Core features (extend as needed)
 		VkPhysicalDeviceFeatures features{};
+
+		// Common device extensions
+		const char* deviceExtensions[] = {
+			VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+			VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+			VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME
+		};
+
 		VkDeviceCreateInfo devInfo{};
 		devInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 		devInfo.queueCreateInfoCount = 1;
 		devInfo.pQueueCreateInfos = &queueCreate;
 		devInfo.pEnabledFeatures = &features;
+		devInfo.enabledExtensionCount = static_cast<uint32_t>(std::size(deviceExtensions));
+		devInfo.ppEnabledExtensionNames = deviceExtensions;
+
+		// Enable Dynamic Rendering and Buffer Device Address features
+		VkPhysicalDeviceVulkan13Features features13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+		features13.dynamicRendering = VK_TRUE;
+
+		VkPhysicalDeviceVulkan12Features features12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+		features12.bufferDeviceAddress = VK_TRUE;
+		features12.pNext = &features13;
+
+		devInfo.pNext = &features12;
 
 		VK_CHECK(vkCreateDevice(m_PhysicalDevice, &devInfo, nullptr, &m_Device));
 		volkLoadDevice(m_Device);
 		vkGetDeviceQueue(m_Device, m_GraphicsQueueFamily, 0, &m_GraphicsQueue);
 
-		// 5. VMA Allocator
+		// 5. Graphics command pool (for transient command buffers)
+		VkCommandPoolCreateInfo poolInfo{};
+		poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+		poolInfo.queueFamilyIndex = m_GraphicsQueueFamily;
+		poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+		VK_CHECK(vkCreateCommandPool(m_Device, &poolInfo, nullptr, &m_GraphicsCommandPool));
+
+		// 6. VMA Allocator
+		VmaVulkanFunctions vmaFunctions{};
+		vmaFunctions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+		vmaFunctions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+
 		VmaAllocatorCreateInfo allocatorInfo{};
-		allocatorInfo.device = m_Device;
+		allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
 		allocatorInfo.physicalDevice = m_PhysicalDevice;
+		allocatorInfo.device = m_Device;
 		allocatorInfo.instance = m_Instance;
+		allocatorInfo.pVulkanFunctions = &vmaFunctions;
+
+		// Required to allow buffers with VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+		allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+
 		VK_CHECK(vmaCreateAllocator(&allocatorInfo, &m_Allocator));
 
-		// 6. Swapchain (minimal version)
+		// 7. Swapchain (minimal version)
 		VkSurfaceCapabilitiesKHR caps;
 		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_PhysicalDevice, m_Surface, &caps);
 		m_SwapchainExtent = caps.currentExtent;
@@ -151,12 +213,20 @@ namespace Snowstorm
 
 	void VulkanContext::Shutdown() const
 	{
-		for (auto view : m_SwapchainImageViews)
+		for (const auto view : m_SwapchainImageViews)
+		{
 			vkDestroyImageView(m_Device, view, nullptr);
+		}
 
 		vkDestroySwapchainKHR(m_Device, m_Swapchain, nullptr);
 		vkDestroySurfaceKHR(m_Instance, m_Surface, nullptr);
 		vmaDestroyAllocator(m_Allocator);
+
+		if (m_GraphicsCommandPool != VK_NULL_HANDLE)
+		{
+			vkDestroyCommandPool(m_Device, m_GraphicsCommandPool, nullptr);
+		}
+
 		vkDestroyDevice(m_Device, nullptr);
 		vkDestroyInstance(m_Instance, nullptr);
 	}

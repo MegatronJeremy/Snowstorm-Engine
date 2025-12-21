@@ -20,6 +20,6 @@ namespace Snowstorm
 	private:
 		Ref<World> m_ActiveWorld;
 
-		Entity m_FramebufferEntity;
+		Entity m_RenderTargetEntity;
 	};
 }

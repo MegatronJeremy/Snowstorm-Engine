@@ -7,7 +7,7 @@
 #include "Snowstorm/Components/TagComponent.hpp"
 #include "Snowstorm/Events/Event.h"
 #include "Snowstorm/Render/MeshLibrarySingleton.hpp"
-#include "Snowstorm/Render/Renderer3DSingleton.hpp"
+#include "Snowstorm/Render/RendererSingleton.hpp"
 #include "Snowstorm/Render/Shader.hpp"
 
 #include "Snowstorm/Systems/CameraControllerSystem.hpp"
@@ -22,7 +22,7 @@ namespace Snowstorm
 		m_SingletonManager->RegisterSingleton<EventsHandlerSingleton>();
 		m_SingletonManager->RegisterSingleton<ShaderLibrarySingleton>();
 		m_SingletonManager->RegisterSingleton<MeshLibrarySingleton>();
-		m_SingletonManager->RegisterSingleton<Renderer3DSingleton>();
+		m_SingletonManager->RegisterSingleton<RendererSingleton>();
 	}
 
 	Entity World::CreateEntity(const std::string& name)

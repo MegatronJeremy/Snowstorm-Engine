@@ -3,80 +3,47 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 
-#include "Buffer.hpp"
-#include "Shader.hpp"
-#include "Texture.hpp"
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Render/Pipeline.hpp"
+#include "Snowstorm/Render/Sampler.hpp"
+#include "Snowstorm/Render/Texture.hpp"
+
+#include <glm/glm.hpp>
 
 namespace Snowstorm
 {
 	class Material : public NonCopyable
 	{
 	public:
-		explicit Material(Ref<Shader> shader);
-
-		void Bind() const;
-
-		template <typename T>
-		void SetUniform(const std::string& name, const T& value)
+		struct Constants
 		{
-			m_Uniforms[name] = value;
-		}
+			glm::vec4 BaseColor = glm::vec4(1.0f);
+		};
 
-		[[nodiscard]] Shader::UniformValue GetUniform(const std::string& name) const
-		{
-			SS_CORE_ASSERT(m_Uniforms.contains(name));
-			return m_Uniforms.find(name)->second;
-		}
+		explicit Material(const Ref<Pipeline>& pipeline);
 
-		// Predefined texture setters (make some sort of enums here)
-		void SetAlbedoMap(Ref<Texture> texture) { m_Textures[0] = std::move(texture); }
-		Ref<Texture> GetAlbedoMap() { return m_Textures[0]; }
+		[[nodiscard]] const Ref<Pipeline>& GetPipeline() const { return m_Pipeline; }
 
-		void SetNormalMap(Ref<Texture> texture) { m_Textures[1] = std::move(texture); }
-		Ref<Texture> GetNormalMap() { return m_Textures[1]; }
+		// Defaults copied into MaterialInstance on construction
+		void SetBaseColor(const glm::vec4& color) { m_DefaultConstants.BaseColor = color; }
+		[[nodiscard]] const glm::vec4& GetBaseColor() const { return m_DefaultConstants.BaseColor; }
 
-		void SetMetallicMap(Ref<Texture> texture) { m_Textures[2] = std::move(texture); }
-		Ref<Texture> GetMetallicMap() { return m_Textures[2]; }
+		void SetTextureView(uint32_t slot, const Ref<TextureView>& view);
+		[[nodiscard]] Ref<TextureView> GetTextureView(uint32_t slot) const;
 
-		void SetRoughnessMap(Ref<Texture> texture) { m_Textures[3] = std::move(texture); }
-		Ref<Texture> GetRoughnessMap() { return m_Textures[3]; }
-
-		void SetAOMap(Ref<Texture> texture) { m_Textures[4] = std::move(texture); }
-		Ref<Texture> GetAOMap() { return m_Textures[4]; }
-
-		void SetTexture(const uint32_t slot, Ref<Texture> texture) { m_Textures[slot] = std::move(texture); }
-		[[nodiscard]] Ref<Texture> GetTexture(const uint32_t slot) { return m_Textures[slot]; }
-
-		void SetColor(const glm::vec4 color) { m_Uniforms["u_Color"] = color; }
-		[[nodiscard]] glm::vec4 GetColor() { return std::get<glm::vec4>(m_Uniforms["u_Color"]); }
-
-		[[nodiscard]] Ref<Shader> GetShader() const { return m_Shader; }
-
-		// Vertex & Instance Layout Functions
-		[[nodiscard]] std::vector<BufferElement> GetVertexLayout() const;
-		[[nodiscard]] std::vector<BufferElement> GetInstanceLayout() const;
-
-		void AddVertexAttribute(const BufferElement& attribute) { m_ExtraVertexAttributes.push_back(attribute); }
-		void AddInstanceAttribute(const BufferElement& attribute) { m_ExtraInstanceAttributes.push_back(attribute); }
-
-		// Sets the shader path for lazy loading in ShaderReloadSystem
-		void SetShaderPath(std::string path) { m_ShaderReloadPath = std::move(path); }
-		[[nodiscard]] std::string GetShaderPath() const { return m_Shader->GetShaderPath(); }
-
-		[[nodiscard]] bool RequiresReload() const { return !m_ShaderReloadPath.empty(); }
+		void SetSampler(const Ref<Sampler>& sampler) { m_DefaultSampler = sampler; }
+		[[nodiscard]] const Ref<Sampler>& GetSampler() const { return m_DefaultSampler; }
 
 	private:
 		static constexpr uint32_t MAX_TEXTURE_SLOTS = 32;
 
-		Ref<Shader> m_Shader;
-		std::string m_ShaderReloadPath;
-		std::unordered_map<std::string, Shader::UniformValue> m_Uniforms;
-		std::vector<BufferElement> m_ExtraVertexAttributes;
-		std::vector<BufferElement> m_ExtraInstanceAttributes;
-		std::array<Ref<Texture>, MAX_TEXTURE_SLOTS> m_Textures;
+	private:
+		Ref<Pipeline> m_Pipeline;
 
-		void ApplyUniform(const std::string& name, const Shader::UniformValue& value) const;
+		Constants m_DefaultConstants{};
+		std::array<Ref<TextureView>, MAX_TEXTURE_SLOTS> m_DefaultTextureViews{};
+		Ref<Sampler> m_DefaultSampler;
 	};
 }

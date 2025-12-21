@@ -24,7 +24,7 @@ namespace Snowstorm
 			VkBuffer dstBuffer;
 			size_t size;
 			size_t dstOffset;
-			size_t stagingOffset; // offset within the stagin buffer
+			size_t stagingOffset; // offset within the staging buffer
 		};
 
 		static constexpr size_t STAGING_BUFFER_SIZE = 64ull * 1024 * 1024; // 64 MB

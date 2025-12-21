@@ -1,11 +1,15 @@
 ﻿#pragma once
 
-#include <entt/entity/entity.hpp>
+#include "Snowstorm/Render/RenderTarget.hpp"
 
 namespace Snowstorm
 {
 	struct RenderTargetComponent
 	{
-		entt::entity TargetFramebuffer;
+		Ref<RenderTarget> Target;
+		entt::entity TargetEntity{}; // NEW: Points to the entity holding the ViewportComponent
+
+		RenderTargetComponent() = default;
+		explicit RenderTargetComponent(Ref<RenderTarget> target) : Target(std::move(target)) {}
 	};
 }

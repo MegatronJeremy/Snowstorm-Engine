@@ -4,15 +4,15 @@
 
 namespace Snowstorm
 {
-	enum class DepthFunction : uint8_t
+	enum class CompareOp : uint8_t
 	{
-		Never,
+		Never = 0,
 		Less,
 		Equal,
-		LessEqual,
+		LessOrEqual,
 		Greater,
 		NotEqual,
-		GreaterEqual,
+		GreaterOrEqual,
 		Always
 	};
 }

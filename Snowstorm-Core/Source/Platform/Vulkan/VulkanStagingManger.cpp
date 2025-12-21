@@ -20,7 +20,7 @@ namespace Snowstorm
 
 	void VulkanStagingManger::UploadBuffer(const VkBuffer dstBuffer, const void* data, size_t size, const size_t dstOffset)
 	{
-		std::lock_guard lock(m_Mutex);
+		std::scoped_lock lock(m_Mutex);
 
 		SS_CORE_ASSERT(data != nullptr, "Upload data cannot be null");
 		SS_CORE_ASSERT(size > 0, "Upload size must be greater than 0");
