@@ -15,13 +15,15 @@ namespace Snowstorm
 			sizeof(Vertex) * vertices.size(),
 			BufferUsage::Vertex,
 			vertices.data(),
-			false);
+			false,
+			"Mesh Vertex Buffer");
 
 		m_IndexBuffer = Buffer::Create(
 			sizeof(uint32_t) * indices.size(),
 			BufferUsage::Index,
 			indices.data(),
-			false);
+			false,
+			"Mesh Index Buffer");
 
 		SS_CORE_ASSERT(m_VertexBuffer, "Failed to create mesh vertex buffer");
 		SS_CORE_ASSERT(m_IndexBuffer, "Failed to create mesh index buffer");

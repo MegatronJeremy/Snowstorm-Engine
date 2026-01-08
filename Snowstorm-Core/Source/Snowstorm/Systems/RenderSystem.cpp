@@ -53,7 +53,9 @@ namespace Snowstorm
 		Ref<RenderTarget> mainTarget;
 
 		if (!FindPrimaryCameraAndTarget(cameraView, mainCamera, cameraTransform, mainTarget))
+		{
 			return;
+		}
 
 		auto& renderer = SingletonView<RendererSingleton>();
 
@@ -91,17 +93,27 @@ namespace Snowstorm
 				}
 			});
 
-		graph.AddPass({
-				.Name = "DebugPass",
-				.Target = mainTarget,
-				.Execute = [&](CommandContext& c)
-				{
-					// Placeholder debug pass:
-					// - Hook up debug line rendering, GPU markers, ImGui, etc. later.
-					// - Keeping it as a distinct pass is useful even before it draws anything.
-					Renderer::RenderImGuiDrawData(c);
-				}
-			});
+		Ref<RenderTarget> swapchain = Renderer::GetSwapchainTarget();
+
+		// if (IsImGuiEnabled) { TODO implement this as well
+			graph.AddPass({
+					.Name = "EditorPass",
+					.Target = swapchain,
+					.Execute = [&](CommandContext& c)
+					{
+						Renderer::RenderImGuiDrawData(c);
+					}
+				});
+	//		} else {
+	// 		graph.AddPass({
+	// 			.Name = "BlitToScreen",
+	// 			.Target = screen,
+	// 			.Execute = [&](CommandContext& c) {
+	// 				// Logic to simply copy your off-screen Scene texture to the Swapchain
+	// 				// c.Blit(mainTarget->GetColorAttachment(0), screen);
+	// 			}
+	// 		});
+	// 	}
 
 		graph.Execute(*ctx);
 

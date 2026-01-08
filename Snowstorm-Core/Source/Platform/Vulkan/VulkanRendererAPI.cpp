@@ -1,15 +1,16 @@
 #include "VulkanRendererAPI.hpp"
 
-// #define IMGUI_IMPL_VULKAN_NO_PROTOTYPES
-// #define IMGUI_IMPL_VULKAN_USE_VOLK
+#include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
+#include "VulkanBindlessManager.hpp"
 
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/Log.hpp"
 
-#include "Platform/Vulkan/VulkanCommon.hpp"
+#include "Platform/Vulkan/VulkanTexture.hpp"
 #include "Platform/Vulkan/VulkanCommandContext.hpp"
 #include "Platform/Vulkan/VulkanContext.hpp"
+#include "Platform/Windows/WindowsWindow.hpp"
 
 namespace Snowstorm
 {
@@ -26,6 +27,21 @@ namespace Snowstorm
 
 		const auto& context = VulkanContext::Get();
 		const VkDevice device = context.GetDevice();
+
+		// Wrap swapchain images
+		const auto& swapImages = context.GetSwapchainImages();
+		m_SwapchainTextures.resize(swapImages.size());
+
+		TextureDesc desc;
+		desc.Width = context.GetSwapchainExtent().width;
+		desc.Height = context.GetSwapchainExtent().height;
+		desc.Format = FromVkFormat(context.GetSwapchainFormat());
+		desc.Usage = TextureUsage::ColorAttachment;
+
+		for (uint32_t i = 0; i < swapImages.size(); ++i)
+		{
+			m_SwapchainTextures[i] = CreateRef<VulkanTexture>(swapImages[i], desc);
+		}
 
 		m_CurrentFrameIndex = 0;
 
@@ -55,8 +71,14 @@ namespace Snowstorm
 	{
 		const VkDevice device = VulkanContext::Get().GetDevice();
 
-		// Wait for GPU to finish work before destroying core context
+		// Wait for GPU to finish work before destroying the core context
 		vkDeviceWaitIdle(device);
+
+		VulkanBindlessManager::Get().Shutdown();
+
+		// You must clear all swapchain textures we wrapped
+		// These hold Ref<VulkanTexture> which own VMA allocations
+		m_SwapchainTextures.clear();
 
 		for (uint32_t i = 0; i < s_MaxFramesInFlight; ++i)
 		{
@@ -104,11 +126,14 @@ namespace Snowstorm
 	{
 		auto& context = VulkanContext::Get();
 		auto ctx = std::static_pointer_cast<VulkanCommandContext>(m_GraphicsContexts[m_CurrentFrameIndex]);
-		
-		// 1. End command recording
+
+		// 1. Transition to a presentable state
+		ctx->TransitionLayout(m_SwapchainTextures[m_ImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+
+		// 2. End command recording
 		ctx->End();
 
-		// 2. Submit to Queue
+		// 3. Submit to Queue
 		VkSubmitInfo submitInfo{};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
@@ -128,7 +153,7 @@ namespace Snowstorm
 
 		vkQueueSubmit(context.GetGraphicsQueue(), 1, &submitInfo, m_InFlightFences[m_CurrentFrameIndex]);
 
-		// 3. Present
+		// 4. Present
 		VkPresentInfoKHR presentInfo{};
 		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 		presentInfo.waitSemaphoreCount = 1;
@@ -141,7 +166,7 @@ namespace Snowstorm
 
 		vkQueuePresentKHR(context.GetGraphicsQueue(), &presentInfo);
 
-		// 4. Advance frame counter
+		// 5. Advance frame counter
 		m_CurrentFrameIndex = (m_CurrentFrameIndex + 1) % s_MaxFramesInFlight;
 	}
 
@@ -153,6 +178,30 @@ namespace Snowstorm
 	uint32_t VulkanRendererAPI::GetFramesInFlight() const
 	{
 		return s_MaxFramesInFlight;
+	}
+
+	PixelFormat VulkanRendererAPI::GetSurfaceFormat() const
+	{
+		return FromVkFormat(VulkanContext::Get().GetSwapchainFormat());
+	}
+
+	Ref<RenderTarget> VulkanRendererAPI::GetSwapchainTarget() const
+	{
+		auto& context = VulkanContext::Get();
+        
+		RenderTargetDesc desc;
+		desc.Width = context.GetSwapchainExtent().width;
+		desc.Height = context.GetSwapchainExtent().height;
+		desc.IsSwapchainTarget = true; 
+
+		RenderTargetAttachment color;
+		color.View = m_SwapchainTextures[m_ImageIndex]->GetDefaultView();
+		color.LoadOp = RenderTargetLoadOp::Clear;
+		color.StoreOp = RenderTargetStoreOp::Store;
+		color.ClearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
+		desc.ColorAttachments.push_back(color);
+
+		return RenderTarget::Create(desc);
 	}
 
 	uint32_t VulkanRendererAPI::GetMinUniformBufferOffsetAlignment() const
@@ -194,6 +243,11 @@ namespace Snowstorm
 		pool_info.pPoolSizes = pool_sizes;
 		vkCreateDescriptorPool(context.GetDevice(), &pool_info, nullptr, &s_ImGuiPool);
 
+		// 3. Init GLFW Platform backend
+		GLFWwindow* window = static_cast<GLFWwindow*>(windowHandle);
+		ImGui_ImplGlfw_InitForVulkan(window, true);
+
+		// 4. Init ImGui
 		ImGui_ImplVulkan_InitInfo init_info = {};
 		init_info.Instance = context.GetInstance();
 		init_info.PhysicalDevice = context.GetPhysicalDevice();
@@ -210,23 +264,35 @@ namespace Snowstorm
 			SS_CORE_ERROR("[ImGui][Vulkan] Error: {0}", static_cast<int>(result));
 		};
 
-		VkFormat format = VK_FORMAT_B8G8R8A8_UNORM; // TODO Should ideally match swapchain
-		init_info.PipelineRenderingCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
+		static VkFormat surfaceFormat;
+		surfaceFormat = context.GetSwapchainFormat();
+
+		init_info.PipelineRenderingCreateInfo = {.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
 		init_info.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
-		init_info.PipelineRenderingCreateInfo.pColorAttachmentFormats = &format;
+		init_info.PipelineRenderingCreateInfo.pColorAttachmentFormats = &surfaceFormat;
 
 		ImGui_ImplVulkan_Init(&init_info);
 	}
 
 	void VulkanRendererAPI::ShutdownImGuiBackend()
 	{
-		vkDeviceWaitIdle(VulkanContext::Get().GetDevice());
+		const VkDevice device = VulkanContext::Get().GetDevice();
+		vkDeviceWaitIdle(device);
+
+		//Shutdown backends in reverse order of initialization
 		ImGui_ImplVulkan_Shutdown();
-		vkDestroyDescriptorPool(VulkanContext::Get().GetDevice(), s_ImGuiPool, nullptr);
+		ImGui_ImplGlfw_Shutdown();
+
+		if (s_ImGuiPool != VK_NULL_HANDLE)
+		{
+			vkDestroyDescriptorPool(device, s_ImGuiPool, nullptr);
+			s_ImGuiPool = VK_NULL_HANDLE;
+		}
 	}
 
 	void VulkanRendererAPI::ImGuiNewFrame()
 	{
+		ImGui_ImplGlfw_NewFrame();
 		ImGui_ImplVulkan_NewFrame();
 	}
 
@@ -235,6 +301,30 @@ namespace Snowstorm
 		auto& vkContext = dynamic_cast<VulkanCommandContext&>(context);
 		VkCommandBuffer cmd = vkContext.GetVulkanCommandBuffer();
 
-		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+		// 1. Ensure the viewport and scissor cover the whole screen before ImGui starts
+		// ImGui_ImplVulkan_RenderDrawData will set its own internal scissors, 
+		// but it needs a clean slate.
+		VkViewport viewport{};
+		viewport.x = 0.0f;
+		viewport.y = 0.0f;
+		viewport.width = static_cast<float>(VulkanContext::Get().GetSwapchainExtent().width);
+		viewport.height = static_cast<float>(VulkanContext::Get().GetSwapchainExtent().height);
+		viewport.minDepth = 0.0f;
+		viewport.maxDepth = 1.0f;
+		vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+		// Only call Render() if the frame hasn't been finalized yet.
+		// If the user hasn't called ImGui::NewFrame() at all, this will still assert,
+		// which is GOOD because it highlights the logic error.
+		if (ImGui::GetDrawData() == nullptr)
+		{
+			ImGui::Render();
+		}
+
+		ImDrawData* drawData = ImGui::GetDrawData();
+		if (drawData && drawData->CmdListsCount > 0)
+		{
+			ImGui_ImplVulkan_RenderDrawData(drawData, cmd);
+		}
 	}
 }

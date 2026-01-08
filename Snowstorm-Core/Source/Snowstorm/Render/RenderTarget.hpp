@@ -3,7 +3,8 @@
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
-#include <glm/glm.hpp>
+#include "Math.hpp"
+
 #include <optional>
 #include <vector>
 

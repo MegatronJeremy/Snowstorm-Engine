@@ -39,11 +39,11 @@
 //     - Do not simply add it in a .cpp file!
 // (2) Call ImGui_ImplVulkan_LoadFunctions() before ImGui_ImplVulkan_Init() with your custom function.
 // If you have no idea what this is, leave it alone!
-//#define IMGUI_IMPL_VULKAN_NO_PROTOTYPES
+#define IMGUI_IMPL_VULKAN_NO_PROTOTYPES
 
 // Convenience support for Volk
 // (you can also technically use IMGUI_IMPL_VULKAN_NO_PROTOTYPES + wrap Volk via ImGui_ImplVulkan_LoadFunctions().)
-//#define IMGUI_IMPL_VULKAN_USE_VOLK
+#define IMGUI_IMPL_VULKAN_USE_VOLK
 
 #if defined(IMGUI_IMPL_VULKAN_NO_PROTOTYPES) && !defined(VK_NO_PROTOTYPES)
 #define VK_NO_PROTOTYPES

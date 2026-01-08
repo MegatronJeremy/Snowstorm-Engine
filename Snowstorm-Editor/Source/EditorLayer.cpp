@@ -57,18 +57,21 @@ namespace Snowstorm
 
 		auto& systemManager = m_ActiveWorld->GetSystemManager();
 
+		// TODO do this better somehow and not in EditorLayer
 		systemManager.RegisterSystem<ScriptSystem>();
 		systemManager.RegisterSystem<CameraControllerSystem>();
 		systemManager.RegisterSystem<ShaderReloadSystem>();
 		systemManager.RegisterSystem<ViewportResizeSystem>();
 		systemManager.RegisterSystem<LightingSystem>();
-		systemManager.RegisterSystem<RenderSystem>();
 		systemManager.RegisterSystem<MandelbrotControllerSystem>();
 
 		systemManager.RegisterSystem<DockspaceSetupSystem>();
 		systemManager.RegisterSystem<EditorMenuSystem>();
 		systemManager.RegisterSystem<SceneHierarchySystem>();
 		systemManager.RegisterSystem<ViewportDisplaySystem>();
+
+		// RenderSystem should always be last
+		systemManager.RegisterSystem<RenderSystem>();
 
 		// Render target setup (replaces old Framebuffer)
 		{
@@ -81,14 +84,27 @@ namespace Snowstorm
 
 			TextureDesc colorDesc{};
 			colorDesc.Dimension = TextureDimension::Texture2D;
-			colorDesc.Format = TextureFormat::RGBA8_sRGB;
-			colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled | TextureUsage::TransferDst;
+			colorDesc.Format = PixelFormat::RGBA8_UNorm;
+			colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled;
 			colorDesc.Width = windowWidth;
 			colorDesc.Height = windowHeight;
 			colorDesc.DebugName = "MainColor";
 
 			Ref<Texture> colorTex = Texture::Create(colorDesc);
 			Ref<TextureView> colorView = TextureView::Create(colorTex, MakeFullViewDesc(colorDesc));
+
+			// --- Create Depth Attachment ---
+			TextureDesc depthDesc{};
+			depthDesc.Dimension = TextureDimension::Texture2D;
+			// D32_SFloat is the high-precision standard for modern desktop GPUs
+			depthDesc.Format = PixelFormat::D32_Float; 
+			depthDesc.Usage = TextureUsage::DepthStencil;
+			depthDesc.Width = windowWidth;
+			depthDesc.Height = windowHeight;
+			depthDesc.DebugName = "MainDepth";
+
+			Ref<Texture> depthTex = Texture::Create(depthDesc);
+			Ref<TextureView> depthView = TextureView::Create(depthTex, MakeFullViewDesc(depthDesc));
 
 			RenderTargetDesc rtDesc{};
 			rtDesc.Width = windowWidth;
@@ -102,6 +118,14 @@ namespace Snowstorm
 			colorAtt.LoadOp = RenderTargetLoadOp::Clear;
 			colorAtt.StoreOp = RenderTargetStoreOp::Store;
 			rtDesc.ColorAttachments.push_back(colorAtt);
+
+			// Add the depth attachment to the RenderTarget description
+			DepthStencilAttachment depthAtt{};
+			depthAtt.View = depthView;
+			depthAtt.ClearDepth = 1.0f;
+			depthAtt.DepthLoadOp = RenderTargetLoadOp::Clear;
+			depthAtt.DepthStoreOp = RenderTargetStoreOp::Store;
+			rtDesc.DepthAttachment = depthAtt;
 
 			Ref<RenderTarget> target = RenderTarget::Create(rtDesc);
 
@@ -121,11 +145,11 @@ namespace Snowstorm
 		{
 			TextureDesc whiteDesc{};
 			whiteDesc.Dimension = TextureDimension::Texture2D;
-			whiteDesc.Format = TextureFormat::RGBA8_UNorm;
+			whiteDesc.Format = PixelFormat::RGBA8_UNorm;
 			whiteDesc.Usage = TextureUsage::Sampled | TextureUsage::TransferDst;
 			whiteDesc.Width = 1;
 			whiteDesc.Height = 1;
-			whiteDesc.DebugName = "DefaultWhite";
+			whiteDesc.DebugName = "WhiteTex";
 
 			Ref<Texture> whiteTex = Texture::Create(whiteDesc);
 
@@ -147,11 +171,11 @@ namespace Snowstorm
 			vb.InputRate = VertexInputRate::PerVertex;
 			vb.Stride = sizeof(Vertex);
 			vb.Attributes = {
-				{ .Location = 0, .Format = VertexFormat::Float3, .Offset = static_cast<uint32_t>(offsetof(Vertex, Position)) },
-				{ .Location = 1, .Format = VertexFormat::Float3, .Offset = static_cast<uint32_t>(offsetof(Vertex, Normal)) },
-				{ .Location = 2, .Format = VertexFormat::Float2, .Offset = static_cast<uint32_t>(offsetof(Vertex, TexCoord)) },
+				{.Location = 0, .Format = VertexFormat::Float3, .Offset = static_cast<uint32_t>(offsetof(Vertex, Position))},
+				{.Location = 1, .Format = VertexFormat::Float3, .Offset = static_cast<uint32_t>(offsetof(Vertex, Normal))},
+				{.Location = 2, .Format = VertexFormat::Float2, .Offset = static_cast<uint32_t>(offsetof(Vertex, TexCoord))},
 			};
-			vertexLayout.Buffers = { vb };
+			vertexLayout.Buffers = {vb};
 
 			auto MakeLitPipeline = [&](const Ref<Shader>& shader) -> Ref<Pipeline>
 			{
@@ -159,8 +183,14 @@ namespace Snowstorm
 				p.Type = PipelineType::Graphics;
 				p.Shader = shader;
 				p.VertexLayout = vertexLayout;
-				p.ColorFormats = { PipelineFormat::RGBA8_sRGB };
-				p.DepthFormat = PipelineFormat::Unknown;
+				p.ColorFormats = {Renderer::GetSurfaceFormat()};
+
+				// Enable Depth
+				p.DepthFormat = PixelFormat::D32_Float;
+				p.DepthStencil.EnableDepthTest = true;
+				p.DepthStencil.EnableDepthWrite = true;
+				p.DepthStencil.DepthCompare = CompareOp::Less; // Standard for 1.0 clear depth
+
 				p.HasStencil = false;
 
 				p.DebugName = "DefaultLitPipeline";
@@ -173,8 +203,12 @@ namespace Snowstorm
 				p.Type = PipelineType::Graphics;
 				p.Shader = shader;
 				p.VertexLayout = vertexLayout;
-				p.ColorFormats = { PipelineFormat::RGBA8_sRGB };
-				p.DepthFormat = PipelineFormat::Unknown;
+				p.ColorFormats = {Renderer::GetSurfaceFormat()};
+
+				p.DepthFormat = PixelFormat::D32_Float;
+				p.DepthStencil.EnableDepthTest = false;
+				p.DepthStencil.EnableDepthWrite = false;
+
 				p.HasStencil = false;
 
 				p.DebugName = "MandelbrotPipeline";
@@ -191,17 +225,17 @@ namespace Snowstorm
 			const Ref<Material> redMaterial = CreateRef<Material>(litPipeline);
 			const Ref<Material> blueMaterial = CreateRef<Material>(litPipeline);
 
-			whiteMaterial->SetTextureView(0, defaultWhiteView);
-			redMaterial->SetTextureView(0, defaultWhiteView);
-			blueMaterial->SetTextureView(0, defaultWhiteView);
+			whiteMaterial->SetAlbedoTexture(defaultWhiteView);
+			redMaterial->SetAlbedoTexture(defaultWhiteView);
+			blueMaterial->SetAlbedoTexture(defaultWhiteView);
 
 			redMaterial->SetBaseColor({1.0f, 0.0f, 0.0f, 1.0f});
 			blueMaterial->SetBaseColor({0.0f, 0.0f, 1.0f, 1.0f});
 
 			// Create instances (per-entity)
 			const Ref<MaterialInstance> whiteMI = CreateRef<MaterialInstance>(whiteMaterial);
-			const Ref<MaterialInstance> redMI   = CreateRef<MaterialInstance>(redMaterial);
-			const Ref<MaterialInstance> blueMI  = CreateRef<MaterialInstance>(blueMaterial);
+			const Ref<MaterialInstance> redMI = CreateRef<MaterialInstance>(redMaterial);
+			const Ref<MaterialInstance> blueMI = CreateRef<MaterialInstance>(blueMaterial);
 
 			// Mandelbrot: base material + instance + convenience wrapper
 			const Ref<Material> mandelbrotBaseMaterial = CreateRef<Material>(mandelbrotPipeline);

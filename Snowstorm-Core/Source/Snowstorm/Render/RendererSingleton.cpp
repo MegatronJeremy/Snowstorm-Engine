@@ -115,6 +115,10 @@ namespace Snowstorm
 		// Bind pipeline + set=1 (Material) for this instance
 		batch.MaterialInstance->Apply(*commandContext, frameIndex);
 
+		// Bind engine globals
+		// called once per pipeline change or once per frame
+		commandContext->BindGlobalResources();
+
 		const Ref<Pipeline>& pipeline = batch.MaterialInstance->GetPipeline();
 		SS_CORE_ASSERT(pipeline, "MaterialInstance has no pipeline");
 
@@ -129,8 +133,6 @@ namespace Snowstorm
 
 		// One UBO per (pipeline, frameIndex). Keep it alive by storing it in a static map keyed by DescriptorSet*.
 		// This avoids adding more members to DescriptorSet for now.
-		static std::unordered_map<const DescriptorSet*, Ref<Buffer>> s_FrameUniformBuffers;
-
 		if (!perFrameFrameSets[frameIndex])
 		{
 			DescriptorSetDesc setDesc{};
@@ -138,14 +140,14 @@ namespace Snowstorm
 			perFrameFrameSets[frameIndex] = DescriptorSet::Create(setLayouts[0], setDesc);
 			SS_CORE_ASSERT(perFrameFrameSets[frameIndex], "Failed to create set=0 Frame DescriptorSet");
 
-			// Create the frame UBO backing this descriptor set
-			Ref<Buffer> frameUBO = Buffer::Create(sizeof(FrameCB), BufferUsage::Uniform, nullptr, true);
-			SS_CORE_ASSERT(frameUBO, "Failed to create FrameCB uniform buffer");
+			// Create the frame CB backing this descriptor set
+			Ref<Buffer> frameCB = Buffer::Create(sizeof(FrameCB), BufferUsage::Uniform, nullptr, true, "FrameCB");
+			SS_CORE_ASSERT(frameCB, "Failed to create FrameCB uniform buffer");
 
-			s_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()] = frameUBO;
+			m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()] = frameCB;
 
 			BufferBinding bb{};
-			bb.Buffer = frameUBO;
+			bb.Buffer = frameCB;
 			bb.Offset = 0;
 			bb.Range = sizeof(FrameCB);
 			perFrameFrameSets[frameIndex]->SetBuffer(0, bb);
@@ -159,7 +161,7 @@ namespace Snowstorm
 			frame.CameraPosition = m_CameraPosition;
 			frame.Lights = m_Lights;
 
-			Ref<Buffer>& frameUBO = s_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
+			Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
 			SS_CORE_ASSERT(frameUBO, "Frame UBO missing for frame descriptor set");
 			frameUBO->SetData(&frame, sizeof(FrameCB), 0);
 		}

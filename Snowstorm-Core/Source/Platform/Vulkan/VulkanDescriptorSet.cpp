@@ -10,35 +10,6 @@
 
 namespace Snowstorm
 {
-	namespace
-	{
-		VkDescriptorType ToVkDescriptorType(const DescriptorType type)
-		{
-			switch (type)
-			{
-			case DescriptorType::UniformBuffer: return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			case DescriptorType::UniformBufferDynamic: return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-			case DescriptorType::StorageBuffer: return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-			case DescriptorType::SampledImage: return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-			case DescriptorType::StorageImage: return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-			case DescriptorType::Sampler: return VK_DESCRIPTOR_TYPE_SAMPLER;
-			case DescriptorType::CombinedImageSampler: return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			}
-			return VK_DESCRIPTOR_TYPE_MAX_ENUM;
-		}
-
-		VkShaderStageFlags ToVkShaderStages(const ShaderStage stages)
-		{
-			VkShaderStageFlags flags = 0;
-
-			if (HasStage(stages, ShaderStage::Vertex)) flags |= VK_SHADER_STAGE_VERTEX_BIT;
-			if (HasStage(stages, ShaderStage::Fragment)) flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
-			if (HasStage(stages, ShaderStage::Compute)) flags |= VK_SHADER_STAGE_COMPUTE_BIT;
-
-			return flags;
-		}
-	}
-
 	const DescriptorBindingDesc* VulkanDescriptorSet::FindBinding(const uint32_t binding) const
 	{
 		const auto vkLayout = std::static_pointer_cast<VulkanDescriptorSetLayout>(m_Layout);
@@ -47,7 +18,9 @@ namespace Snowstorm
 		for (const auto& b : bindings)
 		{
 			if (b.Binding == binding)
+			{
 				return &b;
+			}
 		}
 		return nullptr;
 	}
@@ -56,7 +29,7 @@ namespace Snowstorm
 		: m_Layout(layout), m_Desc(std::move(desc))
 	{
 		SS_CORE_ASSERT(m_Layout, "VulkanDescriptorSet created with null layout");
-		m_Device = VulkanCommon::GetVulkanDevice();
+		m_Device = GetVulkanDevice();
 
 		CreatePoolAndAllocateSet();
 	}
@@ -122,6 +95,8 @@ namespace Snowstorm
 		{
 			return;
 		}
+
+		vkDeviceWaitIdle(m_Device);
 
 		if (m_Pool != VK_NULL_HANDLE)
 		{

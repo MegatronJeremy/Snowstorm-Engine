@@ -10,7 +10,7 @@
 #include "Snowstorm/Render/Sampler.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
-#include <glm/glm.hpp>
+#include "Math.hpp"
 
 namespace Snowstorm
 {
@@ -20,30 +20,33 @@ namespace Snowstorm
 		struct Constants
 		{
 			glm::vec4 BaseColor = glm::vec4(1.0f);
+			uint32_t AlbedoTextureIndex = 0;
+			uint32_t NormalTextureIndex = 0;
+			float Roughness = 1.0f;
+			float Metallic = 0.0f;
 		};
 
 		explicit Material(const Ref<Pipeline>& pipeline);
 
 		[[nodiscard]] const Ref<Pipeline>& GetPipeline() const { return m_Pipeline; }
 
-		// Defaults copied into MaterialInstance on construction
+		// Defaults
 		void SetBaseColor(const glm::vec4& color) { m_DefaultConstants.BaseColor = color; }
 		[[nodiscard]] const glm::vec4& GetBaseColor() const { return m_DefaultConstants.BaseColor; }
 
-		void SetTextureView(uint32_t slot, const Ref<TextureView>& view);
-		[[nodiscard]] Ref<TextureView> GetTextureView(uint32_t slot) const;
+		void SetAlbedoTexture(const Ref<TextureView>& view);
+		[[nodiscard]] Ref<TextureView> GetAlbedoTexture() const { return m_AlbedoTexture; }
 
 		void SetSampler(const Ref<Sampler>& sampler) { m_DefaultSampler = sampler; }
 		[[nodiscard]] const Ref<Sampler>& GetSampler() const { return m_DefaultSampler; }
 
-	private:
-		static constexpr uint32_t MAX_TEXTURE_SLOTS = 32;
+		[[nodiscard]] const Constants& GetDefaultConstants() const { return m_DefaultConstants; }
 
 	private:
 		Ref<Pipeline> m_Pipeline;
 
 		Constants m_DefaultConstants{};
-		std::array<Ref<TextureView>, MAX_TEXTURE_SLOTS> m_DefaultTextureViews{};
+		Ref<TextureView> m_AlbedoTexture; // Just a reference, not an array
 		Ref<Sampler> m_DefaultSampler;
 	};
 }

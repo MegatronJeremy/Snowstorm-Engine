@@ -19,6 +19,8 @@ namespace Snowstorm
 
 		VkCommandBuffer GetVulkanCommandBuffer() const { return m_CommandBuffer; }
 
+		void TransitionLayout(const Ref<Texture>& texture, VkImageLayout newLayout) const;
+
 		void BeginRenderPass(const RenderTarget& target) override;
 		void EndRenderPass() override;
 
@@ -37,6 +39,8 @@ namespace Snowstorm
 
 		void BindVertexBuffer(const Ref<Buffer>& vertexBuffer,
 		                      uint32_t binding = 0, uint64_t offset = 0) override;
+
+		void BindGlobalResources() override;
 
 		void PushConstants(const void* data, uint32_t size, uint32_t offset = 0) override;
 

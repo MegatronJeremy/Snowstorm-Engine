@@ -40,6 +40,12 @@ namespace Snowstorm
 
 		VkSwapchainKHR GetSwapchain() const { return m_Swapchain; }
 
+		VkFormat GetSwapchainFormat() const { return m_SwapchainFormat; }
+
+		VkExtent2D GetSwapchainExtent() const { return m_SwapchainExtent; }
+
+		std::vector<VkImage> GetSwapchainImages() const { return m_SwapchainImages; }
+
 	private:
 		// Vulkan core
 		VkInstance m_Instance = VK_NULL_HANDLE;
@@ -52,6 +58,9 @@ namespace Snowstorm
 		VmaAllocator m_Allocator = nullptr;
 
 		VkCommandPool m_GraphicsCommandPool = VK_NULL_HANDLE;
+
+		// Debug messenger
+		VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;
 
 		// Surface and swapchain
 		VkSurfaceKHR m_Surface = VK_NULL_HANDLE;

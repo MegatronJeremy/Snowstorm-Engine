@@ -6,7 +6,7 @@
 
 namespace Snowstorm
 {
-	VulkanBuffer::VulkanBuffer(const size_t size, const BufferUsage usage, const void* initialData, const bool hostVisible)
+	VulkanBuffer::VulkanBuffer(const size_t size, const BufferUsage usage, const void* initialData, const bool hostVisible, const std::string& debugName)
 		: m_Usage(usage), m_Size(size), m_HostVisible(hostVisible)
 	{
 		VkBufferUsageFlags usageFlags = 0;
@@ -44,11 +44,17 @@ namespace Snowstorm
 			// Frequently updated buffers (e.g., uniform) can safely stay mapped
 			allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
 			allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-				VMA_ALLOCATION_CREATE_MAPPED_BIT;
+			VMA_ALLOCATION_CREATE_MAPPED_BIT;
 		}
 		else
 		{
 			allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+		}
+
+		if (!debugName.empty())
+		{
+			allocInfo.flags |= VMA_ALLOCATION_CREATE_USER_DATA_COPY_STRING_BIT;
+			allocInfo.pUserData = (void*)debugName.c_str();
 		}
 
 		VkBufferCreateInfo bufferInfo{};
@@ -57,7 +63,7 @@ namespace Snowstorm
 		bufferInfo.usage = usageFlags;
 
 		VkResult result = vmaCreateBuffer(
-			VulkanCommon::GetAllocator(),
+			GetAllocator(),
 			&bufferInfo,
 			&allocInfo,
 			&m_Buffer,
@@ -68,7 +74,7 @@ namespace Snowstorm
 
 		// Query memory properties so we can decide whether flushing is needed
 		vmaGetAllocationMemoryProperties(
-			VulkanCommon::GetAllocator(),
+			GetAllocator(),
 			m_Allocation,
 			&m_MemoryProperties
 		);
@@ -81,7 +87,8 @@ namespace Snowstorm
 
 	VulkanBuffer::~VulkanBuffer()
 	{
-		vmaDestroyBuffer(VulkanCommon::GetAllocator(), m_Buffer, m_Allocation);
+		vkDeviceWaitIdle(GetVulkanDevice()); // TODO this is probably really bad practice, having it here and in other places 
+		vmaDestroyBuffer(GetAllocator(), m_Buffer, m_Allocation);
 	}
 
 	void* VulkanBuffer::Map()
@@ -92,7 +99,7 @@ namespace Snowstorm
 		}
 
 		void* data;
-		VkResult result = vmaMapMemory(VulkanCommon::GetAllocator(), m_Allocation, &data);
+		VkResult result = vmaMapMemory(GetAllocator(), m_Allocation, &data);
 		SS_CORE_ASSERT(result == VK_SUCCESS, "Failed to map Vulkan buffer memory");
 
 		return data;
@@ -105,12 +112,12 @@ namespace Snowstorm
 			// persistently mapped; only flush if memory is not HOST_COHERENT
 			if ((m_MemoryProperties & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
 			{
-				vmaFlushAllocation(VulkanCommon::GetAllocator(), m_Allocation, 0, VK_WHOLE_SIZE);
+				vmaFlushAllocation(GetAllocator(), m_Allocation, 0, VK_WHOLE_SIZE);
 			}
 			return;
 		}
 
-		vmaUnmapMemory(VulkanCommon::GetAllocator(), m_Allocation);
+		vmaUnmapMemory(GetAllocator(), m_Allocation);
 	}
 
 	void VulkanBuffer::SetData(const void* data, const size_t size, const size_t offset)
@@ -130,7 +137,7 @@ namespace Snowstorm
 		info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
 		info.buffer = m_Buffer;
 
-		return vkGetBufferDeviceAddress(VulkanCommon::GetVulkanDevice(), &info);
+		return vkGetBufferDeviceAddress(GetVulkanDevice(), &info);
 	}
 
 	void VulkanBuffer::SetDataInternal(const void* data, const size_t size, const size_t offset) const
@@ -150,7 +157,7 @@ namespace Snowstorm
 			// Only flush if the memory is not HOST_COHERENT
 			if ((m_MemoryProperties & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
 			{
-				vmaFlushAllocation(VulkanCommon::GetAllocator(), m_Allocation, offset, size);
+				vmaFlushAllocation(GetAllocator(), m_Allocation, offset, size);
 			}
 		}
 		else
@@ -164,16 +171,21 @@ namespace Snowstorm
 			stagingInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
 			VmaAllocationCreateInfo stagingAllocInfo{};
-			stagingAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+			stagingAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
 			stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-				VMA_ALLOCATION_CREATE_MAPPED_BIT;
+			VMA_ALLOCATION_CREATE_MAPPED_BIT |
+			VMA_ALLOCATION_CREATE_USER_DATA_COPY_STRING_BIT;
 
 			VkBuffer stagingBuffer = VK_NULL_HANDLE;
 			VmaAllocation stagingAllocation = nullptr;
 			VmaAllocationInfo stagingAllocInfoResult{};
 
+			static uint32_t debugCounter = 0;
+			auto name = std::string("VulkanBufferStaging ") + std::to_string(debugCounter++);
+			stagingAllocInfo.pUserData = (void*)name.c_str();
+
 			VkResult result = vmaCreateBuffer(
-				VulkanCommon::GetAllocator(),
+				GetAllocator(),
 				&stagingInfo,
 				&stagingAllocInfo,
 				&stagingBuffer,
@@ -188,28 +200,41 @@ namespace Snowstorm
 			// Flush staging if needed
 			VkMemoryPropertyFlags stagingProperties = 0;
 			vmaGetAllocationMemoryProperties(
-				VulkanCommon::GetAllocator(),
+				GetAllocator(),
 				stagingAllocation,
 				&stagingProperties
 			);
 
 			if ((stagingProperties & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
 			{
-				vmaFlushAllocation(VulkanCommon::GetAllocator(), stagingAllocation, 0, size);
+				vmaFlushAllocation(GetAllocator(), stagingAllocation, 0, size);
 			}
 
 			// Record and submit copy 
-			VulkanCommon::ImmediateSubmit([&](const VkCommandBuffer cmd)
+			ImmediateSubmit([&](const VkCommandBuffer cmd)
 			{
 				VkBufferCopy copyRegion{};
 				copyRegion.srcOffset = 0;
 				copyRegion.dstOffset = offset;
-				copyRegion.size      = size;
+				copyRegion.size = size;
 
 				vkCmdCopyBuffer(cmd, stagingBuffer, m_Buffer, 1, &copyRegion);
+
+				// Ensure the transfer is finished and visible to the vertex input stage
+				VkMemoryBarrier2 barrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+				barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+				barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+				barrier.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT;
+				barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+
+				VkDependencyInfo dep{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+				dep.memoryBarrierCount = 1;
+				dep.pMemoryBarriers = &barrier;
+
+				vkCmdPipelineBarrier2(cmd, &dep);
 			});
 
-			vmaDestroyBuffer(VulkanCommon::GetAllocator(), stagingBuffer, stagingAllocation);
+			vmaDestroyBuffer(GetAllocator(), stagingBuffer, stagingAllocation);
 		}
 	}
 }

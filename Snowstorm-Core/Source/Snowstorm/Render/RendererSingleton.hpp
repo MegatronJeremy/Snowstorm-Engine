@@ -64,5 +64,7 @@ namespace Snowstorm
 		// Cached per-pipeline sets, per frame-in-flight
 		std::unordered_map<const Pipeline*, std::vector<Ref<DescriptorSet>>> m_FrameSets;
 		std::unordered_map<const Pipeline*, std::vector<Ref<DescriptorSet>>> m_ObjectSets;
+
+		std::unordered_map<const DescriptorSet*, Ref<Buffer>> m_FrameUniformBuffers;
 	};
 }

@@ -25,15 +25,9 @@ namespace Snowstorm
 		SS_CORE_ASSERT(m_DefaultSampler, "Failed to create default material sampler");
 	}
 
-	void Material::SetTextureView(const uint32_t slot, const Ref<TextureView>& view)
+	void Material::SetAlbedoTexture(const Ref<TextureView>& view)
 	{
-		SS_CORE_ASSERT(slot < MAX_TEXTURE_SLOTS, "Texture slot out of range");
-		m_DefaultTextureViews[slot] = view;
-	}
-
-	Ref<TextureView> Material::GetTextureView(const uint32_t slot) const
-	{
-		SS_CORE_ASSERT(slot < MAX_TEXTURE_SLOTS, "Texture slot out of range");
-		return m_DefaultTextureViews[slot];
+		m_AlbedoTexture = view;
+		m_DefaultConstants.AlbedoTextureIndex = view ? view->GetGlobalBindlessIndex() : 0; 
 	}
 }

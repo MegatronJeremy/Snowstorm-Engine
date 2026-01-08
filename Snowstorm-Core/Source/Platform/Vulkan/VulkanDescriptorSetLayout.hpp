@@ -9,7 +9,8 @@ namespace Snowstorm
 	class VulkanDescriptorSetLayout final : public DescriptorSetLayout
 	{
 	public:
-		explicit VulkanDescriptorSetLayout(const DescriptorSetLayoutDesc& desc);
+		explicit VulkanDescriptorSetLayout(DescriptorSetLayoutDesc desc);
+		explicit VulkanDescriptorSetLayout(void* internalHandle);
 		~VulkanDescriptorSetLayout() override;
 
 		[[nodiscard]] const DescriptorSetLayoutDesc& GetDesc() const override { return m_Desc; }
@@ -22,5 +23,7 @@ namespace Snowstorm
 
 		VkDevice m_Device = VK_NULL_HANDLE;
 		VkDescriptorSetLayout m_Layout = VK_NULL_HANDLE;
+
+		bool m_IsLayoutOwner = true;
 	};
 }

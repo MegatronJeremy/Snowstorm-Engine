@@ -3,6 +3,8 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "Snowstorm/Render/Renderer.hpp"
+
 namespace Snowstorm
 {
 	SceneCamera::SceneCamera()

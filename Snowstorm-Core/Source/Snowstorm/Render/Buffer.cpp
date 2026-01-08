@@ -7,7 +7,7 @@
 
 namespace Snowstorm
 {
-	Ref<Buffer> Buffer::Create(size_t size, BufferUsage usage, const void* data, bool hostVisible)
+	Ref<Buffer> Buffer::Create(size_t size, BufferUsage usage, const void* data, bool hostVisible, const std::string& debugName)
 	{
 		switch (RendererAPI::GetAPI())
 		{
@@ -20,7 +20,7 @@ namespace Snowstorm
 			return nullptr;
 
 		case RendererAPI::API::Vulkan:
-			return CreateRef<VulkanBuffer>(size, usage, data, hostVisible);
+			return CreateRef<VulkanBuffer>(size, usage, data, hostVisible, debugName);
 
 		case RendererAPI::API::DX12:
 			SS_CORE_ASSERT(false, "RendererAPI::DX12 is currently not supported!");

@@ -35,6 +35,11 @@ namespace Snowstorm
 				// Use ImGui's viewport size
 				viewportWidth = static_cast<uint32_t>(viewport.Size.x);
 				viewportHeight = static_cast<uint32_t>(viewport.Size.y);
+
+				if (viewportWidth < 64 || viewportHeight < 64)
+				{
+					continue; 
+				}
 			}
 			else
 			{

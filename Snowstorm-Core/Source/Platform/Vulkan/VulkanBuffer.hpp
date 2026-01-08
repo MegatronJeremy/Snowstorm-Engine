@@ -9,7 +9,7 @@ namespace Snowstorm
 	class VulkanBuffer : public Buffer
 	{
 	public:
-		VulkanBuffer(size_t size, BufferUsage usage, const void* initialData, bool hostVisible);
+		VulkanBuffer(size_t size, BufferUsage usage, const void* initialData, bool hostVisible, const std::string& debugName);
 		~VulkanBuffer() override;
 
 		void* Map() override;

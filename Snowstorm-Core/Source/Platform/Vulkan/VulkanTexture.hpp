@@ -10,9 +10,17 @@ namespace Snowstorm
 	{
 	public:
 		explicit VulkanTexture(TextureDesc desc);
+		VulkanTexture(VkImage existingImage, TextureDesc desc);
+
 		~VulkanTexture() override;
 
 		[[nodiscard]] const TextureDesc& GetDesc() const override { return m_Desc; }
+
+		VkImageLayout GetReadyLayout() const;
+
+		VkImageAspectFlags GetAspectMask() const;
+
+		Ref<TextureView> GetDefaultView() override;
 
 		void SetData(const void* data, uint32_t size) override;
 
@@ -21,6 +29,9 @@ namespace Snowstorm
 		// Vulkan-specific accessors (used by VulkanTextureView / render targets)
 		[[nodiscard]] VkImage GetImage() const { return m_Image; }
 		[[nodiscard]] VkFormat GetVkFormat() const { return m_VkFormat; }
+
+		VkImageLayout GetCurrentLayout() const { return m_CurrentLayout; }
+		void SetCurrentLayout(VkImageLayout layout) { m_CurrentLayout = layout; }
 
 	private:
 		void CreateImageAndAllocate();
@@ -37,6 +48,8 @@ namespace Snowstorm
 		// Very small bit of state tracking to make SetData work.
 		// (If you have a proper resource state system later, remove this.)
 		VkImageLayout m_CurrentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+		std::weak_ptr<TextureView> m_DefaultView; // Cache the view
 	};
 
 	class VulkanTextureView final : public TextureView, public std::enable_shared_from_this<VulkanTextureView>

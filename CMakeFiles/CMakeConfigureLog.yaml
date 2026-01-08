@@ -6466,3 +6466,432 @@ events:
         - "C:/Program Files (x86)/Snowstorm"
       CMAKE_FIND_ROOT_PATH: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/debug;C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows"
 ...
+
+---
+events:
+  -
+    kind: "find_package-v1"
+    backtrace:
+      - "vcpkg/scripts/buildsystems/vcpkg.cmake:908 (_find_package)"
+      - "Snowstorm-Core/CMakeLists.txt:32 (find_package)"
+    name: "spirv-reflect"
+    configs:
+      -
+        filename: "spirv-reflectConfig.cmake"
+        kind: "cmake"
+      -
+        filename: "spirv-reflect-config.cmake"
+        kind: "cmake"
+    version_request:
+      exact: false
+    settings:
+      required: "required_explicit"
+      quiet: false
+      global: false
+      policy_scope: true
+      bypass_provider: false
+      names:
+        - "spirv-reflect"
+      path_suffixes:
+        - ""
+      paths:
+        CMAKE_FIND_USE_CMAKE_PATH: true
+        CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+        CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+        CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+        CMAKE_FIND_USE_INSTALL_PREFIX: true
+        CMAKE_FIND_USE_PACKAGE_ROOT_PATH: true
+        CMAKE_FIND_USE_CMAKE_PACKAGE_REGISTRY: true
+        CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY: true
+        CMAKE_FIND_ROOT_PATH_MODE: "BOTH"
+    candidates:
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/debug/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/debug/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/debug/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/debug/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/spirv-reflect/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/spirv-reflect/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/CMakeFiles/pkgRedirects/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/CMakeFiles/pkgRedirects/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/debug/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/debug/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/spirv-reflect/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/spirv-reflect/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/Alacritty/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/Alacritty/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Windows/System32/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Windows/System32/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Windows/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Windows/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Windows/System32/wbem/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Windows/System32/wbem/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Windows/System32/WindowsPowerShell/v1.0/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Windows/System32/WindowsPowerShell/v1.0/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Windows/System32/OpenSSH/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Windows/System32/OpenSSH/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/Microsoft VS Code/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/Microsoft VS Code/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/ProgramData/chocolatey/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/ProgramData/chocolatey/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/dotnet/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/dotnet/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/NVIDIA Corporation/NVIDIA App/NvDLISR/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/NVIDIA Corporation/NVIDIA App/NvDLISR/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files (x86)/NVIDIA Corporation/PhysX/Common/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files (x86)/NVIDIA Corporation/PhysX/Common/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/PuTTY/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/PuTTY/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/CMake/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/CMake/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files (x86)/Windows Kits/10/Windows Performance Toolkit/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files (x86)/Windows Kits/10/Windows Performance Toolkit/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/ProgramData/mingw64/mingw64/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/ProgramData/mingw64/mingw64/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files (x86)/Windows Kits/8.1/Windows Performance Toolkit/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files (x86)/Windows Kits/8.1/Windows Performance Toolkit/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Users/vudjordj/AppData/Local/Microsoft/WindowsApps/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Users/vudjordj/AppData/Local/Microsoft/WindowsApps/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Users/vudjordj/AppData/Local/Programs/Git/cmd/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Users/vudjordj/AppData/Local/Programs/Git/cmd/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Users/vudjordj/AppData/Local/JetBrains/Toolbox/scripts/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Users/vudjordj/AppData/Local/JetBrains/Toolbox/scripts/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/CMake/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files/CMake/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files (x86)/spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Program Files (x86)/spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+    found: null
+    search_context:
+      CMAKE_PREFIX_PATH:
+        - "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/debug"
+        - "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows"
+      ENV{PATH}:
+        - "C:\\Program Files\\Alacritty\\"
+        - "C:\\windows\\system32"
+        - "C:\\windows"
+        - "C:\\windows\\System32\\Wbem"
+        - "C:\\windows\\System32\\WindowsPowerShell\\v1.0\\"
+        - "C:\\windows\\System32\\OpenSSH\\"
+        - "C:\\Program Files\\Microsoft VS Code\\bin"
+        - "C:\\ProgramData\\chocolatey\\bin"
+        - "C:\\Program Files\\dotnet\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\NVIDIA App\\NvDLISR"
+        - "C:\\Program Files (x86)\\NVIDIA Corporation\\PhysX\\Common"
+        - "C:\\Program Files\\PuTTY\\"
+        - "C:\\Program Files\\CMake\\bin"
+        - "C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\"
+        - "C:\\ProgramData\\mingw64\\mingw64\\bin"
+        - "C:\\Program Files (x86)\\Windows Kits\\8.1\\Windows Performance Toolkit\\"
+        - "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\x64"
+        - "C:\\Users\\vudjordj\\AppData\\Local\\Microsoft\\WindowsApps"
+        - "C:\\Users\\vudjordj\\AppData\\Local\\Programs\\Git\\cmd"
+        - "C:\\Users\\vudjordj\\AppData\\Local\\JetBrains\\Toolbox\\scripts"
+        - "C:\\Users\\vudjordj\\.dotnet\\tools"
+        - "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\x64"
+      CMAKE_INSTALL_PREFIX: "C:/Program Files (x86)/Snowstorm"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "C:/Program Files"
+        - "C:/Program Files (x86)"
+        - "C:/Program Files/CMake"
+        - "C:/Program Files (x86)/Snowstorm"
+      CMAKE_FIND_ROOT_PATH: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/debug;C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows"
+...
+
+---
+events:
+  -
+    kind: "find_package-v1"
+    backtrace:
+      - "vcpkg/scripts/buildsystems/vcpkg.cmake:908 (_find_package)"
+      - "Snowstorm-Core/CMakeLists.txt:32 (find_package)"
+    name: "unofficial-spirv-reflect"
+    configs:
+      -
+        filename: "unofficial-spirv-reflectConfig.cmake"
+        kind: "cmake"
+      -
+        filename: "unofficial-spirv-reflect-config.cmake"
+        kind: "cmake"
+    version_request:
+      exact: false
+    settings:
+      required: "required_explicit"
+      quiet: false
+      global: false
+      policy_scope: true
+      bypass_provider: false
+      names:
+        - "unofficial-spirv-reflect"
+      path_suffixes:
+        - ""
+      paths:
+        CMAKE_FIND_USE_CMAKE_PATH: true
+        CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+        CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+        CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+        CMAKE_FIND_USE_INSTALL_PREFIX: true
+        CMAKE_FIND_USE_PACKAGE_ROOT_PATH: true
+        CMAKE_FIND_USE_CMAKE_PACKAGE_REGISTRY: true
+        CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY: true
+        CMAKE_FIND_ROOT_PATH_MODE: "BOTH"
+    candidates:
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/debug/unofficial-spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/debug/unofficial-spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/debug/unofficial-spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/debug/unofficial-spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/unofficial-spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/unofficial-spirv-reflect-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/unofficial-spirv-reflect/unofficial-spirv-reflectConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+    found:
+      path: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/unofficial-spirv-reflect/unofficial-spirv-reflect-config.cmake"
+      mode: "config"
+      version: ""
+    search_context:
+      CMAKE_PREFIX_PATH:
+        - "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/debug"
+        - "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows"
+      ENV{PATH}:
+        - "C:\\Program Files\\Alacritty\\"
+        - "C:\\windows\\system32"
+        - "C:\\windows"
+        - "C:\\windows\\System32\\Wbem"
+        - "C:\\windows\\System32\\WindowsPowerShell\\v1.0\\"
+        - "C:\\windows\\System32\\OpenSSH\\"
+        - "C:\\Program Files\\Microsoft VS Code\\bin"
+        - "C:\\ProgramData\\chocolatey\\bin"
+        - "C:\\Program Files\\dotnet\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\NVIDIA App\\NvDLISR"
+        - "C:\\Program Files (x86)\\NVIDIA Corporation\\PhysX\\Common"
+        - "C:\\Program Files\\PuTTY\\"
+        - "C:\\Program Files\\CMake\\bin"
+        - "C:\\Program Files (x86)\\Windows Kits\\10\\Windows Performance Toolkit\\"
+        - "C:\\ProgramData\\mingw64\\mingw64\\bin"
+        - "C:\\Program Files (x86)\\Windows Kits\\8.1\\Windows Performance Toolkit\\"
+        - "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\x64"
+        - "C:\\Users\\vudjordj\\AppData\\Local\\Microsoft\\WindowsApps"
+        - "C:\\Users\\vudjordj\\AppData\\Local\\Programs\\Git\\cmd"
+        - "C:\\Users\\vudjordj\\AppData\\Local\\JetBrains\\Toolbox\\scripts"
+        - "C:\\Users\\vudjordj\\.dotnet\\tools"
+        - "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\x64"
+      CMAKE_INSTALL_PREFIX: "C:/Program Files (x86)/Snowstorm"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "C:/Program Files"
+        - "C:/Program Files (x86)"
+        - "C:/Program Files/CMake"
+        - "C:/Program Files (x86)/Snowstorm"
+      CMAKE_FIND_ROOT_PATH: "C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/debug;C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows"
+...

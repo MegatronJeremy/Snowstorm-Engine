@@ -5,7 +5,9 @@
 #include <fstream>
 #include <algorithm>
 #include <numeric>
+#include <spirv_reflect.h>
 
+#include "VulkanBindlessManager.hpp"
 #include "VulkanDescriptorSetLayout.hpp"
 
 namespace Snowstorm
@@ -16,7 +18,6 @@ namespace Snowstorm
 		{
 			std::ifstream file(filename, std::ios::ate | std::ios::binary);
 			SS_CORE_ASSERT(file.is_open(), "Failed to open file!");
-
 			const size_t fileSize = file.tellg();
 			std::vector<char> buffer(fileSize);
 
@@ -52,108 +53,6 @@ namespace Snowstorm
 			return shaderModule;
 		}
 
-		VkFormat ToVkFormat(const PipelineFormat fmt)
-		{
-			switch (fmt)
-			{
-			case PipelineFormat::RGBA8_UNorm: return VK_FORMAT_R8G8B8A8_UNORM;
-			case PipelineFormat::RGBA8_sRGB: return VK_FORMAT_R8G8B8A8_SRGB;
-			case PipelineFormat::D32_Float: return VK_FORMAT_D32_SFLOAT;
-			case PipelineFormat::D24_UNorm_S8_UInt: return VK_FORMAT_D24_UNORM_S8_UINT;
-			case PipelineFormat::Unknown: break;
-			}
-			return VK_FORMAT_UNDEFINED;
-		}
-
-		VkPrimitiveTopology ToVkTopology(const PrimitiveTopology topo)
-		{
-			switch (topo)
-			{
-			case PrimitiveTopology::TriangleList: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-			case PrimitiveTopology::TriangleStrip: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
-			case PrimitiveTopology::LineList: return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-			case PrimitiveTopology::LineStrip: return VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
-			}
-			return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-		}
-
-		VkCullModeFlags ToVkCullMode(const CullMode cull)
-		{
-			switch (cull)
-			{
-			case CullMode::None: return VK_CULL_MODE_NONE;
-			case CullMode::Front: return VK_CULL_MODE_FRONT_BIT;
-			case CullMode::Back: return VK_CULL_MODE_BACK_BIT;
-			}
-			return VK_CULL_MODE_BACK_BIT;
-		}
-
-		VkFrontFace ToVkFrontFace(const FrontFace face)
-		{
-			switch (face)
-			{
-			case FrontFace::CounterClockwise: return VK_FRONT_FACE_COUNTER_CLOCKWISE;
-			case FrontFace::Clockwise: return VK_FRONT_FACE_CLOCKWISE;
-			}
-			return VK_FRONT_FACE_COUNTER_CLOCKWISE;
-		}
-
-		VkCompareOp ToVkCompareOp(const CompareOp op)
-		{
-			switch (op)
-			{
-			case CompareOp::Never: return VK_COMPARE_OP_NEVER;
-			case CompareOp::Less: return VK_COMPARE_OP_LESS;
-			case CompareOp::Equal: return VK_COMPARE_OP_EQUAL;
-			case CompareOp::LessOrEqual: return VK_COMPARE_OP_LESS_OR_EQUAL;
-			case CompareOp::Greater: return VK_COMPARE_OP_GREATER;
-			case CompareOp::NotEqual: return VK_COMPARE_OP_NOT_EQUAL;
-			case CompareOp::GreaterOrEqual: return VK_COMPARE_OP_GREATER_OR_EQUAL;
-			case CompareOp::Always: return VK_COMPARE_OP_ALWAYS;
-			}
-			return VK_COMPARE_OP_LESS_OR_EQUAL;
-		}
-
-		VkFormat ToVkVertexFormat(const VertexFormat fmt)
-		{
-			switch (fmt)
-			{
-			case VertexFormat::Float: return VK_FORMAT_R32_SFLOAT;
-			case VertexFormat::Float2: return VK_FORMAT_R32G32_SFLOAT;
-			case VertexFormat::Float3: return VK_FORMAT_R32G32B32_SFLOAT;
-			case VertexFormat::Float4: return VK_FORMAT_R32G32B32A32_SFLOAT;
-
-			case VertexFormat::UInt: return VK_FORMAT_R32_UINT;
-			case VertexFormat::UInt2: return VK_FORMAT_R32G32_UINT;
-			case VertexFormat::UInt3: return VK_FORMAT_R32G32B32_UINT;
-			case VertexFormat::UInt4: return VK_FORMAT_R32G32B32A32_UINT;
-
-			case VertexFormat::UByte4_Norm: return VK_FORMAT_R8G8B8A8_UNORM;
-
-			case VertexFormat::Unknown: break;
-			}
-			return VK_FORMAT_UNDEFINED;
-		}
-
-		VkVertexInputRate ToVkInputRate(const VertexInputRate rate)
-		{
-			switch (rate)
-			{
-			case VertexInputRate::PerVertex: return VK_VERTEX_INPUT_RATE_VERTEX;
-			case VertexInputRate::PerInstance: return VK_VERTEX_INPUT_RATE_INSTANCE;
-			}
-			return VK_VERTEX_INPUT_RATE_VERTEX;
-		}
-
-		VkShaderStageFlags ToVkShaderStages(const PipelineShaderStage stages)
-		{
-			VkShaderStageFlags flags = 0;
-			if (HasStage(stages, PipelineShaderStage::Vertex)) flags |= VK_SHADER_STAGE_VERTEX_BIT;
-			if (HasStage(stages, PipelineShaderStage::Fragment)) flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
-			if (HasStage(stages, PipelineShaderStage::Compute)) flags |= VK_SHADER_STAGE_COMPUTE_BIT;
-			return flags;
-		}
-
 		struct Range
 		{
 			uint32_t Begin = 0;
@@ -175,7 +74,7 @@ namespace Snowstorm
 			{
 				SS_CORE_ASSERT(r.Size > 0, "PushConstantRangeDesc.Size must be > 0");
 				SS_CORE_ASSERT((r.Offset % 4) == 0 && (r.Size % 4) == 0, "Push constants offset/size must be multiples of 4");
-				SS_CORE_ASSERT(r.Stages != PipelineShaderStage::None, "PushConstantRangeDesc.Stages must not be None");
+				SS_CORE_ASSERT(r.Stages != ShaderStage::None, "PushConstantRangeDesc.Stages must not be None");
 
 				Range rr{};
 				rr.Begin = r.Offset;
@@ -241,7 +140,7 @@ namespace Snowstorm
 		// --- Set 1: Material ---
 		DescriptorSetLayoutDesc material{};
 		material.SetIndex = 1;
-		material.DebugName = "Set1_Material";
+		material.DebugName = "Set1_Material_Bindless";
 		material.Bindings = {
 			DescriptorBindingDesc{
 				.Binding = 0,
@@ -252,13 +151,6 @@ namespace Snowstorm
 			},
 			DescriptorBindingDesc{
 				.Binding = 1,
-				.Type = DescriptorType::SampledImage,
-				.Count = 32,
-				.Visibility = ShaderStage::Fragment,
-				.DebugName = "Textures[32]"
-			},
-			DescriptorBindingDesc{
-				.Binding = 2,
 				.Type = DescriptorType::Sampler,
 				.Count = 1,
 				.Visibility = ShaderStage::Fragment,
@@ -283,6 +175,11 @@ namespace Snowstorm
 		};
 		m_SetLayouts.push_back(DescriptorSetLayout::Create(object));
 		SS_CORE_ASSERT(m_SetLayouts[2], "Failed to create object DescriptorSetLayout");
+
+		// --- Set 3: Global Bindless Textures ---
+		// We use the layout from the manager so it matches exactly
+		auto bindlessHandle = VulkanBindlessManager::Get().GetLayout();
+		m_SetLayouts.push_back(DescriptorSetLayout::CreateFromExternal(bindlessHandle));
 	}
 
 	VulkanGraphicsPipeline::VulkanGraphicsPipeline(PipelineDesc desc)
@@ -292,7 +189,7 @@ namespace Snowstorm
 		SS_CORE_ASSERT(!m_Desc.ColorFormats.empty(), "Graphics pipeline requires at least one color format (dynamic rendering)");
 		SS_CORE_ASSERT(m_Desc.Shader, "PipelineDesc.Shader must be set");
 
-		m_Device = VulkanCommon::GetVulkanDevice();
+		m_Device = GetVulkanDevice();
 
 		// --- Shader modules ---
 		const std::string vertPath = m_Desc.Shader->GetCompiledPath(ShaderStageKind::Vertex);
@@ -321,6 +218,26 @@ namespace Snowstorm
 
 		VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
 
+		// --- SPIR-V Reflection for Vertex Input ---
+		SpvReflectShaderModule reflectModule;
+		SpvReflectResult reflectResult = spvReflectCreateShaderModule(vertCode.size(), vertCode.data(), &reflectModule);
+		SS_CORE_ASSERT(reflectResult == SPV_REFLECT_RESULT_SUCCESS, "Failed to reflect SPIR-V shader");
+
+		uint32_t inputVarCount = 0;
+		spvReflectEnumerateInputVariables(&reflectModule, &inputVarCount, nullptr);
+		std::vector<SpvReflectInterfaceVariable*> inputVars(inputVarCount);
+		spvReflectEnumerateInputVariables(&reflectModule, &inputVarCount, inputVars.data());
+
+		std::vector<uint32_t> activeLocations;
+		for (const auto* var : inputVars) {
+			// Skip built-ins like gl_VertexIndex
+			if (var->decoration_flags & SPV_REFLECT_DECORATION_BUILT_IN)
+			{
+				continue;
+			}
+			activeLocations.push_back(var->location);
+		}
+
 		// --- Vertex input ---
 		std::vector<VkVertexInputBindingDescription> bindings;
 		std::vector<VkVertexInputAttributeDescription> attributes;
@@ -339,17 +256,24 @@ namespace Snowstorm
 
 			for (const VertexAttributeDesc& a : b.Attributes)
 			{
-				const VkFormat fmt = ToVkVertexFormat(a.Format);
-				SS_CORE_ASSERT(fmt != VK_FORMAT_UNDEFINED, "Unknown/unsupported vertex attribute format");
+				// Only add the attribute if the shader actually uses this location
+				if (std::ranges::find(activeLocations, a.Location) != activeLocations.end())
+				{
+					const VkFormat fmt = ToVkVertexFormat(a.Format);
+					SS_CORE_ASSERT(fmt != VK_FORMAT_UNDEFINED, "Unknown/unsupported vertex attribute format");
 
-				VkVertexInputAttributeDescription ad{};
-				ad.location = a.Location;
-				ad.binding = b.Binding;
-				ad.format = fmt;
-				ad.offset = a.Offset;
-				attributes.push_back(ad);
+					VkVertexInputAttributeDescription ad{};
+					ad.location = a.Location;
+					ad.binding = b.Binding;
+					ad.format = fmt;
+					ad.offset = a.Offset;
+					attributes.push_back(ad);
+				}
 			}
 		}
+
+		// Cleanup reflection
+		spvReflectDestroyShaderModule(&reflectModule);
 
 		VkPipelineVertexInputStateCreateInfo vertexInput{};
 		vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -478,15 +402,15 @@ namespace Snowstorm
 		// --- Dynamic rendering formats ---
 		std::vector<VkFormat> colorVkFormats;
 		colorVkFormats.reserve(m_Desc.ColorFormats.size());
-		for (PipelineFormat f : m_Desc.ColorFormats)
+		for (PixelFormat f : m_Desc.ColorFormats)
 		{
 			const VkFormat vkf = ToVkFormat(f);
 			SS_CORE_ASSERT(vkf != VK_FORMAT_UNDEFINED, "Unknown/unsupported color format in pipeline");
 			colorVkFormats.push_back(vkf);
 		}
 
-		const VkFormat depthVkFormat = (m_Desc.DepthFormat != PipelineFormat::Unknown) ? ToVkFormat(m_Desc.DepthFormat) : VK_FORMAT_UNDEFINED;
-		if (m_Desc.DepthFormat != PipelineFormat::Unknown)
+		const VkFormat depthVkFormat = (m_Desc.DepthFormat != PixelFormat::Unknown) ? ToVkFormat(m_Desc.DepthFormat) : VK_FORMAT_UNDEFINED;
+		if (m_Desc.DepthFormat != PixelFormat::Unknown)
 		{
 			SS_CORE_ASSERT(depthVkFormat != VK_FORMAT_UNDEFINED, "Unknown/unsupported depth format in pipeline");
 		}
@@ -513,7 +437,7 @@ namespace Snowstorm
 		pipeCI.pViewportState = &viewportState;
 		pipeCI.pRasterizationState = &raster;
 		pipeCI.pMultisampleState = &msaa;
-		pipeCI.pDepthStencilState = (m_Desc.DepthFormat != PipelineFormat::Unknown) ? &depthStencil : nullptr;
+		pipeCI.pDepthStencilState = (m_Desc.DepthFormat != PixelFormat::Unknown) ? &depthStencil : nullptr;
 		pipeCI.pColorBlendState = &blend;
 		pipeCI.pDynamicState = &dynamicState;
 
@@ -532,12 +456,14 @@ namespace Snowstorm
 	{
 		if (m_Pipeline != VK_NULL_HANDLE)
 		{
+			vkDeviceWaitIdle(m_Device);
 			vkDestroyPipeline(m_Device, m_Pipeline, nullptr);
 			m_Pipeline = VK_NULL_HANDLE;
 		}
 
 		if (m_PipelineLayout != VK_NULL_HANDLE)
 		{
+			vkDeviceWaitIdle(m_Device);
 			vkDestroyPipelineLayout(m_Device, m_PipelineLayout, nullptr);
 			m_PipelineLayout = VK_NULL_HANDLE;
 		}

@@ -49,25 +49,59 @@ namespace Snowstorm
 			SplitResult r{};
 			std::istringstream iss(src);
 			std::string line;
+
+			std::string vertexSource;
+			std::string fragmentSource;
+			std::string sharedDefinitions;
+
 			Section cur = Section::None;
 
 			while (std::getline(iss, line))
 			{
-				if (line.starts_with("#type"))
+				std::string trimmed = line;
+				trimmed.erase(0, trimmed.find_first_not_of(" \t")); // basic trim
+
+				// 1. Detect Stage Markers
+				if (trimmed.starts_with("#type"))
 				{
-					if (line.find("vertex") != std::string::npos) cur = Section::Vertex;
-					else if (line.find("fragment") != std::string::npos) cur = Section::Fragment;
+					if (trimmed.find("vertex") != std::string::npos) cur = Section::Vertex;
+					else if (trimmed.find("fragment") != std::string::npos) cur = Section::Fragment;
 					else cur = Section::None;
 					continue;
 				}
 
+				// 2. Detect shared constructs (structs, cbuffers, samplers, etc.)
+				// If we find a definition while inside a specific stage, we'll treat it as shared
+				// unless it's strictly local to a function (which we assume isn't the case for 'cbuffer')
+				bool isSharedConstruct = trimmed.starts_with("struct") ||
+				trimmed.starts_with("cbuffer") ||
+				trimmed.starts_with("Texture2D") ||
+				trimmed.starts_with("SamplerState") ||
+				trimmed.starts_with("static const");
+
+				// Note: This is a simple scanner. A more complex one would track { } braces.
+				// For now, we'll append global lines to sharedDefinitions.
+				if (cur == Section::None || isSharedConstruct)
+				{
+					// If it's a cbuffer or struct, we often want the whole block. 
+					// In your current shader style, these are at the top or between sections.
+				}
+
+				// For your current engine architecture, let's stick to the "Global Header" 
+				// but make it easier by moving definitions out of the stages in the HLSL files.
 				switch (cur)
 				{
-				case Section::Vertex:   r.Vertex.append(line).push_back('\n'); break;
-				case Section::Fragment: r.Fragment.append(line).push_back('\n'); break;
-				default: break;
+				case Section::None: sharedDefinitions.append(line).push_back('\n');
+					break;
+				case Section::Vertex: vertexSource.append(line).push_back('\n');
+					break;
+				case Section::Fragment: fragmentSource.append(line).push_back('\n');
+					break;
 				}
 			}
+
+			r.Vertex = sharedDefinitions + vertexSource;
+			r.Fragment = sharedDefinitions + fragmentSource;
 
 			return r;
 		}
@@ -244,11 +278,23 @@ namespace Snowstorm
 			const std::wstring in = inputHlsl.wstring();
 			const std::wstring out = outputSpv.wstring();
 
+			const fs::path includePath = GetRepoRoot() / "assets" / "shaders";
+			const std::wstring includePathW = includePath.wstring();
+
 			std::wstring cmd;
 			cmd += QuoteArg(exe);
 			cmd += L" -spirv -E main -T ";
 			cmd += profile;
 			cmd += L" -fspv-target-env=vulkan1.2 -fvk-use-dx-layout -Zpr";
+
+			// --- DEBUG FLAGS ---
+			// -Zi: Include debug information
+			// -Od: Disable optimizations (makes debugging MUCH easier)
+			// -fspv-debug=vulkan-with-source: Specific SPIR-V debug info
+			cmd += L" -Zi -Od -fspv-debug=vulkan-with-source";
+
+			cmd += L" -I ";
+			cmd += QuoteArg(includePathW);
 			cmd += L" -Fo ";
 			cmd += QuoteArg(out);
 			cmd += L" ";
@@ -314,7 +360,7 @@ namespace Snowstorm
 			}
 
 			// Cache key: hash(source text + fixed flags). Later include: include file contents, defines, etc.
-			constexpr const char* kFlagsKey = "spirv_vulkan1.2_fvk-use-dx-layout_Zpr_vs6_ps6_main";
+			constexpr const char* kFlagsKey = "v2_spirv_vulkan1.2_fvk-use-dx-layout_Zpr_vs6_ps6_main";
 			uint64_t h = 0;
 			h ^= Hash64(fullText.data(), fullText.size());
 			h ^= Hash64(kFlagsKey, std::strlen(kFlagsKey));
@@ -351,10 +397,14 @@ namespace Snowstorm
 			}
 
 			if (!CompileStageWithDxc(dxcExe, tmpVert, outVert, L"vs_6_0"))
+			{
 				return false;
+			}
 
 			if (!CompileStageWithDxc(dxcExe, tmpFrag, outFrag, L"ps_6_0"))
+			{
 				return false;
+			}
 
 			outVertSpv = outVert.string();
 			outFragSpv = outFrag.string();

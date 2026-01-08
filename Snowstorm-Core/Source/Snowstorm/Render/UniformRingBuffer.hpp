@@ -33,7 +33,7 @@ namespace Snowstorm
 
 			Shutdown();
 
-			m_Buffer = Buffer::Create(totalSizeBytes, BufferUsage::Uniform, nullptr, true);
+			m_Buffer = Buffer::Create(totalSizeBytes, BufferUsage::Uniform, nullptr, true, "UniformRingBuffer");
 			SS_CORE_ASSERT(m_Buffer, "UniformRingBuffer::Init failed to create host-visible uniform buffer");
 
 			m_Mapped = static_cast<std::byte*>(m_Buffer->Map());

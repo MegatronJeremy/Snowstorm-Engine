@@ -17,12 +17,6 @@ namespace Snowstorm
 		[[nodiscard]] VkSampler GetHandle() const { return m_Sampler; }
 
 	private:
-		static VkFilter ToVkFilter(Filter f);
-		static VkSamplerMipmapMode ToVkMipmapMode(SamplerMipmapMode m);
-		static VkSamplerAddressMode ToVkAddressMode(SamplerAddressMode a);
-		static VkCompareOp ToVkCompareOp(CompareOp op);
-
-	private:
 		SamplerDesc m_Desc{};
 		VkDevice m_Device = VK_NULL_HANDLE;
 		VkSampler m_Sampler = VK_NULL_HANDLE;

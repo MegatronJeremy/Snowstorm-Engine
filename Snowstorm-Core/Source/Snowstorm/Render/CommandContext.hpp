@@ -1,12 +1,9 @@
 ﻿#pragma once
 
 #include "Snowstorm/Render/Buffer.hpp"
-#include "Snowstorm/Render/Shader.hpp"
 #include "Snowstorm/Render/RenderTarget.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Render/DescriptorSet.hpp"
-
-#include <glm/glm.hpp>
 
 namespace Snowstorm
 {
@@ -35,6 +32,8 @@ namespace Snowstorm
 		                               uint32_t dynamicOffsetCount) = 0;
 
 		virtual void BindVertexBuffer(const Ref<Buffer>& vertexBuffer, uint32_t binding = 0, uint64_t offset = 0) = 0;
+
+		virtual void BindGlobalResources() = 0;
 
 		virtual void PushConstants(const void* data, uint32_t size, uint32_t offset = 0) = 0;
 

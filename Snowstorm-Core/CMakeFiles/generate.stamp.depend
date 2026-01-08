@@ -47,6 +47,9 @@ C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/spdlog/spdlogConfigTar
 C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/spdlog/spdlogConfigVersion.cmake
 C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/stb/FindStb.cmake
 C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/stb/vcpkg-cmake-wrapper.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/unofficial-spirv-reflect/unofficial-spirv-reflect-config-debug.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/unofficial-spirv-reflect/unofficial-spirv-reflect-config-release.cmake
+C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/unofficial-spirv-reflect/unofficial-spirv-reflect-config.cmake
 C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/volk/volkConfig.cmake
 C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/volk/volkConfigVersion.cmake
 C:/Dev/Snowstorm-Engine/vcpkg/installed/x64-windows/share/volk/volkTargets-debug.cmake

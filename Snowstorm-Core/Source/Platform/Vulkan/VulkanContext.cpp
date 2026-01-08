@@ -14,10 +14,16 @@
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
-#define VK_CHECK(expr)                               \
-{                                                    \
-	VkResult _vk_result = (expr);                    \
-	SS_CORE_ASSERT(_vk_result == VK_SUCCESS);        \
+#include "VulkanBindlessManager.hpp"
+
+#define VK_CHECK(expr)                                       \
+{                                                            \
+VkResult _vk_result = (expr);                                \
+	if (_vk_result != VK_SUCCESS)                            \
+	{                                                        \
+		SS_CORE_ERROR("Vulkan Error: {0}", (int)_vk_result); \
+		SS_CORE_ASSERT(_vk_result == VK_SUCCESS);            \
+	}                                                        \
 }
 
 namespace Snowstorm
@@ -40,6 +46,42 @@ namespace Snowstorm
 			SS_CORE_ASSERT(volkRes == VK_SUCCESS, "Failed to initialize Volk loader");
 		}
 
+		bool enableValidationLayers = true; // Usually wrapped in #ifndef NDEBUG
+		const char* validationLayers[] = {
+			"VK_LAYER_KHRONOS_validation"
+		};
+
+		//-- Check if layers are actually available
+		uint32_t layerCount;
+		vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+		std::vector<VkLayerProperties> availableLayers(layerCount);
+		vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+		bool layersFound = true;
+		for (const char* layerName : validationLayers)
+		{
+			bool layerFound = false;
+			for (const auto& layerProperties : availableLayers)
+			{
+				if (strcmp(layerName, layerProperties.layerName) == 0)
+				{
+					layerFound = true;
+					break;
+				}
+			}
+			if (!layerFound)
+			{
+				layersFound = false;
+				break;
+			}
+		}
+
+		if (enableValidationLayers && !layersFound)
+		{
+			SS_CORE_WARN("Validation layers requested, but not available! Disabling...");
+			enableValidationLayers = false;
+		}
+
 		// 1. Instance
 		VkApplicationInfo appInfo{};
 		appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -52,14 +94,52 @@ namespace Snowstorm
 		uint32_t glfwExtCount = 0;
 		const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtCount);
 
+		std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtCount);
+		if (enableValidationLayers) {
+			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+		}
+
 		VkInstanceCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 		createInfo.pApplicationInfo = &appInfo;
-		createInfo.enabledExtensionCount = glfwExtCount;
-		createInfo.ppEnabledExtensionNames = glfwExtensions;
+		createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+		createInfo.ppEnabledExtensionNames = extensions.data();
+
+		if (enableValidationLayers)
+		{
+			createInfo.enabledLayerCount = static_cast<uint32_t>(std::size(validationLayers));
+			createInfo.ppEnabledLayerNames = validationLayers;
+		}
+		else
+		{
+			createInfo.enabledLayerCount = 0;
+		}
 
 		VK_CHECK(vkCreateInstance(&createInfo, nullptr, &m_Instance));
 		volkLoadInstance(m_Instance);
+
+		if (enableValidationLayers)
+		{
+			VkDebugUtilsMessengerCreateInfoEXT debugInfo{};
+			debugInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+			debugInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+			VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+			VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+			debugInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+			VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+			VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+			debugInfo.pfnUserCallback = [](VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+			                               VkDebugUtilsMessageTypeFlagsEXT type,
+			                               const VkDebugUtilsMessengerCallbackDataEXT* data,
+			                               void* user) -> VkBool32
+			{
+				SS_CORE_ERROR("Vulkan Validation Layer: {0}", data->pMessage);
+				SS_CORE_ASSERT(false, "Validation failed!");
+				return VK_TRUE;
+			};
+
+			VK_CHECK(vkCreateDebugUtilsMessengerEXT(m_Instance, &debugInfo, nullptr, &m_DebugMessenger));
+		}
 
 		// 2. Surface (GLFW)
 		GLFWwindow* glfwWindow = static_cast<GLFWwindow*>(m_WindowHandle);
@@ -103,7 +183,17 @@ namespace Snowstorm
 		queueCreate.pQueuePriorities = &queuePriority;
 
 		// Core features (extend as needed)
-		VkPhysicalDeviceFeatures features{};
+		VkPhysicalDeviceFeatures supportedFeatures{};
+		vkGetPhysicalDeviceFeatures(m_PhysicalDevice, &supportedFeatures);
+
+		VkPhysicalDeviceFeatures enabledFeatures{};
+		if (supportedFeatures.samplerAnisotropy) {
+			enabledFeatures.samplerAnisotropy = VK_TRUE;
+		} else {
+			SS_CORE_WARN("Anisotropy not supported by hardware!"); // virtually supported by every GPU since 2010
+		}
+
+		enabledFeatures.samplerAnisotropy = VK_TRUE; // enabled by default in most engines
 
 		// Common device extensions
 		const char* deviceExtensions[] = {
@@ -116,16 +206,24 @@ namespace Snowstorm
 		devInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 		devInfo.queueCreateInfoCount = 1;
 		devInfo.pQueueCreateInfos = &queueCreate;
-		devInfo.pEnabledFeatures = &features;
+		devInfo.pEnabledFeatures = &enabledFeatures;
 		devInfo.enabledExtensionCount = static_cast<uint32_t>(std::size(deviceExtensions));
 		devInfo.ppEnabledExtensionNames = deviceExtensions;
 
 		// Enable Dynamic Rendering and Buffer Device Address features
 		VkPhysicalDeviceVulkan13Features features13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
 		features13.dynamicRendering = VK_TRUE;
+		features13.synchronization2 = VK_TRUE;
 
 		VkPhysicalDeviceVulkan12Features features12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
 		features12.bufferDeviceAddress = VK_TRUE;
+
+		// Bindless texture features
+		features12.descriptorBindingPartiallyBound = VK_TRUE;
+		features12.runtimeDescriptorArray = VK_TRUE;
+		features12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+		features12.descriptorIndexing = VK_TRUE;
+
 		features12.pNext = &features13;
 
 		devInfo.pNext = &features12;
@@ -145,6 +243,23 @@ namespace Snowstorm
 		VmaVulkanFunctions vmaFunctions{};
 		vmaFunctions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
 		vmaFunctions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+		vmaFunctions.vkGetPhysicalDeviceProperties = vkGetPhysicalDeviceProperties;
+		vmaFunctions.vkGetPhysicalDeviceMemoryProperties = vkGetPhysicalDeviceMemoryProperties;
+		vmaFunctions.vkAllocateMemory = vkAllocateMemory;
+		vmaFunctions.vkFreeMemory = vkFreeMemory;
+		vmaFunctions.vkMapMemory = vkMapMemory;
+		vmaFunctions.vkUnmapMemory = vkUnmapMemory;
+		vmaFunctions.vkFlushMappedMemoryRanges = vkFlushMappedMemoryRanges;
+		vmaFunctions.vkInvalidateMappedMemoryRanges = vkInvalidateMappedMemoryRanges;
+		vmaFunctions.vkBindBufferMemory = vkBindBufferMemory;
+		vmaFunctions.vkBindImageMemory = vkBindImageMemory;
+		vmaFunctions.vkGetBufferMemoryRequirements = vkGetBufferMemoryRequirements;
+		vmaFunctions.vkGetImageMemoryRequirements = vkGetImageMemoryRequirements;
+		vmaFunctions.vkCreateBuffer = vkCreateBuffer;
+		vmaFunctions.vkDestroyBuffer = vkDestroyBuffer;
+		vmaFunctions.vkCreateImage = vkCreateImage;
+		vmaFunctions.vkDestroyImage = vkDestroyImage;
+		vmaFunctions.vkCmdCopyBuffer = vkCmdCopyBuffer;
 
 		VmaAllocatorCreateInfo allocatorInfo{};
 		allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
@@ -158,17 +273,30 @@ namespace Snowstorm
 
 		VK_CHECK(vmaCreateAllocator(&allocatorInfo, &m_Allocator));
 
+		VulkanBindlessManager::Get().Init();
+
 		// 7. Swapchain (minimal version)
 		VkSurfaceCapabilitiesKHR caps;
 		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_PhysicalDevice, m_Surface, &caps);
 		m_SwapchainExtent = caps.currentExtent;
 
-		VkSurfaceFormatKHR surfaceFormat;
 		uint32_t formatCount = 0;
 		vkGetPhysicalDeviceSurfaceFormatsKHR(m_PhysicalDevice, m_Surface, &formatCount, nullptr);
 		std::vector<VkSurfaceFormatKHR> formats(formatCount);
 		vkGetPhysicalDeviceSurfaceFormatsKHR(m_PhysicalDevice, m_Surface, &formatCount, formats.data());
-		surfaceFormat = formats[0];
+
+		// --- PROPER SELECTION LOGIC ---
+		VkSurfaceFormatKHR surfaceFormat = formats[0]; // fallback
+		for (const auto& availableFormat : formats)
+		{
+			// We prefer BGRA8_UNORM with SRGB_NONLINEAR for standard desktop compatibility
+			if (availableFormat.format == VK_FORMAT_B8G8R8A8_UNORM &&
+				availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+			{
+				surfaceFormat = availableFormat;
+				break;
+			}
+		}
 		m_SwapchainFormat = surfaceFormat.format;
 
 		VkSwapchainCreateInfoKHR swapInfo{};
@@ -179,11 +307,11 @@ namespace Snowstorm
 		swapInfo.imageColorSpace = surfaceFormat.colorSpace;
 		swapInfo.imageExtent = m_SwapchainExtent;
 		swapInfo.imageArrayLayers = 1;
-		swapInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+		swapInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 		swapInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		swapInfo.preTransform = caps.currentTransform;
 		swapInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-		swapInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+		swapInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR; // TODO Vsync is on -> make this configurable
 		swapInfo.clipped = VK_TRUE;
 
 		VK_CHECK(vkCreateSwapchainKHR(m_Device, &swapInfo, nullptr, &m_Swapchain));
@@ -220,14 +348,26 @@ namespace Snowstorm
 
 		vkDestroySwapchainKHR(m_Device, m_Swapchain, nullptr);
 		vkDestroySurfaceKHR(m_Instance, m_Surface, nullptr);
-		vmaDestroyAllocator(m_Allocator);
 
 		if (m_GraphicsCommandPool != VK_NULL_HANDLE)
 		{
 			vkDestroyCommandPool(m_Device, m_GraphicsCommandPool, nullptr);
 		}
 
+		if (m_DebugMessenger != VK_NULL_HANDLE)
+		{
+			vkDestroyDebugUtilsMessengerEXT(m_Instance, m_DebugMessenger, nullptr);
+		}
+
+		// char* statsString;
+		// vmaBuildStatsString(m_Allocator, &statsString, VK_TRUE);
+		// SS_CORE_INFO("VMA Leak Report: {0}", statsString);
+		// vmaFreeStatsString(m_Allocator, statsString);
+
+		vmaDestroyAllocator(m_Allocator);
+
 		vkDestroyDevice(m_Device, nullptr);
+
 		vkDestroyInstance(m_Instance, nullptr);
 	}
 }

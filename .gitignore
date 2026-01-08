@@ -4,9 +4,12 @@
 .venv/
 Binaries/
 build/
-Snowstorm-Core/Source/Platform/OpenGL/backends
 Vendor/Binaries
 vcpkg/
+Assets/cache
+x64/
+*.CMakeFiles/
+*.dir/
 
 # Files
 *.vcxproj
@@ -15,8 +18,11 @@ vcpkg/
 *.sln
 *.log
 *.json
-*.exe
 *.DotSettings
 *.DotSettings.user
 *.ini
+*.cmake
+CMakeCache.txt
+ALL_BUILD.*
+ZERO_CHECK.*
 Makefile

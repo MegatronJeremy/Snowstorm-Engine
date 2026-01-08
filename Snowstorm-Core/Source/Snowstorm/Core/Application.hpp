@@ -18,7 +18,7 @@ namespace Snowstorm
 
 		void OnEvent(Event& e);
 
-		void PushLayer(Layer* layer);
+		void PushLayer(Layer* layer) const;
 
 		Window& GetWindow() const { return *m_Window; }
 
@@ -38,7 +38,7 @@ namespace Snowstorm
 		Scope<Window> m_Window;
 		bool m_Running = true;
 		bool m_Minimized = false;
-		LayerStack m_LayerStack;
+		Scope<LayerStack> m_LayerStack;
 		float m_LastFrameTime = 0.0f;
 
 		static Application* s_Instance;

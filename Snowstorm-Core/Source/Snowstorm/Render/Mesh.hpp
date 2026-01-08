@@ -1,7 +1,8 @@
 #pragma once
 
 #include <vector>
-#include <glm/glm.hpp>
+
+#include "Math.hpp"
 
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/Buffer.hpp"

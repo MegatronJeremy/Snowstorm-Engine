@@ -1,5 +1,6 @@
 ﻿#include "VulkanCommandContext.hpp"
 
+#include "VulkanBindlessManager.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/Log.hpp"
 
@@ -13,8 +14,8 @@ namespace Snowstorm
 {
 	VulkanCommandContext::VulkanCommandContext()
 	{
-		const VkDevice device = VulkanCommon::GetVulkanDevice();
-		const VkCommandPool pool = VulkanCommon::GetGraphicsCommandPool();
+		const VkDevice device = GetVulkanDevice();
+		const VkCommandPool pool = GetGraphicsCommandPool();
 
 		VkCommandBufferAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -28,8 +29,8 @@ namespace Snowstorm
 
 	VulkanCommandContext::~VulkanCommandContext()
 	{
-		const VkDevice device = VulkanCommon::GetVulkanDevice();
-		const VkCommandPool pool = VulkanCommon::GetGraphicsCommandPool();
+		const VkDevice device = GetVulkanDevice();
+		const VkCommandPool pool = GetGraphicsCommandPool();
 
 		if (m_CommandBuffer != VK_NULL_HANDLE)
 		{
@@ -66,6 +67,63 @@ namespace Snowstorm
 		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to end Vulkan command buffer");
 	}
 
+	void VulkanCommandContext::TransitionLayout(const Ref<Texture>& texture, VkImageLayout newLayout) const
+	{
+		auto vkTex = std::static_pointer_cast<VulkanTexture>(texture);
+		VkImageLayout oldLayout = vkTex->GetCurrentLayout();
+
+		// Redirect layout if this is a depth/stencil aspect
+		const VkImageAspectFlags aspect = vkTex->GetAspectMask();
+		const bool isDepth = (aspect & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0;
+
+		if (isDepth && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+		{
+			newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+		}
+
+		if (oldLayout == newLayout) return;
+
+		VkImageMemoryBarrier2 barrier{ .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+
+		// Define stages and access based on layouts
+		// This is a simplified version of a state-to-access mapping table
+		if (newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+		{
+			barrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+			barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+		}
+		else if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+		{
+			barrier.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+			barrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		}
+		else if (newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL || newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+		{
+			barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+			barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+		}
+		else if (newLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
+		{
+			barrier.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+			barrier.dstAccessMask = 0;
+		}
+
+		barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+		barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+
+		barrier.oldLayout = oldLayout;
+		barrier.newLayout = newLayout;
+		barrier.image = vkTex->GetImage();
+		barrier.subresourceRange = {vkTex->GetAspectMask(), 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
+
+		VkDependencyInfo dep{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+		dep.imageMemoryBarrierCount = 1;
+		dep.pImageMemoryBarriers = &barrier;
+
+		vkCmdPipelineBarrier2(m_CommandBuffer, &dep);
+		vkTex->SetCurrentLayout(newLayout);
+	}
+
 	void VulkanCommandContext::BeginRenderPass(const RenderTarget& target)
 	{
 		SS_CORE_ASSERT(!m_IsRendering, "BeginRenderPass called while already rendering");
@@ -73,6 +131,7 @@ namespace Snowstorm
 		// Dynamic rendering path
 		const auto& vkTarget = dynamic_cast<const VulkanRenderTarget&>(target);
 
+		// 1. Begin rendering
 		VkRenderingInfo renderingInfo{};
 		renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
 		renderingInfo.renderArea.offset = {.x = 0, .y = 0 };
@@ -86,9 +145,6 @@ namespace Snowstorm
 		renderingInfo.pDepthAttachment = vkTarget.GetDepthAttachmentInfo();
 		renderingInfo.pStencilAttachment = vkTarget.GetStencilAttachmentInfo();
 
-		// NOTE: This does NOT insert image layout transitions. For correctness, the images must
-		// already be in COLOR_ATTACHMENT_OPTIMAL / DEPTH_ATTACHMENT_OPTIMAL / etc.
-		// We can add transitions once VulkanTexture exposes the current layout state (or you add a resource barrier system).
 		vkCmdBeginRendering(m_CommandBuffer, &renderingInfo);
 		m_IsRendering = true;
 
@@ -113,6 +169,8 @@ namespace Snowstorm
 	                                       const float width, const float height,
 	                                       const float minDepth, const float maxDepth)
 	{
+		// Modern Vulkan: To flip Y without flipping the projection matrix in C++,
+		// we set Y to the height and height to negative.
 		const VkViewport viewport{
 			.x        = x,
 			.y        = y,
@@ -121,6 +179,7 @@ namespace Snowstorm
 			.minDepth = minDepth,
 			.maxDepth = maxDepth
 		};
+
 		vkCmdSetViewport(m_CommandBuffer, 0, 1, &viewport);
 	}
 
@@ -131,6 +190,7 @@ namespace Snowstorm
 			.offset = { static_cast<int32_t>(x), static_cast<int32_t>(y) },
 			.extent = { width, height }
 		};
+
 		vkCmdSetScissor(m_CommandBuffer, 0, 1, &scissor);
 	}
 
@@ -138,7 +198,7 @@ namespace Snowstorm
 	{
 		SS_CORE_ASSERT(pipeline, "BindPipeline called with null pipeline");
 
-		// Graphics only for now
+		// TODO Graphics only for now, implement later
 		m_CurrentGraphicsPipeline = std::static_pointer_cast<VulkanGraphicsPipeline>(pipeline);
 
 		vkCmdBindPipeline(m_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_CurrentGraphicsPipeline->GetHandle());
@@ -224,6 +284,18 @@ namespace Snowstorm
 		const VkDeviceSize offs = offset;
 
 		vkCmdBindVertexBuffers(m_CommandBuffer, binding, 1, &buf, &offs);
+	}
+
+	void VulkanCommandContext::BindGlobalResources()
+	{
+		SS_CORE_ASSERT(m_CurrentPipelineLayout != VK_NULL_HANDLE, "Must bind pipeline before global resources");
+
+		// Bind Set 3 (Bindless)
+		VkDescriptorSet bindlessSet = VulkanBindlessManager::Get().GetDescriptorSet();
+		vkCmdBindDescriptorSets(m_CommandBuffer,
+		                        m_CurrentBindPoint,
+		                        m_CurrentPipelineLayout,
+		                        3, 1, &bindlessSet, 0, nullptr);
 	}
 
 	void VulkanCommandContext::Draw(const uint32_t vertexCount, const uint32_t instanceCount,

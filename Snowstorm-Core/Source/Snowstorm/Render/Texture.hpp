@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 
+#include "RenderEnums.hpp"
 #include "Snowstorm/Core/Base.hpp"
 
 namespace Snowstorm
@@ -12,19 +13,6 @@ namespace Snowstorm
 		Unknown = 0,
 		Texture2D,
 		TextureCube,
-	};
-
-	enum class TextureFormat : uint8_t
-	{
-		Unknown = 0,
-
-		// Color
-		RGBA8_UNorm,
-		RGBA8_sRGB,
-
-		// Depth/stencil
-		D32_Float,
-		D24_UNorm_S8_UInt,
 	};
 
 	enum class TextureUsage : uint8_t
@@ -64,9 +52,9 @@ namespace Snowstorm
 
 	struct TextureDesc
 	{
-		TextureDimension Dimension = TextureDimension::Texture2D;
-		TextureFormat    Format    = TextureFormat::RGBA8_sRGB;
-		TextureUsage     Usage     = TextureUsage::Sampled | TextureUsage::TransferDst;
+		TextureDimension	Dimension	= TextureDimension::Texture2D;
+		PixelFormat			Format		= PixelFormat::RGBA8_UNorm;
+		TextureUsage		Usage		= TextureUsage::Sampled | TextureUsage::TransferDst;
 
 		uint32_t Width       = 1;
 		uint32_t Height      = 1;
@@ -74,26 +62,28 @@ namespace Snowstorm
 		uint32_t ArrayLayers = 1; // Cube usually 6 (or 6*N for cube arrays)
 		uint32_t SampleCount = 1;
 
-		std::string DebugName;
+		std::string DebugName = "UnnamedTexture";
 	};
 
 	struct TextureViewDesc
 	{
 		// If Unknown/Auto, view inherits from texture where possible
-		TextureDimension Dimension = TextureDimension::Unknown;
-		TextureFormat    Format    = TextureFormat::Unknown;
-		TextureAspect    Aspect    = TextureAspect::Auto;
+		TextureDimension	Dimension	= TextureDimension::Unknown;
+		PixelFormat			Format		= PixelFormat::Unknown;
+		TextureAspect		Aspect		= TextureAspect::Auto;
 
-		uint32_t BaseMipLevel = 0;
-		uint32_t MipLevelCount = 1;
+		uint32_t BaseMipLevel	= 0;
+		uint32_t MipLevelCount	= 1;
 
-		uint32_t BaseArrayLayer = 0;
-		uint32_t ArrayLayerCount = 1;
+		uint32_t BaseArrayLayer		= 0;
+		uint32_t ArrayLayerCount	= 1;
 
-		std::string DebugName;
+		std::string DebugName =	"UnnamedTextureView";
 	};
 
-	class Texture
+	class TextureView;
+
+	class Texture : public std::enable_shared_from_this<Texture>
 	{
 	public:
 		virtual ~Texture() = default;
@@ -104,6 +94,8 @@ namespace Snowstorm
 		Texture& operator=(Texture&&) = delete;
 
 		[[nodiscard]] virtual const TextureDesc& GetDesc() const = 0;
+
+		[[nodiscard]] virtual Ref<TextureView> GetDefaultView() = 0;
 
 		[[nodiscard]] uint32_t GetWidth() const  { return GetDesc().Width; }
 		[[nodiscard]] uint32_t GetHeight() const { return GetDesc().Height; }
@@ -125,6 +117,9 @@ namespace Snowstorm
 	public:
 		virtual ~TextureView() = default;
 
+		[[nodiscard]] uint32_t GetGlobalBindlessIndex() const { return m_GlobalBindlessIndex; }
+		void SetGlobalBindlessIndex(uint32_t index) { m_GlobalBindlessIndex = index; }
+
 		TextureView(const TextureView&) = delete;
 		TextureView(TextureView&&) = delete;
 		TextureView& operator=(const TextureView&) = delete;
@@ -143,6 +138,9 @@ namespace Snowstorm
 
 	protected:
 		TextureView() = default;
+
+	private:
+		uint32_t m_GlobalBindlessIndex = 0;
 	};
 
 	// Convenience helpers (optional, but keeps call sites tidy)

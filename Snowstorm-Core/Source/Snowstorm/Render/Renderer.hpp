@@ -20,11 +20,18 @@ namespace Snowstorm
 		static uint32_t GetCurrentFrameIndex();
 		static uint32_t GetFramesInFlight();
 
+		static PixelFormat GetSurfaceFormat();
+
+		static Ref<RenderTarget> GetSwapchainTarget();
+
 		static UniformRingBuffer& GetFrameUniformRing();
 
 		static uint32_t GetMinUniformBufferOffsetAlignment();
 
 		static Ref<CommandContext> GetGraphicsCommandContext();
+
+		static Ref<DescriptorSetLayout> GetUITextureLayout();
+		static Ref<Sampler> GetUISampler();
 
 		static void InitImGuiBackend(void* windowHandle);
 		static void ShutdownImGuiBackend();

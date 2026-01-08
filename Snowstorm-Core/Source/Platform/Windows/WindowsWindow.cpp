@@ -44,14 +44,7 @@ namespace Snowstorm
 	{
 		SS_PROFILE_FUNCTION();
 
-		if (enabled)
-		{
-			glfwSwapInterval(1);
-		}
-		else
-		{
-			glfwSwapInterval(0);
-		}
+		// TODO make this actually enable/disable vsync in the backend
 
 		m_Data.VSync = enabled;
 	}

@@ -27,6 +27,8 @@ namespace Snowstorm
 		// TODO think about this (but it's probably fine)
 		m_ServiceManager = CreateScope<ServiceManager>();
 
+		m_LayerStack = CreateScope<LayerStack>();
+
 		Renderer::Init(m_Window->GetNativeWindow());
 
 		InitializeRTTR();
@@ -36,10 +38,14 @@ namespace Snowstorm
 	{
 		SS_PROFILE_FUNCTION();
 
-		Renderer::Shutdown();
+		m_LayerStack.reset();
 
-		m_ServiceManager.reset(); // TODO kind of a hack in order to guarantee correct shutdown order
+		Renderer::ShutdownImGuiBackend();
+
+		m_ServiceManager.reset();
+
 		m_Window.reset();
+		Renderer::Shutdown();
 	}
 
 	void Application::Run()
@@ -61,7 +67,7 @@ namespace Snowstorm
 
 				m_ServiceManager->ExecuteUpdate(ts);
 
-				for (Layer* layer : m_LayerStack)
+				for (Layer* layer : *m_LayerStack)
 				{
 					layer->OnUpdate(ts);
 				}
@@ -86,17 +92,17 @@ namespace Snowstorm
 			return;
 		}
 
-		for (const auto& it : std::ranges::reverse_view(m_LayerStack))
+		for (const auto& it : std::ranges::reverse_view(*m_LayerStack))
 		{
 			it->OnEvent(e);
 		}
 	}
 
-	void Application::PushLayer(Layer* layer)
+	void Application::PushLayer(Layer* layer) const
 	{
 		SS_PROFILE_FUNCTION();
 
-		m_LayerStack.PushLayer(layer);
+		m_LayerStack->PushLayer(layer);
 		layer->OnAttach();
 	}
 

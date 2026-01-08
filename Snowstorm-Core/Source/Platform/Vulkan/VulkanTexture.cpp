@@ -1,122 +1,37 @@
 #include "VulkanTexture.hpp"
 
+#include "VulkanBindlessManager.hpp"
 #include "VulkanDescriptorSet.hpp"
 #include "VulkanSampler.hpp"
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
 
 namespace Snowstorm
 {
-	namespace
-	{
-		bool IsDepthFormat(const TextureFormat fmt)
-		{
-			return fmt == TextureFormat::D32_Float || fmt == TextureFormat::D24_UNorm_S8_UInt;
-		}
-
-		VkFormat ToVkFormat(const TextureFormat fmt)
-		{
-			switch (fmt)
-			{
-			case TextureFormat::RGBA8_UNorm:      return VK_FORMAT_R8G8B8A8_UNORM;
-			case TextureFormat::RGBA8_sRGB:       return VK_FORMAT_R8G8B8A8_SRGB;
-			case TextureFormat::D32_Float:        return VK_FORMAT_D32_SFLOAT;
-			case TextureFormat::D24_UNorm_S8_UInt:return VK_FORMAT_D24_UNORM_S8_UINT;
-			case TextureFormat::Unknown:          break;
-			}
-			return VK_FORMAT_UNDEFINED;
-		}
-
-		VkImageUsageFlags ToVkUsage(const TextureUsage usage, const TextureFormat fmt)
-		{
-			VkImageUsageFlags flags = 0;
-
-			if (HasUsage(usage, TextureUsage::Sampled))         flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
-			if (HasUsage(usage, TextureUsage::Storage))         flags |= VK_IMAGE_USAGE_STORAGE_BIT;
-			if (HasUsage(usage, TextureUsage::TransferSrc))     flags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-			if (HasUsage(usage, TextureUsage::TransferDst))     flags |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-			if (HasUsage(usage, TextureUsage::ColorAttachment)) flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-			if (HasUsage(usage, TextureUsage::DepthStencil))    flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-
-			// Sensible default: if you're going to upload data, you almost always want TransferDst
-			// (won't override explicit None; it just helps avoid "why can't I copy?" pain).
-			if (flags == 0 && !IsDepthFormat(fmt))
-			{
-				flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
-			}
-
-			return flags;
-		}
-
-		VkImageAspectFlags ToVkAspect(const TextureAspect aspect, const TextureFormat fmt)
-		{
-			if (aspect == TextureAspect::Auto)
-			{
-				if (fmt == TextureFormat::D24_UNorm_S8_UInt) return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-				if (IsDepthFormat(fmt)) return VK_IMAGE_ASPECT_DEPTH_BIT;
-				return VK_IMAGE_ASPECT_COLOR_BIT;
-			}
-
-			switch (aspect)
-			{
-			case TextureAspect::Color:        return VK_IMAGE_ASPECT_COLOR_BIT;
-			case TextureAspect::Depth:        return VK_IMAGE_ASPECT_DEPTH_BIT;
-			case TextureAspect::Stencil:      return VK_IMAGE_ASPECT_STENCIL_BIT;
-			case TextureAspect::DepthStencil: return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-			case TextureAspect::Auto:         break;
-			}
-
-			return VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-
-		void CmdTransitionImage(
-			VkCommandBuffer cmd,
-			VkImage image,
-			VkImageAspectFlags aspect,
-			VkImageLayout oldLayout,
-			VkImageLayout newLayout,
-			uint32_t mipLevels,
-			uint32_t layers)
-		{
-			VkImageMemoryBarrier2 barrier{};
-			barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-			barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-			barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
-			barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-			barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
-
-			barrier.oldLayout = oldLayout;
-			barrier.newLayout = newLayout;
-			barrier.image = image;
-
-			barrier.subresourceRange.aspectMask = aspect;
-			barrier.subresourceRange.baseMipLevel = 0;
-			barrier.subresourceRange.levelCount = mipLevels;
-			barrier.subresourceRange.baseArrayLayer = 0;
-			barrier.subresourceRange.layerCount = layers;
-
-			VkDependencyInfo dep{};
-			dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-			dep.imageMemoryBarrierCount = 1;
-			dep.pImageMemoryBarriers = &barrier;
-
-			vkCmdPipelineBarrier2(cmd, &dep);
-		}
-	}
-
 	VulkanTexture::VulkanTexture(TextureDesc desc)
 		: m_Desc(std::move(desc))
 	{
 		SS_CORE_ASSERT(m_Desc.Width > 0 && m_Desc.Height > 0, "Texture dimensions must be non-zero");
 
 		m_VkFormat = ToVkFormat(m_Desc.Format);
-		SS_CORE_ASSERT(m_VkFormat != VK_FORMAT_UNDEFINED, "Unsupported/unknown TextureFormat");
+		SS_CORE_ASSERT(m_VkFormat != VK_FORMAT_UNDEFINED, "Unsupported/unknown PixelFormat");
 
 		CreateImageAndAllocate();
 	}
 
+	VulkanTexture::VulkanTexture(const VkImage existingImage, TextureDesc desc)
+		: m_Desc(std::move(desc)), m_Image(existingImage)
+	{
+		m_VkFormat = ToVkFormat(m_Desc.Format);
+		m_CurrentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	}
+
 	VulkanTexture::~VulkanTexture()
 	{
-		DestroyImage();
+		if (m_Allocation) // only destroy if we allocated it
+		{
+			DestroyImage();
+		}
 	}
 
 	void VulkanTexture::CreateImageAndAllocate()
@@ -131,7 +46,9 @@ namespace Snowstorm
 
 			// If the user didn't set it, assume standard cube.
 			if (layers == 1)
+			{
 				layers = 6;
+			}
 		}
 
 		SS_CORE_ASSERT(m_Desc.MipLevels > 0, "MipLevels must be >= 1");
@@ -156,11 +73,11 @@ namespace Snowstorm
 		VmaAllocationCreateInfo allocCI{};
 		allocCI.usage = VMA_MEMORY_USAGE_AUTO;
 
-		// If it's only used as attachment, AUTO is fine. If you plan to Map(), you'd use host-visible.
+		// If it's only used as an attachment, AUTO is fine. If you plan to Map(), you'd use host-visible.
 		// For now, always device local; uploads go through staging in SetData().
 		allocCI.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
 
-		const VmaAllocator allocator = VulkanCommon::GetAllocator();
+		const VmaAllocator allocator = GetAllocator();
 
 		const VkResult res = vmaCreateImage(allocator, &imageCI, &allocCI, &m_Image, &m_Allocation, nullptr);
 		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to create Vulkan image via VMA");
@@ -173,7 +90,7 @@ namespace Snowstorm
 		if (m_Image == VK_NULL_HANDLE)
 			return;
 
-		const VmaAllocator allocator = VulkanCommon::GetAllocator();
+		const VmaAllocator allocator = GetAllocator();
 		vmaDestroyImage(allocator, m_Image, m_Allocation);
 
 		m_Image = VK_NULL_HANDLE;
@@ -181,6 +98,61 @@ namespace Snowstorm
 		m_CurrentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	}
 
+	VkImageLayout VulkanTexture::GetReadyLayout() const
+	{
+		const auto& desc = GetDesc();
+
+		// Priority 1: Depth/Stencil (Aspect-based check)
+		if (IsDepthFormat(desc.Format))
+		{
+			if (HasUsage(desc.Usage, TextureUsage::DepthStencil))
+				return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			
+			return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+		}
+
+		// Priority 2: Standard Shader Sampling
+		if (HasUsage(desc.Usage, TextureUsage::Sampled))
+			return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		// Priority 3: Compute / Storage
+		if (HasUsage(desc.Usage, TextureUsage::Storage))
+			return VK_IMAGE_LAYOUT_GENERAL;
+
+		// Priority 4: Render Target
+		if (HasUsage(desc.Usage, TextureUsage::ColorAttachment))
+			return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		// Priority 5: Transfer / Blit
+		if (HasUsage(desc.Usage, TextureUsage::TransferSrc))
+			return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
+		if (HasUsage(desc.Usage, TextureUsage::TransferDst))
+			return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+
+		return VK_IMAGE_LAYOUT_GENERAL;
+	}
+
+	VkImageAspectFlags VulkanTexture::GetAspectMask() const
+	{
+		// Derive aspect mask properly from the format
+		return ToVkAspect(TextureAspect::Auto, m_Desc.Format);
+	}
+
+	Ref<TextureView> VulkanTexture::GetDefaultView()
+	{
+		//-- Check if the cached view still exists
+		if (Ref<TextureView> view = m_DefaultView.lock())
+		{
+			return view;
+		}
+
+		//-- Otherwise, create a new one and cache it as a weak reference
+		const auto tex = shared_from_this();
+		Ref<TextureView> newView = TextureView::Create(tex, {});
+		m_DefaultView = newView;
+		return newView;
+	}
 
 	void VulkanTexture::SetData(const void* data, const uint32_t size)
 	{
@@ -192,8 +164,8 @@ namespace Snowstorm
 		SS_CORE_ASSERT(HasUsage(m_Desc.Usage, TextureUsage::TransferDst),
 		               "Texture must include TextureUsage::TransferDst to upload data");
 
-		const VkDevice device = VulkanCommon::GetVulkanDevice();
-		const VmaAllocator allocator = VulkanCommon::GetAllocator();
+		const VkDevice device = GetVulkanDevice();
+		const VmaAllocator allocator = GetAllocator();
 
 		// Create a staging buffer
 		VkBuffer staging = VK_NULL_HANDLE;
@@ -207,10 +179,17 @@ namespace Snowstorm
 
 		VmaAllocationCreateInfo stagingAllocCI{};
 		stagingAllocCI.usage = VMA_MEMORY_USAGE_AUTO;
-		stagingAllocCI.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-		                       VMA_ALLOCATION_CREATE_MAPPED_BIT;
+		stagingAllocCI.flags =
+		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+		VMA_ALLOCATION_CREATE_MAPPED_BIT |
+		VMA_ALLOCATION_CREATE_USER_DATA_COPY_STRING_BIT;
 
 		VmaAllocationInfo allocInfo{};
+
+		static uint32_t debugCounter = 0;
+		auto name = std::string("VulkanBufferTexture ") + std::to_string(debugCounter++);
+		stagingAllocCI.pUserData = (void*)name.c_str();
+
 		VkResult res = vmaCreateBuffer(allocator, &bufCI, &stagingAllocCI, &staging, &stagingAlloc, &allocInfo);
 		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to create staging buffer for texture upload");
 
@@ -218,7 +197,7 @@ namespace Snowstorm
 		vmaFlushAllocation(allocator, stagingAlloc, 0, size);
 
 		// Record copy into a one-off command buffer
-		const VkCommandPool pool = VulkanCommon::GetGraphicsCommandPool();
+		const VkCommandPool pool = GetGraphicsCommandPool();
 		VkCommandBuffer cmd = VK_NULL_HANDLE;
 
 		VkCommandBufferAllocateInfo allocCI2{};
@@ -260,19 +239,7 @@ namespace Snowstorm
 		vkCmdCopyBufferToImage(cmd, staging, m_Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
 		// Transition to a reasonable default for sampling if requested; otherwise keep general.
-		VkImageLayout finalLayout = VK_IMAGE_LAYOUT_GENERAL;
-		if (HasUsage(m_Desc.Usage, TextureUsage::Sampled))
-		{
-			finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		}
-		else if (HasUsage(m_Desc.Usage, TextureUsage::ColorAttachment))
-		{
-			finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		}
-		else if (HasUsage(m_Desc.Usage, TextureUsage::DepthStencil))
-		{
-			finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-		}
+		VkImageLayout finalLayout = GetReadyLayout();
 
 		CmdTransitionImage(cmd, m_Image, aspect, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, finalLayout, m_Desc.MipLevels, layers);
 		m_CurrentLayout = finalLayout;
@@ -281,7 +248,7 @@ namespace Snowstorm
 		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to end upload command buffer");
 
 		// Submit + wait (simple and safe; optimize later with per-frame upload queues)
-		const VkQueue queue = VulkanCommon::GetGraphicsQueue();
+		const VkQueue queue = GetGraphicsQueue();
 
 		VkSubmitInfo submit{};
 		submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -302,9 +269,13 @@ namespace Snowstorm
 	{
 		const auto* rhs = dynamic_cast<const VulkanTexture*>(&other);
 		if (!rhs)
+		{
 			return false;
+		}
 		return m_Image == rhs->m_Image;
 	}
+
+	//---------------------------------------------------------------------------------------------------------------------------------
 
 	VulkanTextureView::VulkanTextureView(const Ref<Texture>& texture, TextureViewDesc desc)
 		: m_Texture(texture), m_Desc(std::move(desc))
@@ -318,27 +289,34 @@ namespace Snowstorm
 		{
 			m_Desc.Dimension = vkTex->GetDesc().Dimension;
 		}
-		if (m_Desc.Format == TextureFormat::Unknown)
+
+		if (m_Desc.Format == PixelFormat::Unknown)
 		{
 			m_Desc.Format = vkTex->GetDesc().Format;
 		}
+
+		m_Desc.DebugName = vkTex->GetDesc().DebugName + " View: " + m_Desc.DebugName;
 
 		m_VkFormat = ToVkFormat(m_Desc.Format);
 		SS_CORE_ASSERT(m_VkFormat != VK_FORMAT_UNDEFINED, "Unsupported/unknown TextureView format");
 
 		m_AspectMask = ToVkAspect(m_Desc.Aspect, m_Desc.Format);
 
+		// SS_CORE_INFO("ALLOCATING ImageView: {0}", m_Desc.DebugName.c_str());
+
 		CreateImageView();
 	}
 
 	VulkanTextureView::~VulkanTextureView()
 	{
+		// SS_CORE_INFO("DESTROYING ImageView: {0}", m_Desc.DebugName.c_str());
+
 		DestroyImageView();
 	}
 
 	void VulkanTextureView::CreateImageView()
 	{
-		const VkDevice device = VulkanCommon::GetVulkanDevice();
+		const VkDevice device = GetVulkanDevice();
 		const auto vkTex = std::static_pointer_cast<VulkanTexture>(m_Texture);
 
 		VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -351,6 +329,25 @@ namespace Snowstorm
 		case TextureDimension::Unknown:
 			SS_CORE_ASSERT(false, "TextureView dimension cannot be Unknown at CreateImageView time");
 			break;
+		}
+
+		// --- Ensure the texture is in a usable state for the shader ---
+		// If the texture was just created and never had data set, it's still UNDEFINED.
+		if (vkTex->GetCurrentLayout() == VK_IMAGE_LAYOUT_UNDEFINED)
+		{
+			ImmediateSubmit([&](const VkCommandBuffer cmd)
+			{
+				const VkImageAspectFlags aspect = vkTex->GetAspectMask();
+				const VkImageLayout targetLayout = vkTex->GetReadyLayout();
+
+				CmdTransitionImage(cmd, vkTex->GetImage(), aspect,
+				                   VK_IMAGE_LAYOUT_UNDEFINED,
+				                   targetLayout,
+				                   vkTex->GetDesc().MipLevels,
+				                   vkTex->GetDesc().ArrayLayers);
+
+				vkTex->SetCurrentLayout(targetLayout);
+			});
 		}
 
 		VkImageViewCreateInfo viewCI{};
@@ -367,6 +364,20 @@ namespace Snowstorm
 
 		const VkResult res = vkCreateImageView(device, &viewCI, nullptr, &m_ImageView);
 		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to create VkImageView");
+
+		SetVulkanObjectName(device, reinterpret_cast<uint64_t>(m_ImageView), VK_OBJECT_TYPE_IMAGE_VIEW, m_Desc.DebugName.c_str());
+
+		// Only register with bindless if the texture is meant to be sampled
+		if (HasUsage(vkTex->GetDesc().Usage, TextureUsage::Sampled))
+		{
+			auto& bindless = VulkanBindlessManager::Get();
+			SetGlobalBindlessIndex(bindless.RegisterTexture(m_ImageView));
+		}
+		else
+		{
+			// Optional: Set a "null" or "invalid" index (like 0 or ~0) 
+			SetGlobalBindlessIndex(0); 
+		}
 	}
 
 	void VulkanTextureView::DestroyImageView()
@@ -374,7 +385,7 @@ namespace Snowstorm
 		if (m_ImageView == VK_NULL_HANDLE)
 			return;
 
-		const VkDevice device = VulkanCommon::GetVulkanDevice();
+		const VkDevice device = GetVulkanDevice();
 		vkDestroyImageView(device, m_ImageView, nullptr);
 		m_ImageView = VK_NULL_HANDLE;
 	}
@@ -383,29 +394,13 @@ namespace Snowstorm
 	{
 		if (!m_UIDescriptorSet)
 		{
-			// 1. Define the Layout for a standard UI Texture (1 CombinedImageSampler at binding 0)
-			// We use Set 0 here as this descriptor set is standalone for ImGui
-			DescriptorSetLayoutDesc layoutDesc;
-			layoutDesc.SetIndex = 0;
-			layoutDesc.DebugName = "ImGui_Texture_Layout";
+			const auto uiLayout = Renderer::GetUITextureLayout();
+			const auto uiSampler = Renderer::GetUISampler();
 
-			DescriptorBindingDesc binding;
-			binding.Binding = 0;
-			binding.Type = DescriptorType::CombinedImageSampler;
-			binding.Visibility = ShaderStage::Fragment;
-			binding.Count = 1;
-			layoutDesc.Bindings.push_back(binding);
-
-			static auto uiLayout = DescriptorSetLayout::Create(layoutDesc);
-
-			// 2. Create the Descriptor Set
 			DescriptorSetDesc setDesc;
 			setDesc.DebugName = "UI_Texture_DescriptorSet";
 			m_UIDescriptorSet = DescriptorSet::Create(uiLayout, setDesc);
 
-			// 3. Bind resources
-			static auto uiSampler = Sampler::Create({}); // Default linear/repeat sampler
-			
 			// We cast this to Ref<TextureView> which is the base type of VulkanTextureView
 			m_UIDescriptorSet->SetTexture(0, std::const_pointer_cast<VulkanTextureView>(shared_from_this()));
 			m_UIDescriptorSet->SetSampler(0, uiSampler);
@@ -420,7 +415,9 @@ namespace Snowstorm
 	{
 		const auto* rhs = dynamic_cast<const VulkanTextureView*>(&other);
 		if (!rhs)
+		{
 			return false;
+		}
 		return m_ImageView == rhs->m_ImageView;
 	}
 }

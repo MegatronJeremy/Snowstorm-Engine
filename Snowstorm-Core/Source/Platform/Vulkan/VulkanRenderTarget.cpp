@@ -73,6 +73,7 @@ namespace Snowstorm
 			TextureDesc texDesc = attachment.View->GetTexture()->GetDesc();
 			texDesc.Width = width;
 			texDesc.Height = height;
+			texDesc.DebugName = "ColorAttachment";
 
 			auto newTexture = Texture::Create(texDesc);
 			attachment.View = TextureView::Create(newTexture, attachment.View->GetDesc());
@@ -84,6 +85,7 @@ namespace Snowstorm
 			TextureDesc texDesc = d.View->GetTexture()->GetDesc();
 			texDesc.Width = width;
 			texDesc.Height = height;
+			texDesc.DebugName = "DepthAttachment";
 
 			auto newTexture = Texture::Create(texDesc);
 			d.View = TextureView::Create(newTexture, d.View->GetDesc());
@@ -132,7 +134,7 @@ namespace Snowstorm
 
 			const VkClearValue dsClear = MakeClearDepthStencil(d.ClearDepth, d.ClearStencil);
 
-			// Depth
+			//-- Depth
 			{
 				VkRenderingAttachmentInfo depthInfo{};
 				depthInfo.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;

@@ -8,7 +8,9 @@ namespace Snowstorm
 	LayerStack::~LayerStack()
 	{
 		for (const Layer* layer : m_Layers)
+		{
 			delete layer;
+		}
 	}
 
 	void LayerStack::PushLayer(Layer* layer)

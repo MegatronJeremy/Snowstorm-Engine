@@ -31,6 +31,6 @@ namespace Snowstorm
 
 		virtual BufferUsage GetUsage() const = 0;
 
-		static Ref<Buffer> Create(size_t size, BufferUsage usage, const void* initialData = nullptr, bool hostVisible = false);
+		static Ref<Buffer> Create(size_t size, BufferUsage usage, const void* initialData = nullptr, bool hostVisible = false, const std::string& debugName = "");
 	};
 }

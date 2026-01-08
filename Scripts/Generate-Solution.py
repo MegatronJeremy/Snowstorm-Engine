@@ -38,7 +38,7 @@ def main():
     packages = (
         "vulkan vulkan-validationlayers glfw3 glew spdlog fmt "
         "assimp glm stb entt imgui[vulkan-binding,glfw-binding,docking-experimental] "
-        "rttr gli volk vulkan-memory-allocator"
+        "rttr gli volk vulkan-memory-allocator spirv-reflect"
     )
 
     run_command(

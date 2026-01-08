@@ -28,6 +28,10 @@ namespace Snowstorm
 		// how many frames are in flight (N)
 		virtual uint32_t GetFramesInFlight() const = 0;
 
+		virtual PixelFormat GetSurfaceFormat() const = 0;
+
+		virtual Ref<RenderTarget> GetSwapchainTarget() const = 0;
+
 		// required alignment for dynamic uniform buffer offsets (bytes)
 		virtual uint32_t GetMinUniformBufferOffsetAlignment() const = 0;
 		// TODO turn this into GetCapabilities

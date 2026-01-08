@@ -40,27 +40,6 @@ namespace Snowstorm
 		Clockwise
 	};
 
-	// Push constants (Vulkan/DX12-friendly)
-	enum class PipelineShaderStage : uint32_t
-	{
-		None     = 0,
-		Vertex   = 1u << 0,
-		Fragment = 1u << 1,
-		Compute  = 1u << 2,
-		AllGraphics = Vertex | Fragment,
-		All = Vertex | Fragment | Compute,
-	};
-
-	constexpr PipelineShaderStage operator|(PipelineShaderStage a, PipelineShaderStage b)
-	{
-		return static_cast<PipelineShaderStage>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
-	}
-
-	constexpr bool HasStage(PipelineShaderStage value, PipelineShaderStage flag)
-	{
-		return (static_cast<uint32_t>(value) & static_cast<uint32_t>(flag)) != 0;
-	}
-
 	struct PushConstantRangeDesc
 	{
 		// Byte offset in push constant block
@@ -70,19 +49,7 @@ namespace Snowstorm
 		uint32_t Size = 0;
 
 		// Shader stages that can access this range
-		PipelineShaderStage Stages = PipelineShaderStage::AllGraphics;
-	};
-
-	// Minimal but Vulkan/DX12-friendly: explicit formats for dynamic rendering / RTV/DSV.
-	enum class PipelineFormat : uint8_t
-	{
-		Unknown = 0,
-
-		RGBA8_UNorm,
-		RGBA8_sRGB,
-
-		D32_Float,
-		D24_UNorm_S8_UInt,
+		ShaderStage Stages = ShaderStage::AllGraphics;
 	};
 
 	// --- Vertex layout (for mesh rendering) ---
@@ -155,7 +122,7 @@ namespace Snowstorm
 	{
 		PrimitiveTopology Topology = PrimitiveTopology::TriangleList;
 		CullMode Cull = CullMode::Back;
-		FrontFace Front = FrontFace::CounterClockwise;
+		FrontFace Front = FrontFace::Clockwise;
 
 		bool Wireframe = false;
 	};
@@ -180,8 +147,8 @@ namespace Snowstorm
 		VertexLayoutDesc VertexLayout;
 
 		// Dynamic rendering / render target compatibility
-		std::vector<PipelineFormat> ColorFormats;
-		PipelineFormat DepthFormat = PipelineFormat::Unknown;
+		std::vector<PixelFormat> ColorFormats;
+		PixelFormat DepthFormat = PixelFormat::Unknown;
 		bool HasStencil = false;
 
 		PipelineRasterState Raster{};

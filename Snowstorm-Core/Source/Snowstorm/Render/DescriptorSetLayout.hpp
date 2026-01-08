@@ -5,6 +5,9 @@
 #include <string>
 #include <vector>
 
+#include "RenderEnums.hpp"
+#include "Snowstorm/Utility/NonCopyable.hpp"
+
 namespace Snowstorm
 {
 	enum class DescriptorType : uint8_t
@@ -18,32 +21,13 @@ namespace Snowstorm
 		CombinedImageSampler // for APIs/backends that prefer combined bindings
 	};
 
-	enum class ShaderStage : uint8_t
-	{
-		None     = 0,
-		Vertex   = 1u << 0,
-		Fragment = 1u << 1,
-		Compute  = 1u << 2,
-		AllGraphics = Vertex | Fragment,
-		All = Vertex | Fragment | Compute
-	};
-
-	constexpr ShaderStage operator|(ShaderStage a, ShaderStage b)
-	{
-		return static_cast<ShaderStage>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
-	}
-
-	constexpr bool HasStage(ShaderStage value, ShaderStage flag)
-	{
-		return (static_cast<uint32_t>(value) & static_cast<uint32_t>(flag)) != 0;
-	}
-
 	struct DescriptorBindingDesc
 	{
 		uint32_t Binding = 0;
 		DescriptorType Type = DescriptorType::UniformBuffer;
 		uint32_t Count = 1;               // arrays: e.g. 32 textures
 		ShaderStage Visibility = ShaderStage::AllGraphics;
+		bool IsBindless = false;
 		std::string DebugName;
 	};
 
@@ -54,7 +38,7 @@ namespace Snowstorm
 		std::string DebugName;
 	};
 
-	class DescriptorSetLayout
+	class DescriptorSetLayout : public NonCopyable
 	{
 	public:
 		virtual ~DescriptorSetLayout() = default;
@@ -62,6 +46,7 @@ namespace Snowstorm
 		[[nodiscard]] virtual const DescriptorSetLayoutDesc& GetDesc() const = 0;
 
 		static Ref<DescriptorSetLayout> Create(const DescriptorSetLayoutDesc& desc);
+		static Ref<DescriptorSetLayout> CreateFromExternal(void* internalHandle);
 
 	protected:
 		DescriptorSetLayout() = default;

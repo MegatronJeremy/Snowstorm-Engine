@@ -28,7 +28,7 @@ namespace Snowstorm
 		ImGui::StyleColorsDark();
 		//ImGui::StyleColorsLight();
 
-		// When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
+		// When viewports are enabled, we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
 		ImGuiStyle& style = ImGui::GetStyle();
 		if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
 		{
@@ -44,13 +44,19 @@ namespace Snowstorm
 
 	ImGuiService::~ImGuiService()
 	{
-		Renderer::ShutdownImGuiBackend();
 		ImGui::DestroyContext();
 	}
 
 	void ImGuiService::OnUpdate(Timestep ts)
 	{
-		// Start the Dear ImGui frame
+		// 1. Ensure window isn't minimized (ImGui will assert on 0 DisplaySize)
+		const Application& app = Application::Get();
+		if (app.GetWindow().GetWidth() == 0 || app.GetWindow().GetHeight() == 0)
+		{
+			return;
+		}
+
+		// 2. Start the backends
 		Renderer::ImGuiNewFrame();
 		ImGui::NewFrame();
 	}
@@ -58,22 +64,12 @@ namespace Snowstorm
 	void ImGuiService::PostUpdate(Timestep ts)
 	{
 		ImGuiIO& io = ImGui::GetIO();
-		const Application& app = Application::Get();
-		io.DisplaySize = ImVec2(static_cast<float>(app.GetWindow().GetWidth()),
-		                        static_cast<float>(app.GetWindow().GetHeight()));
 
-		// Prepare draw data
-		ImGui::Render();
-		// RendererAPI::RenderImGuiDrawData(ImGui::GetDrawData());
-
-		// Update and Render additional Platform Windows
-		// (Platform functions may change the current context, so we save/restore it to make it easier to paste this code elsewhere.
+		// Update and render additional platform windows (Multi-Viewport)
 		if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
 		{
-			GLFWwindow* backupCurrentContext = glfwGetCurrentContext();
 			ImGui::UpdatePlatformWindows();
 			ImGui::RenderPlatformWindowsDefault();
-			glfwMakeContextCurrent(backupCurrentContext);
 		}
 	}
 }
