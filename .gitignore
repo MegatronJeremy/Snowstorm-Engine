@@ -1,6 +1,5 @@
 # Directories
 .vs/
-.idea/
 .venv/
 Binaries/
 build/
@@ -10,6 +9,7 @@ Assets/cache
 x64/
 *.CMakeFiles/
 *.dir/
+*.Debug/
 
 # Files
 *.vcxproj
