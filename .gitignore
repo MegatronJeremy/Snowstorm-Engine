@@ -7,9 +7,9 @@ Vendor/Binaries
 vcpkg/
 Assets/cache
 x64/
-*.CMakeFiles/
+*CMakeFiles/
 *.dir/
-*.Debug/
+*Debug/
 
 # Files
 *.vcxproj
