@@ -107,6 +107,7 @@ namespace Snowstorm
 		virtual bool operator==(const Texture& other) const = 0;
 
 		static Ref<Texture> Create(const TextureDesc& desc);
+		static Ref<Texture> Create(const std::filesystem::path& filePath, bool srgb = true);
 
 	protected:
 		Texture() = default;

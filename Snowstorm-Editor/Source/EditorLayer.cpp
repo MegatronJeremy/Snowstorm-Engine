@@ -143,20 +143,27 @@ namespace Snowstorm
 		// --- Shared defaults (to avoid unbound CombinedImageSampler descriptors) ---
 		Ref<TextureView> defaultWhiteView;
 		{
-			TextureDesc whiteDesc{};
-			whiteDesc.Dimension = TextureDimension::Texture2D;
-			whiteDesc.Format = PixelFormat::RGBA8_UNorm;
-			whiteDesc.Usage = TextureUsage::Sampled | TextureUsage::TransferDst;
-			whiteDesc.Width = 1;
-			whiteDesc.Height = 1;
-			whiteDesc.DebugName = "WhiteTex";
+			TextureDesc desc{};
+			desc.Dimension = TextureDimension::Texture2D;
+			desc.Format = PixelFormat::RGBA8_UNorm;
+			desc.Usage = TextureUsage::Sampled | TextureUsage::TransferDst;
+			desc.Width = 1;
+			desc.Height = 1;
+			desc.DebugName = "WhiteTex";
 
-			Ref<Texture> whiteTex = Texture::Create(whiteDesc);
+			Ref<Texture> whiteTex = Texture::Create(desc);
 
 			constexpr uint32_t whitePixel = 0xffffffffu;
 			whiteTex->SetData(&whitePixel, sizeof(whitePixel));
 
-			defaultWhiteView = TextureView::Create(whiteTex, MakeFullViewDesc(whiteDesc));
+			defaultWhiteView = TextureView::Create(whiteTex, MakeFullViewDesc(desc));
+		}
+
+		Ref<TextureView> checkerboardView;
+		{
+			Ref<Texture> checkerboardTex = Texture::Create("assets/textures/Checkerboard.png");
+
+			checkerboardView = TextureView::Create(checkerboardTex, MakeFullViewDesc(checkerboardTex->GetDesc()));
 		}
 
 		// 3D Entities
@@ -225,9 +232,9 @@ namespace Snowstorm
 			const Ref<Material> redMaterial = CreateRef<Material>(litPipeline);
 			const Ref<Material> blueMaterial = CreateRef<Material>(litPipeline);
 
-			whiteMaterial->SetAlbedoTexture(defaultWhiteView);
-			redMaterial->SetAlbedoTexture(defaultWhiteView);
-			blueMaterial->SetAlbedoTexture(defaultWhiteView);
+			whiteMaterial->SetAlbedoTexture(checkerboardView);
+			redMaterial->SetAlbedoTexture(checkerboardView);
+			blueMaterial->SetAlbedoTexture(checkerboardView);
 
 			redMaterial->SetBaseColor({1.0f, 0.0f, 0.0f, 1.0f});
 			blueMaterial->SetBaseColor({0.0f, 0.0f, 1.0f, 1.0f});

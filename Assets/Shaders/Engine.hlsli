@@ -1,6 +1,6 @@
 // Engine.hlsli - The Unified Pipeline Layout
 
-// --- SPACE 0: Global Frame Data ---
+// --- Common structs ---
 struct DirectionalLight
 {
     float3 Direction;
@@ -34,6 +34,7 @@ struct PSInput
 
 static const int MAX_DIRECTIONAL_LIGHTS = 4;
 
+// --- SPACE 0: Global Frame Data ---
 cbuffer FrameCB : register(b0, space0) {
     float4x4 ViewProj;
     float3 CameraPosition;

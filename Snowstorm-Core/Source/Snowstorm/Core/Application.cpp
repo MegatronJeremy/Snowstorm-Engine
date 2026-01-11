@@ -18,7 +18,7 @@ namespace Snowstorm
 	{
 		SS_PROFILE_FUNCTION();
 
-		SS_CORE_ASSERT(!s_Instance, "Application already exists!")
+		SS_CORE_ASSERT(!s_Instance, "Application already exists!");
 		s_Instance = this;
 
 		m_Window = Window::Create(WindowProps(name));
