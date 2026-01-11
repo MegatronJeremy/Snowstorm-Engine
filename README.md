@@ -1,6 +1,6 @@
 # Snowstorm Engine
 
-![image](https://github.com/user-attachments/assets/6fc4c33b-fe00-4a78-911f-7565fae1bf15)
+<img width="2559" height="1390" alt="aaaa" src="https://github.com/user-attachments/assets/6b50d05b-4aa3-4a25-abd7-a9b8ab6829d3" />
 (Work in progress)
 
 3D game engine with an abstract rendering backend. Currently supports Vulkan, and will support DirectX12 in the future.
