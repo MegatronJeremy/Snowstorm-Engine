@@ -1,15 +1,10 @@
 # Directories
 .vs/
 .venv/
-Binaries/
 build/
 Vendor/Binaries
 vcpkg/
 Assets/cache
-x64/
-*CMakeFiles/
-*.dir/
-*Debug/
 
 # Files
 *.vcxproj

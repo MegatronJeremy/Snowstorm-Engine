@@ -30,6 +30,7 @@ find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(gli CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
 find_package(unofficial-spirv-reflect CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 target_include_directories(Snowstorm-Core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
@@ -53,4 +54,5 @@ target_link_libraries(Snowstorm-Core PUBLIC
     GPUOpen::VulkanMemoryAllocator
     gli
     unofficial::spirv-reflect
+    nlohmann_json::nlohmann_json
 )

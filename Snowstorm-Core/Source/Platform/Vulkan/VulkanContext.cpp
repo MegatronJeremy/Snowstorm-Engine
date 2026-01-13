@@ -95,7 +95,8 @@ namespace Snowstorm
 		const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtCount);
 
 		std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtCount);
-		if (enableValidationLayers) {
+		if (enableValidationLayers)
+		{
 			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 		}
 
