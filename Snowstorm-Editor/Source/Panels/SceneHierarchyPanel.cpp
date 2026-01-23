@@ -5,6 +5,7 @@
 #include "SceneHierarchyPanel.hpp"
 
 #include "Snowstorm/Components/ComponentRegistry.hpp"
+#include "Snowstorm/Components/IDComponent.hpp"
 #include "Snowstorm/Components/TagComponent.hpp"
 #include "Snowstorm/Core/Log.hpp"
 
@@ -25,9 +26,12 @@ namespace Snowstorm
 	{
 		ImGui::Begin("Scene Hierarchy");
 
-		for (const auto [entityID] : m_World->GetRegistry().m_Registry.storage<entt::entity>().each())
+		// Only entities that are part of the scene model
+		auto view = m_World->GetRegistry().view<IDComponent, TagComponent>();
+
+		for (const entt::entity e : view)
 		{
-			const Entity entity{entityID, m_World};
+			Entity entity{ e, m_World };
 			DrawEntityNode(entity);
 		}
 
@@ -69,7 +73,7 @@ namespace Snowstorm
 		}
 	}
 
-	void SceneHierarchyPanel::DrawComponents(const Entity entity) const
+	void SceneHierarchyPanel::DrawComponents(const Entity entity)
 	{
 		for (const auto& info : GetComponentRegistry())
 		{

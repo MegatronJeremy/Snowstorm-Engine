@@ -1,6 +1,6 @@
 ﻿#include "ComponentRegistry.hpp"
 
-#include "Snowstorm/Render/Math.hpp"
+#include "Snowstorm/Math/Math.hpp"
 #include <glm/gtc/type_ptr.hpp>
 
 namespace Snowstorm

@@ -2,7 +2,7 @@
 
 #include "pch.h"
 
-#include "Event.h"
+#include "Event.hpp"
 
 namespace Snowstorm
 {

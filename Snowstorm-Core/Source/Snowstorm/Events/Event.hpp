@@ -72,66 +72,6 @@ namespace Snowstorm
 		}
 	};
 
-	class EventsHandlerSingleton final : public Singleton
-	{
-	public:
-		template <typename T, typename... Args>
-		void PushEvent(Args&&... args)
-		{
-			m_Events[typeid(T)].emplace_back(CreateRef<T>(std::forward<Args>(args)...));
-		}
-
-		template <typename T>
-		std::vector<Ref<T>> Process()
-		{
-			std::vector<Ref<T>> events;
-
-			if (const auto it = m_Events.find(typeid(T)); it != m_Events.end())
-			{
-				for (const auto& event : it->second)
-				{
-					events.push_back(std::static_pointer_cast<T>(event));
-				}
-				m_Events.erase(it);
-			}
-
-			for (const auto& event : events)
-			{
-				event->Handled = true;
-			}
-
-			return events;
-		}
-
-	private:
-		std::unordered_map<std::type_index, std::vector<Ref<Event>>> m_Events;
-	};
-
-	class EventDispatcher
-	{
-	public:
-		explicit EventDispatcher(Event& event) // this can be any type of event
-			: m_Event(&event)
-		{
-		}
-
-		// F will be deduced by the compiler
-		template <typename T, typename F>
-		bool Dispatch(const F& func) // call this a bunch of times with a different event function
-		{
-			if (m_Event->GetEventType() == T::GetStaticType())
-			{
-				// run the function if it matches the actual type
-				m_Event->Handled = func(*static_cast<T*>(m_Event));
-				return true;
-			}
-			return false;
-		}
-
-	private:
-		Event* m_Event;
-	};
-
 	inline std::ostream& operator<<(std::ostream& os, const Event& e)
 	{
 		return os << e.ToString();

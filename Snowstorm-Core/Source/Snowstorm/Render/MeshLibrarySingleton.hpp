@@ -12,7 +12,6 @@ namespace Snowstorm
 	{
 	public:
 		Ref<Mesh> Load(const std::string& filepath);
-		Ref<Mesh> CreateQuad();
 
 		void Clear();
 		bool Remove(const std::string& filepath);

@@ -18,7 +18,7 @@ namespace Snowstorm
 	private:
 		void DrawEntityNode(Entity entity);
 
-		void DrawComponents(Entity entity) const;
+		static void DrawComponents(Entity entity);
 
 		World* m_World{};
 		Entity m_SelectionContext;

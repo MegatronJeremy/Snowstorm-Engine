@@ -1,7 +1,7 @@
 #include "ScriptSystem.hpp"
 
 #include "Snowstorm/Components/NativeScriptComponent.hpp"
-#include "Snowstorm/World/ScriptableEntity.h"
+#include "Snowstorm/World/ScriptableEntity.hpp"
 
 namespace Snowstorm
 {

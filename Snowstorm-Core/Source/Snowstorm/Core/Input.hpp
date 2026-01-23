@@ -3,6 +3,8 @@
 #include "Snowstorm/Core/KeyCodes.hpp"
 #include "Snowstorm/Core/MouseCodes.hpp"
 
+#include <utility>
+
 namespace Snowstorm
 {
 	enum class CursorMode
@@ -22,8 +24,6 @@ namespace Snowstorm
 
 		static std::pair<float, float> GetMouseDelta();
 		static void UpdateMousePosition();
-
-		static void SetCursorMode(CursorMode mode);
 
 	private:
 		inline static std::pair<float, float> s_LastMousePosition{};

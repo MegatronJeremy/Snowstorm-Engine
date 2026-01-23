@@ -5,35 +5,40 @@
 #include <cstddef> // offsetof
 
 #include "Examples/MandelbrotSet/MandelbrotControllerComponent.hpp"
-#include "Examples/MandelbrotSet/MandelbrotMaterial.hpp"
 #include "Examples/MandelbrotSet/MandelbrotControllerSystem.hpp"
+#include "Singletons/EditorNotificationsSingleton.hpp"
+#include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Components/CameraControllerComponent.hpp"
+#include "Snowstorm/Components/CameraTargetComponent.hpp"
+#include "Snowstorm/Components/IDComponent.hpp"
 #include "Snowstorm/Components/MaterialComponent.hpp"
+#include "Snowstorm/Components/MaterialOverridesComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/RenderTargetComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Components/ViewportComponent.hpp"
+#include "Snowstorm/Components/VisibilityComponents.hpp"
 #include "Snowstorm/ECS/SystemManager.hpp"
-#include "Snowstorm/Events/KeyEvent.h"
-#include "Snowstorm/Events/MouseEvent.h"
 #include "Snowstorm/Lighting/LightingComponents.hpp"
 #include "Snowstorm/Lighting/LightingSystem.hpp"
-#include "Snowstorm/Render/Material.hpp"
-#include "Snowstorm/Render/Mesh.hpp"
-#include "Snowstorm/Render/MeshLibrarySingleton.hpp"
-#include "Snowstorm/Render/Pipeline.hpp"
-#include "Snowstorm/Render/RendererSingleton.hpp"
-#include "Snowstorm/Render/RenderTarget.hpp"
-#include "Snowstorm/Render/Texture.hpp"
+#include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Systems/CameraControllerSystem.hpp"
+#include "Snowstorm/Systems/CameraRuntimeUpdateSystem.hpp"
+#include "Snowstorm/Systems/MaterialResolveSystem.hpp"
+#include "Snowstorm/Systems/MeshResolveSystem.hpp"
 #include "Snowstorm/Systems/RenderSystem.hpp"
+#include "Snowstorm/Systems/RuntimeInitSystem.hpp"
 #include "Snowstorm/Systems/ShaderReloadSystem.hpp"
 #include "Snowstorm/Systems/ScriptSystem.hpp"
+#include "Snowstorm/Systems/VisibilitySystem.hpp"
+#include "Snowstorm/World/EditorCommandsSingleton.hpp"
+#include "Snowstorm/World/SceneSerializer.hpp"
 
 #include "System/DockspaceSetupSystem.hpp"
 #include "System/EditorMenuSystem.hpp"
+#include "System/EditorNotificationSystem.hpp"
 #include "System/SceneHierarchySystem.hpp"
 #include "System/ViewportDisplaySystem.hpp"
 #include "System/ViewportResizeSystem.hpp"
@@ -51,287 +56,338 @@ namespace Snowstorm
 
 		m_ActiveWorld = CreateRef<World>();
 
-		auto& shaderLibrary = m_ActiveWorld->GetSingleton<ShaderLibrarySingleton>();
-		auto& meshLibrary = m_ActiveWorld->GetSingleton<MeshLibrarySingleton>();
-		auto& renderer = m_ActiveWorld->GetSingleton<RendererSingleton>();
+		// Load asset registry DB early
+		{
+			auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
+			assets.LoadRegistry("assets/cache/AssetRegistry.json");
+		}
 
+		// Hook editor commands for menu systems etc.
+		{
+			auto& cmds = m_ActiveWorld->GetSingleton<EditorCommandsSingleton>();
+			cmds.SaveScene = [this]() -> bool
+			{
+				return SaveActiveScene();
+			};
+		}
+
+		RegisterSystems();
+		LoadOrCreateStartupWorld();
+	}
+
+	bool EditorLayer::TryLoadWorldFromFile(const std::string& scenePath)
+	{
+		if (!std::filesystem::exists(scenePath))
+		{
+			return false;
+		}
+
+		SS_CORE_INFO("Loading scene '{}'", scenePath);
+
+		// "Open Scene" semantics: wipe world entities first.
+		m_ActiveWorld->Clear();
+
+		if (!SceneSerializer::Deserialize(*m_ActiveWorld, scenePath))
+		{
+			SS_CORE_WARN("Failed to deserialize scene '{}'.", scenePath);
+			return false;
+		}
+
+		m_ActiveScenePath = scenePath;
+
+		SS_CORE_INFO("Scene '{}' loaded.", scenePath);
+		return true;
+	}
+
+	void EditorLayer::LoadOrCreateStartupWorld()
+	{
+		// Pick any extension you like; this is just a placeholder until serialization lands.
+		static constexpr const char* kStartupScenePath = "assets/scenes/Startup.world";
+		m_ActiveScenePath = kStartupScenePath;
+
+		if (!TryLoadWorldFromFile(kStartupScenePath))
+		{
+			// First-run: create a default scene that INCLUDES render target + cameras and save it.
+			CreateMainViewportEntity();
+			CreateCameraEntities();
+			CreateDemoEntities();
+
+			SaveActiveScene();
+		}
+	}
+
+	bool EditorLayer::SaveWorldToFile(const std::string& scenePath) const
+	{
+		if (!m_ActiveWorld)
+		{
+			return false;
+		}
+
+		SS_CORE_INFO("Saving scene '{}'", scenePath);
+
+		if (!SceneSerializer::Serialize(*m_ActiveWorld, scenePath))
+		{
+			SS_CORE_WARN("Failed to serialize scene '{}'.", scenePath);
+			return false;
+		}
+
+		// Save asset registry (so new imports persist)
+		{
+			auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
+			assets.SaveRegistry("assets/cache/AssetRegistry.json");
+		}
+
+		SS_CORE_INFO("Scene '{}' saved.", scenePath);
+		return true;
+	}
+
+	bool EditorLayer::SaveActiveScene() const
+	{
+		if (m_ActiveScenePath.empty())
+		{
+			SS_CORE_WARN("No active scene path set; can't save.");
+			return false;
+		}
+
+		return SaveWorldToFile(m_ActiveScenePath);
+	}
+
+	void EditorLayer::RegisterSystems() const   // TODO rename this as well
+	{
 		auto& systemManager = m_ActiveWorld->GetSystemManager();
+		auto& singletonManager = m_ActiveWorld->GetSingletonManager();
+
+		singletonManager.RegisterSingleton<EditorNotificationsSingleton>();
 
 		// TODO do this better somehow and not in EditorLayer
+		systemManager.RegisterSystem<RuntimeInitSystem>();
 		systemManager.RegisterSystem<ScriptSystem>();
 		systemManager.RegisterSystem<CameraControllerSystem>();
 		systemManager.RegisterSystem<ShaderReloadSystem>();
-		systemManager.RegisterSystem<ViewportResizeSystem>();
-		systemManager.RegisterSystem<LightingSystem>();
-		systemManager.RegisterSystem<MandelbrotControllerSystem>();
-
-		systemManager.RegisterSystem<DockspaceSetupSystem>();
-		systemManager.RegisterSystem<EditorMenuSystem>();
-		systemManager.RegisterSystem<SceneHierarchySystem>();
+		systemManager.RegisterSystem<DockspaceSetupSystem>(); // should be BEFORE these other viewport systems
+		systemManager.RegisterSystem<ViewportResizeSystem>(); // should be BEFORE display system
 		systemManager.RegisterSystem<ViewportDisplaySystem>();
 
+		systemManager.RegisterSystem<EditorMenuSystem>();
+		systemManager.RegisterSystem<EditorNotificationSystem>();
+		systemManager.RegisterSystem<SceneHierarchySystem>();
+
+		systemManager.RegisterSystem<CameraRuntimeUpdateSystem>();
+
+		// this should be after scene editing stuff
+		systemManager.RegisterSystem<MeshResolveSystem>();
+		systemManager.RegisterSystem<MaterialResolveSystem>();
+
 		// RenderSystem should always be last
+		systemManager.RegisterSystem<MandelbrotControllerSystem>();
+		systemManager.RegisterSystem<LightingSystem>();
+		systemManager.RegisterSystem<VisibilitySystem>();
 		systemManager.RegisterSystem<RenderSystem>();
+	}
 
-		// Render target setup (replaces old Framebuffer)
+	void EditorLayer::CreateMainViewportEntity()
+	{
+		const auto& window = Application::Get().GetWindow();
+		const uint32_t windowWidth = window.GetWidth();
+		const uint32_t windowHeight = window.GetHeight();
+
+		m_RenderTargetEntity = m_ActiveWorld->CreateEntity("Main Viewport");
+
+		m_RenderTargetEntity.AddComponent<ViewportComponent>(glm::vec2{static_cast<float>(windowWidth), static_cast<float>(windowHeight)});
+
+		auto& rtc = m_RenderTargetEntity.AddComponent<RenderTargetComponent>();
+		rtc.Target = CreateDefaultSceneRenderTarget(windowWidth, windowHeight, "Main Viewport");
+	}
+
+	void EditorLayer::CreateDemoEntities() const
+	{
+		auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
+
+		// ---------------------------------------------------------------------
+		// Import assets (registry entries)
+		// ---------------------------------------------------------------------
+		const AssetHandle girlMeshH = assets.Import("assets/meshes/girl.obj", AssetType::Mesh);
+		const AssetHandle cubeMeshH = assets.Import("assets/meshes/cube.obj", AssetType::Mesh);
+		const AssetHandle quadMeshH = assets.Import("assets/meshes/quad.obj", AssetType::Mesh);
+
+		const AssetHandle whiteMatH = assets.Import("assets/materials/White.ssmat", AssetType::Material);
+		const AssetHandle blueMatH = assets.Import("assets/materials/Blue.ssmat", AssetType::Material);
+		const AssetHandle mandelbrotMatH = assets.Import("assets/materials/Mandelbrot.ssmat", AssetType::Material);
+
+		const AssetHandle checkerTexH = assets.Import("assets/textures/Checkerboard.png", AssetType::Texture);
+
+		// Helper for common renderable setup
+		auto SetupRenderable = [&](Entity e, const AssetHandle meshH, const AssetHandle matH, const VisibilityMask visMask)
 		{
-			const auto& window = Application::Get().GetWindow();
+			e.AddOrReplaceComponent<TransformComponent>();
 
-			const uint32_t windowWidth = window.GetWidth();
-			const uint32_t windowHeight = window.GetHeight();
-
-			m_RenderTargetEntity = m_ActiveWorld->CreateEntity("MainRenderTarget");
-
-			TextureDesc colorDesc{};
-			colorDesc.Dimension = TextureDimension::Texture2D;
-			colorDesc.Format = PixelFormat::RGBA8_UNorm;
-			colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled;
-			colorDesc.Width = windowWidth;
-			colorDesc.Height = windowHeight;
-			colorDesc.DebugName = "MainColor";
-
-			Ref<Texture> colorTex = Texture::Create(colorDesc);
-			Ref<TextureView> colorView = TextureView::Create(colorTex, MakeFullViewDesc(colorDesc));
-
-			// --- Create Depth Attachment ---
-			TextureDesc depthDesc{};
-			depthDesc.Dimension = TextureDimension::Texture2D;
-			// D32_SFloat is the high-precision standard for modern desktop GPUs
-			depthDesc.Format = PixelFormat::D32_Float; 
-			depthDesc.Usage = TextureUsage::DepthStencil;
-			depthDesc.Width = windowWidth;
-			depthDesc.Height = windowHeight;
-			depthDesc.DebugName = "MainDepth";
-
-			Ref<Texture> depthTex = Texture::Create(depthDesc);
-			Ref<TextureView> depthView = TextureView::Create(depthTex, MakeFullViewDesc(depthDesc));
-
-			RenderTargetDesc rtDesc{};
-			rtDesc.Width = windowWidth;
-			rtDesc.Height = windowHeight;
-			rtDesc.IsSwapchainTarget = false;
-
-			RenderTargetAttachment colorAtt{};
-			colorAtt.View = colorView;
-			colorAtt.AttachmentIndex = 0;
-			colorAtt.ClearColor = {0.1f, 0.1f, 0.1f, 1.0f};
-			colorAtt.LoadOp = RenderTargetLoadOp::Clear;
-			colorAtt.StoreOp = RenderTargetStoreOp::Store;
-			rtDesc.ColorAttachments.push_back(colorAtt);
-
-			// Add the depth attachment to the RenderTarget description
-			DepthStencilAttachment depthAtt{};
-			depthAtt.View = depthView;
-			depthAtt.ClearDepth = 1.0f;
-			depthAtt.DepthLoadOp = RenderTargetLoadOp::Clear;
-			depthAtt.DepthStoreOp = RenderTargetStoreOp::Store;
-			rtDesc.DepthAttachment = depthAtt;
-
-			Ref<RenderTarget> target = RenderTarget::Create(rtDesc);
-
-			auto& rtc = m_RenderTargetEntity.AddComponent<RenderTargetComponent>();
-			rtc.Target = target;
-
-			m_RenderTargetEntity.AddComponent<ViewportComponent>(glm::vec2{windowWidth, windowHeight});
-		}
-
-		// Environment setup (skybox left for later)
-		{
-			(void)renderer;
-		}
-
-		// --- Shared defaults (to avoid unbound CombinedImageSampler descriptors) ---
-		Ref<TextureView> defaultWhiteView;
-		{
-			TextureDesc desc{};
-			desc.Dimension = TextureDimension::Texture2D;
-			desc.Format = PixelFormat::RGBA8_UNorm;
-			desc.Usage = TextureUsage::Sampled | TextureUsage::TransferDst;
-			desc.Width = 1;
-			desc.Height = 1;
-			desc.DebugName = "WhiteTex";
-
-			Ref<Texture> whiteTex = Texture::Create(desc);
-
-			constexpr uint32_t whitePixel = 0xffffffffu;
-			whiteTex->SetData(&whitePixel, sizeof(whitePixel));
-
-			defaultWhiteView = TextureView::Create(whiteTex, MakeFullViewDesc(desc));
-		}
-
-		Ref<TextureView> checkerboardView;
-		{
-			Ref<Texture> checkerboardTex = Texture::Create("assets/textures/Checkerboard.png");
-
-			checkerboardView = TextureView::Create(checkerboardTex, MakeFullViewDesc(checkerboardTex->GetDesc()));
-		}
-
-		// 3D Entities
-		{
-			const Ref<Shader> mandelbrotShader = shaderLibrary.Load("assets/shaders/Mandelbrot.hlsl");
-			const Ref<Shader> basicShader = shaderLibrary.Load("assets/shaders/DefaultLit.hlsl");
-
-			// Common vertex layout for Mesh::Vertex
-			VertexLayoutDesc vertexLayout{};
-			VertexBufferLayoutDesc vb{};
-			vb.Binding = 0;
-			vb.InputRate = VertexInputRate::PerVertex;
-			vb.Stride = sizeof(Vertex);
-			vb.Attributes = {
-				{.Location = 0, .Format = VertexFormat::Float3, .Offset = static_cast<uint32_t>(offsetof(Vertex, Position))},
-				{.Location = 1, .Format = VertexFormat::Float3, .Offset = static_cast<uint32_t>(offsetof(Vertex, Normal))},
-				{.Location = 2, .Format = VertexFormat::Float2, .Offset = static_cast<uint32_t>(offsetof(Vertex, TexCoord))},
-			};
-			vertexLayout.Buffers = {vb};
-
-			auto MakeLitPipeline = [&](const Ref<Shader>& shader) -> Ref<Pipeline>
 			{
-				PipelineDesc p{};
-				p.Type = PipelineType::Graphics;
-				p.Shader = shader;
-				p.VertexLayout = vertexLayout;
-				p.ColorFormats = {Renderer::GetSurfaceFormat()};
+				auto& mc = e.AddOrReplaceComponent<MeshComponent>();
+				mc.MeshHandle = meshH;
+				mc.MeshInstance.reset(); // runtime-resolved (MeshResolveSystem)
+			}
 
-				// Enable Depth
-				p.DepthFormat = PixelFormat::D32_Float;
-				p.DepthStencil.EnableDepthTest = true;
-				p.DepthStencil.EnableDepthWrite = true;
-				p.DepthStencil.DepthCompare = CompareOp::Less; // Standard for 1.0 clear depth
-
-				p.HasStencil = false;
-
-				p.DebugName = "DefaultLitPipeline";
-				return Pipeline::Create(p);
-			};
-
-			auto MakeMandelbrotPipeline = [&](const Ref<Shader>& shader) -> Ref<Pipeline>
 			{
-				PipelineDesc p{};
-				p.Type = PipelineType::Graphics;
-				p.Shader = shader;
-				p.VertexLayout = vertexLayout;
-				p.ColorFormats = {Renderer::GetSurfaceFormat()};
+				auto& matc = e.AddOrReplaceComponent<MaterialComponent>();
+				matc.Material = matH;
+				matc.MaterialInstance.reset(); // runtime-resolved (MaterialResolveSystem)
+			}
 
-				p.DepthFormat = PixelFormat::D32_Float;
-				p.DepthStencil.EnableDepthTest = false;
-				p.DepthStencil.EnableDepthWrite = false;
+			{
+				auto& vis = e.AddOrReplaceComponent<VisibilityComponent>();
+				vis.Mask = visMask;
+			}
+		};
 
-				p.HasStencil = false;
+		// ---------------------------------------------------------------------
+		// Lights (optional visibility)
+		// ---------------------------------------------------------------------
+		{
+			auto lightEnt = m_ActiveWorld->CreateEntity("Directional Light A");
+			auto& light = lightEnt.AddComponent<DirectionalLightComponent>();
+			light.Direction = glm::normalize(glm::vec3(1.0f, -1.0f, 0.5f));
+			light.Color = glm::vec3(1.0f, 0.9f, 0.8f);
+			light.Intensity = 1.0f;
 
-				p.DebugName = "MandelbrotPipeline";
-				return Pipeline::Create(p);
-			};
-
-			const Ref<Pipeline> litPipeline = MakeLitPipeline(basicShader);
-			const Ref<Pipeline> mandelbrotPipeline = MakeMandelbrotPipeline(mandelbrotShader);
-
-			SS_CORE_ASSERT(litPipeline, "Failed to create DefaultLit pipeline");
-			SS_CORE_ASSERT(mandelbrotPipeline, "Failed to create Mandelbrot pipeline");
-
-			const Ref<Material> whiteMaterial = CreateRef<Material>(litPipeline);
-			const Ref<Material> redMaterial = CreateRef<Material>(litPipeline);
-			const Ref<Material> blueMaterial = CreateRef<Material>(litPipeline);
-
-			whiteMaterial->SetAlbedoTexture(checkerboardView);
-			redMaterial->SetAlbedoTexture(checkerboardView);
-			blueMaterial->SetAlbedoTexture(checkerboardView);
-
-			redMaterial->SetBaseColor({1.0f, 0.0f, 0.0f, 1.0f});
-			blueMaterial->SetBaseColor({0.0f, 0.0f, 1.0f, 1.0f});
-
-			// Create instances (per-entity)
-			const Ref<MaterialInstance> whiteMI = CreateRef<MaterialInstance>(whiteMaterial);
-			const Ref<MaterialInstance> redMI = CreateRef<MaterialInstance>(redMaterial);
-			const Ref<MaterialInstance> blueMI = CreateRef<MaterialInstance>(blueMaterial);
-
-			// Mandelbrot: base material + instance + convenience wrapper
-			const Ref<Material> mandelbrotBaseMaterial = CreateRef<Material>(mandelbrotPipeline);
-			const Ref<MaterialInstance> mandelbrotMI = CreateRef<MaterialInstance>(mandelbrotBaseMaterial);
-			const Ref<MandelbrotMaterial> mandelbrotMaterial = CreateRef<MandelbrotMaterial>(mandelbrotMI);
-
-			auto cubeMesh = meshLibrary.Load("assets/meshes/cube.obj");
-			auto girlMesh = meshLibrary.Load("assets/meshes/girl.obj");
-
-			auto directionalLightA = m_ActiveWorld->CreateEntity("Directional Light A");
-			auto& lightA = directionalLightA.AddComponent<DirectionalLightComponent>();
-			lightA.Direction = glm::normalize(glm::vec3(1.0f, -1.0f, 0.5f));
-			lightA.Color = glm::vec3(1.0f, 0.9f, 0.8f);
-			lightA.Intensity = 1.0f;
-
-			auto directionalLightB = m_ActiveWorld->CreateEntity("Directional Light B");
-			auto& lightB = directionalLightB.AddComponent<DirectionalLightComponent>();
-			lightB.Direction = glm::normalize(glm::vec3(-0.8f, -0.6f, -0.5f));
-			lightB.Color = glm::vec3(0.7f, 0.8f, 1.0f);
-			lightB.Intensity = 0.8f;
-
-			auto blueGirl = m_ActiveWorld->CreateEntity("Blue Girl");
-			blueGirl.AddComponent<TransformComponent>();
-			blueGirl.AddComponent<MaterialComponent>(blueMI);
-			blueGirl.AddComponent<MeshComponent>(girlMesh);
-			blueGirl.AddComponent<RenderTargetComponent>(m_RenderTargetEntity.GetComponent<RenderTargetComponent>().Target);
-
-			blueGirl.GetComponent<TransformComponent>().Position.x += 2.0f;
-			blueGirl.GetComponent<TransformComponent>().Position.y += 2.0f;
-			blueGirl.GetComponent<TransformComponent>().Position.z += 6.0f;
-
-			auto mandelbrotGirl = m_ActiveWorld->CreateEntity("Mandelbrot Girl");
-			mandelbrotGirl.AddComponent<TransformComponent>();
-			mandelbrotGirl.AddComponent<MaterialComponent>(mandelbrotMI);
-			mandelbrotGirl.AddComponent<MeshComponent>(girlMesh);
-			mandelbrotGirl.AddComponent<RenderTargetComponent>(m_RenderTargetEntity.GetComponent<RenderTargetComponent>().Target);
-
-			mandelbrotGirl.GetComponent<TransformComponent>().Position += 3.0f;
-
-			auto whiteCube = m_ActiveWorld->CreateEntity("White Cube");
-			whiteCube.AddComponent<TransformComponent>();
-			whiteCube.AddComponent<MaterialComponent>(whiteMI);
-			whiteCube.AddComponent<MeshComponent>(cubeMesh);
-			whiteCube.AddComponent<RenderTargetComponent>(m_RenderTargetEntity.GetComponent<RenderTargetComponent>().Target);
-
-			whiteCube.GetComponent<TransformComponent>().Position.x -= 2.0f;
-			whiteCube.GetComponent<TransformComponent>().Position.y -= 2.0f;
-			whiteCube.GetComponent<TransformComponent>().Position.z += 6.0f;
-
-			auto mandelbrotQuad = m_ActiveWorld->CreateEntity("Mandelbrot Quad");
-			mandelbrotQuad.AddComponent<TransformComponent>();
-			mandelbrotQuad.AddComponent<MaterialComponent>(mandelbrotMI);
-			mandelbrotQuad.AddComponent<MeshComponent>(meshLibrary.CreateQuad());
-			mandelbrotQuad.AddComponent<RenderTargetComponent>(m_RenderTargetEntity.GetComponent<RenderTargetComponent>().Target);
-
-			mandelbrotQuad.GetComponent<TransformComponent>().Scale *= 10.0f;
-
-			auto mandelbrotControllerEntity = m_ActiveWorld->CreateEntity("Mandelbrot Controller Entity");
-			mandelbrotControllerEntity.AddComponent<MandelbrotControllerComponent>(mandelbrotMaterial);
+			lightEnt.AddComponent<VisibilityComponent>().Mask = Visibility::Scene | Visibility::Game;
 		}
 
-		// Camera Entities
+		{
+			auto lightEnt = m_ActiveWorld->CreateEntity("Directional Light B");
+			auto& light = lightEnt.AddComponent<DirectionalLightComponent>();
+			light.Direction = glm::normalize(glm::vec3(-0.8f, -0.6f, -0.5f));
+			light.Color = glm::vec3(0.7f, 0.8f, 1.0f);
+			light.Intensity = 0.8f;
+
+			lightEnt.AddComponent<VisibilityComponent>().Mask = Visibility::Scene | Visibility::Game;
+		}
+
+		// ---------------------------------------------------------------------
+		// Blue Girl (per-entity override: checkerboard texture)
+		// ---------------------------------------------------------------------
+		{
+			auto e = m_ActiveWorld->CreateEntity("Blue Girl");
+			SetupRenderable(e, girlMeshH, blueMatH, Visibility::Scene | Visibility::Game);
+
+			// Per-entity overrides live in a separate serialized component
+			{
+				auto& ov = e.AddOrReplaceComponent<MaterialOverridesComponent>();
+				SetOverride(ov.OverrideMask, MaterialOverrideMask::AlbedoTex, true);
+				ov.AlbedoTextureOverride = checkerTexH;
+			}
+
+			e.WriteComponent<TransformComponent>().Position += glm::vec3(2.0f, 2.0f, 6.0f);
+		}
+
+		// ---------------------------------------------------------------------
+		// Mandelbrot Girl
+		// ---------------------------------------------------------------------
+		{
+			auto e = m_ActiveWorld->CreateEntity("Mandelbrot Girl");
+			SetupRenderable(e, girlMeshH, mandelbrotMatH, Visibility::Scene | Visibility::Game);
+
+			e.WriteComponent<TransformComponent>().Position += glm::vec3(3.0f);
+		}
+
+		// ---------------------------------------------------------------------
+		// White Cube (per-entity override: checkerboard texture)
+		// ---------------------------------------------------------------------
+		{
+			auto e = m_ActiveWorld->CreateEntity("White Cube");
+			SetupRenderable(e, cubeMeshH, whiteMatH, Visibility::Scene | Visibility::Game);
+
+			{
+				auto& ov = e.AddOrReplaceComponent<MaterialOverridesComponent>();
+				SetOverride(ov.OverrideMask, MaterialOverrideMask::AlbedoTex, true);
+				ov.AlbedoTextureOverride = checkerTexH;
+			}
+
+			e.WriteComponent<TransformComponent>().Position += glm::vec3(-2.0f, -2.0f, 6.0f);
+		}
+
+		// ---------------------------------------------------------------------
+		// Mandelbrot Quad
+		// (often: Visibility::MaterialPreview only, but keeping Scene|Game like you wrote)
+		// ---------------------------------------------------------------------
+		{
+			auto e = m_ActiveWorld->CreateEntity("Mandelbrot Quad");
+			SetupRenderable(e, quadMeshH, mandelbrotMatH, Visibility::Scene | Visibility::Game);
+
+			e.WriteComponent<TransformComponent>().Scale *= 10.0f;
+		}
+
+		// ---------------------------------------------------------------------
+		// Controller entity (not renderable)
+		// ---------------------------------------------------------------------
+		{
+			auto e = m_ActiveWorld->CreateEntity("Mandelbrot Controller Entity");
+			auto& mcc = e.AddComponent<MandelbrotControllerComponent>();
+			mcc.Material = mandelbrotMatH;
+		}
+	}
+
+	void EditorLayer::CreateCameraEntities() const
+	{
+		// The viewport we want to target
+		const UUID viewportId = m_RenderTargetEntity.GetComponent<IDComponent>().Id;
+
+		// --- Main camera (Scene camera)
 		{
 			auto cameraEntity = m_ActiveWorld->CreateEntity("Camera Entity");
 			cameraEntity.AddComponent<TransformComponent>();
-			cameraEntity.AddComponent<CameraComponent>();
-			cameraEntity.AddComponent<CameraControllerComponent>();
 
+			// Serialized camera data (your new CameraComponent)
 			{
-				auto& rtc = cameraEntity.AddComponent<RenderTargetComponent>();
-				rtc.Target = m_RenderTargetEntity.GetComponent<RenderTargetComponent>().Target;
-				rtc.TargetEntity = m_RenderTargetEntity; // link to the viewport entity
+				auto& cc = cameraEntity.AddComponent<CameraComponent>();
+				cc.Projection = CameraComponent::ProjectionType::Perspective;
+				cc.PerspectiveFOV = 0.785398f;
+				cc.PerspectiveNear = 0.01f;
+				cc.PerspectiveFar = 1000.0f;
+				cc.Primary = true;
+				cc.FixedAspectRatio = false;
 			}
 
-			cameraEntity.GetComponent<CameraComponent>().Camera.SetProjectionType(SceneCamera::ProjectionType::Perspective);
-			cameraEntity.GetComponent<CameraComponent>().Camera.SetOrthographicFarClip(1000.0f);
-			cameraEntity.GetComponent<TransformComponent>().Position.z = 15.0f;
+			cameraEntity.AddComponent<CameraControllerComponent>();
 
+			// Runtime target link data (serialized UUID + runtime cache resolved later)
+			{
+				auto& ct = cameraEntity.AddComponent<CameraTargetComponent>();
+				ct.TargetViewportUUID = viewportId;
+				// ct.TargetViewportEntity resolved by RuntimeInitSystem / PostLoadFixups
+			}
+
+			// What this camera renders
+			{
+				auto& cv = cameraEntity.AddComponent<CameraVisibilityComponent>();
+				cv.Mask = Visibility::Scene; // Scene viewport sees scene
+			}
+
+			cameraEntity.WriteComponent<TransformComponent>().Position.z = 15.0f;
+		}
+
+		// --- Second camera (example: Game camera or “clip space”)
+		{
 			auto secondCamera = m_ActiveWorld->CreateEntity("Clip-Space Entity");
 			secondCamera.AddComponent<TransformComponent>();
-			auto& cc = secondCamera.AddComponent<CameraComponent>();
+
+			{
+				auto& cc = secondCamera.AddComponent<CameraComponent>();
+				cc.Projection = CameraComponent::ProjectionType::Perspective;
+				cc.PerspectiveFar = 1000.0f;
+				cc.Primary = false;
+			}
+
 			secondCamera.AddComponent<CameraControllerComponent>();
 
 			{
-				auto& rtc = secondCamera.AddComponent<RenderTargetComponent>();
-				rtc.Target = m_RenderTargetEntity.GetComponent<RenderTargetComponent>().Target;
+				auto& ct = secondCamera.AddComponent<CameraTargetComponent>();
+				ct.TargetViewportUUID = viewportId;
 			}
 
-			cc.Primary = false;
+			{
+				auto& cv = secondCamera.AddComponent<CameraVisibilityComponent>();
+				cv.Mask = Visibility::Game; // e.g. “Game” viewport would use this
+			}
 		}
 	}
 
@@ -345,31 +401,5 @@ namespace Snowstorm
 		SS_PROFILE_FUNCTION();
 
 		m_ActiveWorld->OnUpdate(ts);
-	}
-
-	void EditorLayer::OnEvent(Event& event)
-	{
-		auto& eventsHandler = m_ActiveWorld->GetSingleton<EventsHandlerSingleton>();
-
-		// TODO have to make this better
-		static const std::unordered_map<EventType, std::function<void(Event&)>> eventMap = {
-			{
-				EventType::MouseScrolled, [&eventsHandler](Event& e)
-				{
-					eventsHandler.PushEvent<MouseScrolledEvent>(dynamic_cast<MouseScrolledEvent&>(e));
-				}
-			}
-		};
-
-		// Check if the event type exists in the map
-		if (const auto it = eventMap.find(event.GetEventType()); it != eventMap.end())
-		{
-			it->second(event); // Call the corresponding function
-		}
-		else
-		{
-			// Don't do this for now... mouse moved events etc...
-			// SS_ASSERT(false, "Unknown event");
-		}
 	}
 }

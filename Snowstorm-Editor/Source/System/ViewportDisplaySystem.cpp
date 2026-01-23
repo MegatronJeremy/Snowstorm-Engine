@@ -1,37 +1,57 @@
 #include "ViewportDisplaySystem.hpp"
 
-#include <imgui.h>
-
 #include "Snowstorm/Components/RenderTargetComponent.hpp"
 #include "Snowstorm/Components/ViewportComponent.hpp"
-#include "Snowstorm/Core/Application.hpp"
+#include "Snowstorm/Components/ViewportInteractionComponent.hpp"
+
+#include <imgui.h>
 
 namespace Snowstorm
 {
-	void ViewportDisplaySystem::Execute(Timestep ts)
+	void ViewportDisplaySystem::Execute(Timestep)
 	{
 		const auto viewportView = View<ViewportComponent, RenderTargetComponent>();
 
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0, 0});
 		ImGui::Begin("Viewport");
 
-		for (const auto entity : viewportView)
+		auto& reg = m_World->GetRegistry();
+
+		for (const entt::entity e : viewportView)
 		{
-			auto [viewportComponent, renderTargetComponent] = viewportView.get(entity);
-			viewportComponent.Focused = ImGui::IsWindowFocused();
-			viewportComponent.Hovered = ImGui::IsWindowHovered();
-
-			ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
-			viewportComponent.Size = {viewportPanelSize.x, viewportPanelSize.y};
-
-			const auto& desc = renderTargetComponent.Target->GetDesc();
-			if (!desc.ColorAttachments.empty())
+			// ---- Interaction flags
+			reg.WriteIfChanged<ViewportInteractionComponent>(e, [&](auto& vi) // TODO this one is editor only, and can or can not exist
 			{
-				// TODO make some sort of access view -> just accesses one (first) entity from the view
+				vi.Focused = ImGui::IsWindowFocused();
+				vi.Hovered = ImGui::IsWindowHovered();
+			});
+
+			// ---- Viewport size
+			const ImVec2 panelSize = ImGui::GetContentRegionAvail();
+			reg.WriteIfChanged<ViewportComponent>(e, [&](auto& vp)
+			{
+				vp.Size = {panelSize.x, panelSize.y};
+			});
+
+			// ---- Draw
+			const auto& rt = reg.Read<RenderTargetComponent>(e);
+			if (!rt.Target)
+			{
+				continue;
+			}
+
+			const auto& desc = rt.Target->GetDesc();
+			if (!desc.ColorAttachments.empty() && desc.ColorAttachments[0].View)
+			{
 				const uint64_t textureID = desc.ColorAttachments[0].View->GetUIID();
-				ImGui::Image(textureID,
-							 ImVec2{viewportComponent.Size.x, viewportComponent.Size.y}, ImVec2{0, 1},
-							 ImVec2{1, 0});
+				const auto& vp = reg.Read<ViewportComponent>(e);
+
+				ImGui::Image(
+					textureID,
+					ImVec2{vp.Size.x, vp.Size.y},
+					ImVec2{0, 1},
+					ImVec2{1, 0}
+				);
 			}
 		}
 

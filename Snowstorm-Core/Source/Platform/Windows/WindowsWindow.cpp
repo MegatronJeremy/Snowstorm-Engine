@@ -1,9 +1,9 @@
 #include "pch.h"
 #include "WindowsWindow.hpp"
 
-#include "Snowstorm/Events/ApplicationEvent.h"
-#include "Snowstorm/Events/KeyEvent.h"
-#include "Snowstorm/Events/MouseEvent.h"
+#include "Snowstorm/Events/ApplicationEvent.hpp"
+#include "Snowstorm/Events/KeyEvent.hpp"
+#include "Snowstorm/Events/MouseEvent.hpp"
 
 #include "Snowstorm/Render/RendererAPI.hpp"
 
@@ -58,6 +58,18 @@ namespace Snowstorm
 	bool WindowsWindow::IsVSync() const
 	{
 		return m_Data.VSync;
+	}
+
+	void WindowsWindow::SetCursorMode(const CursorMode mode)
+	{
+		if (mode == CursorMode::Locked)
+		{
+			glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+		}
+		else
+		{
+			glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+		}
 	}
 
 	void WindowsWindow::Init(const WindowProps& props)

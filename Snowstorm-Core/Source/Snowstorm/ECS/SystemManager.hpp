@@ -29,7 +29,7 @@ namespace Snowstorm
 				system->Execute(ts);
 			}
 
-			m_Registry.clearTrackedComponents();
+			m_Registry.ClearTrackedComponents();
 		}
 
 		TrackedRegistry& GetRegistry() { return m_Registry; }

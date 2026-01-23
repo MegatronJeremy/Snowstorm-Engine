@@ -1,0 +1,6 @@
+{
+  "Type": "SnowstormMaterial",
+  "Version": 1,
+  "PipelinePreset": "Mandelbrot",
+  "BaseColor": [1.0, 1.0, 1.0, 1.0]
+}

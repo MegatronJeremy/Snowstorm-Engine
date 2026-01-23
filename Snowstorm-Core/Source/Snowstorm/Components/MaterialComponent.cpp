@@ -11,11 +11,7 @@ namespace Snowstorm
 	void RegisterMaterialComponent()
 	{
 		registration::class_<MaterialComponent>("Snowstorm::MaterialComponent")
-			.property("MaterialInstance", &MaterialComponent::MaterialInstance);
-
-		// registration::class_<Material>("Snowstorm::Material")
-		// 	.property("Color", &Material::GetColor, &Material::SetColor)
-		// 	.property("ShaderPath", &Material::GetShaderPath, &Material::SetShaderPath);
+		.property("Material", &MaterialComponent::Material); // TODO material editor in the future?
 
 		Snowstorm::RegisterComponent<MaterialComponent>();
 	}

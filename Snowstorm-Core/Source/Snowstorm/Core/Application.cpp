@@ -24,6 +24,8 @@ namespace Snowstorm
 		m_Window = Window::Create(WindowProps(name));
 		m_Window->SetEventCallback(BIND_EVENT_FN(Application::OnEvent));
 
+		m_EventBus = CreateScope<EventBus>();
+
 		// TODO think about this (but it's probably fine)
 		m_ServiceManager = CreateScope<ServiceManager>();
 
@@ -83,19 +85,40 @@ namespace Snowstorm
 	{
 		SS_PROFILE_FUNCTION();
 
-		EventDispatcher dispatcher(e);
-		dispatcher.Dispatch<WindowCloseEvent>(BIND_EVENT_FN(OnWindowClose));
-		dispatcher.Dispatch<WindowResizeEvent>(BIND_EVENT_FN(OnWindowResize));
-
-		if (e.Handled)
+		// Core app handling first (no EventDispatcher)
+		switch (e.GetEventType())
 		{
-			return;
+		case EventType::WindowClose:
+			{
+				m_Running = false;
+				e.Handled = true;
+				break;
+			}
+		case EventType::WindowResize:
+			{
+				const auto& re = static_cast<WindowResizeEvent&>(e);
+
+				m_Window->Resize(re.Width, re.Height);
+
+				if (re.Width == 0 || re.Height == 0)
+				{
+					m_Minimized = true;
+				}
+				else
+				{
+					m_Minimized = false;
+				}
+
+				// Let others also react if they want; do NOT force handled here unless you truly want to.
+				// e.Handled = true; // optional
+				break;
+			}
+		default:
+			break;
 		}
 
-		for (const auto& it : std::ranges::reverse_view(*m_LayerStack))
-		{
-			it->OnEvent(e);
-		}
+		// Always publish (subscribers decide what to do)
+		m_EventBus->Publish(e);
 	}
 
 	void Application::PushLayer(Layer* layer) const

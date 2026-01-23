@@ -2,8 +2,7 @@
 
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/Texture.hpp"
-
-#include "Math.hpp"
+#include "Snowstorm/Math/Math.hpp"
 
 #include <optional>
 #include <vector>
@@ -46,10 +45,10 @@ namespace Snowstorm
 		float    ClearDepth   = 1.0f;
 		uint32_t ClearStencil = 0;
 
-		RenderTargetLoadOp  DepthLoadOp   = RenderTargetLoadOp::Clear;
-		RenderTargetStoreOp DepthStoreOp  = RenderTargetStoreOp::Store;
-		RenderTargetLoadOp  StencilLoadOp = RenderTargetLoadOp::DontCare;
-		RenderTargetStoreOp StencilStoreOp= RenderTargetStoreOp::DontCare;
+		RenderTargetLoadOp  DepthLoadOp    = RenderTargetLoadOp::Clear;
+		RenderTargetStoreOp DepthStoreOp   = RenderTargetStoreOp::Store;
+		RenderTargetLoadOp  StencilLoadOp  = RenderTargetLoadOp::DontCare;
+		RenderTargetStoreOp StencilStoreOp = RenderTargetStoreOp::DontCare;
 	};
 
 	struct RenderTargetDesc

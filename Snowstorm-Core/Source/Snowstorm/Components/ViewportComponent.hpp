@@ -7,7 +7,12 @@ namespace Snowstorm
 	struct ViewportComponent
 	{
 		glm::vec2 Size{};
-		bool Focused = true;
-		bool Hovered = true;
 	};
+
+	inline bool operator==(const ViewportComponent& lhs, const ViewportComponent& rhs)
+	{
+		return lhs.Size == rhs.Size;
+	}
+
+	void RegisterViewportComponent();
 }

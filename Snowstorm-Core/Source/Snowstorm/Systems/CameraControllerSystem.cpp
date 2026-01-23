@@ -1,130 +1,231 @@
 #include "CameraControllerSystem.hpp"
 
-#include <glm/detail/type_quat.hpp>
+#include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <utility>
 
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Components/CameraControllerComponent.hpp"
-#include "Snowstorm/Components/RenderTargetComponent.hpp"
+#include "Snowstorm/Components/CameraControllerRuntimeComponent.hpp"
+#include "Snowstorm/Components/CameraTargetComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
-#include "Snowstorm/Components/ViewportComponent.hpp"
+#include "Snowstorm/Components/ViewportInteractionComponent.hpp"
+
+#include "Snowstorm/Input/InputStateSingleton.hpp"
+#include "Snowstorm/Core/Application.hpp" // for cursor mode via window (see note)
 #include "Snowstorm/Core/Input.hpp"
-#include "Snowstorm/Events/Event.h"
-#include "Snowstorm/Events/MouseEvent.h"
 
 namespace Snowstorm
 {
+	namespace
+	{
+		glm::vec3 ForwardFromEulerRadians(const glm::vec3& eulerRadians)
+		{
+			const glm::quat q(glm::vec3(eulerRadians.x, eulerRadians.y, 0.0f));
+			return q * glm::vec3(0.0f, 0.0f, -1.0f);
+		}
+
+		glm::vec3 RightFromForward(const glm::vec3& forward)
+		{
+			constexpr glm::vec3 up(0.0f, 1.0f, 0.0f);
+			return glm::normalize(glm::cross(forward, up));
+		}
+
+		void SetCursorLocked(bool locked)
+		{
+			// IMPORTANT:
+			// Don't use Input::SetCursorMode anymore.
+			// Put this on Window/Platform (glfwSetInputMode) and call through Application window.
+			auto& window = Application::Get().GetWindow();
+			window.SetCursorMode(locked ? CursorMode::Locked : CursorMode::Normal);
+		}
+	}
+
 	void CameraControllerSystem::Execute(const Timestep ts)
 	{
-		auto& eventsHandler = SingletonView<EventsHandlerSingleton>();
+		auto& reg = m_World->GetRegistry();
+		auto& input = SingletonView<InputStateSingleton>();
 
-		const auto cameraControllerView = View<CameraComponent, TransformComponent, CameraControllerComponent, RenderTargetComponent>();
-		const auto viewportView = View<ViewportComponent>();
+		const float dt = ts.GetSeconds();
 
-		for (const auto entity : cameraControllerView)
+		const auto camCtrlView =
+		View<CameraComponent, TransformComponent, CameraControllerComponent, CameraTargetComponent>();
+
+		const auto vpInteractView = View<ViewportInteractionComponent>();
+
+		// Ensure runtime state for newly created controller cameras
+		for (const auto e : InitView<CameraControllerComponent>())
 		{
-			auto [camera, transform, controller, renderTarget] = cameraControllerView.get(entity);
+			if (!reg.any_of<CameraControllerRuntimeComponent>(e))
+			{
+				reg.emplace<CameraControllerRuntimeComponent>(e);
+			}
+		}
 
-			if (!viewportView.contains(renderTarget.TargetEntity))
+		// Pick one active camera: focused viewport; prefer Primary
+		entt::entity activeCam = entt::null;
+		bool foundPrimary = false;
+
+		for (const auto e : camCtrlView)
+		{
+			const auto& cam = reg.Read<CameraComponent>(e);
+			const auto& ct = reg.Read<CameraTargetComponent>(e);
+
+			if (ct.TargetViewportEntity == entt::null || !reg.valid(ct.TargetViewportEntity))
 			{
 				continue;
 			}
 
-			auto [viewport] = viewportView.get(renderTarget.TargetEntity);
-
-			if (!camera.Primary)
+			if (!vpInteractView.contains(ct.TargetViewportEntity))
 			{
 				continue;
 			}
 
-			if (!viewport.Focused)
+			const auto& vpI = reg.Read<ViewportInteractionComponent>(ct.TargetViewportEntity);
+			if (!vpI.Focused)
 			{
-				Input::SetCursorMode(CursorMode::Normal);
 				continue;
 			}
 
-			bool isPerspective = camera.Camera.GetProjectionType() == SceneCamera::ProjectionType::Perspective;
-			bool rightClickHeld = Input::IsMouseButtonPressed(Mouse::ButtonRight);
-
-			static bool wasRightClickHeld = false;
-			static std::pair<float, float> lastMousePos = Input::GetMousePosition();
-
-			if (rightClickHeld && !wasRightClickHeld)
+			if (activeCam == entt::null)
 			{
-				Input::SetCursorMode(CursorMode::Locked);
-				lastMousePos = Input::GetMousePosition();
+				activeCam = e;
+				foundPrimary = cam.Primary;
 			}
-
-			else if (!rightClickHeld && wasRightClickHeld)
+			else if (!foundPrimary && cam.Primary)
 			{
-				Input::SetCursorMode(CursorMode::Normal);
+				activeCam = e;
+				foundPrimary = true;
 			}
-			wasRightClickHeld = rightClickHeld;
+		}
 
-			glm::vec3 moveDir(0.0f);
+		if (activeCam == entt::null)
+		{
+			SetCursorLocked(false);
+			return;
+		}
 
-			if (rightClickHeld)
+		auto& cam = reg.Write<CameraComponent>(activeCam);
+		auto& tr = reg.Write<TransformComponent>(activeCam);
+
+		const auto& ctrl = reg.Read<CameraControllerComponent>(activeCam);
+		const auto& ct = reg.Read<CameraTargetComponent>(activeCam);
+		auto& rtState = reg.Write<CameraControllerRuntimeComponent>(activeCam);
+
+		// Viewport must be valid + focused
+		if (ct.TargetViewportEntity == entt::null || !vpInteractView.contains(ct.TargetViewportEntity))
+		{
+			SetCursorLocked(false);
+			return;
+		}
+
+		const auto& vpI = reg.Read<ViewportInteractionComponent>(ct.TargetViewportEntity);
+		if (!vpI.Focused)
+		{
+			SetCursorLocked(false);
+			return;
+		}
+
+		// Optional: if UI wants capture, bail (hook ImGui later)
+		if (input.WantCaptureMouse || input.WantCaptureKeyboard)
+		{
+			SetCursorLocked(false);
+			return;
+		}
+
+		const bool isPerspective = (cam.Projection == CameraComponent::ProjectionType::Perspective);
+
+		// GLFW mouse buttons are 0..7 typically; you should map Mouse::ButtonRight to 1 (GLFW_MOUSE_BUTTON_RIGHT)
+		constexpr int rightButton = Mouse::ButtonRight;
+		const bool rightClickHeld = rightButton < static_cast<int>(InputStateSingleton::MaxMouseButtons)
+		? input.MouseDown.test(rightButton)
+		: false;
+
+		// Cursor lock toggle based on RMB edge
+		if (rightClickHeld && !rtState.WasRightClickHeld)
+		{
+			SetCursorLocked(true);
+		}
+		else if (!rightClickHeld && rtState.WasRightClickHeld)
+		{
+			SetCursorLocked(false);
+		}
+
+		rtState.WasRightClickHeld = rightClickHeld;
+
+		// Axes from current transform
+		const glm::vec3 forward = ForwardFromEulerRadians(tr.Rotation);
+		const glm::vec3 right = RightFromForward(forward);
+		constexpr glm::vec3 up(0.0f, 1.0f, 0.0f);
+
+		// Mouse look uses input.MouseDelta (no absolute mouse pos!)
+		if (rightClickHeld && ctrl.RotationEnabled)
+		{
+			const float dx = input.MouseDelta.x;
+			const float dy = -input.MouseDelta.y; // screen Y down -> pitch up
+
+			// LookSensitivity: deg per pixel moved
+			float yawDeg = -dx * ctrl.LookSensitivity;
+			float pitchDeg = dy * ctrl.LookSensitivity;
+
+			// Cap by RotationSpeed (deg/sec)
+			const float maxDegThisFrame = ctrl.RotationSpeed * dt;
+			yawDeg = glm::clamp(yawDeg, -maxDegThisFrame, maxDegThisFrame);
+			pitchDeg = glm::clamp(pitchDeg, -maxDegThisFrame, maxDegThisFrame);
+
+			tr.Rotation.y += glm::radians(yawDeg);
+			tr.Rotation.x += glm::radians(pitchDeg);
+			tr.Rotation.x = glm::clamp(tr.Rotation.x, -glm::half_pi<float>(), glm::half_pi<float>());
+		}
+
+		// Movement (RMB only)
+		glm::vec3 moveDir(0.0f);
+
+		auto isKeyDown = [&](const int key) -> bool
+		{
+			return (key >= 0 && std::cmp_less(key, InputStateSingleton::MaxKeys)) ? input.Down.test(static_cast<size_t>(key)) : false;
+		};
+
+		if (rightClickHeld)
+		{
+			if (isKeyDown(Key::D)) moveDir += right;
+			if (isKeyDown(Key::A)) moveDir -= right;
+
+			if (isPerspective)
 			{
-				auto [mouseX, mouseY] = Input::GetMousePosition();
-
-				if (wasRightClickHeld)
-				{
-					float deltaX = mouseX - lastMousePos.first;
-					float deltaY = lastMousePos.second - mouseY;
-
-					lastMousePos = {mouseX, mouseY};
-
-					float sensitivity = controller.LookSensitivity * 0.001f;
-
-					transform.Rotation.y -= deltaX * sensitivity;
-					transform.Rotation.x += deltaY * sensitivity;
-
-					transform.Rotation.x = glm::clamp(transform.Rotation.x, -glm::half_pi<float>(), glm::half_pi<float>());
-				}
-
-				lastMousePos = {mouseX, mouseY};
+				if (isKeyDown(Key::W)) moveDir += forward;
+				if (isKeyDown(Key::S)) moveDir -= forward;
+				if (isKeyDown(Key::E)) moveDir += up;
+				if (isKeyDown(Key::Q)) moveDir -= up;
 			}
-
-			auto rotation = glm::quat(glm::vec3(transform.Rotation.x, transform.Rotation.y, 0));
-			glm::vec3 forward = rotation * glm::vec3(0.0f, 0.0f, -1.0f);
-			glm::vec3 right = normalize(cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
-			auto up = glm::vec3(0.0f, 1.0f, 0.0f);
-
-			if (rightClickHeld)
+			else
 			{
-				if (Input::IsKeyPressed(Key::D)) moveDir += right;
-				if (Input::IsKeyPressed(Key::A)) moveDir -= right;
+				if (isKeyDown(Key::W)) moveDir += up;
+				if (isKeyDown(Key::S)) moveDir -= up;
+				if (isKeyDown(Key::E)) moveDir += forward;
+				if (isKeyDown(Key::Q)) moveDir -= forward;
+			}
+		}
 
+		if (glm::dot(moveDir, moveDir) > 0.0f)
+		{
+			tr.Position += glm::normalize(moveDir) * ctrl.MoveSpeed * dt;
+		}
+
+		// Zoom: use ScrollDelta (per-frame)
+		if (vpI.Hovered)
+		{
+			if (const float scrollY = input.ScrollDelta.y; scrollY != 0.0f)
+			{
 				if (isPerspective)
 				{
-					if (Input::IsKeyPressed(Key::W)) moveDir += forward;
-					if (Input::IsKeyPressed(Key::S)) moveDir -= forward;
-					if (Input::IsKeyPressed(Key::E)) moveDir += up;
-					if (Input::IsKeyPressed(Key::Q)) moveDir -= up;
+					tr.Position += forward * scrollY * ctrl.ZoomSpeed;
 				}
 				else
 				{
-					if (Input::IsKeyPressed(Key::W)) moveDir += up;
-					if (Input::IsKeyPressed(Key::S)) moveDir -= up;
-					if (Input::IsKeyPressed(Key::E)) moveDir += forward;
-					if (Input::IsKeyPressed(Key::Q)) moveDir -= forward;
-				}
-			}
-
-			transform.Position += moveDir * controller.MoveSpeed * ts.GetSeconds();
-
-			for (const auto& event : eventsHandler.Process<MouseScrolledEvent>())
-			{
-				if (isPerspective)
-				{
-					transform.Position += forward * event->yOffset * controller.ZoomSpeed;
-				}
-				else
-				{
-					float zoomFactor = 1.0f - (event->yOffset * controller.ZoomSpeed * 0.1f);
-					float orthoSize = camera.Camera.GetOrthographicSize();
-					orthoSize = glm::clamp(orthoSize * zoomFactor, 0.25f, 100.0f);
-
-					camera.Camera.SetOrthographicSize(orthoSize);
+					const float zoomFactor = 1.0f - (scrollY * ctrl.ZoomSpeed * 0.1f);
+					cam.OrthographicSize = glm::clamp(cam.OrthographicSize * zoomFactor, 0.25f, 100.0f);
 				}
 			}
 		}

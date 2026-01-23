@@ -2,8 +2,9 @@
 
 #include "Window.hpp"
 #include "Snowstorm/Core/LayerStack.hpp"
-#include "Snowstorm/Events/Event.h"
-#include "Snowstorm/Events/ApplicationEvent.h"
+#include "Snowstorm/Events/Event.hpp"
+#include "Snowstorm/Events/ApplicationEvent.hpp"
+#include "Snowstorm/Events/EventBus.hpp"
 #include "Snowstorm/Service/ServiceManager.hpp"
 
 namespace Snowstorm
@@ -28,6 +29,8 @@ namespace Snowstorm
 
 		ServiceManager& GetServiceManager() const { return *m_ServiceManager; }
 
+		EventBus& GetEventBus() const { return *m_EventBus; }
+
 	protected:
 		Scope<ServiceManager> m_ServiceManager;
 
@@ -36,6 +39,7 @@ namespace Snowstorm
 		bool OnWindowResize(WindowResizeEvent& e);
 
 		Scope<Window> m_Window;
+		Scope<EventBus> m_EventBus;
 		bool m_Running = true;
 		bool m_Minimized = false;
 		Scope<LayerStack> m_LayerStack;

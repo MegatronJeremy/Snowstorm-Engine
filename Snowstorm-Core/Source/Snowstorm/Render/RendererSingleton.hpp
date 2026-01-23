@@ -1,10 +1,10 @@
 #pragma once
 
-#include "Camera.hpp"
 #include "CommandContext.hpp"
 #include "Material.hpp"
 #include "Mesh.hpp"
 
+#include "Snowstorm/Components/CameraRuntimeComponent.hpp"
 #include "Snowstorm/Lighting/LightingUniforms.hpp"
 #include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/MaterialInstance.hpp"
@@ -29,10 +29,8 @@ namespace Snowstorm
 	class RendererSingleton final : public Singleton
 	{
 	public:
-		RendererSingleton() = default;
-
-		void BeginScene(const Camera& camera,
-		                const glm::mat4& cameraTransform,
+		void BeginScene(const CameraRuntimeComponent& cameraRt,
+		                const glm::vec3& cameraWorldPosition,
 		                const Ref<CommandContext>& commandContext,
 		                uint32_t frameIndex);
 
@@ -48,8 +46,8 @@ namespace Snowstorm
 
 	private:
 		void FlushBatch(BatchData& batch,
-		                       const Ref<CommandContext>& commandContext,
-		                       uint32_t frameIndex);
+		                const Ref<CommandContext>& commandContext,
+		                uint32_t frameIndex);
 
 	private:
 		Ref<CommandContext> m_CommandContext;

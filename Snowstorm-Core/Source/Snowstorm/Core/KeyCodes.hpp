@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace Snowstorm
 {
 	using KeyCode = uint16_t;

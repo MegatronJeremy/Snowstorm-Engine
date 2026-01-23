@@ -28,7 +28,7 @@
 
 #include "Snowstorm/Core/Log.hpp"
 
-#include "Snowstorm/Debug/Instrumentor.h"
+#include "Snowstorm/Debug/Instrumentor.hpp"
 
 #ifdef SS_PLATFORM_WINDOWS
 #include <Windows.h>

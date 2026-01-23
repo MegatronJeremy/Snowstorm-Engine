@@ -31,6 +31,8 @@ namespace Snowstorm
 
 		void* GetNativeWindow() const override { return m_Window; }
 
+		void SetCursorMode(CursorMode mode) override;
+
 	private:
 		void Init(const WindowProps& props);
 		void Shutdown() const;

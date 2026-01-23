@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "Snowstorm/World/ScriptableEntity.h"
+#include "Snowstorm/World/ScriptableEntity.hpp"
 
 namespace Snowstorm
 {

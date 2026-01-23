@@ -28,45 +28,29 @@ namespace Snowstorm
 		{
 			static_assert(sizeof...(Components) > 0, "View requires at least one component type.");
 
-			return m_World->GetRegistry().m_Registry.view<Components...>();
+			return m_World->GetRegistry().view<Components...>();
 		}
 
 		/// Returns a view of entities that had all the specified components added
 		template <typename... Components>
 		[[nodiscard]] auto InitView() const
 		{
-			static_assert(sizeof...(Components) > 0, "InitView requires at least one component type.");
-
-			std::unordered_set<entt::entity> entitiesWithAddedComponents;
-
-			for (const auto& [entity, componentTypes] : m_World->GetRegistry().m_AddedComponents)
-			{
-				if ((componentTypes.count(std::type_index(typeid(Components))) && ...))
-				{
-					entitiesWithAddedComponents.insert(entity);
-				}
-			}
-
-			return entitiesWithAddedComponents;
+			return m_World->GetRegistry().AddedView<Components...>();
 		}
 
 		/// Returns a view of entities that had all the specified components removed
 		template <typename... Components>
 		[[nodiscard]] auto FiniView() const
 		{
-			static_assert(sizeof...(Components) > 0, "finiView requires at least one component type.");
+			return m_World->GetRegistry().RemovedView<Components...>();
+		}
 
-			std::unordered_set<entt::entity> entitiesWithRemovedComponents;
-
-			for (const auto& [entity, componentTypes] : m_World->GetRegistry().m_RemovedComponents)
-			{
-				if ((componentTypes.count(std::type_index(typeid(Components))) && ...))
-				{
-					entitiesWithRemovedComponents.insert(entity);
-				}
-			}
-
-			return entitiesWithRemovedComponents;
+		/// Returns a view of entities that had all the specified components changed (AND).
+		/// NOTE: "Changed" only tracks mutations done through TrackedRegistry APIs (patch/replace/emplace_or_replace).
+		template <typename... Components>
+		[[nodiscard]] auto ChangedView() const
+		{
+			return m_World->GetRegistry().ChangedView<Components...>();
 		}
 
 		/// Returns a singleton present in the system's context

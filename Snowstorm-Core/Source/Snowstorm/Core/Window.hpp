@@ -1,9 +1,10 @@
 #pragma once
 
+#include "Input.hpp"
 #include "pch.h"
 
 #include "Snowstorm/Core/Base.hpp"
-#include "Snowstorm/Events/Event.h"
+#include "Snowstorm/Events/Event.hpp"
 
 namespace Snowstorm
 {
@@ -50,6 +51,8 @@ namespace Snowstorm
 		virtual bool IsVSync() const = 0;
 
 		virtual void* GetNativeWindow() const = 0;
+
+		virtual void SetCursorMode(CursorMode mode) = 0;
 
 		static Scope<Window> Create(const WindowProps& props = WindowProps());
 	};

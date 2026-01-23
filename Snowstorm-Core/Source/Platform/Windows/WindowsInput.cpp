@@ -58,13 +58,4 @@ namespace Snowstorm
 
 		s_LastMousePosition = currentMousePos;
 	}
-
-	void Input::SetCursorMode(const CursorMode mode)
-	{
-		const auto window = static_cast<GLFWwindow*>(Application::Get().GetWindow().GetNativeWindow());
-		if (mode == CursorMode::Locked)
-			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-		else
-			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-	}
 }

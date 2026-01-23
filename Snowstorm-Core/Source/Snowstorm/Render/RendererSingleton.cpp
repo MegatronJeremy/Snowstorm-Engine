@@ -1,5 +1,6 @@
 #include "RendererSingleton.hpp"
 
+#include "Camera.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
@@ -25,8 +26,8 @@ namespace Snowstorm
 		};
 	}
 
-	void RendererSingleton::BeginScene(const Camera& camera,
-	                                   const glm::mat4& cameraTransform,
+	void RendererSingleton::BeginScene(const CameraRuntimeComponent& cameraRt,
+	                                   const glm::vec3& cameraWorldPosition,
 	                                   const Ref<CommandContext>& commandContext,
 	                                   const uint32_t frameIndex)
 	{
@@ -35,12 +36,8 @@ namespace Snowstorm
 		m_CommandContext = commandContext;
 		m_FrameIndex = frameIndex;
 
-		const glm::mat4 view = glm::inverse(cameraTransform);
-		const glm::mat4 proj = camera.GetProjection();
-		m_ViewProj = proj * view;
-
-		// Camera world position is the translation of the transform matrix
-		m_CameraPosition = glm::vec3(cameraTransform[3]);
+		m_ViewProj = cameraRt.ViewProjection;
+		m_CameraPosition = cameraWorldPosition;
 
 		m_Batches.clear();
 	}

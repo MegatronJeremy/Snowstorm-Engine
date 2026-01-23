@@ -10,25 +10,23 @@ namespace Snowstorm
 	{
 		using namespace rttr;
 
-		registration::class_<CameraComponent>("Snowstorm::CameraComponent")
-			.property("Camera", &CameraComponent::Camera)
-			.property("Primary", &CameraComponent::Primary)
-			.property("FixedAspectRatio", &CameraComponent::FixedAspectRatio);
-
-		registration::enumeration<SceneCamera::ProjectionType>("Snowstorm::ProjectionType")
+		registration::enumeration<CameraComponent::ProjectionType>("ProjectionType")
 		(
-			value("Perspective", SceneCamera::ProjectionType::Perspective),
-			value("Orthographic", SceneCamera::ProjectionType::Orthographic)
+			value("Perspective", CameraComponent::ProjectionType::Perspective),
+			value("Orthographic", CameraComponent::ProjectionType::Orthographic)
 		);
 
-		registration::class_<SceneCamera>("Snowstorm::SceneCamera")
-			.property("PerspectiveFOV", &SceneCamera::GetPerspectiveVerticalFOV, &SceneCamera::SetPerspectiveVerticalFOV)
-			.property("PerspectiveNear", &SceneCamera::GetPerspectiveNearClip, &SceneCamera::SetPerspectiveNearClip)
-			.property("PerspectiveFar", &SceneCamera::GetPerspectiveFarClip, &SceneCamera::SetPerspectiveFarClip)
-			.property("OrthographicSize", &SceneCamera::GetOrthographicSize, &SceneCamera::SetOrthographicSize)
-			.property("OrthographicNear", &SceneCamera::GetOrthographicNearClip, &SceneCamera::SetOrthographicNearClip)
-			.property("OrthographicFar", &SceneCamera::GetOrthographicFarClip, &SceneCamera::SetOrthographicFarClip)
-			.property("ProjectionType", &SceneCamera::GetProjectionType, &SceneCamera::SetProjectionType);
+		registration::class_<CameraComponent>("Snowstorm::CameraComponent")
+		.property("Projection", &CameraComponent::Projection)
+		.property("PerspectiveFOV", &CameraComponent::PerspectiveFOV)
+		.property("PerspectiveNear", &CameraComponent::PerspectiveNear)
+		.property("PerspectiveFar", &CameraComponent::PerspectiveFar)
+		.property("OrthographicSize", &CameraComponent::OrthographicSize)
+		.property("OrthographicNear", &CameraComponent::OrthographicNear)
+		.property("OrthographicFar", &CameraComponent::OrthographicFar)
+		.property("Primary", &CameraComponent::Primary)
+		.property("FixedAspectRatio", &CameraComponent::FixedAspectRatio)
+		.property("AspectRatio", &CameraComponent::AspectRatio);
 
 		Snowstorm::RegisterComponent<CameraComponent>();
 	}

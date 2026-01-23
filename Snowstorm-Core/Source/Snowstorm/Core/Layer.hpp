@@ -2,7 +2,7 @@
 
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/Timestep.hpp"
-#include "Snowstorm/Events/Event.h"
+#include "Snowstorm/Events/Event.hpp"
 
 namespace Snowstorm
 {
@@ -27,10 +27,6 @@ namespace Snowstorm
 		}
 
 		virtual void OnUpdate(Timestep ts)
-		{
-		}
-
-		virtual void OnEvent(Event& event)
 		{
 		}
 

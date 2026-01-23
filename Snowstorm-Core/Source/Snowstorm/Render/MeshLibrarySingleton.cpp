@@ -74,24 +74,6 @@ namespace Snowstorm
 		return mesh;
 	}
 
-	Ref<Mesh> MeshLibrarySingleton::CreateQuad()
-	{
-		std::vector<Vertex> vertices = {
-			{{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}}, // Bottom-left
-			{{0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}}, // Bottom-right
-			{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}}, // Top-right
-			{{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}}, // Top-left
-		};
-
-		std::vector<uint32_t> indices = {
-			0, 1, 2, 2, 3, 0
-		};
-
-		Ref<Mesh> quad = CreateRef<Mesh>(vertices, indices);
-		m_Meshes["Quad"] = quad;
-		return quad;
-	}
-
 	void MeshLibrarySingleton::Clear()
 	{
 		m_Meshes.clear();

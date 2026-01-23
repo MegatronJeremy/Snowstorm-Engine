@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "Snowstorm/Render/Math.hpp"
+#include "Snowstorm/Math/Math.hpp"
 
 namespace Snowstorm
 {
@@ -18,6 +18,6 @@ namespace Snowstorm
 	{
 		GPUDirectionalLight Lights[MAX_DIRECTIONAL_LIGHTS];
 		int LightCount = 0;
-		float Padding[3] = { 0, 0, 0 };
+		float Padding[3] = {0, 0, 0};
 	};
 }

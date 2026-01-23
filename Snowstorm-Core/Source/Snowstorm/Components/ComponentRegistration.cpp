@@ -2,8 +2,11 @@
 
 #include "CameraComponent.hpp"
 #include "CameraControllerComponent.hpp"
+#include "CameraTargetComponent.hpp"
 #include "ComponentRegistry.hpp"
+#include "IDComponent.hpp"
 #include "MaterialComponent.hpp"
+#include "MaterialOverridesComponent.hpp"
 #include "MeshComponent.hpp"
 #include "NativeScriptComponent.hpp"
 #include "RenderTargetComponent.hpp"
@@ -11,6 +14,8 @@
 #include "TagComponent.hpp"
 #include "TransformComponent.hpp"
 #include "ViewportComponent.hpp"
+#include "ViewportInteractionComponent.hpp"
+#include "VisibilityComponents.hpp"
 
 #include "Snowstorm/Lighting/LightingComponents.hpp"
 
@@ -23,27 +28,23 @@ namespace Snowstorm
 		// TODO move all of these to functions (and automate it somehow)
 		RegisterCameraComponent();
 		RegisterCameraControllerComponent();
+		RegisterMeshComponent();
 		RegisterMaterialComponent();
+		RegisterMaterialOverridesComponent();
 		RegisterLightingComponents();
-
-		registration::class_<MeshComponent>("Snowstorm::MeshComponent")
-			.constructor()
-			.property("MeshInstance", &MeshComponent::MeshInstance);
-		Snowstorm::RegisterComponent<MeshComponent>();
+		RegisterIDComponent();
+		RegisterViewportComponent();
+		RegisterViewportInteractionComponent();
+		RegisterCameraTargetComponent();
+		RegisterVisibilityComponents();
 
 		registration::class_<NativeScriptComponent>("Snowstorm::NativeScriptComponent")
 			.constructor()
 			.property("Instance", &NativeScriptComponent::Instance);
 		Snowstorm::RegisterComponent<NativeScriptComponent>();
 
-		registration::class_<RenderTargetComponent>("Snowstorm::RenderTargetComponent")
-			.constructor()
-			.property("RenderTarget", &RenderTargetComponent::Target);
-		Snowstorm::RegisterComponent<RenderTargetComponent>();
-
 		registration::class_<SpriteComponent>("Snowstorm::SpriteComponent")
 			.constructor()
-	//		.property("TextureInstance", &SpriteComponent::TextureInstance)
 			.property("TilingFactor", &SpriteComponent::TilingFactor)
 			.property("TintColor", &SpriteComponent::TintColor);
 		Snowstorm::RegisterComponent<SpriteComponent>();
@@ -59,12 +60,5 @@ namespace Snowstorm
 			.property("Rotation", &TransformComponent::Rotation)
 			.property("Scale", &TransformComponent::Scale);
 		Snowstorm::RegisterComponent<TransformComponent>();
-
-		registration::class_<ViewportComponent>("Snowstorm::ViewportComponent")
-			.constructor()
-			.property("Focused", &ViewportComponent::Focused)
-			.property("Hovered", &ViewportComponent::Hovered)
-			.property("Size", &ViewportComponent::Size);
-		Snowstorm::RegisterComponent<ViewportComponent>();
 	}
 }

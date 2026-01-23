@@ -10,7 +10,7 @@
 #include "Snowstorm/Render/Sampler.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
-#include "Math.hpp"
+#include "Snowstorm/Math/Math.hpp"
 
 namespace Snowstorm
 {

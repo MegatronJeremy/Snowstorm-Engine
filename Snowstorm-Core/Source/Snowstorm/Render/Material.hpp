@@ -2,15 +2,13 @@
 
 #pragma once
 
-#include <array>
 #include <cstdint>
 
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Render/Sampler.hpp"
 #include "Snowstorm/Render/Texture.hpp"
-
-#include "Math.hpp"
+#include "Snowstorm/Math/Math.hpp"
 
 namespace Snowstorm
 {

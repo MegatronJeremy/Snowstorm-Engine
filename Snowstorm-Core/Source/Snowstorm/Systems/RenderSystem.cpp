@@ -1,10 +1,16 @@
 #include "RenderSystem.hpp"
 
 #include "Snowstorm/Components/CameraComponent.hpp"
+#include "Snowstorm/Components/CameraRuntimeComponent.hpp"
+#include "Snowstorm/Components/CameraTargetComponent.hpp"
+
 #include "Snowstorm/Components/MaterialComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/RenderTargetComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
+#include "Snowstorm/Components/ViewportComponent.hpp"
+#include "Snowstorm/Components/VisibilityCacheComponent.hpp"
+#include "Snowstorm/Components/VisibilityComponents.hpp"
 
 #include "Snowstorm/Render/RenderGraph.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
@@ -14,88 +20,146 @@ namespace Snowstorm
 {
 	namespace
 	{
-		bool FindPrimaryCameraAndTarget(auto& cameraView,
-		                                const Camera*& outCamera,
-		                                glm::mat4& outCameraTransform,
-		                                Ref<RenderTarget>& outTarget)
+		struct CameraPick
 		{
-			for (const auto entity : cameraView)
+			entt::entity Entity = entt::null;
+			const CameraComponent* Cam = nullptr;
+			const CameraRuntimeComponent* Rt = nullptr;
+			const TransformComponent* Transform = nullptr;
+			const CameraVisibilityComponent* Visibility = nullptr;
+		};
+
+		CameraPick FindCameraForViewport(const TrackedRegistry& reg,
+		                                 const entt::entity viewportEntity,
+		                                 const entt::view<
+			                                 entt::get_t<
+				                                 const TransformComponent,
+				                                 const CameraComponent,
+				                                 const CameraTargetComponent,
+				                                 const CameraRuntimeComponent,
+				                                 const CameraVisibilityComponent>>& camView)
+		{
+			CameraPick pick{};
+
+			// 1) Prefer Primary camera targeting this viewport
+			for (const auto e : camView)
 			{
-				auto [transform, camera, rt] = cameraView.template get<TransformComponent, CameraComponent, RenderTargetComponent>(entity);
-
-				if (!camera.Primary)
+				const auto& cc = reg.Read<CameraComponent>(e);
+				if (!cc.Primary)
 				{
 					continue;
 				}
 
-				if (!rt.Target)
+				const auto& ct = reg.Read<CameraTargetComponent>(e);
+				if (ct.TargetViewportEntity != viewportEntity)
 				{
 					continue;
 				}
 
-				outCamera = &camera.Camera;
-				outCameraTransform = transform;
-				outTarget = rt.Target;
-				return true;
+				pick.Entity = e;
+				pick.Cam = &cc;
+				pick.Rt = &reg.Read<CameraRuntimeComponent>(e);
+				pick.Transform = &reg.Read<TransformComponent>(e);
+				pick.Visibility = &reg.Read<CameraVisibilityComponent>(e);
+				return pick;
 			}
 
-			return false;
+			// 2) Fallback: any camera targeting this viewport
+			for (const auto e : camView)
+			{
+				const auto& ct = reg.Read<CameraTargetComponent>(e);
+				if (ct.TargetViewportEntity != viewportEntity)
+				{
+					continue;
+				}
+
+				pick.Entity = e;
+				pick.Cam = &reg.Read<CameraComponent>(e);
+				pick.Rt = &reg.Read<CameraRuntimeComponent>(e);
+				pick.Transform = &reg.Read<TransformComponent>(e);
+				pick.Visibility = &reg.Read<CameraVisibilityComponent>(e);
+				return pick;
+			}
+
+			return pick;
 		}
 	}
 
 	void RenderSystem::Execute(const Timestep /*ts*/)
 	{
-		const auto cameraView = View<TransformComponent, CameraComponent, RenderTargetComponent>();
-		const auto meshView = View<TransformComponent, MeshComponent, MaterialComponent, RenderTargetComponent>();
-
-		const Camera* mainCamera = nullptr;
-		glm::mat4 cameraTransform{1.0f};
-		Ref<RenderTarget> mainTarget;
-
-		if (!FindPrimaryCameraAndTarget(cameraView, mainCamera, cameraTransform, mainTarget))
-		{
-			return;
-		}
-
+		auto& reg = m_World->GetRegistry();
 		auto& renderer = SingletonView<RendererSingleton>();
+
+		const auto viewportView = View<const ViewportComponent, const RenderTargetComponent>();
+
+		// Cameras must have runtime updated before RenderSystem
+		const auto cameraView = View<
+			const TransformComponent,
+			const CameraComponent,
+			const CameraTargetComponent,
+			const CameraRuntimeComponent,
+			const CameraVisibilityComponent>();
+
+		// Meshes have visibility
+		const auto meshView = View<
+			const TransformComponent,
+			const MeshComponent,
+			const MaterialComponent,
+			const VisibilityComponent>();
 
 		Renderer::BeginFrame();
 
 		const uint32_t frameIndex = Renderer::GetCurrentFrameIndex();
 		const Ref<CommandContext> ctx = Renderer::GetGraphicsCommandContext();
-
 		SS_CORE_ASSERT(ctx, "Renderer returned null CommandContext");
-		SS_CORE_ASSERT(mainTarget, "Main camera has no RenderTarget");
 
 		RenderGraph graph;
 
-		graph.AddPass({
-				.Name = "MeshPass",
-				.Target = mainTarget,
-				.Execute = [&](CommandContext& c)
-				{
-					renderer.BeginScene(*mainCamera, cameraTransform, ctx, frameIndex);
+		for (const auto vpEntity : viewportView)
+		{
+			const auto& vpRT = reg.Read<RenderTargetComponent>(vpEntity);
+			if (!vpRT.Target)
+			{
+				continue;
+			}
 
-					for (const auto entity : meshView)
+			const CameraPick cam = FindCameraForViewport(reg, vpEntity, cameraView);
+			if (cam.Entity == entt::null || !cam.Rt || !cam.Transform || !cam.Visibility)
+			{
+				continue;
+			}
+
+			const std::string passName = std::string("MeshPass_") + std::to_string(static_cast<uint32_t>(vpEntity));
+
+			graph.AddPass({
+					.Name = passName,
+					.Target = vpRT.Target,
+					.Execute = [&, cam](CommandContext& /*c*/)
 					{
-						auto [transform, mesh, material, rt] =
-						meshView.get<TransformComponent, MeshComponent, MaterialComponent, RenderTargetComponent>(entity);
+						// Camera world position is TransformComponent.Position (more reliable than mat[3] with your TRS)
+						const glm::vec3 camPos = cam.Transform->Position;
 
-						if (rt.Target != mainTarget)
+						renderer.BeginScene(*cam.Rt, camPos, ctx, frameIndex);
+
+						for (const auto& cache = reg.Read<VisibilityCacheComponent>(cam.Entity);
+						     const entt::entity e : cache.VisibleMeshes)
 						{
-							continue;
+							const auto& tr = reg.Read<TransformComponent>(e);
+							const auto& mesh = reg.Read<MeshComponent>(e);
+							const auto& mat = reg.Read<MaterialComponent>(e);
+
+							renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance);
 						}
-						renderer.DrawMesh(transform, mesh.MeshInstance, material.MaterialInstance);
+
+						renderer.Flush();
+						renderer.EndScene();
 					}
+				});
+		}
 
-					renderer.Flush();
-					renderer.EndScene();
-				}
-			});
-
-		Ref<RenderTarget> swapchain = Renderer::GetSwapchainTarget();
-
-		// if (IsImGuiEnabled) { TODO implement this as well
+		// ImGui pass to swapchain
+		if (const Ref<RenderTarget> swapchain = Renderer::GetSwapchainTarget())
+		{
 			graph.AddPass({
 					.Name = "EditorPass",
 					.Target = swapchain,
@@ -104,19 +168,9 @@ namespace Snowstorm
 						Renderer::RenderImGuiDrawData(c);
 					}
 				});
-	//		} else {
-	// 		graph.AddPass({
-	// 			.Name = "BlitToScreen",
-	// 			.Target = screen,
-	// 			.Execute = [&](CommandContext& c) {
-	// 				// Logic to simply copy your off-screen Scene texture to the Swapchain
-	// 				// c.Blit(mainTarget->GetColorAttachment(0), screen);
-	// 			}
-	// 		});
-	// 	}
+		}
 
 		graph.Execute(*ctx);
-
 		Renderer::EndFrame();
 	}
 }

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <vector>
-
-#include "Math.hpp"
-
+#include "Snowstorm/Math/Bounds.hpp"
+#include "Snowstorm/Math/Math.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
+
+#include <vector>
 
 namespace Snowstorm
 {
@@ -27,11 +27,16 @@ namespace Snowstorm
 		[[nodiscard]] uint32_t GetVertexCount() const { return m_VertexCount; }
 		[[nodiscard]] uint32_t GetIndexCount() const { return m_IndexCount; }
 
+		[[nodiscard]] const MeshBounds& GetBounds() const { return m_Bounds; }
+		void SetBounds(const MeshBounds& b) { m_Bounds = b; }
+
 	private:
 		Ref<Buffer> m_VertexBuffer;
 		Ref<Buffer> m_IndexBuffer;
 
 		uint32_t m_VertexCount = 0;
 		uint32_t m_IndexCount = 0;
+
+		MeshBounds m_Bounds{}; //-- bounds won't be set by default
 	};
 }

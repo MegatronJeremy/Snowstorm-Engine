@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Math.hpp"
+#include "Snowstorm/Math/Math.hpp"
 
 namespace Snowstorm
 {
