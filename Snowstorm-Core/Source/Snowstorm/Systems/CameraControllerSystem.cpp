@@ -20,23 +20,31 @@ namespace Snowstorm
 {
 	namespace
 	{
-		glm::vec3 ForwardFromEulerRadians(const glm::vec3& eulerRadians)
+		// Build orientation explicitly:
+		// - yaw about WORLD up (0,1,0)
+		// - pitch about camera-local right axis (after yaw)
+		glm::vec3 ForwardFromPitchYaw(const float pitchRadians, const float yawRadians)
 		{
-			const glm::quat q(glm::vec3(eulerRadians.x, eulerRadians.y, 0.0f));
-			return q * glm::vec3(0.0f, 0.0f, -1.0f);
+			constexpr glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
+
+			const glm::quat qYaw = glm::angleAxis(yawRadians, worldUp);
+			// After yaw, camera-local right is qYaw * (1,0,0)
+			const glm::vec3 rightAfterYaw = qYaw * glm::vec3(1.0f, 0.0f, 0.0f);
+			const glm::quat qPitch = glm::angleAxis(pitchRadians, rightAfterYaw);
+
+			const glm::quat q = qPitch * qYaw;
+			return glm::normalize(q * glm::vec3(0.0f, 0.0f, -1.0f));
 		}
 
 		glm::vec3 RightFromForward(const glm::vec3& forward)
 		{
 			constexpr glm::vec3 up(0.0f, 1.0f, 0.0f);
+			// With forward defaulting to -Z and up +Y, this yields +X for right.
 			return glm::normalize(glm::cross(forward, up));
 		}
 
-		void SetCursorLocked(bool locked)
+		void SetCursorLocked(const bool locked)
 		{
-			// IMPORTANT:
-			// Don't use Input::SetCursorMode anymore.
-			// Put this on Window/Platform (glfwSetInputMode) and call through Application window.
 			auto& window = Application::Get().GetWindow();
 			window.SetCursorMode(locked ? CursorMode::Locked : CursorMode::Normal);
 		}
@@ -154,11 +162,6 @@ namespace Snowstorm
 
 		rtState.WasRightClickHeld = rightClickHeld;
 
-		// Axes from current transform
-		const glm::vec3 forward = ForwardFromEulerRadians(tr.Rotation);
-		const glm::vec3 right = RightFromForward(forward);
-		constexpr glm::vec3 up(0.0f, 1.0f, 0.0f);
-
 		// Mouse look uses input.MouseDelta (no absolute mouse pos!)
 		if (rightClickHeld && ctrl.RotationEnabled)
 		{
@@ -176,15 +179,25 @@ namespace Snowstorm
 
 			tr.Rotation.y += glm::radians(yawDeg);
 			tr.Rotation.x += glm::radians(pitchDeg);
-			tr.Rotation.x = glm::clamp(tr.Rotation.x, -glm::half_pi<float>(), glm::half_pi<float>());
+
+			// Avoid exact ±90° to prevent singularity / weird yaw behavior near straight up/down.
+			const float limit = glm::half_pi<float>() - 0.001f;
+			tr.Rotation.x = glm::clamp(tr.Rotation.x, -limit, limit);
 		}
+
+		// Small extra: compute axes AFTER applying mouse look so movement/zoom uses current orientation.
+		const glm::vec3 forward = ForwardFromPitchYaw(tr.Rotation.x, tr.Rotation.y);
+		const glm::vec3 right = RightFromForward(forward);
+		constexpr glm::vec3 up(0.0f, 1.0f, 0.0f);
 
 		// Movement (RMB only)
 		glm::vec3 moveDir(0.0f);
 
 		auto isKeyDown = [&](const int key) -> bool
 		{
-			return (key >= 0 && std::cmp_less(key, InputStateSingleton::MaxKeys)) ? input.Down.test(static_cast<size_t>(key)) : false;
+			return (key >= 0 && std::cmp_less(key, InputStateSingleton::MaxKeys))
+			? input.Down.test(static_cast<size_t>(key))
+			: false;
 		};
 
 		if (rightClickHeld)
