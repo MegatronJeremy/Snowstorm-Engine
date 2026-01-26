@@ -50,6 +50,7 @@ namespace Snowstorm
 		}
 	}
 
+	// TODO this still kind of sucks, improve it???
 	void CameraControllerSystem::Execute(const Timestep ts)
 	{
 		auto& reg = m_World->GetRegistry();
@@ -180,8 +181,8 @@ namespace Snowstorm
 			tr.Rotation.y += glm::radians(yawDeg);
 			tr.Rotation.x += glm::radians(pitchDeg);
 
-			// Avoid exact ±90° to prevent singularity / weird yaw behavior near straight up/down.
-			const float limit = glm::half_pi<float>() - 0.001f;
+			// Avoid exact ±90 deg to prevent singularity / weird yaw behavior near straight up/down.
+			constexpr float limit = glm::half_pi<float>() - 0.001f;
 			tr.Rotation.x = glm::clamp(tr.Rotation.x, -limit, limit);
 		}
 
