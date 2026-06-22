@@ -64,6 +64,7 @@ up automatically via the `VK_ADD_LAYER_PATH` environment variable.
 | --- | --- | --- |
 | **Snowstorm-Core** | static library | All engine code: platform-independent code under `Source/Snowstorm/`, backend code under `Source/Platform/` (Vulkan, Windows). |
 | **Snowstorm-Editor** | executable | The editor (ImGui dockspace, scene hierarchy, viewport); the default startup project. |
+| **Snowstorm-Runtime** | executable | Editor-free "player": runs the same engine systems as the editor without any tooling. Work in progress — see `docs/RUNTIME_REFACTOR.md`. |
 
 ```
 Assets/      runtime assets (Shaders, Meshes, Materials, Scenes, Textures)

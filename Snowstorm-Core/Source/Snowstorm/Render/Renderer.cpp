@@ -8,6 +8,7 @@ namespace Snowstorm
 {
 	// TODO move this stuff somewhere to renderer data maybe
 	Scope<RendererAPI> Renderer::s_API;
+	bool Renderer::s_ImGuiBackendInitialized = false;
 	std::vector<UniformRingBuffer> Renderer::s_FrameUniformRings;
 
 	struct RendererData {
@@ -213,13 +214,20 @@ namespace Snowstorm
 	void Renderer::InitImGuiBackend(void* windowHandle)
 	{
 		SS_CORE_ASSERT(s_API, "Renderer not initialized");
-		return s_API->InitImGuiBackend(windowHandle);
+		s_API->InitImGuiBackend(windowHandle);
+		s_ImGuiBackendInitialized = true;
 	}
 
 	void Renderer::ShutdownImGuiBackend()
 	{
 		SS_CORE_ASSERT(s_API, "Renderer not initialized");
-		return s_API->ShutdownImGuiBackend();
+		s_API->ShutdownImGuiBackend();
+		s_ImGuiBackendInitialized = false;
+	}
+
+	bool Renderer::IsImGuiBackendInitialized()
+	{
+		return s_ImGuiBackendInitialized;
 	}
 
 	void Renderer::ImGuiNewFrame()

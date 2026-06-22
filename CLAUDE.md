@@ -36,6 +36,7 @@ Snowstorm-Core/      # STATIC library: all engine code (the only place most work
   Source/Snowstorm/  #   platform-independent engine (Core, ECS, Render, Systems, ...)
   Source/Platform/   #   Vulkan/ (RHI implementation, ~28 files) and Windows/
 Snowstorm-Editor/    # Editor EXECUTABLE — links Core; ImGui dockspace, panels, viewport
+Snowstorm-Runtime/   # Editor-free runtime EXECUTABLE — links Core; shares RegisterCoreSystems (WIP)
 Assets/              # Shaders, Meshes, Materials, Scenes, Textures (loaded at runtime)
 Scripts/             # Generate-Solution.{py,bat}
 Tools/dxc/           # DirectX Shader Compiler (HLSL -> SPIR-V)

@@ -157,17 +157,23 @@ namespace Snowstorm
 				});
 		}
 
-		// ImGui pass to swapchain
-		if (const Ref<RenderTarget> swapchain = Renderer::GetSwapchainTarget())
+		// ImGui pass to swapchain. This is the ONLY pass that composes the swapchain today,
+		// so it only runs when an ImGui backend is up (i.e. the editor). A packaged runtime
+		// has no ImGui and currently presents nothing — it needs a dedicated present path
+		// (blit the primary camera's render target to the swapchain). See docs/RUNTIME_REFACTOR.md.
+		if (Renderer::IsImGuiBackendInitialized())
 		{
-			graph.AddPass({
-					.Name = "EditorPass",
-					.Target = swapchain,
-					.Execute = [&](CommandContext& c)
-					{
-						Renderer::RenderImGuiDrawData(c);
-					}
-				});
+			if (const Ref<RenderTarget> swapchain = Renderer::GetSwapchainTarget())
+			{
+				graph.AddPass({
+						.Name = "EditorPass",
+						.Target = swapchain,
+						.Execute = [&](CommandContext& c)
+						{
+							Renderer::RenderImGuiDrawData(c);
+						}
+					});
+			}
 		}
 
 		graph.Execute(*ctx);

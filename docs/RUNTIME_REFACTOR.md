@@ -151,6 +151,20 @@ same order — that's the property that makes "play mode == shipped build".
 
 ## Step 4 — the `Snowstorm-Runtime` target (the player)
 
+> **Status (scaffolded):** the target exists (`Snowstorm-Runtime/`) and reuses `RegisterCoreSystems`,
+> but it does **not** present to screen yet. Building the scaffold surfaced a gap the original sketch
+> missed: **the swapchain is composed entirely by the editor's ImGui pass.** In `RenderSystem.cpp`
+> the scene renders into offscreen `RenderTarget`s, and the *only* pass that targets the swapchain is
+> `"EditorPass"`, whose body is `Renderer::RenderImGuiDrawData(c)` — i.e. the window you see is ImGui
+> drawing the viewport texture. A runtime with no ImGui therefore renders the scene to an offscreen
+> target and presents nothing → blank window.
+>
+> To avoid a crash, `RenderSystem` now guards that pass with `Renderer::IsImGuiBackendInitialized()`
+> (true only when the editor brings the ImGui backend up). The remaining work — a **present path**
+> that blits the primary camera's render target to the swapchain (or renders the primary camera
+> directly into it) — is Vulkan code that must be written and **verified on a GPU**, so it's
+> deliberately left for a session where the engine can be built and run.
+
 Mirror `SnowstormEditor.cpp` (`Snowstorm-Editor/Source/SnowstormEditor.cpp`), minus `ImGuiService`
 and the editor layer.
 

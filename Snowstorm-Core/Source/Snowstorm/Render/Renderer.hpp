@@ -38,11 +38,16 @@ namespace Snowstorm
 		static void ImGuiNewFrame();
 		static void RenderImGuiDrawData(CommandContext& context);
 
+		// True between InitImGuiBackend() and ShutdownImGuiBackend(). The editor brings the
+		// ImGui backend up; a packaged runtime does not, so it can skip ImGui-only work.
+		static bool IsImGuiBackendInitialized();
+
 		// Access to backend (avoid using this unless you must)
 		static RendererAPI& GetAPI();
 
 	private:
 		static Scope<RendererAPI> s_API;
+		static bool s_ImGuiBackendInitialized;
 
 		// TODO move this to RendererAPI 
 		static std::vector<UniformRingBuffer> s_FrameUniformRings;
