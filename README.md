@@ -63,7 +63,6 @@ up automatically via the `VK_ADD_LAYER_PATH` environment variable.
 | Project | Output | Description |
 | --- | --- | --- |
 | **Snowstorm-Core** | static library | All engine code: platform-independent code under `Source/Snowstorm/`, backend code under `Source/Platform/` (Vulkan, Windows). |
-| **Snowstorm-App** | executable | A sandbox application that links Core — a place to exercise engine features. |
 | **Snowstorm-Editor** | executable | The editor (ImGui dockspace, scene hierarchy, viewport); the default startup project. |
 
 ```
@@ -72,7 +71,7 @@ Scripts/     solution generation (Generate-Solution.py / .bat)
 Tools/dxc/   DirectX Shader Compiler (HLSL -> SPIR-V)
 ```
 
-App and Editor link the Core static library and add its `Source/` directory to their include path.
+Executables link the Core static library and add its `Source/` directory to their include path.
 
 ## License
 

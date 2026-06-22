@@ -35,16 +35,15 @@ The first run is slow — vcpkg compiles every dependency from source.
 Snowstorm-Core/      # STATIC library: all engine code (the only place most work happens)
   Source/Snowstorm/  #   platform-independent engine (Core, ECS, Render, Systems, ...)
   Source/Platform/   #   Vulkan/ (RHI implementation, ~28 files) and Windows/
-Snowstorm-App/       # Sandbox EXECUTABLE — links Core (SandboxApp, Sandbox2D, ParticleSystem)
 Snowstorm-Editor/    # Editor EXECUTABLE — links Core; ImGui dockspace, panels, viewport
 Assets/              # Shaders, Meshes, Materials, Scenes, Textures (loaded at runtime)
 Scripts/             # Generate-Solution.{py,bat}
 Tools/dxc/           # DirectX Shader Compiler (HLSL -> SPIR-V)
 ```
 
-Core builds to a static lib holding code shared by multiple apps; App and Editor are executables
-that link Core and add it to their include path. All three targets are **C++20** (the root
-`CMakeLists.txt` sets C++17 globally, but every target overrides to 20 — treat the project as C++20).
+Core builds to a static lib holding code shared by multiple apps; executables (currently the Editor)
+link Core and add it to their include path. All targets are **C++20** (the root `CMakeLists.txt`
+sets C++17 globally, but every target overrides to 20 — treat the project as C++20).
 
 ## Architecture (Core)
 
