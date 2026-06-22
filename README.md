@@ -1,5 +1,7 @@
 # Snowstorm Engine
 
+[![build](https://github.com/MegatronJeremy/Snowstorm-Engine/actions/workflows/build.yml/badge.svg)](https://github.com/MegatronJeremy/Snowstorm-Engine/actions/workflows/build.yml)
+
 <img width="2557" height="1388" alt="Snowstorm Editor" src="https://github.com/user-attachments/assets/8ff3be0c-e31f-40ec-9767-c9af7460a772" />
 
 A 3D game engine with a backend-agnostic renderer, an EnTT-based entity-component-system, and a

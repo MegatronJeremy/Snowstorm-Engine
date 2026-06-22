@@ -1,0 +1,39 @@
+name: build
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+# Cancel an in-flight run when new commits are pushed to the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # vcpkg builds every dependency from source, which is slow. Cache the bootstrapped
+      # vcpkg tree (incl. installed packages) keyed on the package list in the generate script.
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: vcpkg
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('Scripts/Generate-Solution.py') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-
+
+      - name: Configure (vcpkg + CMake)
+        run: py Scripts/Generate-Solution.py
+
+      - name: Build all targets
+        run: cmake --build build --config Debug
