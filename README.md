@@ -1,16 +1,79 @@
 # Snowstorm Engine
 
-<img width="2557" height="1388" alt="image" src="https://github.com/user-attachments/assets/8ff3be0c-e31f-40ec-9767-c9af7460a772" />
-(Work in progress)
+<img width="2557" height="1388" alt="Snowstorm Editor" src="https://github.com/user-attachments/assets/8ff3be0c-e31f-40ec-9767-c9af7460a772" />
 
-3D game engine with an abstract rendering backend. Currently supports Vulkan, and will support DirectX12 in the future.
+A 3D game engine with a backend-agnostic renderer, an EnTT-based entity-component-system, and a
+Dear ImGui editor. The rendering abstraction currently targets **Vulkan**; DirectX 12 is planned.
 
-There are three included projects - __Core__, __App__ and __Editor__. __CMake__ in conjunction with __vcpkg__ is used to generate project files.
+> **Work in progress.** Windows-only for now.
 
-Core builds into a static library and is meant to contain common code intended for use in multiple applications. 
-App and Editor build into an executable and link the Core static library, as well as having an include path to Core's code.
+## Features
 
-The `Scripts/` directory contains a generate solution script for a Visual Studio solution file, as well as a build script.
+- **Backend-agnostic rendering** — engine-facing interfaces (`Renderer`, `Pipeline`, `Shader`,
+  `Material`, `RenderGraph`, ...) with a Vulkan implementation built on volk, Vulkan Memory
+  Allocator, and SPIR-V reflection. HLSL shaders are compiled to SPIR-V via `dxc`.
+- **Entity-Component-System** — built on [EnTT](https://github.com/skypjack/entt), organised into
+  Systems, Singletons, and Services, with RTTR-based component reflection.
+- **Editor** — Dear ImGui dockspace with a scene hierarchy panel, viewport, and notifications.
+- **Asset & scene pipeline** — mesh/material/texture assets (assimp, stb, gli) and JSON scene
+  serialization.
+- **Engine foundations** — layer stack, event bus, input handling, logging (spdlog), and a
+  built-in profiler that emits Chrome-tracing JSON.
+
+## Tech stack
+
+C++20 · CMake · vcpkg · Vulkan · GLFW · GLM · EnTT · Dear ImGui · spdlog · assimp · RTTR ·
+Vulkan Memory Allocator · volk · SPIRV-Reflect · nlohmann/json · stb · gli
+
+## Getting started
+
+### Prerequisites
+
+- Windows + Visual Studio 2022 (toolset `v143`)
+- CMake 3.16+
+- Python 3 (for the generation script)
+- Git
+
+vcpkg and all third-party dependencies are bootstrapped and installed automatically by the
+generation script — you do not need to install them by hand. The first run is slow because vcpkg
+compiles every dependency from source.
+
+### Build & run
+
+```bat
+:: from the repository root
+py Scripts\Generate-Solution.py
+```
+
+or double-click `Scripts\Generate-Solution.bat` (it changes into the repo root first). Useful flags:
+
+```bat
+py Scripts\Generate-Solution.py --clean    :: delete build/ before configuring
+py Scripts\Generate-Solution.py --fresh    :: also reinstall all vcpkg packages from scratch
+```
+
+The script bootstraps vcpkg into `vcpkg/`, installs the dependencies, and configures CMake into
+`build/`. Open the generated **`build/Snowstorm.sln`** in Visual Studio and build.
+**Snowstorm-Editor** is the default startup project, and the debugger working directory is set to
+the repository root so that relative `Assets/...` paths resolve. Vulkan validation layers are wired
+up automatically via the `VK_ADD_LAYER_PATH` environment variable.
+
+## Project structure
+
+| Project | Output | Description |
+| --- | --- | --- |
+| **Snowstorm-Core** | static library | All engine code: platform-independent code under `Source/Snowstorm/`, backend code under `Source/Platform/` (Vulkan, Windows). |
+| **Snowstorm-App** | executable | A sandbox application that links Core — a place to exercise engine features. |
+| **Snowstorm-Editor** | executable | The editor (ImGui dockspace, scene hierarchy, viewport); the default startup project. |
+
+```
+Assets/      runtime assets (Shaders, Meshes, Materials, Scenes, Textures)
+Scripts/     solution generation (Generate-Solution.py / .bat)
+Tools/dxc/   DirectX Shader Compiler (HLSL -> SPIR-V)
+```
+
+App and Editor link the Core static library and add its `Source/` directory to their include path.
 
 ## License
-- UNLICENSE for this repository (see `UNLICENSE.txt` for more details)
+
+Public domain — see [`UNLICENSE.txt`](UNLICENSE.txt).
