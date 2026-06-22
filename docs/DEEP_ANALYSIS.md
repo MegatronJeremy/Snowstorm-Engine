@@ -66,6 +66,15 @@ interleaved pipelines cause redundant `vkCmdBindPipeline`. Sort by pipeline, the
 systems (`AssetManagerSingleton.cpp`). First touch of an asset (assimp import, image decode, shader
 compile via dxc) stalls the frame. Move to async loading / streaming, or load-ahead at scene load.
 
+**P9 — Every device-local upload is a full, blocking GPU round-trip.** `VulkanBuffer::SetDataInternal`
+for non-host-visible buffers creates a staging buffer and calls `ImmediateSubmit`
+(`VulkanBuffer.cpp:163-238`), which allocates a command buffer, creates a fence, submits to the
+**graphics queue**, and `vkWaitForFences` to completion before returning (`VulkanCommon.cpp:46+`). So
+loading one mesh = two blocking GPU syncs (vertex + index), serialized against rendering on the single
+queue, plus a per-buffer `vkDeviceWaitIdle` on destruction (`VulkanBuffer.cpp:90`). It's correct
+(fence-gated, so the staging free is safe) but it's the concrete mechanism behind P4/P8/S4 — a
+dedicated transfer queue + batched uploads + a deletion queue would remove all of it.
+
 ---
 
 ## Scalability ceilings
