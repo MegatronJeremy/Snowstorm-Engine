@@ -1,0 +1,50 @@
+name: lint
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clang-format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Only check files changed by this push/PR, so the existing (un-formatted)
+      # codebase doesn't fail CI. New and changed code is held to .clang-format.
+      - name: Determine changed C++ files
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+            range="origin/${{ github.base_ref }}...HEAD"
+          else
+            before="${{ github.event.before }}"
+            if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ]; then
+              range="HEAD~1...HEAD"
+            else
+              range="$before...HEAD"
+            fi
+          fi
+          files=$(git diff --name-only --diff-filter=ACMR $range -- '*.cpp' '*.hpp' '*.h' \
+            | grep -vE 'imgui_impl_' || true)
+          {
+            echo "files<<EOF"
+            echo "$files"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: clang-format check
+        if: steps.changed.outputs.files != ''
+        run: |
+          echo "Checking changed files:"
+          echo "${{ steps.changed.outputs.files }}"
+          echo "${{ steps.changed.outputs.files }}" | xargs clang-format --dry-run --Werror

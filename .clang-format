@@ -1,0 +1,16 @@
+# Approximates the existing Snowstorm style: tabs, Allman braces, indented
+# namespaces, left-aligned pointers/references. ColumnLimit is 0 so existing
+# long lines are not reflowed (CI only checks changed files anyway).
+BasedOnStyle: Microsoft
+Language: Cpp
+Standard: c++20
+UseTab: ForIndentation
+IndentWidth: 4
+TabWidth: 4
+ColumnLimit: 0
+BreakBeforeBraces: Allman
+NamespaceIndentation: All
+PointerAlignment: Left
+AccessModifierOffset: -4
+FixNamespaceComments: true
+SortIncludes: false

@@ -1,0 +1,29 @@
+name: shaders
+
+on:
+  push:
+    branches: [ master ]
+    paths: [ 'Assets/Shaders/**', 'Scripts/check_shaders.py' ]
+  pull_request:
+    paths: [ 'Assets/Shaders/**', 'Scripts/check_shaders.py' ]
+
+concurrency:
+  group: shaders-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dxc:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # Compiles every Assets/Shaders/*.hlsl to SPIR-V with the bundled dxc,
+      # so a broken shader fails CI instead of the GPU at runtime.
+      - name: Compile shaders with dxc
+        run: py Scripts/check_shaders.py
