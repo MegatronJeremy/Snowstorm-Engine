@@ -135,6 +135,29 @@ small scenes; build a `name → ComponentInfo` hash map for large ones.
 with asset handle `"0"` is silently *not* added on load (`SceneSerializer.cpp:69-73, 87-91`), so an
 entity that legitimately had the component (awaiting assignment) loses it across a save/load. Minor.
 
+## Camera, culling math & hot-reload
+
+**F1 — Frustum near-plane extraction is for the wrong clip space.** `Frustum::FromViewProjection`
+uses the Gribb–Hartmann extraction with the **OpenGL `[-1,1]` Z** convention — near = `row3 + row2`
+(`Frustum.hpp:66`). But projections are built with `glm::perspectiveRH_ZO`
+(`CameraRuntimeUpdateSystem.cpp:42`), i.e. **Vulkan `[0,1]` Z**, where the near plane is `row2`
+alone (far stays `row3 - row2`). As written, the near plane is offset/incorrect, so near-camera
+culling is wrong (objects right in front of or behind the near plane can be mis-culled). The other
+five planes are unaffected. Medium-high confidence; verify, then switch to the ZO extraction.
+
+**F2 — Y-flip convention is muddled; confirm it's consistent.** Projection is `…RH_ZO` with **no**
+`proj[1][1] *= -1` (`CameraRuntimeUpdateSystem.cpp:38-50`), and `SetViewport` passes a **positive**
+height despite a comment describing the negative-height Y-flip trick
+(`VulkanCommandContext.cpp:172-183`). The editor evidently renders right-side-up, so it's handled
+somewhere — but the comment and code disagree, which is a trap. Worth pinning down the single source
+of the Y convention.
+
+**F3 — Shader hot-reload polls everything every second.** `ShaderReloadSystem` calls
+`ShaderLibrary::ReloadAll()` unconditionally each 1 s (`ShaderReloadSystem.cpp:13-18`). The shader
+cache hashes content so unchanged shaders shouldn't recompile, but this still stats every shader
+every second forever (including release). Prefer a file-watch, or at least confirm `ReloadAll` is a
+true no-op when nothing changed. (Also uses a function-`static` timer, shared across worlds.)
+
 ## Done well (so the picture is balanced)
 
 - **Per-frame-in-flight uniform ring with dynamic offsets**, reset under the frame fence — correct,
