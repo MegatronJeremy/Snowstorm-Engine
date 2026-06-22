@@ -111,6 +111,30 @@ alone calls several per frame.
 
 ---
 
+## Persistence & bindless (addendum)
+
+**B1 — Bindless texture indices leak and can overflow.** `VulkanBindlessManager::RegisterTexture`
+hands out indices with a monotonic `m_NextFreeIndex++` (`VulkanBindlessManager.cpp:54-57`); there is
+**no removal/recycling API and no bound check** against `MAX_BINDLESS_TEXTURES`. Every texture ever
+created consumes a slot forever (hot-reload and scene reloads make it worse), and once the counter
+passes the max, `write.dstArrayElement = index` writes out of range → validation error / corruption.
+Needs a free-list of indices + an unregister path + an overflow guard. (Correctness **and**
+scalability.)
+
+**B2 — Scene JSON parse can throw and crash.** `Deserialize` does `in >> root` with no try/catch
+(`SceneSerializer.cpp:194-195`); nlohmann throws on malformed JSON. In a codebase with no exception
+handling, a corrupt/partial `.world` file terminates the process instead of returning `false` (which
+the function is shaped to do). Wrap parsing and fail gracefully.
+
+**B3 — Component lookup on load is O(entities × components × registry) string compares.**
+`Deserialize` does `std::ranges::find_if` over the whole component registry, comparing RTTR type
+**names as strings**, for every component of every entity (`SceneSerializer.cpp:228-233`). Fine for
+small scenes; build a `name → ComponentInfo` hash map for large ones.
+
+**B4 — Asymmetric drop of zero-handle components.** A serialized `MeshComponent`/`MaterialComponent`
+with asset handle `"0"` is silently *not* added on load (`SceneSerializer.cpp:69-73, 87-91`), so an
+entity that legitimately had the component (awaiting assignment) loses it across a save/load. Minor.
+
 ## Done well (so the picture is balanced)
 
 - **Per-frame-in-flight uniform ring with dynamic offsets**, reset under the frame fence — correct,
