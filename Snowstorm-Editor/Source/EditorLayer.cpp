@@ -22,17 +22,8 @@
 #include "Snowstorm/Components/VisibilityComponents.hpp"
 #include "Snowstorm/ECS/SystemManager.hpp"
 #include "Snowstorm/Lighting/LightingComponents.hpp"
-#include "Snowstorm/Lighting/LightingSystem.hpp"
 #include "Snowstorm/Render/RendererUtils.hpp"
-#include "Snowstorm/Systems/CameraControllerSystem.hpp"
-#include "Snowstorm/Systems/CameraRuntimeUpdateSystem.hpp"
-#include "Snowstorm/Systems/MaterialResolveSystem.hpp"
-#include "Snowstorm/Systems/MeshResolveSystem.hpp"
-#include "Snowstorm/Systems/RenderSystem.hpp"
-#include "Snowstorm/Systems/RuntimeInitSystem.hpp"
-#include "Snowstorm/Systems/ShaderReloadSystem.hpp"
-#include "Snowstorm/Systems/ScriptSystem.hpp"
-#include "Snowstorm/Systems/VisibilitySystem.hpp"
+#include "Snowstorm/Systems/CoreSystems.hpp"
 #include "Snowstorm/World/EditorCommandsSingleton.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
 
@@ -71,7 +62,8 @@ namespace Snowstorm
 			};
 		}
 
-		RegisterSystems();
+		RegisterCoreSystems(*m_ActiveWorld); // engine systems (shared with a future runtime)
+		RegisterEditorSystems();             // editor-only systems on top
 		LoadOrCreateStartupWorld();
 	}
 
@@ -152,20 +144,15 @@ namespace Snowstorm
 		return SaveWorldToFile(m_ActiveScenePath);
 	}
 
-	void EditorLayer::RegisterSystems() const   // TODO rename this as well
+	void EditorLayer::RegisterEditorSystems() const
 	{
 		auto& systemManager = m_ActiveWorld->GetSystemManager();
 		auto& singletonManager = m_ActiveWorld->GetSingletonManager();
 
 		singletonManager.RegisterSingleton<EditorNotificationsSingleton>();
 
-		// Engine systems
-		systemManager.RegisterSystem<RuntimeInitSystem>(SystemPhase::Init);
-		systemManager.RegisterSystem<ScriptSystem>(SystemPhase::Logic);
-		systemManager.RegisterSystem<CameraControllerSystem>(SystemPhase::Logic);
-		systemManager.RegisterSystem<ShaderReloadSystem>(SystemPhase::AssetSync);
-
-		// Editor UI systems
+		// Editor UI systems. The UI phase is empty in a packaged runtime, so the engine
+		// systems (registered by RegisterCoreSystems) run identically with or without these.
 		systemManager.RegisterSystem<DockspaceSetupSystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<ViewportResizeSystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<ViewportDisplaySystem>(SystemPhase::UI);
@@ -173,18 +160,8 @@ namespace Snowstorm
 		systemManager.RegisterSystem<EditorNotificationSystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<SceneHierarchySystem>(SystemPhase::UI);
 
-		// Engine systems (resolve handles -> runtime resources)
-		systemManager.RegisterSystem<CameraRuntimeUpdateSystem>(SystemPhase::Resolve);
-		systemManager.RegisterSystem<MeshResolveSystem>(SystemPhase::Resolve);
-		systemManager.RegisterSystem<MaterialResolveSystem>(SystemPhase::Resolve);
-
-		// Pre-render
-		systemManager.RegisterSystem<MandelbrotControllerSystem>(SystemPhase::PreRender); // editor example
-		systemManager.RegisterSystem<LightingSystem>(SystemPhase::PreRender);
-		systemManager.RegisterSystem<VisibilitySystem>(SystemPhase::PreRender);
-
-		// Submit
-		systemManager.RegisterSystem<RenderSystem>(SystemPhase::Render);
+		// Editor example
+		systemManager.RegisterSystem<MandelbrotControllerSystem>(SystemPhase::PreRender);
 	}
 
 	void EditorLayer::CreateMainViewportEntity()
