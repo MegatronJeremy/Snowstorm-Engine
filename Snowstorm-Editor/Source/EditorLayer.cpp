@@ -159,30 +159,32 @@ namespace Snowstorm
 
 		singletonManager.RegisterSingleton<EditorNotificationsSingleton>();
 
-		// TODO do this better somehow and not in EditorLayer
-		systemManager.RegisterSystem<RuntimeInitSystem>();
-		systemManager.RegisterSystem<ScriptSystem>();
-		systemManager.RegisterSystem<CameraControllerSystem>();
-		systemManager.RegisterSystem<ShaderReloadSystem>();
-		systemManager.RegisterSystem<DockspaceSetupSystem>(); // should be BEFORE these other viewport systems
-		systemManager.RegisterSystem<ViewportResizeSystem>(); // should be BEFORE display system
-		systemManager.RegisterSystem<ViewportDisplaySystem>();
+		// Engine systems
+		systemManager.RegisterSystem<RuntimeInitSystem>(SystemPhase::Init);
+		systemManager.RegisterSystem<ScriptSystem>(SystemPhase::Logic);
+		systemManager.RegisterSystem<CameraControllerSystem>(SystemPhase::Logic);
+		systemManager.RegisterSystem<ShaderReloadSystem>(SystemPhase::AssetSync);
 
-		systemManager.RegisterSystem<EditorMenuSystem>();
-		systemManager.RegisterSystem<EditorNotificationSystem>();
-		systemManager.RegisterSystem<SceneHierarchySystem>();
+		// Editor UI systems
+		systemManager.RegisterSystem<DockspaceSetupSystem>(SystemPhase::UI);
+		systemManager.RegisterSystem<ViewportResizeSystem>(SystemPhase::UI);
+		systemManager.RegisterSystem<ViewportDisplaySystem>(SystemPhase::UI);
+		systemManager.RegisterSystem<EditorMenuSystem>(SystemPhase::UI);
+		systemManager.RegisterSystem<EditorNotificationSystem>(SystemPhase::UI);
+		systemManager.RegisterSystem<SceneHierarchySystem>(SystemPhase::UI);
 
-		systemManager.RegisterSystem<CameraRuntimeUpdateSystem>();
+		// Engine systems (resolve handles -> runtime resources)
+		systemManager.RegisterSystem<CameraRuntimeUpdateSystem>(SystemPhase::Resolve);
+		systemManager.RegisterSystem<MeshResolveSystem>(SystemPhase::Resolve);
+		systemManager.RegisterSystem<MaterialResolveSystem>(SystemPhase::Resolve);
 
-		// this should be after scene editing stuff
-		systemManager.RegisterSystem<MeshResolveSystem>();
-		systemManager.RegisterSystem<MaterialResolveSystem>();
+		// Pre-render
+		systemManager.RegisterSystem<MandelbrotControllerSystem>(SystemPhase::PreRender); // editor example
+		systemManager.RegisterSystem<LightingSystem>(SystemPhase::PreRender);
+		systemManager.RegisterSystem<VisibilitySystem>(SystemPhase::PreRender);
 
-		// RenderSystem should always be last
-		systemManager.RegisterSystem<MandelbrotControllerSystem>();
-		systemManager.RegisterSystem<LightingSystem>();
-		systemManager.RegisterSystem<VisibilitySystem>();
-		systemManager.RegisterSystem<RenderSystem>();
+		// Submit
+		systemManager.RegisterSystem<RenderSystem>(SystemPhase::Render);
 	}
 
 	void EditorLayer::CreateMainViewportEntity()

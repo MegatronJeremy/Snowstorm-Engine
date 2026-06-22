@@ -1,6 +1,9 @@
 #pragma once
 
+#include <array>
+
 #include "System.hpp"
+#include "SystemPhase.hpp"
 #include "TrackedRegistry.hpp"
 
 #include "Snowstorm/Core/Base.hpp"
@@ -15,18 +18,22 @@ namespace Snowstorm
 		{
 		}
 
-		template <typename T>
-		void RegisterSystem()
+		template <typename T, typename... Args>
+		void RegisterSystem(const SystemPhase phase, Args&&... args)
 		{
 			static_assert(std::is_base_of_v<System, T>, "T must inherit from System");
-			m_Systems.emplace_back(CreateScope<T>(m_World));
+			m_Phases[static_cast<size_t>(phase)].emplace_back(CreateScope<T>(m_World, std::forward<Args>(args)...));
 		}
 
 		void ExecuteSystems(const Timestep ts)
 		{
-			for (const auto& system : m_Systems)
+			// Phases run in enum order; systems within a phase run in registration order.
+			for (auto& bucket : m_Phases)
 			{
-				system->Execute(ts);
+				for (const auto& system : bucket)
+				{
+					system->Execute(ts);
+				}
 			}
 
 			m_Registry.ClearTrackedComponents();
@@ -36,7 +43,7 @@ namespace Snowstorm
 
 	private:
 		TrackedRegistry m_Registry;
-		std::vector<Scope<System>> m_Systems;
+		std::array<std::vector<Scope<System>>, static_cast<size_t>(SystemPhase::_Count)> m_Phases;
 
 		const System::WorldRef m_World;
 	};
