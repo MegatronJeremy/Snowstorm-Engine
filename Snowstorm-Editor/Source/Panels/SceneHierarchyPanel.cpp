@@ -31,7 +31,7 @@ namespace Snowstorm
 
 		for (const entt::entity e : view)
 		{
-			Entity entity{ e, m_World };
+			Entity entity{e, m_World};
 			DrawEntityNode(entity);
 		}
 
@@ -54,10 +54,7 @@ namespace Snowstorm
 	{
 		const auto& tag = entity.GetComponent<TagComponent>().Tag;
 
-		ImGuiTreeNodeFlags flags = ((m_SelectionContext == entity) ? ImGuiTreeNodeFlags_Selected : 0)
-			| ImGuiTreeNodeFlags_OpenOnArrow
-			| ImGuiTreeNodeFlags_SpanAvailWidth
-			| ImGuiTreeNodeFlags_Leaf;
+		ImGuiTreeNodeFlags flags = ((m_SelectionContext == entity) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_Leaf;
 
 		const bool opened = ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<uintptr_t>(static_cast<uint32_t>(entity))),
 		                                      flags,

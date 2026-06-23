@@ -18,8 +18,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Only check files changed by this push/PR, so the existing (un-formatted)
-      # codebase doesn't fail CI. New and changed code is held to .clang-format.
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # Pin clang-format so CI matches local formatting exactly (version drift between
+      # clang-format releases changes output and would cause spurious failures).
+      - name: Install clang-format
+        run: pip install clang-format==22.1.5
+
+      # Format-on-touch policy: any C++ file changed by this push/PR must be fully
+      # clang-format clean (whole file). The codebase formats gradually as files are touched.
       - name: Determine changed C++ files
         id: changed
         run: |

@@ -16,7 +16,12 @@ namespace Snowstorm
 
 	namespace
 	{
-		enum class Section : uint8_t { None, Vertex, Fragment };
+		enum class Section : uint8_t
+		{
+			None,
+			Vertex,
+			Fragment
+		};
 
 		struct SplitResult
 		{
@@ -64,9 +69,12 @@ namespace Snowstorm
 				// 1. Detect Stage Markers
 				if (trimmed.starts_with("#type"))
 				{
-					if (trimmed.find("vertex") != std::string::npos) cur = Section::Vertex;
-					else if (trimmed.find("fragment") != std::string::npos) cur = Section::Fragment;
-					else cur = Section::None;
+					if (trimmed.find("vertex") != std::string::npos)
+						cur = Section::Vertex;
+					else if (trimmed.find("fragment") != std::string::npos)
+						cur = Section::Fragment;
+					else
+						cur = Section::None;
 					continue;
 				}
 
@@ -74,28 +82,31 @@ namespace Snowstorm
 				// If we find a definition while inside a specific stage, we'll treat it as shared
 				// unless it's strictly local to a function (which we assume isn't the case for 'cbuffer')
 				bool isSharedConstruct = trimmed.starts_with("struct") ||
-				trimmed.starts_with("cbuffer") ||
-				trimmed.starts_with("Texture2D") ||
-				trimmed.starts_with("SamplerState") ||
-				trimmed.starts_with("static const");
+				                         trimmed.starts_with("cbuffer") ||
+				                         trimmed.starts_with("Texture2D") ||
+				                         trimmed.starts_with("SamplerState") ||
+				                         trimmed.starts_with("static const");
 
 				// Note: This is a simple scanner. A more complex one would track { } braces.
 				// For now, we'll append global lines to sharedDefinitions.
 				if (cur == Section::None || isSharedConstruct)
 				{
-					// If it's a cbuffer or struct, we often want the whole block. 
+					// If it's a cbuffer or struct, we often want the whole block.
 					// In your current shader style, these are at the top or between sections.
 				}
 
-				// For your current engine architecture, let's stick to the "Global Header" 
+				// For your current engine architecture, let's stick to the "Global Header"
 				// but make it easier by moving definitions out of the stages in the HLSL files.
 				switch (cur)
 				{
-				case Section::None: sharedDefinitions.append(line).push_back('\n');
+				case Section::None:
+					sharedDefinitions.append(line).push_back('\n');
 					break;
-				case Section::Vertex: vertexSource.append(line).push_back('\n');
+				case Section::Vertex:
+					vertexSource.append(line).push_back('\n');
 					break;
-				case Section::Fragment: fragmentSource.append(line).push_back('\n');
+				case Section::Fragment:
+					fragmentSource.append(line).push_back('\n');
 					break;
 				}
 			}
@@ -123,7 +134,7 @@ namespace Snowstorm
 		{
 			char buf[17]{};
 			std::snprintf(buf, sizeof(buf), "%016llx", static_cast<unsigned long long>(v));
-			return{buf};
+			return {buf};
 		}
 
 		fs::path GetRepoRoot()
@@ -194,14 +205,14 @@ namespace Snowstorm
 			mutableCmd.push_back(L'\0');
 
 			const BOOL ok = CreateProcessW(
-				exePath.c_str(),
-				mutableCmd.data(),
-				nullptr, nullptr,
-				TRUE, // inherit handles (needed for redirected std handles)
-				CREATE_NO_WINDOW,
-				nullptr,
-				nullptr,
-				&si, &pi);
+			    exePath.c_str(),
+			    mutableCmd.data(),
+			    nullptr, nullptr,
+			    TRUE, // inherit handles (needed for redirected std handles)
+			    CREATE_NO_WINDOW,
+			    nullptr,
+			    nullptr,
+			    &si, &pi);
 
 			// Parent no longer needs the write end
 			CloseHandle(writePipe);
@@ -318,7 +329,8 @@ namespace Snowstorm
 				// Explicit narrowing for the (ASCII) command line, only for this error log.
 				std::string narrowCmd;
 				narrowCmd.reserve(cmd.size());
-				for (const wchar_t wc : cmd) narrowCmd.push_back(static_cast<char>(wc));
+				for (const wchar_t wc : cmd)
+					narrowCmd.push_back(static_cast<char>(wc));
 				SS_CORE_ERROR("DXC failed (exit code {}). Command: {}", static_cast<uint32_t>(exitCode), narrowCmd);
 				return false;
 			}
@@ -416,7 +428,7 @@ namespace Snowstorm
 	}
 
 	VulkanShader::VulkanShader(std::string filepath)
-		: m_Filepath(std::move(filepath))
+	    : m_Filepath(std::move(filepath))
 	{
 		Compile();
 	}
@@ -425,9 +437,12 @@ namespace Snowstorm
 	{
 		switch (stage)
 		{
-		case ShaderStageKind::Vertex: return m_CompiledVertSpv;
-		case ShaderStageKind::Fragment: return m_CompiledFragSpv;
-		case ShaderStageKind::Compute: return {};
+		case ShaderStageKind::Vertex:
+			return m_CompiledVertSpv;
+		case ShaderStageKind::Fragment:
+			return m_CompiledFragSpv;
+		case ShaderStageKind::Compute:
+			return {};
 		}
 		return {};
 	}

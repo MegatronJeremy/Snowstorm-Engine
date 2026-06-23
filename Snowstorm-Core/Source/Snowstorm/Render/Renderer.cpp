@@ -11,7 +11,8 @@ namespace Snowstorm
 	bool Renderer::s_ImGuiBackendInitialized = false;
 	std::vector<UniformRingBuffer> Renderer::s_FrameUniformRings;
 
-	struct RendererData {
+	struct RendererData
+	{
 		Ref<TextureView> WhiteTexture;
 		Ref<TextureView> BlackTexture;
 		Ref<TextureView> NormalTexture; // (0.5, 0.5, 1.0)
@@ -116,7 +117,7 @@ namespace Snowstorm
 		s_FrameUniformRings.clear();
 
 		// Add this to ensure the vector capacity is released and any internal Ref<>s are gone
-		std::vector<UniformRingBuffer>().swap(s_FrameUniformRings); 
+		std::vector<UniformRingBuffer>().swap(s_FrameUniformRings);
 
 		if (s_Data)
 		{

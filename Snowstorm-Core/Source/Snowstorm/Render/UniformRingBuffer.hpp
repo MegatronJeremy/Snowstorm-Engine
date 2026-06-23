@@ -13,8 +13,8 @@ namespace Snowstorm
 	struct UniformRingAllocation final
 	{
 		Ref<Buffer> Buffer;
-		uint32_t Offset = 0;      // byte offset into Buffer
-		uint32_t Size = 0;        // size of allocation in bytes
+		uint32_t Offset = 0;            // byte offset into Buffer
+		uint32_t Size = 0;              // size of allocation in bytes
 		std::byte* MappedPtr = nullptr; // CPU pointer to write into
 	};
 

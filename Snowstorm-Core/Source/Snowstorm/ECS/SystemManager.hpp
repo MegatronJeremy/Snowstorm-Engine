@@ -14,7 +14,7 @@ namespace Snowstorm
 	{
 	public:
 		explicit SystemManager(const System::WorldRef world)
-			: m_World(world)
+		    : m_World(world)
 		{
 		}
 

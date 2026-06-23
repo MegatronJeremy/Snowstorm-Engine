@@ -49,7 +49,7 @@ namespace Snowstorm
 		static Scope<RendererAPI> s_API;
 		static bool s_ImGuiBackendInitialized;
 
-		// TODO move this to RendererAPI 
+		// TODO move this to RendererAPI
 		static std::vector<UniformRingBuffer> s_FrameUniformRings;
 	};
 }

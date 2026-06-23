@@ -68,11 +68,13 @@ TEST_CASE("WriteIfChanged only marks Changed when the value actually changes", "
 	reg.emplace<Position>(e, 1, 1);
 	reg.ClearTrackedComponents();
 
-	const bool noop = reg.WriteIfChanged<Position>(e, [](Position& p) { p.x = 1; p.y = 1; });
+	const bool noop = reg.WriteIfChanged<Position>(e, [](Position& p)
+	                                               { p.x = 1; p.y = 1; });
 	REQUIRE_FALSE(noop);
 	REQUIRE_FALSE(reg.WasChanged<Position>(e));
 
-	const bool changed = reg.WriteIfChanged<Position>(e, [](Position& p) { p.x = 5; });
+	const bool changed = reg.WriteIfChanged<Position>(e, [](Position& p)
+	                                                  { p.x = 5; });
 	REQUIRE(changed);
 	REQUIRE(reg.WasChanged<Position>(e));
 	REQUIRE(reg.ChangedView<Position>().contains(e));

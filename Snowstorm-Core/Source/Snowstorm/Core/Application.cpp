@@ -87,30 +87,30 @@ namespace Snowstorm
 		switch (e.GetEventType())
 		{
 		case EventType::WindowClose:
-			{
-				m_Running = false;
-				e.Handled = true;
-				break;
-			}
+		{
+			m_Running = false;
+			e.Handled = true;
+			break;
+		}
 		case EventType::WindowResize:
+		{
+			const auto& re = static_cast<WindowResizeEvent&>(e);
+
+			m_Window->Resize(re.Width, re.Height);
+
+			if (re.Width == 0 || re.Height == 0)
 			{
-				const auto& re = static_cast<WindowResizeEvent&>(e);
-
-				m_Window->Resize(re.Width, re.Height);
-
-				if (re.Width == 0 || re.Height == 0)
-				{
-					m_Minimized = true;
-				}
-				else
-				{
-					m_Minimized = false;
-				}
-
-				// Let others also react if they want; do NOT force handled here unless you truly want to.
-				// e.Handled = true; // optional
-				break;
+				m_Minimized = true;
 			}
+			else
+			{
+				m_Minimized = false;
+			}
+
+			// Let others also react if they want; do NOT force handled here unless you truly want to.
+			// e.Handled = true; // optional
+			break;
+		}
 		default:
 			break;
 		}

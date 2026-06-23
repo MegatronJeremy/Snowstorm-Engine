@@ -32,12 +32,12 @@ namespace Snowstorm
 		CameraPick FindCameraForViewport(const TrackedRegistry& reg,
 		                                 const entt::entity viewportEntity,
 		                                 const entt::view<
-			                                 entt::get_t<
-				                                 const TransformComponent,
-				                                 const CameraComponent,
-				                                 const CameraTargetComponent,
-				                                 const CameraRuntimeComponent,
-				                                 const CameraVisibilityComponent>>& camView)
+		                                     entt::get_t<
+		                                         const TransformComponent,
+		                                         const CameraComponent,
+		                                         const CameraTargetComponent,
+		                                         const CameraRuntimeComponent,
+		                                         const CameraVisibilityComponent>>& camView)
 		{
 			CameraPick pick{};
 
@@ -94,18 +94,18 @@ namespace Snowstorm
 
 		// Cameras must have runtime updated before RenderSystem
 		const auto cameraView = View<
-			const TransformComponent,
-			const CameraComponent,
-			const CameraTargetComponent,
-			const CameraRuntimeComponent,
-			const CameraVisibilityComponent>();
+		    const TransformComponent,
+		    const CameraComponent,
+		    const CameraTargetComponent,
+		    const CameraRuntimeComponent,
+		    const CameraVisibilityComponent>();
 
 		// Meshes have visibility
 		const auto meshView = View<
-			const TransformComponent,
-			const MeshComponent,
-			const MaterialComponent,
-			const VisibilityComponent>();
+		    const TransformComponent,
+		    const MeshComponent,
+		    const MaterialComponent,
+		    const VisibilityComponent>();
 
 		Renderer::BeginFrame();
 
@@ -131,30 +131,28 @@ namespace Snowstorm
 
 			const std::string passName = std::string("MeshPass_") + std::to_string(static_cast<uint32_t>(vpEntity));
 
-			graph.AddPass({
-					.Name = passName,
-					.Target = vpRT.Target,
-					.Execute = [&, cam](CommandContext& /*c*/)
-					{
-						// Camera world position is TransformComponent.Position (more reliable than mat[3] with your TRS)
-						const glm::vec3 camPos = cam.Transform->Position;
+			graph.AddPass({.Name = passName,
+			               .Target = vpRT.Target,
+			               .Execute = [&, cam](CommandContext& /*c*/)
+			               {
+				               // Camera world position is TransformComponent.Position (more reliable than mat[3] with your TRS)
+				               const glm::vec3 camPos = cam.Transform->Position;
 
-						renderer.BeginScene(*cam.Rt, camPos, ctx, frameIndex);
+				               renderer.BeginScene(*cam.Rt, camPos, ctx, frameIndex);
 
-						for (const auto& cache = reg.Read<VisibilityCacheComponent>(cam.Entity);
-						     const entt::entity e : cache.VisibleMeshes)
-						{
-							const auto& tr = reg.Read<TransformComponent>(e);
-							const auto& mesh = reg.Read<MeshComponent>(e);
-							const auto& mat = reg.Read<MaterialComponent>(e);
+				               for (const auto& cache = reg.Read<VisibilityCacheComponent>(cam.Entity);
+				                    const entt::entity e : cache.VisibleMeshes)
+				               {
+					               const auto& tr = reg.Read<TransformComponent>(e);
+					               const auto& mesh = reg.Read<MeshComponent>(e);
+					               const auto& mat = reg.Read<MaterialComponent>(e);
 
-							renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance);
-						}
+					               renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance);
+				               }
 
-						renderer.Flush();
-						renderer.EndScene();
-					}
-				});
+				               renderer.Flush();
+				               renderer.EndScene();
+			               }});
 		}
 
 		// ImGui pass to swapchain. This is the ONLY pass that composes the swapchain today,
@@ -165,14 +163,12 @@ namespace Snowstorm
 		{
 			if (const Ref<RenderTarget> swapchain = Renderer::GetSwapchainTarget())
 			{
-				graph.AddPass({
-						.Name = "EditorPass",
-						.Target = swapchain,
-						.Execute = [&](CommandContext& c)
-						{
-							Renderer::RenderImGuiDrawData(c);
-						}
-					});
+				graph.AddPass({.Name = "EditorPass",
+				               .Target = swapchain,
+				               .Execute = [&](CommandContext& c)
+				               {
+					               Renderer::RenderImGuiDrawData(c);
+				               }});
 			}
 		}
 

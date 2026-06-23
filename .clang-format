@@ -1,6 +1,6 @@
 # Approximates the existing Snowstorm style: tabs, Allman braces, indented
-# namespaces, left-aligned pointers/references. ColumnLimit is 0 so existing
-# long lines are not reflowed (CI only checks changed files anyway).
+# namespaces, left-aligned pointers/references, inline one-line getters.
+# ColumnLimit is 0 so existing long lines are not reflowed.
 BasedOnStyle: Microsoft
 Language: Cpp
 Standard: c++20
@@ -12,5 +12,10 @@ BreakBeforeBraces: Allman
 NamespaceIndentation: All
 PointerAlignment: Left
 AccessModifierOffset: -4
-FixNamespaceComments: true
+FixNamespaceComments: false
 SortIncludes: false
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortBlocksOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false

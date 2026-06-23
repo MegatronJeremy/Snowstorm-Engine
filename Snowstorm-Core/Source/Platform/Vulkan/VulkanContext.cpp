@@ -16,15 +16,15 @@
 
 #include "VulkanBindlessManager.hpp"
 
-#define VK_CHECK(expr)                                       \
-{                                                            \
-VkResult _vk_result = (expr);                                \
-	if (_vk_result != VK_SUCCESS)                            \
-	{                                                        \
-		SS_CORE_ERROR("Vulkan Error: {0}", (int)_vk_result); \
-		SS_CORE_ASSERT(_vk_result == VK_SUCCESS);            \
-	}                                                        \
-}
+#define VK_CHECK(expr)                                           \
+	{                                                            \
+		VkResult _vk_result = (expr);                            \
+		if (_vk_result != VK_SUCCESS)                            \
+		{                                                        \
+			SS_CORE_ERROR("Vulkan Error: {0}", (int)_vk_result); \
+			SS_CORE_ASSERT(_vk_result == VK_SUCCESS);            \
+		}                                                        \
+	}
 
 namespace Snowstorm
 {
@@ -48,8 +48,7 @@ namespace Snowstorm
 
 		bool enableValidationLayers = true; // Usually wrapped in #ifndef NDEBUG
 		const char* validationLayers[] = {
-			"VK_LAYER_KHRONOS_validation"
-		};
+		    "VK_LAYER_KHRONOS_validation"};
 
 		//-- Check if layers are actually available
 		uint32_t layerCount;
@@ -124,11 +123,11 @@ namespace Snowstorm
 			VkDebugUtilsMessengerCreateInfoEXT debugInfo{};
 			debugInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
 			debugInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-			VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-			VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+			                            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+			                            VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
 			debugInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-			VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-			VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+			                        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+			                        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
 			debugInfo.pfnUserCallback = [](const VkDebugUtilsMessageSeverityFlagBitsEXT severity,
 			                               VkDebugUtilsMessageTypeFlagsEXT /*type*/,
 			                               const VkDebugUtilsMessengerCallbackDataEXT* data,
@@ -213,10 +212,9 @@ namespace Snowstorm
 
 		// Common device extensions
 		const char* deviceExtensions[] = {
-			VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-			VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
-			VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME
-		};
+		    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		    VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+		    VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME};
 
 		VkDeviceCreateInfo devInfo{};
 		devInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -227,11 +225,11 @@ namespace Snowstorm
 		devInfo.ppEnabledExtensionNames = deviceExtensions;
 
 		// Enable Dynamic Rendering and Buffer Device Address features
-		VkPhysicalDeviceVulkan13Features features13{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+		VkPhysicalDeviceVulkan13Features features13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
 		features13.dynamicRendering = VK_TRUE;
 		features13.synchronization2 = VK_TRUE;
 
-		VkPhysicalDeviceVulkan12Features features12{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+		VkPhysicalDeviceVulkan12Features features12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
 		features12.bufferDeviceAddress = VK_TRUE;
 
 		// Bindless texture features
@@ -307,7 +305,7 @@ namespace Snowstorm
 		{
 			// We prefer BGRA8_UNORM with SRGB_NONLINEAR for standard desktop compatibility
 			if (availableFormat.format == VK_FORMAT_B8G8R8A8_UNORM &&
-				availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+			    availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
 			{
 				surfaceFormat = availableFormat;
 				break;

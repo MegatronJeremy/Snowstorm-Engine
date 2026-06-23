@@ -24,7 +24,7 @@ namespace Snowstorm
 	{
 	public:
 		Instrumentor()
-			: m_CurrentSession(nullptr), m_ProfileCount(0) {}
+		    : m_CurrentSession(nullptr), m_ProfileCount(0) {}
 
 		void BeginSession(const std::string& name, const std::string& filepath = "results.json")
 		{
@@ -90,7 +90,7 @@ namespace Snowstorm
 	{
 	public:
 		explicit InstrumentationTimer(const char* name)
-			: m_Name(name), m_Stopped(false)
+		    : m_Name(name), m_Stopped(false)
 		{
 			QueryPerformanceFrequency(&m_Frequency);
 			QueryPerformanceCounter(&m_StartTimePoint);
@@ -130,16 +130,16 @@ namespace Snowstorm
 // Profiling is on in debug builds and off in release. Override by defining SS_PROFILE
 // (e.g. -DSS_PROFILE=1) before this header to force it either way.
 #ifndef SS_PROFILE
-	#ifdef SS_DEBUG
-		#define SS_PROFILE 1
-	#else
-		#define SS_PROFILE 0
-	#endif
+#ifdef SS_DEBUG
+#define SS_PROFILE 1
+#else
+#define SS_PROFILE 0
+#endif
 #endif
 #if SS_PROFILE
 #define SS_PROFILE_BEGIN_SESSION(name, filepath) ::Snowstorm::Instrumentor::Get().BeginSession(name, filepath)
 #define SS_PROFILE_END_SESSION() ::Snowstorm::Instrumentor::Get().EndSession()
-#define SS_PROFILE_SCOPE(name) ::Snowstorm::InstrumentationTimer C(timer,__LINE__)(name)
+#define SS_PROFILE_SCOPE(name) ::Snowstorm::InstrumentationTimer C(timer, __LINE__)(name)
 #define SS_PROFILE_FUNCTION() SS_PROFILE_SCOPE(__FUNCSIG__)
 #else
 #define SS_PROFILE_BEGIN_SESSION(name, filepath)

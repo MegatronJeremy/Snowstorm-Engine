@@ -31,7 +31,7 @@ namespace Snowstorm
 		binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 		VkDescriptorBindingFlags flags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
-		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+		                                 VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
 		VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO};
 		flagsInfo.bindingCount = 1;
 		flagsInfo.pBindingFlags = &flags;
@@ -82,9 +82,10 @@ namespace Snowstorm
 		return index;
 	}
 
-	void VulkanBindlessManager::Shutdown() 
+	void VulkanBindlessManager::Shutdown()
 	{
-		if (m_Device == VK_NULL_HANDLE) return;
+		if (m_Device == VK_NULL_HANDLE)
+			return;
 
 		vkDeviceWaitIdle(m_Device);
 
@@ -99,7 +100,7 @@ namespace Snowstorm
 			vkDestroyDescriptorPool(m_Device, m_DescriptorPool, nullptr);
 			m_DescriptorPool = VK_NULL_HANDLE;
 		}
-		
+
 		// Mark device as null so we don't try to use it again
 		m_Device = VK_NULL_HANDLE;
 	}

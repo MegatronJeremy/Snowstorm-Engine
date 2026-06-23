@@ -37,7 +37,7 @@
 namespace Snowstorm
 {
 	EditorLayer::EditorLayer()
-		: Layer("EditorLayer")
+	    : Layer("EditorLayer")
 	{
 	}
 

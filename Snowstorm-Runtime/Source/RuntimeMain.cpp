@@ -11,7 +11,7 @@ namespace Snowstorm
 	{
 	public:
 		SnowstormRuntime()
-			: Application("Snowstorm-Runtime")
+		    : Application("Snowstorm-Runtime")
 		{
 			PushLayer(new RuntimeLayer());
 		}

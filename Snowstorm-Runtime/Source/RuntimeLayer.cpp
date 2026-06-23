@@ -8,7 +8,7 @@
 namespace Snowstorm
 {
 	RuntimeLayer::RuntimeLayer()
-		: Layer("RuntimeLayer")
+	    : Layer("RuntimeLayer")
 	{
 	}
 
@@ -28,7 +28,8 @@ namespace Snowstorm
 		if (!SceneSerializer::Deserialize(*m_World, m_ScenePath))
 		{
 			SS_CORE_ERROR("Runtime: failed to load startup scene '{}'. "
-			              "Run the editor once to author and save it.", m_ScenePath);
+			              "Run the editor once to author and save it.",
+			              m_ScenePath);
 		}
 
 		// NOTE (known gap): the scene renders into an offscreen RenderTarget, but the only
