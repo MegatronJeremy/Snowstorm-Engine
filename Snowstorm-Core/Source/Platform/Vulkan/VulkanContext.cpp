@@ -129,14 +129,27 @@ namespace Snowstorm
 			debugInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
 			VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
 			VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-			debugInfo.pfnUserCallback = [](VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-			                               VkDebugUtilsMessageTypeFlagsEXT type,
+			debugInfo.pfnUserCallback = [](const VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+			                               VkDebugUtilsMessageTypeFlagsEXT /*type*/,
 			                               const VkDebugUtilsMessengerCallbackDataEXT* data,
-			                               void* user) -> VkBool32
+			                               void* /*user*/) -> VkBool32
 			{
-				SS_CORE_ERROR("Vulkan Validation Layer: {0}", data->pMessage);
-				SS_CORE_ASSERT(false, "Validation failed!");
-				return VK_TRUE;
+				// Only ERROR severity should halt; warnings/info/verbose just log.
+				if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+				{
+					SS_CORE_ERROR("Vulkan Validation: {0}", data->pMessage);
+					SS_CORE_ASSERT(false, "Vulkan validation error");
+				}
+				else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+				{
+					SS_CORE_WARN("Vulkan Validation: {0}", data->pMessage);
+				}
+				else
+				{
+					SS_CORE_TRACE("Vulkan Validation: {0}", data->pMessage);
+				}
+				// Per spec, apps must return VK_FALSE (VK_TRUE aborts the triggering call).
+				return VK_FALSE;
 			};
 
 			VK_CHECK(vkCreateDebugUtilsMessengerEXT(m_Instance, &debugInfo, nullptr, &m_DebugMessenger));
@@ -188,13 +201,15 @@ namespace Snowstorm
 		vkGetPhysicalDeviceFeatures(m_PhysicalDevice, &supportedFeatures);
 
 		VkPhysicalDeviceFeatures enabledFeatures{};
-		if (supportedFeatures.samplerAnisotropy) {
+		if (supportedFeatures.samplerAnisotropy)
+		{
 			enabledFeatures.samplerAnisotropy = VK_TRUE;
-		} else {
-			SS_CORE_WARN("Anisotropy not supported by hardware!"); // virtually supported by every GPU since 2010
 		}
-
-		enabledFeatures.samplerAnisotropy = VK_TRUE; // enabled by default in most engines
+		else
+		{
+			// Don't force-enable an unsupported feature (device creation would fail/validate).
+			SS_CORE_WARN("samplerAnisotropy not supported by hardware; disabling it.");
+		}
 
 		// Common device extensions
 		const char* deviceExtensions[] = {

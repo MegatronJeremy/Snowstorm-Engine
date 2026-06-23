@@ -54,6 +54,16 @@ namespace Snowstorm
 	uint32_t VulkanBindlessManager::RegisterTexture(const VkImageView imageView)
 	{
 		std::scoped_lock lock(m_IndexMutex);
+
+		// Indices are handed out monotonically with no recycling yet, so guard the array bound.
+		// Without this, an overflow writes past the descriptor array (silent corruption in release).
+		SS_CORE_ASSERT(m_NextFreeIndex < MAX_BINDLESS_TEXTURES, "Bindless texture array is full");
+		if (m_NextFreeIndex >= MAX_BINDLESS_TEXTURES)
+		{
+			SS_CORE_ERROR("VulkanBindlessManager: out of bindless slots (max {0}); reusing slot 0", MAX_BINDLESS_TEXTURES);
+			return 0;
+		}
+
 		const uint32_t index = m_NextFreeIndex++;
 
 		VkDescriptorImageInfo imageInfo{};
