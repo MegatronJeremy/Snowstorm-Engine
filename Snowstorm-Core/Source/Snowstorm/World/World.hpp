@@ -16,6 +16,9 @@ namespace Snowstorm
 	{
 	public:
 		World();
+		// Out-of-line: m_SystemManager is a unique_ptr to a forward-declared type, so the
+		// destructor must be emitted in World.cpp where SystemManager is a complete type.
+		~World();
 
 		Entity CreateEntity(const std::string& name = std::string());
 		Entity CreateEntityWithUUID(UUID uuid, const std::string& name = std::string());

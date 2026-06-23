@@ -37,6 +37,8 @@ namespace Snowstorm
 		m_InputEventBridge = CreateScope<InputEventBridge>(bus, input);
 	}
 
+	World::~World() = default;
+
 	Entity World::CreateEntity(const std::string& name)
 	{
 		return CreateEntityWithUUID(UUID{}, name);
