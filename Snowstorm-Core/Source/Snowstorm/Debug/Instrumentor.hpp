@@ -127,7 +127,15 @@ namespace Snowstorm
 	};
 }
 
-#define SS_PROFILE 1
+// Profiling is on in debug builds and off in release. Override by defining SS_PROFILE
+// (e.g. -DSS_PROFILE=1) before this header to force it either way.
+#ifndef SS_PROFILE
+	#ifdef SS_DEBUG
+		#define SS_PROFILE 1
+	#else
+		#define SS_PROFILE 0
+	#endif
+#endif
 #if SS_PROFILE
 #define SS_PROFILE_BEGIN_SESSION(name, filepath) ::Snowstorm::Instrumentor::Get().BeginSession(name, filepath)
 #define SS_PROFILE_END_SESSION() ::Snowstorm::Instrumentor::Get().EndSession()
