@@ -35,9 +35,6 @@ namespace Snowstorm
 		Scope<ServiceManager> m_ServiceManager;
 
 	private:
-		bool OnWindowClose(WindowCloseEvent& e);
-		bool OnWindowResize(WindowResizeEvent& e);
-
 		Scope<Window> m_Window;
 		Scope<EventBus> m_EventBus;
 		bool m_Running = true;
