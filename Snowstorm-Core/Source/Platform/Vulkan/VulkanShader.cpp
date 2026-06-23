@@ -315,8 +315,11 @@ namespace Snowstorm
 
 			if (exitCode != 0)
 			{
-				SS_CORE_ERROR("DXC failed (exit code {}). Command: {}", static_cast<uint32_t>(exitCode),
-				              std::string(cmd.begin(), cmd.end()));
+				// Explicit narrowing for the (ASCII) command line, only for this error log.
+				std::string narrowCmd;
+				narrowCmd.reserve(cmd.size());
+				for (const wchar_t wc : cmd) narrowCmd.push_back(static_cast<char>(wc));
+				SS_CORE_ERROR("DXC failed (exit code {}). Command: {}", static_cast<uint32_t>(exitCode), narrowCmd);
 				return false;
 			}
 
