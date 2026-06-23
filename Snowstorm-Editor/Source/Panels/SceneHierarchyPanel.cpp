@@ -59,7 +59,7 @@ namespace Snowstorm
 			| ImGuiTreeNodeFlags_SpanAvailWidth
 			| ImGuiTreeNodeFlags_Leaf;
 
-		const bool opened = ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<uint32_t>(entity)),
+		const bool opened = ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<uintptr_t>(static_cast<uint32_t>(entity))),
 		                                      flags,
 		                                      "%s", tag.c_str());
 		if (ImGui::IsItemClicked())
