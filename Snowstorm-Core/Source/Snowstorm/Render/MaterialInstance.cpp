@@ -5,19 +5,18 @@
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/CommandContext.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
 
 namespace Snowstorm
 {
 	namespace
 	{
 		constexpr uint32_t kMaterialConstantsBinding = 0;
-		constexpr uint32_t kMaterialSamplerBinding   = 1;
-
-		uint32_t s_NumFrames = 2; // TODO this is somewhere in Renderer...
+		constexpr uint32_t kMaterialSamplerBinding = 1;
 	}
 
 	MaterialInstance::MaterialInstance(const Ref<Material>& baseMaterial)
-		: m_Base(baseMaterial)
+	    : m_Base(baseMaterial)
 	{
 		SS_CORE_ASSERT(m_Base, "MaterialInstance requires a base Material");
 
@@ -30,7 +29,7 @@ namespace Snowstorm
 		const auto& setLayouts = m_Base->GetPipeline()->GetSetLayouts();
 		m_SetLayout = setLayouts[1];
 
-		m_DirtyFramesCounter = 2; 
+		MarkDirty();
 	}
 
 	const Ref<Pipeline>& MaterialInstance::GetPipeline() const
@@ -38,24 +37,29 @@ namespace Snowstorm
 		return m_Base->GetPipeline();
 	}
 
+	void MaterialInstance::MarkDirty()
+	{
+		m_DirtyFramesCounter = Renderer::GetFramesInFlight();
+	}
+
 	void MaterialInstance::SetAlbedoTexture(const Ref<TextureView>& view)
 	{
 		m_AlbedoTexture = view;
 		m_Constants.AlbedoTextureIndex = view ? view->GetGlobalBindlessIndex() : 0;
-		m_DirtyFramesCounter = 2;
+		MarkDirty();
 	}
 
 	void MaterialInstance::SetNormalTexture(const Ref<TextureView>& view)
 	{
 		// Even if your shader doesn't use it yet, your C++ struct is ready
 		m_Constants.NormalTextureIndex = view ? view->GetGlobalBindlessIndex() : 0;
-		m_DirtyFramesCounter = 2;
+		MarkDirty();
 	}
 
 	void MaterialInstance::SetBaseColor(const glm::vec4& color)
 	{
 		m_Constants.BaseColor = color;
-		m_DirtyFramesCounter = 2;
+		MarkDirty();
 	}
 
 	void MaterialInstance::SetSampler(const Ref<Sampler>& sampler)
@@ -104,7 +108,7 @@ namespace Snowstorm
 
 			// Only decrement on the last step of the logic, or use a per-frame dirty bitmask
 			// For now, we'll just decrement. (Note: in a heavy engine, you'd use a bitmask)
-			m_DirtyFramesCounter--; 
+			m_DirtyFramesCounter--;
 		}
 	}
 
@@ -114,7 +118,7 @@ namespace Snowstorm
 
 		ctx.BindPipeline(m_Base->GetPipeline());
 
-		// Bind this material's unique data (Set 1) 
-		ctx.BindDescriptorSet(m_MaterialDataSets[frameIndex], 1); 
+		// Bind this material's unique data (Set 1)
+		ctx.BindDescriptorSet(m_MaterialDataSets[frameIndex], 1);
 	}
 }

@@ -28,15 +28,19 @@ namespace Snowstorm
 		// Named setters - much better for an engine
 		void SetAlbedoTexture(const Ref<TextureView>& view);
 		void SetNormalTexture(const Ref<TextureView>& view);
-        
+
 		// You can keep an internal generic one for the UI/Editor later
-		//void SetTexture(const std::string& name, const Ref<TextureView>& view); 
+		// void SetTexture(const std::string& name, const Ref<TextureView>& view);
 
 		// Per-instance overrides
 		void SetBaseColor(const glm::vec4& color);
 		[[nodiscard]] const glm::vec4& GetBaseColor() const { return m_Constants.BaseColor; }
 
-		void SetObjectExtras0(const glm::vec4& v) { m_ObjectExtras0 = v; m_DirtyFramesCounter = 2; } //  TODO don't hardcode this set
+		void SetObjectExtras0(const glm::vec4& v)
+		{
+			m_ObjectExtras0 = v;
+			MarkDirty();
+		}
 		[[nodiscard]] const glm::vec4& GetObjectExtras0() const { return m_ObjectExtras0; }
 
 		void SetSampler(const Ref<Sampler>& sampler);
@@ -50,6 +54,9 @@ namespace Snowstorm
 	private:
 		void EnsurePerFrameResources(uint32_t frameIndex);
 		void UpdateGPU(uint32_t frameIndex);
+
+		// Mark dirty for the next N frames-in-flight so every per-frame copy is updated.
+		void MarkDirty();
 
 	private:
 		Ref<Material> m_Base;
