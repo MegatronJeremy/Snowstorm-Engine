@@ -67,11 +67,17 @@ sets C++17 globally, but every target overrides to 20 — treat the project as C
 - Namespace `Snowstorm`. Smart-pointer aliases `Ref<T>` (shared) / `Scope<T>` (unique) with
   `CreateRef` / `CreateScope` — use these, not raw `std::shared_ptr`/`make_unique`, in engine code.
 - Macros from `Core/Base.hpp`: `SS_ASSERT` / `SS_CORE_ASSERT`, `BIT(x)`, `SS_BIND_EVENT_FN(fn)`,
-  `SS_DEBUGBREAK()`. Logging is `SS_CORE_*` / `SS_*` (spdlog). Asserts compile out unless `SS_DEBUG`.
+  `SS_DEBUGBREAK()`. Logging is `SS_CORE_*` / `SS_*` (spdlog). Asserts compile out unless `SS_DEBUG`;
+  use `SS_VERIFY` / `SS_CORE_VERIFY` for checks that must survive release builds.
 - Platform code goes behind `SS_PLATFORM_WINDOWS` (see `Core/PlatformDetection.hpp`); the engine
   currently `#error`s on non-Windows.
 - Headers are `.hpp`, translation units `.cpp`. Core globs all sources recursively, so a new file
   under `Snowstorm-Core/Source/` is picked up after re-running CMake (re-generate the solution).
+- **Formatting (format-on-touch):** the repo has a `.clang-format`. The `lint` CI checks the C++
+  files changed by a push/PR and **fails if any touched file isn't fully clang-format-clean**, so the
+  codebase formats gradually as files are edited. Pinned to **`clang-format==22.1.5`** (match it
+  locally — version drift changes output). Run `clang-format -i <files>` (or enable format-on-save
+  against the repo config) before committing.
 
 ## Dependencies (vcpkg, x64-windows)
 
