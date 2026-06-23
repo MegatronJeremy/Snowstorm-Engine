@@ -23,6 +23,7 @@ PACKAGES = [
     "vulkan-memory-allocator",
     "spirv-reflect",
     "nlohmann-json",
+    "catch2",
 ]
 
 def run(cmd, cwd=None, env=None):

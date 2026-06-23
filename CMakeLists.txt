@@ -13,6 +13,9 @@ add_subdirectory(Snowstorm-Core)
 add_subdirectory(Snowstorm-Editor)
 add_subdirectory(Snowstorm-Runtime)
 
+enable_testing()
+add_subdirectory(Snowstorm-Tests)
+
 # 2. Set the default startup project for Visual Studio/Rider
 set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT "Snowstorm-Editor")
 

@@ -37,3 +37,6 @@ jobs:
 
       - name: Build all targets
         run: cmake --build build --config Debug
+
+      - name: Run tests
+        run: ctest --test-dir build -C Debug --output-on-failure
