@@ -78,9 +78,23 @@ namespace Snowstorm
 			SS_CORE_ASSERT(alignmentBytes > 0, "UniformRingBuffer::Alloc alignmentBytes must be > 0");
 			SS_CORE_ASSERT((alignmentBytes & (alignmentBytes - 1)) == 0, "UniformRingBuffer::Alloc alignment must be power of two");
 
-			const uint32_t alignedHead = AlignUp(m_Head, alignmentBytes);
-			SS_CORE_ASSERT(alignedHead + sizeBytes <= m_Size,
-			               "UniformRingBuffer overflow. Increase ring size or reduce per-frame allocations.");
+			uint32_t alignedHead = AlignUp(m_Head, alignmentBytes);
+
+			// Release-safe overflow handling: never write past the mapped buffer. In debug this
+			// asserts; in release it logs and reuses an in-bounds region (overflowing allocations
+			// this frame may glitch visually, but no memory corruption occurs).
+			if (alignedHead + sizeBytes > m_Size)
+			{
+				SS_CORE_ASSERT(false, "UniformRingBuffer overflow. Increase ring size or reduce per-frame allocations.");
+				SS_CORE_ERROR("UniformRingBuffer overflow ({0}+{1} > {2}); clamping. Increase ring size.", alignedHead, sizeBytes, m_Size);
+
+				if (sizeBytes > m_Size)
+				{
+					// A single allocation larger than the whole ring cannot be satisfied.
+					return UniformRingAllocation{};
+				}
+				alignedHead = m_Size - sizeBytes;
+			}
 
 			UniformRingAllocation a{};
 			a.Buffer = m_Buffer;
