@@ -58,12 +58,15 @@ namespace Snowstorm
 			const glm::vec4 row2 = {vp[0][2], vp[1][2], vp[2][2], vp[3][2]};
 			const glm::vec4 row3 = {vp[0][3], vp[1][3], vp[2][3], vp[3][3]};
 
-			// Planes: row3 +/- rowX
+			// Gribb-Hartmann plane extraction. X/Y use row3 +/- rowX (clip x,y in [-w, w]).
+			// Z uses the [0, w] (Vulkan/D3D, "zero-to-one") convention to match the
+			// glm::perspectiveRH_ZO projection used by the camera system: near = row2,
+			// far = row3 - row2. (The OpenGL [-1, 1] convention would use row3 + row2 for near.)
 			f.m_Planes[Left] = PlaneFromVec4(row3 + row0);
 			f.m_Planes[Right] = PlaneFromVec4(row3 - row0);
 			f.m_Planes[Bottom] = PlaneFromVec4(row3 + row1);
 			f.m_Planes[Top] = PlaneFromVec4(row3 - row1);
-			f.m_Planes[Near] = PlaneFromVec4(row3 + row2);
+			f.m_Planes[Near] = PlaneFromVec4(row2);
 			f.m_Planes[Far] = PlaneFromVec4(row3 - row2);
 
 			for (auto& p : f.m_Planes)
