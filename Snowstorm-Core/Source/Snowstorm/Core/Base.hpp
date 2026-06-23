@@ -51,6 +51,12 @@ SS_DEBUGBREAK();                                                                
 #define SS_CORE_ASSERT(...)
 #endif
 
+// SS_VERIFY / SS_CORE_VERIFY: always-on checks that survive release builds (unlike SS_ASSERT,
+// which compiles out). On failure they log and break in debug; in release they log and continue.
+// Use for critical invariants that must not be silently skipped in shipping builds.
+#define SS_VERIFY(check, ...)      do { if (!(check)) { SS_ERROR(__VA_ARGS__);      SS_DEBUGBREAK(); } } while (false)
+#define SS_CORE_VERIFY(check, ...) do { if (!(check)) { SS_CORE_ERROR(__VA_ARGS__); SS_DEBUGBREAK(); } } while (false)
+
 
 #define SS_EXPAND_MACRO(x) x
 #define SS_STRINGIFY_MACRO(x) #x
