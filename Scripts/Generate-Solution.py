@@ -26,6 +26,14 @@ PACKAGES = [
     "catch2",
 ]
 
+# Pin the v143 toolset to a concrete MSVC version. Without this, "-T v143" resolves
+# to Microsoft.VCToolsVersion.v143.default.txt (can lag behind, e.g. 14.38), while
+# vcpkg builds dependencies with the unqualified default (Microsoft.VCToolsVersion.default.txt,
+# e.g. 14.44). The skew makes Catch2 link against vectorized-STL symbols (__std_search_1,
+# __std_find_last_of_trivial_pos_1) the older toolset's libs don't provide -> LNK2019.
+# Keep this matching the vcpkg default toolset; bump when upgrading VS.
+TOOLSET = "v143,version=14.44.35207"
+
 def run(cmd, cwd=None, env=None):
     print(">", " ".join(cmd))
     try:
@@ -66,7 +74,7 @@ def configure_cmake(project_root: Path, build_dir: Path, vcpkg_dir: Path, genera
         "-S", str(project_root),
         "-B", str(build_dir),
         f"-DCMAKE_TOOLCHAIN_FILE={toolchain}",
-        "-T", "v143",
+        "-T", TOOLSET,
     ]
 
     # If you want to force VS generator explicitly (optional)
@@ -125,7 +133,7 @@ def main():
         "-S", str(project_root),
         "-B", str(build_dir),
         f"-DCMAKE_TOOLCHAIN_FILE={vcpkg_dir / 'scripts' / 'buildsystems' / 'vcpkg.cmake'}",
-        "-T", "v143",
+        "-T", TOOLSET,
         *(["-G", args.generator] if args.generator else []),
     ], env=env)
 
