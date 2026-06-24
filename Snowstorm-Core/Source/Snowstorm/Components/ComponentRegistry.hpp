@@ -61,25 +61,35 @@ namespace Snowstorm
 		}
 		else
 		{
-			DrawFn = [type](const Entity entity) // default draw function
+			DrawFn = [type](Entity entity) // default draw function
 			{
 				if (!entity.HasComponent<T>()) return;
+				if (!type.is_valid()) return;
 
-				const T& component = entity.GetComponent<T>();
-				const rttr::instance instance = component;
-
-				if (!type.is_valid())
-					return;
+				// Render into a mutable copy: binding rttr::instance to GetComponent()'s const
+				// reference makes set_value a no-op (writes never reach the real component). Write
+				// the copy back through the tracked path only if something changed, so edits land
+				// AND ChangedView consumers are notified.
+				T working = entity.GetComponent<T>();
+				rttr::instance instance = working;
 
 				const std::string name = type.get_name().to_string();
 
+				bool changed = false;
+				ImGui::PushID(name.c_str()); // scope widget IDs per component (avoid cross-component collisions)
 				if (ImGui::TreeNodeEx(name.c_str(), ImGuiTreeNodeFlags_DefaultOpen, "%s", name.c_str()))
 				{
 					for (const auto& prop : type.get_properties())
 					{
-						RenderProperty(prop, instance);
+						changed |= RenderProperty(prop, instance);
 					}
 					ImGui::TreePop();
+				}
+				ImGui::PopID();
+
+				if (changed)
+				{
+					entity.PatchComponent<T>([&](T& target) { target = working; });
 				}
 			};
 		}
