@@ -11,6 +11,7 @@
 #include "Snowstorm/Render/MaterialInstance.hpp"
 
 #include <unordered_map>
+#include <unordered_set>
 #include <filesystem>
 
 namespace Snowstorm
@@ -47,8 +48,15 @@ namespace Snowstorm
 	private:
 		Ref<Pipeline> GetOrCreatePipeline(PipelinePreset preset);
 
+		// Resolve metadata for a non-zero handle, logging a clear error (once per handle) if it is
+		// missing or the wrong type. A scene referencing handles absent from the registry is the
+		// classic "registry stale/missing" failure and otherwise fails silently (nothing renders).
+		const AssetMetadata* ResolveMetaOrWarn(AssetHandle handle, AssetType expected, const char* what);
+
 	private:
 		AssetRegistry m_Registry;
+
+		std::unordered_set<uint64_t> m_WarnedHandles;
 
 		WorldRef m_World;
 

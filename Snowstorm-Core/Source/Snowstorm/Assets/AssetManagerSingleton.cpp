@@ -29,6 +29,29 @@ namespace Snowstorm
 		return m_Registry.Import(path, type);
 	}
 
+	const AssetMetadata* AssetManagerSingleton::ResolveMetaOrWarn(const AssetHandle handle, const AssetType expected, const char* what)
+	{
+		const AssetMetadata* meta = m_Registry.GetMetadata(handle);
+		if (meta && meta->Type == expected)
+		{
+			return meta;
+		}
+
+		// Warn once per handle so a stale/missing registry is loud but doesn't spam every frame.
+		if (m_WarnedHandles.insert(handle.Value()).second)
+		{
+			if (!meta)
+			{
+				SS_CORE_ERROR("Asset {0} handle {1} not found in registry (registry stale or missing?).", what, handle.Value());
+			}
+			else
+			{
+				SS_CORE_ERROR("Asset handle {0} is not a {1} (registry/scene mismatch).", handle.Value(), what);
+			}
+		}
+		return nullptr;
+	}
+
 	Ref<Mesh> AssetManagerSingleton::GetMesh(const AssetHandle handle)
 	{
 		if (handle == 0) return nullptr;
@@ -38,8 +61,8 @@ namespace Snowstorm
 			return it->second;
 		}
 
-		const AssetMetadata* meta = m_Registry.GetMetadata(handle);
-		if (!meta || meta->Type != AssetType::Mesh)
+		const AssetMetadata* meta = ResolveMetaOrWarn(handle, AssetType::Mesh, "mesh");
+		if (!meta)
 		{
 			return nullptr;
 		}
@@ -94,8 +117,8 @@ namespace Snowstorm
 			return it->second;
 		}
 
-		const AssetMetadata* meta = m_Registry.GetMetadata(handle);
-		if (!meta || meta->Type != AssetType::Shader)
+		const AssetMetadata* meta = ResolveMetaOrWarn(handle, AssetType::Shader, "shader");
+		if (!meta)
 			return nullptr;
 
 		auto& shaderLib = m_World->GetSingleton<ShaderLibrarySingleton>();
@@ -113,8 +136,8 @@ namespace Snowstorm
 			return it->second;
 		}
 
-		const AssetMetadata* meta = m_Registry.GetMetadata(handle);
-		if (!meta || meta->Type != AssetType::Texture)
+		const AssetMetadata* meta = ResolveMetaOrWarn(handle, AssetType::Texture, "texture");
+		if (!meta)
 		{
 			return nullptr;
 		}
@@ -179,8 +202,8 @@ namespace Snowstorm
 	{
 		if (handle == 0) return nullptr;
 
-		const AssetMetadata* meta = m_Registry.GetMetadata(handle);
-		if (!meta || meta->Type != AssetType::Material)
+		const AssetMetadata* meta = ResolveMetaOrWarn(handle, AssetType::Material, "material");
+		if (!meta)
 		{
 			return nullptr;
 		}
@@ -220,8 +243,8 @@ namespace Snowstorm
 			return it->second;
 		}
 
-		const AssetMetadata* meta = m_Registry.GetMetadata(handle);
-		if (!meta || meta->Type != AssetType::Material)
+		const AssetMetadata* meta = ResolveMetaOrWarn(handle, AssetType::Material, "material");
+		if (!meta)
 		{
 			return nullptr;
 		}

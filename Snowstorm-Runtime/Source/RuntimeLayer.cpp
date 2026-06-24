@@ -17,7 +17,7 @@ namespace Snowstorm
 		m_World = CreateRef<World>();
 
 		// Resolve the asset handles referenced by the scene.
-		m_World->GetSingleton<AssetManagerSingleton>().LoadRegistry("assets/cache/AssetRegistry.json");
+		m_World->GetSingleton<AssetManagerSingleton>().LoadRegistry("assets/AssetRegistry.json");
 
 		// The SAME engine systems the editor runs — without the editor/UI systems on top.
 		RegisterCoreSystems(*m_World);

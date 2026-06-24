@@ -26,3 +26,8 @@ Makefile
 # blanket *.json / *.cmake ignores above (those target generated build files).
 !Scripts/vcpkg-overlays/
 !Scripts/vcpkg-overlays/**
+
+# The asset registry maps the UUID handles in committed scenes to their files. It
+# is project data, not build output, so it must travel with the scenes (despite
+# the blanket *.json ignore) or every fresh checkout renders nothing.
+!Assets/AssetRegistry.json

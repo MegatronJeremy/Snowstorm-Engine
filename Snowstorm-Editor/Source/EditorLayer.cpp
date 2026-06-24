@@ -50,7 +50,7 @@ namespace Snowstorm
 		// Load asset registry DB early
 		{
 			auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
-			assets.LoadRegistry("assets/cache/AssetRegistry.json");
+			assets.LoadRegistry("assets/AssetRegistry.json");
 		}
 
 		// Hook editor commands for menu systems etc.
@@ -126,7 +126,7 @@ namespace Snowstorm
 		// Save asset registry (so new imports persist)
 		{
 			auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
-			assets.SaveRegistry("assets/cache/AssetRegistry.json");
+			assets.SaveRegistry("assets/AssetRegistry.json");
 		}
 
 		SS_CORE_INFO("Scene '{}' saved.", scenePath);

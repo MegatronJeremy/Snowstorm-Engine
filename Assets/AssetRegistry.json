@@ -1,0 +1,39 @@
+{
+  "Assets": [
+    {
+      "Handle": "14863079243352112687",
+      "Path": "assets/materials/White.ssmat",
+      "Type": "Material"
+    },
+    {
+      "Handle": "14167707854468761414",
+      "Path": "assets/meshes/girl.obj",
+      "Type": "Mesh"
+    },
+    {
+      "Handle": "12465655103903380530",
+      "Path": "assets/textures/Checkerboard.png",
+      "Type": "Texture"
+    },
+    {
+      "Handle": "5810267832183663728",
+      "Path": "assets/meshes/cube.obj",
+      "Type": "Mesh"
+    },
+    {
+      "Handle": "12112538743247314239",
+      "Path": "assets/meshes/quad.obj",
+      "Type": "Mesh"
+    },
+    {
+      "Handle": "9496730424453785457",
+      "Path": "assets/materials/Blue.ssmat",
+      "Type": "Material"
+    },
+    {
+      "Handle": "13869174114393927166",
+      "Path": "assets/materials/Mandelbrot.ssmat",
+      "Type": "Material"
+    }
+  ]
+}
