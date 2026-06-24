@@ -1,39 +1,30 @@
 #pragma once
 
-#include <typeindex>
-
 #include "Singleton.hpp"
 
-#include "Snowstorm/Core/Base.hpp"
-#include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Utility/TypeMap.hpp"
 
 namespace Snowstorm
 {
+	// World-scoped singletons: one instance per type, living for the lifetime of a World.
+	// Plain cross-cutting state with no per-frame lifecycle (cf. ServiceManager, which is
+	// application-scoped and ticks its entries). Both share TypeMap.
 	class SingletonManager
 	{
 	public:
 		template <typename T, typename... Args>
 		void RegisterSingleton(Args&&... args)
 		{
-			static_assert(std::is_base_of_v<Singleton, T>, "T must inherit from Singleton");
-
-			if (const std::type_index typeIndex(typeid(T)); !m_Singletons.contains(typeIndex))
-			{
-				m_Singletons[typeIndex].reset(new T(std::forward<Args>(args)...));
-			}
+			m_Singletons.Emplace<T>(std::forward<Args>(args)...);
 		}
 
 		template <typename T>
 		[[nodiscard]] T& GetSingleton()
 		{
-			const std::type_index typeIndex(typeid(T));
-
-			SS_ASSERT(m_Singletons.contains(typeIndex), "Singleton not registered!");
-
-			return *static_cast<T*>(m_Singletons[typeIndex].get());
+			return m_Singletons.Get<T>();
 		}
 
 	private:
-		std::unordered_map<std::type_index, Scope<Singleton>> m_Singletons;
+		TypeMap<Singleton> m_Singletons;
 	};
 }
