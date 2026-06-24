@@ -333,7 +333,11 @@ namespace Snowstorm
 
 		// --- Ensure the texture is in a usable state for the shader ---
 		// If the texture was just created and never had data set, it's still UNDEFINED.
-		if (vkTex->GetCurrentLayout() == VK_IMAGE_LAYOUT_UNDEFINED)
+		// Skip this for externally-owned images (swapchain): their layout is managed inside the
+		// frame command buffer (BeginRenderPass), gated by the image-acquire semaphore. Doing a
+		// queue-blind ImmediateSubmit here would transition the acquired presentable image without
+		// waiting that semaphore -> sync-hazard validation error (editor, first frame). See #28.
+		if (vkTex->OwnsImage() && vkTex->GetCurrentLayout() == VK_IMAGE_LAYOUT_UNDEFINED)
 		{
 			ImmediateSubmit([&](const VkCommandBuffer cmd)
 			{

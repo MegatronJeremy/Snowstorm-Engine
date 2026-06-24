@@ -67,6 +67,11 @@ namespace Snowstorm
 		}
 	}
 
+	void VulkanRendererAPI::WaitIdle()
+	{
+		vkDeviceWaitIdle(VulkanContext::Get().GetDevice());
+	}
+
 	void VulkanRendererAPI::Shutdown()
 	{
 		const VkDevice device = VulkanContext::Get().GetDevice();

@@ -138,9 +138,13 @@ namespace Snowstorm
 		// layout (e.g. SHADER_READ_ONLY after being sampled, or UNDEFINED/PRESENT_SRC for the
 		// swapchain) won't match the COLOR/DEPTH_ATTACHMENT_OPTIMAL the render pass expects.
 		const RenderTargetDesc& desc = vkTarget.GetDesc();
+		m_CurrentColorTargets.clear();
+		m_CurrentTargetIsSwapchain = desc.IsSwapchainTarget;
 		for (const RenderTargetAttachment& a : desc.ColorAttachments)
 		{
-			TransitionLayout(a.View->GetTexture(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+			const Ref<Texture>& tex = a.View->GetTexture();
+			TransitionLayout(tex, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+			m_CurrentColorTargets.push_back(tex);
 		}
 		if (desc.DepthAttachment.has_value())
 		{
@@ -179,6 +183,19 @@ namespace Snowstorm
 
 		vkCmdEndRendering(m_CommandBuffer);
 		m_IsRendering = false;
+
+		// Offscreen color targets are rendered to be sampled afterwards (e.g. the editor viewport
+		// texture is drawn with ImGui as a combined-image-sampler expecting SHADER_READ_ONLY).
+		// Transition them now so the tracked layout matches the descriptor at sample time. The
+		// swapchain target is excluded — EndFrame transitions it to PRESENT_SRC.
+		if (!m_CurrentTargetIsSwapchain)
+		{
+			for (const Ref<Texture>& tex : m_CurrentColorTargets)
+			{
+				TransitionLayout(tex, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+			}
+		}
+		m_CurrentColorTargets.clear();
 	}
 
 	void VulkanCommandContext::SetViewport(const float x, const float y,

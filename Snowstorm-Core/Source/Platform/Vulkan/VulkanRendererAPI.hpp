@@ -12,6 +12,8 @@ namespace Snowstorm
 		void Init(void* windowHandle) override;
 		void Shutdown() override;
 
+		void WaitIdle() override;
+
 		void BeginFrame() override;
 		void EndFrame() override;
 

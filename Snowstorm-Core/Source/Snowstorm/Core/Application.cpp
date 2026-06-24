@@ -39,6 +39,12 @@ namespace Snowstorm
 	{
 		SS_PROFILE_FUNCTION();
 
+		// Finish all in-flight GPU work before tearing down layers/worlds, which destroy GPU
+		// resources (textures, descriptor sets, views). Without this they can be destroyed while
+		// still referenced by the last submitted command buffer -> "in use by command buffer"
+		// validation errors on shutdown.
+		Renderer::WaitIdle();
+
 		m_LayerStack.reset();
 
 		Renderer::ShutdownImGuiBackend();

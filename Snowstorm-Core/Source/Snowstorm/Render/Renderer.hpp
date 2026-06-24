@@ -13,6 +13,9 @@ namespace Snowstorm
 		static void Init(void* windowHandle);
 		static void Shutdown();
 
+		// Block until the GPU is idle. Call before destroying GPU resources (e.g. on app teardown).
+		static void WaitIdle();
+
 		static void BeginFrame();
 		static void EndFrame();
 

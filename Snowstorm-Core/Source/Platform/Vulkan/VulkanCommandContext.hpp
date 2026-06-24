@@ -4,9 +4,12 @@
 
 #include "Snowstorm/Render/CommandContext.hpp"
 
+#include <vector>
+
 namespace Snowstorm
 {
 	class VulkanGraphicsPipeline;
+	class Texture;
 
 	class VulkanCommandContext final : public CommandContext
 	{
@@ -65,5 +68,11 @@ namespace Snowstorm
 		VkPipelineBindPoint m_CurrentBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 
 		Ref<VulkanGraphicsPipeline> m_CurrentGraphicsPipeline;
+
+		// Color attachments of the active render pass, and whether it targets the swapchain.
+		// Used by EndRenderPass to leave offscreen color targets in SHADER_READ_ONLY so they can be
+		// sampled afterwards (e.g. the editor viewport texture).
+		std::vector<Ref<Texture>> m_CurrentColorTargets;
+		bool m_CurrentTargetIsSwapchain = false;
 	};
 }

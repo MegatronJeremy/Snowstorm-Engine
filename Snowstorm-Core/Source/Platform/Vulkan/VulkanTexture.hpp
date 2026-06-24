@@ -33,6 +33,10 @@ namespace Snowstorm
 		VkImageLayout GetCurrentLayout() const { return m_CurrentLayout; }
 		void SetCurrentLayout(VkImageLayout layout) { m_CurrentLayout = layout; }
 
+		// False for externally-owned images (e.g. swapchain images wrapped via the
+		// VulkanTexture(VkImage, desc) ctor), whose memory and layout lifecycle we don't own.
+		[[nodiscard]] bool OwnsImage() const { return m_Allocation != nullptr; }
+
 	private:
 		void CreateImageAndAllocate();
 		void DestroyImage();

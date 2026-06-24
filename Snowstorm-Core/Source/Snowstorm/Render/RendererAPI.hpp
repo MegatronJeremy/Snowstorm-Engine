@@ -19,6 +19,10 @@ namespace Snowstorm
 		virtual void Init(void* windowHandle) = 0;
 		virtual void Shutdown() = 0;
 
+		// Block until the GPU has finished all submitted work. Call before tearing down GPU
+		// resources so they aren't destroyed while still referenced by in-flight command buffers.
+		virtual void WaitIdle() = 0;
+
 		virtual void BeginFrame() = 0;
 		virtual void EndFrame() = 0;
 
