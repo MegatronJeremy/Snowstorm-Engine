@@ -6,6 +6,7 @@
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+#include <cstdlib>
 #include <iostream>
 
 //-- compile the actual implementation in this file
@@ -137,7 +138,16 @@ namespace Snowstorm
 				if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
 				{
 					SS_CORE_ERROR("Vulkan Validation: {0}", data->pMessage);
-					SS_CORE_ASSERT(false, "Vulkan validation error");
+
+					// When SS_VALIDATION_NONFATAL is set, log every error and keep running instead
+					// of asserting on the first one. Lets a single run (e.g. the smoke test) surface
+					// ALL validation errors at once rather than one-per-run. Cached once; the lambda
+					// is captureless (required for the C function-pointer conversion).
+					static const bool s_NonFatal = std::getenv("SS_VALIDATION_NONFATAL") != nullptr;
+					if (!s_NonFatal)
+					{
+						SS_CORE_ASSERT(false, "Vulkan validation error");
+					}
 				}
 				else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
 				{

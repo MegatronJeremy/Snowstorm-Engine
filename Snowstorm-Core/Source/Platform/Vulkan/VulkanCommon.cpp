@@ -142,13 +142,19 @@ namespace Snowstorm
 
 	void SetVulkanObjectName(const VkDevice device, const uint64_t objectHandle, const VkObjectType objectType, const char* name)
 	{
+		// Requires VK_EXT_debug_utils. The entry point is only loaded when validation/debug-utils
+		// is active; skip (don't crash) when it isn't, or when there's nothing to name.
+		if (vkSetDebugUtilsObjectNameEXT == nullptr || objectHandle == 0 || name == nullptr)
+		{
+			return;
+		}
+
 		VkDebugUtilsObjectNameInfoEXT nameInfo = {};
 		nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
 		nameInfo.objectType = objectType;
 		nameInfo.objectHandle = objectHandle;
 		nameInfo.pObjectName = name;
-    
-		// This requires the VK_EXT_debug_utils extension (which you already have enabled)
+
 		vkSetDebugUtilsObjectNameEXT(device, &nameInfo);
 	}
 }

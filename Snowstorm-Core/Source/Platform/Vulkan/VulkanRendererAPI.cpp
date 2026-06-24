@@ -40,7 +40,10 @@ namespace Snowstorm
 
 		for (uint32_t i = 0; i < swapImages.size(); ++i)
 		{
+			desc.DebugName = "Swapchain[" + std::to_string(i) + "]";
 			m_SwapchainTextures[i] = CreateRef<VulkanTexture>(swapImages[i], desc);
+			SetVulkanObjectName(device, reinterpret_cast<uint64_t>(swapImages[i]),
+			                    VK_OBJECT_TYPE_IMAGE, desc.DebugName.c_str());
 		}
 
 		m_CurrentFrameIndex = 0;

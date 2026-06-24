@@ -50,6 +50,14 @@ Build first (`cmake --build build --config Debug`), then smoke-test. It needs a 
 (Vulkan), so it is a **local** gate — it cannot run on hosted CI; the GitHub `build` workflow only
 compiles. The harness sets `VK_ADD_LAYER_PATH` itself so validation layers load.
 
+The harness also sets `SS_VALIDATION_NONFATAL=1`: by default the Vulkan validation messenger
+asserts (and the process dies) on the first ERROR, so you only see one error per run. With this env
+var set, every validation error is logged and the app keeps running, so a single smoke run surfaces
+**all** of them at once — the harness then detects failures by scanning the log, not the exit code.
+Set it yourself when debugging validation interactively. GPU resources are also named via
+`SetVulkanObjectName` (`VK_EXT_debug_utils`), so validation/RenderDoc report e.g. `Swapchain[0]`
+instead of a raw `VkImage 0x...` handle.
+
 ## Layout
 
 ```

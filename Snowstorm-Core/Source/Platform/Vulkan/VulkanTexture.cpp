@@ -82,6 +82,10 @@ namespace Snowstorm
 		const VkResult res = vmaCreateImage(allocator, &imageCI, &allocCI, &m_Image, &m_Allocation, nullptr);
 		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to create Vulkan image via VMA");
 
+		// Name the image so validation/RenderDoc report it by DebugName instead of a raw handle.
+		SetVulkanObjectName(GetVulkanDevice(), reinterpret_cast<uint64_t>(m_Image),
+		                    VK_OBJECT_TYPE_IMAGE, m_Desc.DebugName.c_str());
+
 		m_CurrentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	}
 

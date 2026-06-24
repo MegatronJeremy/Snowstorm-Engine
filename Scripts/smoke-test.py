@@ -74,6 +74,9 @@ def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
 
     env = os.environ.copy()
     env["SS_SMOKE_FRAMES"] = str(frames)
+    # Don't assert-and-die on the first Vulkan validation error; log them all and keep running so a
+    # single smoke run surfaces every error at once. We detect failures by scanning the log below.
+    env["SS_VALIDATION_NONFATAL"] = "1"
     # Point Vulkan at the vcpkg validation layers, matching Generate-Solution.py and the
     # VS debugger environment. Without this the loader can't find the layers the engine
     # requests, and init crashes instead of running -> false failures.
