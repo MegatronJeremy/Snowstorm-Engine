@@ -29,6 +29,27 @@ debugger environment) pointing at the vcpkg `bin` dir.
 
 The first run is slow — vcpkg compiles every dependency from source.
 
+## Smoke test (run after non-trivial changes)
+
+`Scripts/smoke-test.py` boots each executable headlessly and checks it doesn't crash or log
+errors. It launches every app with `SS_SMOKE_FRAMES` set (the engine then runs that many frames
+and exits cleanly), captures stdout/stderr, enforces a per-app wall-clock timeout (a hang/deadlock
+becomes a failure instead of blocking), checks the exit code, and scans the log for error markers
+(`[error]`/`[critical]`, Vulkan validation, assertion text). Exit 0 = all pass.
+
+```
+py Scripts/smoke-test.py                 # 120 frames, 60s timeout/app, Debug build
+py Scripts/smoke-test.py --frames 300    # longer soak
+py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime)
+py Scripts/smoke-test.py --warnings-fail # treat [warning] lines as failures too
+```
+
+**Run it after any change substantial enough to affect runtime behavior** (engine/render/ECS/asset
+code, the frame loop, anything touching Vulkan) — not for docs/comment/build-script-only edits.
+Build first (`cmake --build build --config Debug`), then smoke-test. It needs a **real GPU/display**
+(Vulkan), so it is a **local** gate — it cannot run on hosted CI; the GitHub `build` workflow only
+compiles. The harness sets `VK_ADD_LAYER_PATH` itself so validation layers load.
+
 ## Layout
 
 ```
@@ -96,5 +117,8 @@ solution/project files (`*.sln`, `*.vcxproj*`, `*.cmake`, `CMakeCache.txt`, `ALL
 
 - This is graphics code: "renders/looks correct" can only be confirmed by **building and running**
   on a machine with a GPU/display. Headless verification is not possible — say so when you can't run it.
+- After non-trivial runtime changes, **build then run `Scripts/smoke-test.py`** (see Smoke test
+  above) — it catches crashes, hangs, and Vulkan validation/assertion errors that compilation can't.
+  A clean smoke run is the minimum bar before claiming a runtime change works.
 - Confirm behavior against the actual source/build, not from names. Mark unverified statements as
   assumptions.
