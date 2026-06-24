@@ -67,6 +67,21 @@ Set it yourself when debugging validation interactively. GPU resources are also 
 `SetVulkanObjectName` (`VK_EXT_debug_utils`), so validation/RenderDoc report e.g. `Swapchain[0]`
 instead of a raw `VkImage 0x...` handle.
 
+## Console variables (CVars)
+
+Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc
+`std::getenv`. Declare engine-wide CVars in `Snowstorm/Core/EngineCVars.{hpp,cpp}`; each
+self-registers and is resolved once at startup by `CVarRegistry::Initialize(argc, argv)` (called in
+`EntryPoint.hpp`) from, in increasing priority: **default → environment → CLI**.
+
+A CVar named `validation.extra` is set by env `SS_VALIDATION_EXTRA` **or** CLI `--validation.extra`
+(dots→`_`, uppercased, `SS_` prefix for env). Bools accept presence (`--flag`, or env set to
+anything but `0`/`false`/`off`/`no`). Run any executable with `--list-cvars` (or `--help`) to print
+every CVar with its value, type, env name, and description. Current CVars: `smoke.frames`,
+`validation.nonfatal`, `validation.extra` (the smoke harness still sets the matching env vars, so
+nothing about running it changed). Resolution is read-once at startup — runtime mutation (ImGui
+panel) and a config-file source are planned follow-ups, not yet implemented.
+
 ## Layout
 
 ```

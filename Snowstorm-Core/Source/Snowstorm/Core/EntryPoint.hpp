@@ -1,10 +1,16 @@
 #pragma once
 
+#include "Snowstorm/Utility/CVar.hpp"
+
 #ifdef SS_PLATFORM_WINDOWS
 
 inline int main(int argc, char** argv)
 {
 	Snowstorm::Log::Init();
+
+	// Resolve console variables (env + CLI) before creating the application: startup-critical CVars
+	// (e.g. Vulkan validation) are read during instance creation inside CreateApplication().
+	Snowstorm::CVarRegistry::Get().Initialize(argc, argv);
 
 	SS_PROFILE_BEGIN_SESSION("Startup", "SnowstormProfile-Startup.json");
 	const auto app = Snowstorm::CreateApplication();

@@ -6,8 +6,9 @@
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-#include <cstdlib>
 #include <iostream>
+
+#include "Snowstorm/Core/EngineCVars.hpp"
 
 //-- compile the actual implementation in this file
 #define VOLK_IMPLEMENTATION
@@ -128,7 +129,7 @@ namespace Snowstorm
 		validationFeatures.enabledValidationFeatureCount = static_cast<uint32_t>(std::size(enabledValidationFeatures));
 		validationFeatures.pEnabledValidationFeatures = enabledValidationFeatures;
 
-		if (enableValidationLayers && std::getenv("SS_VALIDATION_EXTRA") != nullptr)
+		if (enableValidationLayers && CVars::ValidationExtra.Get())
 		{
 			validationFeatures.pNext = createInfo.pNext;
 			createInfo.pNext = &validationFeatures;
@@ -158,11 +159,12 @@ namespace Snowstorm
 				{
 					SS_CORE_ERROR("Vulkan Validation: {0}", data->pMessage);
 
-					// When SS_VALIDATION_NONFATAL is set, log every error and keep running instead
-					// of asserting on the first one. Lets a single run (e.g. the smoke test) surface
+					// When validation.nonfatal is set, log every error and keep running instead of
+					// asserting on the first one. Lets a single run (e.g. the smoke test) surface
 					// ALL validation errors at once rather than one-per-run. Cached once; the lambda
-					// is captureless (required for the C function-pointer conversion).
-					static const bool s_NonFatal = std::getenv("SS_VALIDATION_NONFATAL") != nullptr;
+					// is captureless (required for the C function-pointer conversion), and CVars are
+					// resolved at startup before this callback can fire.
+					static const bool s_NonFatal = CVars::ValidationNonFatal.Get();
 					if (!s_NonFatal)
 					{
 						SS_CORE_ASSERT(false, "Vulkan validation error");

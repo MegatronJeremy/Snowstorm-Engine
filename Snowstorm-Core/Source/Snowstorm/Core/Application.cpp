@@ -3,10 +3,10 @@
 
 #include <GLFW/glfw3.h>
 
-#include <cstdlib>
 #include <ranges>
 
 #include "Snowstorm/Components/ComponentRegistration.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 
 namespace Snowstorm
@@ -59,21 +59,17 @@ namespace Snowstorm
 	{
 		SS_PROFILE_FUNCTION();
 
-		// Smoke-test hook: if SS_SMOKE_FRAMES is set to a positive integer, run that many
-		// frames and then exit cleanly. Lets automated smoke tests boot the app, exercise the
-		// init/update/shutdown path, and return a real exit code without a human closing the
-		// window. Unset (the normal case) -> runs until the window is closed.
+		// Smoke-test hook: if the smoke.frames CVar is a positive integer, run that many frames and
+		// then exit cleanly. Lets automated smoke tests boot the app, exercise the init/update/
+		// shutdown path, and return a real exit code without a human closing the window. Zero (the
+		// normal case) -> runs until the window is closed.
 		uint64_t smokeFramesLeft = 0;
 		bool smokeMode = false;
-		if (const char* smokeEnv = std::getenv("SS_SMOKE_FRAMES"))
+		if (const int smokeFrames = CVars::SmokeFrames.Get(); smokeFrames > 0)
 		{
-			const long long parsed = std::strtoll(smokeEnv, nullptr, 10);
-			if (parsed > 0)
-			{
-				smokeMode = true;
-				smokeFramesLeft = static_cast<uint64_t>(parsed);
-				SS_CORE_INFO("Smoke mode: running {0} frames then exiting.", smokeFramesLeft);
-			}
+			smokeMode = true;
+			smokeFramesLeft = static_cast<uint64_t>(smokeFrames);
+			SS_CORE_INFO("Smoke mode: running {0} frames then exiting.", smokeFramesLeft);
 		}
 
 		while (m_Running)
