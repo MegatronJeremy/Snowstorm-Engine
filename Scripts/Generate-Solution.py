@@ -107,6 +107,14 @@ def main():
     env = os.environ.copy()
     env["VK_ADD_LAYER_PATH"] = str(vcpkg_dir / "installed" / args.triplet / "bin")
 
+    # Local overlay ports (override upstream vcpkg ports). polyclipping ships here
+    # to fetch clipper 6.4.2 from a GitHub mirror over git instead of SourceForge,
+    # which a filtering proxy (e.g. Zscaler) blocks. See Scripts/vcpkg-overlays/.
+    overlay_ports = script_dir / "vcpkg-overlays"
+    if overlay_ports.is_dir():
+        env["VCPKG_OVERLAY_PORTS"] = str(overlay_ports)
+        print(f"Using overlay ports: {overlay_ports}")
+
     print("Installing vcpkg packages...")
     run([str(vcpkg_exe), "install", *PACKAGES, "--recurse", "--triplet", args.triplet], env=env, cwd=project_root)
 

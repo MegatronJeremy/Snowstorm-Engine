@@ -21,3 +21,8 @@ CMakeCache.txt
 ALL_BUILD.*
 ZERO_CHECK.*
 Makefile
+
+# Local vcpkg overlay ports are real sources and MUST be committed, despite the
+# blanket *.json / *.cmake ignores above (those target generated build files).
+!Scripts/vcpkg-overlays/
+!Scripts/vcpkg-overlays/**
