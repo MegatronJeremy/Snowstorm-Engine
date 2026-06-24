@@ -3,6 +3,7 @@
 #include "Snowstorm/Core/Timestep.hpp"
 
 #include <imgui.h>
+#include <imgui_internal.h>
 
 namespace Snowstorm
 {
@@ -62,7 +63,35 @@ namespace Snowstorm
 		if (const ImGuiIO& io = ImGui::GetIO(); io.ConfigFlags & ImGuiConfigFlags_DockingEnable)
 		{
 			const ImGuiID dockspaceID = ImGui::GetID("MyDockSpace");
+
+			// On first run (no imgui.ini), the dock node is empty and every panel floats at the
+			// default position, all stacked at the top-left. Build a sensible default layout once;
+			// after that the user's imgui.ini takes over and this branch is skipped.
+			if (ImGui::DockBuilderGetNode(dockspaceID) == nullptr)
+			{
+				BuildDefaultLayout(dockspaceID);
+			}
+
 			ImGui::DockSpace(dockspaceID, ImVec2(0.0f, 0.0f), dockspaceFlags);
 		}
+	}
+
+	void DockspaceSetupSystem::BuildDefaultLayout(const ImGuiID dockspaceID)
+	{
+		ImGui::DockBuilderRemoveNode(dockspaceID);
+		ImGui::DockBuilderAddNode(dockspaceID, ImGuiDockNodeFlags_DockSpace);
+		ImGui::DockBuilderSetNodeSize(dockspaceID, ImGui::GetMainViewport()->WorkSize);
+
+		// Split off a left column (20%) and a right column (25%); the remainder stays central.
+		ImGuiID dockCentral = dockspaceID;
+		const ImGuiID dockLeft = ImGui::DockBuilderSplitNode(dockCentral, ImGuiDir_Left, 0.20f, nullptr, &dockCentral);
+		const ImGuiID dockRight = ImGui::DockBuilderSplitNode(dockCentral, ImGuiDir_Right, 0.25f, nullptr, &dockCentral);
+
+		ImGui::DockBuilderDockWindow("Scene Hierarchy", dockLeft);
+		ImGui::DockBuilderDockWindow("Settings", dockLeft);
+		ImGui::DockBuilderDockWindow("Properties", dockRight);
+		ImGui::DockBuilderDockWindow("Viewport", dockCentral);
+
+		ImGui::DockBuilderFinish(dockspaceID);
 	}
 }

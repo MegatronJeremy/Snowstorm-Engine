@@ -1,6 +1,8 @@
 #pragma once
 #include "Snowstorm/ECS/System.hpp"
 
+#include <imgui.h>
+
 namespace Snowstorm
 {
 	// TODO important this runs before any other ImGui systems, and after Rendering has finished
@@ -13,5 +15,8 @@ namespace Snowstorm
 		}
 
 		void Execute(Timestep ts) override;
+
+	private:
+		static void BuildDefaultLayout(ImGuiID dockspaceID);
 	};
 }
