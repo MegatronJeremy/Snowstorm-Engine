@@ -154,3 +154,29 @@ solution/project files (`*.sln`, `*.vcxproj*`, `*.cmake`, `CMakeCache.txt`, `ALL
   A clean smoke run is the minimum bar before claiming a runtime change works.
 - Confirm behavior against the actual source/build, not from names. Mark unverified statements as
   assumptions.
+
+### Build verification (learned the hard way)
+
+- **Check the build exit code, not a grepped log.** `cmake --build ... | grep -i error` can miss the
+  real failure (MSBuild error formatting varies) and report success on a broken build. Always inspect
+  `${PIPESTATUS[0]}` / the actual exit status. A failed compile leaves the **previous** exe in place,
+  so the app keeps running stale code and every downstream test is meaningless.
+- **Confirm the exe was actually rebuilt** before testing behavior: check the binary's timestamp
+  (`ls -l build/Snowstorm-Editor/Debug/Snowstorm-Editor.exe`) is newer than your edit. If a "rebuild"
+  didn't update the timestamp, the build failed silently — fix that first. This is the #1 cause of
+  "my change isn't taking effect."
+- **A running editor locks the exe.** `LNK1168: cannot open ... for writing` means a previous instance
+  is still alive; `taskkill //IM Snowstorm-Editor.exe //F` before rebuilding. A leftover process also
+  means you may be looking at an old build.
+- Strip all temporary debug probes (logs, on-screen text) before committing, and `git diff` each
+  touched file to catch leftovers — incremental edits during debugging are easy to forget.
+
+### Don't turn the user into your debugger
+
+- Prefer verification you control: headless runs (`SS_SMOKE_FRAMES=N`), startup-time logging, and
+  reading source/state. Reserve "please click X and tell me what you see" for genuine final visual
+  confirmation, not for diagnosing logic — a manual launch→click→report loop burns the user's time
+  and stalls on build/timing artifacts.
+- **Keep effort proportional.** Time-box cosmetic/nice-to-have features; if one can't be made to work
+  and verified in a couple of clean attempts, drop it rather than rabbit-holing. Commit the larger
+  body of working, verified changes promptly instead of leaving it uncommitted while chasing a detail.
