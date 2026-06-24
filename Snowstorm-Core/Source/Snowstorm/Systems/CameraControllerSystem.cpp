@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <cmath>
 #include <utility>
 
 #include "Snowstorm/Components/CameraComponent.hpp"
@@ -50,7 +51,20 @@ namespace Snowstorm
 		}
 	}
 
-	// TODO this still kind of sucks, improve it???
+	namespace
+	{
+		// Frame-rate-independent exponential smoothing factor: fraction to move toward the
+		// target this frame given a rate (1/sec) and dt. rate<=0 -> snap (no smoothing).
+		float SmoothAlpha(const float rate, const float dt)
+		{
+			if (rate <= 0.0f)
+			{
+				return 1.0f;
+			}
+			return 1.0f - std::exp(-rate * dt);
+		}
+	}
+
 	void CameraControllerSystem::Execute(const Timestep ts)
 	{
 		auto& reg = m_World->GetRegistry();
@@ -152,7 +166,8 @@ namespace Snowstorm
 		: false;
 
 		// Cursor lock toggle based on RMB edge
-		if (rightClickHeld && !rtState.WasRightClickHeld)
+		const bool lockEngagedThisFrame = rightClickHeld && !rtState.WasRightClickHeld;
+		if (lockEngagedThisFrame)
 		{
 			SetCursorLocked(true);
 		}
@@ -163,36 +178,14 @@ namespace Snowstorm
 
 		rtState.WasRightClickHeld = rightClickHeld;
 
-		// Mouse look uses input.MouseDelta (no absolute mouse pos!)
-		if (rightClickHeld && ctrl.RotationEnabled)
+		// Seed the look target from the current transform once, so smoothing eases from where
+		// the camera already points instead of snapping to zero on the first frame.
+		if (!rtState.Initialized)
 		{
-			const float dx = input.MouseDelta.x;
-			const float dy = -input.MouseDelta.y; // screen Y down -> pitch up
-
-			// LookSensitivity: deg per pixel moved
-			float yawDeg = -dx * ctrl.LookSensitivity;
-			float pitchDeg = dy * ctrl.LookSensitivity;
-
-			// Cap by RotationSpeed (deg/sec)
-			const float maxDegThisFrame = ctrl.RotationSpeed * dt;
-			yawDeg = glm::clamp(yawDeg, -maxDegThisFrame, maxDegThisFrame);
-			pitchDeg = glm::clamp(pitchDeg, -maxDegThisFrame, maxDegThisFrame);
-
-			tr.Rotation.y += glm::radians(yawDeg);
-			tr.Rotation.x += glm::radians(pitchDeg);
-
-			// Avoid exact ±90 deg to prevent singularity / weird yaw behavior near straight up/down.
-			constexpr float limit = glm::half_pi<float>() - 0.001f;
-			tr.Rotation.x = glm::clamp(tr.Rotation.x, -limit, limit);
+			rtState.TargetPitch = tr.Rotation.x;
+			rtState.TargetYaw = tr.Rotation.y;
+			rtState.Initialized = true;
 		}
-
-		// Small extra: compute axes AFTER applying mouse look so movement/zoom uses current orientation.
-		const glm::vec3 forward = ForwardFromPitchYaw(tr.Rotation.x, tr.Rotation.y);
-		const glm::vec3 right = RightFromForward(forward);
-		constexpr glm::vec3 up(0.0f, 1.0f, 0.0f);
-
-		// Movement (RMB only)
-		glm::vec3 moveDir(0.0f);
 
 		auto isKeyDown = [&](const int key) -> bool
 		{
@@ -200,6 +193,63 @@ namespace Snowstorm
 			? input.Down.test(static_cast<size_t>(key))
 			: false;
 		};
+
+		// ---- Mouse look: 1:1 with mouse movement (delta is already frame-rate independent;
+		// it must NOT be scaled by dt). Drives a target angle; the transform eases toward it.
+		// Skip the frame the lock engages: switching GLFW to GLFW_CURSOR_DISABLED produces one
+		// large bogus delta (absolute -> virtual cursor jump) that would snap the camera.
+		if (rightClickHeld && ctrl.RotationEnabled && !lockEngagedThisFrame)
+		{
+			const float dx = input.MouseDelta.x;
+			const float dy = -input.MouseDelta.y; // screen Y down -> pitch up
+
+			rtState.TargetYaw += glm::radians(-dx * ctrl.LookSensitivity);
+			rtState.TargetPitch += glm::radians(dy * ctrl.LookSensitivity);
+
+			// Avoid exact ±90 deg to prevent singularity / weird yaw near straight up/down.
+			constexpr float limit = glm::half_pi<float>() - 0.001f;
+			rtState.TargetPitch = glm::clamp(rtState.TargetPitch, -limit, limit);
+		}
+
+		// Ease the transform's rotation toward the target (exponential smoothing).
+		{
+			const float a = SmoothAlpha(ctrl.LookSmoothing, dt);
+			tr.Rotation.x += (rtState.TargetPitch - tr.Rotation.x) * a;
+			tr.Rotation.y += (rtState.TargetYaw - tr.Rotation.y) * a;
+		}
+
+		// Axes computed AFTER look so movement uses the (eased) current orientation.
+		const glm::vec3 forward = ForwardFromPitchYaw(tr.Rotation.x, tr.Rotation.y);
+		const glm::vec3 right = RightFromForward(forward);
+		constexpr glm::vec3 up(0.0f, 1.0f, 0.0f);
+
+		// ---- Speed: scroll adjusts fly speed geometrically while RMB held (editor convention);
+		// otherwise scroll dollies/zooms as before.
+		if (vpI.Hovered)
+		{
+			if (const float scrollY = input.ScrollDelta.y; scrollY != 0.0f)
+			{
+				if (rightClickHeld)
+				{
+					auto& mutableCtrl = reg.Write<CameraControllerComponent>(activeCam);
+					mutableCtrl.MoveSpeed = glm::clamp(
+						mutableCtrl.MoveSpeed * std::pow(ctrl.SpeedAdjustStep, scrollY),
+						ctrl.MinMoveSpeed, ctrl.MaxMoveSpeed);
+				}
+				else if (isPerspective)
+				{
+					tr.Position += forward * scrollY * ctrl.ZoomSpeed;
+				}
+				else
+				{
+					const float zoomFactor = 1.0f - (scrollY * ctrl.ZoomSpeed * 0.1f);
+					cam.OrthographicSize = glm::clamp(cam.OrthographicSize * zoomFactor, 0.25f, 100.0f);
+				}
+			}
+		}
+
+		// ---- Movement (RMB only)
+		glm::vec3 moveDir(0.0f);
 
 		if (rightClickHeld)
 		{
@@ -222,26 +272,25 @@ namespace Snowstorm
 			}
 		}
 
-		if (glm::dot(moveDir, moveDir) > 0.0f)
+		// Sprint / slow modifiers.
+		float speed = ctrl.MoveSpeed;
+		if (isKeyDown(Key::LeftShift) || isKeyDown(Key::RightShift)) speed *= ctrl.SprintMultiplier;
+		if (isKeyDown(Key::LeftControl) || isKeyDown(Key::RightControl)) speed *= ctrl.SlowMultiplier;
+
+		// Target velocity from input; ease the actual velocity toward it for accel/decel.
+		const glm::vec3 targetVel = (glm::dot(moveDir, moveDir) > 0.0f)
+		? glm::normalize(moveDir) * speed
+		: glm::vec3(0.0f);
+
+		const float moveA = SmoothAlpha(ctrl.MoveSmoothing, dt);
+		rtState.MoveVelocity += (targetVel - rtState.MoveVelocity) * moveA;
+
+		// Stop drifting once the velocity is negligible (avoids endless tiny easing).
+		if (glm::dot(rtState.MoveVelocity, rtState.MoveVelocity) < 1e-6f)
 		{
-			tr.Position += glm::normalize(moveDir) * ctrl.MoveSpeed * dt;
+			rtState.MoveVelocity = glm::vec3(0.0f);
 		}
 
-		// Zoom: use ScrollDelta (per-frame)
-		if (vpI.Hovered)
-		{
-			if (const float scrollY = input.ScrollDelta.y; scrollY != 0.0f)
-			{
-				if (isPerspective)
-				{
-					tr.Position += forward * scrollY * ctrl.ZoomSpeed;
-				}
-				else
-				{
-					const float zoomFactor = 1.0f - (scrollY * ctrl.ZoomSpeed * 0.1f);
-					cam.OrthographicSize = glm::clamp(cam.OrthographicSize * zoomFactor, 0.25f, 100.0f);
-				}
-			}
-		}
+		tr.Position += rtState.MoveVelocity * dt;
 	}
 }

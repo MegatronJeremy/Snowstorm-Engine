@@ -14,8 +14,14 @@ namespace Snowstorm
 		.property("LookSensitivity", &CameraControllerComponent::LookSensitivity)
 		.property("MoveSpeed", &CameraControllerComponent::MoveSpeed)
 		.property("RotationEnabled", &CameraControllerComponent::RotationEnabled)
-		.property("RotationSpeed", &CameraControllerComponent::RotationSpeed)
-		.property("ZoomSpeed", &CameraControllerComponent::ZoomSpeed);
+		.property("ZoomSpeed", &CameraControllerComponent::ZoomSpeed)
+		.property("SprintMultiplier", &CameraControllerComponent::SprintMultiplier)
+		.property("SlowMultiplier", &CameraControllerComponent::SlowMultiplier)
+		.property("SpeedAdjustStep", &CameraControllerComponent::SpeedAdjustStep)
+		.property("MinMoveSpeed", &CameraControllerComponent::MinMoveSpeed)
+		.property("MaxMoveSpeed", &CameraControllerComponent::MaxMoveSpeed)
+		.property("LookSmoothing", &CameraControllerComponent::LookSmoothing)
+		.property("MoveSmoothing", &CameraControllerComponent::MoveSmoothing);
 
 		Snowstorm::RegisterComponent<CameraControllerComponent>();
 	}
