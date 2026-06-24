@@ -36,12 +36,14 @@ TARGETS = [
 ]
 
 # Substrings that mark a failure in captured output. Case-insensitive.
-# The log pattern is "[HH:MM:SS] [level] LOGGER: msg", so error/critical lines contain
-# "[error]"/"[critical]". Vulkan validation and assertion text are matched directly.
+# The log pattern is "[HH:MM:SS] [level] LOGGER: msg". A genuine Vulkan validation ERROR is logged
+# by the messenger at [error] level, so "[error]"/"[critical]" already catch it precisely. We do NOT
+# match the bare string "vulkan validation": best-practices and synchronization findings (only seen
+# in --strict) are logged at [warning] level and are advisory, not failures — matching the substring
+# would wrongly fail strict runs. Use --warnings-fail to treat advisory validation warnings as fatal.
 ERROR_MARKERS = [
     "[error]",
     "[critical]",
-    "vulkan validation",
     "validation failed",
     "assertion failed",
     "assert failed",
@@ -65,7 +67,7 @@ def scan_output(text: str, markers: list[str]) -> list[str]:
 
 
 def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
-               warnings_fail: bool, layer_path: Path | None) -> bool:
+               warnings_fail: bool, layer_path: Path | None, strict: bool) -> bool:
     print(f"\n=== {name} :: {exe.name} ===")
     if not exe.exists():
         print(f"  FAIL: executable not found at {exe}")
@@ -77,6 +79,10 @@ def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
     # Don't assert-and-die on the first Vulkan validation error; log them all and keep running so a
     # single smoke run surfaces every error at once. We detect failures by scanning the log below.
     env["SS_VALIDATION_NONFATAL"] = "1"
+    # --strict enables deeper validation (synchronization + best-practices). Off by default: it adds
+    # overhead and best-practices is advisory/noisy, so it's opt-in rather than part of every run.
+    if strict:
+        env["SS_VALIDATION_EXTRA"] = "1"
     # Point Vulkan at the vcpkg validation layers, matching Generate-Solution.py and the
     # VS debugger environment. Without this the loader can't find the layers the engine
     # requests, and init crashes instead of running -> false failures.
@@ -140,6 +146,7 @@ def main() -> int:
     ap.add_argument("--triplet", default="x64-windows", help="vcpkg triplet for the validation-layer path (default x64-windows)")
     ap.add_argument("--only", default=None, help="Run only this target by name (e.g. Editor)")
     ap.add_argument("--warnings-fail", action="store_true", help="Treat [warning] lines as failures")
+    ap.add_argument("--strict", action="store_true", help="Enable extra Vulkan validation (synchronization + best-practices)")
     args = ap.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -156,13 +163,13 @@ def main() -> int:
 
     print(f"Repo root : {repo_root}")
     print(f"Build dir : {build_dir}  (config: {args.config})")
-    print(f"Frames    : {args.frames}   Timeout: {args.timeout}s/app")
+    print(f"Frames    : {args.frames}   Timeout: {args.timeout}s/app   Strict: {args.strict}")
 
     results = {}
     for name, rel in targets:
         exe = build_dir / rel.format(config=args.config)
         results[name] = run_target(name, exe, repo_root, args.frames, args.timeout,
-                                    args.warnings_fail, layer_path)
+                                    args.warnings_fail, layer_path, args.strict)
 
     print("\n=== Summary ===")
     all_ok = True

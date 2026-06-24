@@ -116,6 +116,25 @@ namespace Snowstorm
 			createInfo.enabledLayerCount = 0;
 		}
 
+		// Opt-in deeper validation when SS_VALIDATION_EXTRA is set (off by default - these add
+		// overhead and best-practices is noisy). Enables synchronization validation (barrier/
+		// semaphore/fence hazards) and best-practices (perf/usage foot-guns). GPU-assisted
+		// validation is intentionally left out here - it's much heavier; add it when needed.
+		const VkValidationFeatureEnableEXT enabledValidationFeatures[] = {
+			VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
+			VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
+		};
+		VkValidationFeaturesEXT validationFeatures{VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT};
+		validationFeatures.enabledValidationFeatureCount = static_cast<uint32_t>(std::size(enabledValidationFeatures));
+		validationFeatures.pEnabledValidationFeatures = enabledValidationFeatures;
+
+		if (enableValidationLayers && std::getenv("SS_VALIDATION_EXTRA") != nullptr)
+		{
+			validationFeatures.pNext = createInfo.pNext;
+			createInfo.pNext = &validationFeatures;
+			SS_CORE_INFO("Vulkan: extra validation enabled (synchronization + best-practices).");
+		}
+
 		VK_CHECK(vkCreateInstance(&createInfo, nullptr, &m_Instance));
 		volkLoadInstance(m_Instance);
 

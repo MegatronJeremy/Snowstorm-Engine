@@ -42,7 +42,16 @@ py Scripts/smoke-test.py                 # 120 frames, 60s timeout/app, Debug bu
 py Scripts/smoke-test.py --frames 300    # longer soak
 py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime)
 py Scripts/smoke-test.py --warnings-fail # treat [warning] lines as failures too
+py Scripts/smoke-test.py --strict        # enable deeper Vulkan validation (see below)
 ```
+
+`--strict` sets `SS_VALIDATION_EXTRA=1`, which enables **synchronization validation** (barrier/
+semaphore/fence hazards) and **best-practices** (perf/usage foot-guns) via `VkValidationFeaturesEXT`.
+These are off by default — they add overhead and best-practices is advisory/noisy. Strict findings
+are logged at `[warning]` level and shown as **notes**, not failures (a strict run still PASSes on
+them); add `--warnings-fail` to gate on them. Genuine validation **errors** are always `[error]`
+level and fail the run in either mode. GPU-assisted validation is not wired up (much heavier) — add
+it when the compute path needs it.
 
 **Run it after any change substantial enough to affect runtime behavior** (engine/render/ECS/asset
 code, the frame loop, anything touching Vulkan) — not for docs/comment/build-script-only edits.
