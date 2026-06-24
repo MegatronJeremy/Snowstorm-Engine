@@ -92,7 +92,9 @@ namespace Snowstorm
 			barrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 			barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
 		}
-		else if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+		else if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL ||
+		         newLayout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL ||
+		         newLayout == VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL)
 		{
 			barrier.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
 			barrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
@@ -130,6 +132,20 @@ namespace Snowstorm
 
 		// Dynamic rendering path
 		const auto& vkTarget = dynamic_cast<const VulkanRenderTarget&>(target);
+
+		// Transition every attachment into the layout the VkRenderingAttachmentInfo declares.
+		// vkCmdBeginRendering does NOT transition images; without this the attachment's tracked
+		// layout (e.g. SHADER_READ_ONLY after being sampled, or UNDEFINED/PRESENT_SRC for the
+		// swapchain) won't match the COLOR/DEPTH_ATTACHMENT_OPTIMAL the render pass expects.
+		const RenderTargetDesc& desc = vkTarget.GetDesc();
+		for (const RenderTargetAttachment& a : desc.ColorAttachments)
+		{
+			TransitionLayout(a.View->GetTexture(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+		}
+		if (desc.DepthAttachment.has_value())
+		{
+			TransitionLayout(desc.DepthAttachment->View->GetTexture(), VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+		}
 
 		// 1. Begin rendering
 		VkRenderingInfo renderingInfo{};

@@ -222,6 +222,12 @@ namespace Snowstorm
 	void Renderer::ShutdownImGuiBackend()
 	{
 		SS_CORE_ASSERT(s_API, "Renderer not initialized");
+		// No-op if no backend was ever brought up (e.g. the runtime, which has no ImGui). The
+		// underlying ImGui_ImplVulkan_Shutdown asserts if called without a matching Init.
+		if (!s_ImGuiBackendInitialized)
+		{
+			return;
+		}
 		s_API->ShutdownImGuiBackend();
 		s_ImGuiBackendInitialized = false;
 	}

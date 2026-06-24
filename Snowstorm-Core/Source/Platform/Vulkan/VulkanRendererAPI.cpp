@@ -133,25 +133,33 @@ namespace Snowstorm
 		// 2. End command recording
 		ctx->End();
 
-		// 3. Submit to Queue
-		VkSubmitInfo submitInfo{};
-		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		// 3. Submit to Queue (synchronization2). Using vkQueueSubmit2 so the image-acquire wait is
+		// a VkSemaphoreSubmitInfo with an explicit stage mask, which forms a proper execution
+		// dependency with the swapchain image's first sync2 layout transition (in BeginRenderPass).
+		// A sync1 vkQueueSubmit wait does not chain into a vkCmdPipelineBarrier2, so validation
+		// reports "semaphore signaled by image acquire was not waited on".
+		VkSemaphoreSubmitInfo waitInfo{ .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
+		waitInfo.semaphore = m_ImageAvailableSemaphores[m_CurrentFrameIndex];
+		waitInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
-		VkSemaphore waitSemaphores[] = { m_ImageAvailableSemaphores[m_CurrentFrameIndex] };
-		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-		submitInfo.waitSemaphoreCount = 1;
-		submitInfo.pWaitSemaphores = waitSemaphores;
-		submitInfo.pWaitDstStageMask = waitStages;
+		VkSemaphoreSubmitInfo signalInfo{ .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
+		signalInfo.semaphore = m_RenderFinishedSemaphores[m_CurrentFrameIndex];
+		signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
-		VkCommandBuffer cmd = ctx->GetVulkanCommandBuffer();
-		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = &cmd;
+		VkCommandBufferSubmitInfo cmdInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO };
+		cmdInfo.commandBuffer = ctx->GetVulkanCommandBuffer();
+
+		VkSubmitInfo2 submitInfo{ .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
+		submitInfo.waitSemaphoreInfoCount = 1;
+		submitInfo.pWaitSemaphoreInfos = &waitInfo;
+		submitInfo.commandBufferInfoCount = 1;
+		submitInfo.pCommandBufferInfos = &cmdInfo;
+		submitInfo.signalSemaphoreInfoCount = 1;
+		submitInfo.pSignalSemaphoreInfos = &signalInfo;
+
+		vkQueueSubmit2(context.GetGraphicsQueue(), 1, &submitInfo, m_InFlightFences[m_CurrentFrameIndex]);
 
 		VkSemaphore signalSemaphores[] = { m_RenderFinishedSemaphores[m_CurrentFrameIndex] };
-		submitInfo.signalSemaphoreCount = 1;
-		submitInfo.pSignalSemaphores = signalSemaphores;
-
-		vkQueueSubmit(context.GetGraphicsQueue(), 1, &submitInfo, m_InFlightFences[m_CurrentFrameIndex]);
 
 		// 4. Present
 		VkPresentInfoKHR presentInfo{};
