@@ -2,6 +2,7 @@
 
 #include <imgui.h>
 
+#include "EditorTheme.hpp"
 #include "Platform/Windows/WindowsWindow.hpp"
 
 #include "Snowstorm/Core/Application.hpp"
@@ -24,17 +25,11 @@ namespace Snowstorm
 		//io.ConfigViewportsNoAutoMerge = true;
 		//io.ConfigViewportsNoTaskBarIcon = true;
 
-		// Setup Dear ImGui style
-		ImGui::StyleColorsDark();
-		//ImGui::StyleColorsLight();
-
-		// When viewports are enabled, we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
-		ImGuiStyle& style = ImGui::GetStyle();
-		if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
-		{
-			style.WindowRounding = 0.0f;
-			style.Colors[ImGuiCol_WindowBg].w = 1.0f;
-		}
+		// NERV/Evangelion editor theme (amber on near-black, sharp corners, hard borders).
+		// Optionally swap in a monospace font if one is present under Assets/Fonts (load before
+		// the backend builds the font atlas in InitImGuiBackend).
+		EditorTheme::LoadMonospaceFont();
+		EditorTheme::ApplyEvangelion();
 
 		const Application& app = Application::Get();
 		auto window = static_cast<GLFWwindow*>(app.GetWindow().GetNativeWindow());

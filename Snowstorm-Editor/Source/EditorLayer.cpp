@@ -9,6 +9,7 @@
 #include "Singletons/EditorNotificationsSingleton.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 
+#include "Snowstorm/Components/ComponentRegistry.hpp"
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Components/CameraControllerComponent.hpp"
 #include "Snowstorm/Components/CameraTargetComponent.hpp"
@@ -51,6 +52,17 @@ namespace Snowstorm
 		{
 			auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
 			assets.LoadRegistry("assets/AssetRegistry.json");
+
+			// Let the inspector show asset handles as filenames instead of raw UUIDs.
+			World* world = m_ActiveWorld.get();
+			SetAssetNameResolver([world](const uint64_t handle) -> std::string
+			{
+				if (const AssetMetadata* meta = world->GetSingleton<AssetManagerSingleton>().GetMetadata(AssetHandle{handle}))
+				{
+					return meta->Path.filename().string();
+				}
+				return {};
+			});
 		}
 
 		// Hook editor commands for menu systems etc.

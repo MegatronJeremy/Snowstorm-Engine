@@ -1,14 +1,172 @@
 ﻿#include "ComponentRegistry.hpp"
 
 #include "Snowstorm/Math/Math.hpp"
+#include "Snowstorm/Utility/UUID.hpp"
 #include <glm/gtc/type_ptr.hpp>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 
 namespace Snowstorm
 {
+	namespace
+	{
+		std::function<std::string(uint64_t)> s_AssetNameResolver;
+	}
+
+	void SetAssetNameResolver(std::function<std::string(uint64_t)> resolver)
+	{
+		s_AssetNameResolver = std::move(resolver);
+	}
+
+	std::string ResolveAssetName(const uint64_t handle)
+	{
+		if (handle == 0)
+		{
+			return "(none)";
+		}
+		if (s_AssetNameResolver)
+		{
+			if (std::string name = s_AssetNameResolver(handle); !name.empty())
+			{
+				return name;
+			}
+		}
+		return std::to_string(handle); // fallback: raw handle when unresolved
+	}
+
+	namespace
+	{
+		// Start a new table row: label in the (clipping) left column, widget filling the right.
+		// Requires an active 2-column table (see BeginPropertyTable). Using a table instead of a
+		// fixed SameLine offset means long property names are clipped to their cell rather than
+		// overlapping the widget.
+		void LabelLeft(const char* label)
+		{
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted(label);
+			ImGui::TableSetColumnIndex(1);
+			ImGui::SetNextItemWidth(-FLT_MIN);
+		}
+
+		// A sensible default drag speed: scale to the value's magnitude so small fields (near plane
+		// 0.01) are still adjustable and large ones (far plane 1000) move at a usable rate.
+		float AutoSpeed(const float magnitude)
+		{
+			return std::max(0.001f, std::abs(magnitude) * 0.01f);
+		}
+
+		// One colored, draggable component of a vector (Unity-style R/G/B X Y Z tags). Returns true
+		// if edited; writes into v[index]. dragW is the width of the drag field (the square tag
+		// button is added on top). The width MUST be set here, right before the DragFloat: the
+		// Button consumes any earlier SetNextItemWidth, so setting it before ColoredAxis is lost.
+		bool ColoredAxis(const char* tag, const ImVec4& color, float* v, const char* id, float speed, float dragW)
+		{
+			ImGui::PushStyleColor(ImGuiCol_Button, color);
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, color);
+			ImGui::PushStyleColor(ImGuiCol_ButtonActive, color);
+			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.05f, 0.05f, 0.05f, 1.0f));
+			const float h = ImGui::GetFrameHeight();
+			ImGui::Button(tag, ImVec2(h, h));
+			ImGui::PopStyleColor(4);
+			ImGui::SameLine(0.0f, 0.0f);
+			ImGui::SetNextItemWidth(dragW);
+			return ImGui::DragFloat(id, v, speed);
+		}
+
+		// Draw n-component colored vector; returns true if any axis changed. baseId scopes the
+		// widget IDs so the same axis on different rows (Position-X vs Rotation-X) don't collide.
+		bool ColoredVector(const char* baseId, float* v, int n, float speed)
+		{
+			static const char* tags[4] = {"X", "Y", "Z", "W"};
+			static const ImVec4 cols[4] = {
+				{0.78f, 0.18f, 0.20f, 1.0f}, // X red
+				{0.22f, 0.60f, 0.24f, 1.0f}, // Y green
+				{0.20f, 0.40f, 0.75f, 1.0f}, // Z blue
+				{0.60f, 0.55f, 0.20f, 1.0f}, // W
+			};
+			bool changed = false;
+			ImGui::PushID(baseId);
+
+			// Tight, fixed gap between axes (the default ItemSpacing is too wide for 3 cells).
+			constexpr float gap = 4.0f;
+			const float avail = ImGui::GetContentRegionAvail().x;
+			// Leave a 1px-per-cell safety margin so frame borders never push the last axis off-row.
+			const float cell = (avail - gap * static_cast<float>(n - 1)) / static_cast<float>(n) - 1.0f;
+			const float dragW = std::max(8.0f, cell - ImGui::GetFrameHeight());
+
+			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(gap, ImGui::GetStyle().ItemSpacing.y));
+			for (int i = 0; i < n; ++i)
+			{
+				ImGui::PushID(i);
+				changed |= ColoredAxis(tags[i], cols[i], &v[i], "##v", speed, dragW);
+				ImGui::PopID();
+				if (i < n - 1) ImGui::SameLine();
+			}
+			ImGui::PopStyleVar();
+			ImGui::PopID();
+			return changed;
+		}
+	}
+
+	bool BeginPropertyTable(const char* id)
+	{
+		// Stretchy label column + a wider value column; borders off for a clean instrument look.
+		if (ImGui::BeginTable(id, 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX))
+		{
+			ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthStretch, 0.42f);
+			ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 0.58f);
+			return true;
+		}
+		return false;
+	}
+
+	void EndPropertyTable()
+	{
+		ImGui::EndTable();
+	}
+
+	std::string PrettyComponentName(const std::string& fullName)
+	{
+		// Drop the "...::" namespace.
+		std::string name = fullName;
+		if (const size_t colons = name.rfind("::"); colons != std::string::npos)
+		{
+			name = name.substr(colons + 2);
+		}
+
+		// Drop a trailing "Component".
+		if (constexpr const char* suffix = "Component"; name.size() > 9 &&
+			name.compare(name.size() - 9, 9, suffix) == 0)
+		{
+			name = name.substr(0, name.size() - 9);
+		}
+
+		// Split CamelCase into words (insert a space before an upper that follows a lower/digit),
+		// then uppercase the whole thing: "DirectionalLight" -> "DIRECTIONAL LIGHT".
+		std::string out;
+		out.reserve(name.size() + 4);
+		for (size_t i = 0; i < name.size(); ++i)
+		{
+			const unsigned char ch = static_cast<unsigned char>(name[i]);
+			if (i > 0 && std::isupper(ch) &&
+				!std::isupper(static_cast<unsigned char>(name[i - 1])))
+			{
+				out.push_back(' ');
+			}
+			out.push_back(static_cast<char>(std::toupper(ch)));
+		}
+		return out;
+	}
+
 	bool RenderProperty(const rttr::property& prop, const rttr::instance& instance)
 	{
 		const rttr::type type = prop.get_type();
 		const std::string name = prop.get_name().to_string();
+		const std::string hidden = "##" + name; // hidden widget label (we draw our own on the left)
 		rttr::variant value = prop.get_value(instance);
 
 		if (!value.is_valid())
@@ -19,12 +177,30 @@ namespace Snowstorm
 
 		bool propChanged = false;
 
+		// Asset handles / UUIDs: read-only. Editing a raw 64-bit handle by hand is meaningless;
+		// show it compactly. (A friendly name lookup can replace ToString later.)
+		if (type == rttr::type::get<UUID>())
+		{
+			LabelLeft(name.c_str());
+			ImGui::TextDisabled("%s", ResolveAssetName(value.get_value<UUID>().Value()).c_str());
+			return false;
+		}
+
+		// Unsigned integers (e.g. visibility masks): read-only display, no editing.
+		if (type == rttr::type::get<uint32_t>() || type == rttr::type::get<uint64_t>())
+		{
+			LabelLeft(name.c_str());
+			ImGui::TextDisabled("%llu", static_cast<unsigned long long>(value.to_uint64()));
+			return false;
+		}
+
 		if (type == rttr::type::get<std::string>())
 		{
 			std::string val = value.get_value<std::string>();
 			char buffer[256];
 			strncpy_s(buffer, val.c_str(), sizeof(buffer));
-			if (ImGui::InputText(name.c_str(), buffer, sizeof(buffer)))
+			LabelLeft(name.c_str());
+			if (ImGui::InputText(hidden.c_str(), buffer, sizeof(buffer)))
 			{
 				propChanged = prop.set_value(instance, std::string(buffer));
 			}
@@ -32,7 +208,8 @@ namespace Snowstorm
 		else if (type == rttr::type::get<float>())
 		{
 			float val = value.get_value<float>();
-			if (ImGui::DragFloat(name.c_str(), &val))
+			LabelLeft(name.c_str());
+			if (ImGui::DragFloat(hidden.c_str(), &val, AutoSpeed(val)))
 			{
 				propChanged = prop.set_value(instance, val);
 			}
@@ -40,7 +217,8 @@ namespace Snowstorm
 		else if (type == rttr::type::get<int>())
 		{
 			int val = value.get_value<int>();
-			if (ImGui::DragInt(name.c_str(), &val))
+			LabelLeft(name.c_str());
+			if (ImGui::DragInt(hidden.c_str(), &val))
 			{
 				propChanged = prop.set_value(instance, val);
 			}
@@ -48,7 +226,8 @@ namespace Snowstorm
 		else if (type == rttr::type::get<bool>())
 		{
 			bool val = value.get_value<bool>();
-			if (ImGui::Checkbox(name.c_str(), &val))
+			LabelLeft(name.c_str());
+			if (ImGui::Checkbox(hidden.c_str(), &val))
 			{
 				propChanged = prop.set_value(instance, val);
 			}
@@ -56,7 +235,8 @@ namespace Snowstorm
 		else if (type == rttr::type::get<glm::vec2>())
 		{
 			glm::vec2 val = value.get_value<glm::vec2>();
-			if (ImGui::DragFloat2(name.c_str(), glm::value_ptr(val)))
+			LabelLeft(name.c_str());
+			if (ColoredVector(hidden.c_str(), glm::value_ptr(val), 2, 0.05f))
 			{
 				propChanged = prop.set_value(instance, val);
 			}
@@ -64,7 +244,8 @@ namespace Snowstorm
 		else if (type == rttr::type::get<glm::vec3>())
 		{
 			glm::vec3 val = value.get_value<glm::vec3>();
-			if (ImGui::DragFloat3(name.c_str(), glm::value_ptr(val)))
+			LabelLeft(name.c_str());
+			if (ColoredVector(hidden.c_str(), glm::value_ptr(val), 3, 0.05f))
 			{
 				propChanged = prop.set_value(instance, val);
 			}
@@ -72,7 +253,8 @@ namespace Snowstorm
 		else if (type == rttr::type::get<glm::vec4>())
 		{
 			glm::vec4 val = value.get_value<glm::vec4>();
-			if (ImGui::ColorEdit4(name.c_str(), glm::value_ptr(val)))
+			LabelLeft(name.c_str());
+			if (ImGui::ColorEdit4(hidden.c_str(), glm::value_ptr(val)))
 			{
 				propChanged = prop.set_value(instance, val);
 			}
@@ -81,7 +263,7 @@ namespace Snowstorm
 		{
 			rttr::type wrapped_type = type.get_wrapped_type();
 
-			ImGui::Text("%s", name.c_str());
+			LabelLeft(name.c_str()); // header row: name on the left, nested fields follow as rows
 			ImGui::PushID(name.c_str());
 
 			rttr::variant wrapped_value = value.extract_wrapped_value();
@@ -96,14 +278,14 @@ namespace Snowstorm
 			}
 			else
 			{
-				ImGui::Text("Null pointer");
+				ImGui::TextDisabled("(null)");
 			}
 
 			ImGui::PopID();
 		}
 		else if (type.is_class())
 		{
-			ImGui::Text("%s", name.c_str());
+			LabelLeft(name.c_str()); // header row; nested fields render as their own rows below
 			ImGui::PushID(name.c_str());
 			rttr::instance nested_instance = value;
 			for (const auto& nested_prop : type.get_properties())
@@ -121,7 +303,8 @@ namespace Snowstorm
 			int current_val = value.to_int();
 			std::string current_label = value.to_string();
 
-			if (ImGui::BeginCombo(name.c_str(), current_label.c_str()))
+			LabelLeft(name.c_str());
+			if (ImGui::BeginCombo(hidden.c_str(), current_label.c_str()))
 			{
 				for (auto enum_variant : enum_type.get_values())
 				{

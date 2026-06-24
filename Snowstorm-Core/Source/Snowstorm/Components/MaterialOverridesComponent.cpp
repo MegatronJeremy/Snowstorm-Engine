@@ -15,8 +15,9 @@ namespace Snowstorm
 
 			entity.WriteComponentIfChanged<MaterialOverridesComponent>([&](auto& mo)
 			{
-				const char* header = "Snowstorm::MaterialOverridesComponent";
-				if (ImGui::TreeNodeEx(header, ImGuiTreeNodeFlags_DefaultOpen, "%s", header))
+				const std::string header = PrettyComponentName("Snowstorm::MaterialOverridesComponent");
+				ImGui::PushID(header.c_str());
+				if (ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed))
 				{
 					bool baseColor = HasOverride(mo.OverrideMask, MaterialOverrideMask::BaseColor);
 					if (ImGui::Checkbox("Override Base Color", &baseColor))
@@ -31,12 +32,12 @@ namespace Snowstorm
 
 					if (albedo)
 					{
-						ImGui::Text("AlbedoTextureOverride: %s", mo.AlbedoTextureOverride.ToString().c_str());
+						ImGui::TextDisabled("Albedo: %s", ResolveAssetName(mo.AlbedoTextureOverride.Value()).c_str());
 						// later: asset picker
 					}
-
-					ImGui::TreePop();
 				}
+				ImGui::Spacing();
+				ImGui::PopID();
 			});
 		}
 	}

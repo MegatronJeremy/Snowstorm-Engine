@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include <functional>
+#include <cctype>
 #include <rttr/type>
 #include <imgui.h>
 
@@ -37,6 +38,23 @@ namespace Snowstorm
 	}
 
 	bool RenderProperty(const rttr::property& prop, const rttr::instance& instance);
+
+	// 2-column (label | value) table wrapping a component's properties. Long labels are clipped
+	// to their cell instead of overlapping the widget. Call Begin before the property loop and
+	// End after, only when Begin returned true.
+	bool BeginPropertyTable(const char* id);
+	void EndPropertyTable();
+
+	// Turn a reflected type name into a terminal-style header: drop the "...::" namespace and a
+	// trailing "Component", split CamelCase into words, and uppercase. e.g.
+	// "Snowstorm::DirectionalLightComponent" -> "DIRECTIONAL LIGHT".
+	std::string PrettyComponentName(const std::string& fullName);
+
+	// Resolver the inspector uses to turn an asset handle (UUID) into a human-readable name (e.g.
+	// the asset filename). The editor installs this from the active World's AssetManager; when
+	// unset, handles fall back to their raw numeric string.
+	void SetAssetNameResolver(std::function<std::string(uint64_t)> resolver);
+	std::string ResolveAssetName(uint64_t handle);
 
 	struct ComponentRegisterOptions
 	{
@@ -73,18 +91,25 @@ namespace Snowstorm
 				T working = entity.GetComponent<T>();
 				rttr::instance instance = working;
 
-				const std::string name = type.get_name().to_string();
+				const std::string fullName = type.get_name().to_string();
+				const std::string display = PrettyComponentName(fullName);
 
 				bool changed = false;
-				ImGui::PushID(name.c_str()); // scope widget IDs per component (avoid cross-component collisions)
-				if (ImGui::TreeNodeEx(name.c_str(), ImGuiTreeNodeFlags_DefaultOpen, "%s", name.c_str()))
+				ImGui::PushID(fullName.c_str()); // scope widget IDs per component (avoid collisions)
+				// Framed collapsing header gives each component a filled title bar -> visual
+				// separation + outline between components.
+				if (ImGui::CollapsingHeader(display.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed))
 				{
-					for (const auto& prop : type.get_properties())
+					if (BeginPropertyTable("##props"))
 					{
-						changed |= RenderProperty(prop, instance);
+						for (const auto& prop : type.get_properties())
+						{
+							changed |= RenderProperty(prop, instance);
+						}
+						EndPropertyTable();
 					}
-					ImGui::TreePop();
 				}
+				ImGui::Spacing();
 				ImGui::PopID();
 
 				if (changed)

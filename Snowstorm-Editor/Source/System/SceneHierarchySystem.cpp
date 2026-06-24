@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include "Snowstorm/Render/RendererAPI.hpp"
+#include "Service/EditorTheme.hpp"
 
 namespace Snowstorm
 {
@@ -11,6 +12,7 @@ namespace Snowstorm
 		m_SceneHierarchyPanel.OnImGuiRender();
 
 		ImGui::Begin("Settings");
+		EditorTheme::SectionHeader("System");
 
 		// const auto stats = Renderer2D::GetStats();
 		// ImGui::Text("Renderer2D Stats:");

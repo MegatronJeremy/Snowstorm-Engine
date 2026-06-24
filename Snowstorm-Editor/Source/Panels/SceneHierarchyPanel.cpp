@@ -9,6 +9,8 @@
 #include "Snowstorm/Components/TagComponent.hpp"
 #include "Snowstorm/Core/Log.hpp"
 
+#include "Service/EditorTheme.hpp"
+
 namespace Snowstorm
 {
 	SceneHierarchyPanel::SceneHierarchyPanel(World* context)
@@ -25,6 +27,7 @@ namespace Snowstorm
 	void SceneHierarchyPanel::OnImGuiRender()
 	{
 		ImGui::Begin("Scene Hierarchy");
+		EditorTheme::SectionHeader("Scene Hierarchy");
 
 		// Only entities that are part of the scene model
 		auto view = m_World->GetRegistry().view<IDComponent, TagComponent>();
@@ -43,9 +46,14 @@ namespace Snowstorm
 		ImGui::End();
 
 		ImGui::Begin("Properties");
+		EditorTheme::SectionHeader("Properties");
 		if (m_SelectionContext)
 		{
 			DrawComponents(m_SelectionContext);
+		}
+		else
+		{
+			EditorTheme::WarningBanner("NO ENTITY SELECTED");
 		}
 		ImGui::End();
 	}
