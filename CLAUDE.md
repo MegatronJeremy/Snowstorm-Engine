@@ -180,3 +180,46 @@ solution/project files (`*.sln`, `*.vcxproj*`, `*.cmake`, `CMakeCache.txt`, `ALL
 - **Keep effort proportional.** Time-box cosmetic/nice-to-have features; if one can't be made to work
   and verified in a couple of clean attempts, drop it rather than rabbit-holing. Commit the larger
   body of working, verified changes promptly instead of leaving it uncommitted while chasing a detail.
+
+### How to debug effectively (don't guess in a loop)
+
+- **Bisect, don't guess.** When behavior contradicts the code, the bug is somewhere between "what I
+  believe is true" and "what's observed." Add a probe that splits that gap in half and *prove* which
+  side is wrong, rather than changing code speculatively and re-running. One well-placed probe beats
+  five hopeful edits.
+- **One assumption per probe; isolate the variable.** Each test should answer exactly one yes/no
+  question. If a result is paradoxical (e.g. "metadata valid at registration but absent at render"),
+  do not theorize further — put *both* readings in a *single build/run* and compare. Contradictions
+  across separate runs usually mean the runs differed (stale exe, different selection), not that the
+  code is haunted.
+- **Verify the harness before the hypothesis.** Before concluding "the code is wrong," confirm the
+  test itself is valid: right binary (timestamp), build actually succeeded, the probe code path is
+  even reached. Most "impossible" bugs are a broken test, not broken code.
+- **Make the probe observable without a human.** Favor startup-time logs and `SS_SMOKE_FRAMES` runs
+  whose output you can read directly. An on-screen-only probe that requires a click is a last resort
+  and is itself a debuggability smell (see below).
+- **When stuck after ~2 failed attempts, change altitude.** Stop poking the same spot: re-read the
+  full function (not a snippet), question the premise, or check the layer above/below (build system,
+  RTTR registration, ImGui ID/widget state). Repeating a variant of a failed approach is the signal
+  to step back, not to try harder.
+
+### Build the engine to be debuggable
+
+The deeper fix for "I couldn't verify without the user" is to make state inspectable in code:
+
+- **Expose state to headless inspection.** If you can only confirm a feature by looking at the screen,
+  add a non-visual path to read the same truth: a startup/CVar-gated dump, a query function, or a log.
+  The inspector's reflection (RTTR) and the `smoke.frames` hook already make a lot of state reachable
+  without a GPU — prefer wiring new state through those.
+- **Prefer pure, testable cores.** Logic that maps data→data (name formatting, layout math, value
+  conversions, asset-handle resolution) should live in free functions that a Catch2 test or a headless
+  run can exercise directly — not be entangled in an ImGui draw call that only runs on a click.
+- **Fail loud, not silent.** Silent fallbacks (a missing asset resolving to null, an unread metadata
+  key, a default value) hide bugs and force interactive spelunking. Log once at `[error]`/`[warn]`
+  when an expectation is violated, the way `ResolveAssetName` / the unresolved-handle path do.
+- **Name things for diagnosis.** Vulkan objects via `SetVulkanObjectName`, ImGui widgets with stable
+  unique IDs, components with reflected type names — so logs, validation, and RenderDoc say
+  `Swapchain[0]` / `DIRECTIONAL LIGHT`, not an opaque handle.
+- **Treat "I had to add a temporary on-screen probe" as a missing feature.** It usually means that
+  state should be permanently visible (a debug overlay / stats panel / CVar dump). Consider promoting
+  the probe into a real, toggleable diagnostic instead of deleting it.
