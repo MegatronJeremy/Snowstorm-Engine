@@ -10,7 +10,9 @@ namespace Snowstorm
 
 	void Log::Init()
 	{
-		spdlog::set_pattern("%^[%T] %n: %v%$");
+		// Include the level name (%l) so logs are machine-greppable (e.g. by the smoke test),
+		// not just colour-coded. Format: [HH:MM:SS] [level] LOGGER: message
+		spdlog::set_pattern("%^[%T] [%l] %n: %v%$");
 		s_CoreLogger = spdlog::stdout_color_mt("SNOWSTORM");
 		s_CoreLogger->set_level(spdlog::level::trace);
 
