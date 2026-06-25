@@ -70,6 +70,17 @@ namespace Snowstorm
 		std::string Name;
 	};
 
+	// One named bit of a flag mask (e.g. a visibility layer). A property whose RTTR metadata key
+	// "Flags" holds a FlagBitList is drawn by the inspector as a checkbox dropdown over these names
+	// instead of a raw integer (Unity-style layer/culling-mask editing). Reusable for any uint32_t
+	// mask, not just visibility.
+	struct FlagBit
+	{
+		std::string Name;
+		uint32_t Bit = 0;
+	};
+	using FlagBitList = std::vector<FlagBit>;
+
 	// Provider the inspector uses to list assets of a given type (by AssetType's integer value) for
 	// the picker. The editor installs this from the active World's AssetManager; when unset, UUID
 	// fields fall back to a read-only display. assetTypeValue uses the AssetType enum's underlying int.

@@ -301,8 +301,63 @@ namespace Snowstorm
 			return false;
 		}
 
-		// Unsigned integers (e.g. visibility masks): read-only display, no editing.
-		if (type == rttr::type::get<uint32_t>() || type == rttr::type::get<uint64_t>())
+		// uint32_t flag masks tagged with a "Flags" FlagBitList: edit as a checkbox dropdown over the
+		// named bits (Unity-style layer/culling mask), rather than a raw integer.
+		if (type == rttr::type::get<uint32_t>())
+		{
+			if (const rttr::variant flagsMeta = prop.get_metadata("Flags");
+			    flagsMeta.is_valid() && flagsMeta.is_type<FlagBitList>())
+			{
+				const auto& bits = flagsMeta.get_value<FlagBitList>();
+				uint32_t mask = value.get_value<uint32_t>();
+
+				LabelLeft(name.c_str());
+
+				// Summary label: list the set bits, or "(none)" / "All".
+				std::string summary;
+				uint32_t allBits = 0;
+				for (const FlagBit& b : bits)
+				{
+					allBits |= b.Bit;
+					if ((mask & b.Bit) != 0)
+					{
+						if (!summary.empty())
+							summary += ", ";
+						summary += b.Name;
+					}
+				}
+				if (summary.empty())
+					summary = "(none)";
+				else if ((mask & allBits) == allBits)
+					summary = "All";
+
+				if (ImGui::BeginCombo(hidden.c_str(), summary.c_str()))
+				{
+					for (const FlagBit& b : bits)
+					{
+						bool on = (mask & b.Bit) != 0;
+						if (ImGui::Checkbox(b.Name.c_str(), &on))
+						{
+							if (on)
+								mask |= b.Bit;
+							else
+								mask &= ~b.Bit;
+							propChanged = prop.set_value(instance, mask);
+						}
+					}
+					ImGui::EndCombo();
+				}
+				return propChanged;
+			}
+
+			// No flag metadata: read-only display.
+			LabelLeft(name.c_str());
+			ImGui::TextDisabled("%llu", static_cast<unsigned long long>(value.to_uint64()));
+			return false;
+		}
+
+		// Other unsigned integers: read-only display, no editing.
+		if (type == rttr::type::get<uint64_t>())
 		{
 			LabelLeft(name.c_str());
 			ImGui::TextDisabled("%llu", static_cast<unsigned long long>(value.to_uint64()));
