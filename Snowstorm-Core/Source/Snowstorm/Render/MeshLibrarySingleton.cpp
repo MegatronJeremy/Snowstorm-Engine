@@ -74,6 +74,79 @@ namespace Snowstorm
 		return mesh;
 	}
 
+	Ref<Mesh> MeshLibrarySingleton::Load(const std::string& filepath, const int submeshIndex)
+	{
+		// Cache key embeds the submesh index so different parts of the same file stay distinct.
+		const std::string cacheKey = filepath + "?submesh=" + std::to_string(submeshIndex);
+		if (m_Meshes.contains(cacheKey))
+		{
+			return m_Meshes[cacheKey];
+		}
+
+		Assimp::Importer importer;
+		// PreTransformVertices bakes the node hierarchy into vertex positions, so a single aiMesh is
+		// already in model space — the per-part entity can then sit at identity (no TRS decomposition).
+		const aiScene* scene = importer.ReadFile(filepath,
+		                                         aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_JoinIdenticalVertices | aiProcess_PreTransformVertices);
+
+		if (!scene || !scene->mRootNode || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE)
+		{
+			SS_CORE_ERROR("Failed to load mesh: {} | Assimp Error: {}", filepath, importer.GetErrorString());
+			return nullptr;
+		}
+
+		if (submeshIndex < 0 || static_cast<uint32_t>(submeshIndex) >= scene->mNumMeshes)
+		{
+			SS_CORE_ERROR("Submesh index {} out of range ({} meshes) for {}", submeshIndex, scene->mNumMeshes, filepath);
+			return nullptr;
+		}
+
+		const aiMesh* mesh = scene->mMeshes[submeshIndex];
+
+		std::vector<Vertex> vertices;
+		std::vector<uint32_t> indices;
+		vertices.reserve(mesh->mNumVertices);
+
+		for (uint32_t j = 0; j < mesh->mNumVertices; j++)
+		{
+			Vertex vertex;
+			vertex.Position = {mesh->mVertices[j].x, mesh->mVertices[j].y, mesh->mVertices[j].z};
+
+			if (mesh->HasNormals())
+			{
+				vertex.Normal = {mesh->mNormals[j].x, mesh->mNormals[j].y, mesh->mNormals[j].z};
+			}
+			else
+			{
+				vertex.Normal = {0.0f, 1.0f, 0.0f};
+			}
+
+			if (mesh->HasTextureCoords(0))
+			{
+				vertex.TexCoord = {mesh->mTextureCoords[0][j].x, 1.0f - mesh->mTextureCoords[0][j].y};
+			}
+			else
+			{
+				vertex.TexCoord = {vertex.Position.x, vertex.Position.z};
+			}
+
+			vertices.push_back(vertex);
+		}
+
+		for (uint32_t j = 0; j < mesh->mNumFaces; j++)
+		{
+			const aiFace& face = mesh->mFaces[j];
+			for (uint32_t k = 0; k < face.mNumIndices; k++)
+			{
+				indices.push_back(face.mIndices[k]);
+			}
+		}
+
+		Ref<Mesh> result = CreateRef<Mesh>(vertices, indices);
+		m_Meshes[cacheKey] = result;
+		return result;
+	}
+
 	void MeshLibrarySingleton::Clear()
 	{
 		m_Meshes.clear();

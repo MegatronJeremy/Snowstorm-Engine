@@ -13,10 +13,12 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <filesystem>
+#include <vector>
 
 namespace Snowstorm
 {
 	class World;
+	class Entity;
 
 	class AssetManagerSingleton final : public Singleton
 	{
@@ -24,7 +26,7 @@ namespace Snowstorm
 		using WorldRef = World*;
 
 		AssetManagerSingleton(const WorldRef world)
-			: m_World(world)
+		    : m_World(world)
 		{
 		}
 
@@ -32,6 +34,12 @@ namespace Snowstorm
 		bool SaveRegistry(const std::filesystem::path& filePath) const;
 
 		AssetHandle Import(const std::filesystem::path& path, AssetType type);
+
+		// Import a model file (any Assimp format) as a set of renderable entities — one per submesh,
+		// each with Transform + Mesh + Material + Visibility. A per-submesh ".ssmat" is generated next
+		// to the model (DefaultLit; diffuse color + diffuse texture from the aiMaterial when present).
+		// Returns the created entities (empty on failure). Does NOT save the registry — caller decides.
+		std::vector<Entity> ImportModel(const std::filesystem::path& path);
 
 		Ref<Mesh> GetMesh(AssetHandle handle);
 		Ref<Shader> GetShader(AssetHandle handle);
