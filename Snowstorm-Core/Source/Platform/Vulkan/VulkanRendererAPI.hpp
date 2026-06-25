@@ -14,7 +14,7 @@ namespace Snowstorm
 
 		void WaitIdle() override;
 
-		void BeginFrame() override;
+		bool BeginFrame() override;
 		void EndFrame() override;
 
 		uint32_t GetCurrentFrameIndex() const override;
@@ -34,6 +34,14 @@ namespace Snowstorm
 		void RenderImGuiDrawData(CommandContext& context) override;
 
 	private:
+		// Wrap the context's current swapchain VkImages in Ref<VulkanTexture>. Called at init and
+		// after every swapchain recreate so m_SwapchainTextures tracks the live images.
+		void WrapSwapchainTextures();
+
+		// Drain GPU, recreate the swapchain, and rewrap textures. Returns false when the swapchain
+		// could not be created (minimized window) so the caller skips the frame.
+		bool RecreateSwapchain();
+
 		uint32_t m_CurrentFrameIndex = 0;
 		uint32_t m_ImageIndex = 0; // The actual index of the swapchain image acquired
 

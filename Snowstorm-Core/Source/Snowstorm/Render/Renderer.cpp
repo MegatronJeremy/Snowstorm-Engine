@@ -136,9 +136,16 @@ namespace Snowstorm
 		s_API.reset();
 	}
 
-	void Renderer::BeginFrame()
+	bool Renderer::BeginFrame()
 	{
 		SS_CORE_ASSERT(s_API, "Renderer not initialized");
+
+		// Try to start the GPU frame first. If the swapchain isn't ready (e.g. minimized), skip:
+		// don't touch the uniform ring so it stays consistent for the next real frame.
+		if (!s_API->BeginFrame())
+		{
+			return false;
+		}
 
 		// Reset the current frame ring before any draws
 		{
@@ -147,7 +154,7 @@ namespace Snowstorm
 			s_FrameUniformRings[frameIndex].BeginFrame();
 		}
 
-		s_API->BeginFrame();
+		return true;
 	}
 
 	void Renderer::EndFrame()

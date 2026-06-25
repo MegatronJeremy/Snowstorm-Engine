@@ -22,6 +22,11 @@ namespace Snowstorm
 		void Init(void* windowHandle); // GLFWwindow*, HWND, etc.
 		void Shutdown() const;
 
+		// Rebuild the swapchain + image views after the surface changes (window resize / out-of-date).
+		// Blocks until the GPU is idle first. Returns false (and leaves the old swapchain torn down)
+		// when the surface area is zero, e.g. a minimized window — the caller should skip the frame.
+		bool RecreateSwapchain();
+
 		static VulkanContext& Get();
 
 		VkInstance GetInstance() const { return m_Instance; }
@@ -47,6 +52,11 @@ namespace Snowstorm
 		std::vector<VkImage> GetSwapchainImages() const { return m_SwapchainImages; }
 
 	private:
+		// (Re)build m_Swapchain + image views from the current surface capabilities. Used by Init and
+		// RecreateSwapchain. Returns false when the surface extent is zero (minimized window).
+		bool CreateSwapchain();
+		void DestroySwapchain() const;
+
 		// Vulkan core
 		VkInstance m_Instance = VK_NULL_HANDLE;
 		VkPhysicalDevice m_PhysicalDevice = VK_NULL_HANDLE;

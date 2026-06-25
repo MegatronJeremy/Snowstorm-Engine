@@ -122,8 +122,8 @@ namespace Snowstorm
 		// semaphore/fence hazards) and best-practices (perf/usage foot-guns). GPU-assisted
 		// validation is intentionally left out here - it's much heavier; add it when needed.
 		const VkValidationFeatureEnableEXT enabledValidationFeatures[] = {
-			VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
-			VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
+		    VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
+		    VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
 		};
 		VkValidationFeaturesEXT validationFeatures{VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT};
 		validationFeatures.enabledValidationFeatureCount = static_cast<uint32_t>(std::size(enabledValidationFeatures));
@@ -320,9 +320,21 @@ namespace Snowstorm
 
 		VulkanBindlessManager::Get().Init();
 
-		// 7. Swapchain (minimal version)
+		// 7. Swapchain
+		CreateSwapchain();
+	}
+
+	bool VulkanContext::CreateSwapchain()
+	{
 		VkSurfaceCapabilitiesKHR caps;
 		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_PhysicalDevice, m_Surface, &caps);
+
+		// currentExtent is 0x0 when the window is minimized (or the surface is otherwise zero-area).
+		// A zero-extent swapchain is invalid; bail and let the caller skip rendering until restore.
+		if (caps.currentExtent.width == 0 || caps.currentExtent.height == 0)
+		{
+			return false;
+		}
 		m_SwapchainExtent = caps.currentExtent;
 
 		uint32_t formatCount = 0;
@@ -382,16 +394,41 @@ namespace Snowstorm
 
 			VK_CHECK(vkCreateImageView(m_Device, &viewInfo, nullptr, &m_SwapchainImageViews[i]));
 		}
+
+		return true;
 	}
 
-	void VulkanContext::Shutdown() const
+	void VulkanContext::DestroySwapchain() const
 	{
 		for (const auto view : m_SwapchainImageViews)
 		{
 			vkDestroyImageView(m_Device, view, nullptr);
 		}
 
-		vkDestroySwapchainKHR(m_Device, m_Swapchain, nullptr);
+		if (m_Swapchain != VK_NULL_HANDLE)
+		{
+			vkDestroySwapchainKHR(m_Device, m_Swapchain, nullptr);
+		}
+	}
+
+	bool VulkanContext::RecreateSwapchain()
+	{
+		// All in-flight work may still reference the old swapchain images; drain the GPU first.
+		vkDeviceWaitIdle(m_Device);
+
+		DestroySwapchain();
+
+		// Reset handles so a failed (zero-extent) recreate leaves us in a clean, non-dangling state.
+		m_Swapchain = VK_NULL_HANDLE;
+		m_SwapchainImages.clear();
+		m_SwapchainImageViews.clear();
+
+		return CreateSwapchain();
+	}
+
+	void VulkanContext::Shutdown() const
+	{
+		DestroySwapchain();
 		vkDestroySurfaceKHR(m_Instance, m_Surface, nullptr);
 
 		if (m_GraphicsCommandPool != VK_NULL_HANDLE)

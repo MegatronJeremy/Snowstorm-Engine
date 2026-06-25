@@ -107,7 +107,12 @@ namespace Snowstorm
 		    const MaterialComponent,
 		    const VisibilityComponent>();
 
-		Renderer::BeginFrame();
+		// Swapchain may be unavailable (e.g. minimized / mid-resize). Skip the whole frame cleanly;
+		// EndFrame must not run if BeginFrame didn't start a frame.
+		if (!Renderer::BeginFrame())
+		{
+			return;
+		}
 
 		const uint32_t frameIndex = Renderer::GetCurrentFrameIndex();
 		const Ref<CommandContext> ctx = Renderer::GetGraphicsCommandContext();

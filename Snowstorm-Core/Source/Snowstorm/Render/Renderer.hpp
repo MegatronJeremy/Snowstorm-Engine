@@ -16,7 +16,9 @@ namespace Snowstorm
 		// Block until the GPU is idle. Call before destroying GPU resources (e.g. on app teardown).
 		static void WaitIdle();
 
-		static void BeginFrame();
+		// Returns false when no frame could be started (swapchain not ready, e.g. minimized window);
+		// the caller must then skip all rendering and NOT call EndFrame for this frame.
+		static bool BeginFrame();
 		static void EndFrame();
 
 		// Current frame info

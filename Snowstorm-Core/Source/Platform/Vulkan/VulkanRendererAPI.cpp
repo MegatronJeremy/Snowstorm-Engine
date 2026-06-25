@@ -28,23 +28,7 @@ namespace Snowstorm
 		const auto& context = VulkanContext::Get();
 		const VkDevice device = context.GetDevice();
 
-		// Wrap swapchain images
-		const auto& swapImages = context.GetSwapchainImages();
-		m_SwapchainTextures.resize(swapImages.size());
-
-		TextureDesc desc;
-		desc.Width = context.GetSwapchainExtent().width;
-		desc.Height = context.GetSwapchainExtent().height;
-		desc.Format = FromVkFormat(context.GetSwapchainFormat());
-		desc.Usage = TextureUsage::ColorAttachment;
-
-		for (uint32_t i = 0; i < swapImages.size(); ++i)
-		{
-			desc.DebugName = "Swapchain[" + std::to_string(i) + "]";
-			m_SwapchainTextures[i] = CreateRef<VulkanTexture>(swapImages[i], desc);
-			SetVulkanObjectName(device, reinterpret_cast<uint64_t>(swapImages[i]),
-			                    VK_OBJECT_TYPE_IMAGE, desc.DebugName.c_str());
-		}
+		WrapSwapchainTextures();
 
 		m_CurrentFrameIndex = 0;
 
@@ -68,6 +52,42 @@ namespace Snowstorm
 			vkCreateSemaphore(device, &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]);
 			vkCreateFence(device, &fenceInfo, nullptr, &m_InFlightFences[i]);
 		}
+	}
+
+	void VulkanRendererAPI::WrapSwapchainTextures()
+	{
+		const auto& context = VulkanContext::Get();
+		const VkDevice device = context.GetDevice();
+
+		const auto& swapImages = context.GetSwapchainImages();
+		m_SwapchainTextures.clear();
+		m_SwapchainTextures.resize(swapImages.size());
+
+		TextureDesc desc;
+		desc.Width = context.GetSwapchainExtent().width;
+		desc.Height = context.GetSwapchainExtent().height;
+		desc.Format = FromVkFormat(context.GetSwapchainFormat());
+		desc.Usage = TextureUsage::ColorAttachment;
+
+		for (uint32_t i = 0; i < swapImages.size(); ++i)
+		{
+			desc.DebugName = "Swapchain[" + std::to_string(i) + "]";
+			m_SwapchainTextures[i] = CreateRef<VulkanTexture>(swapImages[i], desc);
+			SetVulkanObjectName(device, reinterpret_cast<uint64_t>(swapImages[i]),
+			                    VK_OBJECT_TYPE_IMAGE, desc.DebugName.c_str());
+		}
+	}
+
+	bool VulkanRendererAPI::RecreateSwapchain()
+	{
+		// VulkanContext::RecreateSwapchain drains the GPU before tearing down the old images, so the
+		// Ref<VulkanTexture> wrappers we still hold are safe to drop and rebuild here.
+		if (!VulkanContext::Get().RecreateSwapchain())
+		{
+			return false; // zero-extent surface (minimized) — skip the frame
+		}
+		WrapSwapchainTextures();
+		return true;
 	}
 
 	void VulkanRendererAPI::WaitIdle()
@@ -101,33 +121,54 @@ namespace Snowstorm
 		VulkanContext::Get().Shutdown();
 	}
 
-	void VulkanRendererAPI::BeginFrame()
+	bool VulkanRendererAPI::BeginFrame()
 	{
 		auto& context = VulkanContext::Get();
 		VkDevice device = context.GetDevice();
 
-		// 1. Wait for the GPU to finish the frame we are about to reuse
+		// 1. Wait for the GPU to finish the frame we are about to reuse. (Fence reset is deferred
+		// until AFTER a successful acquire — resetting here and then bailing on OUT_OF_DATE would
+		// leave the fence unsignaled forever, hanging the next wait on this slot.)
 		vkWaitForFences(device, 1, &m_InFlightFences[m_CurrentFrameIndex], VK_TRUE, UINT64_MAX);
-		vkResetFences(device, 1, &m_InFlightFences[m_CurrentFrameIndex]);
 
-		// 2. Acquire an image from the swapchain
-		// Note: m_ImageIndex might be different from m_CurrentFrameIndex
-		const VkResult result = vkAcquireNextImageKHR(
-			device,
-			context.GetSwapchain(),
-			UINT64_MAX,
-			m_ImageAvailableSemaphores[m_CurrentFrameIndex],
-			VK_NULL_HANDLE,
-			&m_ImageIndex);
+		// 2. Acquire an image from the swapchain. On OUT_OF_DATE (surface changed, e.g. resize) the
+		// swapchain is unusable: rebuild it and retry. SUBOPTIMAL still works for this frame; we
+		// rebuild after present instead. Note: m_ImageIndex may differ from m_CurrentFrameIndex.
+		VkResult result = vkAcquireNextImageKHR(
+		    device,
+		    context.GetSwapchain(),
+		    UINT64_MAX,
+		    m_ImageAvailableSemaphores[m_CurrentFrameIndex],
+		    VK_NULL_HANDLE,
+		    &m_ImageIndex);
 
-		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-			// Handle resize logic here later
-			return;
+		if (result == VK_ERROR_OUT_OF_DATE_KHR)
+		{
+			if (!RecreateSwapchain())
+			{
+				return false; // minimized / zero-extent: skip the frame
+			}
+			result = vkAcquireNextImageKHR(
+			    device,
+			    context.GetSwapchain(),
+			    UINT64_MAX,
+			    m_ImageAvailableSemaphores[m_CurrentFrameIndex],
+			    VK_NULL_HANDLE,
+			    &m_ImageIndex);
 		}
 
-		// 3. Reset and Begin the command context for this frame
+		if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+		{
+			SS_CORE_ERROR("vkAcquireNextImageKHR failed: {0}", static_cast<int>(result));
+			return false;
+		}
+
+		// 3. Acquire succeeded — now it's safe to reset the fence and begin recording.
+		vkResetFences(device, 1, &m_InFlightFences[m_CurrentFrameIndex]);
+
 		auto ctx = std::static_pointer_cast<VulkanCommandContext>(m_GraphicsContexts[m_CurrentFrameIndex]);
-		ctx->Begin(); 
+		ctx->Begin();
+		return true;
 	}
 
 	void VulkanRendererAPI::EndFrame()
@@ -146,18 +187,18 @@ namespace Snowstorm
 		// dependency with the swapchain image's first sync2 layout transition (in BeginRenderPass).
 		// A sync1 vkQueueSubmit wait does not chain into a vkCmdPipelineBarrier2, so validation
 		// reports "semaphore signaled by image acquire was not waited on".
-		VkSemaphoreSubmitInfo waitInfo{ .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
+		VkSemaphoreSubmitInfo waitInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
 		waitInfo.semaphore = m_ImageAvailableSemaphores[m_CurrentFrameIndex];
 		waitInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
-		VkSemaphoreSubmitInfo signalInfo{ .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
+		VkSemaphoreSubmitInfo signalInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
 		signalInfo.semaphore = m_RenderFinishedSemaphores[m_CurrentFrameIndex];
 		signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
-		VkCommandBufferSubmitInfo cmdInfo{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO };
+		VkCommandBufferSubmitInfo cmdInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
 		cmdInfo.commandBuffer = ctx->GetVulkanCommandBuffer();
 
-		VkSubmitInfo2 submitInfo{ .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
+		VkSubmitInfo2 submitInfo{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
 		submitInfo.waitSemaphoreInfoCount = 1;
 		submitInfo.pWaitSemaphoreInfos = &waitInfo;
 		submitInfo.commandBufferInfoCount = 1;
@@ -167,7 +208,7 @@ namespace Snowstorm
 
 		vkQueueSubmit2(context.GetGraphicsQueue(), 1, &submitInfo, m_InFlightFences[m_CurrentFrameIndex]);
 
-		VkSemaphore signalSemaphores[] = { m_RenderFinishedSemaphores[m_CurrentFrameIndex] };
+		VkSemaphore signalSemaphores[] = {m_RenderFinishedSemaphores[m_CurrentFrameIndex]};
 
 		// 4. Present
 		VkPresentInfoKHR presentInfo{};
@@ -175,12 +216,19 @@ namespace Snowstorm
 		presentInfo.waitSemaphoreCount = 1;
 		presentInfo.pWaitSemaphores = signalSemaphores;
 
-		VkSwapchainKHR swapchains[] = { context.GetSwapchain() };
+		VkSwapchainKHR swapchains[] = {context.GetSwapchain()};
 		presentInfo.swapchainCount = 1;
 		presentInfo.pSwapchains = swapchains;
 		presentInfo.pImageIndices = &m_ImageIndex;
 
-		vkQueuePresentKHR(context.GetGraphicsQueue(), &presentInfo);
+		// OUT_OF_DATE/SUBOPTIMAL here means the surface changed during the frame (resize). Rebuild
+		// the swapchain so the next acquire starts clean. The rebuild drains the GPU, so the work we
+		// just submitted is complete before the old images are destroyed.
+		if (const VkResult presentResult = vkQueuePresentKHR(context.GetGraphicsQueue(), &presentInfo);
+		    presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR)
+		{
+			RecreateSwapchain();
+		}
 
 		// 5. Advance frame counter
 		m_CurrentFrameIndex = (m_CurrentFrameIndex + 1) % s_MaxFramesInFlight;
@@ -204,17 +252,17 @@ namespace Snowstorm
 	Ref<RenderTarget> VulkanRendererAPI::GetSwapchainTarget() const
 	{
 		auto& context = VulkanContext::Get();
-        
+
 		RenderTargetDesc desc;
 		desc.Width = context.GetSwapchainExtent().width;
 		desc.Height = context.GetSwapchainExtent().height;
-		desc.IsSwapchainTarget = true; 
+		desc.IsSwapchainTarget = true;
 
 		RenderTargetAttachment color;
 		color.View = m_SwapchainTextures[m_ImageIndex]->GetDefaultView();
 		color.LoadOp = RenderTargetLoadOp::Clear;
 		color.StoreOp = RenderTargetStoreOp::Store;
-		color.ClearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
+		color.ClearColor = {0.0f, 0.0f, 0.0f, 1.0f};
 		desc.ColorAttachments.push_back(color);
 
 		return RenderTarget::Create(desc);
@@ -245,12 +293,11 @@ namespace Snowstorm
 		auto& context = VulkanContext::Get();
 
 		// 1. Load Vulkan functions for ImGui using Volk
-		ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_3, [](const char* function_name, void* user_data) {
-			return vkGetInstanceProcAddr(VulkanContext::Get().GetInstance(), function_name);
-		}, nullptr);
+		ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_3, [](const char* function_name, void* user_data)
+		                               { return vkGetInstanceProcAddr(VulkanContext::Get().GetInstance(), function_name); }, nullptr);
 
 		// 2. Create Descriptor Pool for ImGui
-		VkDescriptorPoolSize pool_sizes[] = { { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 } };
+		VkDescriptorPoolSize pool_sizes[] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000}};
 		VkDescriptorPoolCreateInfo pool_info = {};
 		pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 		pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
@@ -276,7 +323,8 @@ namespace Snowstorm
 
 		init_info.CheckVkResultFn = [](const VkResult result)
 		{
-			if (result == VK_SUCCESS) return;
+			if (result == VK_SUCCESS)
+				return;
 			SS_CORE_ERROR("[ImGui][Vulkan] Error: {0}", static_cast<int>(result));
 		};
 
@@ -295,7 +343,7 @@ namespace Snowstorm
 		const VkDevice device = VulkanContext::Get().GetDevice();
 		vkDeviceWaitIdle(device);
 
-		//Shutdown backends in reverse order of initialization
+		// Shutdown backends in reverse order of initialization
 		ImGui_ImplVulkan_Shutdown();
 		ImGui_ImplGlfw_Shutdown();
 
@@ -318,7 +366,7 @@ namespace Snowstorm
 		VkCommandBuffer cmd = vkContext.GetVulkanCommandBuffer();
 
 		// 1. Ensure the viewport and scissor cover the whole screen before ImGui starts
-		// ImGui_ImplVulkan_RenderDrawData will set its own internal scissors, 
+		// ImGui_ImplVulkan_RenderDrawData will set its own internal scissors,
 		// but it needs a clean slate.
 		VkViewport viewport{};
 		viewport.x = 0.0f;

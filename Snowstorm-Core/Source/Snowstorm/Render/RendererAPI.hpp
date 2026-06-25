@@ -23,7 +23,9 @@ namespace Snowstorm
 		// resources so they aren't destroyed while still referenced by in-flight command buffers.
 		virtual void WaitIdle() = 0;
 
-		virtual void BeginFrame() = 0;
+		// Returns false when a frame could not be started (swapchain not ready, e.g. minimized
+		// window). The caller must skip rendering and not call EndFrame for this frame.
+		virtual bool BeginFrame() = 0;
 		virtual void EndFrame() = 0;
 
 		// Index of the frame in flight (0..N-1) if using a multi-buffered setup
