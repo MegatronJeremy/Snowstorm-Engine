@@ -94,7 +94,15 @@ namespace Snowstorm
 
 			cmds.OpenScene = [this](const std::string& path) -> bool
 			{
-				return TryLoadWorldFromFile(path);
+				// Defer to the next frame boundary (see m_PendingScenePath): UI systems run mid-frame,
+				// and loading inline would destroy GPU resources the in-progress frame still uses.
+				if (!std::filesystem::exists(path))
+				{
+					return false;
+				}
+				m_PendingScenePath = path;
+				m_HasPendingScene = true;
+				return true;
 			};
 
 			World* world = m_ActiveWorld.get();
@@ -462,6 +470,17 @@ namespace Snowstorm
 	void EditorLayer::OnUpdate(const Timestep ts)
 	{
 		SS_PROFILE_FUNCTION();
+
+		// Apply a deferred scene open at the frame boundary, before any system runs this frame. The
+		// previous frame is fully submitted by now; TryLoadWorldFromFile drains the GPU and rebuilds
+		// the world cleanly, with no render pass in progress binding the resources we're freeing.
+		if (m_HasPendingScene)
+		{
+			m_HasPendingScene = false;
+			const std::string path = std::move(m_PendingScenePath);
+			m_PendingScenePath.clear();
+			TryLoadWorldFromFile(path);
+		}
 
 		m_ActiveWorld->OnUpdate(ts);
 	}

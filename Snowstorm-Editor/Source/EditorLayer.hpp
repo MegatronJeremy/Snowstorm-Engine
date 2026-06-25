@@ -34,5 +34,11 @@ namespace Snowstorm
 		Entity m_RenderTargetEntity;
 
 		std::string m_ActiveScenePath;
+
+		// Scene open requested from a UI system (e.g. Content Browser). Executed at the next frame
+		// boundary in OnUpdate, NOT inline: tearing the old scene down mid-frame destroys GPU
+		// resources (descriptor sets, meshes) that the in-progress frame's render pass still binds.
+		std::string m_PendingScenePath;
+		bool m_HasPendingScene = false;
 	};
 }
