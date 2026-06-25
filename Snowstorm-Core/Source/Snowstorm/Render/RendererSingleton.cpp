@@ -40,6 +40,7 @@ namespace Snowstorm
 		m_CameraPosition = cameraWorldPosition;
 
 		m_Batches.clear();
+		m_Stats = RenderStats{};
 	}
 
 	void RendererSingleton::EndScene()
@@ -108,6 +109,13 @@ namespace Snowstorm
 			return;
 
 		SS_CORE_ASSERT(batch.Mesh && batch.MaterialInstance, "Invalid batch");
+
+		// Stats: one batch, N instances; each instance is one DrawIndexed today (no HW instancing).
+		const auto instanceCount = static_cast<uint32_t>(batch.Instances.size());
+		m_Stats.Batches += 1;
+		m_Stats.Instances += instanceCount;
+		m_Stats.DrawCalls += instanceCount;
+		m_Stats.Triangles += instanceCount * (batch.Mesh->GetIndexCount() / 3u);
 
 		// Bind pipeline + set=1 (Material) for this instance
 		batch.MaterialInstance->Apply(*commandContext, frameIndex);

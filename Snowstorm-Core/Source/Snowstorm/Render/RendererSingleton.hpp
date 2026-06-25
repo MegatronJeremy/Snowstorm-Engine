@@ -26,6 +26,18 @@ namespace Snowstorm
 		std::vector<MeshInstanceData> Instances;
 	};
 
+	// Per-scene-pass GPU submission stats, for the editor's perf overlay. Reset each BeginScene and
+	// filled during Flush, so it reflects the most recent scene pass. DrawCalls == Instances today
+	// (one DrawIndexed per object) and Batches tracks how well (mesh, material) batching collapses
+	// objects — both are the headline numbers for diagnosing draw-submission cost.
+	struct RenderStats
+	{
+		uint32_t Batches = 0;   // unique (mesh, materialInstance) groups
+		uint32_t Instances = 0; // total renderables submitted
+		uint32_t DrawCalls = 0; // vkCmdDrawIndexed invocations
+		uint32_t Triangles = 0; // total triangles submitted
+	};
+
 	class RendererSingleton final : public Singleton
 	{
 	public:
@@ -43,6 +55,9 @@ namespace Snowstorm
 		void UploadLights(const LightDataBlock& lightData);
 
 		void Flush();
+
+		// Stats from the most recently submitted scene pass (reset each BeginScene).
+		[[nodiscard]] const RenderStats& GetStats() const { return m_Stats; }
 
 	private:
 		void FlushBatch(BatchData& batch,
@@ -64,5 +79,7 @@ namespace Snowstorm
 		std::unordered_map<const Pipeline*, std::vector<Ref<DescriptorSet>>> m_ObjectSets;
 
 		std::unordered_map<const DescriptorSet*, Ref<Buffer>> m_FrameUniformBuffers;
+
+		RenderStats m_Stats{};
 	};
 }
