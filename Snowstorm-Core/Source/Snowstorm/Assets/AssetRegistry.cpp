@@ -14,6 +14,18 @@ namespace Snowstorm
 		{
 			return p.lexically_normal();
 		}
+
+		// Key used to decide whether two paths refer to the same asset. The filesystem is
+		// case-insensitive on Windows (assets/Meshes/x.obj == assets/meshes/x.obj), so compare
+		// lower-cased generic strings — otherwise the same file gets two handles and shows up
+		// twice in the editor. The stored Path keeps its original casing for display.
+		std::string PathKey(const std::filesystem::path& p)
+		{
+			std::string s = NormalizePath(p).generic_string();
+			std::ranges::transform(s, s.begin(), [](const unsigned char c)
+			                       { return static_cast<char>(std::tolower(c)); });
+			return s;
+		}
 	}
 
 	bool AssetRegistry::LoadFromFile(const std::filesystem::path& filePath)
@@ -81,11 +93,11 @@ namespace Snowstorm
 
 	AssetHandle AssetRegistry::FindHandleByPath(const std::filesystem::path& assetPath, const AssetType type) const
 	{
-		const auto norm = NormalizePath(assetPath);
+		const std::string key = PathKey(assetPath);
 
 		for (const auto& m : m_Metadata | std::views::values)
 		{
-			if (m.Type == type && NormalizePath(m.Path) == norm)
+			if (m.Type == type && PathKey(m.Path) == key)
 			{
 				return m.Handle;
 			}
