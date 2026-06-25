@@ -26,7 +26,7 @@ namespace Snowstorm
 			ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
 			ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 			windowFlags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
-			ImGuiWindowFlags_NoMove;
+			               ImGuiWindowFlags_NoMove;
 			windowFlags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
 		}
 		else
@@ -82,14 +82,17 @@ namespace Snowstorm
 		ImGui::DockBuilderAddNode(dockspaceID, ImGuiDockNodeFlags_DockSpace);
 		ImGui::DockBuilderSetNodeSize(dockspaceID, ImGui::GetMainViewport()->WorkSize);
 
-		// Split off a left column (20%) and a right column (25%); the remainder stays central.
+		// Split off a left column (20%), a right column (25%), and a bottom strip (25%); the
+		// remainder stays central (the viewport).
 		ImGuiID dockCentral = dockspaceID;
 		const ImGuiID dockLeft = ImGui::DockBuilderSplitNode(dockCentral, ImGuiDir_Left, 0.20f, nullptr, &dockCentral);
 		const ImGuiID dockRight = ImGui::DockBuilderSplitNode(dockCentral, ImGuiDir_Right, 0.25f, nullptr, &dockCentral);
+		const ImGuiID dockBottom = ImGui::DockBuilderSplitNode(dockCentral, ImGuiDir_Down, 0.25f, nullptr, &dockCentral);
 
 		ImGui::DockBuilderDockWindow("Scene Hierarchy", dockLeft);
 		ImGui::DockBuilderDockWindow("Settings", dockLeft);
 		ImGui::DockBuilderDockWindow("Properties", dockRight);
+		ImGui::DockBuilderDockWindow("Content Browser", dockBottom);
 		ImGui::DockBuilderDockWindow("Viewport", dockCentral);
 
 		ImGui::DockBuilderFinish(dockspaceID);
