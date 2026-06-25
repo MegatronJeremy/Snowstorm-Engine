@@ -6,13 +6,21 @@ namespace Snowstorm
 {
 	struct CameraComponent
 	{
-		enum class ProjectionType : uint8_t { Perspective = 0, Orthographic = 1 };
+		enum class ProjectionType : uint8_t
+		{
+			Perspective = 0,
+			Orthographic = 1
+		};
 
 		ProjectionType Projection = ProjectionType::Perspective;
 
 		// Perspective
 		float PerspectiveFOV = 0.785398f; // radians
-		float PerspectiveNear = 0.01f;
+		// Depth precision in a perspective projection is dominated by the near plane (precision ∝ 1/near).
+		// near=0.01 with far=500-1000 makes the far/near ratio so large that distant coplanar surfaces
+		// collapse to the same depth and z-fight. 0.1 is close enough for any sane scene and ~10x the
+		// usable precision.
+		float PerspectiveNear = 0.1f;
 		float PerspectiveFar = 500.0f;
 
 		// Ortho

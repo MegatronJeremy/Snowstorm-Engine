@@ -437,7 +437,7 @@ namespace Snowstorm
 				auto& cc = cameraEntity.AddComponent<CameraComponent>();
 				cc.Projection = CameraComponent::ProjectionType::Perspective;
 				cc.PerspectiveFOV = 0.785398f;
-				cc.PerspectiveNear = 0.01f;
+				cc.PerspectiveNear = 0.1f; // larger near = far better depth precision (avoids z-fighting)
 				cc.PerspectiveFar = 1000.0f;
 				cc.Primary = true;
 				cc.FixedAspectRatio = false;
