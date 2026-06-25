@@ -2,12 +2,41 @@
 
 #include <imgui.h>
 
+#include "Snowstorm/ECS/SystemManager.hpp"
+#include "Snowstorm/ECS/SystemPhase.hpp"
 #include "Snowstorm/Render/RendererAPI.hpp"
 #include "Snowstorm/Render/RendererSingleton.hpp"
+#include "Snowstorm/World/World.hpp"
 #include "Service/EditorTheme.hpp"
 
 namespace Snowstorm
 {
+	namespace
+	{
+		const char* PhaseName(const size_t i)
+		{
+			switch (static_cast<SystemPhase>(i))
+			{
+			case SystemPhase::Init:
+				return "Init";
+			case SystemPhase::Logic:
+				return "Logic";
+			case SystemPhase::AssetSync:
+				return "AssetSync";
+			case SystemPhase::UI:
+				return "UI";
+			case SystemPhase::Resolve:
+				return "Resolve";
+			case SystemPhase::PreRender:
+				return "PreRender";
+			case SystemPhase::Render:
+				return "Render";
+			default:
+				return "?";
+			}
+		}
+	}
+
 	void SceneHierarchySystem::Execute(Timestep ts)
 	{
 		m_SceneHierarchyPanel.OnImGuiRender();
@@ -29,6 +58,20 @@ namespace Snowstorm
 		ImGui::Text("Batches:    %u", stats.Batches);
 		ImGui::Text("Instances:  %u", stats.Instances);
 		ImGui::Text("Triangles:  %u", stats.Triangles);
+
+		ImGui::Spacing();
+		EditorTheme::SectionHeader("CPU phases (ms)");
+
+		// Per-phase CPU time: the "where did the frame go" breakdown. Lets us see whether the cost is
+		// in Render submission or somewhere else before optimizing.
+		const auto& phaseMs = m_World->GetSystemManager().GetPhaseTimingsMs();
+		for (size_t i = 0; i < phaseMs.size(); ++i)
+		{
+			if (phaseMs[i] >= 0.005f) // hide phases that are essentially free
+			{
+				ImGui::Text("%-10s %.2f", PhaseName(i), phaseMs[i]);
+			}
+		}
 
 		ImGui::End();
 	}
