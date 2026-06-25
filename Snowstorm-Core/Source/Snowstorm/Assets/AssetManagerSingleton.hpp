@@ -57,6 +57,9 @@ namespace Snowstorm
 		// Visit every registered asset (editor UI: asset picker, content browser).
 		void IterateAssets(const std::function<void(const AssetMetadata&)>& fn) const { m_Registry.Iterate(fn); }
 
+		// Look up an existing handle by path+type (0 if not yet imported). Editor content browser.
+		AssetHandle FindHandle(const std::filesystem::path& path, const AssetType type) const { return m_Registry.FindHandleByPath(path, type); }
+
 	private:
 		Ref<Pipeline> GetOrCreatePipeline(PipelinePreset preset);
 

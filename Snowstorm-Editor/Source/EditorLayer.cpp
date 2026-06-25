@@ -29,6 +29,7 @@
 #include "Snowstorm/World/EditorSelectionSingleton.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
 
+#include "System/ContentBrowserSystem.hpp"
 #include "System/DockspaceSetupSystem.hpp"
 #include "System/EditorMenuSystem.hpp"
 #include "System/EditorNotificationSystem.hpp"
@@ -196,6 +197,7 @@ namespace Snowstorm
 		systemManager.RegisterSystem<EditorMenuSystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<EditorNotificationSystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<SceneHierarchySystem>(SystemPhase::UI);
+		systemManager.RegisterSystem<ContentBrowserSystem>(SystemPhase::UI);
 
 		// Editor example
 		systemManager.RegisterSystem<MandelbrotControllerSystem>(SystemPhase::PreRender);
