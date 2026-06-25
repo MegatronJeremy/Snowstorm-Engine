@@ -3,6 +3,7 @@
 
 #include "Snowstorm/Assets/AssetTypes.hpp"
 
+#include <functional>
 #include <unordered_map>
 
 namespace Snowstorm
@@ -17,6 +18,9 @@ namespace Snowstorm
 		AssetHandle FindHandleByPath(const std::filesystem::path& assetPath, AssetType type) const;
 
 		const AssetMetadata* GetMetadata(AssetHandle handle) const;
+
+		// Visit every registered asset (for editor UI like the asset picker / content browser).
+		void Iterate(const std::function<void(const AssetMetadata&)>& fn) const;
 
 	private:
 		std::unordered_map<UUID, AssetMetadata> m_Metadata; // key = UUID::Value()

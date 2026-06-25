@@ -1,5 +1,6 @@
 ﻿#include "MeshComponent.hpp"
 
+#include "Snowstorm/Assets/AssetTypes.hpp"
 #include "Snowstorm/Components/ComponentRegistry.hpp"
 
 #include <rttr/registration.h>
@@ -11,8 +12,10 @@ namespace Snowstorm
 		using namespace rttr;
 
 		registration::class_<MeshComponent>("Snowstorm::MeshComponent")
-			.constructor()
-			.property("Mesh", &MeshComponent::MeshHandle);
+		    .constructor()
+		    .property("Mesh", &MeshComponent::MeshHandle)(
+		        metadata("AssetType", static_cast<int>(AssetType::Mesh)) // inspector asset picker filter
+		    );
 		Snowstorm::RegisterComponent<MeshComponent>();
 	}
 }

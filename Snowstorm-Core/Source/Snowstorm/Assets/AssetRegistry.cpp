@@ -91,7 +91,7 @@ namespace Snowstorm
 			}
 		}
 
-		return AssetHandle{ 0 };
+		return AssetHandle{0};
 	}
 
 	AssetHandle AssetRegistry::Import(const std::filesystem::path& assetPath, const AssetType type)
@@ -108,6 +108,14 @@ namespace Snowstorm
 
 		m_Metadata[m.Handle] = std::move(m);
 		return m.Handle;
+	}
+
+	void AssetRegistry::Iterate(const std::function<void(const AssetMetadata&)>& fn) const
+	{
+		for (const auto& m : m_Metadata | std::views::values)
+		{
+			fn(m);
+		}
 	}
 
 	const AssetMetadata* AssetRegistry::GetMetadata(const AssetHandle handle) const

@@ -13,11 +13,31 @@ namespace Snowstorm
 	namespace
 	{
 		std::function<std::string(uint64_t)> s_AssetNameResolver;
+		std::function<std::vector<AssetChoice>(int)> s_AssetListProvider;
 	}
 
 	void SetAssetNameResolver(std::function<std::string(uint64_t)> resolver)
 	{
 		s_AssetNameResolver = std::move(resolver);
+	}
+
+	void SetAssetListProvider(std::function<std::vector<AssetChoice>(int)> provider)
+	{
+		s_AssetListProvider = std::move(provider);
+	}
+
+	bool HasAssetListProvider()
+	{
+		return static_cast<bool>(s_AssetListProvider);
+	}
+
+	std::vector<AssetChoice> ListAssetsOfType(const int assetTypeValue)
+	{
+		if (s_AssetListProvider)
+		{
+			return s_AssetListProvider(assetTypeValue);
+		}
+		return {};
 	}
 
 	namespace
@@ -218,12 +238,50 @@ namespace Snowstorm
 
 		bool propChanged = false;
 
-		// Asset handles / UUIDs: read-only. Editing a raw 64-bit handle by hand is meaningless;
-		// show it compactly. (A friendly name lookup can replace ToString later.)
+		// Asset handles (UUID). When the property is tagged with an "AssetType" and an asset-list
+		// provider is installed (editor), show a picker combo so the user can reassign the asset;
+		// otherwise fall back to a read-only name display.
 		if (type == rttr::type::get<UUID>())
 		{
+			const uint64_t current = value.get_value<UUID>().Value();
 			LabelLeft(name.c_str());
-			ImGui::TextDisabled("%s", ResolveAssetName(value.get_value<UUID>().Value()).c_str());
+
+			const rttr::variant assetTypeMeta = prop.get_metadata("AssetType");
+			if (assetTypeMeta.is_valid() && HasAssetListProvider())
+			{
+				const int assetTypeValue = assetTypeMeta.to_int();
+				const std::string currentName = ResolveAssetName(current);
+
+				if (ImGui::BeginCombo(hidden.c_str(), currentName.c_str()))
+				{
+					// "(none)" clears the handle.
+					if (ImGui::Selectable("(none)", current == 0))
+					{
+						propChanged = prop.set_value(instance, UUID{0});
+					}
+
+					for (const std::vector<AssetChoice> choices = ListAssetsOfType(assetTypeValue);
+					     const auto& [Handle, Name] : choices)
+					{
+						const bool selected = (Handle == current);
+						ImGui::PushID(static_cast<int>(Handle));
+						if (ImGui::Selectable(Name.c_str(), selected))
+						{
+							propChanged = prop.set_value(instance, UUID{Handle});
+						}
+						if (selected)
+						{
+							ImGui::SetItemDefaultFocus();
+						}
+						ImGui::PopID();
+					}
+					ImGui::EndCombo();
+				}
+				return propChanged;
+			}
+
+			// No metadata / no provider: read-only display.
+			ImGui::TextDisabled("%s", ResolveAssetName(current).c_str());
 			return false;
 		}
 

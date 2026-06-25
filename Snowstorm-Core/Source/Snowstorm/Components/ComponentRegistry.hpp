@@ -63,6 +63,20 @@ namespace Snowstorm
 	void SetAssetNameResolver(std::function<std::string(uint64_t)> resolver);
 	std::string ResolveAssetName(uint64_t handle);
 
+	// One selectable asset for the inspector's asset-picker combo.
+	struct AssetChoice
+	{
+		uint64_t Handle = 0;
+		std::string Name;
+	};
+
+	// Provider the inspector uses to list assets of a given type (by AssetType's integer value) for
+	// the picker. The editor installs this from the active World's AssetManager; when unset, UUID
+	// fields fall back to a read-only display. assetTypeValue uses the AssetType enum's underlying int.
+	void SetAssetListProvider(std::function<std::vector<AssetChoice>(int assetTypeValue)> provider);
+	std::vector<AssetChoice> ListAssetsOfType(int assetTypeValue);
+	bool HasAssetListProvider();
+
 	// Whether this component type may be removed from an entity in the inspector. Identity/name
 	// components (ID, Tag) are structural and never removable.
 	bool IsComponentRemovable(const rttr::type& type);

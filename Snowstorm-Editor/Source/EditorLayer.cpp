@@ -63,6 +63,20 @@ namespace Snowstorm
 					return meta->Path.filename().string();
 				}
 				return {}; });
+
+			// Let the inspector's UUID fields offer a picker over registry assets of the right type.
+			SetAssetListProvider([world](const int assetTypeValue) -> std::vector<AssetChoice>
+			                     {
+				std::vector<AssetChoice> out;
+				const auto wanted = static_cast<AssetType>(assetTypeValue);
+				world->GetSingleton<AssetManagerSingleton>().IterateAssets([&](const AssetMetadata& meta)
+				{
+					if (meta.Type == wanted)
+					{
+						out.push_back({meta.Handle.Value(), meta.Path.filename().string()});
+					}
+				});
+				return out; });
 		}
 
 		// Hook editor commands for menu systems etc.

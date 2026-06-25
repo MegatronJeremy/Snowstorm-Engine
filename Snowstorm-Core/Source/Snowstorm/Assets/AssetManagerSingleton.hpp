@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <filesystem>
+#include <functional>
 #include <vector>
 
 namespace Snowstorm
@@ -52,6 +53,9 @@ namespace Snowstorm
 		Ref<MaterialInstance> GetMaterialInstance(AssetHandle handle);
 
 		const AssetMetadata* GetMetadata(AssetHandle handle) const { return m_Registry.GetMetadata(handle); }
+
+		// Visit every registered asset (editor UI: asset picker, content browser).
+		void IterateAssets(const std::function<void(const AssetMetadata&)>& fn) const { m_Registry.Iterate(fn); }
 
 	private:
 		Ref<Pipeline> GetOrCreatePipeline(PipelinePreset preset);
