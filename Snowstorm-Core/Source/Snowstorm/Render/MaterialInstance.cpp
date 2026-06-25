@@ -39,7 +39,8 @@ namespace Snowstorm
 
 	void MaterialInstance::MarkDirty()
 	{
-		m_DirtyFramesCounter = Renderer::GetFramesInFlight();
+		// Every frame-in-flight's copy needs re-upload.
+		m_FrameDirty.assign(Renderer::GetFramesInFlight(), true);
 	}
 
 	void MaterialInstance::SetAlbedoTexture(const Ref<TextureView>& view)
@@ -94,21 +95,24 @@ namespace Snowstorm
 	{
 		EnsurePerFrameResources(frameIndex);
 
-		// Keep track of how many frames still need an update
-		if (m_DirtyFramesCounter > 0)
+		if (m_FrameDirty.size() <= frameIndex)
+		{
+			m_FrameDirty.resize(frameIndex + 1, true);
+		}
+
+		// Commit this frame's set at most once. A shared instance is Apply()'d by many batches per
+		// frame; re-committing after it's bound would invalidate the recording command buffer.
+		if (m_FrameDirty[frameIndex])
 		{
 			m_UniformBuffers[frameIndex]->SetData(&m_Constants, sizeof(Material::Constants), 0);
 
-			// Re-bind just in case, then Commit to GPU
 			const BufferBinding bb{.Buffer = m_UniformBuffers[frameIndex], .Offset = 0, .Range = sizeof(Material::Constants)};
 			m_MaterialDataSets[frameIndex]->SetBuffer(kMaterialConstantsBinding, bb);
 			m_MaterialDataSets[frameIndex]->SetSampler(kMaterialSamplerBinding, m_Sampler);
 
 			m_MaterialDataSets[frameIndex]->Commit();
 
-			// Only decrement on the last step of the logic, or use a per-frame dirty bitmask
-			// For now, we'll just decrement. (Note: in a heavy engine, you'd use a bitmask)
-			m_DirtyFramesCounter--;
+			m_FrameDirty[frameIndex] = false;
 		}
 	}
 

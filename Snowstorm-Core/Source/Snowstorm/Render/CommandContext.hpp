@@ -46,7 +46,8 @@ namespace Snowstorm
 		                         uint32_t indexCount,
 		                         uint32_t instanceCount = 1,
 		                         uint32_t firstIndex = 0,
-		                         int32_t vertexOffset = 0) = 0;
+		                         int32_t vertexOffset = 0,
+		                         uint32_t firstInstance = 0) = 0;
 
 		// Dispatch (compute support)
 		virtual void Dispatch(uint32_t groupX, uint32_t groupY, uint32_t groupZ) = 0;

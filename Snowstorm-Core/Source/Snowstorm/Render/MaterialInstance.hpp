@@ -77,6 +77,10 @@ namespace Snowstorm
 		Ref<TextureView> m_AlbedoTexture;
 		Ref<Sampler> m_Sampler;
 
-		uint32_t m_DirtyFramesCounter = 2;
+		// Per-frame-in-flight "needs GPU update" flags. A shared MaterialInstance can be Apply()'d by
+		// many batches in one frame; committing its set on every Apply would update a set already bound
+		// earlier this frame (invalid). So commit at most once per frameIndex: set all flags on
+		// MarkDirty, clear the flag the first time UpdateGPU runs for that frame.
+		std::vector<bool> m_FrameDirty;
 	};
 }

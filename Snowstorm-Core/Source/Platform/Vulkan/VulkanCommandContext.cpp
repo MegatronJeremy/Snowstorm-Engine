@@ -81,9 +81,10 @@ namespace Snowstorm
 			newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 		}
 
-		if (oldLayout == newLayout) return;
+		if (oldLayout == newLayout)
+			return;
 
-		VkImageMemoryBarrier2 barrier{ .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+		VkImageMemoryBarrier2 barrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
 
 		// Define stages and access based on layouts
 		// This is a simplified version of a state-to-access mapping table
@@ -154,8 +155,8 @@ namespace Snowstorm
 		// 1. Begin rendering
 		VkRenderingInfo renderingInfo{};
 		renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-		renderingInfo.renderArea.offset = {.x = 0, .y = 0 };
-		renderingInfo.renderArea.extent = {.width = vkTarget.GetWidth(), .height = vkTarget.GetHeight() };
+		renderingInfo.renderArea.offset = {.x = 0, .y = 0};
+		renderingInfo.renderArea.extent = {.width = vkTarget.GetWidth(), .height = vkTarget.GetHeight()};
 		renderingInfo.layerCount = 1;
 
 		const auto& colors = vkTarget.GetColorAttachmentInfos();
@@ -205,13 +206,12 @@ namespace Snowstorm
 		// Modern Vulkan: To flip Y without flipping the projection matrix in C++,
 		// we set Y to the height and height to negative.
 		const VkViewport viewport{
-			.x        = x,
-			.y        = y,
-			.width    = width,
-			.height   = height,
-			.minDepth = minDepth,
-			.maxDepth = maxDepth
-		};
+		    .x = x,
+		    .y = y,
+		    .width = width,
+		    .height = height,
+		    .minDepth = minDepth,
+		    .maxDepth = maxDepth};
 
 		vkCmdSetViewport(m_CommandBuffer, 0, 1, &viewport);
 	}
@@ -220,9 +220,8 @@ namespace Snowstorm
 	                                      const uint32_t width, const uint32_t height)
 	{
 		const VkRect2D scissor{
-			.offset = { static_cast<int32_t>(x), static_cast<int32_t>(y) },
-			.extent = { width, height }
-		};
+		    .offset = {static_cast<int32_t>(x), static_cast<int32_t>(y)},
+		    .extent = {width, height}};
 
 		vkCmdSetScissor(m_CommandBuffer, 0, 1, &scissor);
 	}
@@ -250,14 +249,14 @@ namespace Snowstorm
 		const VkDescriptorSet setHandle = vkSet->GetHandle();
 
 		vkCmdBindDescriptorSets(
-			m_CommandBuffer,
-			m_CurrentBindPoint,
-			m_CurrentPipelineLayout,
-			setIndex,
-			1,
-			&setHandle,
-			0,
-			nullptr);
+		    m_CommandBuffer,
+		    m_CurrentBindPoint,
+		    m_CurrentPipelineLayout,
+		    setIndex,
+		    1,
+		    &setHandle,
+		    0,
+		    nullptr);
 	}
 
 	void VulkanCommandContext::BindDescriptorSet(const Ref<DescriptorSet>& descriptorSet,
@@ -275,14 +274,14 @@ namespace Snowstorm
 		const VkDescriptorSet setHandle = vkSet->GetHandle();
 
 		vkCmdBindDescriptorSets(
-			m_CommandBuffer,
-			m_CurrentBindPoint,
-			m_CurrentPipelineLayout,
-			setIndex,
-			1,
-			&setHandle,
-			dynamicOffsetCount,
-			dynamicOffsets);
+		    m_CommandBuffer,
+		    m_CurrentBindPoint,
+		    m_CurrentPipelineLayout,
+		    setIndex,
+		    1,
+		    &setHandle,
+		    dynamicOffsetCount,
+		    dynamicOffsets);
 	}
 
 	void VulkanCommandContext::PushConstants(const void* data, const uint32_t size, const uint32_t offset)
@@ -341,7 +340,8 @@ namespace Snowstorm
 	                                       const uint32_t indexCount,
 	                                       const uint32_t instanceCount,
 	                                       const uint32_t firstIndex,
-	                                       const int32_t vertexOffset)
+	                                       const int32_t vertexOffset,
+	                                       const uint32_t firstInstance)
 	{
 		// Assume indexBuffer wraps a VulkanBuffer with index data.
 		const auto vkIndexBuffer = std::static_pointer_cast<VulkanBuffer>(indexBuffer);
@@ -351,7 +351,7 @@ namespace Snowstorm
 		const VkIndexType indexType = VK_INDEX_TYPE_UINT32;
 
 		vkCmdBindIndexBuffer(m_CommandBuffer, buf, 0, indexType);
-		vkCmdDrawIndexed(m_CommandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, 0);
+		vkCmdDrawIndexed(m_CommandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 	}
 
 	void VulkanCommandContext::Dispatch(const uint32_t groupX,

@@ -5,6 +5,7 @@
 #include "Snowstorm/Components/CameraTargetComponent.hpp"
 
 #include "Snowstorm/Components/MaterialComponent.hpp"
+#include "Snowstorm/Components/MaterialOverridesComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/RenderTargetComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
@@ -12,9 +13,11 @@
 #include "Snowstorm/Components/VisibilityCacheComponent.hpp"
 #include "Snowstorm/Components/VisibilityComponents.hpp"
 
+#include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Render/RenderGraph.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererSingleton.hpp"
+#include "Snowstorm/Render/Texture.hpp"
 
 namespace Snowstorm
 {
@@ -145,6 +148,8 @@ namespace Snowstorm
 
 				               renderer.BeginScene(*cam.Rt, camPos, ctx, frameIndex);
 
+				               auto& assets = SingletonView<AssetManagerSingleton>();
+
 				               for (const auto& cache = reg.Read<VisibilityCacheComponent>(cam.Entity);
 				                    const entt::entity e : cache.VisibleMeshes)
 				               {
@@ -152,7 +157,28 @@ namespace Snowstorm
 					               const auto& mesh = reg.Read<MeshComponent>(e);
 					               const auto& mat = reg.Read<MaterialComponent>(e);
 
-					               renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance);
+					               // Per-instance albedo override travels in the instance buffer (not a unique
+					               // material), so objects sharing a material still batch. Resolve the override
+					               // texture's bindless index here; 0 = use the material's own albedo.
+					               uint32_t albedoIndex = 0;
+					               if (const auto* ov = reg.try_get_const<MaterialOverridesComponent>(e))
+					               {
+						               for (const MaterialOverride& o : ov->Overrides)
+						               {
+							               if (o.Type == MaterialOverrideType::Texture && o.Name == "AlbedoTexture" && o.Texture != 0)
+							               {
+								               if (const Ref<TextureView> view = assets.GetTextureView(o.Texture))
+								               {
+									               albedoIndex = view->GetGlobalBindlessIndex();
+								               }
+							               }
+						               }
+					               }
+
+					               // Extras0 (e.g. Mandelbrot params) currently lives on the material instance.
+					               const glm::vec4 extras0 = mat.MaterialInstance->GetObjectExtras0();
+
+					               renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, albedoIndex, extras0);
 				               }
 
 				               renderer.Flush();

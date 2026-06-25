@@ -19,6 +19,11 @@ namespace Snowstorm
 		bool TryLoadWorldFromFile(const std::string& scenePath);
 		void LoadOrCreateStartupWorld();
 
+		// Force-load every material-override texture in the active world so they register in the
+		// bindless set NOW (at load), not lazily during command recording — which would invalidate the
+		// bound descriptor set. Call after building/loading a scene, before the first render.
+		void PrewarmSceneTextures() const;
+
 		bool SaveWorldToFile(const std::string& scenePath) const;
 		bool SaveActiveScene() const;
 

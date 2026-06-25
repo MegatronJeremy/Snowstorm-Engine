@@ -146,10 +146,30 @@ namespace Snowstorm
 			return false;
 		}
 
+		PrewarmSceneTextures();
+
 		m_ActiveScenePath = scenePath;
 
 		SS_CORE_INFO("Scene '{}' loaded.", scenePath);
 		return true;
+	}
+
+	void EditorLayer::PrewarmSceneTextures() const
+	{
+		auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
+		auto& reg = m_ActiveWorld->GetRegistry();
+
+		for (const auto view = reg.view<MaterialOverridesComponent>(); const entt::entity e : view)
+		{
+			const auto& ov = reg.Read<MaterialOverridesComponent>(e);
+			for (const MaterialOverride& o : ov.Overrides)
+			{
+				if (o.Type == MaterialOverrideType::Texture && o.Texture != 0)
+				{
+					(void)assets.GetTextureView(o.Texture); // registers it in the bindless set now
+				}
+			}
+		}
 	}
 
 	void EditorLayer::LoadOrCreateStartupWorld()
@@ -161,6 +181,7 @@ namespace Snowstorm
 			CreateMainViewportEntity();
 			CreateCameraEntities();
 			BuildStressScene(*m_ActiveWorld);
+			PrewarmSceneTextures();
 
 			const std::string out = "assets/scenes/Stress.world";
 			if (SaveWorldToFile(out))
@@ -187,6 +208,7 @@ namespace Snowstorm
 			CreateMainViewportEntity();
 			CreateCameraEntities();
 			CreateDemoEntities();
+			PrewarmSceneTextures();
 
 			SaveActiveScene();
 		}

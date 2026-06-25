@@ -128,14 +128,17 @@ namespace Snowstorm
 		auto& context = VulkanContext::Get();
 		VkDevice device = context.GetDevice();
 
+		// GPU/present wait: time BOTH the in-flight fence wait AND the swapchain image acquire. Under
+		// vsync (FIFO) the throttle shows up in vkAcquireNextImageKHR, not the fence, so timing only
+		// the fence misses it. This is a stall, not CPU work — surfaced as "GPU wait" so the editor
+		// overlay doesn't misread it as render cost. (Measured: stress scene renders in ~0.5ms of real
+		// work; the rest of the frame is this acquire stall waiting on the 60 Hz present queue.)
+		const auto waitStart = std::chrono::steady_clock::now();
+
 		// 1. Wait for the GPU to finish the frame we are about to reuse. (Fence reset is deferred
 		// until AFTER a successful acquire — resetting here and then bailing on OUT_OF_DATE would
 		// leave the fence unsignaled forever, hanging the next wait on this slot.)
-		// Measure this wait: it's GPU/vsync stall, not CPU work — surfaced as "GPU wait" so the
-		// editor overlay doesn't misattribute it to whichever system happens to call BeginFrame.
-		const auto waitStart = std::chrono::steady_clock::now();
 		vkWaitForFences(device, 1, &m_InFlightFences[m_CurrentFrameIndex], VK_TRUE, UINT64_MAX);
-		m_LastGpuWaitMs = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - waitStart).count();
 
 		// 2. Acquire an image from the swapchain. On OUT_OF_DATE (surface changed, e.g. resize) the
 		// swapchain is unusable: rebuild it and retry. SUBOPTIMAL still works for this frame; we
@@ -168,6 +171,8 @@ namespace Snowstorm
 			SS_CORE_ERROR("vkAcquireNextImageKHR failed: {0}", static_cast<int>(result));
 			return false;
 		}
+
+		m_LastGpuWaitMs = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - waitStart).count();
 
 		// 3. Acquire succeeded — now it's safe to reset the fence and begin recording.
 		vkResetFences(device, 1, &m_InFlightFences[m_CurrentFrameIndex]);

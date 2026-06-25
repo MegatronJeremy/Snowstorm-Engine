@@ -87,15 +87,14 @@ namespace Snowstorm
 			}
 
 			std::ranges::sort(sorted, [](const Range& a, const Range& b)
-			{
+			                  {
 				if (a.Begin != b.Begin) return a.Begin < b.Begin;
-				return a.End < b.End;
-			});
+				return a.End < b.End; });
 
 			for (size_t i = 1; i < sorted.size(); i++)
 			{
 				const Range& prev = sorted[i - 1];
-				const Range& cur  = sorted[i];
+				const Range& cur = sorted[i];
 
 				// Overlap check: cur begins before prev ends
 				SS_CORE_ASSERT(cur.Begin >= prev.End,
@@ -128,13 +127,12 @@ namespace Snowstorm
 		frame.SetIndex = 0;
 		frame.DebugName = "Set0_Frame";
 		frame.Bindings = {
-			DescriptorBindingDesc{
-				.Binding = 0,
-				.Type = DescriptorType::UniformBuffer,
-				.Count = 1,
-				.Visibility = ShaderStage::AllGraphics,
-				.DebugName = "FrameCB"
-			},
+		    DescriptorBindingDesc{
+		        .Binding = 0,
+		        .Type = DescriptorType::UniformBuffer,
+		        .Count = 1,
+		        .Visibility = ShaderStage::AllGraphics,
+		        .DebugName = "FrameCB"},
 		};
 		m_SetLayouts.push_back(DescriptorSetLayout::Create(frame));
 		SS_CORE_ASSERT(m_SetLayouts[0], "Failed to create frame DescriptorSetLayout");
@@ -144,36 +142,33 @@ namespace Snowstorm
 		material.SetIndex = 1;
 		material.DebugName = "Set1_Material_Bindless";
 		material.Bindings = {
-			DescriptorBindingDesc{
-				.Binding = 0,
-				.Type = DescriptorType::UniformBuffer,
-				.Count = 1,
-				.Visibility = ShaderStage::AllGraphics,
-				.DebugName = "MaterialCB"
-			},
-			DescriptorBindingDesc{
-				.Binding = 1,
-				.Type = DescriptorType::Sampler,
-				.Count = 1,
-				.Visibility = ShaderStage::Fragment,
-				.DebugName = "LinearSampler"
-			},
+		    DescriptorBindingDesc{
+		        .Binding = 0,
+		        .Type = DescriptorType::UniformBuffer,
+		        .Count = 1,
+		        .Visibility = ShaderStage::AllGraphics,
+		        .DebugName = "MaterialCB"},
+		    DescriptorBindingDesc{
+		        .Binding = 1,
+		        .Type = DescriptorType::Sampler,
+		        .Count = 1,
+		        .Visibility = ShaderStage::Fragment,
+		        .DebugName = "LinearSampler"},
 		};
 		m_SetLayouts.push_back(DescriptorSetLayout::Create(material));
 		SS_CORE_ASSERT(m_SetLayouts[1], "Failed to create material DescriptorSetLayout");
 
-		// --- Set 2: Object (dynamic UBO) ---
+		// --- Set 2: per-instance Object data (StructuredBuffer / storage) ---
 		DescriptorSetLayoutDesc object{};
 		object.SetIndex = 2;
-		object.DebugName = "Set2_Object";
+		object.DebugName = "Set2_Instances";
 		object.Bindings = {
-			DescriptorBindingDesc{
-				.Binding = 0,
-				.Type = DescriptorType::UniformBufferDynamic,
-				.Count = 1,
-				.Visibility = ShaderStage::AllGraphics,
-				.DebugName = "ObjectCB"
-			},
+		    DescriptorBindingDesc{
+		        .Binding = 0,
+		        .Type = DescriptorType::StorageBuffer,
+		        .Count = 1,
+		        .Visibility = ShaderStage::AllGraphics,
+		        .DebugName = "Instances"},
 		};
 		m_SetLayouts.push_back(DescriptorSetLayout::Create(object));
 		SS_CORE_ASSERT(m_SetLayouts[2], "Failed to create object DescriptorSetLayout");
@@ -185,7 +180,7 @@ namespace Snowstorm
 	}
 
 	VulkanGraphicsPipeline::VulkanGraphicsPipeline(PipelineDesc desc)
-		: m_Desc(std::move(desc))
+	    : m_Desc(std::move(desc))
 	{
 		SS_CORE_ASSERT(m_Desc.Type == PipelineType::Graphics, "VulkanGraphicsPipeline requires PipelineType::Graphics");
 		SS_CORE_ASSERT(!m_Desc.ColorFormats.empty(), "Graphics pipeline requires at least one color format (dynamic rendering)");
@@ -218,7 +213,7 @@ namespace Snowstorm
 		fragStage.module = fragModule;
 		fragStage.pName = "main";
 
-		VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
+		VkPipelineShaderStageCreateInfo stages[] = {vertStage, fragStage};
 
 		// --- SPIR-V Reflection for Vertex Input ---
 		SpvReflectShaderModule reflectModule;
@@ -231,7 +226,8 @@ namespace Snowstorm
 		spvReflectEnumerateInputVariables(&reflectModule, &inputVarCount, inputVars.data());
 
 		std::vector<uint32_t> activeLocations;
-		for (const auto* var : inputVars) {
+		for (const auto* var : inputVars)
+		{
 			// Skip built-ins like gl_VertexIndex
 			if (var->decoration_flags & SPV_REFLECT_DECORATION_BUILT_IN)
 			{
@@ -291,7 +287,7 @@ namespace Snowstorm
 		inputAssembly.primitiveRestartEnable = VK_FALSE;
 
 		// --- Dynamic state (viewport/scissor) ---
-		constexpr VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+		constexpr VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 		VkPipelineDynamicStateCreateInfo dynamicState{};
 		dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
 		dynamicState.dynamicStateCount = 2;
@@ -339,7 +335,7 @@ namespace Snowstorm
 			                   VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
 			const bool enableBlend =
-				(i < m_Desc.Blend.Attachments.size()) ? m_Desc.Blend.Attachments[i].EnableBlend : false;
+			    (i < m_Desc.Blend.Attachments.size()) ? m_Desc.Blend.Attachments[i].EnableBlend : false;
 
 			a.blendEnable = enableBlend ? VK_TRUE : VK_FALSE;
 

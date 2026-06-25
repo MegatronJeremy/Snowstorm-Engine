@@ -18,12 +18,6 @@ namespace Snowstorm
 
 			LightDataBlock Lights;
 		};
-
-		struct ObjectCB
-		{
-			glm::mat4 Model;
-			glm::vec4 Extras0;
-		};
 	}
 
 	void RendererSingleton::BeginScene(const CameraRuntimeComponent& cameraRt,
@@ -41,6 +35,7 @@ namespace Snowstorm
 
 		m_Batches.clear();
 		m_Stats = RenderStats{};
+		m_InstanceWriteCursor = 0;
 	}
 
 	void RendererSingleton::EndScene()
@@ -53,7 +48,9 @@ namespace Snowstorm
 
 	void RendererSingleton::DrawMesh(const glm::mat4& transform,
 	                                 const Ref<Mesh>& mesh,
-	                                 const Ref<MaterialInstance>& materialInstance)
+	                                 const Ref<MaterialInstance>& materialInstance,
+	                                 const uint32_t albedoTextureIndex,
+	                                 const glm::vec4& extras0)
 	{
 		SS_CORE_ASSERT(m_CommandContext, "DrawMesh called outside of BeginScene/EndScene");
 		SS_CORE_ASSERT(mesh, "Mesh must be valid");
@@ -78,8 +75,10 @@ namespace Snowstorm
 			batch = &m_Batches.back();
 		}
 
-		MeshInstanceData instance{};
-		instance.ModelMatrix = transform;
+		InstanceData instance{};
+		instance.Model = transform;
+		instance.AlbedoTextureIndex = albedoTextureIndex;
+		instance.Extras0 = extras0;
 		batch->Instances.push_back(instance);
 	}
 
@@ -110,12 +109,12 @@ namespace Snowstorm
 
 		SS_CORE_ASSERT(batch.Mesh && batch.MaterialInstance, "Invalid batch");
 
-		// Stats: one batch, N instances; each instance is one DrawIndexed today (no HW instancing).
-		const auto instanceCount = static_cast<uint32_t>(batch.Instances.size());
+		// Stats: one batch == one instanced DrawIndexed covering all its instances.
+		const auto batchInstanceCount = static_cast<uint32_t>(batch.Instances.size());
 		m_Stats.Batches += 1;
-		m_Stats.Instances += instanceCount;
-		m_Stats.DrawCalls += instanceCount;
-		m_Stats.Triangles += instanceCount * (batch.Mesh->GetIndexCount() / 3u);
+		m_Stats.Instances += batchInstanceCount;
+		m_Stats.DrawCalls += 1;
+		m_Stats.Triangles += batchInstanceCount * (batch.Mesh->GetIndexCount() / 3u);
 
 		// Bind pipeline + set=1 (Material) for this instance
 		batch.MaterialInstance->Apply(*commandContext, frameIndex);
@@ -174,7 +173,12 @@ namespace Snowstorm
 		// Bind set 0 after the pipeline is bound (pipeline already bound by MaterialInstance::Apply)
 		commandContext->BindDescriptorSet(perFrameFrameSets[frameIndex], 0);
 
-		// ---- Set 2: Object (dynamic) ----
+		// ---- Set 2: per-instance Object data (StructuredBuffer) ----
+		// One frame-wide storage buffer holds every instance; each batch writes its slice and draws
+		// with firstInstance = sliceStart, so SV_InstanceID indexes the right entries. The descriptor
+		// binds the whole buffer once (fixed capacity → committed once, never re-bound mid-frame).
+		EnsureInstanceBuffer(frameIndex, static_cast<uint32_t>(batch.Instances.size()));
+
 		auto& perFrameObjectSets = m_ObjectSets[pipeline.get()];
 		if (perFrameObjectSets.empty())
 			perFrameObjectSets.resize(Renderer::GetFramesInFlight());
@@ -182,45 +186,66 @@ namespace Snowstorm
 		if (!perFrameObjectSets[frameIndex])
 		{
 			DescriptorSetDesc setDesc{};
-			setDesc.DebugName = "Set2_Object";
+			setDesc.DebugName = "Set2_Instances";
 			perFrameObjectSets[frameIndex] = DescriptorSet::Create(setLayouts[2], setDesc);
 			SS_CORE_ASSERT(perFrameObjectSets[frameIndex], "Failed to create set=2 Object DescriptorSet");
 
 			BufferBinding bb{};
-			bb.Buffer = Renderer::GetFrameUniformRing().GetBuffer();
+			bb.Buffer = m_InstanceBuffers[frameIndex];
 			bb.Offset = 0;
-			bb.Range = sizeof(ObjectCB);
+			bb.Range = 0; // whole buffer
 			perFrameObjectSets[frameIndex]->SetBuffer(0, bb);
 			perFrameObjectSets[frameIndex]->Commit();
 		}
 
 		const Ref<DescriptorSet>& objectSet = perFrameObjectSets[frameIndex];
 
-		// Bind mesh buffers
-		commandContext->BindVertexBuffer(batch.Mesh->GetVertexBuffer(), 0, 0);
-
-		auto& ring = Renderer::GetFrameUniformRing();
-		const uint32_t alignment = Renderer::GetMinUniformBufferOffsetAlignment();
-
-		for (const auto& instance : batch.Instances)
+		// Write this batch's instances into the frame buffer at the running cursor.
+		const auto instanceCount = static_cast<uint32_t>(batch.Instances.size());
+		const uint32_t firstInstance = m_InstanceWriteCursor;
+		if (firstInstance + instanceCount > m_InstanceBufferCapacity)
 		{
-			ObjectCB obj{};
-			obj.Model = instance.ModelMatrix;
-			obj.Extras0 = batch.MaterialInstance->GetObjectExtras0();
-
-			const auto alloc = ring.AllocAndWrite(&obj, sizeof(ObjectCB), alignment);
-			const uint32_t dynamicOffset = alloc.Offset;
-
-			commandContext->BindDescriptorSet(objectSet, 2, &dynamicOffset, 1);
-
-			// TODO only one instance?
-			commandContext->DrawIndexed(batch.Mesh->GetIndexBuffer(),
-			                            batch.Mesh->GetIndexCount(),
-			                            1,
-			                            0,
-			                            0);
+			SS_CORE_ERROR("Instance buffer overflow ({0}+{1} > {2}); dropping batch.", firstInstance, instanceCount, m_InstanceBufferCapacity);
+			batch.Instances.clear();
+			return;
 		}
 
+		m_InstanceBuffers[frameIndex]->SetData(batch.Instances.data(),
+		                                       instanceCount * sizeof(InstanceData),
+		                                       static_cast<size_t>(firstInstance) * sizeof(InstanceData));
+		m_InstanceWriteCursor += instanceCount;
+
+		// Bind mesh buffers + set=2, then one instanced draw for the whole batch.
+		commandContext->BindVertexBuffer(batch.Mesh->GetVertexBuffer(), 0, 0);
+		commandContext->BindDescriptorSet(objectSet, 2);
+
+		commandContext->DrawIndexed(batch.Mesh->GetIndexBuffer(),
+		                            batch.Mesh->GetIndexCount(),
+		                            instanceCount,
+		                            0,
+		                            0,
+		                            firstInstance);
+
 		batch.Instances.clear();
+	}
+
+	void RendererSingleton::EnsureInstanceBuffer(const uint32_t frameIndex, uint32_t /*additionalNeeded*/)
+	{
+		if (m_InstanceBuffers.size() <= frameIndex)
+		{
+			m_InstanceBuffers.resize(frameIndex + 1);
+		}
+
+		// Fixed generous capacity, allocated once. Growing mid-frame is unsafe: earlier batches this
+		// frame have already recorded draws + descriptor binds against the current buffer, so swapping
+		// it would leave them dangling. A per-batch bounds check (in FlushBatch) drops + logs anything
+		// past capacity instead. Bump this constant if a scene legitimately needs more.
+		constexpr uint32_t kCapacity = 65536; // ~6 MB/frame at sizeof(InstanceData)
+		if (!m_InstanceBuffers[frameIndex])
+		{
+			m_InstanceBufferCapacity = kCapacity;
+			m_InstanceBuffers[frameIndex] = Buffer::Create(static_cast<size_t>(kCapacity) * sizeof(InstanceData),
+			                                               BufferUsage::Storage, nullptr, true, "InstanceBuffer");
+		}
 	}
 }

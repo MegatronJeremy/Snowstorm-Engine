@@ -8,23 +8,44 @@ namespace Snowstorm
 {
 	namespace
 	{
+		// True if an override is handled per-instance (in the instance buffer) rather than by baking a
+		// unique MaterialInstance. AlbedoTexture rides the per-instance buffer (RenderSystem resolves it
+		// to a bindless index), so it does NOT force a unique instance — that's what lets objects with
+		// different albedo textures still share a material and batch.
+		bool IsPerInstanceOverride(const MaterialOverride& o)
+		{
+			return o.Type == MaterialOverrideType::Texture && o.Name == "AlbedoTexture";
+		}
+
+		// Does this entity have any override that genuinely needs a unique MaterialInstance (i.e. one
+		// not handled per-instance, e.g. BaseColor)?
+		bool NeedsUniqueInstance(const MaterialOverridesComponent& ov)
+		{
+			for (const MaterialOverride& o : ov.Overrides)
+			{
+				if (!IsPerInstanceOverride(o))
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
 		void ApplyOverrides(AssetManagerSingleton& assets,
 		                    const MaterialOverridesComponent& ov,
 		                    MaterialInstance& mi)
 		{
-			// Dispatch each named override to the matching typed setter. Unknown names are ignored
-			// (forward-compatible: a scene authored with a property this build doesn't know simply
-			// has no effect rather than failing to load).
+			// Apply only the overrides that bake into the instance; per-instance ones (albedo) are
+			// handled at draw time via the instance buffer, so skip them here.
 			for (const MaterialOverride& o : ov.Overrides)
 			{
+				if (IsPerInstanceOverride(o))
+				{
+					continue;
+				}
 				if (o.Name == "BaseColor" && o.Type == MaterialOverrideType::Color)
 				{
 					mi.SetBaseColor(o.Color);
-				}
-				else if (o.Name == "AlbedoTexture" && o.Type == MaterialOverrideType::Texture)
-				{
-					// allow “override to none”
-					mi.SetAlbedoTexture(assets.GetTextureView(o.Texture));
 				}
 			}
 		}
@@ -68,11 +89,28 @@ namespace Snowstorm
 			const bool hasOverrides = reg.any_of<MaterialOverridesComponent>(e);
 			const MaterialOverridesComponent* ov = hasOverrides ? reg.try_get_const<MaterialOverridesComponent>(e) : nullptr;
 
-			const bool overridesActive = (ov && !ov->Overrides.empty());
-
-			if (!overridesActive)
+			// Pre-warm albedo-override textures here (resolve phase), so RenderSystem's lookup during
+			// command recording is a pure cache hit. Creating a texture registers it in the bindless
+			// set; doing that mid-render-pass invalidates the bound descriptor set.
+			if (ov)
 			{
-				// Shared instance for all entities using this material (no overrides)
+				for (const MaterialOverride& o : ov->Overrides)
+				{
+					if (o.Type == MaterialOverrideType::Texture && o.Texture != 0)
+					{
+						(void)assets.GetTextureView(o.Texture);
+					}
+				}
+			}
+
+			// Only overrides that can't ride the per-instance buffer (e.g. BaseColor) force a unique
+			// instance. Texture-only albedo overrides stay on the shared instance so objects batch.
+			const bool needsUnique = (ov && NeedsUniqueInstance(*ov));
+
+			if (!needsUnique)
+			{
+				// Shared instance — objects with the same material (even with per-instance albedo
+				// overrides) collapse into one instanced draw.
 				const Ref<MaterialInstance> shared = assets.GetMaterialInstance(mcRead.Material);
 				auto& mc = reg.Write<MaterialComponent>(e);
 				mc.MaterialInstance = shared;
