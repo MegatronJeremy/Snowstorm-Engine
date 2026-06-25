@@ -245,6 +245,30 @@ Worked example — **asset pipeline** (the engine's current biggest simplificati
   RTTR registration, ImGui ID/widget state). Repeating a variant of a failed approach is the signal
   to step back, not to try harder.
 
+### Debugging rendering bugs specifically (lead with observation, not code)
+
+A plausible cause is not a proven cause. On a flickering-texture bug the obvious-looking culprits
+(missing mipmaps, near-plane z-fighting, depth precision) were all *wrong* — each was "fixed" before
+being proven, wasting three rounds. What actually found it: the user's observations + visual probes.
+
+- **Ask "when does it NOT happen?" before reading code.** Which scene only? Which material only?
+  Static camera or only in motion? Each answer eliminates a whole class of causes in one sentence.
+- **Static vs motion is the big discriminator.** Garbage/flicker *while the camera is static* ⇒ data
+  changing per-frame: a race, sync gap, or undefined behaviour (e.g. non-uniform descriptor indexing).
+  Shimmer *only under motion* ⇒ aliasing / mip-LOD / depth precision. Pin this first; it splits the
+  search space in half immediately.
+- **Bisect with temporary shader probes, not theory.** Force a flat color (geometry vs sampling),
+  force texture index 0 (slot vs index), output a value as RGB (index magnitude, `SV_InstanceID`),
+  force a mip level (`SampleLevel`). Each probe is one yes/no that halves the space; ~4–5 pin it. This
+  is "bisect, don't guess" applied to the GPU — strip every probe before committing.
+- **Don't "fix" before the probe proves the cause.** Prove with one probe, *then* change code.
+- **Bindless + instancing red flag:** when one draw renders many objects with *different*
+  descriptor-array indices, the index is not dynamically uniform → wrap in `NonUniformResourceIndex()`
+  and enable the matching `shader*ArrayNonUniformIndexing` device feature. Silent garbage/flicker
+  otherwise; it "works" pre-instancing only because each object was its own draw.
+- **A wrong fix that's independently useful can stay.** Misdiagnoses (mipmaps, near plane) were real
+  improvements on their own — keep them; don't revert good changes just because they missed this bug.
+
 ### Build the engine to be debuggable
 
 The deeper fix for "I couldn't verify without the user" is to make state inspectable in code:
