@@ -18,8 +18,8 @@ namespace Snowstorm
 		rttr::type Type;
 
 		// Flags
-		bool Serializable = true;   // written into .world
-		bool DrawInEditor = true;   // shown in inspector
+		bool Serializable = true; // written into .world
+		bool DrawInEditor = true; // shown in inspector
 
 		// Editor UI
 		std::function<void(Entity)> DrawFn = nullptr;
@@ -28,6 +28,13 @@ namespace Snowstorm
 		std::function<bool(Entity)> HasFn = nullptr;
 		std::function<void(Entity)> EmplaceDefaultFn = nullptr;
 		std::function<rttr::instance(Entity)> GetInstanceFn = nullptr;
+
+		// Copy this component's value from src to dst (no-op if src lacks it). Used by entity
+		// duplication so a cloned entity gets every component the original had.
+		std::function<void(Entity, Entity)> CopyFn = nullptr;
+
+		// Remove this component from an entity (no-op if absent). Used by the inspector's remove "X".
+		std::function<void(Entity)> RemoveFn = nullptr;
 	};
 
 	// Central registry for all registered component types
@@ -67,7 +74,8 @@ namespace Snowstorm
 	void RegisterComponent(const ComponentRegisterOptions opts = {})
 	{
 		static bool registered = false;
-		if (registered) return;
+		if (registered)
+			return;
 		registered = true;
 
 		const rttr::type type = rttr::type::get<T>();
@@ -81,8 +89,10 @@ namespace Snowstorm
 		{
 			DrawFn = [type](Entity entity) // default draw function
 			{
-				if (!entity.HasComponent<T>()) return;
-				if (!type.is_valid()) return;
+				if (!entity.HasComponent<T>())
+					return;
+				if (!type.is_valid())
+					return;
 
 				// Render into a mutable copy: binding rttr::instance to GetComponent()'s const
 				// reference makes set_value a no-op (writes never reach the real component). Write
@@ -114,47 +124,61 @@ namespace Snowstorm
 
 				if (changed)
 				{
-					entity.PatchComponent<T>([&](T& target) { target = working; });
+					entity.PatchComponent<T>([&](T& target)
+					                         { target = working; });
 				}
 			};
 		}
 
 		ComponentInfo info{
-			.Type = type,
-			.Serializable = opts.Serializable,
-			.DrawInEditor = opts.DrawInEditor,
+		    .Type = type,
+		    .Serializable = opts.Serializable,
+		    .DrawInEditor = opts.DrawInEditor,
 
-			.DrawFn = DrawFn,
+		    .DrawFn = DrawFn,
 
-			.HasFn = [](const Entity entity) -> bool
-			{
-				return entity.HasComponent<T>();
-			},
+		    .HasFn = [](const Entity entity) -> bool
+		    {
+			    return entity.HasComponent<T>();
+		    },
 
-			.EmplaceDefaultFn = [](Entity entity)
-			{
+		    .EmplaceDefaultFn = [](Entity entity)
+		    {
 				if (!entity.HasComponent<T>())
 				{
 					entity.AddComponent<T>();
-				}
-			},
+				} },
 
-			.GetInstanceFn = [](const Entity entity) -> const rttr::instance
-			{
-				const T& component = entity.GetComponent<T>();
-				return rttr::instance(component);
-			}
-		};
+		    .GetInstanceFn = [](const Entity entity) -> const rttr::instance
+		    {
+			    const T& component = entity.GetComponent<T>();
+			    return rttr::instance(component);
+		    },
+
+		    .CopyFn = [](Entity src, Entity dst)
+		    {
+				if (src.HasComponent<T>())
+				{
+					dst.AddOrReplaceComponent<T>(src.GetComponent<T>());
+				} },
+
+		    .RemoveFn = [](Entity entity)
+		    {
+				if (entity.HasComponent<T>())
+				{
+					entity.RemoveComponent<T>();
+				} }};
 
 		GetComponentRegistry().emplace_back(std::move(info));
 	}
 } // namespace Snowstorm
 
-#define AUTO_REGISTER_COMPONENT(Type) \
-namespace \
-{ \
-	struct AutoRegister_##Type { \
-		AutoRegister_##Type() { ::Snowstorm::RegisterComponent<Type>(); } \
-	}; \
-	static AutoRegister_##Type auto_register_instance_##Type; \
-}
+#define AUTO_REGISTER_COMPONENT(Type)                                         \
+	namespace                                                                 \
+	{                                                                         \
+		struct AutoRegister_##Type                                            \
+		{                                                                     \
+			AutoRegister_##Type() { ::Snowstorm::RegisterComponent<Type>(); } \
+		};                                                                    \
+		static AutoRegister_##Type auto_register_instance_##Type;             \
+	}

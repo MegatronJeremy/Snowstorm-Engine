@@ -8,8 +8,12 @@
 #include "Snowstorm/Components/IDComponent.hpp"
 #include "Snowstorm/Components/TagComponent.hpp"
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/World/EditorCommandsSingleton.hpp"
+#include "Snowstorm/World/EditorSelectionSingleton.hpp"
 
 #include "Service/EditorTheme.hpp"
+
+#include <cstring>
 
 namespace Snowstorm
 {
@@ -21,13 +25,53 @@ namespace Snowstorm
 	void SceneHierarchyPanel::SetContext(World* context)
 	{
 		m_World = context;
-		m_SelectionContext = {};
+		SetSelected({});
+	}
+
+	Entity SceneHierarchyPanel::GetSelected() const
+	{
+		return m_World->GetSingleton<EditorSelectionSingleton>().Selected;
+	}
+
+	void SceneHierarchyPanel::SetSelected(const Entity entity) const
+	{
+		m_World->GetSingleton<EditorSelectionSingleton>().Selected = entity;
+	}
+
+	Entity SceneHierarchyPanel::DuplicateEntity(const Entity src) const
+	{
+		const std::string name = src.GetComponent<TagComponent>().Tag + " (Copy)";
+		Entity dst = m_World->CreateEntity(name); // fresh IDComponent UUID + TagComponent
+
+		// Copy every registered component except identity/name (those are set by CreateEntity).
+		for (const auto& info : GetComponentRegistry())
+		{
+			if (!info.CopyFn || !info.Type.is_valid())
+			{
+				continue;
+			}
+			const std::string typeName = info.Type.get_name().to_string();
+			if (typeName == "Snowstorm::IDComponent" || typeName == "Snowstorm::TagComponent")
+			{
+				continue;
+			}
+			info.CopyFn(src, dst);
+		}
+		return dst;
 	}
 
 	void SceneHierarchyPanel::OnImGuiRender()
 	{
 		ImGui::Begin("Scene Hierarchy");
 		EditorTheme::SectionHeader("Scene Hierarchy");
+
+		auto& cmds = m_World->GetSingleton<EditorCommandsSingleton>();
+
+		if (ImGui::Button("+ Create Entity") && cmds.CreateEntity)
+		{
+			SetSelected(cmds.CreateEntity());
+		}
+		ImGui::Separator();
 
 		// Only entities that are part of the scene model
 		auto view = m_World->GetRegistry().view<IDComponent, TagComponent>();
@@ -38,18 +82,64 @@ namespace Snowstorm
 			DrawEntityNode(entity);
 		}
 
-		if (ImGui::IsMouseDown(0) && ImGui::IsWindowHovered())
+		// Clicking empty space clears selection (but not while a right-click context menu is up).
+		if (ImGui::IsMouseDown(0) && ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered())
 		{
-			m_SelectionContext = {};
+			SetSelected({});
 		}
 
 		ImGui::End();
 
+		// ---- Apply deferred actions after the view iteration above ----
+		if (m_PendingDuplicate)
+		{
+			SetSelected(DuplicateEntity(m_PendingDuplicate));
+			m_PendingDuplicate = {};
+		}
+		if (m_PendingDelete)
+		{
+			if (GetSelected() == m_PendingDelete)
+			{
+				SetSelected({});
+			}
+			if (cmds.DeleteEntity)
+			{
+				cmds.DeleteEntity(m_PendingDelete); // deferred destroy at end of frame
+			}
+			m_PendingDelete = {};
+		}
+
+		// Rename modal (opened from the context menu).
+		if (m_OpenRenamePopup)
+		{
+			ImGui::OpenPopup("Rename Entity");
+			m_OpenRenamePopup = false;
+		}
+		if (ImGui::BeginPopupModal("Rename Entity", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+		{
+			ImGui::SetNextItemWidth(280.0f);
+			const bool enter = ImGui::InputText("##rename", m_RenameBuffer, sizeof(m_RenameBuffer),
+			                                    ImGuiInputTextFlags_EnterReturnsTrue);
+			if ((ImGui::Button("OK", ImVec2(120.0f, 0.0f)) || enter) && m_RenameTarget)
+			{
+				m_RenameTarget.WriteComponent<TagComponent>().Tag = m_RenameBuffer;
+				m_RenameTarget = {};
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+			{
+				m_RenameTarget = {};
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
+
 		ImGui::Begin("Properties");
 		EditorTheme::SectionHeader("Properties");
-		if (m_SelectionContext)
+		if (const Entity selected = GetSelected())
 		{
-			DrawComponents(m_SelectionContext);
+			DrawComponents(selected);
 		}
 		else
 		{
@@ -62,14 +152,36 @@ namespace Snowstorm
 	{
 		const auto& tag = entity.GetComponent<TagComponent>().Tag;
 
-		ImGuiTreeNodeFlags flags = ((m_SelectionContext == entity) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_Leaf;
+		ImGuiTreeNodeFlags flags = ((GetSelected() == entity) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_Leaf;
 
 		const bool opened = ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<uintptr_t>(static_cast<uint32_t>(entity))),
 		                                      flags,
 		                                      "%s", tag.c_str());
 		if (ImGui::IsItemClicked())
 		{
-			m_SelectionContext = entity;
+			SetSelected(entity);
+		}
+
+		// Per-entity context menu: Rename / Duplicate / Delete (deferred to avoid view invalidation).
+		if (ImGui::BeginPopupContextItem())
+		{
+			SetSelected(entity);
+			if (ImGui::MenuItem("Rename"))
+			{
+				m_RenameTarget = entity;
+				strncpy_s(m_RenameBuffer, tag.c_str(), sizeof(m_RenameBuffer) - 1);
+				m_OpenRenamePopup = true;
+			}
+			if (ImGui::MenuItem("Duplicate"))
+			{
+				m_PendingDuplicate = entity;
+			}
+			ImGui::Separator();
+			if (ImGui::MenuItem("Delete"))
+			{
+				m_PendingDelete = entity;
+			}
+			ImGui::EndPopup();
 		}
 
 		if (opened)

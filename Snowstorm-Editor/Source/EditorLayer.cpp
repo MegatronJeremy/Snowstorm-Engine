@@ -26,6 +26,7 @@
 #include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Systems/CoreSystems.hpp"
 #include "Snowstorm/World/EditorCommandsSingleton.hpp"
+#include "Snowstorm/World/EditorSelectionSingleton.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
 
 #include "System/DockspaceSetupSystem.hpp"
@@ -56,13 +57,12 @@ namespace Snowstorm
 			// Let the inspector show asset handles as filenames instead of raw UUIDs.
 			World* world = m_ActiveWorld.get();
 			SetAssetNameResolver([world](const uint64_t handle) -> std::string
-			{
+			                     {
 				if (const AssetMetadata* meta = world->GetSingleton<AssetManagerSingleton>().GetMetadata(AssetHandle{handle}))
 				{
 					return meta->Path.filename().string();
 				}
-				return {};
-			});
+				return {}; });
 		}
 
 		// Hook editor commands for menu systems etc.
@@ -71,6 +71,16 @@ namespace Snowstorm
 			cmds.SaveScene = [this]() -> bool
 			{
 				return SaveActiveScene();
+			};
+
+			World* world = m_ActiveWorld.get();
+			cmds.CreateEntity = [world]() -> Entity
+			{
+				return world->CreateEntity("Entity");
+			};
+			cmds.DeleteEntity = [world](const Entity e)
+			{
+				world->DestroyEntity(e);
 			};
 		}
 
@@ -162,6 +172,7 @@ namespace Snowstorm
 		auto& singletonManager = m_ActiveWorld->GetSingletonManager();
 
 		singletonManager.RegisterSingleton<EditorNotificationsSingleton>();
+		singletonManager.RegisterSingleton<EditorSelectionSingleton>();
 
 		// Editor UI systems. The UI phase is empty in a packaged runtime, so the engine
 		// systems (registered by RegisterCoreSystems) run identically with or without these.

@@ -7,6 +7,9 @@
 #include "Snowstorm/Utility/NonCopyable.hpp"
 #include "Snowstorm/Utility/UUID.hpp"
 
+#include <entt/entt.hpp>
+#include <vector>
+
 namespace Snowstorm
 {
 	class SystemManager;
@@ -22,6 +25,12 @@ namespace Snowstorm
 
 		Entity CreateEntity(const std::string& name = std::string());
 		Entity CreateEntityWithUUID(UUID uuid, const std::string& name = std::string());
+
+		// Queue an entity for destruction at the end of the current frame. Deferred so callers can
+		// request deletion while iterating an ECS view (e.g. from a UI system) without invalidating
+		// the iteration. FlushDestroyQueue() performs the actual destroy and is called once per frame.
+		void DestroyEntity(Entity entity);
+		void FlushDestroyQueue();
 
 		void Clear() const;
 
@@ -40,13 +49,15 @@ namespace Snowstorm
 			return m_SingletonManager->GetSingleton<T>();
 		}
 
-		void OnUpdate(Timestep ts) const;
+		void OnUpdate(Timestep ts);
 
 	private:
 		Scope<SystemManager> m_SystemManager;
 		Scope<SingletonManager> m_SingletonManager;
 
 		Scope<InputEventBridge> m_InputEventBridge;
+
+		std::vector<entt::entity> m_PendingDestroy; // flushed at end of frame by FlushDestroyQueue
 
 		friend class Entity;
 		friend class SceneHierarchyPanel;

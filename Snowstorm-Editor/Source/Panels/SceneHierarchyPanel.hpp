@@ -20,7 +20,19 @@ namespace Snowstorm
 
 		static void DrawComponents(Entity entity);
 
+		// Selection now lives in EditorSelectionSingleton (shared with viewport/gizmo/picking).
+		[[nodiscard]] Entity GetSelected() const;
+		void SetSelected(Entity entity) const;
+
+		Entity DuplicateEntity(Entity src) const;
+
 		World* m_World{};
-		Entity m_SelectionContext;
+
+		// Deferred per-frame actions so we never mutate the ECS while iterating the hierarchy view.
+		Entity m_PendingDelete;
+		Entity m_PendingDuplicate;
+		Entity m_RenameTarget;
+		char m_RenameBuffer[256] = {};
+		bool m_OpenRenamePopup = false;
 	};
 }

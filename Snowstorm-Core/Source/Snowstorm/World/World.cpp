@@ -57,6 +57,33 @@ namespace Snowstorm
 		return entity;
 	}
 
+	void World::DestroyEntity(const Entity entity)
+	{
+		if (!entity)
+		{
+			return;
+		}
+		m_PendingDestroy.push_back(entity.Handle());
+	}
+
+	void World::FlushDestroyQueue()
+	{
+		if (m_PendingDestroy.empty())
+		{
+			return;
+		}
+
+		auto& reg = m_SystemManager->GetRegistry();
+		for (const entt::entity e : m_PendingDestroy)
+		{
+			if (reg.valid(e))
+			{
+				reg.destroy(e);
+			}
+		}
+		m_PendingDestroy.clear();
+	}
+
 	void World::Clear() const
 	{
 		m_SystemManager->GetRegistry().Clear();
@@ -92,9 +119,10 @@ namespace Snowstorm
 		return m_SystemManager->GetRegistry();
 	}
 
-	void World::OnUpdate(const Timestep ts) const
+	void World::OnUpdate(const Timestep ts)
 	{
 		m_SystemManager->ExecuteSystems(ts);
+		FlushDestroyQueue(); // apply deferred entity deletions after all systems have run
 		m_SingletonManager->GetSingleton<InputStateSingleton>().Clear();
 	}
 }
