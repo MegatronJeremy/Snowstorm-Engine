@@ -20,6 +20,46 @@ namespace Snowstorm
 		s_AssetNameResolver = std::move(resolver);
 	}
 
+	namespace
+	{
+		// Pending component removals requested from the inspector this frame (entity + type), applied
+		// by FlushComponentRemovals after the inspector finished drawing.
+		std::vector<std::pair<Entity, rttr::type>> s_PendingRemovals;
+	}
+
+	bool IsComponentRemovable(const rttr::type& type)
+	{
+		const std::string name = type.get_name().to_string();
+		// Identity + name are structural: an entity must always have them.
+		return name != "Snowstorm::IDComponent" && name != "Snowstorm::TagComponent";
+	}
+
+	void RequestComponentRemoval(const Entity entity, const rttr::type& type)
+	{
+		s_PendingRemovals.emplace_back(entity, type);
+	}
+
+	void FlushComponentRemovals()
+	{
+		if (s_PendingRemovals.empty())
+		{
+			return;
+		}
+
+		for (const auto& [entity, type] : s_PendingRemovals)
+		{
+			for (const auto& info : GetComponentRegistry())
+			{
+				if (info.Type == type && info.RemoveFn)
+				{
+					info.RemoveFn(entity);
+					break;
+				}
+			}
+		}
+		s_PendingRemovals.clear();
+	}
+
 	std::string ResolveAssetName(const uint64_t handle)
 	{
 		if (handle == 0)
@@ -83,10 +123,10 @@ namespace Snowstorm
 		{
 			static const char* tags[4] = {"X", "Y", "Z", "W"};
 			static const ImVec4 cols[4] = {
-				{0.78f, 0.18f, 0.20f, 1.0f}, // X red
-				{0.22f, 0.60f, 0.24f, 1.0f}, // Y green
-				{0.20f, 0.40f, 0.75f, 1.0f}, // Z blue
-				{0.60f, 0.55f, 0.20f, 1.0f}, // W
+			    {0.78f, 0.18f, 0.20f, 1.0f}, // X red
+			    {0.22f, 0.60f, 0.24f, 1.0f}, // Y green
+			    {0.20f, 0.40f, 0.75f, 1.0f}, // Z blue
+			    {0.60f, 0.55f, 0.20f, 1.0f}, // W
 			};
 			bool changed = false;
 			ImGui::PushID(baseId);
@@ -104,7 +144,8 @@ namespace Snowstorm
 				ImGui::PushID(i);
 				changed |= ColoredAxis(tags[i], cols[i], &v[i], "##v", speed, dragW);
 				ImGui::PopID();
-				if (i < n - 1) ImGui::SameLine();
+				if (i < n - 1)
+					ImGui::SameLine();
 			}
 			ImGui::PopStyleVar();
 			ImGui::PopID();
@@ -140,7 +181,7 @@ namespace Snowstorm
 
 		// Drop a trailing "Component".
 		if (constexpr const char* suffix = "Component"; name.size() > 9 &&
-			name.compare(name.size() - 9, 9, suffix) == 0)
+		                                                name.compare(name.size() - 9, 9, suffix) == 0)
 		{
 			name = name.substr(0, name.size() - 9);
 		}
@@ -153,7 +194,7 @@ namespace Snowstorm
 		{
 			const unsigned char ch = static_cast<unsigned char>(name[i]);
 			if (i > 0 && std::isupper(ch) &&
-				!std::isupper(static_cast<unsigned char>(name[i - 1])))
+			    !std::isupper(static_cast<unsigned char>(name[i - 1])))
 			{
 				out.push_back(' ');
 			}

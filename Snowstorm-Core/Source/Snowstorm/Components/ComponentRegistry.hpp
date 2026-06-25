@@ -63,6 +63,15 @@ namespace Snowstorm
 	void SetAssetNameResolver(std::function<std::string(uint64_t)> resolver);
 	std::string ResolveAssetName(uint64_t handle);
 
+	// Whether this component type may be removed from an entity in the inspector. Identity/name
+	// components (ID, Tag) are structural and never removable.
+	bool IsComponentRemovable(const rttr::type& type);
+
+	// Queue a component removal (from the inspector's per-component "Remove"). Deferred so we never
+	// mutate the entity while its DrawFn is still running; FlushComponentRemovals applies them.
+	void RequestComponentRemoval(Entity entity, const rttr::type& type);
+	void FlushComponentRemovals();
+
 	struct ComponentRegisterOptions
 	{
 		bool Serializable = true;
@@ -108,7 +117,19 @@ namespace Snowstorm
 				ImGui::PushID(fullName.c_str()); // scope widget IDs per component (avoid collisions)
 				// Framed collapsing header gives each component a filled title bar -> visual
 				// separation + outline between components.
-				if (ImGui::CollapsingHeader(display.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed))
+				const bool open = ImGui::CollapsingHeader(display.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed);
+
+				// Right-click the header to remove the component (structural ones are not removable).
+				if (IsComponentRemovable(type) && ImGui::BeginPopupContextItem("##compctx"))
+				{
+					if (ImGui::MenuItem("Remove Component"))
+					{
+						RequestComponentRemoval(entity, type);
+					}
+					ImGui::EndPopup();
+				}
+
+				if (open)
 				{
 					if (BeginPropertyTable("##props"))
 					{

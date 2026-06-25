@@ -146,6 +146,9 @@ namespace Snowstorm
 			EditorTheme::WarningBanner("NO ENTITY SELECTED");
 		}
 		ImGui::End();
+
+		// Apply any component removals requested by the inspector this frame (after DrawComponents).
+		FlushComponentRemovals();
 	}
 
 	void SceneHierarchyPanel::DrawEntityNode(Entity entity)
@@ -195,6 +198,43 @@ namespace Snowstorm
 		for (const auto& info : GetComponentRegistry())
 		{
 			info.DrawFn(entity);
+		}
+
+		ImGui::Spacing();
+		if (ImGui::Button("Add Component", ImVec2(-FLT_MIN, 0.0f)))
+		{
+			ImGui::OpenPopup("##addcomponent");
+		}
+
+		if (ImGui::BeginPopup("##addcomponent"))
+		{
+			bool anyAvailable = false;
+			for (const auto& info : GetComponentRegistry())
+			{
+				// Offer only components the entity lacks and that are inspector-facing.
+				if (!info.DrawInEditor || !info.HasFn || !info.EmplaceDefaultFn || !info.Type.is_valid())
+				{
+					continue;
+				}
+				if (info.HasFn(entity) || !IsComponentRemovable(info.Type))
+				{
+					continue; // already present, or structural (ID/Tag)
+				}
+
+				anyAvailable = true;
+				const std::string label = PrettyComponentName(info.Type.get_name().to_string());
+				if (ImGui::MenuItem(label.c_str()))
+				{
+					info.EmplaceDefaultFn(entity);
+					ImGui::CloseCurrentPopup();
+				}
+			}
+
+			if (!anyAvailable)
+			{
+				ImGui::TextDisabled("(no more components)");
+			}
+			ImGui::EndPopup();
 		}
 	}
 }
