@@ -149,7 +149,18 @@ solution/project files (`*.sln`, `*.vcxproj*`, `*.cmake`, `CMakeCache.txt`, `ALL
 
 When designing or proposing anything, first ask: **how would a serious production engine
 (Unreal, Unity, Godot, modern in-house) do this?** State that reference model briefly, then
-deliberately decide how far to go for *this* project. The point is not to build AAA infrastructure
+deliberately decide how far to go for *this* project.
+
+**Lead with the more rigid, long-term-correct option.** When choosing between a quick patch and the
+structurally sound design, *propose the sound one first* and recommend it by default — even if it is
+more work — and only fall back to the shortcut when there is a concrete reason (time-box, throwaway
+code, the right design needs infra that doesn't exist yet). Don't offer the lazy option as the
+headline and the good one as an afterthought. Vuk's stated preference: this should feel like a
+professional engine, so bias toward the design that a production codebase would actually ship. A
+worked example: when per-entity material overrides needed an editor, the rigid choice was to replace
+the fixed `mask + one-field-per-property` struct with a *sparse list of named, typed overrides*
+(Unity `MaterialPropertyBlock` / Unreal MID) rather than just bolting a picker onto the old shape —
+the latter would have had to be ripped out the moment a third override type appeared. The point is not to build AAA infrastructure
 — it's a thesis platform — but to make the simplification a *conscious* choice with the real shape
 in view, so today's shortcut is a known subset of the right design rather than an accidental dead
 end. Call out which parts are intentionally deferred and why, and prefer shortcuts that are a

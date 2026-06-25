@@ -12,15 +12,20 @@ namespace Snowstorm
 		                    const MaterialOverridesComponent& ov,
 		                    MaterialInstance& mi)
 		{
-			if (HasOverride(ov.OverrideMask, MaterialOverrideMask::BaseColor))
+			// Dispatch each named override to the matching typed setter. Unknown names are ignored
+			// (forward-compatible: a scene authored with a property this build doesn't know simply
+			// has no effect rather than failing to load).
+			for (const MaterialOverride& o : ov.Overrides)
 			{
-				mi.SetBaseColor(ov.BaseColorOverride);
-			}
-
-			if (HasOverride(ov.OverrideMask, MaterialOverrideMask::AlbedoTex))
-			{
-				// allow “override to none”
-				mi.SetAlbedoTexture(assets.GetTextureView(ov.AlbedoTextureOverride));
+				if (o.Name == "BaseColor" && o.Type == MaterialOverrideType::Color)
+				{
+					mi.SetBaseColor(o.Color);
+				}
+				else if (o.Name == "AlbedoTexture" && o.Type == MaterialOverrideType::Texture)
+				{
+					// allow “override to none”
+					mi.SetAlbedoTexture(assets.GetTextureView(o.Texture));
+				}
 			}
 		}
 	}
@@ -35,10 +40,14 @@ namespace Snowstorm
 		// - MaterialOverridesComponent is Added/Changed
 		std::unordered_set<entt::entity> dirty;
 
-		for (auto e : InitView<MaterialComponent>()) dirty.insert(e);
-		for (auto e : ChangedView<MaterialComponent>()) dirty.insert(e);
-		for (auto e : InitView<MaterialOverridesComponent>()) dirty.insert(e);
-		for (auto e : ChangedView<MaterialOverridesComponent>()) dirty.insert(e);
+		for (auto e : InitView<MaterialComponent>())
+			dirty.insert(e);
+		for (auto e : ChangedView<MaterialComponent>())
+			dirty.insert(e);
+		for (auto e : InitView<MaterialOverridesComponent>())
+			dirty.insert(e);
+		for (auto e : ChangedView<MaterialOverridesComponent>())
+			dirty.insert(e);
 
 		for (const entt::entity e : dirty)
 		{
@@ -59,7 +68,7 @@ namespace Snowstorm
 			const bool hasOverrides = reg.any_of<MaterialOverridesComponent>(e);
 			const MaterialOverridesComponent* ov = hasOverrides ? reg.try_get_const<MaterialOverridesComponent>(e) : nullptr;
 
-			const bool overridesActive = (ov && static_cast<uint32_t>(ov->OverrideMask) != 0);
+			const bool overridesActive = (ov && !ov->Overrides.empty());
 
 			if (!overridesActive)
 			{

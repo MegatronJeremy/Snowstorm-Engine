@@ -53,14 +53,13 @@
           "$asset": "14863079243352112687"
         },
         "Snowstorm::MaterialOverridesComponent": {
-          "AlbedoTextureOverride": "12465655103903380530",
-          "BaseColorOverride": [
-            1.0,
-            1.0,
-            1.0,
-            1.0
-          ],
-          "OverrideMask": 2
+          "Overrides": [
+            {
+              "Name": "AlbedoTexture",
+              "Type": "Texture",
+              "Value": "12465655103903380530"
+            }
+          ]
         },
         "Snowstorm::MeshComponent": {
           "$asset": "5810267832183663728"
@@ -127,14 +126,13 @@
           "$asset": "9496730424453785457"
         },
         "Snowstorm::MaterialOverridesComponent": {
-          "AlbedoTextureOverride": "12465655103903380530",
-          "BaseColorOverride": [
-            1.0,
-            1.0,
-            1.0,
-            1.0
-          ],
-          "OverrideMask": 2
+          "Overrides": [
+            {
+              "Name": "AlbedoTexture",
+              "Type": "Texture",
+              "Value": "12465655103903380530"
+            }
+          ]
         },
         "Snowstorm::MeshComponent": {
           "$asset": "14167707854468761414"

@@ -6,6 +6,7 @@
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Components/MaterialComponent.hpp"
+#include "Snowstorm/Components/MaterialOverridesComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/CameraTargetComponent.hpp"
 #include "Snowstorm/Components/ViewportComponent.hpp"
@@ -56,6 +57,34 @@ namespace Snowstorm
 					outJson["TargetViewport"] = rtc.TargetViewportUUID.ToString();
 				}
 
+				return true;
+			}
+
+			if (typeName == "Snowstorm::MaterialOverridesComponent")
+			{
+				const auto& mo = entity.GetComponent<MaterialOverridesComponent>();
+				outJson = nlohmann::json::object();
+				nlohmann::json arr = nlohmann::json::array();
+				for (const MaterialOverride& o : mo.Overrides)
+				{
+					nlohmann::json e = nlohmann::json::object();
+					e["Name"] = o.Name;
+					e["Type"] = MaterialOverrideTypeToString(o.Type);
+					switch (o.Type)
+					{
+					case MaterialOverrideType::Float:
+						e["Value"] = o.Scalar;
+						break;
+					case MaterialOverrideType::Color:
+						e["Value"] = {o.Color.x, o.Color.y, o.Color.z, o.Color.w};
+						break;
+					case MaterialOverrideType::Texture:
+						e["Value"] = o.Texture.ToString();
+						break;
+					}
+					arr.push_back(std::move(e));
+				}
+				outJson["Overrides"] = std::move(arr);
 				return true;
 			}
 
@@ -114,6 +143,43 @@ namespace Snowstorm
 				return true;
 			}
 
+			if (typeName == "Snowstorm::MaterialOverridesComponent")
+			{
+				entity.AddOrReplaceComponent<MaterialOverridesComponent>();
+				auto& mo = entity.WriteComponent<MaterialOverridesComponent>();
+				mo.Overrides.clear();
+
+				if (inJson.contains("Overrides") && inJson["Overrides"].is_array())
+				{
+					for (const auto& e : inJson["Overrides"])
+					{
+						MaterialOverride o;
+						o.Name = e.value("Name", "");
+						o.Type = MaterialOverrideTypeFromString(e.value("Type", "Float"));
+
+						const auto& val = e.contains("Value") ? e["Value"] : nlohmann::json{};
+						switch (o.Type)
+						{
+						case MaterialOverrideType::Float:
+							if (val.is_number())
+								o.Scalar = val.get<float>();
+							break;
+						case MaterialOverrideType::Color:
+							if (val.is_array() && val.size() == 4)
+								o.Color = {val[0].get<float>(), val[1].get<float>(), val[2].get<float>(), val[3].get<float>()};
+							break;
+						case MaterialOverrideType::Texture:
+							if (val.is_string())
+								o.Texture = UUID::FromString(val.get<std::string>());
+							break;
+						}
+						mo.Overrides.push_back(std::move(o));
+					}
+				}
+
+				return true;
+			}
+
 			return false;
 		}
 	}
@@ -121,7 +187,7 @@ namespace Snowstorm
 	bool SceneSerializer::Serialize(const World& world, const std::string& filePath)
 	{
 		json root;
-		root["Scene"] = { {"Version", 1}, {"Name", "Untitled"} };
+		root["Scene"] = {{"Version", 1}, {"Name", "Untitled"}};
 		root["Entities"] = json::array();
 
 		auto& reg = world.GetRegistry();
@@ -129,7 +195,7 @@ namespace Snowstorm
 		auto view = reg.view<IDComponent, TagComponent>();
 		for (const entt::entity e : view)
 		{
-			Entity entity{ e, const_cast<World*>(&world) };
+			Entity entity{e, const_cast<World*>(&world)};
 
 			json entJ;
 			entJ["UUID"] = entity.GetComponent<IDComponent>().Id.ToString();

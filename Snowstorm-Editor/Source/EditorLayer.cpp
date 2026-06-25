@@ -290,8 +290,11 @@ namespace Snowstorm
 			// Per-entity overrides live in a separate serialized component
 			{
 				auto& ov = e.AddOrReplaceComponent<MaterialOverridesComponent>();
-				SetOverride(ov.OverrideMask, MaterialOverrideMask::AlbedoTex, true);
-				ov.AlbedoTextureOverride = checkerTexH;
+				MaterialOverride albedoOverride;
+				albedoOverride.Name = "AlbedoTexture";
+				albedoOverride.Type = MaterialOverrideType::Texture;
+				albedoOverride.Texture = checkerTexH;
+				ov.Overrides.push_back(albedoOverride);
 			}
 
 			e.WriteComponent<TransformComponent>().Position += glm::vec3(2.0f, 2.0f, 6.0f);
@@ -316,8 +319,11 @@ namespace Snowstorm
 
 			{
 				auto& ov = e.AddOrReplaceComponent<MaterialOverridesComponent>();
-				SetOverride(ov.OverrideMask, MaterialOverrideMask::AlbedoTex, true);
-				ov.AlbedoTextureOverride = checkerTexH;
+				MaterialOverride albedoOverride;
+				albedoOverride.Name = "AlbedoTexture";
+				albedoOverride.Type = MaterialOverrideType::Texture;
+				albedoOverride.Texture = checkerTexH;
+				ov.Overrides.push_back(albedoOverride);
 			}
 
 			e.WriteComponent<TransformComponent>().Position += glm::vec3(-2.0f, -2.0f, 6.0f);

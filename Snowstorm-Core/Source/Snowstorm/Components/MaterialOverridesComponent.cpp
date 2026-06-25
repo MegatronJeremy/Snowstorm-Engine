@@ -1,44 +1,153 @@
-﻿#include "MaterialOverridesComponent.hpp"
+#include "MaterialOverridesComponent.hpp"
 #include "Snowstorm/Components/ComponentRegistry.hpp"
 
 #include <rttr/registration.h>
 #include <imgui.h>
 
+#include <glm/gtc/type_ptr.hpp>
+
 namespace Snowstorm
 {
+	const char* MaterialOverrideTypeToString(const MaterialOverrideType type)
+	{
+		switch (type)
+		{
+		case MaterialOverrideType::Float:
+			return "Float";
+		case MaterialOverrideType::Color:
+			return "Color";
+		case MaterialOverrideType::Texture:
+			return "Texture";
+		}
+		return "Float";
+	}
+
+	MaterialOverrideType MaterialOverrideTypeFromString(const std::string& s)
+	{
+		if (s == "Color")
+			return MaterialOverrideType::Color;
+		if (s == "Texture")
+			return MaterialOverrideType::Texture;
+		return MaterialOverrideType::Float;
+	}
+
 	namespace
 	{
+		// True if the entity already overrides a property with this name (so the "Add Override" menu
+		// can grey out duplicates).
+		bool HasOverrideNamed(const MaterialOverridesComponent& mo, const std::string& name)
+		{
+			for (const MaterialOverride& o : mo.Overrides)
+			{
+				if (o.Name == name)
+					return true;
+			}
+			return false;
+		}
+
+		// Draw the value editor for one override row; returns true if the value changed.
+		bool DrawOverrideValue(MaterialOverride& o)
+		{
+			ImGui::SetNextItemWidth(-FLT_MIN);
+			switch (o.Type)
+			{
+			case MaterialOverrideType::Float:
+				return ImGui::DragFloat("##val", &o.Scalar, 0.01f);
+			case MaterialOverrideType::Color:
+				return ImGui::ColorEdit4("##val", glm::value_ptr(o.Color));
+			case MaterialOverrideType::Texture:
+			{
+				uint64_t handle = o.Texture.Value();
+				if (AssetPickerCombo("##val", handle, static_cast<int>(AssetType::Texture)))
+				{
+					o.Texture = AssetHandle{handle};
+					return true;
+				}
+				return false;
+			}
+			}
+			return false;
+		}
+
 		void DrawMaterialOverridesUI(Entity entity)
 		{
 			if (!entity.HasComponent<MaterialOverridesComponent>())
 				return;
 
-			entity.WriteComponentIfChanged<MaterialOverridesComponent>([&](auto& mo)
+			const std::string header = PrettyComponentName("Snowstorm::MaterialOverridesComponent");
+			ImGui::PushID(header.c_str());
+
+			const bool open = ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed);
+
+			// Right-click header to remove the whole component (matches the generic inspector).
+			if (ImGui::BeginPopupContextItem("##compctx"))
 			{
-				const std::string header = PrettyComponentName("Snowstorm::MaterialOverridesComponent");
-				ImGui::PushID(header.c_str());
-				if (ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed))
+				if (ImGui::MenuItem("Remove Component"))
 				{
-					bool baseColor = HasOverride(mo.OverrideMask, MaterialOverrideMask::BaseColor);
-					if (ImGui::Checkbox("Override Base Color", &baseColor))
-						SetOverride(mo.OverrideMask, MaterialOverrideMask::BaseColor, baseColor);
-
-					if (baseColor)
-						ImGui::ColorEdit4("Base Color", &mo.BaseColorOverride.x);
-
-					bool albedo = HasOverride(mo.OverrideMask, MaterialOverrideMask::AlbedoTex);
-					if (ImGui::Checkbox("Override Albedo Texture", &albedo))
-						SetOverride(mo.OverrideMask, MaterialOverrideMask::AlbedoTex, albedo);
-
-					if (albedo)
-					{
-						ImGui::TextDisabled("Albedo: %s", ResolveAssetName(mo.AlbedoTextureOverride.Value()).c_str());
-						// later: asset picker
-					}
+					RequestComponentRemoval(entity, rttr::type::get<MaterialOverridesComponent>());
 				}
-				ImGui::Spacing();
-				ImGui::PopID();
-			});
+				ImGui::EndPopup();
+			}
+
+			if (open)
+			{
+				entity.WriteComponentIfChanged<MaterialOverridesComponent>([&](MaterialOverridesComponent& mo)
+				                                                           {
+					int removeIndex = -1;
+					for (int i = 0; i < static_cast<int>(mo.Overrides.size()); ++i)
+					{
+						MaterialOverride& o = mo.Overrides[i];
+						ImGui::PushID(i);
+
+						if (BeginPropertyTable("##ov"))
+						{
+							ImGui::TableNextRow();
+							ImGui::TableSetColumnIndex(0);
+							ImGui::AlignTextToFramePadding();
+							ImGui::TextUnformatted(o.Name.c_str());
+							ImGui::TableSetColumnIndex(1);
+							DrawOverrideValue(o);
+							EndPropertyTable();
+						}
+
+						ImGui::SameLine();
+						if (ImGui::SmallButton("X"))
+						{
+							removeIndex = i;
+						}
+
+						ImGui::PopID();
+					}
+
+					if (removeIndex >= 0)
+					{
+						mo.Overrides.erase(mo.Overrides.begin() + removeIndex);
+					}
+
+					// "Add Override" lists known material properties not already overridden.
+					if (ImGui::Button("Add Override"))
+					{
+						ImGui::OpenPopup("##add_override");
+					}
+					if (ImGui::BeginPopup("##add_override"))
+					{
+						for (const MaterialOverrideSpec& spec : KnownMaterialOverrides())
+						{
+							const bool already = HasOverrideNamed(mo, spec.Name);
+							if (ImGui::MenuItem(spec.Name, nullptr, false, !already))
+							{
+								MaterialOverride add;
+								add.Name = spec.Name;
+								add.Type = spec.Type;
+								mo.Overrides.push_back(std::move(add));
+							}
+						}
+						ImGui::EndPopup();
+					} });
+			}
+
+			ImGui::Spacing();
+			ImGui::PopID();
 		}
 	}
 
@@ -46,23 +155,27 @@ namespace Snowstorm
 	{
 		using namespace rttr;
 
-		// Keep enum registration (useful for reflection/UI tooling), but NOT for serializing the bitmask itself.
-		registration::enumeration<MaterialOverrideMask>("Snowstorm::MaterialOverrideMask")
-		(
-			value("None",      MaterialOverrideMask::None),
-			value("BaseColor", MaterialOverrideMask::BaseColor),
-			value("AlbedoTex", MaterialOverrideMask::AlbedoTex)
-		);
+		registration::enumeration<MaterialOverrideType>("Snowstorm::MaterialOverrideType")(
+		    value("Float", MaterialOverrideType::Float),
+		    value("Color", MaterialOverrideType::Color),
+		    value("Texture", MaterialOverrideType::Texture));
 
-		registration::class_<MaterialOverridesComponent>("Snowstorm::MaterialOverridesComponent")
-			.property("OverrideMask", &MaterialOverridesComponent::OverrideMask)
-			.property("BaseColorOverride", &MaterialOverridesComponent::BaseColorOverride)
-			.property("AlbedoTextureOverride", &MaterialOverridesComponent::AlbedoTextureOverride);
+		// The override list is serialized by the SceneSerializer override path (sparse JSON array),
+		// not by reflecting these fields; registration is kept for tooling/introspection.
+		registration::class_<MaterialOverride>("Snowstorm::MaterialOverride")
+		    .property("Name", &MaterialOverride::Name)
+		    .property("Type", &MaterialOverride::Type)
+		    .property("Scalar", &MaterialOverride::Scalar)
+		    .property("Color", &MaterialOverride::Color)
+		    .property("Texture", &MaterialOverride::Texture);
+
+		registration::class_<MaterialOverridesComponent>("Snowstorm::MaterialOverridesComponent");
 
 		ComponentRegisterOptions opts{};
 		opts.Serializable = true;
 		opts.DrawInEditor = true;
-		opts.DrawFnOverride = [](const Entity e) { DrawMaterialOverridesUI(e); };
+		opts.DrawFnOverride = [](const Entity e)
+		{ DrawMaterialOverridesUI(e); };
 
 		Snowstorm::RegisterComponent<MaterialOverridesComponent>(opts);
 	}

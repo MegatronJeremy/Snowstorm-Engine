@@ -77,6 +77,13 @@ namespace Snowstorm
 	std::vector<AssetChoice> ListAssetsOfType(int assetTypeValue);
 	bool HasAssetListProvider();
 
+	// A combo that lets the user pick an asset of the given type (by AssetType's int value), showing
+	// resolved names and a "(none)" clear entry. Writes the chosen handle into `handle` and returns
+	// true if it changed. `id` scopes the widget. Reused by the inspector's UUID fields and by
+	// per-component editors (e.g. material overrides). Requires an installed asset-list provider; if
+	// none is installed it draws a read-only name and returns false.
+	bool AssetPickerCombo(const char* id, uint64_t& handle, int assetTypeValue);
+
 	// Whether this component type may be removed from an entity in the inspector. Identity/name
 	// components (ID, Tag) are structural and never removable.
 	bool IsComponentRemovable(const rttr::type& type);

@@ -96,6 +96,45 @@ namespace Snowstorm
 		return std::to_string(handle); // fallback: raw handle when unresolved
 	}
 
+	bool AssetPickerCombo(const char* id, uint64_t& handle, const int assetTypeValue)
+	{
+		if (!HasAssetListProvider())
+		{
+			ImGui::TextDisabled("%s", ResolveAssetName(handle).c_str());
+			return false;
+		}
+
+		bool changed = false;
+		const std::string currentName = ResolveAssetName(handle);
+		if (ImGui::BeginCombo(id, currentName.c_str()))
+		{
+			if (ImGui::Selectable("(none)", handle == 0))
+			{
+				handle = 0;
+				changed = true;
+			}
+
+			for (const std::vector<AssetChoice> choices = ListAssetsOfType(assetTypeValue);
+			     const auto& [Handle, Name] : choices)
+			{
+				const bool selected = (Handle == handle);
+				ImGui::PushID(static_cast<int>(Handle));
+				if (ImGui::Selectable(Name.c_str(), selected))
+				{
+					handle = Handle;
+					changed = true;
+				}
+				if (selected)
+				{
+					ImGui::SetItemDefaultFocus();
+				}
+				ImGui::PopID();
+			}
+			ImGui::EndCombo();
+		}
+		return changed;
+	}
+
 	namespace
 	{
 		// Start a new table row: label in the (clipping) left column, widget filling the right.
@@ -249,33 +288,10 @@ namespace Snowstorm
 			const rttr::variant assetTypeMeta = prop.get_metadata("AssetType");
 			if (assetTypeMeta.is_valid() && HasAssetListProvider())
 			{
-				const int assetTypeValue = assetTypeMeta.to_int();
-				const std::string currentName = ResolveAssetName(current);
-
-				if (ImGui::BeginCombo(hidden.c_str(), currentName.c_str()))
+				uint64_t handle = current;
+				if (AssetPickerCombo(hidden.c_str(), handle, assetTypeMeta.to_int()))
 				{
-					// "(none)" clears the handle.
-					if (ImGui::Selectable("(none)", current == 0))
-					{
-						propChanged = prop.set_value(instance, UUID{0});
-					}
-
-					for (const std::vector<AssetChoice> choices = ListAssetsOfType(assetTypeValue);
-					     const auto& [Handle, Name] : choices)
-					{
-						const bool selected = (Handle == current);
-						ImGui::PushID(static_cast<int>(Handle));
-						if (ImGui::Selectable(Name.c_str(), selected))
-						{
-							propChanged = prop.set_value(instance, UUID{Handle});
-						}
-						if (selected)
-						{
-							ImGui::SetItemDefaultFocus();
-						}
-						ImGui::PopID();
-					}
-					ImGui::EndCombo();
+					propChanged = prop.set_value(instance, UUID{handle});
 				}
 				return propChanged;
 			}
