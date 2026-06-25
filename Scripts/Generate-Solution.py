@@ -17,6 +17,7 @@ PACKAGES = [
     "stb",
     "entt",
     "imgui[vulkan-binding,glfw-binding,docking-experimental,glfw-binding]",
+    "imguizmo",
     "rttr",
     "gli",
     "volk",

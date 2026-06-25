@@ -25,7 +25,11 @@ target_include_directories(Snowstorm-Editor PUBLIC
     ${CMAKE_SOURCE_DIR}/Snowstorm-Core/Source
 )
 
+# ImGuizmo: editor-only transform gizmos drawn over the viewport.
+find_package(imguizmo CONFIG REQUIRED)
+
 # Link libraries
 target_link_libraries(Snowstorm-Editor PUBLIC
     Snowstorm-Core  # Link the core library
+    imguizmo::imguizmo
 )

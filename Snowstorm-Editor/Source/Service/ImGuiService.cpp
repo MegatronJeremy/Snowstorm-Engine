@@ -1,6 +1,7 @@
 #include "ImGuiService.hpp"
 
 #include <imgui.h>
+#include <ImGuizmo.h>
 
 #include "EditorTheme.hpp"
 #include "Platform/Windows/WindowsWindow.hpp"
@@ -19,11 +20,11 @@ namespace Snowstorm
 		ImGuiIO& io = ImGui::GetIO();
 		(void)io;
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
-		//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
-		io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; // Enable Docking
+		// io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
+		io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;   // Enable Docking
 		io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // Enable Multi-Viewport / Platform Windows
-		//io.ConfigViewportsNoAutoMerge = true;
-		//io.ConfigViewportsNoTaskBarIcon = true;
+		// io.ConfigViewportsNoAutoMerge = true;
+		// io.ConfigViewportsNoTaskBarIcon = true;
 
 		// NERV/Evangelion editor theme (amber on near-black, sharp corners, hard borders).
 		// Optionally swap in a monospace font if one is present under Assets/Fonts (load before
@@ -54,6 +55,7 @@ namespace Snowstorm
 		// 2. Start the backends
 		Renderer::ImGuiNewFrame();
 		ImGui::NewFrame();
+		ImGuizmo::BeginFrame(); // must follow ImGui::NewFrame each frame for gizmos to work
 	}
 
 	void ImGuiService::PostUpdate(Timestep ts)
