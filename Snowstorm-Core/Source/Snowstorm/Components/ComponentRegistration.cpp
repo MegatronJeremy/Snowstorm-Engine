@@ -10,6 +10,7 @@
 #include "MeshComponent.hpp"
 #include "NativeScriptComponent.hpp"
 #include "RenderTargetComponent.hpp"
+#include "RotatorComponent.hpp"
 #include "SpriteComponent.hpp"
 #include "TagComponent.hpp"
 #include "TransformComponent.hpp"
@@ -37,28 +38,29 @@ namespace Snowstorm
 		RegisterViewportInteractionComponent();
 		RegisterCameraTargetComponent();
 		RegisterVisibilityComponents();
+		RegisterRotatorComponent();
 
 		registration::class_<NativeScriptComponent>("Snowstorm::NativeScriptComponent")
-			.constructor()
-			.property("Instance", &NativeScriptComponent::Instance);
+		    .constructor()
+		    .property("Instance", &NativeScriptComponent::Instance);
 		Snowstorm::RegisterComponent<NativeScriptComponent>();
 
 		registration::class_<SpriteComponent>("Snowstorm::SpriteComponent")
-			.constructor()
-			.property("TilingFactor", &SpriteComponent::TilingFactor)
-			.property("TintColor", &SpriteComponent::TintColor);
+		    .constructor()
+		    .property("TilingFactor", &SpriteComponent::TilingFactor)
+		    .property("TintColor", &SpriteComponent::TintColor);
 		Snowstorm::RegisterComponent<SpriteComponent>();
 
 		registration::class_<TagComponent>("Snowstorm::TagComponent")
-			.constructor()
-			.property("Tag", &TagComponent::Tag);
+		    .constructor()
+		    .property("Tag", &TagComponent::Tag);
 		Snowstorm::RegisterComponent<TagComponent>();
 
 		registration::class_<TransformComponent>("Snowstorm::TransformComponent")
-			.constructor()
-			.property("Position", &TransformComponent::Position)
-			.property("Rotation", &TransformComponent::Rotation)
-			.property("Scale", &TransformComponent::Scale);
+		    .constructor()
+		    .property("Position", &TransformComponent::Position)
+		    .property("Rotation", &TransformComponent::Rotation)
+		    .property("Scale", &TransformComponent::Scale);
 		Snowstorm::RegisterComponent<TransformComponent>();
 	}
 }

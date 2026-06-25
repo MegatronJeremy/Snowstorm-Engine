@@ -11,6 +11,7 @@
 #include "Snowstorm/Systems/MaterialResolveSystem.hpp"
 #include "Snowstorm/Systems/MeshResolveSystem.hpp"
 #include "Snowstorm/Systems/RenderSystem.hpp"
+#include "Snowstorm/Systems/RotatorSystem.hpp"
 #include "Snowstorm/Systems/RuntimeInitSystem.hpp"
 #include "Snowstorm/Systems/ScriptSystem.hpp"
 #include "Snowstorm/Systems/ShaderReloadSystem.hpp"
@@ -26,6 +27,7 @@ namespace Snowstorm
 
 		sm.RegisterSystem<ScriptSystem>(SystemPhase::Logic);
 		sm.RegisterSystem<CameraControllerSystem>(SystemPhase::Logic);
+		sm.RegisterSystem<RotatorSystem>(SystemPhase::Logic);
 
 		sm.RegisterSystem<ShaderReloadSystem>(SystemPhase::AssetSync);
 
