@@ -24,6 +24,7 @@
 #include "Snowstorm/Components/VisibilityComponents.hpp"
 #include "Snowstorm/ECS/SystemManager.hpp"
 #include "Snowstorm/Lighting/LightingComponents.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Systems/CoreSystems.hpp"
 #include "Snowstorm/World/EditorCommandsSingleton.hpp"
@@ -120,6 +121,13 @@ namespace Snowstorm
 		}
 
 		SS_CORE_INFO("Loading scene '{}'", scenePath);
+
+		// Opening a scene mid-frame (e.g. from the Content Browser) destroys the old scene's GPU
+		// resources (meshes/textures) the moment their refcounts drop in Clear(). Command buffers
+		// from frames still in flight reference those resources, so tearing them down without first
+		// draining the GPU causes a device-lost (the next texture upload's submit then fails). Wait
+		// for the GPU to go idle before wiping — the standard "safe point" for a scene transition.
+		Renderer::WaitIdle();
 
 		// "Open Scene" semantics: wipe world entities first.
 		m_ActiveWorld->Clear();
