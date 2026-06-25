@@ -45,6 +45,14 @@ namespace Snowstorm
 		ImGui::Begin("Settings");
 		EditorTheme::SectionHeader("Performance");
 
+		// Build config: Debug runs glm/ECS-heavy systems (e.g. culling) 10-50x slower than Release,
+		// so timings are only meaningful in Release. Make the config impossible to misread.
+#ifdef NDEBUG
+		ImGui::TextDisabled("Build: Release");
+#else
+		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.2f, 1.0f), "Build: DEBUG (timings not representative)");
+#endif
+
 		const ImGuiIO& io = ImGui::GetIO();
 		ImGui::Text("FPS:        %.1f", io.Framerate);
 		ImGui::Text("Frame:      %.2f ms", io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f);
