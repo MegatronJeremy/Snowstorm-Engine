@@ -145,6 +145,37 @@ Keep those two in sync when adding a dependency.
 solution/project files (`*.sln`, `*.vcxproj*`, `*.cmake`, `CMakeCache.txt`, `ALL_BUILD.*`,
 `ZERO_CHECK.*`, `Makefile`). Never commit those or compiled artifacts. Commit messages in English.
 
+## Think like a real engine
+
+When designing or proposing anything, first ask: **how would a serious production engine
+(Unreal, Unity, Godot, modern in-house) do this?** State that reference model briefly, then
+deliberately decide how far to go for *this* project. The point is not to build AAA infrastructure
+— it's a thesis platform — but to make the simplification a *conscious* choice with the real shape
+in view, so today's shortcut is a known subset of the right design rather than an accidental dead
+end. Call out which parts are intentionally deferred and why, and prefer shortcuts that are a
+*smaller version of* the real thing (so they extend later) over ones that would have to be ripped
+out. When the "real" way is genuinely cheap, just do it the real way.
+
+Worked example — **asset pipeline** (the engine's current biggest simplification):
+
+- **Real engines separate source assets from cooked runtime assets.** The file you drop in
+  (`.obj`/`.png`/`.fbx`) is the *source*; an *importer* cooks it once into a GPU-ready artifact
+  (mesh → packed vertex/index buffers; texture → BC7/ASTC + mips; shader → SPIR-V/DXIL) plus a
+  sidecar `.meta` holding a stable GUID + import settings (cf. Unity's `foo.fbx.meta`). Scenes
+  reference the **GUID**, never the path — so moving/renaming a file never breaks references.
+- An **asset database** maps `GUID → (source, cooked, dependencies, content hash)`; a **file
+  watcher** re-cooks only what changed (and its dependents) and hot-reloads it; the runtime
+  **streams** cooked assets asynchronously under a memory budget; builds cook only the transitive
+  closure of what scenes actually reference (no dead content shipped).
+- **Where Snowstorm is today (deliberately):** `Import` just adds a `handle → path` row to a JSON
+  registry; there is no cook step (Assimp/dxc/stb run every startup), no `.meta`, no hot-reload, no
+  async, no GUID-vs-path indirection (handles are stable but the registry stores raw paths). This is
+  acceptable for the thesis. The editor's manual "Import" button mirrors the fact that, in a real
+  engine, import is a *deliberate, potentially expensive* step — not a reason the current trivial
+  version must stay manual. The honest upgrade path, in order: auto-import on scan → file watcher →
+  a cook step with `.meta` sidecars → async streaming. Treat the existing `AssetRegistry` /
+  `AssetManagerSingleton` as the seam where that grows.
+
 ## Verify before claiming
 
 - This is graphics code: "renders/looks correct" can only be confirmed by **building and running**
