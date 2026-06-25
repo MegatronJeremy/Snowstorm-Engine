@@ -1,7 +1,6 @@
 #include "ContentBrowserSystem.hpp"
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
-#include "Singletons/EditorNotificationsSingleton.hpp"
 #include "Service/EditorTheme.hpp"
 
 #include <imgui.h>
@@ -68,7 +67,20 @@ namespace Snowstorm
 		for (auto it = std::filesystem::recursive_directory_iterator(root, ec);
 		     it != std::filesystem::recursive_directory_iterator(); it.increment(ec))
 		{
-			if (ec || !it->is_regular_file(ec))
+			if (ec)
+			{
+				continue;
+			}
+
+			// Skip assets/cache/: those are generated cooked artifacts (gitignored), not source
+			// assets — don't list or import them.
+			if (it->is_directory(ec) && it->path().filename() == "cache")
+			{
+				it.disable_recursion_pending();
+				continue;
+			}
+
+			if (!it->is_regular_file(ec))
 			{
 				continue;
 			}
@@ -95,6 +107,26 @@ namespace Snowstorm
 			if (a.Type != b.Type) return a.Type < b.Type;
 			return a.DisplayName < b.DisplayName; });
 
+		// Auto-import: every discovered source file gets a registry handle so it is immediately
+		// usable in the inspector picker. Import is idempotent (case-insensitive dedup), so this is
+		// safe to run on every scan and never creates duplicates. This is the trivial current form of
+		// a real engine's import step (see CLAUDE.md "Think like a real engine"); the deliberate next
+		// step up is a file watcher so this happens without an explicit scan.
+		auto& assets = m_World->GetSingleton<AssetManagerSingleton>();
+		bool importedAny = false;
+		for (const Entry& entry : m_Entries)
+		{
+			if (assets.FindHandle(entry.Path, entry.Type) == 0)
+			{
+				assets.Import(entry.Path, entry.Type);
+				importedAny = true;
+			}
+		}
+		if (importedAny)
+		{
+			assets.SaveRegistry("assets/AssetRegistry.json");
+		}
+
 		m_Scanned = true;
 	}
 
@@ -108,6 +140,8 @@ namespace Snowstorm
 		ImGui::Begin("Content Browser");
 		EditorTheme::SectionHeader("Content Browser");
 
+		// Files under assets/ are auto-imported on scan, so this panel just lists them. Use Rescan
+		// after dropping in new files (until a file watcher makes even that unnecessary).
 		if (ImGui::Button("Rescan"))
 		{
 			Rescan();
@@ -116,15 +150,10 @@ namespace Snowstorm
 		ImGui::TextDisabled("%zu files", m_Entries.size());
 		ImGui::Separator();
 
-		auto& assets = m_World->GetSingleton<AssetManagerSingleton>();
-		auto& notify = m_World->GetSingleton<EditorNotificationsSingleton>();
-
 		if (ImGui::BeginChild("##content_list"))
 		{
 			for (const Entry& entry : m_Entries)
 			{
-				const bool imported = assets.FindHandle(entry.Path, entry.Type) != 0;
-
 				// Colored type tag.
 				ImGui::PushStyleColor(ImGuiCol_Text, TypeColor(entry.Type));
 				ImGui::TextUnformatted(AssetTypeToString(entry.Type).c_str());
@@ -132,22 +161,6 @@ namespace Snowstorm
 				ImGui::SameLine(110.0f);
 
 				ImGui::TextUnformatted(entry.DisplayName.c_str());
-
-				ImGui::SameLine();
-				ImGui::PushID(entry.Path.c_str());
-				if (imported)
-				{
-					ImGui::BeginDisabled();
-					ImGui::SmallButton("Imported");
-					ImGui::EndDisabled();
-				}
-				else if (ImGui::SmallButton("Import"))
-				{
-					assets.Import(entry.Path, entry.Type);
-					assets.SaveRegistry("assets/AssetRegistry.json");
-					notify.Push("Imported " + entry.DisplayName, EditorToastType::Success);
-				}
-				ImGui::PopID();
 			}
 		}
 		ImGui::EndChild();

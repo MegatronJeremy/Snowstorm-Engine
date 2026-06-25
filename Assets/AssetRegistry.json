@@ -1,24 +1,24 @@
 {
   "Assets": [
     {
+      "Handle": "14167707854468761414",
+      "Path": "assets/meshes/girl.obj",
+      "Type": "Mesh"
+    },
+    {
       "Handle": "14863079243352112687",
       "Path": "assets/materials/White.ssmat",
       "Type": "Material"
     },
     {
-      "Handle": "14167707854468761414",
-      "Path": "assets/meshes/girl.obj",
+      "Handle": "5810267832183663728",
+      "Path": "assets/meshes/cube.obj",
       "Type": "Mesh"
     },
     {
       "Handle": "12465655103903380530",
       "Path": "assets/textures/Checkerboard.png",
       "Type": "Texture"
-    },
-    {
-      "Handle": "5810267832183663728",
-      "Path": "assets/meshes/cube.obj",
-      "Type": "Mesh"
     },
     {
       "Handle": "12112538743247314239",
@@ -31,9 +31,34 @@
       "Type": "Material"
     },
     {
+      "Handle": "5408720500040009833",
+      "Path": "assets/Textures/ChernoLogo.png",
+      "Type": "Texture"
+    },
+    {
       "Handle": "13869174114393927166",
       "Path": "assets/materials/Mandelbrot.ssmat",
       "Type": "Material"
+    },
+    {
+      "Handle": "15489220767351234531",
+      "Path": "assets/Textures/RPGpack_sheet_2X.png",
+      "Type": "Texture"
+    },
+    {
+      "Handle": "4098444733576884815",
+      "Path": "assets/Textures/skybox.dds",
+      "Type": "Texture"
+    },
+    {
+      "Handle": "11226544796140713220",
+      "Path": "assets/Shaders/DefaultLit.hlsl",
+      "Type": "Shader"
+    },
+    {
+      "Handle": "11495008595649888680",
+      "Path": "assets/Shaders/Mandelbrot.hlsl",
+      "Type": "Shader"
     }
   ]
 }
