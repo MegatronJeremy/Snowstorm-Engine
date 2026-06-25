@@ -60,16 +60,26 @@ namespace Snowstorm
 		ImGui::Text("Triangles:  %u", stats.Triangles);
 
 		ImGui::Spacing();
-		EditorTheme::SectionHeader("CPU phases (ms)");
+		EditorTheme::SectionHeader("CPU phases / systems (ms)");
 
-		// Per-phase CPU time: the "where did the frame go" breakdown. Lets us see whether the cost is
-		// in Render submission or somewhere else before optimizing.
-		const auto& phaseMs = m_World->GetSystemManager().GetPhaseTimingsMs();
+		// Per-phase + per-system CPU time: the "where did the frame go" breakdown, down to the
+		// individual system, so we target the actual hot spot instead of guessing.
+		const SystemManager& sm = m_World->GetSystemManager();
+		const auto& phaseMs = sm.GetPhaseTimingsMs();
+		const auto& sysMs = sm.GetSystemTimingsMs();
 		for (size_t i = 0; i < phaseMs.size(); ++i)
 		{
-			if (phaseMs[i] >= 0.005f) // hide phases that are essentially free
+			if (phaseMs[i] < 0.005f) // hide phases that are essentially free
 			{
-				ImGui::Text("%-10s %.2f", PhaseName(i), phaseMs[i]);
+				continue;
+			}
+			ImGui::Text("%-10s %.2f", PhaseName(i), phaseMs[i]);
+			for (const auto& [name, ms] : sysMs[i])
+			{
+				if (ms >= 0.005f)
+				{
+					ImGui::Text("  %-18s %.2f", name.c_str(), ms);
+				}
 			}
 		}
 
