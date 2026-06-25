@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <functional>
+#include <string>
 
 namespace Snowstorm
 {
@@ -11,14 +12,14 @@ namespace Snowstorm
 	public:
 		std::function<bool()> SaveScene;
 
+		// Open (load) a scene from a .world file path, replacing the current scene. Returns success.
+		// Bound by the editor layer.
+		std::function<bool(const std::string&)> OpenScene;
+
 		// Create a fresh, empty entity (Tag + ID only) and return it. Bound by the editor layer.
 		std::function<Entity()> CreateEntity;
 
 		// Queue an entity for deferred destruction. Bound by the editor layer.
 		std::function<void(Entity)> DeleteEntity;
-
-		// Replace the current scene with the procedural stress-test showcase scene (wipes the world,
-		// rebuilds viewport + camera + content). Bound by the editor layer.
-		std::function<void()> BuildStressScene;
 	};
 }

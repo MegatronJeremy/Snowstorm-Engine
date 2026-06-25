@@ -1,7 +1,9 @@
 #include "ContentBrowserSystem.hpp"
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
+#include "Snowstorm/World/EditorCommandsSingleton.hpp"
 #include "Service/EditorTheme.hpp"
+#include "Singletons/EditorNotificationsSingleton.hpp"
 
 #include <imgui.h>
 
@@ -31,6 +33,10 @@ namespace Snowstorm
 			{
 				return AssetType::Shader;
 			}
+			if (ext == ".world")
+			{
+				return AssetType::Scene;
+			}
 			return AssetType::None;
 		}
 
@@ -46,6 +52,8 @@ namespace Snowstorm
 				return {1.00f, 0.65f, 0.20f, 1.0f}; // amber
 			case AssetType::Shader:
 				return {0.85f, 0.40f, 0.85f, 1.0f}; // magenta
+			case AssetType::Scene:
+				return {0.95f, 0.85f, 0.30f, 1.0f}; // yellow
 			default:
 				return {0.6f, 0.6f, 0.6f, 1.0f};
 			}
@@ -116,6 +124,12 @@ namespace Snowstorm
 		bool importedAny = false;
 		for (const Entry& entry : m_Entries)
 		{
+			// Scenes are opened by path (double-click), not referenced by handle, so they are not
+			// registry assets — don't auto-import them.
+			if (entry.Type == AssetType::Scene)
+			{
+				continue;
+			}
 			if (assets.FindHandle(entry.Path, entry.Type) == 0)
 			{
 				assets.Import(entry.Path, entry.Type);
@@ -150,17 +164,38 @@ namespace Snowstorm
 		ImGui::TextDisabled("%zu files", m_Entries.size());
 		ImGui::Separator();
 
+		ImGui::TextDisabled("Double-click a Scene to open it.");
+		ImGui::Separator();
+
 		if (ImGui::BeginChild("##content_list"))
 		{
-			for (const Entry& entry : m_Entries)
+			for (int i = 0; i < static_cast<int>(m_Entries.size()); ++i)
 			{
+				const Entry& entry = m_Entries[i];
+				ImGui::PushID(i);
+
 				// Colored type tag.
 				ImGui::PushStyleColor(ImGuiCol_Text, TypeColor(entry.Type));
 				ImGui::TextUnformatted(AssetTypeToString(entry.Type).c_str());
 				ImGui::PopStyleColor();
 				ImGui::SameLine(110.0f);
 
-				ImGui::TextUnformatted(entry.DisplayName.c_str());
+				// Selectable row; double-clicking a Scene opens it.
+				ImGui::Selectable(entry.DisplayName.c_str());
+				if (entry.Type == AssetType::Scene && ImGui::IsItemHovered() &&
+				    ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+				{
+					auto& cmds = SingletonView<EditorCommandsSingleton>();
+					auto& notify = SingletonView<EditorNotificationsSingleton>();
+					if (cmds.OpenScene)
+					{
+						const bool ok = cmds.OpenScene(entry.Path);
+						notify.Push(ok ? "Opened " + entry.DisplayName : "Failed to open " + entry.DisplayName,
+						            ok ? EditorToastType::Success : EditorToastType::Error);
+					}
+				}
+
+				ImGui::PopID();
 			}
 		}
 		ImGui::EndChild();

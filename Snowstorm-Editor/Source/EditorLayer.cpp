@@ -91,6 +91,11 @@ namespace Snowstorm
 				return SaveActiveScene();
 			};
 
+			cmds.OpenScene = [this](const std::string& path) -> bool
+			{
+				return TryLoadWorldFromFile(path);
+			};
+
 			World* world = m_ActiveWorld.get();
 			cmds.CreateEntity = [world]() -> Entity
 			{
@@ -99,15 +104,6 @@ namespace Snowstorm
 			cmds.DeleteEntity = [world](const Entity e)
 			{
 				world->DestroyEntity(e);
-			};
-
-			cmds.BuildStressScene = [this]()
-			{
-				// "New scene" semantics: wipe entities, then rebuild viewport + cameras + content.
-				m_ActiveWorld->Clear();
-				CreateMainViewportEntity();
-				CreateCameraEntities();
-				BuildStressScene(*m_ActiveWorld);
 			};
 		}
 
@@ -142,14 +138,26 @@ namespace Snowstorm
 
 	void EditorLayer::LoadOrCreateStartupWorld()
 	{
-		// CVar-gated: build the heavy stress-test scene at startup (smoke-testable, benchmark hook)
-		// instead of loading the saved startup world.
-		if (CVars::StressScene.Get())
+		// One-shot bake tool: generate the stress-test scene, serialize it to a .world asset, exit.
+		// Afterwards the scene is opened from the Content Browser like any other .world.
+		if (CVars::BakeStressScene.Get())
 		{
 			CreateMainViewportEntity();
 			CreateCameraEntities();
 			BuildStressScene(*m_ActiveWorld);
-			m_ActiveScenePath = "assets/scenes/Stress.world";
+
+			const std::string out = "assets/scenes/Stress.world";
+			if (SaveWorldToFile(out))
+			{
+				SS_CORE_INFO("Baked stress scene to '{}'.", out);
+			}
+			else
+			{
+				SS_CORE_ERROR("Failed to bake stress scene to '{}'.", out);
+			}
+
+			Application::Get().Close();
+			m_ActiveScenePath = out;
 			return;
 		}
 

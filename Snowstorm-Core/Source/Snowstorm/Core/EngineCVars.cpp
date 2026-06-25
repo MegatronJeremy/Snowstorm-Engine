@@ -9,5 +9,5 @@ namespace Snowstorm::CVars
 
 	CVar<bool> ValidationExtra{"validation.extra", false, "Enable synchronization + best-practices Vulkan validation"};
 
-	CVar<bool> StressScene{"scene.stress", false, "Build the procedural stress-test scene at startup instead of the saved startup world"};
+	CVar<bool> BakeStressScene{"scene.bake_stress", false, "Build the procedural stress-test scene, save it to Assets/Scenes/Stress.world, then exit"};
 }

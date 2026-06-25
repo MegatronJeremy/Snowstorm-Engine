@@ -18,7 +18,8 @@ namespace Snowstorm::CVars
 	// Enable deeper Vulkan validation (synchronization + best-practices) at instance creation.
 	extern CVar<bool> ValidationExtra;
 
-	// Build the procedural stress-test showcase scene at startup instead of loading the saved startup
-	// world. Lets the smoke test exercise the heavy scene headlessly and serves as a benchmark hook.
-	extern CVar<bool> StressScene;
+	// One-shot tool: build the procedural stress-test scene, serialize it to Assets/Scenes/Stress.world,
+	// then exit. Run this to (re)generate the stress scene as a normal data asset; afterwards the scene
+	// is opened from the Content Browser like any other .world.
+	extern CVar<bool> BakeStressScene;
 }
