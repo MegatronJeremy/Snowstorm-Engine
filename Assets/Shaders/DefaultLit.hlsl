@@ -43,7 +43,11 @@ float4 main(PSInput i) : SV_Target0
 	// so objects sharing one material can each show a different texture (and still batch).
 	const uint instAlbedo = Instances[i.InstanceID].AlbedoTextureIndex;
 	const uint albedoIndex = (instAlbedo != 0) ? instAlbedo : AlbedoTextureIndex;
-	const float3 albedo = Textures[albedoIndex].Sample(LinearSampler, i.TexCoord).rgb * BaseColor.rgb;
+	// Instancing makes albedoIndex vary BETWEEN instances in a single draw, so the bindless index is
+	// not dynamically uniform across the draw. Indexing a descriptor array with a non-uniform index is
+	// undefined behaviour unless wrapped in NonUniformResourceIndex() — without it you get garbage /
+	// flickering samples. (This worked pre-instancing only because each object was its own draw.)
+	const float3 albedo = Textures[NonUniformResourceIndex(albedoIndex)].Sample(LinearSampler, i.TexCoord).rgb * BaseColor.rgb;
 	const float3 normal = normalize(i.NormalWS);
 	const float3 lit = ComputeLighting(normal, albedo);
 	return float4(lit, BaseColor.a);

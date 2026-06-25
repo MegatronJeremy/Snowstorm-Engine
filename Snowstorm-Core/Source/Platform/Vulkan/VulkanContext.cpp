@@ -269,6 +269,10 @@ namespace Snowstorm
 		features12.runtimeDescriptorArray = VK_TRUE;
 		features12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
 		features12.descriptorIndexing = VK_TRUE;
+		// Required for NonUniformResourceIndex() in shaders: with instancing, one draw samples the
+		// bindless array with an index that varies per instance (not dynamically uniform). Without this
+		// feature + the NonUniformResourceIndex wrap, such reads are undefined (garbage/flicker).
+		features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
 
 		features12.pNext = &features13;
 
