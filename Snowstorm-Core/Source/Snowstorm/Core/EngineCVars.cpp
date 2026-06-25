@@ -8,4 +8,6 @@ namespace Snowstorm::CVars
 	CVar<bool> ValidationNonFatal{"validation.nonfatal", false, "Log Vulkan validation errors instead of asserting on the first"};
 
 	CVar<bool> ValidationExtra{"validation.extra", false, "Enable synchronization + best-practices Vulkan validation"};
+
+	CVar<bool> StressScene{"scene.stress", false, "Build the procedural stress-test scene at startup instead of the saved startup world"};
 }

@@ -8,6 +8,7 @@
 #include "Examples/MandelbrotSet/MandelbrotControllerSystem.hpp"
 #include "Singletons/EditorNotificationsSingleton.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 
 #include "Snowstorm/Components/ComponentRegistry.hpp"
 #include "Snowstorm/Components/CameraComponent.hpp"
@@ -28,6 +29,8 @@
 #include "Snowstorm/World/EditorCommandsSingleton.hpp"
 #include "Snowstorm/World/EditorSelectionSingleton.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
+
+#include "StressScene.hpp"
 
 #include "System/ContentBrowserSystem.hpp"
 #include "System/DockspaceSetupSystem.hpp"
@@ -97,6 +100,15 @@ namespace Snowstorm
 			{
 				world->DestroyEntity(e);
 			};
+
+			cmds.BuildStressScene = [this]()
+			{
+				// "New scene" semantics: wipe entities, then rebuild viewport + cameras + content.
+				m_ActiveWorld->Clear();
+				CreateMainViewportEntity();
+				CreateCameraEntities();
+				BuildStressScene(*m_ActiveWorld);
+			};
 		}
 
 		RegisterCoreSystems(*m_ActiveWorld); // engine systems (shared with a future runtime)
@@ -130,6 +142,17 @@ namespace Snowstorm
 
 	void EditorLayer::LoadOrCreateStartupWorld()
 	{
+		// CVar-gated: build the heavy stress-test scene at startup (smoke-testable, benchmark hook)
+		// instead of loading the saved startup world.
+		if (CVars::StressScene.Get())
+		{
+			CreateMainViewportEntity();
+			CreateCameraEntities();
+			BuildStressScene(*m_ActiveWorld);
+			m_ActiveScenePath = "assets/scenes/Stress.world";
+			return;
+		}
+
 		// Pick any extension you like; this is just a placeholder until serialization lands.
 		static constexpr const char* kStartupScenePath = "assets/scenes/Startup.world";
 		m_ActiveScenePath = kStartupScenePath;

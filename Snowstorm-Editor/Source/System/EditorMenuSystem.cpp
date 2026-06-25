@@ -73,6 +73,17 @@ namespace Snowstorm
 				ImGui::EndMenu();
 			}
 
+			if (ImGui::BeginMenu("Scene"))
+			{
+				const bool canBuild = static_cast<bool>(cmds.BuildStressScene);
+				if (ImGui::MenuItem("Build Stress Scene", nullptr, false, canBuild))
+				{
+					cmds.BuildStressScene();
+					notify.Push("Stress scene built", EditorToastType::Success);
+				}
+				ImGui::EndMenu();
+			}
+
 			ImGui::EndMenuBar();
 		}
 

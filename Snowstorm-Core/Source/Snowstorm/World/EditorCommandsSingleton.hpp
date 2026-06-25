@@ -16,5 +16,9 @@ namespace Snowstorm
 
 		// Queue an entity for deferred destruction. Bound by the editor layer.
 		std::function<void(Entity)> DeleteEntity;
+
+		// Replace the current scene with the procedural stress-test showcase scene (wipes the world,
+		// rebuilds viewport + camera + content). Bound by the editor layer.
+		std::function<void()> BuildStressScene;
 	};
 }
