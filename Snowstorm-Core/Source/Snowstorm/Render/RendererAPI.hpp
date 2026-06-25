@@ -28,6 +28,11 @@ namespace Snowstorm
 		virtual bool BeginFrame() = 0;
 		virtual void EndFrame() = 0;
 
+		// CPU time (ms) spent in the last BeginFrame blocking on the in-flight fence — i.e. waiting
+		// for the GPU/vsync. This is "GPU/present wait", not CPU work; the editor overlay shows it
+		// separately so a system's wall-clock time isn't misread as CPU cost when it's really a stall.
+		virtual float GetLastGpuWaitMs() const = 0;
+
 		// Index of the frame in flight (0..N-1) if using a multi-buffered setup
 		virtual uint32_t GetCurrentFrameIndex() const = 0;
 

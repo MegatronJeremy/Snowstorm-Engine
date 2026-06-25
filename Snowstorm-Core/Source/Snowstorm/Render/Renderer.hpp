@@ -21,6 +21,9 @@ namespace Snowstorm
 		static bool BeginFrame();
 		static void EndFrame();
 
+		// CPU ms spent in the last BeginFrame waiting on the GPU/vsync fence (a stall, not CPU work).
+		static float GetLastGpuWaitMs();
+
 		// Current frame info
 		static uint32_t GetCurrentFrameIndex();
 		static uint32_t GetFramesInFlight();

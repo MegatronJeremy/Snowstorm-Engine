@@ -169,6 +169,12 @@ namespace Snowstorm
 		s_API->WaitIdle();
 	}
 
+	float Renderer::GetLastGpuWaitMs()
+	{
+		SS_CORE_ASSERT(s_API, "Renderer not initialized");
+		return s_API->GetLastGpuWaitMs();
+	}
+
 	uint32_t Renderer::GetCurrentFrameIndex()
 	{
 		SS_CORE_ASSERT(s_API, "Renderer not initialized");

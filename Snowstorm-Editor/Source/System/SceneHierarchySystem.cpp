@@ -4,6 +4,7 @@
 
 #include "Snowstorm/ECS/SystemManager.hpp"
 #include "Snowstorm/ECS/SystemPhase.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererAPI.hpp"
 #include "Snowstorm/Render/RendererSingleton.hpp"
 #include "Snowstorm/World/World.hpp"
@@ -48,6 +49,12 @@ namespace Snowstorm
 		ImGui::Text("FPS:        %.1f", io.Framerate);
 		ImGui::Text("Frame:      %.2f ms", io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f);
 
+		// GPU/vsync wait: CPU time blocked on the in-flight fence in BeginFrame. This is a stall, not
+		// CPU work — and because BeginFrame is called from inside RenderSystem, the per-system "Render"
+		// number below INCLUDES this wait. Subtract it to read the true CPU submission cost.
+		const float gpuWaitMs = Renderer::GetLastGpuWaitMs();
+		ImGui::Text("GPU wait:   %.2f ms", gpuWaitMs);
+
 		ImGui::Spacing();
 
 		// Last scene-pass GPU submission stats (RendererSingleton::RenderStats). DrawCalls == Instances
@@ -61,9 +68,12 @@ namespace Snowstorm
 
 		ImGui::Spacing();
 		EditorTheme::SectionHeader("CPU phases / systems (ms)");
+		ImGui::TextDisabled("(Render includes GPU wait above)");
 
 		// Per-phase + per-system CPU time: the "where did the frame go" breakdown, down to the
-		// individual system, so we target the actual hot spot instead of guessing.
+		// individual system, so we target the actual hot spot instead of guessing. NOTE: a system that
+		// blocks on the GPU (RenderSystem -> BeginFrame fence wait) shows that stall in its time; see
+		// the "GPU wait" line to separate stall from real CPU cost.
 		const SystemManager& sm = m_World->GetSystemManager();
 		const auto& phaseMs = sm.GetPhaseTimingsMs();
 		const auto& sysMs = sm.GetSystemTimingsMs();

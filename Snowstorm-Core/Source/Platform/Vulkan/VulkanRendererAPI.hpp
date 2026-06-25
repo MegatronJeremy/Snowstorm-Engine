@@ -17,6 +17,8 @@ namespace Snowstorm
 		bool BeginFrame() override;
 		void EndFrame() override;
 
+		float GetLastGpuWaitMs() const override { return m_LastGpuWaitMs; }
+
 		uint32_t GetCurrentFrameIndex() const override;
 		uint32_t GetFramesInFlight() const override;
 
@@ -44,6 +46,8 @@ namespace Snowstorm
 
 		uint32_t m_CurrentFrameIndex = 0;
 		uint32_t m_ImageIndex = 0; // The actual index of the swapchain image acquired
+
+		float m_LastGpuWaitMs = 0.0f; // time spent blocking on the in-flight fence in BeginFrame
 
 		std::vector<Ref<CommandContext>> m_GraphicsContexts;
 		std::vector<Ref<Texture>> m_SwapchainTextures;
