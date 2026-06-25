@@ -63,11 +63,18 @@ namespace Snowstorm
 		const float gpuWaitMs = Renderer::GetLastGpuWaitMs();
 		ImGui::Text("GPU wait:   %.2f ms", gpuWaitMs);
 
+		// VSync toggle: off uncaps the frame rate (the GPU wait above is mostly the vsync present
+		// stall). Switching recreates the swapchain.
+		if (bool vsync = Renderer::IsVSync(); ImGui::Checkbox("VSync", &vsync))
+		{
+			Renderer::SetVSync(vsync);
+		}
+
 		ImGui::Spacing();
 
-		// Last scene-pass GPU submission stats (RendererSingleton::RenderStats). DrawCalls == Instances
-		// today because there is no hardware instancing yet; when Batches is far below DrawCalls it
-		// means many objects share (mesh, material) and could collapse into instanced draws.
+		// Last scene-pass GPU submission stats (RendererSingleton::RenderStats). With instancing,
+		// DrawCalls == Batches (one instanced draw per mesh+material) while Instances counts every
+		// object — a big gap between Instances and DrawCalls means instancing is doing its job.
 		const RenderStats& stats = SingletonView<RendererSingleton>().GetStats();
 		ImGui::Text("Draw calls: %u", stats.DrawCalls);
 		ImGui::Text("Batches:    %u", stats.Batches);

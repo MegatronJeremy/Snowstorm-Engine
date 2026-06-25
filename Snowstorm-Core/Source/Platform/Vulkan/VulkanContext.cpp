@@ -6,6 +6,7 @@
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+#include <algorithm>
 #include <iostream>
 
 #include "Snowstorm/Core/EngineCVars.hpp"
@@ -368,7 +369,7 @@ namespace Snowstorm
 		swapInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		swapInfo.preTransform = caps.currentTransform;
 		swapInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-		swapInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR; // TODO Vsync is on -> make this configurable
+		swapInfo.presentMode = ChoosePresentMode();
 		swapInfo.clipped = VK_TRUE;
 
 		VK_CHECK(vkCreateSwapchainKHR(m_Device, &swapInfo, nullptr, &m_Swapchain));
@@ -409,6 +410,43 @@ namespace Snowstorm
 		{
 			vkDestroySwapchainKHR(m_Device, m_Swapchain, nullptr);
 		}
+	}
+
+	VkPresentModeKHR VulkanContext::ChoosePresentMode() const
+	{
+		uint32_t count = 0;
+		vkGetPhysicalDeviceSurfacePresentModesKHR(m_PhysicalDevice, m_Surface, &count, nullptr);
+		std::vector<VkPresentModeKHR> modes(count);
+		vkGetPhysicalDeviceSurfacePresentModesKHR(m_PhysicalDevice, m_Surface, &count, modes.data());
+
+		const auto supports = [&](const VkPresentModeKHR m)
+		{
+			return std::ranges::find(modes, m) != modes.end();
+		};
+
+		// VSync on → FIFO (always supported, locked to refresh). VSync off → prefer MAILBOX (uncapped,
+		// no tearing); fall back to IMMEDIATE (uncapped, may tear); FIFO if neither is available.
+		if (m_VSync)
+		{
+			return VK_PRESENT_MODE_FIFO_KHR;
+		}
+		if (supports(VK_PRESENT_MODE_MAILBOX_KHR))
+		{
+			return VK_PRESENT_MODE_MAILBOX_KHR;
+		}
+		if (supports(VK_PRESENT_MODE_IMMEDIATE_KHR))
+		{
+			return VK_PRESENT_MODE_IMMEDIATE_KHR;
+		}
+		return VK_PRESENT_MODE_FIFO_KHR;
+	}
+
+	void VulkanContext::SetVSync(const bool enabled)
+	{
+		// Only stores the desired mode; the caller (VulkanRendererAPI::SetVSync) drives the swapchain
+		// recreate so the RHI's wrapped swapchain textures get rebuilt too. Recreating here would skip
+		// that re-wrap and leave the RHI pointing at destroyed images.
+		m_VSync = enabled;
 	}
 
 	bool VulkanContext::RecreateSwapchain()

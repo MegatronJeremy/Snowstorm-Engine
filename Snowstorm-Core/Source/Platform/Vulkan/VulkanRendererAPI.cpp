@@ -97,6 +97,23 @@ namespace Snowstorm
 		vkDeviceWaitIdle(VulkanContext::Get().GetDevice());
 	}
 
+	void VulkanRendererAPI::SetVSync(const bool enabled)
+	{
+		auto& context = VulkanContext::Get();
+		if (context.IsVSync() == enabled)
+		{
+			return;
+		}
+		context.SetVSync(enabled); // store desired present mode (no recreate here)
+		RecreateSwapchain();       // RHI path: recreate + re-wrap swapchain textures
+		SS_CORE_INFO("VSync {}", enabled ? "on (FIFO)" : "off (uncapped)");
+	}
+
+	bool VulkanRendererAPI::IsVSync() const
+	{
+		return VulkanContext::Get().IsVSync();
+	}
+
 	void VulkanRendererAPI::Shutdown()
 	{
 		const VkDevice device = VulkanContext::Get().GetDevice();

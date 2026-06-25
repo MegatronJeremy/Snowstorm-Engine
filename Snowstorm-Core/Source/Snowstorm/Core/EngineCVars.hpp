@@ -22,4 +22,8 @@ namespace Snowstorm::CVars
 	// then exit. Run this to (re)generate the stress scene as a normal data asset; afterwards the scene
 	// is opened from the Content Browser like any other .world.
 	extern CVar<bool> BakeStressScene;
+
+	// Startup VSync state. On (default) = FIFO (locked to refresh, no tearing); off = uncapped present
+	// (MAILBOX/IMMEDIATE). Runtime-toggleable from the editor's Settings panel.
+	extern CVar<bool> VSync;
 }

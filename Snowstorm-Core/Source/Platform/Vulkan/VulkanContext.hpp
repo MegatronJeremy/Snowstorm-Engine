@@ -27,6 +27,11 @@ namespace Snowstorm
 		// when the surface area is zero, e.g. a minimized window — the caller should skip the frame.
 		bool RecreateSwapchain();
 
+		// VSync: true → FIFO (locked to refresh, no tearing). false → MAILBOX if supported (uncapped,
+		// no tearing), else IMMEDIATE (uncapped, may tear). Changing this recreates the swapchain.
+		void SetVSync(bool enabled);
+		[[nodiscard]] bool IsVSync() const { return m_VSync; }
+
 		static VulkanContext& Get();
 
 		VkInstance GetInstance() const { return m_Instance; }
@@ -72,9 +77,14 @@ namespace Snowstorm
 		// Debug messenger
 		VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;
 
+		// Pick the present mode honoring m_VSync from the surface's supported modes (FIFO is the only
+		// one guaranteed by spec, so it's the universal fallback).
+		[[nodiscard]] VkPresentModeKHR ChoosePresentMode() const;
+
 		// Surface and swapchain
 		VkSurfaceKHR m_Surface = VK_NULL_HANDLE;
 		VkSwapchainKHR m_Swapchain = VK_NULL_HANDLE;
+		bool m_VSync = true;
 		VkFormat m_SwapchainFormat{};
 		VkExtent2D m_SwapchainExtent{};
 		std::vector<VkImage> m_SwapchainImages;

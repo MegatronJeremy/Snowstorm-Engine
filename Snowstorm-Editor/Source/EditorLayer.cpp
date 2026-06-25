@@ -116,6 +116,9 @@ namespace Snowstorm
 			};
 		}
 
+		// Apply the startup VSync preference (backend defaults to FIFO/on).
+		Renderer::SetVSync(CVars::VSync.Get());
+
 		RegisterCoreSystems(*m_ActiveWorld); // engine systems (shared with a future runtime)
 		RegisterEditorSystems();             // editor-only systems on top
 		LoadOrCreateStartupWorld();

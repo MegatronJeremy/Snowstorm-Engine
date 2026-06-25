@@ -19,6 +19,9 @@ namespace Snowstorm
 
 		float GetLastGpuWaitMs() const override { return m_LastGpuWaitMs; }
 
+		void SetVSync(bool enabled) override;
+		bool IsVSync() const override;
+
 		uint32_t GetCurrentFrameIndex() const override;
 		uint32_t GetFramesInFlight() const override;
 

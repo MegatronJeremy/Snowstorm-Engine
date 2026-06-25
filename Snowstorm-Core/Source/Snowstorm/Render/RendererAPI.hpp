@@ -33,6 +33,11 @@ namespace Snowstorm
 		// separately so a system's wall-clock time isn't misread as CPU cost when it's really a stall.
 		virtual float GetLastGpuWaitMs() const = 0;
 
+		// VSync: true = locked to refresh (FIFO, no tearing); false = uncapped (MAILBOX/IMMEDIATE).
+		// Switching recreates the swapchain.
+		virtual void SetVSync(bool enabled) = 0;
+		virtual bool IsVSync() const = 0;
+
 		// Index of the frame in flight (0..N-1) if using a multi-buffered setup
 		virtual uint32_t GetCurrentFrameIndex() const = 0;
 
