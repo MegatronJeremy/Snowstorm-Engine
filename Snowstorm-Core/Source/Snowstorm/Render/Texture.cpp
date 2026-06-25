@@ -7,6 +7,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#include <algorithm>
+#include <cmath>
+
 namespace Snowstorm
 {
 	Ref<Texture> Texture::Create(const TextureDesc& desc)
@@ -37,7 +40,7 @@ namespace Snowstorm
 	{
 		int w = 0, h = 0, channels = 0;
 
-		// Force 4 channels so SetData is predictable (RGBA8) 
+		// Force 4 channels so SetData is predictable (RGBA8)
 		// TODO makes this varied according to the bool srgb, if passing normals/roughness map
 		stbi_uc* pixels = stbi_load(filePath.string().c_str(), &w, &h, &channels, 4);
 		SS_CORE_ASSERT(pixels, "Failed to load texture image: {}", filePath.string());
@@ -46,9 +49,12 @@ namespace Snowstorm
 		desc.Dimension = TextureDimension::Texture2D;
 		desc.Width = static_cast<uint32_t>(w);
 		desc.Height = static_cast<uint32_t>(h);
-		desc.MipLevels = 1;
+		// Full mip chain: floor(log2(max(w,h))) + 1 levels. Without mips, high-frequency textures
+		// alias/shimmer in the distance (the sampler is configured for trilinear + anisotropy but has
+		// nothing to sample). TransferSrc is required because mip generation blits from each level.
+		desc.MipLevels = 1 + static_cast<uint32_t>(std::floor(std::log2(static_cast<float>(std::max(w, h)))));
 		desc.ArrayLayers = 1;
-		desc.Usage = TextureUsage::Sampled | TextureUsage::TransferDst;
+		desc.Usage = TextureUsage::Sampled | TextureUsage::TransferDst | TextureUsage::TransferSrc;
 
 		// Pick the correct format for your engine:
 		// If you have an sRGB format enum, use it when srgb=true.

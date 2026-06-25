@@ -9,7 +9,7 @@
 namespace Snowstorm
 {
 	VulkanTexture::VulkanTexture(TextureDesc desc)
-		: m_Desc(std::move(desc))
+	    : m_Desc(std::move(desc))
 	{
 		SS_CORE_ASSERT(m_Desc.Width > 0 && m_Desc.Height > 0, "Texture dimensions must be non-zero");
 
@@ -20,7 +20,7 @@ namespace Snowstorm
 	}
 
 	VulkanTexture::VulkanTexture(const VkImage existingImage, TextureDesc desc)
-		: m_Desc(std::move(desc)), m_Image(existingImage)
+	    : m_Desc(std::move(desc)), m_Image(existingImage)
 	{
 		m_VkFormat = ToVkFormat(m_Desc.Format);
 		m_CurrentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -58,7 +58,7 @@ namespace Snowstorm
 		imageCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 		imageCI.imageType = imageType;
 		imageCI.format = m_VkFormat;
-		imageCI.extent = { m_Desc.Width, m_Desc.Height, 1u };
+		imageCI.extent = {m_Desc.Width, m_Desc.Height, 1u};
 		imageCI.mipLevels = m_Desc.MipLevels;
 		imageCI.arrayLayers = layers;
 		imageCI.samples = static_cast<VkSampleCountFlagBits>(m_Desc.SampleCount);
@@ -111,7 +111,7 @@ namespace Snowstorm
 		{
 			if (HasUsage(desc.Usage, TextureUsage::DepthStencil))
 				return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-			
+
 			return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 		}
 
@@ -184,9 +184,9 @@ namespace Snowstorm
 		VmaAllocationCreateInfo stagingAllocCI{};
 		stagingAllocCI.usage = VMA_MEMORY_USAGE_AUTO;
 		stagingAllocCI.flags =
-		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-		VMA_ALLOCATION_CREATE_MAPPED_BIT |
-		VMA_ALLOCATION_CREATE_USER_DATA_COPY_STRING_BIT;
+		    VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+		    VMA_ALLOCATION_CREATE_MAPPED_BIT |
+		    VMA_ALLOCATION_CREATE_USER_DATA_COPY_STRING_BIT;
 
 		VmaAllocationInfo allocInfo{};
 
@@ -221,14 +221,17 @@ namespace Snowstorm
 		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to begin upload command buffer");
 
 		const uint32_t layers =
-			(m_Desc.Dimension == TextureDimension::TextureCube && m_Desc.ArrayLayers == 1) ? 6u : m_Desc.ArrayLayers;
+		    (m_Desc.Dimension == TextureDimension::TextureCube && m_Desc.ArrayLayers == 1) ? 6u : m_Desc.ArrayLayers;
 
 		const VkImageAspectFlags aspect = IsDepthFormat(m_Desc.Format)
-			? ToVkAspect(TextureAspect::Auto, m_Desc.Format)
-			: VK_IMAGE_ASPECT_COLOR_BIT;
+		                                      ? ToVkAspect(TextureAspect::Auto, m_Desc.Format)
+		                                      : VK_IMAGE_ASPECT_COLOR_BIT;
+
+		const VkImageLayout finalLayout = GetReadyLayout();
 
 		CmdTransitionImage(cmd, m_Image, aspect, m_CurrentLayout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, m_Desc.MipLevels, layers);
 
+		// Upload the full-resolution image into mip level 0.
 		VkBufferImageCopy region{};
 		region.bufferOffset = 0;
 		region.bufferRowLength = 0;   // tightly packed
@@ -237,15 +240,77 @@ namespace Snowstorm
 		region.imageSubresource.mipLevel = 0;
 		region.imageSubresource.baseArrayLayer = 0;
 		region.imageSubresource.layerCount = layers;
-		region.imageOffset = { 0, 0, 0 };
-		region.imageExtent = { m_Desc.Width, m_Desc.Height, 1 };
+		region.imageOffset = {0, 0, 0};
+		region.imageExtent = {m_Desc.Width, m_Desc.Height, 1};
 
 		vkCmdCopyBufferToImage(cmd, staging, m_Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-		// Transition to a reasonable default for sampling if requested; otherwise keep general.
-		VkImageLayout finalLayout = GetReadyLayout();
+		if (m_Desc.MipLevels > 1)
+		{
+			// Generate the mip chain by successively blitting level i-1 (downscaled) into level i.
+			// Per-level barriers: each source level is moved DST->SRC before the blit, then SRC->final
+			// after; the highest level is moved DST->final at the end. (Assumes the format supports
+			// linear blit — true for RGBA8_UNORM, which is what file textures use.)
+			auto barrierMip = [&](const uint32_t mip, const VkImageLayout oldL, const VkImageLayout newL,
+			                      const VkAccessFlags srcAccess, const VkAccessFlags dstAccess,
+			                      const VkPipelineStageFlags srcStage, const VkPipelineStageFlags dstStage)
+			{
+				VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+				b.oldLayout = oldL;
+				b.newLayout = newL;
+				b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+				b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+				b.image = m_Image;
+				b.subresourceRange = {aspect, mip, 1, 0, layers};
+				b.srcAccessMask = srcAccess;
+				b.dstAccessMask = dstAccess;
+				vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &b);
+			};
 
-		CmdTransitionImage(cmd, m_Image, aspect, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, finalLayout, m_Desc.MipLevels, layers);
+			auto mipWidth = static_cast<int32_t>(m_Desc.Width);
+			auto mipHeight = static_cast<int32_t>(m_Desc.Height);
+
+			for (uint32_t i = 1; i < m_Desc.MipLevels; ++i)
+			{
+				// Source level (i-1): TRANSFER_DST -> TRANSFER_SRC for the blit read.
+				barrierMip(i - 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				           VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+				           VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+				const int32_t nextW = mipWidth > 1 ? mipWidth / 2 : 1;
+				const int32_t nextH = mipHeight > 1 ? mipHeight / 2 : 1;
+
+				VkImageBlit blit{};
+				blit.srcOffsets[0] = {0, 0, 0};
+				blit.srcOffsets[1] = {mipWidth, mipHeight, 1};
+				blit.srcSubresource = {aspect, i - 1, 0, layers};
+				blit.dstOffsets[0] = {0, 0, 0};
+				blit.dstOffsets[1] = {nextW, nextH, 1};
+				blit.dstSubresource = {aspect, i, 0, layers};
+
+				vkCmdBlitImage(cmd, m_Image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				               m_Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+
+				// Source level is done: TRANSFER_SRC -> final (sampleable).
+				barrierMip(i - 1, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, finalLayout,
+				           VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
+				           VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+				mipWidth = nextW;
+				mipHeight = nextH;
+			}
+
+			// Last level is still TRANSFER_DST -> final.
+			barrierMip(m_Desc.MipLevels - 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, finalLayout,
+			           VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+			           VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+		}
+		else
+		{
+			// Single level: just move it to the sampleable layout.
+			CmdTransitionImage(cmd, m_Image, aspect, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, finalLayout, m_Desc.MipLevels, layers);
+		}
+
 		m_CurrentLayout = finalLayout;
 
 		res = vkEndCommandBuffer(cmd);
@@ -282,7 +347,7 @@ namespace Snowstorm
 	//---------------------------------------------------------------------------------------------------------------------------------
 
 	VulkanTextureView::VulkanTextureView(const Ref<Texture>& texture, TextureViewDesc desc)
-		: m_Texture(texture), m_Desc(std::move(desc))
+	    : m_Texture(texture), m_Desc(std::move(desc))
 	{
 		SS_CORE_ASSERT(m_Texture, "VulkanTextureView created with null texture");
 
@@ -326,9 +391,11 @@ namespace Snowstorm
 		VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D;
 		switch (m_Desc.Dimension)
 		{
-		case TextureDimension::Texture2D: viewType = VK_IMAGE_VIEW_TYPE_2D;
+		case TextureDimension::Texture2D:
+			viewType = VK_IMAGE_VIEW_TYPE_2D;
 			break;
-		case TextureDimension::TextureCube: viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+		case TextureDimension::TextureCube:
+			viewType = VK_IMAGE_VIEW_TYPE_CUBE;
 			break;
 		case TextureDimension::Unknown:
 			SS_CORE_ASSERT(false, "TextureView dimension cannot be Unknown at CreateImageView time");
@@ -344,7 +411,7 @@ namespace Snowstorm
 		if (vkTex->OwnsImage() && vkTex->GetCurrentLayout() == VK_IMAGE_LAYOUT_UNDEFINED)
 		{
 			ImmediateSubmit([&](const VkCommandBuffer cmd)
-			{
+			                {
 				const VkImageAspectFlags aspect = vkTex->GetAspectMask();
 				const VkImageLayout targetLayout = vkTex->GetReadyLayout();
 
@@ -354,8 +421,7 @@ namespace Snowstorm
 				                   vkTex->GetDesc().MipLevels,
 				                   vkTex->GetDesc().ArrayLayers);
 
-				vkTex->SetCurrentLayout(targetLayout);
-			});
+				vkTex->SetCurrentLayout(targetLayout); });
 		}
 
 		VkImageViewCreateInfo viewCI{};
@@ -383,8 +449,8 @@ namespace Snowstorm
 		}
 		else
 		{
-			// Optional: Set a "null" or "invalid" index (like 0 or ~0) 
-			SetGlobalBindlessIndex(0); 
+			// Optional: Set a "null" or "invalid" index (like 0 or ~0)
+			SetGlobalBindlessIndex(0);
 		}
 	}
 
