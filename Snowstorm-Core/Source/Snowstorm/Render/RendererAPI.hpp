@@ -33,6 +33,11 @@ namespace Snowstorm
 		// separately so a system's wall-clock time isn't misread as CPU cost when it's really a stall.
 		virtual float GetLastGpuWaitMs() const = 0;
 
+		// GPU execution time (ms) of the most recently completed frame, measured with timestamp queries
+		// (write at command-buffer begin/end, read one frame later). Unlike GetLastGpuWaitMs (a CPU
+		// stall on the present fence), this is real GPU work. Returns 0 if timestamps are unsupported.
+		virtual float GetLastGpuFrameMs() const = 0;
+
 		// VSync: true = locked to refresh (FIFO, no tearing); false = uncapped (MAILBOX/IMMEDIATE).
 		// Switching recreates the swapchain.
 		virtual void SetVSync(bool enabled) = 0;

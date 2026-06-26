@@ -19,34 +19,57 @@ namespace Snowstorm
 	bool VisibilitySystem::IsVisibilityDirtyThisFrame() const
 	{
 		// Any relevant component changed?
-		if (!ChangedView<TransformComponent>().empty()) return true;
-		if (!ChangedView<CameraComponent>().empty()) return true;
-		if (!ChangedView<ViewportComponent>().empty()) return true;
-		if (!ChangedView<VisibilityComponent>().empty()) return true;
-		if (!ChangedView<CameraVisibilityComponent>().empty()) return true;
+		if (!ChangedView<TransformComponent>().empty())
+			return true;
+		if (!ChangedView<CameraComponent>().empty())
+			return true;
+		if (!ChangedView<ViewportComponent>().empty())
+			return true;
+		if (!ChangedView<VisibilityComponent>().empty())
+			return true;
+		if (!ChangedView<CameraVisibilityComponent>().empty())
+			return true;
 
 		// Mesh/material resolution changes can change what is drawable (null -> valid, material swap, etc.)
-		if (!ChangedView<MeshComponent>().empty()) return true;
-		if (!ChangedView<MaterialComponent>().empty()) return true;
+		if (!ChangedView<MeshComponent>().empty())
+			return true;
+		if (!ChangedView<MaterialComponent>().empty())
+			return true;
 
 		// Any relevant component added/removed?
-		if (!InitView<TransformComponent>().empty()) return true;
-		if (!InitView<CameraComponent>().empty()) return true;
-		if (!InitView<MeshComponent>().empty()) return true;
-		if (!InitView<MaterialComponent>().empty()) return true;
-		if (!InitView<VisibilityComponent>().empty()) return true;
-		if (!InitView<CameraVisibilityComponent>().empty()) return true;
-		if (!InitView<ViewportComponent>().empty()) return true;
-		if (!InitView<CameraTargetComponent>().empty()) return true;
+		if (!InitView<TransformComponent>().empty())
+			return true;
+		if (!InitView<CameraComponent>().empty())
+			return true;
+		if (!InitView<MeshComponent>().empty())
+			return true;
+		if (!InitView<MaterialComponent>().empty())
+			return true;
+		if (!InitView<VisibilityComponent>().empty())
+			return true;
+		if (!InitView<CameraVisibilityComponent>().empty())
+			return true;
+		if (!InitView<ViewportComponent>().empty())
+			return true;
+		if (!InitView<CameraTargetComponent>().empty())
+			return true;
 
-		if (!FiniView<TransformComponent>().empty()) return true;
-		if (!FiniView<CameraComponent>().empty()) return true;
-		if (!FiniView<MeshComponent>().empty()) return true;
-		if (!FiniView<MaterialComponent>().empty()) return true;
-		if (!FiniView<VisibilityComponent>().empty()) return true;
-		if (!FiniView<CameraVisibilityComponent>().empty()) return true;
-		if (!FiniView<ViewportComponent>().empty()) return true;
-		if (!FiniView<CameraTargetComponent>().empty()) return true;
+		if (!FiniView<TransformComponent>().empty())
+			return true;
+		if (!FiniView<CameraComponent>().empty())
+			return true;
+		if (!FiniView<MeshComponent>().empty())
+			return true;
+		if (!FiniView<MaterialComponent>().empty())
+			return true;
+		if (!FiniView<VisibilityComponent>().empty())
+			return true;
+		if (!FiniView<CameraVisibilityComponent>().empty())
+			return true;
+		if (!FiniView<ViewportComponent>().empty())
+			return true;
+		if (!FiniView<CameraTargetComponent>().empty())
+			return true;
 
 		return false;
 	}
@@ -83,14 +106,15 @@ namespace Snowstorm
 			auto& cache = reg.emplace_or_replace<VisibilityCacheComponent>(camE);
 			cache.VisibleMeshes.clear();
 			cache.VisibleMeshes.reserve(256);
+			cache.Considered = 0;
 
 			const VisibilityMask camMask = camVis.Mask;
 
 			for (const entt::entity e : meshView)
 			{
 				const auto& mesh = reg.Read<MeshComponent>(e);
-				const auto& mat  = reg.Read<MaterialComponent>(e);
-				const auto& vis  = reg.Read<VisibilityComponent>(e);
+				const auto& mat = reg.Read<MaterialComponent>(e);
+				const auto& vis = reg.Read<VisibilityComponent>(e);
 
 				// Must be resolved
 				if (!mesh.MeshInstance || !mat.MaterialInstance)
@@ -103,6 +127,9 @@ namespace Snowstorm
 				{
 					continue;
 				}
+
+				// Eligible for this camera (resolved + layer-matched); frustum culling decides the rest.
+				cache.Considered++;
 
 				// Frustum culling
 				const auto& tr = reg.Read<TransformComponent>(e);

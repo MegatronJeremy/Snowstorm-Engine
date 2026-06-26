@@ -54,6 +54,35 @@ namespace Snowstorm
 			vkCreateSemaphore(device, &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]);
 			vkCreateFence(device, &fenceInfo, nullptr, &m_InFlightFences[i]);
 		}
+
+		// GPU frame timing: a 2-query timestamp pool per frame-in-flight (start + end). Requires the
+		// device to support timestamps on the graphics queue (timestampPeriod != 0 and the queue family
+		// allows them). If unsupported we leave the pools null and report 0 ms — no functional impact.
+		VkPhysicalDeviceProperties props{};
+		vkGetPhysicalDeviceProperties(context.GetPhysicalDevice(), &props);
+		m_TimestampPeriodNs = props.limits.timestampPeriod;
+		m_TimestampsSupported = m_TimestampPeriodNs > 0.0f;
+		m_TimestampPools.resize(s_MaxFramesInFlight, VK_NULL_HANDLE);
+		m_TimestampWritten.resize(s_MaxFramesInFlight, false);
+		if (m_TimestampsSupported)
+		{
+			VkQueryPoolCreateInfo qpInfo{.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+			qpInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+			qpInfo.queryCount = 2;
+			for (uint32_t i = 0; i < s_MaxFramesInFlight; ++i)
+			{
+				if (vkCreateQueryPool(device, &qpInfo, nullptr, &m_TimestampPools[i]) != VK_SUCCESS)
+				{
+					SS_CORE_WARN("Failed to create timestamp query pool; GPU frame timing disabled.");
+					m_TimestampsSupported = false;
+					break;
+				}
+			}
+		}
+		else
+		{
+			SS_CORE_WARN("Device reports no timestamp support; GPU frame timing disabled.");
+		}
 	}
 
 	void VulkanRendererAPI::WrapSwapchainTextures()
@@ -132,6 +161,10 @@ namespace Snowstorm
 			vkDestroySemaphore(device, m_ImageAvailableSemaphores[i], nullptr);
 			vkDestroySemaphore(device, m_RenderFinishedSemaphores[i], nullptr);
 			vkDestroyFence(device, m_InFlightFences[i], nullptr);
+			if (m_TimestampPools[i] != VK_NULL_HANDLE)
+			{
+				vkDestroyQueryPool(device, m_TimestampPools[i], nullptr);
+			}
 		}
 
 		m_GraphicsContexts.clear();
@@ -196,6 +229,24 @@ namespace Snowstorm
 
 		auto ctx = std::static_pointer_cast<VulkanCommandContext>(m_GraphicsContexts[m_CurrentFrameIndex]);
 		ctx->Begin();
+
+		// GPU frame timing. We waited on this slot's fence above, so its prior submission is complete and
+		// its timestamps are resolvable; read them, then reset the pool and write a fresh start stamp.
+		if (m_TimestampsSupported)
+		{
+			const VkQueryPool pool = m_TimestampPools[m_CurrentFrameIndex];
+			if (m_TimestampWritten[m_CurrentFrameIndex])
+			{
+				uint64_t stamps[2] = {0, 0};
+				if (vkGetQueryPoolResults(device, pool, 0, 2, sizeof(stamps), stamps, sizeof(uint64_t),
+				                          VK_QUERY_RESULT_64_BIT) == VK_SUCCESS)
+				{
+					m_LastGpuFrameMs = static_cast<float>(stamps[1] - stamps[0]) * m_TimestampPeriodNs * 1e-6f;
+				}
+			}
+			vkCmdResetQueryPool(ctx->GetVulkanCommandBuffer(), pool, 0, 2);
+			vkCmdWriteTimestamp(ctx->GetVulkanCommandBuffer(), VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, pool, 0);
+		}
 		return true;
 	}
 
@@ -206,6 +257,14 @@ namespace Snowstorm
 
 		// 1. Transition to a presentable state
 		ctx->TransitionLayout(m_SwapchainTextures[m_ImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+
+		// GPU frame timing: end stamp after all work is recorded (bottom of pipe = everything done).
+		if (m_TimestampsSupported)
+		{
+			vkCmdWriteTimestamp(ctx->GetVulkanCommandBuffer(), VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+			                    m_TimestampPools[m_CurrentFrameIndex], 1);
+			m_TimestampWritten[m_CurrentFrameIndex] = true;
+		}
 
 		// 2. End command recording
 		ctx->End();

@@ -24,6 +24,9 @@ namespace Snowstorm
 		// CPU ms spent in the last BeginFrame waiting on the GPU/vsync fence (a stall, not CPU work).
 		static float GetLastGpuWaitMs();
 
+		// GPU execution time (ms) of the last completed frame (timestamp queries; 0 if unsupported).
+		static float GetLastGpuFrameMs();
+
 		// VSync on = locked to refresh (FIFO); off = uncapped (MAILBOX/IMMEDIATE). Recreates swapchain.
 		static void SetVSync(bool enabled);
 		static bool IsVSync();

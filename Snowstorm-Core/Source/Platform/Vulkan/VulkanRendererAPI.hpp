@@ -18,6 +18,7 @@ namespace Snowstorm
 		void EndFrame() override;
 
 		float GetLastGpuWaitMs() const override { return m_LastGpuWaitMs; }
+		float GetLastGpuFrameMs() const override { return m_LastGpuFrameMs; }
 
 		void SetVSync(bool enabled) override;
 		bool IsVSync() const override;
@@ -50,7 +51,16 @@ namespace Snowstorm
 		uint32_t m_CurrentFrameIndex = 0;
 		uint32_t m_ImageIndex = 0; // The actual index of the swapchain image acquired
 
-		float m_LastGpuWaitMs = 0.0f; // time spent blocking on the in-flight fence in BeginFrame
+		float m_LastGpuWaitMs = 0.0f;  // time spent blocking on the in-flight fence in BeginFrame
+		float m_LastGpuFrameMs = 0.0f; // GPU execution time of the last completed frame (timestamp query)
+
+		// One timestamp query pool per frame-in-flight: write a start stamp at command-buffer Begin and
+		// an end stamp before End, then read the previous frame's resolved pair (it has finished by the
+		// time we reuse its slot). Disabled (pool == NULL) when the device reports no timestamp support.
+		std::vector<VkQueryPool> m_TimestampPools;
+		std::vector<bool> m_TimestampWritten; // slot has a resolvable pair from its previous use
+		float m_TimestampPeriodNs = 0.0f;     // ns per timestamp tick (VkPhysicalDeviceLimits::timestampPeriod)
+		bool m_TimestampsSupported = false;
 
 		std::vector<Ref<CommandContext>> m_GraphicsContexts;
 		std::vector<Ref<Texture>> m_SwapchainTextures;

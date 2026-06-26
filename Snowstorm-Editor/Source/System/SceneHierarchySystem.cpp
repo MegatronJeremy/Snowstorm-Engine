@@ -8,6 +8,7 @@
 #include "Snowstorm/Render/RendererAPI.hpp"
 #include "Snowstorm/Render/RendererSingleton.hpp"
 #include "Snowstorm/World/World.hpp"
+#include "Snowstorm/Components/VisibilityCacheComponent.hpp"
 #include "Service/EditorTheme.hpp"
 
 namespace Snowstorm
@@ -63,6 +64,10 @@ namespace Snowstorm
 		const float gpuWaitMs = Renderer::GetLastGpuWaitMs();
 		ImGui::Text("GPU wait:   %.2f ms", gpuWaitMs);
 
+		// Real GPU execution time (timestamp queries), distinct from the present-fence stall above.
+		// This is the number that tells you if you're GPU-bound. 0.00 = device lacks timestamp support.
+		ImGui::Text("GPU frame:  %.2f ms", Renderer::GetLastGpuFrameMs());
+
 		// VSync toggle: off uncaps the frame rate (the GPU wait above is mostly the vsync present
 		// stall). Switching recreates the swapchain.
 		if (bool vsync = Renderer::IsVSync(); ImGui::Checkbox("VSync", &vsync))
@@ -80,6 +85,20 @@ namespace Snowstorm
 		ImGui::Text("Batches:    %u", stats.Batches);
 		ImGui::Text("Instances:  %u", stats.Instances);
 		ImGui::Text("Triangles:  %u", stats.Triangles);
+
+		// Frustum-culling effectiveness, summed over every camera's visibility cache this frame.
+		// "considered" = resolved + layer-matched renderables; "culled" = those the frustum rejected.
+		// Near-zero culling with many considered means scene-sized bounds (e.g. material-merged groups)
+		// that always intersect the frustum — the batching-vs-culling trade-off, made visible.
+		uint32_t considered = 0;
+		uint32_t visible = 0;
+		for (auto view = m_World->GetRegistry().view<VisibilityCacheComponent>(); const entt::entity e : view)
+		{
+			const auto& cache = view.get<VisibilityCacheComponent>(e);
+			considered += cache.Considered;
+			visible += static_cast<uint32_t>(cache.VisibleMeshes.size());
+		}
+		ImGui::Text("Culled:     %u / %u", considered - visible, considered);
 
 		ImGui::Spacing();
 		EditorTheme::SectionHeader("CPU phases / systems (ms)");
