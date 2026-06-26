@@ -27,6 +27,10 @@ namespace Snowstorm
 
 		static Application& Get() { return *s_Instance; }
 
+		// True when an Application has been constructed. Lets engine objects (e.g. World) work in a
+		// headless context (unit tests) where there is no Application/Window/Renderer.
+		static bool Exists() { return s_Instance != nullptr; }
+
 		ServiceManager& GetServiceManager() const { return *m_ServiceManager; }
 
 		EventBus& GetEventBus() const { return *m_EventBus; }

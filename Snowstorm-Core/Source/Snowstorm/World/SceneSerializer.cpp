@@ -184,6 +184,112 @@ namespace Snowstorm
 		}
 	}
 
+	bool SceneSerializer::SerializeEntity(Entity entity, json& out)
+	{
+		if (!entity || !entity.HasComponent<IDComponent>() || !entity.HasComponent<TagComponent>())
+		{
+			return false;
+		}
+
+		out = json::object();
+		out["UUID"] = entity.GetComponent<IDComponent>().Id.ToString();
+		out["Name"] = entity.GetComponent<TagComponent>().Tag;
+
+		json comps = json::object();
+
+		for (const auto& info : GetComponentRegistry())
+		{
+			if (!info.Type.is_valid() || !info.HasFn || !info.GetInstanceFn)
+			{
+				continue;
+			}
+
+			if (!info.Serializable)
+			{
+				continue;
+			}
+
+			const std::string typeName = info.Type.get_name().to_string();
+			if (typeName == "Snowstorm::IDComponent" || typeName == "Snowstorm::TagComponent")
+			{
+				continue;
+			}
+
+			if (!info.HasFn(entity))
+			{
+				continue;
+			}
+
+			if (SerializeComponentOverride(entity, info.Type, comps[typeName]))
+			{
+				continue;
+			}
+
+			rttr::instance inst = info.GetInstanceFn(entity);
+			comps[typeName] = RttrInstanceToJson(inst);
+		}
+
+		out["Components"] = std::move(comps);
+		return true;
+	}
+
+	Entity SceneSerializer::DeserializeEntity(World& world, const json& entJ)
+	{
+		const std::string uuidStr = entJ.value("UUID", "0");
+		const std::string name = entJ.value("Name", "Entity");
+
+		Entity entity = world.CreateEntityWithUUID(UUID::FromString(uuidStr), name);
+
+		if (!entJ.contains("Components") || !entJ["Components"].is_object())
+		{
+			return entity;
+		}
+
+		const json& comps = entJ["Components"];
+
+		for (auto it = comps.begin(); it != comps.end(); ++it)
+		{
+			const std::string& compTypeName = it.key();
+			const json& compData = it.value();
+
+			// Override path first (assets, entity refs, etc.)
+			if (DeserializeComponentOverride(world, entity, compTypeName, compData))
+			{
+				continue;
+			}
+
+			// Find matching component registration
+			const auto& registry = GetComponentRegistry();
+			auto found = std::ranges::find_if(registry,
+			                                  [&](const ComponentInfo& ci)
+			                                  {
+				                                  return ci.Type.is_valid() && ci.Type.get_name().to_string() == compTypeName;
+			                                  });
+
+			if (found == registry.end())
+			{
+				continue;
+			}
+
+			if (!found->Serializable)
+			{
+				continue;
+			}
+
+			if (!found->EmplaceDefaultFn || !found->GetInstanceFn)
+			{
+				continue;
+			}
+
+			found->EmplaceDefaultFn(entity);
+			rttr::instance inst = found->GetInstanceFn(entity);
+
+			JsonToRttrInstance(compData, inst);
+		}
+
+		return entity;
+	}
+
 	bool SceneSerializer::Serialize(const World& world, const std::string& filePath)
 	{
 		json root;
@@ -198,45 +304,10 @@ namespace Snowstorm
 			Entity entity{e, const_cast<World*>(&world)};
 
 			json entJ;
-			entJ["UUID"] = entity.GetComponent<IDComponent>().Id.ToString();
-			entJ["Name"] = entity.GetComponent<TagComponent>().Tag;
-
-			json comps = json::object();
-
-			for (const auto& info : GetComponentRegistry())
+			if (SerializeEntity(entity, entJ))
 			{
-				if (!info.Type.is_valid() || !info.HasFn || !info.GetInstanceFn)
-				{
-					continue;
-				}
-
-				if (!info.Serializable)
-				{
-					continue;
-				}
-
-				const std::string typeName = info.Type.get_name().to_string();
-				if (typeName == "Snowstorm::IDComponent" || typeName == "Snowstorm::TagComponent")
-				{
-					continue;
-				}
-
-				if (!info.HasFn(entity))
-				{
-					continue;
-				}
-
-				if (SerializeComponentOverride(entity, info.Type, comps[typeName]))
-				{
-					continue;
-				}
-
-				rttr::instance inst = info.GetInstanceFn(entity);
-				comps[typeName] = RttrInstanceToJson(inst);
+				root["Entities"].push_back(std::move(entJ));
 			}
-
-			entJ["Components"] = std::move(comps);
-			root["Entities"].push_back(std::move(entJ));
 		}
 
 		std::ofstream out(filePath);
@@ -267,57 +338,7 @@ namespace Snowstorm
 
 		for (const auto& entJ : root["Entities"])
 		{
-			const std::string uuidStr = entJ.value("UUID", "0");
-			const std::string name = entJ.value("Name", "Entity");
-
-			Entity entity = world.CreateEntityWithUUID(UUID::FromString(uuidStr), name);
-
-			if (!entJ.contains("Components") || !entJ["Components"].is_object())
-			{
-				continue;
-			}
-
-			const json& comps = entJ["Components"];
-
-			for (auto it = comps.begin(); it != comps.end(); ++it)
-			{
-				const std::string& compTypeName = it.key();
-				const json& compData = it.value();
-
-				// Override path first (assets, entity refs, etc.)
-				if (DeserializeComponentOverride(world, entity, compTypeName, compData))
-				{
-					continue;
-				}
-
-				// Find matching component registration
-				const auto& registry = GetComponentRegistry();
-				auto found = std::ranges::find_if(registry,
-				                                  [&](const ComponentInfo& ci)
-				                                  {
-					                                  return ci.Type.is_valid() && ci.Type.get_name().to_string() == compTypeName;
-				                                  });
-
-				if (found == registry.end())
-				{
-					continue;
-				}
-
-				if (!found->Serializable)
-				{
-					continue;
-				}
-
-				if (!found->EmplaceDefaultFn || !found->GetInstanceFn)
-				{
-					continue;
-				}
-
-				found->EmplaceDefaultFn(entity);
-				rttr::instance inst = found->GetInstanceFn(entity);
-
-				JsonToRttrInstance(compData, inst);
-			}
+			DeserializeEntity(world, entJ);
 		}
 
 		return true;

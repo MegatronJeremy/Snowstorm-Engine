@@ -31,10 +31,14 @@ namespace Snowstorm
 
 		m_SingletonManager->RegisterSingleton<AssetManagerSingleton>(this);
 
-		// Create the bridge to the Application event bus
-		auto& bus = Application::Get().GetEventBus();
-		auto& input = m_SingletonManager->GetSingleton<InputStateSingleton>();
-		m_InputEventBridge = CreateScope<InputEventBridge>(bus, input);
+		// Create the bridge to the Application event bus. In a headless context (unit tests) there is no
+		// Application, so skip the bridge — input simply never fires, which is fine for logic-only tests.
+		if (Application::Exists())
+		{
+			auto& bus = Application::Get().GetEventBus();
+			auto& input = m_SingletonManager->GetSingleton<InputStateSingleton>();
+			m_InputEventBridge = CreateScope<InputEventBridge>(bus, input);
+		}
 	}
 
 	World::~World() = default;
@@ -55,6 +59,19 @@ namespace Snowstorm
 		tag.Tag = name.empty() ? "Entity" : name;
 
 		return entity;
+	}
+
+	Entity World::FindEntityByUUID(const UUID uuid) const
+	{
+		auto& reg = m_SystemManager->GetRegistry();
+		for (const auto view = reg.view<IDComponent>(); const entt::entity e : view)
+		{
+			if (reg.Read<IDComponent>(e).Id == uuid)
+			{
+				return Entity{e, const_cast<World*>(this)};
+			}
+		}
+		return Entity{entt::null, const_cast<World*>(this)};
 	}
 
 	void World::DestroyEntity(const Entity entity)

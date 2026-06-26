@@ -26,6 +26,11 @@ namespace Snowstorm
 		Entity CreateEntity(const std::string& name = std::string());
 		Entity CreateEntityWithUUID(UUID uuid, const std::string& name = std::string());
 
+		// Find an entity by its IDComponent UUID, or return an invalid Entity if none matches. Linear
+		// scan over view<IDComponent> — fine at editor entity counts. Used by undo/redo commands, which
+		// must reference entities by stable UUID (entt handles are recycled across destroy/create).
+		[[nodiscard]] Entity FindEntityByUUID(UUID uuid) const;
+
 		// Queue an entity for destruction at the end of the current frame. Deferred so callers can
 		// request deletion while iterating an ECS view (e.g. from a UI system) without invalidating
 		// the iteration. FlushDestroyQueue() performs the actual destroy and is called once per frame.

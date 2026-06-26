@@ -157,6 +157,15 @@ namespace Snowstorm
 					               const auto& mesh = reg.Read<MeshComponent>(e);
 					               const auto& mat = reg.Read<MaterialComponent>(e);
 
+					               // Runtime instances may be unresolved for a frame (e.g. a freshly duplicated
+					               // or restored entity whose resolve runs the same frame). The visibility cache
+					               // can include it before resolution, so guard here too — dereferencing a null
+					               // MaterialInstance below was an access violation.
+					               if (!mesh.MeshInstance || !mat.MaterialInstance)
+					               {
+						               continue;
+					               }
+
 					               // Per-instance albedo override travels in the instance buffer (not a unique
 					               // material), so objects sharing a material still batch. Resolve the override
 					               // texture's bindless index here; 0 = use the material's own albedo.
