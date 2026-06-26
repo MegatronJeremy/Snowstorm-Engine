@@ -3,6 +3,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
 #include <cstddef> // offsetof
+#include <limits>
 
 #include "Examples/MandelbrotSet/MandelbrotControllerComponent.hpp"
 #include "Examples/MandelbrotSet/MandelbrotControllerSystem.hpp"
@@ -24,15 +25,19 @@
 #include "Snowstorm/Components/VisibilityComponents.hpp"
 #include "Snowstorm/ECS/SystemManager.hpp"
 #include "Snowstorm/Lighting/LightingComponents.hpp"
+#include "Snowstorm/Math/CameraFraming.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererUtils.hpp"
+#include "Snowstorm/Render/SceneBounds.hpp"
 #include "Snowstorm/Systems/CoreSystems.hpp"
 #include "Snowstorm/World/EditorCommandsSingleton.hpp"
+#include "Snowstorm/World/EditorHistorySingleton.hpp"
 #include "Snowstorm/World/EditorSelectionSingleton.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
 
 #include "StressScene.hpp"
 
+#include "System/CameraFocusSystem.hpp"
 #include "System/ContentBrowserSystem.hpp"
 #include "System/DockspaceSetupSystem.hpp"
 #include "System/EditorMenuSystem.hpp"
@@ -143,6 +148,10 @@ namespace Snowstorm
 		// "Open Scene" semantics: wipe world entities first.
 		m_ActiveWorld->Clear();
 
+		// Undo history references the old scene's entities by UUID; drop it so undo can't touch a world
+		// that no longer exists.
+		m_ActiveWorld->GetSingleton<EditorHistorySingleton>().Clear();
+
 		if (!SceneSerializer::Deserialize(*m_ActiveWorld, scenePath))
 		{
 			SS_CORE_WARN("Failed to deserialize scene '{}'.", scenePath);
@@ -198,6 +207,39 @@ namespace Snowstorm
 
 			Application::Get().Close();
 			m_ActiveScenePath = out;
+			return;
+		}
+
+		// One-shot bake tool: import the Sponza model into a fresh scene, serialize it to a .world asset,
+		// exit. Afterwards the scene is opened from the Content Browser like any other .world.
+		if (CVars::BakeSponzaScene.Get())
+		{
+			CreateMainViewportEntity();
+			CreateCameraEntities();
+
+			auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
+			const std::vector<Entity> created = assets.ImportModel("assets/meshes/Sponza/Sponza.gltf");
+			SS_CORE_INFO("Sponza import produced {} parts.", created.size());
+			AddDefaultLightRig();       // imported models carry no lights — add a rig as scene content
+			FrameImportedSceneCamera(); // fit the primary camera to the (unknown-scale) model bounds
+			PrewarmSceneTextures();
+
+			const std::string out = "assets/scenes/Sponza.world";
+			if (created.empty())
+			{
+				SS_CORE_ERROR("Sponza import produced no entities; not baking '{}'.", out);
+			}
+			else if (SaveWorldToFile(out))
+			{
+				SS_CORE_INFO("Baked Sponza scene to '{}'.", out);
+				m_ActiveScenePath = out;
+			}
+			else
+			{
+				SS_CORE_ERROR("Failed to bake Sponza scene to '{}'.", out);
+			}
+
+			Application::Get().Close();
 			return;
 		}
 
@@ -260,6 +302,7 @@ namespace Snowstorm
 
 		singletonManager.RegisterSingleton<EditorNotificationsSingleton>();
 		singletonManager.RegisterSingleton<EditorSelectionSingleton>();
+		singletonManager.RegisterSingleton<EditorHistorySingleton>();
 
 		// Editor UI systems. The UI phase is empty in a packaged runtime, so the engine
 		// systems (registered by RegisterCoreSystems) run identically with or without these.
@@ -270,6 +313,7 @@ namespace Snowstorm
 		systemManager.RegisterSystem<EditorNotificationSystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<SceneHierarchySystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<ContentBrowserSystem>(SystemPhase::UI);
+		systemManager.RegisterSystem<CameraFocusSystem>(SystemPhase::UI);
 
 		// Editor example
 		systemManager.RegisterSystem<MandelbrotControllerSystem>(SystemPhase::PreRender);
@@ -484,6 +528,60 @@ namespace Snowstorm
 				auto& cv = secondCamera.AddComponent<CameraVisibilityComponent>();
 				cv.Mask = Visibility::Game; // e.g. “Game” viewport would use this
 			}
+		}
+	}
+
+	void EditorLayer::AddDefaultLightRig() const
+	{
+		// A default key + fill directional rig, added as ordinary scene content (entities the user can
+		// select, edit, or delete). Imported models carry geometry + materials only — lighting is a
+		// scene-authoring decision — so a freshly imported showcase scene needs an explicit rig to be lit.
+		{
+			auto key = m_ActiveWorld->CreateEntity("Sun (key)");
+			auto& dl = key.AddComponent<DirectionalLightComponent>();
+			dl.Direction = glm::normalize(glm::vec3(-0.5f, -1.0f, -0.3f));
+			dl.Color = glm::vec3(1.0f, 0.97f, 0.9f);
+			dl.Intensity = 1.0f;
+			key.AddComponent<VisibilityComponent>().Mask = Visibility::Scene | Visibility::Game;
+		}
+		{
+			auto fill = m_ActiveWorld->CreateEntity("Sky (fill)");
+			auto& dl = fill.AddComponent<DirectionalLightComponent>();
+			dl.Direction = glm::normalize(glm::vec3(0.4f, -0.3f, 0.6f));
+			dl.Color = glm::vec3(0.6f, 0.7f, 0.9f);
+			dl.Intensity = 0.4f;
+			fill.AddComponent<VisibilityComponent>().Mask = Visibility::Scene | Visibility::Game;
+		}
+	}
+
+	void EditorLayer::FrameImportedSceneCamera() const
+	{
+		AABB scene;
+		if (!ComputeWorldRenderableAABB(*m_ActiveWorld, scene))
+		{
+			SS_CORE_WARN("FrameImportedSceneCamera: no renderable meshes; leaving camera as-is.");
+			return;
+		}
+
+		auto& reg = m_ActiveWorld->GetRegistry();
+		for (const auto view = reg.view<CameraComponent, TransformComponent>(); const entt::entity e : view)
+		{
+			auto& cam = reg.Write<CameraComponent>(e);
+			if (!cam.Primary)
+			{
+				continue;
+			}
+
+			const FramingPose pose = ComputeFramingPose(scene, cam.PerspectiveFOV);
+			auto& tr = reg.Write<TransformComponent>(e);
+			tr.Position = pose.Position;
+			tr.Rotation = glm::vec3(pose.Pitch, pose.Yaw, 0.0f);
+			cam.PerspectiveNear = pose.Near;
+			cam.PerspectiveFar = pose.Far;
+
+			SS_CORE_INFO("Framed imported scene: center=({:.1f},{:.1f},{:.1f}); near={:.3f} far={:.1f}",
+			             scene.Center().x, scene.Center().y, scene.Center().z, pose.Near, pose.Far);
+			break;
 		}
 	}
 

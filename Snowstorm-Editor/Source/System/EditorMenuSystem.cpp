@@ -2,6 +2,7 @@
 
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/World/EditorCommandsSingleton.hpp"
+#include "Snowstorm/World/EditorHistorySingleton.hpp"
 #include "Snowstorm/World/World.hpp"
 #include "Snowstorm/World/Entity.hpp"
 #include "Snowstorm/Input/InputStateSingleton.hpp"
@@ -11,6 +12,7 @@
 #include <imgui.h>
 
 #include <cstring>
+#include <string>
 
 namespace Snowstorm
 {
@@ -38,6 +40,23 @@ namespace Snowstorm
 			else
 			{
 				notify.Push("SaveScene not bound", EditorToastType::Warning);
+			}
+		}
+
+		// Undo / Redo (edge-triggered, not while typing). Redo = Ctrl+Y or Ctrl+Shift+Z (Ctrl+R is the
+		// Scale-gizmo key, so it is deliberately not used here).
+		auto& history = SingletonView<EditorHistorySingleton>();
+		if (ctrlDown && !input.WantCaptureKeyboard)
+		{
+			const bool shift = input.Down.test(Key::LeftShift) || input.Down.test(Key::RightShift);
+
+			if (input.PressedThisFrame.test(Key::Z) && !shift)
+			{
+				history.Undo(*m_World);
+			}
+			else if (input.PressedThisFrame.test(Key::Y) || (input.PressedThisFrame.test(Key::Z) && shift))
+			{
+				history.Redo(*m_World);
 			}
 		}
 
@@ -73,10 +92,133 @@ namespace Snowstorm
 				ImGui::EndMenu();
 			}
 
+			if (ImGui::BeginMenu("Edit"))
+			{
+				const char* undoName = history.PeekUndoName();
+				const char* redoName = history.PeekRedoName();
+				const std::string undoLabel = undoName ? (std::string("Undo ") + undoName) : "Undo";
+				const std::string redoLabel = redoName ? (std::string("Redo ") + redoName) : "Redo";
+
+				if (ImGui::MenuItem(undoLabel.c_str(), "Ctrl+Z", false, history.CanUndo()))
+				{
+					history.Undo(*m_World);
+				}
+				if (ImGui::MenuItem(redoLabel.c_str(), "Ctrl+Y", false, history.CanRedo()))
+				{
+					history.Redo(*m_World);
+				}
+
+				ImGui::EndMenu();
+			}
+
+			if (ImGui::BeginMenu("Help"))
+			{
+				if (ImGui::MenuItem("Keyboard & Mouse Shortcuts", nullptr, m_ShowShortcuts))
+				{
+					m_ShowShortcuts = !m_ShowShortcuts;
+				}
+
+				ImGui::EndMenu();
+			}
+
 			ImGui::EndMenuBar();
 		}
 
 		DrawImportModelPopup(notify);
+		DrawShortcutsWindow();
+
+		ImGui::End();
+	}
+
+	void EditorMenuSystem::DrawShortcutsWindow()
+	{
+		if (!m_ShowShortcuts)
+		{
+			return;
+		}
+
+		ImGui::SetNextWindowSize(ImVec2(440.0f, 0.0f), ImGuiCond_FirstUseEver);
+		if (!ImGui::Begin("Keyboard & Mouse Shortcuts", &m_ShowShortcuts))
+		{
+			ImGui::End();
+			return;
+		}
+
+		// A two-column key/action table. Keep these rows in sync with the real bindings (CLAUDE.md).
+		const auto section = [](const char* title)
+		{
+			ImGui::Spacing();
+			ImGui::SeparatorText(title);
+		};
+
+		const auto row = [](const char* keys, const char* action)
+		{
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			ImGui::TextUnformatted(keys);
+			ImGui::TableSetColumnIndex(1);
+			ImGui::TextUnformatted(action);
+		};
+
+		constexpr ImGuiTableFlags tableFlags = ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerV;
+
+		ImGui::TextDisabled("Camera navigation requires holding the right mouse button in the viewport.");
+
+		section("Camera (hold Right Mouse Button in viewport)");
+		if (ImGui::BeginTable("cam", 2, tableFlags))
+		{
+			row("Right Mouse (hold)", "Look around / enable fly controls");
+			row("W / A / S / D", "Move forward / left / back / right");
+			row("E / Q", "Move up / down");
+			row("Left Shift", "Sprint (move faster)");
+			row("Left Ctrl", "Move slower (precision)");
+			row("Mouse Wheel (RMB held)", "Adjust fly speed");
+			row("Mouse Wheel (no RMB)", "Zoom / dolly (perspective) or zoom (ortho)");
+			ImGui::EndTable();
+		}
+
+		section("Selection & Gizmos");
+		if (ImGui::BeginTable("sel", 2, tableFlags))
+		{
+			row("Left Mouse (viewport)", "Select entity under cursor");
+			row("W", "Translate gizmo");
+			row("E", "Rotate gizmo");
+			row("R", "Scale gizmo");
+			ImGui::EndTable();
+		}
+
+		section("Camera Framing");
+		if (ImGui::BeginTable("frame", 2, tableFlags))
+		{
+			row("F", "Frame selected entity (or whole scene if none)");
+			row("Shift + F", "Frame the whole scene");
+			ImGui::EndTable();
+		}
+
+		section("Edit");
+		if (ImGui::BeginTable("edit", 2, tableFlags))
+		{
+			row("Ctrl + Z", "Undo");
+			row("Ctrl + Y", "Redo");
+			row("Ctrl + Shift + Z", "Redo (alternate)");
+			ImGui::EndTable();
+		}
+
+		section("Scene");
+		if (ImGui::BeginTable("scene", 2, tableFlags))
+		{
+			row("Ctrl + S", "Save current scene");
+			ImGui::EndTable();
+		}
+
+		section("Scene Hierarchy (right-click an entity)");
+		if (ImGui::BeginTable("hier", 2, tableFlags))
+		{
+			row("Right-click > Rename", "Rename the entity");
+			row("Right-click > Duplicate", "Duplicate the entity");
+			row("Right-click > Delete", "Delete the entity");
+			ImGui::EndTable();
+		}
 
 		ImGui::End();
 	}

@@ -8,8 +8,8 @@
             0.02012000046670437
           ],
           "Material": "13869174114393927166",
-          "MaxIterations": 1000,
-          "Zoom": 4.0
+          "MaxIterations": 114,
+          "Zoom": 2.620084285736084
         }
       },
       "Name": "Mandelbrot Controller Entity",
@@ -64,6 +64,14 @@
         "Snowstorm::MeshComponent": {
           "$asset": "5810267832183663728"
         },
+        "Snowstorm::RotatorComponent": {
+          "Axis": [
+            1.0,
+            1.899999976158142,
+            0.0
+          ],
+          "SpeedDegPerSec": 67.22100067138672
+        },
         "Snowstorm::TransformComponent": {
           "Position": [
             -2.0,
@@ -71,9 +79,9 @@
             6.0
           ],
           "Rotation": [
-            0.0,
-            0.0,
-            0.0
+            0.14460676908493042,
+            1.233079195022583,
+            0.029667742550373077
           ],
           "Scale": [
             1.0,
@@ -220,9 +228,16 @@
           "Projection": "Perspective"
         },
         "Snowstorm::CameraControllerComponent": {
-          "LookSensitivity": 0.1,
+          "LookSensitivity": 0.10000000149011612,
+          "LookSmoothing": 30.0,
+          "MaxMoveSpeed": 500.0,
+          "MinMoveSpeed": 0.10000000149011612,
+          "MoveSmoothing": 15.0,
           "MoveSpeed": 5.0,
           "RotationEnabled": true,
+          "SlowMultiplier": 0.25,
+          "SpeedAdjustStep": 1.100000023841858,
+          "SprintMultiplier": 4.0,
           "ZoomSpeed": 5.0
         },
         "Snowstorm::CameraTargetComponent": {
@@ -267,9 +282,16 @@
           "Projection": "Perspective"
         },
         "Snowstorm::CameraControllerComponent": {
-          "LookSensitivity": 0.1,
+          "LookSensitivity": 0.10000000149011612,
+          "LookSmoothing": 30.0,
+          "MaxMoveSpeed": 500.0,
+          "MinMoveSpeed": 0.10000000149011612,
+          "MoveSmoothing": 15.0,
           "MoveSpeed": 5.0,
           "RotationEnabled": true,
+          "SlowMultiplier": 0.25,
+          "SpeedAdjustStep": 1.100000023841858,
+          "SprintMultiplier": 4.0,
           "ZoomSpeed": 5.0
         },
         "Snowstorm::CameraTargetComponent": {
@@ -280,13 +302,13 @@
         },
         "Snowstorm::TransformComponent": {
           "Position": [
-            0.0,
-            0.0,
-            15.0
+            7.872457504272461,
+            3.671855926513672,
+            13.271027565002441
           ],
           "Rotation": [
-            0.0,
-            0.0,
+            -0.19547684490680695,
+            0.5759590268135071,
             0.0
           ],
           "Scale": [
@@ -303,9 +325,13 @@
       "Components": {
         "Snowstorm::ViewportComponent": {
           "Size": [
-            2560.0,
-            1369.0
+            1533.0,
+            981.0
           ]
+        },
+        "Snowstorm::ViewportInteractionComponent": {
+          "Focused": true,
+          "Hovered": true
         }
       },
       "Name": "Main Viewport",

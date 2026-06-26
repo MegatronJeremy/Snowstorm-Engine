@@ -33,6 +33,16 @@ namespace Snowstorm
 		void CreateDemoEntities() const;
 		void CreateCameraEntities() const;
 
+		// Position the primary camera so the whole scene's renderable bounds are in view and fit the
+		// near/far planes to its size. Pure camera move (no lights, no save) — shares the framing math
+		// with the editor's Frame command so an unknown-scale import (e.g. Sponza) is never off-screen.
+		void FrameImportedSceneCamera() const;
+
+		// Add a default key + fill directional light rig as ordinary scene entities. Imported models
+		// carry no lights (lighting is a scene-authoring decision), so a fresh showcase scene needs this
+		// to be lit. Separate from import + framing so each concern stays independent.
+		void AddDefaultLightRig() const;
+
 	private:
 		Ref<World> m_ActiveWorld;
 

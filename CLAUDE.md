@@ -99,6 +99,13 @@ Core builds to a static lib holding code shared by multiple apps; executables (c
 link Core and add it to their include path. All targets are **C++20** (the root `CMakeLists.txt`
 sets C++17 globally, but every target overrides to 20 — treat the project as C++20).
 
+**Keep the in-editor shortcut reference current.** The editor has a *Help > Keyboard & Mouse
+Shortcuts* window (`Snowstorm-Editor/Source/System/EditorMenuSystem.cpp`, `DrawShortcutsWindow`)
+that documents every keyboard/mouse binding. Whenever you add, remove, or change a shortcut (camera
+controls, gizmo keys, framing, save, selection, hierarchy actions, …), update that window in the
+same change so the docs never drift from the real bindings. It is the single source of truth users
+see, so treat it as part of the feature, not an afterthought.
+
 ## Architecture (Core)
 
 - **Entry point:** clients define `Snowstorm::CreateApplication()`; `Core/EntryPoint.hpp` provides

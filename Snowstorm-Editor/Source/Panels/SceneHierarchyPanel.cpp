@@ -8,8 +8,13 @@
 #include "Snowstorm/Components/IDComponent.hpp"
 #include "Snowstorm/Components/TagComponent.hpp"
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/World/EditorCommands.hpp"
 #include "Snowstorm/World/EditorCommandsSingleton.hpp"
+#include "Snowstorm/World/EditorHistorySingleton.hpp"
 #include "Snowstorm/World/EditorSelectionSingleton.hpp"
+#include "Snowstorm/World/SceneSerializer.hpp"
+
+#include <nlohmann/json.hpp>
 
 #include "Service/EditorTheme.hpp"
 
@@ -69,7 +74,13 @@ namespace Snowstorm
 
 		if (ImGui::Button("+ Create Entity") && cmds.CreateEntity)
 		{
-			SetSelected(cmds.CreateEntity());
+			const Entity created = cmds.CreateEntity();
+			SetSelected(created);
+			if (created)
+			{
+				m_World->GetSingleton<EditorHistorySingleton>().Push(
+				    CreateRef<AddEntityCommand>(created.GetComponent<IDComponent>().Id, "Create Entity"));
+			}
 		}
 		ImGui::Separator();
 
@@ -91,9 +102,16 @@ namespace Snowstorm
 		ImGui::End();
 
 		// ---- Apply deferred actions after the view iteration above ----
+		auto& history = m_World->GetSingleton<EditorHistorySingleton>();
+
 		if (m_PendingDuplicate)
 		{
-			SetSelected(DuplicateEntity(m_PendingDuplicate));
+			const Entity dup = DuplicateEntity(m_PendingDuplicate);
+			SetSelected(dup);
+			if (dup)
+			{
+				history.Push(CreateRef<AddEntityCommand>(dup.GetComponent<IDComponent>().Id, "Duplicate Entity"));
+			}
 			m_PendingDuplicate = {};
 		}
 		if (m_PendingDelete)
@@ -102,9 +120,13 @@ namespace Snowstorm
 			{
 				SetSelected({});
 			}
-			if (cmds.DeleteEntity)
+			// Snapshot before destroying so the delete can be undone (restores same UUID/identity).
+			nlohmann::json snapshot;
+			const UUID uuid = m_PendingDelete.GetComponent<IDComponent>().Id;
+			if (SceneSerializer::SerializeEntity(m_PendingDelete, snapshot) && cmds.DeleteEntity)
 			{
 				cmds.DeleteEntity(m_PendingDelete); // deferred destroy at end of frame
+				history.Push(CreateRef<DeleteEntityCommand>(uuid, std::move(snapshot)));
 			}
 			m_PendingDelete = {};
 		}
@@ -122,7 +144,14 @@ namespace Snowstorm
 			                                    ImGuiInputTextFlags_EnterReturnsTrue);
 			if ((ImGui::Button("OK", ImVec2(120.0f, 0.0f)) || enter) && m_RenameTarget)
 			{
-				m_RenameTarget.WriteComponent<TagComponent>().Tag = m_RenameBuffer;
+				const std::string before = m_RenameTarget.GetComponent<TagComponent>().Tag;
+				const std::string after = m_RenameBuffer;
+				if (after != before)
+				{
+					m_RenameTarget.WriteComponent<TagComponent>().Tag = after;
+					m_World->GetSingleton<EditorHistorySingleton>().Push(
+					    CreateRef<RenameCommand>(m_RenameTarget.GetComponent<IDComponent>().Id, before, after));
+				}
 				m_RenameTarget = {};
 				ImGui::CloseCurrentPopup();
 			}

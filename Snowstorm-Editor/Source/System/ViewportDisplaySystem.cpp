@@ -8,10 +8,13 @@
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Components/ViewportInteractionComponent.hpp"
+#include "Snowstorm/Components/IDComponent.hpp"
 #include "Snowstorm/Core/KeyCodes.hpp"
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/Math/Bounds.hpp"
 #include "Snowstorm/Math/Picking.hpp"
+#include "Snowstorm/World/EditorCommands.hpp"
+#include "Snowstorm/World/EditorHistorySingleton.hpp"
 #include "Snowstorm/World/EditorSelectionSingleton.hpp"
 
 #include <glm/gtc/type_ptr.hpp>
@@ -176,7 +179,29 @@ namespace Snowstorm
 							t.Scale = scale; });
 					}
 				}
+
 				usingGizmo = ImGuizmo::IsUsing();
+
+				// One undo step per drag: capture the transform when a drag begins, push a single
+				// TransformCommand when it ends. The live edit above is already applied each frame.
+				if (usingGizmo && !m_GizmoDragging)
+				{
+					m_GizmoDragging = true;
+					m_DragBefore = selected.GetComponent<TransformComponent>();
+				}
+				else if (!usingGizmo && m_GizmoDragging)
+				{
+					m_GizmoDragging = false;
+					const TransformComponent after = selected.GetComponent<TransformComponent>();
+					auto& history = SingletonView<EditorHistorySingleton>();
+					history.Push(CreateRef<TransformCommand>(
+					    selected.GetComponent<IDComponent>().Id, m_DragBefore, after));
+				}
+			}
+			else if (m_GizmoDragging)
+			{
+				// Selection lost mid-drag — abandon the in-progress capture.
+				m_GizmoDragging = false;
 			}
 
 			// ---- Mouse picking: left-click in the viewport, not on the gizmo.
