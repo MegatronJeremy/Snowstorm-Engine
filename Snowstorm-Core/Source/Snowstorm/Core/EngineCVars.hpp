@@ -23,6 +23,11 @@ namespace Snowstorm::CVars
 	// is opened from the Content Browser like any other .world.
 	extern CVar<bool> BakeStressScene;
 
+	// One-shot tool: import the Sponza model (Assets/Meshes/Sponza/Sponza.gltf), serialize the result to
+	// Assets/Scenes/Sponza.world, then exit. Like BakeStressScene but for the imported showcase scene;
+	// afterwards the scene is opened from the Content Browser like any other .world.
+	extern CVar<bool> BakeSponzaScene;
+
 	// Startup VSync state. On (default) = FIFO (locked to refresh, no tearing); off = uncapped present
 	// (MAILBOX/IMMEDIATE). Runtime-toggleable from the editor's Settings panel.
 	extern CVar<bool> VSync;

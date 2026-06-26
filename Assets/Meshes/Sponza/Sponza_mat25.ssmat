@@ -1,0 +1,11 @@
+{
+  "BaseColor": [
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "PipelinePreset": "DefaultLit",
+  "Type": "SnowstormMaterial",
+  "Version": 1
+}

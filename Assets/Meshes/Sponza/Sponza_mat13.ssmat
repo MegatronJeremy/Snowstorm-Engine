@@ -1,0 +1,12 @@
+{
+  "AlbedoTexture": "11887311685181390352",
+  "BaseColor": [
+    0.5879999995231628,
+    0.5879999995231628,
+    0.5879999995231628,
+    1.0
+  ],
+  "PipelinePreset": "DefaultLit",
+  "Type": "SnowstormMaterial",
+  "Version": 1
+}
