@@ -1,10 +1,14 @@
 #include "pch.h"
 #include "EditorCommands.hpp"
 
+#include "Snowstorm/Components/ComponentRegistry.hpp"
 #include "Snowstorm/Components/TagComponent.hpp"
+#include "Snowstorm/Utility/JsonUtils.hpp"
 #include "Snowstorm/World/Entity.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
 #include "Snowstorm/World/World.hpp"
+
+#include <algorithm>
 
 namespace Snowstorm
 {
@@ -71,6 +75,44 @@ namespace Snowstorm
 		{
 			world.DestroyEntity(e);
 		}
+	}
+
+	// ---- ComponentEditCommand ------------------------------------------------------------------------
+
+	void ComponentEditCommand::Apply(World& world, const nlohmann::json& state)
+	{
+		Entity e = world.FindEntityByUUID(m_Target);
+		if (!e)
+		{
+			return;
+		}
+
+		const auto& registry = GetComponentRegistry();
+		const auto found = std::ranges::find_if(registry, [&](const ComponentInfo& ci)
+		                                        { return ci.Type.is_valid() && ci.Type.get_name().to_string() == m_TypeName; });
+		if (found == registry.end() || !found->EmplaceDefaultFn || !found->GetInstanceFn)
+		{
+			return;
+		}
+
+		found->EmplaceDefaultFn(e); // ensure the component exists
+		rttr::instance inst = found->GetInstanceFn(e);
+		JsonToRttrInstance(state, inst); // writes onto the live component (bypasses tracking)
+
+		// Mark it changed so resolve systems (material/mesh) react to the undone/redone value.
+		if (found->TouchFn)
+		{
+			found->TouchFn(e);
+		}
+	}
+
+	void ComponentEditCommand::Undo(World& world)
+	{
+		Apply(world, m_Before);
+	}
+	void ComponentEditCommand::Redo(World& world)
+	{
+		Apply(world, m_After);
 	}
 
 	// ---- RenameCommand -------------------------------------------------------------------------------

@@ -162,25 +162,85 @@ namespace Snowstorm
 		}
 		ImGui::SameLine();
 		ImGui::TextDisabled("%zu files", m_Entries.size());
-		ImGui::Separator();
+
+		// Search box (filters by filename substring, case-insensitive).
+		ImGui::SetNextItemWidth(-1.0f);
+		ImGui::InputTextWithHint("##search", "Search...", m_Search, sizeof(m_Search));
+
+		// Type filter tabs: "All" plus one tab per asset type.
+		if (ImGui::BeginTabBar("##type_tabs"))
+		{
+			constexpr std::pair<const char*, AssetType> tabs[] = {
+			    {"All", AssetType::None},
+			    {"Meshes", AssetType::Mesh},
+			    {"Textures", AssetType::Texture},
+			    {"Materials", AssetType::Material},
+			    {"Shaders", AssetType::Shader},
+			    {"Scenes", AssetType::Scene},
+			};
+			for (const auto& [label, type] : tabs)
+			{
+				if (ImGui::BeginTabItem(label))
+				{
+					m_Filter = type;
+					ImGui::EndTabItem();
+				}
+			}
+			ImGui::EndTabBar();
+		}
 
 		ImGui::TextDisabled("Double-click a Scene to open it.");
 		ImGui::Separator();
 
+		// Lowercase search needle for case-insensitive matching.
+		std::string needle = m_Search;
+		std::ranges::transform(needle, needle.begin(), [](const unsigned char c)
+		                       { return static_cast<char>(std::tolower(c)); });
+
+		const auto passesFilter = [&](const Entry& e)
+		{
+			if (m_Filter != AssetType::None && e.Type != m_Filter)
+			{
+				return false;
+			}
+			if (!needle.empty())
+			{
+				std::string name = e.DisplayName;
+				std::ranges::transform(name, name.begin(), [](const unsigned char c)
+				                       { return static_cast<char>(std::tolower(c)); });
+				if (name.find(needle) == std::string::npos)
+				{
+					return false;
+				}
+			}
+			return true;
+		};
+
 		if (ImGui::BeginChild("##content_list"))
 		{
+			// m_Entries is sorted by (Type, Name), so walking it groups naturally. In the "All" view
+			// emit a colored section header each time the type changes.
+			AssetType currentSection = AssetType::None;
+
 			for (int i = 0; i < static_cast<int>(m_Entries.size()); ++i)
 			{
 				const Entry& entry = m_Entries[i];
+				if (!passesFilter(entry))
+				{
+					continue;
+				}
+
+				if (m_Filter == AssetType::None && entry.Type != currentSection)
+				{
+					currentSection = entry.Type;
+					ImGui::PushStyleColor(ImGuiCol_Text, TypeColor(entry.Type));
+					ImGui::SeparatorText(AssetTypeToString(entry.Type).c_str());
+					ImGui::PopStyleColor();
+				}
+
 				ImGui::PushID(i);
+				ImGui::Indent(8.0f);
 
-				// Colored type tag.
-				ImGui::PushStyleColor(ImGuiCol_Text, TypeColor(entry.Type));
-				ImGui::TextUnformatted(AssetTypeToString(entry.Type).c_str());
-				ImGui::PopStyleColor();
-				ImGui::SameLine(110.0f);
-
-				// Selectable row; double-clicking a Scene opens it.
 				ImGui::Selectable(entry.DisplayName.c_str());
 				if (entry.Type == AssetType::Scene && ImGui::IsItemHovered() &&
 				    ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
@@ -195,6 +255,7 @@ namespace Snowstorm
 					}
 				}
 
+				ImGui::Unindent(8.0f);
 				ImGui::PopID();
 			}
 		}

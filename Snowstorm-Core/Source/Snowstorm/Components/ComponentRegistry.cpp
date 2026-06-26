@@ -1,8 +1,14 @@
 ﻿#include "ComponentRegistry.hpp"
 
+#include "Snowstorm/Components/IDComponent.hpp"
 #include "Snowstorm/Math/Math.hpp"
+#include "Snowstorm/Utility/JsonUtils.hpp"
 #include "Snowstorm/Utility/UUID.hpp"
+#include "Snowstorm/World/EditorHistorySingleton.hpp"
+#include "Snowstorm/World/Entity.hpp"
+#include "Snowstorm/World/World.hpp"
 #include <glm/gtc/type_ptr.hpp>
+#include <imgui.h>
 
 #include <algorithm>
 #include <cmath>
@@ -78,6 +84,58 @@ namespace Snowstorm
 			}
 		}
 		s_PendingRemovals.clear();
+	}
+
+	namespace
+	{
+		// Serialize one component on an entity to JSON via its registry entry. Empty json if absent.
+		nlohmann::json ComponentToJson(Entity entity, const rttr::type& type)
+		{
+			for (const auto& info : GetComponentRegistry())
+			{
+				if (info.Type == type && info.HasFn && info.GetInstanceFn && info.HasFn(entity))
+				{
+					return RttrInstanceToJson(info.GetInstanceFn(entity));
+				}
+			}
+			return {};
+		}
+
+		// The editor history singleton for this entity's world, or null in a headless world.
+		EditorHistorySingleton* HistoryFor(Entity entity)
+		{
+			World* world = entity.GetWorld();
+			if (!world || !world->HasSingleton<EditorHistorySingleton>())
+			{
+				return nullptr;
+			}
+			return &world->GetSingleton<EditorHistorySingleton>();
+		}
+	}
+
+	void OnComponentEditBegin(Entity entity, const rttr::type& type)
+	{
+		EditorHistorySingleton* history = HistoryFor(entity);
+		if (!history || history->HasPendingEdit())
+		{
+			return; // already capturing this interaction
+		}
+		history->BeginEdit(entity.GetComponent<IDComponent>().Id, type.get_name().to_string(),
+		                   ComponentToJson(entity, type));
+	}
+
+	void PollComponentEditEnd(Entity entity, const rttr::type& type)
+	{
+		EditorHistorySingleton* history = HistoryFor(entity);
+		if (!history || !history->HasPendingEdit())
+		{
+			return;
+		}
+		// Finalize once no inspector widget is being interacted with (drag released / field committed).
+		if (!ImGui::IsAnyItemActive())
+		{
+			history->FinalizeEdit(ComponentToJson(entity, type));
+		}
 	}
 
 	std::string ResolveAssetName(const uint64_t handle)

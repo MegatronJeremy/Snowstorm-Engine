@@ -32,5 +32,9 @@ namespace Snowstorm
 
 		std::vector<Entry> m_Entries;
 		bool m_Scanned = false;
+
+		// Active type filter. AssetType::None means "All". Drives the tab bar at the top of the panel.
+		AssetType m_Filter = AssetType::None;
+		char m_Search[128] = {};
 	};
 }

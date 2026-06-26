@@ -24,6 +24,12 @@ namespace Snowstorm
 			return m_Singletons.Get<T>();
 		}
 
+		template <typename T>
+		[[nodiscard]] bool HasSingleton() const
+		{
+			return m_Singletons.Contains<T>();
+		}
+
 	private:
 		TypeMap<Singleton> m_Singletons;
 	};

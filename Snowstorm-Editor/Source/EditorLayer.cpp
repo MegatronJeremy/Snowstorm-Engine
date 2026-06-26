@@ -563,26 +563,8 @@ namespace Snowstorm
 			return;
 		}
 
-		auto& reg = m_ActiveWorld->GetRegistry();
-		for (const auto view = reg.view<CameraComponent, TransformComponent>(); const entt::entity e : view)
-		{
-			auto& cam = reg.Write<CameraComponent>(e);
-			if (!cam.Primary)
-			{
-				continue;
-			}
-
-			const FramingPose pose = ComputeFramingPose(scene, cam.PerspectiveFOV);
-			auto& tr = reg.Write<TransformComponent>(e);
-			tr.Position = pose.Position;
-			tr.Rotation = glm::vec3(pose.Pitch, pose.Yaw, 0.0f);
-			cam.PerspectiveNear = pose.Near;
-			cam.PerspectiveFar = pose.Far;
-
-			SS_CORE_INFO("Framed imported scene: center=({:.1f},{:.1f},{:.1f}); near={:.3f} far={:.1f}",
-			             scene.Center().x, scene.Center().y, scene.Center().z, pose.Near, pose.Far);
-			break;
-		}
+		// Initial whole-scene framing: also fit the clip planes to the (unknown-scale) model.
+		FramePrimaryCameraOnAABB(*m_ActiveWorld, scene, /*adjustClipPlanes=*/true);
 	}
 
 	void EditorLayer::OnDetach()

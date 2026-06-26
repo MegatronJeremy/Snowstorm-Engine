@@ -13,6 +13,7 @@
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/Math/Bounds.hpp"
 #include "Snowstorm/Math/Picking.hpp"
+#include "Snowstorm/Render/SceneBounds.hpp"
 #include "Snowstorm/World/EditorCommands.hpp"
 #include "Snowstorm/World/EditorHistorySingleton.hpp"
 #include "Snowstorm/World/EditorSelectionSingleton.hpp"
@@ -212,7 +213,14 @@ namespace Snowstorm
 				const float localY = input.MousePos.y - imageStart.y;
 				if (localX >= 0.0f && localY >= 0.0f && localX <= vp.Size.x && localY <= vp.Size.y)
 				{
-					selection.Selected = Entity{PickEntity(reg, camRt.ViewProjection, localX, localY, vp.Size.x, vp.Size.y), m_World};
+					const Entity picked{PickEntity(reg, camRt.ViewProjection, localX, localY, vp.Size.x, vp.Size.y), m_World};
+					selection.Selected = picked;
+
+					// Double-click focuses the camera on the picked entity (same as F / hierarchy double-click).
+					if (picked.IsValid() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+					{
+						FrameCameraOnEntity(*m_World, picked.Handle());
+					}
 				}
 			}
 		}

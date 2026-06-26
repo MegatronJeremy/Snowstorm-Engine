@@ -192,6 +192,7 @@ namespace Snowstorm
 		{
 			row("F", "Frame selected entity (or whole scene if none)");
 			row("Shift + F", "Frame the whole scene");
+			row("Double-click entity", "Focus camera on it (hierarchy or viewport)");
 			ImGui::EndTable();
 		}
 
@@ -211,9 +212,10 @@ namespace Snowstorm
 			ImGui::EndTable();
 		}
 
-		section("Scene Hierarchy (right-click an entity)");
+		section("Scene Hierarchy");
 		if (ImGui::BeginTable("hier", 2, tableFlags))
 		{
+			row("Delete", "Delete the selected entity");
 			row("Right-click > Rename", "Rename the entity");
 			row("Right-click > Duplicate", "Duplicate the entity");
 			row("Right-click > Delete", "Delete the entity");

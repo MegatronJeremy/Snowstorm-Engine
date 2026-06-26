@@ -35,6 +35,11 @@ namespace Snowstorm
 
 		// Remove this component from an entity (no-op if absent). Used by the inspector's remove "X".
 		std::function<void(Entity)> RemoveFn = nullptr;
+
+		// Mark this component changed through the tracked path (no value change), so ChangedView consumers
+		// (resolve systems) react. Used after a type-erased write (e.g. undo deserializes onto the live
+		// component, which bypasses TrackedRegistry).
+		std::function<void(Entity)> TouchFn = nullptr;
 	};
 
 	// Central registry for all registered component types
@@ -98,6 +103,14 @@ namespace Snowstorm
 	// Whether this component type may be removed from an entity in the inspector. Identity/name
 	// components (ID, Tag) are structural and never removable.
 	bool IsComponentRemovable(const rttr::type& type);
+
+	// Inspector undo coalescing (definitions in ComponentRegistry.cpp). The default DrawFn calls these
+	// around its property edits so a continuous drag becomes ONE undo step:
+	//  - OnComponentEditBegin: first changed frame — snapshot the pre-edit component as the undo "before".
+	//  - PollComponentEditEnd: once no inspector widget is active, finalize the pending edit (push command).
+	// Both no-op when the world has no EditorHistorySingleton (e.g. headless), so Core stays editor-agnostic.
+	void OnComponentEditBegin(Entity entity, const rttr::type& type);
+	void PollComponentEditEnd(Entity entity, const rttr::type& type);
 
 	// Queue a component removal (from the inspector's per-component "Remove"). Deferred so we never
 	// mutate the entity while its DrawFn is still running; FlushComponentRemovals applies them.
@@ -177,9 +190,16 @@ namespace Snowstorm
 
 				if (changed)
 				{
+					// Capture the pre-edit state once at the start of the interaction (for undo), then
+					// apply the live edit. The matching FinalizeEdit happens in PollComponentEditEnd below.
+					OnComponentEditBegin(entity, type);
+
 					entity.PatchComponent<T>([&](T& target)
 					                         { target = working; });
 				}
+
+				// When the interaction ends (widget released), coalesce it into one undo step.
+				PollComponentEditEnd(entity, type);
 			};
 		}
 
@@ -220,6 +240,14 @@ namespace Snowstorm
 				if (entity.HasComponent<T>())
 				{
 					entity.RemoveComponent<T>();
+				} },
+
+		    .TouchFn = [](Entity entity)
+		    {
+				if (entity.HasComponent<T>())
+				{
+					// Empty patch: marks the component changed for this frame without altering its value.
+					entity.PatchComponent<T>([](T&) {});
 				} }};
 
 		GetComponentRegistry().emplace_back(std::move(info));

@@ -71,6 +71,32 @@ namespace Snowstorm
 		nlohmann::json m_Snapshot;
 	};
 
+	// A generic inspector edit of one component on one entity. Stores the component's serialized JSON
+	// before and after the edit, and applies whichever side by deserializing it onto the live component.
+	// Used for property edits (RTTR) where capturing typed before/after per property would be unwieldy;
+	// the whole-component snapshot is small and type-agnostic. A continuous drag is coalesced into one
+	// command at the inspector call site (push on edit-end, before captured on edit-begin).
+	class ComponentEditCommand final : public EditorCommand
+	{
+	public:
+		ComponentEditCommand(UUID target, std::string typeName, nlohmann::json before, nlohmann::json after)
+		    : m_Target(target), m_TypeName(std::move(typeName)), m_Before(std::move(before)), m_After(std::move(after))
+		{
+		}
+
+		void Undo(World& world) override;
+		void Redo(World& world) override;
+		[[nodiscard]] const char* Name() const override { return "Edit"; }
+
+	private:
+		void Apply(World& world, const nlohmann::json& state);
+
+		UUID m_Target;
+		std::string m_TypeName;
+		nlohmann::json m_Before;
+		nlohmann::json m_After;
+	};
+
 	// Rename (TagComponent) of a single entity.
 	class RenameCommand final : public EditorCommand
 	{

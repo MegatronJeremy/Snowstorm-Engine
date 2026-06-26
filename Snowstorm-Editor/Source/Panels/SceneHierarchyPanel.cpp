@@ -4,10 +4,16 @@
 
 #include "SceneHierarchyPanel.hpp"
 
+#include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Components/ComponentRegistry.hpp"
 #include "Snowstorm/Components/IDComponent.hpp"
+#include "Snowstorm/Components/RenderTargetComponent.hpp"
 #include "Snowstorm/Components/TagComponent.hpp"
+#include "Snowstorm/Components/ViewportComponent.hpp"
+#include "Snowstorm/Core/KeyCodes.hpp"
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Input/InputStateSingleton.hpp"
+#include "Snowstorm/Render/SceneBounds.hpp"
 #include "Snowstorm/World/EditorCommands.hpp"
 #include "Snowstorm/World/EditorCommandsSingleton.hpp"
 #include "Snowstorm/World/EditorHistorySingleton.hpp"
@@ -22,6 +28,19 @@
 
 namespace Snowstorm
 {
+	namespace
+	{
+		// Structural entities must not be deleted from the editor: the viewport/render-target and the
+		// cameras are required infrastructure (deleting the main viewport left RenderSystem dereferencing
+		// a destroyed target → crash). Everything else is ordinary, deletable scene content.
+		bool IsDeletable(const Entity entity)
+		{
+			return !entity.HasComponent<ViewportComponent>() &&
+			       !entity.HasComponent<RenderTargetComponent>() &&
+			       !entity.HasComponent<CameraComponent>();
+		}
+	}
+
 	SceneHierarchyPanel::SceneHierarchyPanel(World* context)
 	{
 		SetContext(context);
@@ -71,6 +90,17 @@ namespace Snowstorm
 		EditorTheme::SectionHeader("Scene Hierarchy");
 
 		auto& cmds = m_World->GetSingleton<EditorCommandsSingleton>();
+
+		// Delete key removes the selected entity (same deferred path as the right-click Delete). Gated
+		// on the keyboard not being captured (e.g. a rename field) so typing never deletes.
+		if (const auto& input = m_World->GetSingleton<InputStateSingleton>();
+		    input.PressedThisFrame.test(Key::Delete) && !input.WantCaptureKeyboard)
+		{
+			if (const Entity sel = GetSelected(); sel && IsDeletable(sel))
+			{
+				m_PendingDelete = sel;
+			}
+		}
 
 		if (ImGui::Button("+ Create Entity") && cmds.CreateEntity)
 		{
@@ -194,6 +224,13 @@ namespace Snowstorm
 			SetSelected(entity);
 		}
 
+		// Double-click focuses the camera on the entity (same as pressing F with it selected).
+		if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+		{
+			SetSelected(entity);
+			FrameCameraOnEntity(*m_World, entity.Handle());
+		}
+
 		// Per-entity context menu: Rename / Duplicate / Delete (deferred to avoid view invalidation).
 		if (ImGui::BeginPopupContextItem())
 		{
@@ -209,7 +246,8 @@ namespace Snowstorm
 				m_PendingDuplicate = entity;
 			}
 			ImGui::Separator();
-			if (ImGui::MenuItem("Delete"))
+			// Structural entities (viewport, cameras) can't be deleted — show the item disabled.
+			if (ImGui::MenuItem("Delete", nullptr, false, IsDeletable(entity)))
 			{
 				m_PendingDelete = entity;
 			}

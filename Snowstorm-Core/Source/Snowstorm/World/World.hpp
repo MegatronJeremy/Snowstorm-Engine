@@ -54,6 +54,12 @@ namespace Snowstorm
 			return m_SingletonManager->GetSingleton<T>();
 		}
 
+		template <typename T>
+		bool HasSingleton() const
+		{
+			return m_SingletonManager->HasSingleton<T>();
+		}
+
 		void OnUpdate(Timestep ts);
 
 	private:
