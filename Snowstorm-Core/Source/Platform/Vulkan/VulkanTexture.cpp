@@ -151,9 +151,13 @@ namespace Snowstorm
 			return view;
 		}
 
-		//-- Otherwise, create a new one and cache it as a weak reference
+		//-- Otherwise, create a new one and cache it as a weak reference.
+		// Use a full view desc so the default view spans every mip level and array layer of the
+		// texture. An empty desc would default to MipLevelCount/ArrayLayerCount = 1, hiding generated
+		// mips (sampler reads only level 0 -> minification aliasing) and collapsing cube textures to
+		// a single face. See #24 / #47.
 		const auto tex = shared_from_this();
-		Ref<TextureView> newView = TextureView::Create(tex, {});
+		Ref<TextureView> newView = TextureView::Create(tex, MakeFullViewDesc(m_Desc));
 		m_DefaultView = newView;
 		return newView;
 	}
