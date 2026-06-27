@@ -156,9 +156,14 @@ solution/project files (`*.sln`, `*.vcxproj*`, `*.cmake`, `CMakeCache.txt`, `ALL
 
 ## Think like a real engine
 
-When designing or proposing anything, first ask: **how would a serious production engine
-(Unreal, Unity, Godot, modern in-house) do this?** State that reference model briefly, then
-deliberately decide how far to go for *this* project.
+**Always** check how a serious production engine (Unreal, Unity, Godot, modern in-house) does it
+*before* proposing or implementing any design — this is a required step, not an optional prompt.
+Name the reference model concretely (e.g. "Unity Clear Flags", "Unreal SkyAtmosphere actor", "Godot
+WorldEnvironment Background Mode"), state how that engine actually structures the feature, and only
+then deliberately decide how far to go for *this* project. If you're unsure how the reference engines
+do it, research it (web search / docs) rather than guessing — a vague "engines usually…" is not
+acceptable. The point is to anchor every design decision in a proven pattern so today's choice is a
+known subset of the real thing, not an accidental invention.
 
 **Lead with the more rigid, long-term-correct option.** When choosing between a quick patch and the
 structurally sound design, *propose the sound one first* and recommend it by default — even if it is
