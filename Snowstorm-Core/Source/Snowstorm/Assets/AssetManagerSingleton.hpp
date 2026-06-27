@@ -68,6 +68,10 @@ namespace Snowstorm
 	private:
 		Ref<Pipeline> GetOrCreatePipeline(PipelinePreset preset);
 
+		// Copy a loaded MaterialAsset's colors/factors/maps onto a base Material (shared by the cached
+		// and unique material-instance paths). Resolves each texture handle in the correct color space.
+		void ApplyMaterialAsset(Material& base, const MaterialAsset& matAsset);
+
 		// Resolve metadata for a non-zero handle, logging a clear error (once per handle) if it is
 		// missing or the wrong type. A scene referencing handles absent from the registry is the
 		// classic "registry stale/missing" failure and otherwise fails silently (nothing renders).

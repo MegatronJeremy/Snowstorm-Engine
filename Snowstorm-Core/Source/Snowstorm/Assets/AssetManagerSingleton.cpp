@@ -406,15 +406,7 @@ namespace Snowstorm
 		}
 
 		Ref<Material> base = CreateRef<Material>(pipeline);
-		base->SetBaseColor(matAsset.BaseColor);
-
-		if (matAsset.AlbedoTexture != 0)
-		{
-			if (const Ref<TextureView> albedoView = GetTextureView(matAsset.AlbedoTexture))
-			{
-				base->SetAlbedoTexture(albedoView);
-			}
-		}
+		ApplyMaterialAsset(*base, matAsset);
 
 		return CreateRef<MaterialInstance>(base);
 	}
@@ -448,19 +440,47 @@ namespace Snowstorm
 		}
 
 		Ref<Material> base = CreateRef<Material>(pipeline);
-		base->SetBaseColor(matAsset.BaseColor);
-
-		if (matAsset.AlbedoTexture != 0)
-		{
-			if (const Ref<TextureView> albedoView = GetTextureView(matAsset.AlbedoTexture))
-			{
-				base->SetAlbedoTexture(albedoView);
-			}
-		}
+		ApplyMaterialAsset(*base, matAsset);
 
 		Ref<MaterialInstance> mi = CreateRef<MaterialInstance>(base);
 
 		m_MaterialInstanceCache[handle] = mi;
 		return mi;
+	}
+
+	void AssetManagerSingleton::ApplyMaterialAsset(Material& base, const MaterialAsset& matAsset)
+	{
+		base.SetBaseColor(matAsset.BaseColor);
+		base.SetMetallic(matAsset.Metallic);
+		base.SetRoughness(matAsset.Roughness);
+		base.SetEmissiveColor(matAsset.EmissiveColor);
+
+		// Albedo + emissive sample as sRGB; normal / metallic-roughness / AO are data maps and MUST be
+		// sampled linear (sRGB on a normal map = wrong lighting). GetTextureView caches per color space.
+		if (matAsset.AlbedoTexture != 0)
+		{
+			if (const Ref<TextureView> v = GetTextureView(matAsset.AlbedoTexture, true))
+				base.SetAlbedoTexture(v);
+		}
+		if (matAsset.NormalTexture != 0)
+		{
+			if (const Ref<TextureView> v = GetTextureView(matAsset.NormalTexture, false))
+				base.SetNormalTexture(v);
+		}
+		if (matAsset.MetallicRoughnessTexture != 0)
+		{
+			if (const Ref<TextureView> v = GetTextureView(matAsset.MetallicRoughnessTexture, false))
+				base.SetMetallicRoughnessTexture(v);
+		}
+		if (matAsset.AOTexture != 0)
+		{
+			if (const Ref<TextureView> v = GetTextureView(matAsset.AOTexture, false))
+				base.SetAOTexture(v);
+		}
+		if (matAsset.EmissiveTexture != 0)
+		{
+			if (const Ref<TextureView> v = GetTextureView(matAsset.EmissiveTexture, true))
+				base.SetEmissiveTexture(v);
+		}
 	}
 }

@@ -28,6 +28,9 @@ namespace Snowstorm
 		// Named setters - much better for an engine
 		void SetAlbedoTexture(const Ref<TextureView>& view);
 		void SetNormalTexture(const Ref<TextureView>& view);
+		void SetMetallicRoughnessTexture(const Ref<TextureView>& view);
+		void SetAOTexture(const Ref<TextureView>& view);
+		void SetEmissiveTexture(const Ref<TextureView>& view);
 
 		// You can keep an internal generic one for the UI/Editor later
 		// void SetTexture(const std::string& name, const Ref<TextureView>& view);

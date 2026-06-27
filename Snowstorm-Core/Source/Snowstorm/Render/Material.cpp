@@ -5,7 +5,7 @@
 namespace Snowstorm
 {
 	Material::Material(const Ref<Pipeline>& pipeline)
-		: m_Pipeline(pipeline)
+	    : m_Pipeline(pipeline)
 	{
 		SS_CORE_ASSERT(m_Pipeline, "Material requires a Pipeline");
 
@@ -28,6 +28,30 @@ namespace Snowstorm
 	void Material::SetAlbedoTexture(const Ref<TextureView>& view)
 	{
 		m_AlbedoTexture = view;
-		m_DefaultConstants.AlbedoTextureIndex = view ? view->GetGlobalBindlessIndex() : 0; 
+		m_DefaultConstants.AlbedoTextureIndex = view ? view->GetGlobalBindlessIndex() : 0;
+	}
+
+	void Material::SetNormalTexture(const Ref<TextureView>& view)
+	{
+		m_NormalTexture = view;
+		m_DefaultConstants.NormalTextureIndex = view ? view->GetGlobalBindlessIndex() : 0;
+	}
+
+	void Material::SetMetallicRoughnessTexture(const Ref<TextureView>& view)
+	{
+		m_MetallicRoughnessTexture = view;
+		m_DefaultConstants.MetallicRoughnessTextureIndex = view ? view->GetGlobalBindlessIndex() : 0;
+	}
+
+	void Material::SetAOTexture(const Ref<TextureView>& view)
+	{
+		m_AOTexture = view;
+		m_DefaultConstants.AOTextureIndex = view ? view->GetGlobalBindlessIndex() : 0;
+	}
+
+	void Material::SetEmissiveTexture(const Ref<TextureView>& view)
+	{
+		m_EmissiveTexture = view;
+		m_DefaultConstants.EmissiveTextureIndex = view ? view->GetGlobalBindlessIndex() : 0;
 	}
 }

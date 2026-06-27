@@ -52,8 +52,25 @@ namespace Snowstorm
 
 	void MaterialInstance::SetNormalTexture(const Ref<TextureView>& view)
 	{
-		// Even if your shader doesn't use it yet, your C++ struct is ready
 		m_Constants.NormalTextureIndex = view ? view->GetGlobalBindlessIndex() : 0;
+		MarkDirty();
+	}
+
+	void MaterialInstance::SetMetallicRoughnessTexture(const Ref<TextureView>& view)
+	{
+		m_Constants.MetallicRoughnessTextureIndex = view ? view->GetGlobalBindlessIndex() : 0;
+		MarkDirty();
+	}
+
+	void MaterialInstance::SetAOTexture(const Ref<TextureView>& view)
+	{
+		m_Constants.AOTextureIndex = view ? view->GetGlobalBindlessIndex() : 0;
+		MarkDirty();
+	}
+
+	void MaterialInstance::SetEmissiveTexture(const Ref<TextureView>& view)
+	{
+		m_Constants.EmissiveTextureIndex = view ? view->GetGlobalBindlessIndex() : 0;
 		MarkDirty();
 	}
 

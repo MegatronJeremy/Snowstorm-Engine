@@ -51,13 +51,23 @@ cbuffer FrameCB : register(b0, space0)
 };
 
 // --- SPACE 1: Material Data ---
+// MUST match Material::Constants in Snowstorm/Render/Material.hpp field-for-field (16-byte rows).
 cbuffer MaterialCB : register(b0, space1)
 {
 	float4 BaseColor;
+
 	uint AlbedoTextureIndex;
 	uint NormalTextureIndex;
 	float Roughness;
 	float Metallic;
+
+	uint MetallicRoughnessTextureIndex; // glTF packing: G = roughness, B = metallic
+	uint AOTextureIndex;
+	uint EmissiveTextureIndex;
+	uint _MatPad0;
+
+	float3 EmissiveColor;
+	float _MatPad1;
 };
 SamplerState LinearSampler : register(s1, space1);
 
