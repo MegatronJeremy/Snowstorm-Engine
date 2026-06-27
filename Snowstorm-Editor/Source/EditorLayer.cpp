@@ -40,7 +40,9 @@
 
 #include "System/CameraFocusSystem.hpp"
 #include "System/ContentBrowserSystem.hpp"
+#include "Singletons/EditorStatusBarSingleton.hpp"
 #include "System/DockspaceSetupSystem.hpp"
+#include "System/StatusBarSystem.hpp"
 #include "System/EditorMenuSystem.hpp"
 #include "System/EditorNotificationSystem.hpp"
 #include "System/SceneHierarchySystem.hpp"
@@ -313,6 +315,10 @@ namespace Snowstorm
 			assets.SaveRegistry("assets/AssetRegistry.json");
 		}
 
+		// Mark the history's current depth as the clean baseline, so the status bar drops its "*" until
+		// the next edit. Single choke point for all saves (Ctrl+S, bake, first-run), so this covers them.
+		m_ActiveWorld->GetSingleton<EditorHistorySingleton>().MarkSaved();
+
 		SS_CORE_INFO("Scene '{}' saved.", scenePath);
 		return true;
 	}
@@ -336,9 +342,13 @@ namespace Snowstorm
 		singletonManager.RegisterSingleton<EditorNotificationsSingleton>();
 		singletonManager.RegisterSingleton<EditorSelectionSingleton>();
 		singletonManager.RegisterSingleton<EditorHistorySingleton>();
+		singletonManager.RegisterSingleton<EditorStatusBarSingleton>();
 
 		// Editor UI systems. The UI phase is empty in a packaged runtime, so the engine
 		// systems (registered by RegisterCoreSystems) run identically with or without these.
+		// StatusBarSystem first: it reserves the bottom strip via BeginViewportSideBar before
+		// DockspaceSetupSystem sizes the dockspace to the (now-shrunk) viewport work-area.
+		systemManager.RegisterSystem<StatusBarSystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<DockspaceSetupSystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<ViewportResizeSystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<ViewportDisplaySystem>(SystemPhase::UI);
@@ -618,6 +628,15 @@ namespace Snowstorm
 			const std::string path = std::move(m_PendingScenePath);
 			m_PendingScenePath.clear();
 			TryLoadWorldFromFile(path);
+		}
+
+		// Publish the current scene file + unsaved-changes flag to the status bar. Done here (once per
+		// frame, before systems run) because m_ActiveScenePath is owned by the layer, not a singleton —
+		// this is the single point that knows it, so the StatusBarSystem can stay a pure reader.
+		{
+			auto& statusBar = m_ActiveWorld->GetSingleton<EditorStatusBarSingleton>();
+			const bool dirty = m_ActiveWorld->GetSingleton<EditorHistorySingleton>().IsDirty();
+			statusBar.SetScene(m_ActiveScenePath, dirty);
 		}
 
 		m_ActiveWorld->OnUpdate(ts);

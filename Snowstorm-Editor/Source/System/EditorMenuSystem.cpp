@@ -8,6 +8,7 @@
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Singletons/EditorNotificationsSingleton.hpp"
+#include "Singletons/EditorStatusBarSingleton.hpp"
 
 #include <imgui.h>
 
@@ -16,6 +17,39 @@
 
 namespace Snowstorm
 {
+	namespace
+	{
+		// Undo/redo, reporting what happened on the ambient status bar (not a toast — undo/redo is
+		// high-frequency and a popup per keystroke is noise). The command name MUST be read before the
+		// op runs: Undo moves the command onto the redo stack, so PeekUndoName would then return the
+		// *next* one. Shared by the keyboard shortcuts and the Edit menu so message + ordering match.
+		void UndoAction(EditorHistorySingleton& history, World& world, EditorStatusBarSingleton& status)
+		{
+			if (!history.CanUndo())
+			{
+				status.SetMessage("Nothing to undo");
+				return;
+			}
+			const char* name = history.PeekUndoName();
+			const std::string label = name ? (std::string("Undo: ") + name) : "Undo";
+			history.Undo(world);
+			status.SetMessage(label);
+		}
+
+		void RedoAction(EditorHistorySingleton& history, World& world, EditorStatusBarSingleton& status)
+		{
+			if (!history.CanRedo())
+			{
+				status.SetMessage("Nothing to redo");
+				return;
+			}
+			const char* name = history.PeekRedoName();
+			const std::string label = name ? (std::string("Redo: ") + name) : "Redo";
+			history.Redo(world);
+			status.SetMessage(label);
+		}
+	}
+
 	void EditorMenuSystem::Execute(Timestep)
 	{
 		auto& cmds = SingletonView<EditorCommandsSingleton>();
@@ -46,17 +80,18 @@ namespace Snowstorm
 		// Undo / Redo (edge-triggered, not while typing). Redo = Ctrl+Y or Ctrl+Shift+Z (Ctrl+R is the
 		// Scale-gizmo key, so it is deliberately not used here).
 		auto& history = SingletonView<EditorHistorySingleton>();
+		auto& status = SingletonView<EditorStatusBarSingleton>();
 		if (ctrlDown && !input.WantCaptureKeyboard)
 		{
 			const bool shift = input.Down.test(Key::LeftShift) || input.Down.test(Key::RightShift);
 
 			if (input.PressedThisFrame.test(Key::Z) && !shift)
 			{
-				history.Undo(*m_World);
+				UndoAction(history, *m_World, status);
 			}
 			else if (input.PressedThisFrame.test(Key::Y) || (input.PressedThisFrame.test(Key::Z) && shift))
 			{
-				history.Redo(*m_World);
+				RedoAction(history, *m_World, status);
 			}
 		}
 
@@ -101,11 +136,11 @@ namespace Snowstorm
 
 				if (ImGui::MenuItem(undoLabel.c_str(), "Ctrl+Z", false, history.CanUndo()))
 				{
-					history.Undo(*m_World);
+					UndoAction(history, *m_World, status);
 				}
 				if (ImGui::MenuItem(redoLabel.c_str(), "Ctrl+Y", false, history.CanRedo()))
 				{
-					history.Redo(*m_World);
+					RedoAction(history, *m_World, status);
 				}
 
 				ImGui::EndMenu();

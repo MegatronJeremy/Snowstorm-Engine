@@ -37,6 +37,14 @@ namespace Snowstorm
 		// Drop all history. Call on scene open/new — the old commands point at a world that no longer exists.
 		void Clear();
 
+		// --- Unsaved-changes ("dirty") tracking ---
+		// Dirty = the undo stack has diverged from where it was at the last save. Undoing back to the
+		// saved point reads as clean again; any edit past it reads dirty. This rides the undo stack
+		// rather than a manual flag, so every undoable mutation marks dirty for free (the editor's
+		// status bar reads it). Non-undoable changes are not tracked — acceptable, they're rare.
+		void MarkSaved() { m_CleanIndex = m_Undo.size(); }
+		[[nodiscard]] bool IsDirty() const { return m_Undo.size() != m_CleanIndex; }
+
 		// --- Coalesced inspector edits ---
 		// A continuous inspector edit (e.g. dragging a slider) patches the component every frame; we want
 		// ONE undo step for the whole interaction. The inspector calls BeginEdit on the first changed
@@ -49,6 +57,12 @@ namespace Snowstorm
 	private:
 		std::vector<Ref<EditorCommand>> m_Undo;
 		std::vector<Ref<EditorCommand>> m_Redo;
+
+		// Undo-stack depth at the last save (or scene load). IsDirty compares the current depth to this;
+		// Clear() resets it to 0 (a freshly loaded/empty scene is clean). Edge case: once the stack is
+		// capped at kMaxDepth, front entries are dropped and the depth comparison can misjudge after
+		// 100+ unsaved edits — acceptable for the editor's status indicator.
+		size_t m_CleanIndex = 0;
 
 		struct PendingEdit
 		{

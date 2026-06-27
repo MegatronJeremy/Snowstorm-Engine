@@ -53,6 +53,7 @@ namespace Snowstorm
 		m_Undo.clear();
 		m_Redo.clear();
 		m_PendingEdit = {};
+		m_CleanIndex = 0; // a freshly loaded/empty scene is clean
 	}
 
 	void EditorHistorySingleton::BeginEdit(const UUID target, const std::string& typeName, nlohmann::json before)
