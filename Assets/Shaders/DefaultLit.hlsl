@@ -13,6 +13,8 @@ VSOutput main(VSInput i, uint iid : SV_InstanceID)
 
 	// Normal matrix: for now, treat Model as rigid/affine (same as your GLSL mat3(model))
 	o.NormalWS = normalize(mul(i.Normal, (float3x3)model));
+	// Tangent to world space (same rigid/affine assumption); keep handedness w untouched.
+	o.TangentWS = float4(normalize(mul(i.Tangent.xyz, (float3x3)model)), i.Tangent.w);
 
 	o.TexCoord = i.TexCoord;
 	o.PositionCS = mul(posWS, ViewProj);

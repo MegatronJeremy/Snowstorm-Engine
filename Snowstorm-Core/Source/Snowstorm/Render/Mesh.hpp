@@ -14,6 +14,10 @@ namespace Snowstorm
 		glm::vec3 Position;
 		glm::vec3 Normal;
 		glm::vec2 TexCoord;
+		// Tangent basis for normal mapping. xyz = tangent direction, w = handedness sign for the
+		// bitangent (bitangent = cross(normal, tangent.xyz) * tangent.w), the glTF/assimp convention.
+		// A plain vec4 keeps the vertex stride 16-byte friendly vs. a separate tangent+bitangent.
+		glm::vec4 Tangent{1.0f, 0.0f, 0.0f, 1.0f};
 	};
 
 	class Mesh

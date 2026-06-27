@@ -14,6 +14,7 @@ struct VSInput
 	float3 Position : TEXCOORD0;
 	float3 Normal : TEXCOORD1;
 	float2 TexCoord : TEXCOORD2;
+	float4 Tangent : TEXCOORD3; // xyz = tangent, w = bitangent handedness sign (glTF/assimp convention)
 };
 
 struct VSOutput
@@ -22,7 +23,8 @@ struct VSOutput
 	float2 TexCoord : TEXCOORD0;
 	float3 NormalWS : TEXCOORD1;
 	float3 PositionWS : TEXCOORD2;
-	nointerpolation uint InstanceID : TEXCOORD3; // carry SV_InstanceID to the fragment stage
+	float4 TangentWS : TEXCOORD3; // world-space tangent (xyz) + handedness (w) for normal mapping
+	nointerpolation uint InstanceID : TEXCOORD4; // carry SV_InstanceID to the fragment stage
 };
 
 struct PSInput
@@ -31,7 +33,8 @@ struct PSInput
 	float2 TexCoord : TEXCOORD0;
 	float3 NormalWS : TEXCOORD1;
 	float3 PositionWS : TEXCOORD2;
-	nointerpolation uint InstanceID : TEXCOORD3;
+	float4 TangentWS : TEXCOORD3;
+	nointerpolation uint InstanceID : TEXCOORD4;
 };
 
 static const int MAX_DIRECTIONAL_LIGHTS = 4;

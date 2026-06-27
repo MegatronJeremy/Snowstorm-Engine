@@ -11,6 +11,7 @@ VSOutput main(VSInput i, uint iid : SV_InstanceID)
 	const float4 posWS = mul(float4(i.Position, 1.0), model);
 	o.PositionWS = posWS.xyz;
 	o.NormalWS = float3(0.0, 0.0, 1.0);
+	o.TangentWS = float4(1.0, 0.0, 0.0, 1.0); // unused by Mandelbrot, but VSOutput requires it set
 	o.PositionCS = mul(posWS, ViewProj);
 	o.InstanceID = iid;
 	return o;
