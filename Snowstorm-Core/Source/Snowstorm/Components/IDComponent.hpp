@@ -8,6 +8,4 @@ namespace Snowstorm
 	{
 		UUID Id;
 	};
-
-	void RegisterIDComponent();
 }

@@ -1,4 +1,4 @@
-﻿#include "VisibilityComponents.hpp"
+#include "VisibilityComponents.hpp"
 
 #include <rttr/registration.h>
 
@@ -19,7 +19,7 @@ namespace Snowstorm
 		}
 	}
 
-	void RegisterVisibilityComponents()
+	RTTR_REGISTRATION
 	{
 		using namespace rttr;
 
@@ -31,8 +31,8 @@ namespace Snowstorm
 		registration::class_<CameraVisibilityComponent>("Snowstorm::CameraVisibilityComponent")
 		    .property("Mask", &CameraVisibilityComponent::Mask)(
 		        metadata("Flags", VisibilityFlagBits()));
-
-		Snowstorm::RegisterComponent<VisibilityComponent>();
-		Snowstorm::RegisterComponent<CameraVisibilityComponent>();
 	}
+
+	AUTO_REGISTER_COMPONENT(VisibilityComponent);
+	AUTO_REGISTER_COMPONENT(CameraVisibilityComponent);
 }

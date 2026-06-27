@@ -11,6 +11,4 @@ namespace Snowstorm
 		Ref<MaterialInstance> MaterialInstance;
 		AssetHandle Material{0};
 	};
-
-	void RegisterMaterialComponent();
 }

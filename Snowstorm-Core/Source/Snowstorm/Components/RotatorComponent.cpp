@@ -6,7 +6,7 @@
 
 namespace Snowstorm
 {
-	void RegisterRotatorComponent()
+	RTTR_REGISTRATION
 	{
 		using namespace rttr;
 
@@ -14,7 +14,7 @@ namespace Snowstorm
 		    .constructor()
 		    .property("Axis", &RotatorComponent::Axis)
 		    .property("SpeedDegPerSec", &RotatorComponent::SpeedDegPerSec);
-
-		Snowstorm::RegisterComponent<RotatorComponent>();
 	}
+
+	AUTO_REGISTER_COMPONENT(RotatorComponent);
 }

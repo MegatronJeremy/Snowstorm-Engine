@@ -1,4 +1,4 @@
-﻿#include "MaterialComponent.hpp"
+#include "MaterialComponent.hpp"
 
 #include "ComponentRegistry.hpp"
 #include "Snowstorm/Assets/AssetTypes.hpp"
@@ -7,15 +7,15 @@
 
 namespace Snowstorm
 {
-	using namespace rttr;
-
-	void RegisterMaterialComponent()
+	RTTR_REGISTRATION
 	{
+		using namespace rttr;
+
 		registration::class_<MaterialComponent>("Snowstorm::MaterialComponent")
 		    .property("Material", &MaterialComponent::Material)(
 		        metadata("AssetType", static_cast<int>(AssetType::Material)) // inspector asset picker filter
 		    );
-
-		Snowstorm::RegisterComponent<MaterialComponent>();
 	}
+
+	AUTO_REGISTER_COMPONENT(MaterialComponent);
 }

@@ -157,7 +157,7 @@ namespace Snowstorm
 		}
 	}
 
-	void RegisterMaterialOverridesComponent()
+	RTTR_REGISTRATION
 	{
 		using namespace rttr;
 
@@ -176,13 +176,25 @@ namespace Snowstorm
 		    .property("Texture", &MaterialOverride::Texture);
 
 		registration::class_<MaterialOverridesComponent>("Snowstorm::MaterialOverridesComponent");
+	}
 
-		ComponentRegisterOptions opts{};
-		opts.Serializable = true;
-		opts.DrawInEditor = true;
-		opts.DrawFnOverride = [](const Entity e)
-		{ DrawMaterialOverridesUI(e); };
-
-		Snowstorm::RegisterComponent<MaterialOverridesComponent>(opts);
+	namespace
+	{
+		// This component uses a hand-written inspector (DrawMaterialOverridesUI) instead of the default
+		// reflected one, so it can't use the plain AUTO_REGISTER_COMPONENT macro; register with a custom
+		// DrawFnOverride from a static initializer (same self-registration shape, see ComponentRegistry.hpp).
+		struct AutoRegisterMaterialOverrides
+		{
+			AutoRegisterMaterialOverrides()
+			{
+				ComponentRegisterOptions opts{};
+				opts.Serializable = true;
+				opts.DrawInEditor = true;
+				opts.DrawFnOverride = [](const Entity e)
+				{ DrawMaterialOverridesUI(e); };
+				RegisterComponent<MaterialOverridesComponent>(opts);
+			}
+		};
+		const AutoRegisterMaterialOverrides g_autoRegisterMaterialOverrides;
 	}
 }

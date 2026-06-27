@@ -11,7 +11,5 @@ namespace Snowstorm
 		Ref<Mesh> MeshInstance;
 		AssetHandle MeshHandle{0};
 	};
-
-	void RegisterMeshComponent();
 }
 

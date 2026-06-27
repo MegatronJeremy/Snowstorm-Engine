@@ -34,6 +34,4 @@ namespace Snowstorm
 
 		// Optional later: exposure, tonemap, post process volume ref, etc.
 	};
-
-	void RegisterCameraComponent();
 }

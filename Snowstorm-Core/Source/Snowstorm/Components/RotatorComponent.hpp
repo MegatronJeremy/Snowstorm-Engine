@@ -14,6 +14,4 @@ namespace Snowstorm
 		glm::vec3 Axis{0.0f, 1.0f, 0.0f}; // rotation axis (need not be normalized; system normalizes)
 		float SpeedDegPerSec = 30.0f;     // angular speed in degrees per second
 	};
-
-	void RegisterRotatorComponent();
 }

@@ -1,4 +1,4 @@
-﻿#include "IDComponent.hpp"
+#include "IDComponent.hpp"
 
 #include <rttr/registration.h>
 
@@ -6,16 +6,16 @@
 
 namespace Snowstorm
 {
-	void RegisterIDComponent()
+	RTTR_REGISTRATION
 	{
 		using namespace rttr;
 
 		registration::class_<IDComponent>("Snowstorm::IDComponent")
-			.property("Id", &IDComponent::Id);
+		    .property("Id", &IDComponent::Id);
 
 		registration::class_<UUID>("Snowstorm::UUID")
-			.property_readonly("Value", &UUID::ToString);
-
-		Snowstorm::RegisterComponent<IDComponent>();
+		    .property_readonly("Value", &UUID::ToString);
 	}
+
+	AUTO_REGISTER_COMPONENT(IDComponent);
 }

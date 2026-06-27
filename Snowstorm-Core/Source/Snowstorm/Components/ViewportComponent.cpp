@@ -1,4 +1,4 @@
-﻿#include "ViewportComponent.hpp"
+#include "ViewportComponent.hpp"
 
 #include <rttr/registration.h>
 
@@ -6,13 +6,13 @@
 
 namespace Snowstorm
 {
-	void RegisterViewportComponent()
+	RTTR_REGISTRATION
 	{
 		using namespace rttr;
 
 		registration::class_<ViewportComponent>("Snowstorm::ViewportComponent")
-		.property("Size", &ViewportComponent::Size);
-
-		Snowstorm::RegisterComponent<ViewportComponent>();
+		    .property("Size", &ViewportComponent::Size);
 	}
+
+	AUTO_REGISTER_COMPONENT(ViewportComponent);
 }

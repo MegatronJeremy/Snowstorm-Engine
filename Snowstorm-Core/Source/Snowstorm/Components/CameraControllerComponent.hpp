@@ -24,6 +24,4 @@ namespace Snowstorm
 		float LookSmoothing = 30.0f;
 		float MoveSmoothing = 15.0f;
 	};
-
-	void RegisterCameraControllerComponent();
 }

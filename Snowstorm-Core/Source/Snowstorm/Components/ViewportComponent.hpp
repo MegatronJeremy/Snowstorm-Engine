@@ -13,6 +13,4 @@ namespace Snowstorm
 	{
 		return lhs.Size == rhs.Size;
 	}
-
-	void RegisterViewportComponent();
 }

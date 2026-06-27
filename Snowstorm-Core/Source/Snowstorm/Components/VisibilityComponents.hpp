@@ -25,6 +25,4 @@ namespace Snowstorm
 	{
 		VisibilityMask Mask = Visibility::All; // camera sees everything by default
 	};
-
-	void RegisterVisibilityComponents();
 }

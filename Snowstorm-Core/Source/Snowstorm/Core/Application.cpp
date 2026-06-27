@@ -5,7 +5,6 @@
 
 #include <ranges>
 
-#include "Snowstorm/Components/ComponentRegistration.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 
@@ -32,7 +31,10 @@ namespace Snowstorm
 
 		Renderer::Init(m_Window->GetNativeWindow());
 
-		InitializeRTTR();
+		// Component reflection (RTTR) + editor/serializer registration happen via per-component static
+		// initializers (RTTR_REGISTRATION + AUTO_REGISTER_COMPONENT). Snowstorm-Core is a static lib, so
+		// the executables link it WHOLE_ARCHIVE to keep those initializer TUs from being dropped — there
+		// is no manual registration list to call here.
 	}
 
 	Application::~Application()

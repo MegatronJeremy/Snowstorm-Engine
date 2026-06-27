@@ -22,9 +22,10 @@ target_include_directories(Snowstorm-Tests PRIVATE
 
 find_package(Catch2 CONFIG REQUIRED)
 
-# Link Core for the code under test (e.g. UUID); Catch2WithMain provides main().
+# Link Core for the code under test (e.g. UUID); Catch2WithMain provides main(). WHOLE_ARCHIVE so the
+# component self-registration static initializers run (SceneSerializer round-trip needs the reflection).
 target_link_libraries(Snowstorm-Tests PRIVATE
-    Snowstorm-Core
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,Snowstorm-Core>
     Catch2::Catch2WithMain
 )
 

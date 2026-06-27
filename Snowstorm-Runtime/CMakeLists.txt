@@ -25,7 +25,9 @@ target_include_directories(Snowstorm-Runtime PUBLIC
     ${CMAKE_SOURCE_DIR}/Snowstorm-Core/Source
 )
 
-# Link libraries
+# Link libraries.
+# Core's components self-register via static initializers; link WHOLE_ARCHIVE so the linker keeps
+# those TUs instead of dropping the unreferenced ones (see Snowstorm-Editor/CMakeLists.txt).
 target_link_libraries(Snowstorm-Runtime PUBLIC
-    Snowstorm-Core  # Link the core library
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,Snowstorm-Core>
 )

@@ -1,6 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "Snowstorm/Components/ComponentRegistration.hpp"
 #include "Snowstorm/Components/IDComponent.hpp"
 #include "Snowstorm/Components/TagComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
@@ -16,13 +15,9 @@ using namespace Snowstorm;
 
 namespace
 {
-	// Component reflection must be registered before SceneSerializer can round-trip an entity. The app
-	// does this in Application's constructor; tests have no Application, so do it once here.
-	struct RttrInit
-	{
-		RttrInit() { InitializeRTTR(); }
-	};
-	const RttrInit g_rttrInit;
+	// Component reflection + registration happen via per-component static initializers
+	// (RTTR_REGISTRATION + AUTO_REGISTER_COMPONENT). The Tests target links Snowstorm-Core
+	// WHOLE_ARCHIVE so those initializers run before main, with no manual setup needed here.
 
 	// Helper: the world's entity count (entities carry IDComponent).
 	size_t EntityCount(World& world)

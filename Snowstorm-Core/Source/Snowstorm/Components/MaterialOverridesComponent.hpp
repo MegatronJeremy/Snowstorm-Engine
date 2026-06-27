@@ -71,6 +71,4 @@ namespace Snowstorm
 
 	const char* MaterialOverrideTypeToString(MaterialOverrideType type);
 	MaterialOverrideType MaterialOverrideTypeFromString(const std::string& s);
-
-	void RegisterMaterialOverridesComponent();
 }

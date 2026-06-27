@@ -10,7 +10,5 @@ namespace Snowstorm
 		glm::vec3 Color;
 		float Intensity = 1.0f;
 	};
-
-	void RegisterLightingComponents();
 }
 

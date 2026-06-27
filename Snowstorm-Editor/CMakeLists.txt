@@ -28,8 +28,11 @@ target_include_directories(Snowstorm-Editor PUBLIC
 # ImGuizmo: editor-only transform gizmos drawn over the viewport.
 find_package(imguizmo CONFIG REQUIRED)
 
-# Link libraries
+# Link libraries.
+# Snowstorm-Core is a STATIC lib whose components self-register via static initializers
+# (RTTR_REGISTRATION + AUTO_REGISTER_COMPONENT). The linker drops object files nothing references,
+# which would silently skip those initializers — so link Core WHOLE_ARCHIVE to keep every TU.
 target_link_libraries(Snowstorm-Editor PUBLIC
-    Snowstorm-Core  # Link the core library
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,Snowstorm-Core>  # keep self-registration TUs (see note above)
     imguizmo::imguizmo
 )

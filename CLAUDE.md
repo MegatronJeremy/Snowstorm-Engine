@@ -113,8 +113,10 @@ see, so treat it as part of the feature, not an afterthought.
   `LayerStack`, the `EventBus`, and the `ServiceManager` (singleton via `Application::Get()`).
 - **ECS:** EnTT-backed. `World`/`Entity` (`World/`), components in `Components/`, behavior in
   `Systems/` (managed by `SystemManager`), cross-cutting state in `Singletons/` (`SingletonManager`),
-  and `Service/` for longer-lived services. Components are registered for reflection via **RTTR**
-  (`Components/ComponentRegistration.hpp`).
+  and `Service/` for longer-lived services. Components self-register for reflection via **RTTR** plus
+  the editor/serializer registry from a per-component static initializer (`RTTR_REGISTRATION { ... }` +
+  `AUTO_REGISTER_COMPONENT(T)` in each `Components/*.cpp`; see `Components/ComponentRegistry.hpp`).
+  Core is a static lib, so the executables link it `WHOLE_ARCHIVE` to keep those initializer TUs.
 - **Rendering:** backend-agnostic interfaces in `Render/` (`RendererAPI`, `Renderer`, `Pipeline`,
   `Shader`, `Buffer`, `Texture`, `Material`, `RenderGraph`, ...). The concrete implementation lives
   in `Platform/Vulkan/` (volk + Vulkan Memory Allocator + spirv-reflect; shaders compiled to SPIR-V

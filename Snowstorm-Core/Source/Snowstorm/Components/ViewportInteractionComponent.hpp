@@ -13,6 +13,4 @@ namespace Snowstorm
 	{
 		return lhs.Focused == rhs.Focused && lhs.Hovered == rhs.Hovered;
 	}
-
-	void RegisterViewportInteractionComponent();
 };

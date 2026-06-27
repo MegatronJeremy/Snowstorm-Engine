@@ -11,6 +11,4 @@ namespace Snowstorm
 		UUID TargetViewportUUID{};
 		entt::entity TargetViewportEntity = entt::null; // runtime cache
 	};
-
-	void RegisterCameraTargetComponent();
 }
