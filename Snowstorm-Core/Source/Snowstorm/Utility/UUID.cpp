@@ -21,12 +21,12 @@ namespace Snowstorm
 	}
 
 	UUID::UUID()
-		: m_Value(GenerateUUID())
+	    : m_Value(GenerateUUID())
 	{
 	}
 
 	UUID::UUID(const UnderlyingType value)
-		: m_Value(value)
+	    : m_Value(value)
 	{
 	}
 
@@ -37,15 +37,28 @@ namespace Snowstorm
 
 	UUID UUID::FromString(const std::string& s)
 	{
-		// stored as decimal string in JSON
+		// Stored as a decimal string in JSON. Malformed input must NOT throw or abort the load: this is
+		// called per scene-entity ID and per asset handle, so a single bad value would otherwise terminate
+		// the whole scene/asset deserialization (std::stoull throws; the old trailing-garbage assert was
+		// debug-only and silently accepted "123abc" as 123 in release). Fail soft to UUID(0) — callers
+		// already treat the zero handle as "skip/unresolved" — and log once so it's visible.
 		size_t idx = 0;
 		UnderlyingType v = 0;
 
-		v = std::stoull(s, &idx, 10);
+		try
+		{
+			v = std::stoull(s, &idx, 10);
+		}
+		catch (const std::exception&)
+		{
+			SS_CORE_ERROR("Invalid UUID string '{}'", s);
+			return UUID(0);
+		}
 
 		if (idx != s.size())
 		{
-			SS_CORE_ASSERT(false, "Invalid UUID string");
+			SS_CORE_ERROR("Invalid UUID string '{}' (trailing characters)", s);
+			return UUID(0);
 		}
 
 		return UUID(v);
