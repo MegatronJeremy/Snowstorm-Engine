@@ -58,10 +58,11 @@ float4 main(SkyPSIn i) : SV_Target0
 	const float3 worldPos = worldH.xyz / worldH.w;
 	const float3 ray = normalize(worldPos - CameraPosition);
 
-	// Vertical gradient: ground tint below the horizon, horizon->zenith lerp above. Linear HDR values.
-	const float3 zenith = float3(0.10, 0.22, 0.45);
-	const float3 horizon = float3(0.52, 0.62, 0.75);
-	const float3 ground = float3(0.12, 0.11, 0.10);
+	// Vertical gradient from the shared environment (FrameCB) so the visible sky and the scene's
+	// ambient fill come from one definition. Linear HDR values.
+	const float3 zenith = SkyZenithColor;
+	const float3 horizon = SkyHorizonColor;
+	const float3 ground = GroundColor;
 
 	const float t = ray.y; // [-1,1]
 	float3 sky = (t < 0.0)

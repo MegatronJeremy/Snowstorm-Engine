@@ -49,6 +49,15 @@ cbuffer FrameCB : register(b0, space0)
 	DirectionalLight DirectionalLights[4];
 	int LightCount;
 	float3 _Pad1;
+
+	// Environment: shared by the sky pass and the DefaultLit ambient term. Mirrors the FrameCB tail in
+	// RendererSingleton.cpp field-for-field (each float3 register-packed with the trailing float).
+	float3 SkyZenithColor;
+	float SkyIntensity;
+	float3 SkyHorizonColor;
+	float _EnvPad0;
+	float3 GroundColor;
+	float _EnvPad1;
 };
 
 // --- SPACE 1: Material Data ---

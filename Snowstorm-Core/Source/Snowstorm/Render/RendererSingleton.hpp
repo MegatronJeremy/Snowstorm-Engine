@@ -65,6 +65,10 @@ namespace Snowstorm
 
 		void UploadLights(const LightDataBlock& lightData);
 
+		// Scene environment (sky/ambient colors) for the current frame. Mirrors UploadLights; the values
+		// are folded into FrameCB and consumed by both the sky pass and the DefaultLit ambient term.
+		void UploadEnvironment(const EnvironmentDataBlock& environment);
+
 		void Flush();
 
 		// Draw the procedural sky as a fullscreen triangle at the far plane. Call inside an active scene
@@ -96,6 +100,7 @@ namespace Snowstorm
 		glm::mat4 m_ViewProj{1.0f};
 		glm::vec3 m_CameraPosition{0.0f};
 		LightDataBlock m_Lights{};
+		EnvironmentDataBlock m_Environment{};
 
 		std::vector<BatchData> m_Batches;
 

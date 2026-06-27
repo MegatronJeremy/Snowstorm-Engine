@@ -5,6 +5,7 @@
 #include "Snowstorm/ECS/SystemPhase.hpp"
 #include "Snowstorm/World/World.hpp"
 
+#include "Snowstorm/Lighting/EnvironmentSystem.hpp"
 #include "Snowstorm/Lighting/LightingSystem.hpp"
 #include "Snowstorm/Systems/CameraControllerSystem.hpp"
 #include "Snowstorm/Systems/CameraRuntimeUpdateSystem.hpp"
@@ -35,6 +36,7 @@ namespace Snowstorm
 		sm.RegisterSystem<MeshResolveSystem>(SystemPhase::Resolve);
 		sm.RegisterSystem<MaterialResolveSystem>(SystemPhase::Resolve);
 
+		sm.RegisterSystem<EnvironmentSystem>(SystemPhase::PreRender);
 		sm.RegisterSystem<LightingSystem>(SystemPhase::PreRender);
 		sm.RegisterSystem<VisibilitySystem>(SystemPhase::PreRender);
 

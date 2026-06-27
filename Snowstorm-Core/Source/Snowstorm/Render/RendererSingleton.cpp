@@ -20,6 +20,16 @@ namespace Snowstorm
 			float Exposure = 1.0f; // linear pre-tonemap multiplier (mirrors Engine.hlsli FrameCB)
 
 			LightDataBlock Lights;
+
+			// Environment (sky/ambient), shared by Sky.hlsl and DefaultLit's ambient term. Each vec3 is
+			// register-packed with the trailing float (SkyIntensity, then padding) — same trick as
+			// CameraPosition+Exposure. MUST match the FrameCB tail in Engine.hlsli field-for-field.
+			glm::vec3 SkyZenithColor;
+			float SkyIntensity = 1.0f;
+			glm::vec3 SkyHorizonColor;
+			float _EnvPad0 = 0.0f;
+			glm::vec3 GroundColor;
+			float _EnvPad1 = 0.0f;
 		};
 	}
 
@@ -90,6 +100,11 @@ namespace Snowstorm
 		m_Lights = lightData;
 	}
 
+	void RendererSingleton::UploadEnvironment(const EnvironmentDataBlock& environment)
+	{
+		m_Environment = environment;
+	}
+
 	void RendererSingleton::Flush()
 	{
 		if (!m_CommandContext)
@@ -142,6 +157,10 @@ namespace Snowstorm
 		frame.CameraPosition = m_CameraPosition;
 		frame.Exposure = CVars::Exposure.Get();
 		frame.Lights = m_Lights;
+		frame.SkyZenithColor = m_Environment.SkyZenithColor;
+		frame.SkyHorizonColor = m_Environment.SkyHorizonColor;
+		frame.GroundColor = m_Environment.GroundColor;
+		frame.SkyIntensity = m_Environment.SkyIntensity;
 
 		const Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
 		SS_CORE_ASSERT(frameUBO, "Frame UBO missing for frame descriptor set");
@@ -153,6 +172,13 @@ namespace Snowstorm
 	void RendererSingleton::DrawSky(const PixelFormat colorFormat, const PixelFormat depthFormat)
 	{
 		if (!m_CommandContext)
+		{
+			return;
+		}
+
+		// Sky is opt-in: only the procedural-sky background mode draws. No environment / SolidColor mode
+		// leaves the render target's clear color showing (see EnvironmentDataBlock::DrawProceduralSky).
+		if (!m_Environment.DrawProceduralSky)
 		{
 			return;
 		}

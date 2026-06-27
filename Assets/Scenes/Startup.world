@@ -2,117 +2,62 @@
   "Entities": [
     {
       "Components": {
-        "MandelbrotControllerComponent": {
-          "Center": [
-            -1.2506599426269531,
-            0.02012000046670437
-          ],
-          "Material": "13869174114393927166",
-          "MaxIterations": 114,
-          "Zoom": 2.620084285736084
+        "Snowstorm::ViewportComponent": {
+          "Size": [
+            1284.0,
+            700.0
+          ]
+        },
+        "Snowstorm::ViewportInteractionComponent": {
+          "Focused": true,
+          "Hovered": true
         }
       },
-      "Name": "Mandelbrot Controller Entity",
-      "UUID": "3924645658962084767"
+      "Name": "Main Viewport",
+      "UUID": "17586729191764668718"
     },
     {
       "Components": {
-        "Snowstorm::MaterialComponent": {
-          "$asset": "13869174114393927166"
+        "Snowstorm::CameraComponent": {
+          "AspectRatio": 1.7777777910232544,
+          "FixedAspectRatio": false,
+          "OrthographicFar": 10.0,
+          "OrthographicNear": -10.0,
+          "OrthographicSize": 10.0,
+          "PerspectiveFOV": 0.785398006439209,
+          "PerspectiveFar": 1000.0,
+          "PerspectiveNear": 0.009999999776482582,
+          "Primary": true,
+          "Projection": "Perspective"
         },
-        "Snowstorm::MeshComponent": {
-          "$asset": "12112538743247314239"
+        "Snowstorm::CameraControllerComponent": {
+          "LookSensitivity": 0.10000000149011612,
+          "LookSmoothing": 30.0,
+          "MaxMoveSpeed": 500.0,
+          "MinMoveSpeed": 0.10000000149011612,
+          "MoveSmoothing": 15.0,
+          "MoveSpeed": 5.0,
+          "RotationEnabled": true,
+          "SlowMultiplier": 0.25,
+          "SpeedAdjustStep": 1.100000023841858,
+          "SprintMultiplier": 4.0,
+          "ZoomSpeed": 5.0
         },
-        "Snowstorm::TransformComponent": {
-          "Position": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "Rotation": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "Scale": [
-            10.0,
-            10.0,
-            10.0
-          ]
+        "Snowstorm::CameraTargetComponent": {
+          "TargetViewport": "17586729191764668718"
         },
-        "Snowstorm::VisibilityComponent": {
-          "Mask": 3
-        }
-      },
-      "Name": "Mandelbrot Quad",
-      "UUID": "12379510728273235196"
-    },
-    {
-      "Components": {
-        "Snowstorm::MaterialComponent": {
-          "$asset": "14863079243352112687"
-        },
-        "Snowstorm::MaterialOverridesComponent": {
-          "Overrides": [
-            {
-              "Name": "AlbedoTexture",
-              "Type": "Texture",
-              "Value": "12465655103903380530"
-            }
-          ]
-        },
-        "Snowstorm::MeshComponent": {
-          "$asset": "5810267832183663728"
-        },
-        "Snowstorm::RotatorComponent": {
-          "Axis": [
-            1.0,
-            1.899999976158142,
-            0.0
-          ],
-          "SpeedDegPerSec": 67.22100067138672
+        "Snowstorm::CameraVisibilityComponent": {
+          "Mask": 1
         },
         "Snowstorm::TransformComponent": {
           "Position": [
-            -2.0,
-            -2.0,
-            6.0
+            8.851719856262207,
+            3.1696090698242188,
+            16.03931427001953
           ],
           "Rotation": [
-            0.14460676908493042,
-            1.233079195022583,
-            0.029667742550373077
-          ],
-          "Scale": [
-            1.0,
-            1.0,
-            1.0
-          ]
-        },
-        "Snowstorm::VisibilityComponent": {
-          "Mask": 3
-        }
-      },
-      "Name": "White Cube",
-      "UUID": "374719826386365629"
-    },
-    {
-      "Components": {
-        "Snowstorm::MaterialComponent": {
-          "$asset": "13869174114393927166"
-        },
-        "Snowstorm::MeshComponent": {
-          "$asset": "14167707854468761414"
-        },
-        "Snowstorm::TransformComponent": {
-          "Position": [
-            3.0,
-            3.0,
-            3.0
-          ],
-          "Rotation": [
-            0.0,
-            0.0,
+            -0.0925021544098854,
+            0.6143569350242615,
             0.0
           ],
           "Scale": [
@@ -120,98 +65,10 @@
             1.0,
             1.0
           ]
-        },
-        "Snowstorm::VisibilityComponent": {
-          "Mask": 3
         }
       },
-      "Name": "Mandelbrot Girl",
-      "UUID": "403131259036889213"
-    },
-    {
-      "Components": {
-        "Snowstorm::MaterialComponent": {
-          "$asset": "9496730424453785457"
-        },
-        "Snowstorm::MaterialOverridesComponent": {
-          "Overrides": [
-            {
-              "Name": "AlbedoTexture",
-              "Type": "Texture",
-              "Value": "12465655103903380530"
-            }
-          ]
-        },
-        "Snowstorm::MeshComponent": {
-          "$asset": "14167707854468761414"
-        },
-        "Snowstorm::TransformComponent": {
-          "Position": [
-            2.0,
-            2.0,
-            6.0
-          ],
-          "Rotation": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "Scale": [
-            1.0,
-            1.0,
-            1.0
-          ]
-        },
-        "Snowstorm::VisibilityComponent": {
-          "Mask": 3
-        }
-      },
-      "Name": "Blue Girl",
-      "UUID": "4004838569448236733"
-    },
-    {
-      "Components": {
-        "Snowstorm::DirectionalLightComponent": {
-          "Color": [
-            0.699999988079071,
-            0.800000011920929,
-            1.0
-          ],
-          "Direction": [
-            -0.7155417799949646,
-            -0.5366563200950623,
-            -0.4472135901451111
-          ],
-          "Intensity": 0.800000011920929
-        },
-        "Snowstorm::VisibilityComponent": {
-          "Mask": 3
-        }
-      },
-      "Name": "Directional Light B",
-      "UUID": "2115362846432076038"
-    },
-    {
-      "Components": {
-        "Snowstorm::DirectionalLightComponent": {
-          "Color": [
-            1.0,
-            0.8999999761581421,
-            0.800000011920929
-          ],
-          "Direction": [
-            0.6666666865348816,
-            -0.6666666865348816,
-            0.3333333432674408
-          ],
-          "Intensity": 1.0
-        },
-        "Snowstorm::VisibilityComponent": {
-          "Mask": 3
-        }
-      },
-      "Name": "Directional Light A",
-      "UUID": "13084783285429280438"
+      "Name": "Camera Entity",
+      "UUID": "222261355913641524"
     },
     {
       "Components": {
@@ -269,46 +126,87 @@
     },
     {
       "Components": {
-        "Snowstorm::CameraComponent": {
-          "AspectRatio": 1.7777777910232544,
-          "FixedAspectRatio": false,
-          "OrthographicFar": 10.0,
-          "OrthographicNear": -10.0,
-          "OrthographicSize": 10.0,
-          "PerspectiveFOV": 0.785398006439209,
-          "PerspectiveFar": 1000.0,
-          "PerspectiveNear": 0.009999999776482582,
-          "Primary": true,
-          "Projection": "Perspective"
+        "Snowstorm::DirectionalLightComponent": {
+          "Color": [
+            1.0,
+            0.8999999761581421,
+            0.800000011920929
+          ],
+          "Direction": [
+            0.6666666865348816,
+            -0.6666666865348816,
+            0.3333333432674408
+          ],
+          "Intensity": 1.0
         },
-        "Snowstorm::CameraControllerComponent": {
-          "LookSensitivity": 0.10000000149011612,
-          "LookSmoothing": 30.0,
-          "MaxMoveSpeed": 500.0,
-          "MinMoveSpeed": 0.10000000149011612,
-          "MoveSmoothing": 15.0,
-          "MoveSpeed": 5.0,
-          "RotationEnabled": true,
-          "SlowMultiplier": 0.25,
-          "SpeedAdjustStep": 1.100000023841858,
-          "SprintMultiplier": 4.0,
-          "ZoomSpeed": 5.0
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Directional Light A",
+      "UUID": "13084783285429280438"
+    },
+    {
+      "Components": {
+        "Snowstorm::EnvironmentComponent": {
+          "Background": "ProceduralSky",
+          "GroundColor": [
+            0.11999999731779099,
+            0.10999999940395355,
+            0.10000000149011612
+          ],
+          "SkyHorizonColor": [
+            0.5199999809265137,
+            0.6200000047683716,
+            0.75
+          ],
+          "SkyIntensity": 1.7999999523162842,
+          "SkyZenithColor": [
+            0.10000000149011612,
+            0.2199999988079071,
+            0.44999998807907104
+          ]
+        }
+      },
+      "Name": "Environment",
+      "UUID": "2115362846432076038"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
         },
-        "Snowstorm::CameraTargetComponent": {
-          "TargetViewport": "17586729191764668718"
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "AlbedoTexture",
+              "Type": "Texture",
+              "Value": "12465655103903380530"
+            },
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.0,
+                0.25316476821899414,
+                1.0,
+                1.0
+              ]
+            }
+          ]
         },
-        "Snowstorm::CameraVisibilityComponent": {
-          "Mask": 1
+        "Snowstorm::MeshComponent": {
+          "$asset": "14167707854468761414"
         },
         "Snowstorm::TransformComponent": {
           "Position": [
-            7.872457504272461,
-            3.671855926513672,
-            13.271027565002441
+            2.0,
+            2.0,
+            6.0
           ],
           "Rotation": [
-            -0.19547684490680695,
-            0.5759590268135071,
+            0.0,
+            0.0,
             0.0
           ],
           "Scale": [
@@ -316,26 +214,141 @@
             1.0,
             1.0
           ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
         }
       },
-      "Name": "Camera Entity",
-      "UUID": "222261355913641524"
+      "Name": "Blue Girl",
+      "UUID": "4004838569448236733"
     },
     {
       "Components": {
-        "Snowstorm::ViewportComponent": {
-          "Size": [
-            1533.0,
-            981.0
+        "Snowstorm::MaterialComponent": {
+          "$asset": "13869174114393927166"
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "14167707854468761414"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            3.0,
+            3.0,
+            3.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
           ]
         },
-        "Snowstorm::ViewportInteractionComponent": {
-          "Focused": true,
-          "Hovered": true
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
         }
       },
-      "Name": "Main Viewport",
-      "UUID": "17586729191764668718"
+      "Name": "Mandelbrot Girl",
+      "UUID": "403131259036889213"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "AlbedoTexture",
+              "Type": "Texture",
+              "Value": "12465655103903380530"
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "5810267832183663728"
+        },
+        "Snowstorm::RotatorComponent": {
+          "Axis": [
+            1.0,
+            1.899999976158142,
+            0.0
+          ],
+          "SpeedDegPerSec": 67.22100067138672
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            -2.0,
+            -2.0,
+            6.0
+          ],
+          "Rotation": [
+            -0.3774719536304474,
+            -1.3167970180511475,
+            0.7812466621398926
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "White Cube",
+      "UUID": "374719826386365629"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "13869174114393927166"
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "12112538743247314239"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            10.0,
+            10.0,
+            10.0
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Mandelbrot Quad",
+      "UUID": "12379510728273235196"
+    },
+    {
+      "Components": {
+        "MandelbrotControllerComponent": {
+          "Center": [
+            -1.2506599426269531,
+            0.02012000046670437
+          ],
+          "Material": "13869174114393927166",
+          "MaxIterations": 248,
+          "Zoom": 0.055080052465200424
+        }
+      },
+      "Name": "Mandelbrot Controller Entity",
+      "UUID": "3924645658962084767"
     }
   ],
   "Scene": {

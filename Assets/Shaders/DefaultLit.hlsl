@@ -144,12 +144,14 @@ float4 main(PSInput i) : SV_Target0
 		Lo += (kd * albedo / PI + specular) * radiance * NdotL;
 	}
 
-	// Hemisphere ambient stopgap until image-based lighting (#52, needs the skybox #35): a sky/ground
-	// gradient by world-up gives metals a directional environment to reflect instead of reading black.
-	const float3 skyColor = float3(0.30, 0.34, 0.42);
-	const float3 groundColor = float3(0.18, 0.16, 0.14);
-	const float3 ambientEnv = lerp(groundColor, skyColor, N.y * 0.5 + 0.5);
-	const float3 ambient = ambientEnv * albedo * ao;
+	// Hemisphere ambient (IBL stopgap until #52). From the shared environment (FrameCB) — the SAME
+	// zenith/horizon/ground colors the sky pass shows,
+	// so the fill light always matches the visible sky. Upper hemisphere fades horizon->zenith by world-
+	// up; lower hemisphere reads the ground color. Scaled by SkyIntensity.
+	const float3 ambientEnv = (N.y >= 0.0)
+	                              ? lerp(SkyHorizonColor, SkyZenithColor, saturate(N.y))
+	                              : lerp(SkyHorizonColor, GroundColor, saturate(-N.y));
+	const float3 ambient = ambientEnv * SkyIntensity * albedo * ao;
 
 	float3 color = Lo + ambient;
 
