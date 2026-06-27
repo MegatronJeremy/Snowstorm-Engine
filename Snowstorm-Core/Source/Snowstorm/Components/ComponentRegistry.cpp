@@ -195,17 +195,16 @@ namespace Snowstorm
 
 	namespace
 	{
-		// Start a new table row: label in the (clipping) left column, widget filling the right.
-		// Requires an active 2-column table (see BeginPropertyTable). Using a table instead of a
-		// fixed SameLine offset means long property names are clipped to their cell rather than
-		// overlapping the widget.
+		// Start a new property: the label on its own line, then the widget full-width on the line below
+		// (the caller draws it right after this returns). Stacking label-above-widget is the only layout
+		// that never clips — no fixed column split can fit both "Position" and "SpeedDegPerSecond" at a
+		// narrow docked width. Within the single table cell, consecutive items stack vertically, and
+		// SetNextItemWidth(-FLT_MIN) makes the widget span the full cell — so vectors get maximum room.
 		void LabelLeft(const char* label)
 		{
 			ImGui::TableNextRow();
 			ImGui::TableSetColumnIndex(0);
-			ImGui::AlignTextToFramePadding();
 			ImGui::TextUnformatted(label);
-			ImGui::TableSetColumnIndex(1);
 			ImGui::SetNextItemWidth(-FLT_MIN);
 		}
 
@@ -231,7 +230,9 @@ namespace Snowstorm
 			ImGui::PopStyleColor(4);
 			ImGui::SameLine(0.0f, 0.0f);
 			ImGui::SetNextItemWidth(dragW);
-			return ImGui::DragFloat(id, v, speed);
+			// 2 decimals, not the default 3: a negative value ("-1.50") otherwise overflows the narrow
+			// per-axis field and the digits get clipped. The full precision is still kept in the float.
+			return ImGui::DragFloat(id, v, speed, 0.0f, 0.0f, "%.2f");
 		}
 
 		// Draw n-component colored vector; returns true if any axis changed. baseId scopes the
@@ -272,11 +273,12 @@ namespace Snowstorm
 
 	bool BeginPropertyTable(const char* id)
 	{
-		// Stretchy label column + a wider value column; borders off for a clean instrument look.
-		if (ImGui::BeginTable(id, 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX))
+		// Single full-width column: each property stacks its label above a full-width widget (see
+		// LabelLeft). A table (rather than raw widgets) is kept so PadOuterX gives consistent insets and
+		// future per-row striping/hover stays cheap. Borders off for a clean instrument look.
+		if (ImGui::BeginTable(id, 1, ImGuiTableFlags_PadOuterX))
 		{
-			ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthStretch, 0.42f);
-			ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 0.58f);
+			ImGui::TableSetupColumn("prop", ImGuiTableColumnFlags_WidthStretch);
 			return true;
 		}
 		return false;

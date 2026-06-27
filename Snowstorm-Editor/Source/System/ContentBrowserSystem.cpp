@@ -152,7 +152,6 @@ namespace Snowstorm
 		}
 
 		ImGui::Begin("Content Browser");
-		EditorTheme::SectionHeader("Content Browser");
 
 		// Files under assets/ are auto-imported on scan, so this panel just lists them. Use Rescan
 		// after dropping in new files (until a file watcher makes even that unnecessary).
@@ -189,7 +188,6 @@ namespace Snowstorm
 			ImGui::EndTabBar();
 		}
 
-		ImGui::TextDisabled("Double-click a Scene to open it.");
 		ImGui::Separator();
 
 		// Lowercase search needle for case-insensitive matching.

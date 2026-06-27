@@ -101,19 +101,25 @@ namespace Snowstorm
 
 						if (BeginPropertyTable("##ov"))
 						{
+							// Stacked layout (label above full-width widget), matching the inspector — the
+							// property table is single-column now, so there is no column 1 to address.
 							ImGui::TableNextRow();
 							ImGui::TableSetColumnIndex(0);
+
+							// Header line: a remove button on the left, then the override name. The X sits at
+							// a fixed leading position so it stays put regardless of dock width (a trailing
+							// SameLine after the full-width value widget below would fall off the right edge).
+							if (ImGui::SmallButton("X"))
+							{
+								removeIndex = i;
+							}
+							ImGui::SameLine();
 							ImGui::AlignTextToFramePadding();
 							ImGui::TextUnformatted(o.Name.c_str());
-							ImGui::TableSetColumnIndex(1);
+
+							ImGui::SetNextItemWidth(-FLT_MIN);
 							DrawOverrideValue(o);
 							EndPropertyTable();
-						}
-
-						ImGui::SameLine();
-						if (ImGui::SmallButton("X"))
-						{
-							removeIndex = i;
 						}
 
 						ImGui::PopID();

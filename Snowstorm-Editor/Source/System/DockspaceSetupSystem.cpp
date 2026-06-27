@@ -82,12 +82,15 @@ namespace Snowstorm
 		ImGui::DockBuilderAddNode(dockspaceID, ImGuiDockNodeFlags_DockSpace);
 		ImGui::DockBuilderSetNodeSize(dockspaceID, ImGui::GetMainViewport()->WorkSize);
 
-		// Split off a left column (20%), a right column (25%), and a bottom strip (25%); the
-		// remainder stays central (the viewport).
+		// Keep the viewport dominant, the way a production editor (Unreal/Unity) does: side panels only
+		// as wide as needed to read them, the content strip short. These fractions are of the *remaining*
+		// space at each step, so the viewport ends up ~67% wide x ~76% tall. Left 16% (Scene Hierarchy +
+		// Settings; the perf text still fits), right 20% (Properties), bottom 24% (Content Browser — it
+		// has a fixed-height header of buttons/search/tabs, so it needs a little more room for the list).
 		ImGuiID dockCentral = dockspaceID;
-		const ImGuiID dockLeft = ImGui::DockBuilderSplitNode(dockCentral, ImGuiDir_Left, 0.20f, nullptr, &dockCentral);
-		const ImGuiID dockRight = ImGui::DockBuilderSplitNode(dockCentral, ImGuiDir_Right, 0.25f, nullptr, &dockCentral);
-		const ImGuiID dockBottom = ImGui::DockBuilderSplitNode(dockCentral, ImGuiDir_Down, 0.25f, nullptr, &dockCentral);
+		const ImGuiID dockLeft = ImGui::DockBuilderSplitNode(dockCentral, ImGuiDir_Left, 0.16f, nullptr, &dockCentral);
+		const ImGuiID dockRight = ImGui::DockBuilderSplitNode(dockCentral, ImGuiDir_Right, 0.20f, nullptr, &dockCentral);
+		const ImGuiID dockBottom = ImGui::DockBuilderSplitNode(dockCentral, ImGuiDir_Down, 0.24f, nullptr, &dockCentral);
 
 		ImGui::DockBuilderDockWindow("Scene Hierarchy", dockLeft);
 		ImGui::DockBuilderDockWindow("Settings", dockLeft);
