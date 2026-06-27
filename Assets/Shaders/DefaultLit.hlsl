@@ -34,6 +34,25 @@ float4 SampleBindless(uint index, float2 uv)
 	return Textures[NonUniformResourceIndex(index)].Sample(LinearSampler, uv);
 }
 
+// ACES filmic tonemap (Narkowicz fit): compress unbounded linear HDR into [0,1] with a filmic
+// shoulder/toe, so bright spots roll off instead of clipping flat white. Cheap, no LUT.
+float3 TonemapACES(float3 x)
+{
+	const float a = 2.51;
+	const float b = 0.03;
+	const float c = 2.43;
+	const float d = 0.59;
+	const float e = 0.14;
+	return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
+}
+
+// Encode linear -> sRGB. The scene target is a UNORM image displayed as sRGB with no hardware
+// encode, so we gamma-encode in the shader; without this the whole image reads too dark.
+float3 LinearToSRGB(float3 c)
+{
+	return pow(max(c, 0.0), 1.0 / 2.2);
+}
+
 // --- Cook-Torrance terms ---
 float DistributionGGX(float3 N, float3 H, float roughness)
 {
@@ -143,6 +162,12 @@ float4 main(PSInput i) : SV_Target0
 	{
 		color += EmissiveColor;
 	}
+
+	// Output transform: linear HDR -> exposure -> filmic tonemap -> sRGB encode. Without this the raw
+	// linear BRDF result clips to flat white at highlights and reads too dark elsewhere on an sRGB
+	// display. Exposure is the FrameCB knob (CVar render.exposure).
+	color = TonemapACES(color * Exposure);
+	color = LinearToSRGB(color);
 
 	return float4(color, BaseColor.a);
 }

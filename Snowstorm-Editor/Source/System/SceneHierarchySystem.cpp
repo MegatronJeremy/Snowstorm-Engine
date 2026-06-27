@@ -4,6 +4,7 @@
 
 #include "Snowstorm/ECS/SystemManager.hpp"
 #include "Snowstorm/ECS/SystemPhase.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererAPI.hpp"
 #include "Snowstorm/Render/RendererSingleton.hpp"
@@ -73,6 +74,13 @@ namespace Snowstorm
 		if (bool vsync = Renderer::IsVSync(); ImGui::Checkbox("VSync", &vsync))
 		{
 			Renderer::SetVSync(vsync);
+		}
+
+		// Exposure: linear multiplier applied before the filmic tonemap in DefaultLit. Read once per
+		// frame at flush, so dragging this updates the image live. Backs the render.exposure CVar.
+		if (float exposure = CVars::Exposure.Get(); ImGui::SliderFloat("Exposure", &exposure, 0.1f, 8.0f, "%.2f"))
+		{
+			CVars::Exposure.Set(exposure);
 		}
 
 		ImGui::Spacing();

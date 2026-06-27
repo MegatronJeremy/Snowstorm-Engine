@@ -35,4 +35,8 @@ namespace Snowstorm::CVars
 	// Startup.world. Lets the smoke harness boot any scene headlessly — e.g. load Sponza to exercise
 	// the PBR sampling path that Startup.world doesn't, without a manual Content Browser open.
 	extern CVar<std::string> StartupScene;
+
+	// Linear exposure multiplier applied before tonemapping in DefaultLit. 1.0 = neutral; raise to
+	// brighten, lower to darken. Runtime-tweakable from the editor's Settings panel.
+	extern CVar<float> Exposure;
 }

@@ -2,6 +2,7 @@
 
 #include "Camera.hpp"
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
@@ -14,7 +15,7 @@ namespace Snowstorm
 		{
 			glm::mat4 ViewProj;
 			glm::vec3 CameraPosition;
-			float _Pad0 = 0.0f;
+			float Exposure = 1.0f; // linear pre-tonemap multiplier (mirrors Engine.hlsli FrameCB)
 
 			LightDataBlock Lights;
 		};
@@ -163,6 +164,7 @@ namespace Snowstorm
 			FrameCB frame{};
 			frame.ViewProj = m_ViewProj;
 			frame.CameraPosition = m_CameraPosition;
+			frame.Exposure = CVars::Exposure.Get();
 			frame.Lights = m_Lights;
 
 			Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];

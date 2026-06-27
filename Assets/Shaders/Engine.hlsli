@@ -44,7 +44,7 @@ cbuffer FrameCB : register(b0, space0)
 {
 	float4x4 ViewProj;
 	float3 CameraPosition;
-	float _Pad0;
+	float Exposure; // linear pre-tonemap multiplier (was _Pad0; same 16-byte slot)
 	DirectionalLight DirectionalLights[4];
 	int LightCount;
 	float3 _Pad1;
