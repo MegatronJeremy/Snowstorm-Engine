@@ -284,7 +284,17 @@ namespace Snowstorm
 			mesh->SetBounds(bounds);
 		}
 
-		m_MeshCache[handle] = mesh;
+		// Only cache successes. Caching a null on a transient/first-time failure (missing file, bad
+		// submesh) would poison the handle permanently — the cache never evicts, so every later lookup
+		// returns the stale null and never retries even after the file is fixed.
+		if (mesh)
+		{
+			m_MeshCache[handle] = mesh;
+		}
+		else
+		{
+			SS_CORE_ERROR("Failed to load mesh for handle {}", (uint64_t)handle);
+		}
 		return mesh;
 	}
 
@@ -304,7 +314,17 @@ namespace Snowstorm
 
 		auto& shaderLib = m_World->GetSingleton<ShaderLibrarySingleton>();
 		Ref<Shader> shader = shaderLib.Load(meta->Path.string());
-		m_ShaderCache[handle] = shader;
+
+		// Only cache successes — see GetMesh: caching a null on a failed dxc compile permanently poisons
+		// the handle, so a fixed/recompiled shader would never be picked up.
+		if (shader)
+		{
+			m_ShaderCache[handle] = shader;
+		}
+		else
+		{
+			SS_CORE_ERROR("Failed to load shader '{}' for handle {}", meta->Path.string(), (uint64_t)handle);
+		}
 		return shader;
 	}
 
