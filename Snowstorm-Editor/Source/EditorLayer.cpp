@@ -3,6 +3,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
 #include <cstddef> // offsetof
+#include <filesystem>
 #include <limits>
 
 #include "Examples/MandelbrotSet/MandelbrotControllerComponent.hpp"
@@ -184,63 +185,95 @@ namespace Snowstorm
 		}
 	}
 
-	void EditorLayer::LoadOrCreateStartupWorld()
+	bool EditorLayer::BakeRequestedScene()
 	{
-		// One-shot bake tool: generate the stress-test scene, serialize it to a .world asset, exit.
-		// Afterwards the scene is opened from the Content Browser like any other .world.
-		if (CVars::BakeStressScene.Get())
+		const std::string& request = CVars::BakeScene.Get();
+		if (request.empty())
+		{
+			return false; // no bake requested
+		}
+
+		// Every bake follows the same ritual: a fresh scene needs the viewport + cameras, then a recipe
+		// populates it, then we prewarm + save + close. The two recipes differ only in how they fill the
+		// world and what they name the output, so factor the shared steps and pass in just those two.
+		const auto bake = [this](const std::string& outPath, const std::function<bool()>& populate)
 		{
 			CreateMainViewportEntity();
 			CreateCameraEntities();
-			BuildStressScene(*m_ActiveWorld);
+
+			if (!populate())
+			{
+				SS_CORE_ERROR("Scene bake produced nothing; not writing '{}'.", outPath);
+				Application::Get().Close();
+				return;
+			}
+
 			PrewarmSceneTextures();
 
-			const std::string out = "assets/scenes/Stress.world";
-			if (SaveWorldToFile(out))
+			if (SaveWorldToFile(outPath))
 			{
-				SS_CORE_INFO("Baked stress scene to '{}'.", out);
+				SS_CORE_INFO("Baked scene to '{}'.", outPath);
+				m_ActiveScenePath = outPath;
 			}
 			else
 			{
-				SS_CORE_ERROR("Failed to bake stress scene to '{}'.", out);
+				SS_CORE_ERROR("Failed to bake scene to '{}'.", outPath);
 			}
-
 			Application::Get().Close();
-			m_ActiveScenePath = out;
+		};
+
+		if (request == "stress")
+		{
+			bake("assets/scenes/Stress.world", [this]
+			     {
+				BuildStressScene(*m_ActiveWorld);
+				return true; });
+		}
+		else
+		{
+			// Treat the value as a model path. Output name derives from the model's file stem, so any
+			// model bakes to Assets/Scenes/<ModelStem>.world (not just the previously-hardcoded Sponza).
+			const std::string outPath = "assets/scenes/" + std::filesystem::path(request).stem().string() + ".world";
+			bake(outPath, [this, &request]
+			     {
+				auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
+				const std::vector<Entity> created = assets.ImportModel(request);
+				SS_CORE_INFO("Model import '{}' produced {} parts.", request, created.size());
+				if (created.empty())
+				{
+					return false;
+				}
+				AddDefaultLightRig();       // imported models carry no lights — add a rig as scene content
+				FrameImportedSceneCamera(); // fit the primary camera to the (unknown-scale) model bounds
+				return true; });
+		}
+
+		return true; // a bake was requested; the app is closing
+	}
+
+	void EditorLayer::LoadOrCreateStartupWorld()
+	{
+		// One-shot bake tool (CVar scene.bake): populate a fresh scene, save it to a .world, then exit.
+		// "stress" = the procedural recipe; anything else is a model path to import. Returns true when a
+		// bake was requested (the app is closing) so we don't also load a startup scene afterwards.
+		if (BakeRequestedScene())
+		{
 			return;
 		}
 
-		// One-shot bake tool: import the Sponza model into a fresh scene, serialize it to a .world asset,
-		// exit. Afterwards the scene is opened from the Content Browser like any other .world.
-		if (CVars::BakeSponzaScene.Get())
+		// Optional startup-scene override (CVar startup.scene / env SS_STARTUP_SCENE). Lets the smoke
+		// harness boot directly into a chosen scene headlessly — e.g. Sponza, to exercise the PBR
+		// sampling path that Startup.world doesn't. Fail loud and fall through to the default if the
+		// override path can't be loaded, rather than silently booting the wrong scene.
+		if (const std::string& overridePath = CVars::StartupScene.Get(); !overridePath.empty())
 		{
-			CreateMainViewportEntity();
-			CreateCameraEntities();
-
-			auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
-			const std::vector<Entity> created = assets.ImportModel("assets/meshes/Sponza/Sponza.gltf");
-			SS_CORE_INFO("Sponza import produced {} parts.", created.size());
-			AddDefaultLightRig();       // imported models carry no lights — add a rig as scene content
-			FrameImportedSceneCamera(); // fit the primary camera to the (unknown-scale) model bounds
-			PrewarmSceneTextures();
-
-			const std::string out = "assets/scenes/Sponza.world";
-			if (created.empty())
+			if (TryLoadWorldFromFile(overridePath))
 			{
-				SS_CORE_ERROR("Sponza import produced no entities; not baking '{}'.", out);
+				m_ActiveScenePath = overridePath;
+				SS_CORE_INFO("Loaded startup-scene override '{}'.", overridePath);
+				return;
 			}
-			else if (SaveWorldToFile(out))
-			{
-				SS_CORE_INFO("Baked Sponza scene to '{}'.", out);
-				m_ActiveScenePath = out;
-			}
-			else
-			{
-				SS_CORE_ERROR("Failed to bake Sponza scene to '{}'.", out);
-			}
-
-			Application::Get().Close();
-			return;
+			SS_CORE_ERROR("startup.scene override '{}' failed to load; falling back to default.", overridePath);
 		}
 
 		// Pick any extension you like; this is just a placeholder until serialization lands.

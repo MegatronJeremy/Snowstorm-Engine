@@ -19,6 +19,11 @@ namespace Snowstorm
 		bool TryLoadWorldFromFile(const std::string& scenePath);
 		void LoadOrCreateStartupWorld();
 
+		// Handle the scene.bake CVar: if set, populate a fresh scene ("stress" recipe or a model path),
+		// save it to Assets/Scenes/<name>.world, close the app, and return true. Returns false (no-op)
+		// when no bake was requested, so the normal startup-load path proceeds.
+		bool BakeRequestedScene();
+
 		// Force-load every material-override texture in the active world so they register in the
 		// bindless set NOW (at load), not lazily during command recording — which would invalidate the
 		// bound descriptor set. Call after building/loading a scene, before the first render.

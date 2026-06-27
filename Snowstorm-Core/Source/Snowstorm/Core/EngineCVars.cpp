@@ -9,9 +9,9 @@ namespace Snowstorm::CVars
 
 	CVar<bool> ValidationExtra{"validation.extra", false, "Enable synchronization + best-practices Vulkan validation"};
 
-	CVar<bool> BakeStressScene{"scene.bake_stress", false, "Build the procedural stress-test scene, save it to Assets/Scenes/Stress.world, then exit"};
-
-	CVar<bool> BakeSponzaScene{"scene.bake_sponza", false, "Import Assets/Meshes/Sponza/Sponza.gltf, save it to Assets/Scenes/Sponza.world, then exit"};
+	CVar<std::string> BakeScene{"scene.bake", "", "Bake a scene to Assets/Scenes/<name>.world then exit. Value: 'stress' (procedural) or a model path (.gltf/.glb/.obj/.fbx)"};
 
 	CVar<bool> VSync{"display.vsync", true, "VSync on (FIFO, locked to refresh) or off (uncapped present)"};
+
+	CVar<std::string> StartupScene{"startup.scene", "", "Path to a .world to load at startup (empty = Startup.world); e.g. assets/scenes/Sponza.world"};
 }
