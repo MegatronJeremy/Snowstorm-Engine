@@ -94,19 +94,63 @@ namespace Snowstorm
 			MaterialAsset matAsset{};
 			matAsset.Preset = PipelinePreset::DefaultLit;
 
-			aiColor3D diffuse(1.0f, 1.0f, 1.0f);
-			aiMat->Get(AI_MATKEY_COLOR_DIFFUSE, diffuse);
-			matAsset.BaseColor = glm::vec4(diffuse.r, diffuse.g, diffuse.b, 1.0f);
-
-			// Diffuse texture (if any): import it and reference by handle.
-			if (aiString texPath; aiMat->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == AI_SUCCESS && texPath.length > 0)
+			// Base color: prefer the glTF PBR base-color factor, fall back to legacy diffuse (OBJ/FBX).
+			aiColor4D baseColor(1.0f, 1.0f, 1.0f, 1.0f);
+			if (aiMat->Get(AI_MATKEY_BASE_COLOR, baseColor) != AI_SUCCESS)
 			{
-				const std::filesystem::path resolvedTex = modelDir / texPath.C_Str();
-				if (std::filesystem::exists(resolvedTex))
-				{
-					matAsset.AlbedoTexture = Import(resolvedTex, AssetType::Texture);
-				}
+				aiColor3D diffuse(1.0f, 1.0f, 1.0f);
+				aiMat->Get(AI_MATKEY_COLOR_DIFFUSE, diffuse);
+				baseColor = aiColor4D(diffuse.r, diffuse.g, diffuse.b, 1.0f);
 			}
+			matAsset.BaseColor = glm::vec4(baseColor.r, baseColor.g, baseColor.b, baseColor.a);
+
+			// Scalar PBR factors (glTF). Defaults match the struct (metallic 0, roughness 1).
+			ai_real metallic = matAsset.Metallic;
+			if (aiMat->Get(AI_MATKEY_METALLIC_FACTOR, metallic) == AI_SUCCESS)
+				matAsset.Metallic = metallic;
+			ai_real roughness = matAsset.Roughness;
+			if (aiMat->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness) == AI_SUCCESS)
+				matAsset.Roughness = roughness;
+			aiColor3D emissive(0.0f, 0.0f, 0.0f);
+			if (aiMat->Get(AI_MATKEY_COLOR_EMISSIVE, emissive) == AI_SUCCESS)
+				matAsset.EmissiveColor = glm::vec3(emissive.r, emissive.g, emissive.b);
+
+			// Resolve+import one texture slot. Tries `type`, then `fallback` (for formats that store a
+			// map under a legacy slot, e.g. OBJ normal-as-HEIGHT). Embedded textures ("*0") are not yet
+			// supported — warn loudly rather than silently dropping the map. The srgb flag is recorded
+			// only by intent here; the resolve path samples linear/sRGB per slot (see GetTextureView).
+			const auto importTex = [&](const aiTextureType type, const aiTextureType fallback) -> AssetHandle
+			{
+				aiString texPath;
+				if (aiMat->GetTexture(type, 0, &texPath) != AI_SUCCESS || texPath.length == 0)
+				{
+					if (fallback == aiTextureType_NONE ||
+					    aiMat->GetTexture(fallback, 0, &texPath) != AI_SUCCESS || texPath.length == 0)
+					{
+						return AssetHandle{0};
+					}
+				}
+				if (texPath.C_Str()[0] == '*')
+				{
+					SS_CORE_WARN("ImportModel: embedded texture '{}' in {} not yet supported (skipped).",
+					             texPath.C_Str(), path.string());
+					return AssetHandle{0};
+				}
+				const std::filesystem::path resolved = modelDir / texPath.C_Str();
+				if (!std::filesystem::exists(resolved))
+				{
+					return AssetHandle{0};
+				}
+				return Import(resolved, AssetType::Texture);
+			};
+
+			matAsset.AlbedoTexture = importTex(aiTextureType_DIFFUSE, aiTextureType_BASE_COLOR);
+			matAsset.NormalTexture = importTex(aiTextureType_NORMALS, aiTextureType_HEIGHT);
+			// glTF packs occlusion-roughness-metallic into one image; assimp exposes it under both
+			// METALNESS and DIFFUSE_ROUGHNESS — same file, so either query resolves the shared slot.
+			matAsset.MetallicRoughnessTexture = importTex(aiTextureType_METALNESS, aiTextureType_DIFFUSE_ROUGHNESS);
+			matAsset.AOTexture = importTex(aiTextureType_AMBIENT_OCCLUSION, aiTextureType_LIGHTMAP);
+			matAsset.EmissiveTexture = importTex(aiTextureType_EMISSIVE, aiTextureType_NONE);
 
 			aiString aiMatName;
 			aiMat->Get(AI_MATKEY_NAME, aiMatName);
@@ -264,12 +308,13 @@ namespace Snowstorm
 		return shader;
 	}
 
-	Ref<TextureView> AssetManagerSingleton::GetTextureView(const AssetHandle handle)
+	Ref<TextureView> AssetManagerSingleton::GetTextureView(const AssetHandle handle, const bool srgb)
 	{
 		if (handle == 0)
 			return nullptr;
 
-		if (auto it = m_TextureViewCache.find(handle); it != m_TextureViewCache.end())
+		auto& cache = srgb ? m_TextureViewCache : m_TextureViewCacheLinear;
+		if (auto it = cache.find(handle); it != cache.end())
 		{
 			return it->second;
 		}
@@ -280,10 +325,10 @@ namespace Snowstorm
 			return nullptr;
 		}
 
-		Ref<Texture> tex = Texture::Create(meta->Path, true);
+		Ref<Texture> tex = Texture::Create(meta->Path, srgb);
 		Ref<TextureView> view = TextureView::Create(tex, MakeFullViewDesc(tex->GetDesc()));
 
-		m_TextureViewCache[handle] = view;
+		cache[handle] = view;
 		return view;
 	}
 

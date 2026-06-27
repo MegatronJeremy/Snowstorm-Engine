@@ -6,7 +6,16 @@
     0.5879999995231628,
     1.0
   ],
+  "EmissiveColor": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "Metallic": 1.0,
+  "MetallicRoughnessTexture": "15641344068730412736",
+  "NormalTexture": "306115742812377500",
   "PipelinePreset": "DefaultLit",
+  "Roughness": 1.0,
   "Type": "SnowstormMaterial",
-  "Version": 1
+  "Version": 2
 }

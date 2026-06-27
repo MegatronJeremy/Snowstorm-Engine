@@ -44,7 +44,12 @@ namespace Snowstorm
 
 		Ref<Mesh> GetMesh(AssetHandle handle);
 		Ref<Shader> GetShader(AssetHandle handle);
-		Ref<TextureView> GetTextureView(AssetHandle handle);
+
+		// Resolve a texture handle to a sampled view. `srgb` selects the color space the GPU view
+		// interprets: albedo/emissive are sRGB (default), while data maps (normal/metallic-roughness/AO)
+		// must be linear or lighting is wrong. The same source texture can be requested in both spaces
+		// (it is cached per (handle, srgb)).
+		Ref<TextureView> GetTextureView(AssetHandle handle, bool srgb = true);
 
 		/// Unique material instance
 		Ref<MaterialInstance> CreateMaterialInstanceUnique(AssetHandle handle);
@@ -77,7 +82,9 @@ namespace Snowstorm
 
 		std::unordered_map<uint64_t, Ref<Mesh>> m_MeshCache;
 		std::unordered_map<uint64_t, Ref<Shader>> m_ShaderCache;
-		std::unordered_map<uint64_t, Ref<TextureView>> m_TextureViewCache;
+		// Keyed by (handle, srgb): a texture can be sampled both as sRGB (albedo) and linear (data).
+		std::unordered_map<uint64_t, Ref<TextureView>> m_TextureViewCache;       // srgb views
+		std::unordered_map<uint64_t, Ref<TextureView>> m_TextureViewCacheLinear; // linear views
 		std::unordered_map<uint64_t, Ref<MaterialInstance>> m_MaterialInstanceCache;
 
 		std::unordered_map<int, Ref<Pipeline>> m_PipelineCache; // key = (int)PipelinePreset
