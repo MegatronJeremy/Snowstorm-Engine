@@ -2,6 +2,7 @@
 
 #include "Snowstorm/Core/Log.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -147,6 +148,41 @@ namespace Snowstorm
 		fs::path GetDxcExePath()
 		{
 			return GetRepoRoot() / "tools" / "dxc" / "dxc.exe";
+		}
+
+		// Fold every shared .hlsli header into the cache key. The cache key otherwise hashes only the
+		// top-level .hlsl source, so editing an included header (e.g. Engine.hlsli, which defines the
+		// FrameCB/MaterialCB layouts shared by all shaders) would NOT invalidate the cached SPIR-V —
+		// the stale shader keeps the old cbuffer layout while C++ uploads the new one, silently
+		// corrupting every cbuffer read (symptom: black/unlit geometry). A full #include dependency
+		// parse is overkill for a single flat include dir; hashing all headers in it is a deliberately
+		// smaller version that catches any header edit. Headers are sorted so the hash is order-stable.
+		uint64_t HashIncludeHeaders()
+		{
+			const fs::path includeDir = GetRepoRoot() / "assets" / "shaders";
+			std::error_code ec;
+			if (!fs::exists(includeDir, ec))
+			{
+				return 0;
+			}
+
+			std::vector<fs::path> headers;
+			for (const auto& entry : fs::directory_iterator(includeDir, ec))
+			{
+				if (entry.is_regular_file() && entry.path().extension() == ".hlsli")
+				{
+					headers.push_back(entry.path());
+				}
+			}
+			std::ranges::sort(headers);
+
+			uint64_t h = 0;
+			for (const fs::path& header : headers)
+			{
+				const std::string text = ReadTextFileOrEmpty(header);
+				h ^= Hash64(text.data(), text.size());
+			}
+			return h;
 		}
 
 		fs::path GetShaderCacheDir()
@@ -374,10 +410,12 @@ namespace Snowstorm
 				return false;
 			}
 
-			// Cache key: hash(source text + fixed flags). Later include: include file contents, defines, etc.
+			// Cache key: hash(source text + included headers + fixed flags). Including the headers is
+			// essential — they carry the shared cbuffer layouts (see HashIncludeHeaders).
 			constexpr const char* kFlagsKey = "v2_spirv_vulkan1.2_fvk-use-dx-layout_Zpr_vs6_ps6_main";
 			uint64_t h = 0;
 			h ^= Hash64(fullText.data(), fullText.size());
+			h ^= HashIncludeHeaders();
 			h ^= Hash64(kFlagsKey, std::strlen(kFlagsKey));
 
 			const std::string key = ToHex64(h);
