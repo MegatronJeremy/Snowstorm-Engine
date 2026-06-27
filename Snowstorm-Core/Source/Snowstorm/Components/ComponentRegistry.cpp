@@ -9,6 +9,7 @@
 #include "Snowstorm/World/World.hpp"
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
+#include <imgui_stdlib.h> // ImGui::InputText(const char*, std::string*) — grows the buffer, no truncation
 
 #include <algorithm>
 #include <cmath>
@@ -213,6 +214,59 @@ namespace Snowstorm
 		float AutoSpeed(const float magnitude)
 		{
 			return std::max(0.001f, std::abs(magnitude) * 0.01f);
+		}
+
+		// Optional numeric widget hints carried on a property via RTTR metadata. A property tagged with
+		// any of Min/Max/Speed/Format drives a clamped slider / fixed drag instead of the default
+		// magnitude-scaled DragFloat (issue #39). All fields optional; HasRange means both Min and Max
+		// were given (-> use a Slider so the value can't leave the range).
+		struct NumericMeta
+		{
+			bool HasMin = false;
+			bool HasMax = false;
+			float Min = 0.0f;
+			float Max = 0.0f;
+			bool HasSpeed = false;
+			float Speed = 0.0f;
+			std::string Format; // empty -> use the widget default ("%.3f")
+
+			bool HasRange() const { return HasMin && HasMax; }
+			const char* FormatOr(const char* fallback) const { return Format.empty() ? fallback : Format.c_str(); }
+		};
+
+		// Read Min/Max/Speed/Format metadata off a property (any subset may be absent). RTTR stores the
+		// values as variants; convert defensively so a wrongly-typed key just falls back to "no hint".
+		NumericMeta ReadNumericMeta(const rttr::property& prop)
+		{
+			NumericMeta m;
+			if (const rttr::variant v = prop.get_metadata("Min"); v.is_valid() && v.can_convert<float>())
+			{
+				m.HasMin = true;
+				m.Min = v.to_float();
+			}
+			if (const rttr::variant v = prop.get_metadata("Max"); v.is_valid() && v.can_convert<float>())
+			{
+				m.HasMax = true;
+				m.Max = v.to_float();
+			}
+			if (const rttr::variant v = prop.get_metadata("Speed"); v.is_valid() && v.can_convert<float>())
+			{
+				m.HasSpeed = true;
+				m.Speed = v.to_float();
+			}
+			if (const rttr::variant v = prop.get_metadata("Format"); v.is_valid() && v.is_type<std::string>())
+			{
+				m.Format = v.get_value<std::string>();
+			}
+			return m;
+		}
+
+		// True if a vector property is tagged metadata("Color", true) — render it as a color picker
+		// rather than a plain numeric vector (issue #39: not every vec3/vec4 is a color).
+		bool IsColorProperty(const rttr::property& prop)
+		{
+			const rttr::variant v = prop.get_metadata("Color");
+			return v.is_valid() && v.can_convert<bool>() && v.to_bool();
 		}
 
 		// One colored, draggable component of a vector (Unity-style R/G/B X Y Z tags). Returns true
@@ -427,19 +481,33 @@ namespace Snowstorm
 		if (type == rttr::type::get<std::string>())
 		{
 			std::string val = value.get_value<std::string>();
-			char buffer[256];
-			strncpy_s(buffer, val.c_str(), sizeof(buffer));
 			LabelLeft(name.c_str());
-			if (ImGui::InputText(hidden.c_str(), buffer, sizeof(buffer)))
+			// std::string overload (imgui_stdlib): the buffer grows to fit, so long tags/paths are never
+			// silently truncated the way a fixed char[256] + strncpy_s would.
+			if (ImGui::InputText(hidden.c_str(), &val))
 			{
-				propChanged = prop.set_value(instance, std::string(buffer));
+				propChanged = prop.set_value(instance, val);
 			}
 		}
 		else if (type == rttr::type::get<float>())
 		{
 			float val = value.get_value<float>();
+			const NumericMeta meta = ReadNumericMeta(prop);
 			LabelLeft(name.c_str());
-			if (ImGui::DragFloat(hidden.c_str(), &val, AutoSpeed(val)))
+			bool edited;
+			if (meta.HasRange())
+			{
+				// Both bounds known -> slider that can't leave the range.
+				edited = ImGui::SliderFloat(hidden.c_str(), &val, meta.Min, meta.Max, meta.FormatOr("%.3f"));
+			}
+			else
+			{
+				const float speed = meta.HasSpeed ? meta.Speed : AutoSpeed(val);
+				const float lo = meta.HasMin ? meta.Min : 0.0f;
+				const float hi = meta.HasMax ? meta.Max : 0.0f; // lo==hi -> DragFloat leaves it unbounded
+				edited = ImGui::DragFloat(hidden.c_str(), &val, speed, lo, hi, meta.FormatOr("%.3f"));
+			}
+			if (edited)
 			{
 				propChanged = prop.set_value(instance, val);
 			}
@@ -447,8 +515,21 @@ namespace Snowstorm
 		else if (type == rttr::type::get<int>())
 		{
 			int val = value.get_value<int>();
+			const NumericMeta meta = ReadNumericMeta(prop);
 			LabelLeft(name.c_str());
-			if (ImGui::DragInt(hidden.c_str(), &val))
+			bool edited;
+			if (meta.HasRange())
+			{
+				edited = ImGui::SliderInt(hidden.c_str(), &val, static_cast<int>(meta.Min), static_cast<int>(meta.Max));
+			}
+			else
+			{
+				const float speed = meta.HasSpeed ? meta.Speed : 1.0f;
+				const int lo = meta.HasMin ? static_cast<int>(meta.Min) : 0;
+				const int hi = meta.HasMax ? static_cast<int>(meta.Max) : 0; // lo==hi -> unbounded
+				edited = ImGui::DragInt(hidden.c_str(), &val, speed, lo, hi);
+			}
+			if (edited)
 			{
 				propChanged = prop.set_value(instance, val);
 			}
@@ -475,7 +556,12 @@ namespace Snowstorm
 		{
 			glm::vec3 val = value.get_value<glm::vec3>();
 			LabelLeft(name.c_str());
-			if (ColoredVector(hidden.c_str(), glm::value_ptr(val), 3, 0.05f))
+			// Only a property explicitly tagged metadata("Color", true) is a color; a plain vec3 is a
+			// direction/scale/etc. and gets the XYZ numeric editor (issue #39).
+			const bool edited = IsColorProperty(prop)
+			                        ? ImGui::ColorEdit3(hidden.c_str(), glm::value_ptr(val))
+			                        : ColoredVector(hidden.c_str(), glm::value_ptr(val), 3, 0.05f);
+			if (edited)
 			{
 				propChanged = prop.set_value(instance, val);
 			}
@@ -484,7 +570,11 @@ namespace Snowstorm
 		{
 			glm::vec4 val = value.get_value<glm::vec4>();
 			LabelLeft(name.c_str());
-			if (ImGui::ColorEdit4(hidden.c_str(), glm::value_ptr(val)))
+			// Same gate as vec3: color picker only when tagged, otherwise a plain XYZW numeric editor.
+			const bool edited = IsColorProperty(prop)
+			                        ? ImGui::ColorEdit4(hidden.c_str(), glm::value_ptr(val))
+			                        : ColoredVector(hidden.c_str(), glm::value_ptr(val), 4, 0.05f);
+			if (edited)
 			{
 				propChanged = prop.set_value(instance, val);
 			}

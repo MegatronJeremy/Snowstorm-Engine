@@ -16,7 +16,8 @@ namespace Snowstorm
 
 		registration::class_<CameraComponent>("Snowstorm::CameraComponent")
 		    .property("Projection", &CameraComponent::Projection)
-		    .property("PerspectiveFOV", &CameraComponent::PerspectiveFOV)
+		    // FOV is stored in radians; clamp the slider to ~5deg..~175deg so it can't go degenerate.
+		    .property("PerspectiveFOV", &CameraComponent::PerspectiveFOV)(metadata("Min", 0.0873f), metadata("Max", 3.054f))
 		    .property("PerspectiveNear", &CameraComponent::PerspectiveNear)
 		    .property("PerspectiveFar", &CameraComponent::PerspectiveFar)
 		    .property("OrthographicSize", &CameraComponent::OrthographicSize)

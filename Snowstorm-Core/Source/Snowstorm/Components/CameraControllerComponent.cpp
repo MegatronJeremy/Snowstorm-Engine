@@ -11,8 +11,8 @@ namespace Snowstorm
 		using namespace rttr;
 
 		registration::class_<CameraControllerComponent>("Snowstorm::CameraControllerComponent")
-		    .property("LookSensitivity", &CameraControllerComponent::LookSensitivity)
-		    .property("MoveSpeed", &CameraControllerComponent::MoveSpeed)
+		    .property("LookSensitivity", &CameraControllerComponent::LookSensitivity)(metadata("Min", 0.0f), metadata("Speed", 0.01f))
+		    .property("MoveSpeed", &CameraControllerComponent::MoveSpeed)(metadata("Min", 0.0f))
 		    .property("RotationEnabled", &CameraControllerComponent::RotationEnabled)
 		    .property("ZoomSpeed", &CameraControllerComponent::ZoomSpeed)
 		    .property("SprintMultiplier", &CameraControllerComponent::SprintMultiplier)
