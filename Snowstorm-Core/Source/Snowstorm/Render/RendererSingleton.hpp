@@ -67,6 +67,11 @@ namespace Snowstorm
 
 		void Flush();
 
+		// Draw the procedural sky as a fullscreen triangle at the far plane. Call inside an active scene
+		// pass (between BeginScene/EndScene) AFTER opaque meshes, so depth is populated and the sky only
+		// fills uncovered pixels. Lazily builds its pipeline against the given color/depth formats.
+		void DrawSky(PixelFormat colorFormat, PixelFormat depthFormat);
+
 		// Stats from the most recently submitted scene pass (reset each BeginScene).
 		[[nodiscard]] const RenderStats& GetStats() const { return m_Stats; }
 
@@ -74,6 +79,11 @@ namespace Snowstorm
 		void FlushBatch(BatchData& batch,
 		                const Ref<CommandContext>& commandContext,
 		                uint32_t frameIndex);
+
+		// Acquire (creating on first use) the per-(pipeline, frame) set=0 Frame descriptor set, and
+		// upload the current frame's FrameCB into its backing UBO. Shared by the mesh batches and the
+		// sky pass so the FrameCB assembly (incl. InvViewProj) lives in exactly one place.
+		Ref<DescriptorSet> AcquireFrameSet(const Ref<Pipeline>& pipeline, uint32_t frameIndex);
 
 		// Ensure the per-frame instance storage buffer for `frameIndex` exists and can hold at least
 		// `additionalNeeded` more elements past the current write cursor; (re)allocates if needed.
@@ -94,6 +104,12 @@ namespace Snowstorm
 		std::unordered_map<const Pipeline*, std::vector<Ref<DescriptorSet>>> m_ObjectSets;
 
 		std::unordered_map<const DescriptorSet*, Ref<Buffer>> m_FrameUniformBuffers;
+
+		// Lazily-built procedural sky pipeline (no vertex buffer; draws at the far plane). Built once for
+		// the scene target's color/depth formats; rebuilt only if those change.
+		Ref<Pipeline> m_SkyPipeline;
+		PixelFormat m_SkyColorFormat = PixelFormat::Unknown;
+		PixelFormat m_SkyDepthFormat = PixelFormat::Unknown;
 
 		// Per-frame storage buffer holding all instances for the frame (set=2). Bound once; each batch
 		// indexes its slice via the draw's firstInstance (SV_InstanceID includes firstInstance). Fixed

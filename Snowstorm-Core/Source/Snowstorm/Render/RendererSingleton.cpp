@@ -6,6 +6,7 @@
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
+#include "Snowstorm/Render/Shader.hpp"
 
 namespace Snowstorm
 {
@@ -14,6 +15,7 @@ namespace Snowstorm
 		struct FrameCB
 		{
 			glm::mat4 ViewProj;
+			glm::mat4 InvViewProj; // for reconstructing world-space rays (sky pass); mirrors Engine.hlsli FrameCB
 			glm::vec3 CameraPosition;
 			float Exposure = 1.0f; // linear pre-tonemap multiplier (mirrors Engine.hlsli FrameCB)
 
@@ -101,6 +103,90 @@ namespace Snowstorm
 		}
 	}
 
+	Ref<DescriptorSet> RendererSingleton::AcquireFrameSet(const Ref<Pipeline>& pipeline, const uint32_t frameIndex)
+	{
+		const auto& setLayouts = pipeline->GetSetLayouts();
+		SS_CORE_ASSERT(!setLayouts.empty() && setLayouts[0], "Pipeline missing set=0 (Frame) layout");
+
+		// One (set, UBO) per (pipeline, frameIndex). The UBO is kept alive in m_FrameUniformBuffers,
+		// keyed by the DescriptorSet* (avoids storing it on DescriptorSet itself).
+		auto& perFrameFrameSets = m_FrameSets[pipeline.get()];
+		if (perFrameFrameSets.empty())
+			perFrameFrameSets.resize(Renderer::GetFramesInFlight());
+
+		if (!perFrameFrameSets[frameIndex])
+		{
+			DescriptorSetDesc setDesc{};
+			setDesc.DebugName = "Set0_Frame";
+			perFrameFrameSets[frameIndex] = DescriptorSet::Create(setLayouts[0], setDesc);
+			SS_CORE_ASSERT(perFrameFrameSets[frameIndex], "Failed to create set=0 Frame DescriptorSet");
+
+			Ref<Buffer> frameCB = Buffer::Create(sizeof(FrameCB), BufferUsage::Uniform, nullptr, true, "FrameCB");
+			SS_CORE_ASSERT(frameCB, "Failed to create FrameCB uniform buffer");
+
+			m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()] = frameCB;
+
+			BufferBinding bb{};
+			bb.Buffer = frameCB;
+			bb.Offset = 0;
+			bb.Range = sizeof(FrameCB);
+			perFrameFrameSets[frameIndex]->SetBuffer(0, bb);
+			perFrameFrameSets[frameIndex]->Commit();
+		}
+
+		// Refresh the UBO contents every call (safe + simple; optimize later). Single source of truth for
+		// FrameCB assembly, including InvViewProj used by the sky pass.
+		FrameCB frame{};
+		frame.ViewProj = m_ViewProj;
+		frame.InvViewProj = glm::inverse(m_ViewProj);
+		frame.CameraPosition = m_CameraPosition;
+		frame.Exposure = CVars::Exposure.Get();
+		frame.Lights = m_Lights;
+
+		const Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
+		SS_CORE_ASSERT(frameUBO, "Frame UBO missing for frame descriptor set");
+		frameUBO->SetData(&frame, sizeof(FrameCB), 0);
+
+		return perFrameFrameSets[frameIndex];
+	}
+
+	void RendererSingleton::DrawSky(const PixelFormat colorFormat, const PixelFormat depthFormat)
+	{
+		if (!m_CommandContext)
+		{
+			return;
+		}
+
+		// (Re)build the sky pipeline when first used or when the target formats change. Empty vertex
+		// layout (the VS generates a fullscreen triangle from SV_VertexID); depth test LessOrEqual with
+		// NO depth write so the sky sits at the far plane behind already-drawn geometry.
+		if (!m_SkyPipeline || m_SkyColorFormat != colorFormat || m_SkyDepthFormat != depthFormat)
+		{
+			Ref<Shader> shader = Shader::Create("assets/shaders/Sky.hlsl");
+			SS_CORE_ASSERT(shader, "Failed to load Sky shader");
+
+			PipelineDesc p{};
+			p.Type = PipelineType::Graphics;
+			p.Shader = shader;
+			p.ColorFormats = {colorFormat};
+			p.DepthFormat = depthFormat;
+			p.Raster.Cull = CullMode::None; // fullscreen triangle: don't cull by winding
+			p.DepthStencil.EnableDepthTest = true;
+			p.DepthStencil.EnableDepthWrite = false;
+			p.DepthStencil.DepthCompare = CompareOp::LessOrEqual;
+			p.DebugName = "SkyPipeline";
+
+			m_SkyPipeline = Pipeline::Create(p);
+			SS_CORE_ASSERT(m_SkyPipeline, "Failed to create Sky pipeline");
+			m_SkyColorFormat = colorFormat;
+			m_SkyDepthFormat = depthFormat;
+		}
+
+		m_CommandContext->BindPipeline(m_SkyPipeline);
+		m_CommandContext->BindDescriptorSet(AcquireFrameSet(m_SkyPipeline, m_FrameIndex), 0);
+		m_CommandContext->Draw(3, 1, 0); // fullscreen triangle, no vertex/index buffer
+	}
+
 	void RendererSingleton::FlushBatch(BatchData& batch,
 	                                   const Ref<CommandContext>& commandContext,
 	                                   const uint32_t frameIndex)
@@ -131,49 +217,11 @@ namespace Snowstorm
 		SS_CORE_ASSERT(setLayouts.size() > 2, "Pipeline must provide set layouts 0..2");
 		SS_CORE_ASSERT(setLayouts[0] && setLayouts[2], "Pipeline missing set=0 and/or set=2 layouts");
 
-		// ---- Set 0: Frame ----
-		auto& perFrameFrameSets = m_FrameSets[pipeline.get()];
-		if (perFrameFrameSets.empty())
-			perFrameFrameSets.resize(Renderer::GetFramesInFlight());
-
-		// One UBO per (pipeline, frameIndex). Keep it alive by storing it in a static map keyed by DescriptorSet*.
-		// This avoids adding more members to DescriptorSet for now.
-		if (!perFrameFrameSets[frameIndex])
-		{
-			DescriptorSetDesc setDesc{};
-			setDesc.DebugName = "Set0_Frame";
-			perFrameFrameSets[frameIndex] = DescriptorSet::Create(setLayouts[0], setDesc);
-			SS_CORE_ASSERT(perFrameFrameSets[frameIndex], "Failed to create set=0 Frame DescriptorSet");
-
-			// Create the frame CB backing this descriptor set
-			Ref<Buffer> frameCB = Buffer::Create(sizeof(FrameCB), BufferUsage::Uniform, nullptr, true, "FrameCB");
-			SS_CORE_ASSERT(frameCB, "Failed to create FrameCB uniform buffer");
-
-			m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()] = frameCB;
-
-			BufferBinding bb{};
-			bb.Buffer = frameCB;
-			bb.Offset = 0;
-			bb.Range = sizeof(FrameCB);
-			perFrameFrameSets[frameIndex]->SetBuffer(0, bb);
-			perFrameFrameSets[frameIndex]->Commit();
-		}
-
-		// Update frame UBO contents every flush (safe + simple; optimize later)
-		{
-			FrameCB frame{};
-			frame.ViewProj = m_ViewProj;
-			frame.CameraPosition = m_CameraPosition;
-			frame.Exposure = CVars::Exposure.Get();
-			frame.Lights = m_Lights;
-
-			Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
-			SS_CORE_ASSERT(frameUBO, "Frame UBO missing for frame descriptor set");
-			frameUBO->SetData(&frame, sizeof(FrameCB), 0);
-		}
+		// ---- Set 0: Frame ---- (created on demand + uploaded; shared with the sky pass)
+		const Ref<DescriptorSet> frameSet = AcquireFrameSet(pipeline, frameIndex);
 
 		// Bind set 0 after the pipeline is bound (pipeline already bound by MaterialInstance::Apply)
-		commandContext->BindDescriptorSet(perFrameFrameSets[frameIndex], 0);
+		commandContext->BindDescriptorSet(frameSet, 0);
 
 		// ---- Set 2: per-instance Object data (StructuredBuffer) ----
 		// One frame-wide storage buffer holds every instance; each batch writes its slice and draws

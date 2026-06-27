@@ -191,6 +191,20 @@ namespace Snowstorm
 				               }
 
 				               renderer.Flush();
+
+				               // Procedural sky after opaque meshes: depth is populated, so the far-plane
+				               // sky only fills uncovered pixels. Formats come from the target's own
+				               // attachments so the sky pipeline is render-pass-compatible with this pass.
+				               const auto& rtDesc = vpRT.Target->GetDesc();
+				               if (!rtDesc.ColorAttachments.empty() && rtDesc.DepthAttachment)
+				               {
+					               const PixelFormat colorFmt =
+					                   rtDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+					               const PixelFormat depthFmt =
+					                   rtDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
+					               renderer.DrawSky(colorFmt, depthFmt);
+				               }
+
 				               renderer.EndScene();
 			               }});
 		}
