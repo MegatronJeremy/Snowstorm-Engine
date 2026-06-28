@@ -48,4 +48,35 @@ namespace Snowstorm
 
 		return RenderTarget::Create(rtDesc);
 	}
+
+	Ref<RenderTarget> CreateShadowDepthTarget(const uint32_t size, const char* debugPrefix)
+	{
+		TextureDesc depthDesc{};
+		depthDesc.Dimension = TextureDimension::Texture2D;
+		depthDesc.Format = PixelFormat::D32_Float;
+		// DepthStencil: written as a depth attachment by the shadow pass. Sampled: read back in the lit
+		// shader (also auto-registers the view for bindless sampling).
+		depthDesc.Usage = TextureUsage::DepthStencil | TextureUsage::Sampled;
+		depthDesc.Width = size;
+		depthDesc.Height = size;
+		depthDesc.DebugName = std::string(debugPrefix) + "_ShadowDepth";
+
+		Ref<Texture> depthTex = Texture::Create(depthDesc);
+		Ref<TextureView> depthView = TextureView::Create(depthTex, MakeFullViewDesc(depthDesc));
+
+		RenderTargetDesc rtDesc{};
+		rtDesc.Width = size;
+		rtDesc.Height = size;
+		rtDesc.IsSwapchainTarget = false;
+		// No color attachment — depth-only pass.
+
+		DepthStencilAttachment depthAtt{};
+		depthAtt.View = depthView;
+		depthAtt.ClearDepth = 1.0f;
+		depthAtt.DepthLoadOp = RenderTargetLoadOp::Clear;
+		depthAtt.DepthStoreOp = RenderTargetStoreOp::Store;
+		rtDesc.DepthAttachment = depthAtt;
+
+		return RenderTarget::Create(rtDesc);
+	}
 }

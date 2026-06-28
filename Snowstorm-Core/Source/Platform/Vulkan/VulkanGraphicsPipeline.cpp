@@ -183,7 +183,9 @@ namespace Snowstorm
 	    : m_Desc(std::move(desc))
 	{
 		SS_CORE_ASSERT(m_Desc.Type == PipelineType::Graphics, "VulkanGraphicsPipeline requires PipelineType::Graphics");
-		SS_CORE_ASSERT(!m_Desc.ColorFormats.empty(), "Graphics pipeline requires at least one color format (dynamic rendering)");
+		// A depth-only pipeline (no color attachments) is valid for a shadow / depth-prepass: empty
+		// ColorFormats -> colorAttachmentCount = 0 below, and the blend state resizes to zero attachments.
+		// It must still have a depth format, asserted via DepthFormat where the depth state is wired.
 		SS_CORE_ASSERT(m_Desc.Shader, "PipelineDesc.Shader must be set");
 
 		m_Device = GetVulkanDevice();

@@ -58,6 +58,18 @@ cbuffer FrameCB : register(b0, space0)
 	float _EnvPad0;
 	float3 GroundColor;
 	float _EnvPad1;
+
+	// Directional shadow (sun). LightViewProj reprojects world -> light clip; ShadowMapIndex is the
+	// bindless depth-texture index (0 = no shadows). Mirrors the FrameCB tail in RendererSingleton.cpp.
+	float4x4 LightViewProj;
+	uint ShadowMapIndex;
+	float ShadowBias;
+	float ShadowTexelSize;
+	float ShadowStrength;
+	uint ShadowSoft; // 1 = 3x3 PCF, 0 = hard single tap
+	float _ShadowPad0;
+	float _ShadowPad1;
+	float _ShadowPad2;
 };
 
 // --- SPACE 1: Material Data ---

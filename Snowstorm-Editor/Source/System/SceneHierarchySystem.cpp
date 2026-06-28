@@ -84,6 +84,47 @@ namespace Snowstorm
 		}
 
 		ImGui::Spacing();
+		EditorTheme::SectionHeader("Shadows");
+
+		// Global shadow toggle (scalability kill-switch). The per-light "Cast Shadows" flag in the
+		// inspector is the authored on/off above this; both must be on for shadows to render.
+		if (bool shadows = CVars::Shadows.Get(); ImGui::Checkbox("Enabled", &shadows))
+		{
+			CVars::Shadows.Set(shadows);
+		}
+
+		// Resolution: changing it rebuilds the shadow map target at the start of the next frame.
+		{
+			constexpr int kResolutions[] = {1024, 2048, 4096};
+			const int current = CVars::ShadowResolution.Get();
+			int idx = 1; // default 2048
+			for (int i = 0; i < 3; ++i)
+			{
+				if (kResolutions[i] == current)
+				{
+					idx = i;
+				}
+			}
+			const char* labels[] = {"1024", "2048", "4096"};
+			if (ImGui::Combo("Resolution", &idx, labels, 3))
+			{
+				CVars::ShadowResolution.Set(kResolutions[idx]);
+			}
+		}
+
+		// Soft (3x3 PCF) vs hard (single tap).
+		if (bool soft = CVars::ShadowSoft.Get(); ImGui::Checkbox("Soft (PCF)", &soft))
+		{
+			CVars::ShadowSoft.Set(soft);
+		}
+
+		// Strength: how dark shadows get (1 = full occlusion, 0 = none). Read into FrameCB each frame.
+		if (float strength = CVars::ShadowStrength.Get(); ImGui::SliderFloat("Strength", &strength, 0.0f, 1.0f, "%.2f"))
+		{
+			CVars::ShadowStrength.Set(strength);
+		}
+
+		ImGui::Spacing();
 
 		// Last scene-pass GPU submission stats (RendererSingleton::RenderStats). With instancing,
 		// DrawCalls == Batches (one instanced draw per mesh+material) while Instances counts every

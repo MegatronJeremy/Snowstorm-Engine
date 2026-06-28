@@ -14,10 +14,16 @@
 #include "Snowstorm/Components/VisibilityComponents.hpp"
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Lighting/LightingComponents.hpp"
 #include "Snowstorm/Render/RenderGraph.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererSingleton.hpp"
+#include "Snowstorm/Render/RenderTarget.hpp"
+#include "Snowstorm/Render/SceneBounds.hpp"
 #include "Snowstorm/Render/Texture.hpp"
+
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace Snowstorm
 {
@@ -86,6 +92,35 @@ namespace Snowstorm
 
 			return pick;
 		}
+
+		// Fit an orthographic light frustum to the scene AABB and build the sun's view-projection. The
+		// light looks from the AABB center back along -lightDir, far enough to enclose the whole box; the
+		// ortho extents cover the box radius. Matches the camera's clip convention (RH, zero-to-one Z via
+		// GLM_FORCE_DEPTH_ZERO_TO_ONE). Returns false if the scene has no renderable bounds yet.
+		bool ComputeSunViewProj(World& world, const glm::vec3& lightDir, glm::mat4& outViewProj)
+		{
+			AABB sceneAABB;
+			if (!ComputeWorldRenderableAABB(world, sceneAABB))
+			{
+				return false;
+			}
+
+			const glm::vec3 center = sceneAABB.Center();
+			const float radius = glm::length(sceneAABB.Extents()) + 0.001f; // bounding-sphere radius
+
+			const glm::vec3 dir = glm::normalize(lightDir);
+			// Eye placed one radius back along the light so the whole sphere is in front of the near plane.
+			const glm::vec3 eye = center - dir * radius;
+			// Pick an up vector not parallel to the light direction.
+			const glm::vec3 up = (glm::abs(dir.y) > 0.99f) ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+
+			const glm::mat4 view = glm::lookAtRH(eye, center, up);
+			// Ortho sized to the bounding sphere; depth spans 0..2r so the sphere fits between near/far.
+			const glm::mat4 proj = glm::orthoRH_ZO(-radius, radius, -radius, radius, 0.0f, 2.0f * radius);
+
+			outViewProj = proj * view;
+			return true;
+		}
 	}
 
 	void RenderSystem::Execute(const Timestep /*ts*/)
@@ -117,11 +152,75 @@ namespace Snowstorm
 			return;
 		}
 
+		renderer.NewFrame(); // reset the per-frame instance cursor before any pass appends to it
+
 		const uint32_t frameIndex = Renderer::GetCurrentFrameIndex();
 		const Ref<CommandContext> ctx = Renderer::GetGraphicsCommandContext();
 		SS_CORE_ASSERT(ctx, "Renderer returned null CommandContext");
 
 		RenderGraph graph;
+
+		// ---- Directional shadow pass (primary sun) ----
+		// Render scene depth from the sun's POV into the shared shadow map, before any camera pass. Uses
+		// ALL renderable meshes (not a camera's visibility cache) — an off-screen caster still shadows
+		// on-screen geometry. If there is no directional light or no scene bounds, shadows are disabled
+		// (ShadowMapIndex = 0) and the lit shader falls back to fully lit.
+		renderer.SetShadowData(glm::mat4(1.0f), 0); // default: no shadows unless set up below
+
+		// Primary sun = first directional light (matches DirectionalLights[0] in the shader). Shadows are
+		// gated by the global render.shadows CVar (scalability kill-switch) AND the light's authored
+		// CastShadows flag — either off => no shadow pass, ShadowMapIndex stays 0 (fully lit).
+		glm::vec3 sunDir{0.0f};
+		bool sunCasts = false;
+		for (const auto sunView = View<const DirectionalLightComponent>(); const auto e : sunView)
+		{
+			const auto& dl = sunView.get<const DirectionalLightComponent>(e);
+			sunDir = dl.Direction;
+			sunCasts = dl.CastShadows;
+			break;
+		}
+
+		glm::mat4 lightViewProj{1.0f};
+		if (CVars::Shadows.Get() && sunCasts && ComputeSunViewProj(*m_World, sunDir, lightViewProj))
+		{
+			const Ref<RenderTarget>& shadowRT = renderer.GetOrCreateShadowTarget();
+			const uint32_t shadowIndex =
+			    shadowRT->GetDesc().DepthAttachment->View->GetGlobalBindlessIndex();
+
+			const PixelFormat shadowDepthFmt =
+			    shadowRT->GetDesc().DepthAttachment->View->GetTexture()->GetDesc().Format;
+
+			renderer.SetShadowData(lightViewProj, shadowIndex);
+
+			graph.AddPass({.Name = "ShadowPass",
+			               .Target = shadowRT,
+			               .Execute = [&, lightViewProj, shadowDepthFmt](CommandContext& /*c*/)
+			               {
+				               // Light "camera": only ViewProjection is read by BeginScene/FrameCB.
+				               CameraRuntimeComponent lightCam{};
+				               lightCam.ViewProjection = lightViewProj;
+
+				               renderer.BeginScene(lightCam, glm::vec3(0.0f), ctx, frameIndex);
+
+				               // Accumulate ALL renderable meshes as shadow casters (resolved instances).
+				               for (const auto casters = View<const TransformComponent, const MeshComponent, const MaterialComponent, const VisibilityComponent>();
+				                    const auto e : casters)
+				               {
+					               const auto& mesh = reg.Read<MeshComponent>(e);
+					               const auto& mat = reg.Read<MaterialComponent>(e);
+					               if (!mesh.MeshInstance || !mat.MaterialInstance)
+					               {
+						               continue;
+					               }
+					               renderer.DrawMesh(reg.Read<TransformComponent>(e).GetTransformMatrix(),
+					                                 mesh.MeshInstance, mat.MaterialInstance);
+				               }
+
+				               renderer.DrawShadowDepth(shadowDepthFmt);
+				               // The depth target is transitioned to shader-read by EndRenderPass (it's a
+				               // sampleable depth attachment) — can't barrier inside the rendering instance.
+			               }});
+		}
 
 		for (const auto vpEntity : viewportView)
 		{

@@ -140,6 +140,7 @@ namespace Snowstorm
 		// swapchain) won't match the COLOR/DEPTH_ATTACHMENT_OPTIMAL the render pass expects.
 		const RenderTargetDesc& desc = vkTarget.GetDesc();
 		m_CurrentColorTargets.clear();
+		m_CurrentSampledDepthTarget.reset();
 		m_CurrentTargetIsSwapchain = desc.IsSwapchainTarget;
 		for (const RenderTargetAttachment& a : desc.ColorAttachments)
 		{
@@ -149,7 +150,14 @@ namespace Snowstorm
 		}
 		if (desc.DepthAttachment.has_value())
 		{
-			TransitionLayout(desc.DepthAttachment->View->GetTexture(), VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+			const Ref<Texture>& depthTex = desc.DepthAttachment->View->GetTexture();
+			TransitionLayout(depthTex, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+			// A sampleable depth target (shadow map) must become shader-readable after the pass; remember
+			// it so EndRenderPass transitions it (a transition can't happen inside the rendering instance).
+			if (HasUsage(depthTex->GetDesc().Usage, TextureUsage::Sampled))
+			{
+				m_CurrentSampledDepthTarget = depthTex;
+			}
 		}
 
 		// 1. Begin rendering
@@ -197,6 +205,14 @@ namespace Snowstorm
 			}
 		}
 		m_CurrentColorTargets.clear();
+
+		// Sampleable depth target (shadow map): make it shader-readable for the consuming pass. Done here,
+		// after vkCmdEndRendering, so the barrier is outside the dynamic-rendering instance.
+		if (m_CurrentSampledDepthTarget)
+		{
+			TransitionLayout(m_CurrentSampledDepthTarget, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+			m_CurrentSampledDepthTarget.reset();
+		}
 	}
 
 	void VulkanCommandContext::SetViewport(const float x, const float y,

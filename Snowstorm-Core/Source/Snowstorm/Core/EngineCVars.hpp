@@ -39,4 +39,18 @@ namespace Snowstorm::CVars
 	// Linear exposure multiplier applied before tonemapping in DefaultLit. 1.0 = neutral; raise to
 	// brighten, lower to darken. Runtime-tweakable from the editor's Settings panel.
 	extern CVar<float> Exposure;
+
+	// --- Shadows (quality settings; runtime-tweakable from the editor's Settings panel) ---
+	// Global shadow kill-switch (scalability layer, like Unity Quality Settings / UE sg.ShadowQuality).
+	// Off = skip the shadow pass entirely; the per-light CastShadows flag is the authored on/off above it.
+	extern CVar<bool> Shadows;
+
+	// Shadow-map resolution (square). Changing it rebuilds the shadow target. Higher = sharper, costlier.
+	extern CVar<int> ShadowResolution;
+
+	// Soft shadows: 3x3 PCF when on, single hard tap when off.
+	extern CVar<bool> ShadowSoft;
+
+	// How dark shadows get: 1 = full occlusion, 0 = none. Lerps the sun's visibility toward 1.
+	extern CVar<float> ShadowStrength;
 }

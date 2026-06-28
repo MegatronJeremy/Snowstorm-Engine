@@ -74,6 +74,9 @@ namespace Snowstorm
 		// Used by EndRenderPass to leave offscreen color targets in SHADER_READ_ONLY so they can be
 		// sampled afterwards (e.g. the editor viewport texture).
 		std::vector<Ref<Texture>> m_CurrentColorTargets;
+		// A sampleable depth attachment (e.g. the shadow map) to transition to shader-read after the pass.
+		// Null for the normal scene depth (DepthStencil-only, never sampled). Set in BeginRenderPass.
+		Ref<Texture> m_CurrentSampledDepthTarget;
 		bool m_CurrentTargetIsSwapchain = false;
 	};
 }

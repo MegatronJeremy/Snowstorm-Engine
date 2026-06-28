@@ -34,6 +34,68 @@ float4 SampleBindless(uint index, float2 uv)
 	return Textures[NonUniformResourceIndex(index)].Sample(LinearSampler, uv);
 }
 
+// Directional-sun shadow factor: 1 = fully lit, 0 = fully shadowed. Reprojects the world position into
+// light clip space, then does a 3x3 PCF compare against the stored shadow-map depth. Manual PCF keeps
+// the existing bindless SAMPLED_IMAGE model (no comparison-sampler descriptor). NdotL drives a
+// slope-scaled bias to kill acne on grazing surfaces; ShadowStrength lets shadows be lightened.
+float SampleSunShadow(float3 positionWS, float NdotL)
+{
+	if (ShadowMapIndex == 0)
+	{
+		return 1.0; // no shadow map bound
+	}
+
+	float4 lightClip = mul(float4(positionWS, 1.0), LightViewProj);
+	float3 ndc = lightClip.xyz / lightClip.w;
+
+	// Outside the light frustum (depth or XY) => treat as lit, don't darken unshadowed areas.
+	if (ndc.z > 1.0 || ndc.z < 0.0)
+	{
+		return 1.0;
+	}
+
+	// Clip XY [-1,1] -> UV [0,1]. NO Y-flip: the engine's SetViewport does NOT apply the Vulkan
+	// negative-height flip (despite its comment), so the whole renderer is internally consistent in
+	// un-flipped clip space. Flipping here would mismatch the shadow map's own rasterization.
+	float2 uv = ndc.xy * float2(0.5, 0.5) + 0.5;
+	if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
+	{
+		return 1.0;
+	}
+
+	// Depth bias: a constant floor plus a slope-scaled term (more bias on surfaces grazing the light).
+	// The floor matters even for light-facing surfaces (shadow-map texel quantization causes acne there
+	// too); a pure slope term collapses to ~0 at high NdotL and lets acne through.
+	const float bias = ShadowBias + ShadowBias * 4.0 * (1.0 - NdotL);
+
+	const float currentDepth = ndc.z - bias;
+
+	// Soft (3x3 PCF, averaged compares) or hard (single tap), per the render.shadow.soft quality setting.
+	float visibility;
+	if (ShadowSoft != 0)
+	{
+		float sum = 0.0;
+		[unroll] for (int dy = -1; dy <= 1; ++dy)
+		{
+			[unroll] for (int dx = -1; dx <= 1; ++dx)
+			{
+				const float2 offset = float2(dx, dy) * ShadowTexelSize;
+				const float storedDepth = SampleBindless(ShadowMapIndex, uv + offset).r;
+				sum += (currentDepth <= storedDepth) ? 1.0 : 0.0;
+			}
+		}
+		visibility = sum / 9.0;
+	}
+	else
+	{
+		const float storedDepth = SampleBindless(ShadowMapIndex, uv).r;
+		visibility = (currentDepth <= storedDepth) ? 1.0 : 0.0;
+	}
+
+	// ShadowStrength scales how dark shadows get (1 = full occlusion -> visibility, 0 = no shadowing).
+	return lerp(1.0, visibility, ShadowStrength);
+}
+
 // ACES filmic tonemap (Narkowicz fit): compress unbounded linear HDR into [0,1] with a filmic
 // shoulder/toe, so bright spots roll off instead of clipping flat white. Cheap, no LUT.
 float3 TonemapACES(float3 x)
@@ -95,7 +157,7 @@ float3 ResolveNormal(PSInput i, uint normalIndex)
 	float3 T = normalize(i.TangentWS.xyz);
 	// Re-orthogonalize (Gram-Schmidt) so interpolation skew doesn't tilt the basis.
 	T = normalize(T - N * dot(N, T));
-	float3 B = cross(N, T) * i.TangentWS.w; // handedness sign baked at import
+	float3 B = cross(N, T) * i.TangentWS.w;                                   // handedness sign baked at import
 	float3 sampled = SampleBindless(normalIndex, i.TexCoord).xyz * 2.0 - 1.0; // [0,1] -> [-1,1]
 	float3x3 TBN = float3x3(T, B, N);
 	return normalize(mul(sampled, TBN));
@@ -141,7 +203,12 @@ float4 main(PSInput i) : SV_Target0
 
 		const float3 specular = (D * G * F) / max(4.0 * max(dot(N, V), 0.0) * NdotL, 1e-4);
 		const float3 kd = (1.0 - F) * (1.0 - metallic); // metals have no diffuse
-		Lo += (kd * albedo / PI + specular) * radiance * NdotL;
+
+		// Only the primary sun (light 0) casts shadows in this single-map implementation; other
+		// directionals are unshadowed. Ambient is unaffected, so shadowed areas stay lit-but-dim.
+		const float shadow = (l == 0) ? SampleSunShadow(i.PositionWS, NdotL) : 1.0;
+
+		Lo += (kd * albedo / PI + specular) * radiance * NdotL * shadow;
 	}
 
 	// Hemisphere ambient (IBL stopgap until #52). From the shared environment (FrameCB) — the SAME

@@ -48,6 +48,12 @@ namespace Snowstorm
 	class RendererSingleton final : public Singleton
 	{
 	public:
+		// Call once per frame, before any BeginScene, after Renderer::BeginFrame(). Resets the per-frame
+		// instance write cursor so multiple passes in the frame (shadow depth pass + camera pass, or
+		// several viewports) APPEND into the shared instance buffer instead of each resetting to 0 and
+		// clobbering the others' already-recorded draws.
+		void NewFrame();
+
 		void BeginScene(const CameraRuntimeComponent& cameraRt,
 		                const glm::vec3& cameraWorldPosition,
 		                const Ref<CommandContext>& commandContext,
@@ -75,6 +81,21 @@ namespace Snowstorm
 		// pass (between BeginScene/EndScene) AFTER opaque meshes, so depth is populated and the sky only
 		// fills uncovered pixels. Lazily builds its pipeline against the given color/depth formats.
 		void DrawSky(PixelFormat colorFormat, PixelFormat depthFormat);
+
+		// Set the directional shadow data the lit pass needs: the light's view-projection (world -> light
+		// clip) and the bindless index of the shadow depth texture (0 = no shadows). The camera pass's
+		// FrameCB picks these up so DefaultLit can reproject + compare. Call before the camera Flush().
+		void SetShadowData(const glm::mat4& lightViewProj, uint32_t shadowMapIndex);
+
+		// Draw the currently-accumulated batches (from DrawMesh) into the bound depth-only shadow target,
+		// using a dedicated depth-only pipeline and the light's matrix (m_ViewProj, set by the preceding
+		// BeginScene with the light's view-projection). No materials/bindless. Call inside the shadow
+		// RenderGraph pass; the batches are consumed (instances cleared) like Flush().
+		void DrawShadowDepth(PixelFormat depthFormat);
+
+		// The shared shadow-map render target (lazily created at a fixed resolution). RenderSystem uses it
+		// as the shadow pass's target and reads its depth texture's bindless index for SetShadowData.
+		[[nodiscard]] const Ref<RenderTarget>& GetOrCreateShadowTarget();
 
 		// Stats from the most recently submitted scene pass (reset each BeginScene).
 		[[nodiscard]] const RenderStats& GetStats() const { return m_Stats; }
@@ -115,6 +136,17 @@ namespace Snowstorm
 		Ref<Pipeline> m_SkyPipeline;
 		PixelFormat m_SkyColorFormat = PixelFormat::Unknown;
 		PixelFormat m_SkyDepthFormat = PixelFormat::Unknown;
+
+		// Lazily-built depth-only shadow pipeline (mesh vertex layout, no color target). Plus the current
+		// frame's light view-projection + shadow-map bindless index, folded into the camera pass's FrameCB.
+		Ref<Pipeline> m_ShadowPipeline;
+		PixelFormat m_ShadowDepthFormat = PixelFormat::Unknown;
+		glm::mat4 m_LightViewProj{1.0f};
+		uint32_t m_ShadowMapIndex = 0;
+
+		// Shared shadow-map target (depth-only, sampleable). Resolution comes from the
+		// render.shadow.resolution CVar; rebuilt when it changes (see GetOrCreateShadowTarget).
+		Ref<RenderTarget> m_ShadowTarget;
 
 		// Per-frame storage buffer holding all instances for the frame (set=2). Bound once; each batch
 		// indexes its slice via the draw's firstInstance (SV_InstanceID includes firstInstance). Fixed
