@@ -18,10 +18,10 @@ namespace Snowstorm
 
 	enum class ShaderStage : uint8_t
 	{
-		None     = 0,
-		Vertex   = 1u << 0,
+		None = 0,
+		Vertex = 1u << 0,
 		Fragment = 1u << 1,
-		Compute  = 1u << 2,
+		Compute = 1u << 2,
 		AllGraphics = Vertex | Fragment,
 		All = Vertex | Fragment | Compute
 	};
@@ -30,11 +30,15 @@ namespace Snowstorm
 	{
 		Unknown = 0,
 
-		// Color
+		// Color (LDR)
 		RGBA8_UNorm,
 		RGBA8_sRGB,
 		BGRA8_UNorm, // Important for Windows Swapchains
 		BGRA8_sRGB,
+
+		// Color (HDR float) — needed for IBL env/irradiance/prefilter maps and an HDR scene target (#54)
+		RGBA16_SFloat,
+		R11G11B10_UFloat,
 
 		// Depth
 		D32_Float,
