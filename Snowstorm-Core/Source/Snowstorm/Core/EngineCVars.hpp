@@ -54,10 +54,6 @@ namespace Snowstorm::CVars
 	// How dark shadows get: 1 = full occlusion, 0 = none. Lerps the sun's visibility toward 1.
 	extern CVar<float> ShadowStrength;
 
-	// One-shot self-test: on the first frame, create + bind + dispatch a trivial compute pipeline and
-	// log the result. Proves the compute path (Phase 2 / #17-#18) works under validation, headlessly.
-	extern CVar<bool> ComputeSelfTest;
-
 	// Image-based lighting: bake irradiance/prefiltered cubes from the sky on compute and use them for
 	// ambient (#52). On by default; turn off to fall back to the analytic hemisphere ambient.
 	extern CVar<bool> IBL;

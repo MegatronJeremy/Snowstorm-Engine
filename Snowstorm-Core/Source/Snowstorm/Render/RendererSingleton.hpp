@@ -9,7 +9,6 @@
 #include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/MaterialInstance.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
-#include "Snowstorm/Render/Sampler.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
 #include <unordered_map>
@@ -79,20 +78,6 @@ namespace Snowstorm
 
 		void Flush();
 
-		// Bake the IBL maps (irradiance + later prefiltered/BRDF) from the current procedural-sky
-		// environment, on compute. Lazy: bakes once, then on environment change. Call inside a recording
-		// command buffer (before render passes). The generated cubes' bindless indices feed FrameCB.
-		void BakeIBL(const Ref<CommandContext>& commandContext);
-
-		// Whether the IBL maps have been baked (so callers can drain the GPU before the one-time bake).
-		[[nodiscard]] bool IsIBLBaked() const { return m_IBLBaked; }
-
-		// One-shot compute self-test (Phase 2 / #17-#18): lazily create a trivial compute pipeline, bind
-		// and dispatch it once in the given command context, and log the result. The pipeline is owned by
-		// this singleton so it tears down in the normal device-shutdown order (not at static-exit, which
-		// would destroy GPU objects after the device is gone). Call inside a recording command buffer.
-		void RunComputeSelfTest(const Ref<CommandContext>& commandContext);
-
 		// Draw the procedural sky as a fullscreen triangle at the far plane. Call inside an active scene
 		// pass (between BeginScene/EndScene) AFTER opaque meshes, so depth is populated and the sky only
 		// fills uncovered pixels. Lazily builds its pipeline against the given color/depth formats.
@@ -102,6 +87,17 @@ namespace Snowstorm
 		// clip) and the bindless index of the shadow depth texture (0 = no shadows). The camera pass's
 		// FrameCB picks these up so DefaultLit can reproject + compare. Call before the camera Flush().
 		void SetShadowData(const glm::mat4& lightViewProj, uint32_t shadowMapIndex);
+
+		// Set the baked IBL data the lit pass needs: bindless indices of the irradiance + prefiltered cubes
+		// and the BRDF LUT, plus the prefiltered mip count (drives the roughness->lod map). All zero = IBL
+		// off (DefaultLit falls back to the analytic hemisphere ambient). The bake pass owns the maps and
+		// pushes these each frame (mirrors SetShadowData); FrameCB picks them up in AcquireFrameSet.
+		void SetIBLData(uint32_t irradianceIndex, uint32_t prefilteredIndex, uint32_t brdfLutIndex, uint32_t prefilteredMipCount);
+
+		// Current frame's lights / environment (uploaded by the PreRender systems). The IBL bake reads
+		// these to capture the sky; exposed so the bake lives in its own pass, not the renderer.
+		[[nodiscard]] const LightDataBlock& GetLights() const { return m_Lights; }
+		[[nodiscard]] const EnvironmentDataBlock& GetEnvironment() const { return m_Environment; }
 
 		// Draw the currently-accumulated batches (from DrawMesh) into the bound depth-only shadow target,
 		// using a dedicated depth-only pipeline and the light's matrix (m_ViewProj, set by the preceding
@@ -147,35 +143,12 @@ namespace Snowstorm
 
 		std::unordered_map<const DescriptorSet*, Ref<Buffer>> m_FrameUniformBuffers;
 
-		// Lazily-built procedural sky pipeline (no vertex buffer; draws at the far plane). Built once for
-		// the scene target's color/depth formats; rebuilt only if those change.
-		// One-shot compute self-test (Phase 2-3 diagnostic): pipeline + a storage image it writes + the
-		// UAV descriptor set. Owned here for correct teardown order (destruct before the device dies).
-		Ref<Pipeline> m_ComputeSelfTestPipeline;
-		Ref<Texture> m_ComputeSelfTestImage;
-		Ref<TextureView> m_ComputeSelfTestView;
-		Ref<DescriptorSet> m_ComputeSelfTestSet;
-
-		// --- IBL bake (compute) ---
-		// Generated from the procedural sky into HDR cubes. Owned here so they survive across frames and
-		// tear down in the correct device-shutdown order. Their bindless indices feed FrameCB (Phase 6).
-		Ref<Pipeline> m_IBLCapturePipeline;    // sky -> env cube
-		Ref<Pipeline> m_IBLIrradiancePipeline; // env cube -> irradiance cube
-		Ref<Pipeline> m_IBLPrefilterPipeline;  // env cube -> prefiltered (roughness mips) cube
-		Ref<Pipeline> m_IBLBRDFLutPipeline;    // BRDF integration LUT (2D)
-		Ref<Texture> m_EnvCube;                // captured sky environment (HDR)
-		Ref<TextureView> m_EnvCubeView;        // full-cube sampled view (kept alive; bound during convolution)
-		Ref<Texture> m_IrradianceCube;         // diffuse irradiance
-		Ref<TextureView> m_IrradianceCubeView; // full-cube sampled view (kept alive; read in Phase 6)
-		Ref<Texture> m_PrefilteredCube;        // specular prefiltered env (mip = roughness)
-		Ref<TextureView> m_PrefilteredCubeView;
-		Ref<Texture> m_BRDFLut; // 2D BRDF integration LUT
-		Ref<TextureView> m_BRDFLutView;
-		Ref<Sampler> m_IBLSampler; // linear clamp sampler for the convolution
-		bool m_IBLBaked = false;   // bake once (regenerate on environment change later)
-		// Per-face UBOs / descriptor sets / face views recorded into the bake command buffer; they must
-		// outlive the in-flight frame, so the bake parks them here. Cleared after the bake is consumed.
-		std::vector<Ref<void>> m_IBLBakeKeepAlive;
+		// --- IBL data (the maps themselves are owned by IBLBakePass; the renderer just stores the bindless
+		// indices the bake pushes via SetIBLData, mirroring the shadow data above). 0 = IBL off. ---
+		uint32_t m_IrradianceCubeIndex = 0;
+		uint32_t m_PrefilteredCubeIndex = 0;
+		uint32_t m_BRDFLutIndex = 0;
+		uint32_t m_PrefilteredMipCount = 0;
 
 		Ref<Pipeline> m_SkyPipeline;
 		PixelFormat m_SkyColorFormat = PixelFormat::Unknown;

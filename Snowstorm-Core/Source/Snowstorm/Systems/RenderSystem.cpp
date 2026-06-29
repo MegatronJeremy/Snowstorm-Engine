@@ -158,26 +158,34 @@ namespace Snowstorm
 		const Ref<CommandContext> ctx = Renderer::GetGraphicsCommandContext();
 		SS_CORE_ASSERT(ctx, "Renderer returned null CommandContext");
 
-		// One-shot compute self-test (Phase 2 / #17-#18): prove a compute pipeline creates, binds, and
-		// dispatches cleanly under validation. Runs in the recorded command buffer before any render pass.
-		if (static bool s_computeTested = false; CVars::ComputeSelfTest.Get() && !s_computeTested)
-		{
-			s_computeTested = true;
-			renderer.RunComputeSelfTest(ctx);
-		}
-
 		// Bake IBL maps from the sky (compute) when enabled. Lights/environment are already uploaded by
-		// the PreRender systems, so the bake reads the current sky. BakeIBL no-ops once baked.
+		// the PreRender systems, so the bake reads the current sky (via the renderer's stored blocks).
+		// Bake no-ops once done.
 		//
 		// The bake registers descriptors (RegisterCube / SetTexture) and records compute dispatches into
 		// THIS frame's command buffer. When IBL is toggled on at runtime, prior frames are still in flight
 		// reading the bindless descriptor set — updating it under them corrupts state and crashes. Drain
 		// the GPU first so the one-time bake happens with nothing in flight. Only costs a stall on the
 		// single frame the bake runs (it no-ops thereafter), so this is cheap and correct.
-		if (CVars::IBL.Get() && !renderer.IsIBLBaked())
+		if (CVars::IBL.Get() && !m_IBLBakePass.IsBaked())
 		{
 			Renderer::WaitIdle();
-			renderer.BakeIBL(ctx);
+			m_IBLBakePass.Bake(ctx, renderer.GetLights(), renderer.GetEnvironment());
+		}
+
+		// Push the baked IBL indices into the renderer's FrameCB assembly — but only while IBL is enabled.
+		// Toggling off writes zeros, so DefaultLit falls back to the analytic ambient (the maps stay baked,
+		// ready to re-enable without another bake). Mirrors the SetShadowData hand-off.
+		if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
+		{
+			renderer.SetIBLData(m_IBLBakePass.IrradianceIndex(),
+			                    m_IBLBakePass.PrefilteredIndex(),
+			                    m_IBLBakePass.BRDFLutIndex(),
+			                    m_IBLBakePass.PrefilteredMipCount());
+		}
+		else
+		{
+			renderer.SetIBLData(0, 0, 0, 0);
 		}
 
 		RenderGraph graph;

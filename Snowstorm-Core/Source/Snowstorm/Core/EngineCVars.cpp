@@ -25,8 +25,6 @@ namespace Snowstorm::CVars
 
 	CVar<float> ShadowStrength{"render.shadow.strength", 1.0f, "Shadow darkness (1 = full occlusion, 0 = none)"};
 
-	CVar<bool> ComputeSelfTest{"compute.selftest", false, "Create+dispatch a trivial compute pipeline once at startup and log the result"};
-
 	CVar<bool> IBL{"render.ibl", true, "Bake + use image-based lighting from the sky (off = analytic hemisphere ambient)"};
 
 	CVar<float> IBLIntensity{"render.ibl.intensity", 0.75f, "Multiplier on the IBL ambient contribution"};
