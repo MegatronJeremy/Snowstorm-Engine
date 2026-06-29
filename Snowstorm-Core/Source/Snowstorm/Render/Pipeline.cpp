@@ -3,6 +3,7 @@
 #include "Snowstorm/Core/Log.hpp"
 #include "RendererAPI.hpp"
 
+#include "Platform/Vulkan/VulkanComputePipeline.hpp"
 #include "Platform/Vulkan/VulkanGraphicsPipeline.hpp"
 
 namespace Snowstorm
@@ -20,7 +21,9 @@ namespace Snowstorm
 			return nullptr;
 
 		case RendererAPI::API::Vulkan:
-			return CreateRef<VulkanGraphicsPipeline>(desc);
+			return desc.Type == PipelineType::Compute
+			           ? Ref<Pipeline>(CreateRef<VulkanComputePipeline>(desc))
+			           : Ref<Pipeline>(CreateRef<VulkanGraphicsPipeline>(desc));
 
 		case RendererAPI::API::DX12:
 			SS_CORE_ASSERT(false, "DX12 pipelines are not implemented yet.");

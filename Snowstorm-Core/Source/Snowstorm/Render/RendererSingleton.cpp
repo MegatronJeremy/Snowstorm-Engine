@@ -200,6 +200,38 @@ namespace Snowstorm
 		return perFrameFrameSets[frameIndex];
 	}
 
+	void RendererSingleton::RunComputeSelfTest(const Ref<CommandContext>& commandContext)
+	{
+		if (!commandContext)
+		{
+			return;
+		}
+
+		if (!m_ComputeSelfTestPipeline)
+		{
+			Ref<Shader> cs = Shader::Create("assets/shaders/HelloCompute.hlsl");
+			if (!cs)
+			{
+				SS_CORE_ERROR("[COMPUTE SELF-TEST] failed to load HelloCompute.hlsl");
+				return;
+			}
+			PipelineDesc cp{};
+			cp.Type = PipelineType::Compute;
+			cp.Shader = cs;
+			cp.DebugName = "HelloComputePipeline";
+			m_ComputeSelfTestPipeline = Pipeline::Create(cp);
+			if (!m_ComputeSelfTestPipeline)
+			{
+				SS_CORE_ERROR("[COMPUTE SELF-TEST] Pipeline::Create returned null");
+				return;
+			}
+		}
+
+		commandContext->BindPipeline(m_ComputeSelfTestPipeline);
+		commandContext->Dispatch(1, 1, 1);
+		SS_CORE_WARN("[COMPUTE SELF-TEST] pipeline created, bound, and dispatched OK");
+	}
+
 	void RendererSingleton::DrawSky(const PixelFormat colorFormat, const PixelFormat depthFormat)
 	{
 		if (!m_CommandContext)

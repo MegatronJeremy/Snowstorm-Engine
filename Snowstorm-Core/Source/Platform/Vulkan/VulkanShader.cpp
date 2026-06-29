@@ -21,13 +21,15 @@ namespace Snowstorm
 		{
 			None,
 			Vertex,
-			Fragment
+			Fragment,
+			Compute
 		};
 
 		struct SplitResult
 		{
 			std::string Vertex;
 			std::string Fragment;
+			std::string Compute;
 		};
 
 		std::string ReadTextFileOrEmpty(const fs::path& p)
@@ -58,6 +60,7 @@ namespace Snowstorm
 
 			std::string vertexSource;
 			std::string fragmentSource;
+			std::string computeSource;
 			std::string sharedDefinitions;
 
 			Section cur = Section::None;
@@ -74,6 +77,8 @@ namespace Snowstorm
 						cur = Section::Vertex;
 					else if (trimmed.find("fragment") != std::string::npos)
 						cur = Section::Fragment;
+					else if (trimmed.find("compute") != std::string::npos)
+						cur = Section::Compute;
 					else
 						cur = Section::None;
 					continue;
@@ -109,11 +114,17 @@ namespace Snowstorm
 				case Section::Fragment:
 					fragmentSource.append(line).push_back('\n');
 					break;
+				case Section::Compute:
+					computeSource.append(line).push_back('\n');
+					break;
 				}
 			}
 
 			r.Vertex = sharedDefinitions + vertexSource;
 			r.Fragment = sharedDefinitions + fragmentSource;
+			// Only prepend shared defs to compute if the file actually has a compute stage (keep it empty
+			// otherwise, so callers can detect "no compute" by an empty string).
+			r.Compute = computeSource.empty() ? std::string{} : sharedDefinitions + computeSource;
 
 			return r;
 		}
@@ -380,6 +391,70 @@ namespace Snowstorm
 			return true;
 		}
 
+		// Compile a compute-only shader (a file whose only stage is `#type compute`) to a cached .spv.
+		// Mirrors CompileHlslWithTypesToSpirvCache but for the single cs_6_0 stage. Returns false (and
+		// leaves outComputeSpv empty) if the file has no compute section.
+		bool CompileComputeToSpirvCache(const std::string& sourcePath, std::string& outComputeSpv)
+		{
+			const fs::path srcPath(sourcePath);
+			const fs::path dxcExe = GetDxcExePath();
+			const fs::path cacheDir = GetShaderCacheDir();
+
+			if (!fs::exists(dxcExe))
+			{
+				SS_CORE_ERROR("DXC not found at {}", dxcExe.string());
+				return false;
+			}
+
+			fs::create_directories(cacheDir);
+
+			const std::string fullText = ReadTextFileOrEmpty(srcPath);
+			if (fullText.empty())
+			{
+				SS_CORE_ERROR("Shader source is empty or missing: {}", sourcePath);
+				return false;
+			}
+
+			const SplitResult split = SplitByTypeMarkers(fullText);
+			if (split.Compute.empty())
+			{
+				return false; // no compute section — caller falls back to the graphics path
+			}
+
+			// Same cache-key recipe as the graphics path (source + headers + flags), distinct profile tag.
+			constexpr const char* kFlagsKey = "v2_spirv_vulkan1.2_fvk-use-dx-layout_Zpr_cs6_main";
+			uint64_t h = 0;
+			h ^= Hash64(fullText.data(), fullText.size());
+			h ^= HashIncludeHeaders();
+			h ^= Hash64(kFlagsKey, std::strlen(kFlagsKey));
+
+			const std::string key = ToHex64(h);
+			const std::string stem = srcPath.stem().string();
+
+			const fs::path tmpComp = cacheDir / (stem + "_" + key + ".comp.hlsl");
+			const fs::path outComp = cacheDir / (stem + "_" + key + ".comp.spv");
+
+			if (fs::exists(outComp))
+			{
+				outComputeSpv = outComp.string();
+				return true;
+			}
+
+			if (!WriteTextFile(tmpComp, split.Compute))
+			{
+				SS_CORE_ERROR("Failed to write temp compute HLSL: {}", tmpComp.string());
+				return false;
+			}
+
+			if (!CompileStageWithDxc(dxcExe, tmpComp, outComp, L"cs_6_0"))
+			{
+				return false;
+			}
+
+			outComputeSpv = outComp.string();
+			return true;
+		}
+
 		bool CompileHlslWithTypesToSpirvCache(const std::string& sourcePath,
 		                                      std::string& outVertSpv,
 		                                      std::string& outFragSpv)
@@ -480,7 +555,7 @@ namespace Snowstorm
 		case ShaderStageKind::Fragment:
 			return m_CompiledFragSpv;
 		case ShaderStageKind::Compute:
-			return {};
+			return m_CompiledCompSpv;
 		}
 		return {};
 	}
@@ -492,6 +567,16 @@ namespace Snowstorm
 		if (p.extension() != ".hlsl")
 		{
 			SS_CORE_ERROR("VulkanShader: runtime compile expects .hlsl, got {}", m_Filepath);
+			return;
+		}
+
+		// A file with a `#type compute` section is a compute shader (single stage); otherwise it's a
+		// vertex+fragment graphics shader. Try the compute path first — it returns false for files with
+		// no compute section, so we fall through to the graphics path.
+		if (std::string comp; CompileComputeToSpirvCache(m_Filepath, comp))
+		{
+			m_CompiledCompSpv = std::move(comp);
+			++m_Version;
 			return;
 		}
 

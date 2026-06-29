@@ -24,4 +24,6 @@ namespace Snowstorm::CVars
 	CVar<bool> ShadowSoft{"render.shadow.soft", true, "Soft shadows (3x3 PCF) when on, hard single-tap when off"};
 
 	CVar<float> ShadowStrength{"render.shadow.strength", 1.0f, "Shadow darkness (1 = full occlusion, 0 = none)"};
+
+	CVar<bool> ComputeSelfTest{"compute.selftest", false, "Create+dispatch a trivial compute pipeline once at startup and log the result"};
 }

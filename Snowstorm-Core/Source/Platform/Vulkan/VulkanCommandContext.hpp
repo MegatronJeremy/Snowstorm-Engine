@@ -9,6 +9,7 @@
 namespace Snowstorm
 {
 	class VulkanGraphicsPipeline;
+	class VulkanComputePipeline;
 	class Texture;
 
 	class VulkanCommandContext final : public CommandContext
@@ -68,7 +69,10 @@ namespace Snowstorm
 		VkPipelineLayout m_CurrentPipelineLayout = VK_NULL_HANDLE;
 		VkPipelineBindPoint m_CurrentBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 
+		// Exactly one of these is set after BindPipeline, depending on the bound pipeline's type. Used by
+		// PushConstants to look up the declared stage flags for a range.
 		Ref<VulkanGraphicsPipeline> m_CurrentGraphicsPipeline;
+		Ref<VulkanComputePipeline> m_CurrentComputePipeline;
 
 		// Color attachments of the active render pass, and whether it targets the swapchain.
 		// Used by EndRenderPass to leave offscreen color targets in SHADER_READ_ONLY so they can be

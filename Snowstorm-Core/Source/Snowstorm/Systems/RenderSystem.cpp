@@ -158,6 +158,14 @@ namespace Snowstorm
 		const Ref<CommandContext> ctx = Renderer::GetGraphicsCommandContext();
 		SS_CORE_ASSERT(ctx, "Renderer returned null CommandContext");
 
+		// One-shot compute self-test (Phase 2 / #17-#18): prove a compute pipeline creates, binds, and
+		// dispatches cleanly under validation. Runs in the recorded command buffer before any render pass.
+		if (static bool s_computeTested = false; CVars::ComputeSelfTest.Get() && !s_computeTested)
+		{
+			s_computeTested = true;
+			renderer.RunComputeSelfTest(ctx);
+		}
+
 		RenderGraph graph;
 
 		// ---- Directional shadow pass (primary sun) ----

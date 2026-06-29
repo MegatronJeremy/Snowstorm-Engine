@@ -24,6 +24,7 @@ namespace Snowstorm
 
 		std::string m_CompiledVertSpv;
 		std::string m_CompiledFragSpv;
+		std::string m_CompiledCompSpv;
 
 		uint64_t m_Version = 0;
 	};

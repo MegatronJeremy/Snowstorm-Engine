@@ -7,6 +7,7 @@
 #include "Platform/Vulkan/VulkanContext.hpp"
 #include "Platform/Vulkan/VulkanBuffer.hpp"
 #include "Platform/Vulkan/VulkanRenderTarget.hpp"
+#include "Platform/Vulkan/VulkanComputePipeline.hpp"
 #include "Platform/Vulkan/VulkanGraphicsPipeline.hpp"
 #include "Platform/Vulkan/VulkanDescriptorSet.hpp"
 
@@ -246,13 +247,24 @@ namespace Snowstorm
 	{
 		SS_CORE_ASSERT(pipeline, "BindPipeline called with null pipeline");
 
-		// TODO Graphics only for now, implement later
-		m_CurrentGraphicsPipeline = std::static_pointer_cast<VulkanGraphicsPipeline>(pipeline);
-
-		vkCmdBindPipeline(m_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_CurrentGraphicsPipeline->GetHandle());
-
-		m_CurrentPipelineLayout = m_CurrentGraphicsPipeline->GetPipelineLayout();
-		m_CurrentBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		// Bind graphics or compute based on the pipeline's type; only one "current" pointer is live at a
+		// time (the other is reset) so PushConstants knows which layout/stages to use.
+		if (pipeline->GetDesc().Type == PipelineType::Compute)
+		{
+			m_CurrentComputePipeline = std::static_pointer_cast<VulkanComputePipeline>(pipeline);
+			m_CurrentGraphicsPipeline.reset();
+			vkCmdBindPipeline(m_CommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_CurrentComputePipeline->GetHandle());
+			m_CurrentPipelineLayout = m_CurrentComputePipeline->GetPipelineLayout();
+			m_CurrentBindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
+		}
+		else
+		{
+			m_CurrentGraphicsPipeline = std::static_pointer_cast<VulkanGraphicsPipeline>(pipeline);
+			m_CurrentComputePipeline.reset();
+			vkCmdBindPipeline(m_CommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_CurrentGraphicsPipeline->GetHandle());
+			m_CurrentPipelineLayout = m_CurrentGraphicsPipeline->GetPipelineLayout();
+			m_CurrentBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		}
 	}
 
 	void VulkanCommandContext::BindDescriptorSet(const Ref<DescriptorSet>& descriptorSet, const uint32_t setIndex)
@@ -306,9 +318,12 @@ namespace Snowstorm
 		SS_CORE_ASSERT(size > 0, "PushConstants size must be > 0");
 		SS_CORE_ASSERT(m_CurrentPipelineLayout != VK_NULL_HANDLE,
 		               "PushConstants called before BindPipeline (need pipeline layout)");
-		SS_CORE_ASSERT(m_CurrentGraphicsPipeline, "PushConstants requires a bound VulkanGraphicsPipeline");
+		SS_CORE_ASSERT(m_CurrentGraphicsPipeline || m_CurrentComputePipeline,
+		               "PushConstants requires a bound graphics or compute pipeline");
 
-		const VkShaderStageFlags stages = m_CurrentGraphicsPipeline->GetVkPushConstantStagesFor(offset, size);
+		const VkShaderStageFlags stages = m_CurrentGraphicsPipeline
+		                                      ? m_CurrentGraphicsPipeline->GetVkPushConstantStagesFor(offset, size)
+		                                      : m_CurrentComputePipeline->GetVkPushConstantStagesFor(offset, size);
 		SS_CORE_ASSERT(stages != 0,
 		               "PushConstants range not declared in PipelineDesc::PushConstants (offset/size mismatch)");
 
@@ -321,6 +336,7 @@ namespace Snowstorm
 		m_CurrentPipelineLayout = VK_NULL_HANDLE;
 		m_CurrentBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		m_CurrentGraphicsPipeline.reset();
+		m_CurrentComputePipeline.reset();
 	}
 
 	void VulkanCommandContext::BindVertexBuffer(const Ref<Buffer>& vertexBuffer,

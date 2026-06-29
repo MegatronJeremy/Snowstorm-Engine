@@ -77,6 +77,12 @@ namespace Snowstorm
 
 		void Flush();
 
+		// One-shot compute self-test (Phase 2 / #17-#18): lazily create a trivial compute pipeline, bind
+		// and dispatch it once in the given command context, and log the result. The pipeline is owned by
+		// this singleton so it tears down in the normal device-shutdown order (not at static-exit, which
+		// would destroy GPU objects after the device is gone). Call inside a recording command buffer.
+		void RunComputeSelfTest(const Ref<CommandContext>& commandContext);
+
 		// Draw the procedural sky as a fullscreen triangle at the far plane. Call inside an active scene
 		// pass (between BeginScene/EndScene) AFTER opaque meshes, so depth is populated and the sky only
 		// fills uncovered pixels. Lazily builds its pipeline against the given color/depth formats.
@@ -133,6 +139,9 @@ namespace Snowstorm
 
 		// Lazily-built procedural sky pipeline (no vertex buffer; draws at the far plane). Built once for
 		// the scene target's color/depth formats; rebuilt only if those change.
+		// One-shot compute self-test pipeline (Phase 2 diagnostic); owned here for correct teardown order.
+		Ref<Pipeline> m_ComputeSelfTestPipeline;
+
 		Ref<Pipeline> m_SkyPipeline;
 		PixelFormat m_SkyColorFormat = PixelFormat::Unknown;
 		PixelFormat m_SkyDepthFormat = PixelFormat::Unknown;
