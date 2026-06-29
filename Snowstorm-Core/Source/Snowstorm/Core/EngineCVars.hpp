@@ -57,4 +57,8 @@ namespace Snowstorm::CVars
 	// One-shot self-test: on the first frame, create + bind + dispatch a trivial compute pipeline and
 	// log the result. Proves the compute path (Phase 2 / #17-#18) works under validation, headlessly.
 	extern CVar<bool> ComputeSelfTest;
+
+	// Image-based lighting: bake irradiance/prefiltered cubes from the sky on compute and use them for
+	// ambient (#52). Off (default) keeps the analytic hemisphere ambient. Default-on once Phase 6 lands.
+	extern CVar<bool> IBL;
 }

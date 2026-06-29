@@ -259,6 +259,249 @@ namespace Snowstorm
 		SS_CORE_WARN("[COMPUTE SELF-TEST] storage image written by compute + transitioned OK");
 	}
 
+	namespace
+	{
+		// Mirrors IBLCapture.hlsl IBLParams (16-byte-aligned rows). FaceIndex selects the cube face.
+		struct CaptureParams
+		{
+			glm::vec3 SkyZenithColor;
+			float _p0 = 0.0f;
+			glm::vec3 SkyHorizonColor;
+			float _p1 = 0.0f;
+			glm::vec3 GroundColor;
+			float _p2 = 0.0f;
+			glm::vec3 ToSun;
+			float _p3 = 0.0f;
+			glm::vec3 SunColor;
+			uint32_t FaceIndex = 0;
+		};
+
+		// Mirrors IBLIrradiance.hlsl IrradianceParams.
+		struct IrradianceParams
+		{
+			uint32_t FaceIndex = 0;
+			float _p0 = 0.0f;
+			float _p1 = 0.0f;
+			float _p2 = 0.0f;
+		};
+
+		// Mirrors IBLPrefilter.hlsl PrefilterParams.
+		struct PrefilterParams
+		{
+			float Roughness = 0.0f;
+			uint32_t FaceIndex = 0;
+			float _p0 = 0.0f;
+			float _p1 = 0.0f;
+		};
+
+		constexpr uint32_t kEnvCubeSize = 128;
+		constexpr uint32_t kIrradianceCubeSize = 32;
+		constexpr uint32_t kPrefilterCubeSize = 128;
+		constexpr uint32_t kPrefilterMips = 5; // roughness 0..1 across mips
+		constexpr uint32_t kBRDFLutSize = 256;
+	}
+
+	void RendererSingleton::BakeIBL(const Ref<CommandContext>& commandContext)
+	{
+		if (!commandContext || m_IBLBaked)
+		{
+			return;
+		}
+
+		// --- One-time resource creation ---
+		if (!m_IBLCapturePipeline)
+		{
+			Ref<Shader> captureCs = Shader::Create("assets/shaders/IBLCapture.hlsl");
+			Ref<Shader> irradianceCs = Shader::Create("assets/shaders/IBLIrradiance.hlsl");
+			Ref<Shader> prefilterCs = Shader::Create("assets/shaders/IBLPrefilter.hlsl");
+			Ref<Shader> brdfCs = Shader::Create("assets/shaders/IBLBRDFLut.hlsl");
+			if (!captureCs || !irradianceCs || !prefilterCs || !brdfCs)
+			{
+				SS_CORE_ERROR("[IBL] failed to load bake compute shaders");
+				return;
+			}
+
+			const auto makeComputePipe = [](const Ref<Shader>& cs, const char* name)
+			{
+				PipelineDesc p{};
+				p.Type = PipelineType::Compute;
+				p.Shader = cs;
+				p.DebugName = name;
+				return Pipeline::Create(p);
+			};
+			m_IBLCapturePipeline = makeComputePipe(captureCs, "IBLCapturePipeline");
+			m_IBLIrradiancePipeline = makeComputePipe(irradianceCs, "IBLIrradiancePipeline");
+			m_IBLPrefilterPipeline = makeComputePipe(prefilterCs, "IBLPrefilterPipeline");
+			m_IBLBRDFLutPipeline = makeComputePipe(brdfCs, "IBLBRDFLutPipeline");
+
+			m_EnvCube = CreateCubeTexture(kEnvCubeSize, 1, PixelFormat::RGBA16_SFloat, "IBL_EnvCube");
+			m_IrradianceCube = CreateCubeTexture(kIrradianceCubeSize, 1, PixelFormat::RGBA16_SFloat, "IBL_IrradianceCube");
+			m_PrefilteredCube = CreateCubeTexture(kPrefilterCubeSize, kPrefilterMips, PixelFormat::RGBA16_SFloat, "IBL_PrefilteredCube");
+
+			// 2D BRDF LUT (RG16F is enough, but reuse RGBA16F to avoid another format dependency).
+			TextureDesc lutDesc{};
+			lutDesc.Dimension = TextureDimension::Texture2D;
+			lutDesc.Format = PixelFormat::RGBA16_SFloat;
+			lutDesc.Usage = TextureUsage::Sampled | TextureUsage::Storage;
+			lutDesc.Width = kBRDFLutSize;
+			lutDesc.Height = kBRDFLutSize;
+			lutDesc.DebugName = "IBL_BRDFLut";
+			m_BRDFLut = Texture::Create(lutDesc);
+
+			// Full-resource sampled views, kept alive: env is bound as the convolution source; the others
+			// auto-register in the bindless arrays (their indices feed FrameCB in Phase 6).
+			m_EnvCubeView = m_EnvCube->GetDefaultView();
+			m_IrradianceCubeView = m_IrradianceCube->GetDefaultView();
+			m_PrefilteredCubeView = m_PrefilteredCube->GetDefaultView();
+			m_BRDFLutView = m_BRDFLut->GetDefaultView();
+
+			SamplerDesc sd{};
+			sd.MinFilter = Filter::Linear;
+			sd.MagFilter = Filter::Linear;
+			sd.AddressU = SamplerAddressMode::ClampToEdge;
+			sd.AddressV = SamplerAddressMode::ClampToEdge;
+			sd.AddressW = SamplerAddressMode::ClampToEdge;
+			sd.EnableAnisotropy = false;
+			sd.DebugName = "IBLSampler";
+			m_IBLSampler = Sampler::Create(sd);
+		}
+
+		// Environment params from the current sky (linear HDR; sun = DirectionalLights[0]).
+		const bool haveSun = m_Lights.LightCount > 0;
+		const glm::vec3 toSun = haveSun ? glm::normalize(-m_Lights.Lights[0].Direction) : glm::vec3(0.0f);
+		const glm::vec3 sunColor = haveSun ? m_Lights.Lights[0].Color * m_Lights.Lights[0].Intensity : glm::vec3(0.0f);
+
+		// ---- Pass 1: capture the sky into the env cube (6 faces) ----
+		commandContext->TransitionToStorage(m_EnvCube);
+		commandContext->BindPipeline(m_IBLCapturePipeline);
+		const auto& capLayouts = m_IBLCapturePipeline->GetSetLayouts();
+		SS_CORE_ASSERT(!capLayouts.empty(), "[IBL] capture pipeline has no set layout");
+		for (uint32_t face = 0; face < 6; ++face)
+		{
+			CaptureParams p{};
+			p.SkyZenithColor = m_Environment.SkyZenithColor;
+			p.SkyHorizonColor = m_Environment.SkyHorizonColor;
+			p.GroundColor = m_Environment.GroundColor;
+			p.ToSun = toSun;
+			p.SunColor = sunColor;
+			p.FaceIndex = face;
+
+			Ref<Buffer> ubo = Buffer::Create(sizeof(CaptureParams), BufferUsage::Uniform, &p, true, "IBLCaptureParams");
+			Ref<TextureView> faceView = MakeFaceMipView(m_EnvCube, face, 0);
+
+			DescriptorSetDesc dsd{};
+			dsd.DebugName = "IBLCaptureSet";
+			Ref<DescriptorSet> set = DescriptorSet::Create(capLayouts[0], dsd);
+			BufferBinding bb{.Buffer = ubo, .Offset = 0, .Range = sizeof(CaptureParams)};
+			set->SetBuffer(0, bb);
+			set->SetTexture(1, faceView); // u1 storage face
+			set->Commit();
+
+			commandContext->BindDescriptorSet(set, 0);
+			commandContext->Dispatch((kEnvCubeSize + 7) / 8, (kEnvCubeSize + 7) / 8, 1);
+
+			m_IBLBakeKeepAlive.push_back(ubo);
+			m_IBLBakeKeepAlive.push_back(set);
+			m_IBLBakeKeepAlive.push_back(faceView);
+		}
+		// Env cube now readable as a sampled source for the convolution.
+		commandContext->TransitionToSampled(m_EnvCube);
+
+		// ---- Pass 2: cosine-convolve env -> irradiance cube (6 faces) ----
+		commandContext->TransitionToStorage(m_IrradianceCube);
+		commandContext->BindPipeline(m_IBLIrradiancePipeline);
+		const auto& irrLayouts = m_IBLIrradiancePipeline->GetSetLayouts();
+		SS_CORE_ASSERT(!irrLayouts.empty(), "[IBL] irradiance pipeline has no set layout");
+		for (uint32_t face = 0; face < 6; ++face)
+		{
+			IrradianceParams p{};
+			p.FaceIndex = face;
+
+			Ref<Buffer> ubo = Buffer::Create(sizeof(IrradianceParams), BufferUsage::Uniform, &p, true, "IBLIrradianceParams");
+			Ref<TextureView> faceView = MakeFaceMipView(m_IrradianceCube, face, 0);
+
+			DescriptorSetDesc dsd{};
+			dsd.DebugName = "IBLIrradianceSet";
+			Ref<DescriptorSet> set = DescriptorSet::Create(irrLayouts[0], dsd);
+			BufferBinding bb{.Buffer = ubo, .Offset = 0, .Range = sizeof(IrradianceParams)};
+			set->SetBuffer(0, bb);
+			set->SetTexture(1, m_EnvCubeView); // t1 sampled env cube (kept-alive member)
+			set->SetSampler(2, m_IBLSampler);  // s2
+			set->SetTexture(3, faceView);      // u3 storage face
+			set->Commit();
+
+			commandContext->BindDescriptorSet(set, 0);
+			commandContext->Dispatch((kIrradianceCubeSize + 7) / 8, (kIrradianceCubeSize + 7) / 8, 1);
+
+			m_IBLBakeKeepAlive.push_back(ubo);
+			m_IBLBakeKeepAlive.push_back(set);
+			m_IBLBakeKeepAlive.push_back(faceView);
+		}
+		commandContext->TransitionToSampled(m_IrradianceCube);
+
+		// ---- Pass 3: GGX prefilter env -> prefiltered cube, one dispatch per (mip, face) ----
+		commandContext->TransitionToStorage(m_PrefilteredCube);
+		commandContext->BindPipeline(m_IBLPrefilterPipeline);
+		const auto& preLayouts = m_IBLPrefilterPipeline->GetSetLayouts();
+		SS_CORE_ASSERT(!preLayouts.empty(), "[IBL] prefilter pipeline has no set layout");
+		for (uint32_t mip = 0; mip < kPrefilterMips; ++mip)
+		{
+			const uint32_t mipSize = kPrefilterCubeSize >> mip;
+			const float roughness = (kPrefilterMips > 1) ? static_cast<float>(mip) / static_cast<float>(kPrefilterMips - 1) : 0.0f;
+			for (uint32_t face = 0; face < 6; ++face)
+			{
+				PrefilterParams p{};
+				p.Roughness = roughness;
+				p.FaceIndex = face;
+
+				Ref<Buffer> ubo = Buffer::Create(sizeof(PrefilterParams), BufferUsage::Uniform, &p, true, "IBLPrefilterParams");
+				Ref<TextureView> faceView = MakeFaceMipView(m_PrefilteredCube, face, mip);
+
+				DescriptorSetDesc dsd{};
+				dsd.DebugName = "IBLPrefilterSet";
+				Ref<DescriptorSet> set = DescriptorSet::Create(preLayouts[0], dsd);
+				BufferBinding bb{.Buffer = ubo, .Offset = 0, .Range = sizeof(PrefilterParams)};
+				set->SetBuffer(0, bb);
+				set->SetTexture(1, m_EnvCubeView); // t1 sampled env cube
+				set->SetSampler(2, m_IBLSampler);  // s2
+				set->SetTexture(3, faceView);      // u3 storage face+mip
+				set->Commit();
+
+				commandContext->BindDescriptorSet(set, 0);
+				commandContext->Dispatch((mipSize + 7) / 8, (mipSize + 7) / 8, 1);
+
+				m_IBLBakeKeepAlive.push_back(ubo);
+				m_IBLBakeKeepAlive.push_back(set);
+				m_IBLBakeKeepAlive.push_back(faceView);
+			}
+		}
+		commandContext->TransitionToSampled(m_PrefilteredCube);
+
+		// ---- Pass 4: BRDF integration LUT (2D, environment-independent) ----
+		commandContext->TransitionToStorage(m_BRDFLut);
+		commandContext->BindPipeline(m_IBLBRDFLutPipeline);
+		const auto& lutLayouts = m_IBLBRDFLutPipeline->GetSetLayouts();
+		SS_CORE_ASSERT(!lutLayouts.empty(), "[IBL] BRDF LUT pipeline has no set layout");
+		{
+			DescriptorSetDesc dsd{};
+			dsd.DebugName = "IBLBRDFLutSet";
+			Ref<DescriptorSet> set = DescriptorSet::Create(lutLayouts[0], dsd);
+			set->SetTexture(0, m_BRDFLutView); // u0 storage 2D LUT
+			set->Commit();
+
+			commandContext->BindDescriptorSet(set, 0);
+			commandContext->Dispatch((kBRDFLutSize + 7) / 8, (kBRDFLutSize + 7) / 8, 1);
+			m_IBLBakeKeepAlive.push_back(set);
+		}
+		commandContext->TransitionToSampled(m_BRDFLut);
+
+		m_IBLBaked = true;
+		SS_CORE_WARN("[IBL] baked all maps — irradiance={} prefiltered={} (cube bindless) brdfLut={} (2d bindless)",
+		             m_IrradianceCubeView->GetGlobalBindlessIndex(),
+		             m_PrefilteredCubeView->GetGlobalBindlessIndex(),
+		             m_BRDFLutView->GetGlobalBindlessIndex());
+	}
+
 	void RendererSingleton::DrawSky(const PixelFormat colorFormat, const PixelFormat depthFormat)
 	{
 		if (!m_CommandContext)

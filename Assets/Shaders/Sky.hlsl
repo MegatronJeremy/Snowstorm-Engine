@@ -1,4 +1,5 @@
 #include "Engine.hlsli"
+#include "SkyCommon.hlsli"
 
 // Procedural sky background. Drawn after opaque geometry at the far plane: a fullscreen triangle with
 // NDC z = 1.0, depth test LessOrEqual, depth write OFF, so it only fills pixels no mesh covered.
@@ -58,28 +59,11 @@ float4 main(SkyPSIn i) : SV_Target0
 	const float3 worldPos = worldH.xyz / worldH.w;
 	const float3 ray = normalize(worldPos - CameraPosition);
 
-	// Vertical gradient from the shared environment (FrameCB) so the visible sky and the scene's
-	// ambient fill come from one definition. Linear HDR values.
-	const float3 zenith = SkyZenithColor;
-	const float3 horizon = SkyHorizonColor;
-	const float3 ground = GroundColor;
-
-	const float t = ray.y; // [-1,1]
-	float3 sky = (t < 0.0)
-	                 ? lerp(horizon, ground, saturate(-t * 3.0)) // quick falloff into the ground band
-	                 : lerp(horizon, zenith, saturate(t));
-
-	// Sun disk + glow from the dominant directional light (if any). DirectionalLights[].Direction is
-	// the direction the light travels, so the vector toward the sun is its negation.
-	if (LightCount > 0)
-	{
-		const float3 toSun = normalize(-DirectionalLights[0].Direction);
-		const float d = saturate(dot(ray, toSun));
-		const float disk = pow(d, 2000.0);          // tight bright core
-		const float glow = pow(d, 64.0) * 0.25;     // soft surrounding haze
-		const float3 sunColor = DirectionalLights[0].Color * DirectionalLights[0].Intensity;
-		sky += (disk + glow) * sunColor;
-	}
+	// Shared sky evaluation (also used by the IBL capture). Pull the gradient + sun from FrameCB; the
+	// sun's toSun is the negated light direction, zeroed when there is no directional light.
+	const float3 toSun = (LightCount > 0) ? normalize(-DirectionalLights[0].Direction) : float3(0, 0, 0);
+	const float3 sunColor = (LightCount > 0) ? DirectionalLights[0].Color * DirectionalLights[0].Intensity : float3(0, 0, 0);
+	float3 sky = EvaluateSky(ray, SkyZenithColor, SkyHorizonColor, GroundColor, toSun, sunColor);
 
 	sky = TonemapACES(sky * Exposure);
 	sky = LinearToSRGB(sky);

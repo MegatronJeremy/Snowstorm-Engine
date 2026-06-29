@@ -9,6 +9,7 @@
 #include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/MaterialInstance.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
+#include "Snowstorm/Render/Sampler.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
 #include <unordered_map>
@@ -78,6 +79,11 @@ namespace Snowstorm
 
 		void Flush();
 
+		// Bake the IBL maps (irradiance + later prefiltered/BRDF) from the current procedural-sky
+		// environment, on compute. Lazy: bakes once, then on environment change. Call inside a recording
+		// command buffer (before render passes). The generated cubes' bindless indices feed FrameCB.
+		void BakeIBL(const Ref<CommandContext>& commandContext);
+
 		// One-shot compute self-test (Phase 2 / #17-#18): lazily create a trivial compute pipeline, bind
 		// and dispatch it once in the given command context, and log the result. The pipeline is owned by
 		// this singleton so it tears down in the normal device-shutdown order (not at static-exit, which
@@ -146,6 +152,27 @@ namespace Snowstorm
 		Ref<Texture> m_ComputeSelfTestImage;
 		Ref<TextureView> m_ComputeSelfTestView;
 		Ref<DescriptorSet> m_ComputeSelfTestSet;
+
+		// --- IBL bake (compute) ---
+		// Generated from the procedural sky into HDR cubes. Owned here so they survive across frames and
+		// tear down in the correct device-shutdown order. Their bindless indices feed FrameCB (Phase 6).
+		Ref<Pipeline> m_IBLCapturePipeline;    // sky -> env cube
+		Ref<Pipeline> m_IBLIrradiancePipeline; // env cube -> irradiance cube
+		Ref<Pipeline> m_IBLPrefilterPipeline;  // env cube -> prefiltered (roughness mips) cube
+		Ref<Pipeline> m_IBLBRDFLutPipeline;    // BRDF integration LUT (2D)
+		Ref<Texture> m_EnvCube;                // captured sky environment (HDR)
+		Ref<TextureView> m_EnvCubeView;        // full-cube sampled view (kept alive; bound during convolution)
+		Ref<Texture> m_IrradianceCube;         // diffuse irradiance
+		Ref<TextureView> m_IrradianceCubeView; // full-cube sampled view (kept alive; read in Phase 6)
+		Ref<Texture> m_PrefilteredCube;        // specular prefiltered env (mip = roughness)
+		Ref<TextureView> m_PrefilteredCubeView;
+		Ref<Texture> m_BRDFLut; // 2D BRDF integration LUT
+		Ref<TextureView> m_BRDFLutView;
+		Ref<Sampler> m_IBLSampler; // linear clamp sampler for the convolution
+		bool m_IBLBaked = false;   // bake once (regenerate on environment change later)
+		// Per-face UBOs / descriptor sets / face views recorded into the bake command buffer; they must
+		// outlive the in-flight frame, so the bake parks them here. Cleared after the bake is consumed.
+		std::vector<Ref<void>> m_IBLBakeKeepAlive;
 
 		Ref<Pipeline> m_SkyPipeline;
 		PixelFormat m_SkyColorFormat = PixelFormat::Unknown;

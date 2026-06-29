@@ -166,6 +166,13 @@ namespace Snowstorm
 			renderer.RunComputeSelfTest(ctx);
 		}
 
+		// Bake IBL maps from the sky (compute) when enabled. Lights/environment are already uploaded by
+		// the PreRender systems, so the bake reads the current sky. BakeIBL no-ops once baked.
+		if (CVars::IBL.Get())
+		{
+			renderer.BakeIBL(ctx);
+		}
+
 		RenderGraph graph;
 
 		// ---- Directional shadow pass (primary sun) ----
