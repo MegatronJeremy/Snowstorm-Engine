@@ -59,7 +59,7 @@ namespace Snowstorm::CVars
 	extern CVar<bool> ComputeSelfTest;
 
 	// Image-based lighting: bake irradiance/prefiltered cubes from the sky on compute and use them for
-	// ambient (#52). Off (default) keeps the analytic hemisphere ambient. Default-on once Phase 6 lands.
+	// ambient (#52). On by default; turn off to fall back to the analytic hemisphere ambient.
 	extern CVar<bool> IBL;
 
 	// Multiplier on the IBL ambient contribution. Separate from SkyIntensity because the irradiance cube
