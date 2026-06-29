@@ -52,6 +52,13 @@ namespace Snowstorm
 		// Dispatch (compute support)
 		virtual void Dispatch(uint32_t groupX, uint32_t groupY, uint32_t groupZ) = 0;
 
+		// --- Image layout transitions for compute (backend-agnostic) ---
+		// Move a texture to the storage/UAV layout (Vulkan GENERAL) so a compute shader can read/write it.
+		virtual void TransitionToStorage(const Ref<Texture>& texture) = 0;
+		// Move a texture to the shader-sampled read layout (e.g. after a compute pass wrote it, before a
+		// later pass samples it). Auto-redirects to the depth-read layout for depth textures.
+		virtual void TransitionToSampled(const Ref<Texture>& texture) = 0;
+
 		// Reset the internal state between passes if the backend needs it
 		virtual void ResetState() = 0;
 	};

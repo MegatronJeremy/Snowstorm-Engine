@@ -9,6 +9,7 @@
 #include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/MaterialInstance.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
+#include "Snowstorm/Render/Texture.hpp"
 
 #include <unordered_map>
 
@@ -139,8 +140,12 @@ namespace Snowstorm
 
 		// Lazily-built procedural sky pipeline (no vertex buffer; draws at the far plane). Built once for
 		// the scene target's color/depth formats; rebuilt only if those change.
-		// One-shot compute self-test pipeline (Phase 2 diagnostic); owned here for correct teardown order.
+		// One-shot compute self-test (Phase 2-3 diagnostic): pipeline + a storage image it writes + the
+		// UAV descriptor set. Owned here for correct teardown order (destruct before the device dies).
 		Ref<Pipeline> m_ComputeSelfTestPipeline;
+		Ref<Texture> m_ComputeSelfTestImage;
+		Ref<TextureView> m_ComputeSelfTestView;
+		Ref<DescriptorSet> m_ComputeSelfTestSet;
 
 		Ref<Pipeline> m_SkyPipeline;
 		PixelFormat m_SkyColorFormat = PixelFormat::Unknown;

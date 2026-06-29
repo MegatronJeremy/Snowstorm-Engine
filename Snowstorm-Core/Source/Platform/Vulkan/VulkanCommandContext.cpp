@@ -111,6 +111,23 @@ namespace Snowstorm
 			barrier.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
 			barrier.dstAccessMask = 0;
 		}
+		else if (newLayout == VK_IMAGE_LAYOUT_GENERAL)
+		{
+			// Storage image for compute read/write (UAV). Both access bits so the same GENERAL image can
+			// be read and written by the compute stage.
+			barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+			barrier.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+		}
+		else if (newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)
+		{
+			barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+			barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+		}
+		else if (newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+		{
+			barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+			barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+		}
 
 		barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 		barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
@@ -328,6 +345,17 @@ namespace Snowstorm
 		               "PushConstants range not declared in PipelineDesc::PushConstants (offset/size mismatch)");
 
 		vkCmdPushConstants(m_CommandBuffer, m_CurrentPipelineLayout, stages, offset, size, data);
+	}
+
+	void VulkanCommandContext::TransitionToStorage(const Ref<Texture>& texture)
+	{
+		TransitionLayout(texture, VK_IMAGE_LAYOUT_GENERAL);
+	}
+
+	void VulkanCommandContext::TransitionToSampled(const Ref<Texture>& texture)
+	{
+		// Auto-redirects to DEPTH_STENCIL_READ_ONLY_OPTIMAL for depth textures inside TransitionLayout.
+		TransitionLayout(texture, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 	}
 
 	void VulkanCommandContext::ResetState()

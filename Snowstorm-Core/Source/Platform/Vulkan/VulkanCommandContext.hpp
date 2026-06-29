@@ -59,6 +59,9 @@ namespace Snowstorm
 
 		void Dispatch(uint32_t groupX, uint32_t groupY, uint32_t groupZ) override;
 
+		void TransitionToStorage(const Ref<Texture>& texture) override;
+		void TransitionToSampled(const Ref<Texture>& texture) override;
+
 		void ResetState() override;
 
 	private:

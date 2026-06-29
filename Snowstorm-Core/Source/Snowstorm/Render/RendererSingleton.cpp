@@ -207,6 +207,8 @@ namespace Snowstorm
 			return;
 		}
 
+		constexpr uint32_t kSize = 64;
+
 		if (!m_ComputeSelfTestPipeline)
 		{
 			Ref<Shader> cs = Shader::Create("assets/shaders/HelloCompute.hlsl");
@@ -225,11 +227,36 @@ namespace Snowstorm
 				SS_CORE_ERROR("[COMPUTE SELF-TEST] Pipeline::Create returned null");
 				return;
 			}
+
+			// Storage image the compute shader writes (UAV). HDR format exercises Phase 1's RGBA16F too.
+			TextureDesc td{};
+			td.Dimension = TextureDimension::Texture2D;
+			td.Format = PixelFormat::RGBA16_SFloat;
+			td.Usage = TextureUsage::Storage | TextureUsage::Sampled;
+			td.Width = kSize;
+			td.Height = kSize;
+			td.DebugName = "ComputeSelfTestImage";
+			m_ComputeSelfTestImage = Texture::Create(td);
+			m_ComputeSelfTestView = m_ComputeSelfTestImage->GetDefaultView();
+
+			// UAV descriptor set from the pipeline's reflected set 0 (RWTexture2D at binding 0).
+			const auto& setLayouts = m_ComputeSelfTestPipeline->GetSetLayouts();
+			SS_CORE_ASSERT(!setLayouts.empty(), "[COMPUTE SELF-TEST] compute pipeline has no set layouts");
+			DescriptorSetDesc sd{};
+			sd.DebugName = "ComputeSelfTestSet";
+			m_ComputeSelfTestSet = DescriptorSet::Create(setLayouts[0], sd);
+			m_ComputeSelfTestSet->SetTexture(0, m_ComputeSelfTestView);
+			m_ComputeSelfTestSet->Commit();
 		}
 
+		// Full Phase-3 path: GENERAL for UAV write -> bind+dispatch -> sampled (proves the barriers,
+		// layout, and storage descriptor are all valid; strict validation catches any mismatch).
+		commandContext->TransitionToStorage(m_ComputeSelfTestImage);
 		commandContext->BindPipeline(m_ComputeSelfTestPipeline);
-		commandContext->Dispatch(1, 1, 1);
-		SS_CORE_WARN("[COMPUTE SELF-TEST] pipeline created, bound, and dispatched OK");
+		commandContext->BindDescriptorSet(m_ComputeSelfTestSet, 0);
+		commandContext->Dispatch((kSize + 7) / 8, (kSize + 7) / 8, 1);
+		commandContext->TransitionToSampled(m_ComputeSelfTestImage);
+		SS_CORE_WARN("[COMPUTE SELF-TEST] storage image written by compute + transitioned OK");
 	}
 
 	void RendererSingleton::DrawSky(const PixelFormat colorFormat, const PixelFormat depthFormat)
