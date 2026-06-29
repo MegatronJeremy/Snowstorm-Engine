@@ -1,15 +1,11 @@
 #include "RendererSingleton.hpp"
 
-#include <algorithm>
-#include <cstddef>
-
 #include "Camera.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
-#include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Render/Shader.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
@@ -204,7 +200,7 @@ namespace Snowstorm
 		frame.ShadowMapIndex = m_ShadowMapIndex;
 		frame.ShadowStrength = CVars::ShadowStrength.Get();
 		frame.ShadowSoft = CVars::ShadowSoft.Get() ? 1u : 0u;
-		frame.ShadowTexelSize = 1.0f / static_cast<float>(m_ShadowTarget ? m_ShadowTarget->GetWidth() : 2048u);
+		frame.ShadowTexelSize = 1.0f / static_cast<float>(m_ShadowResolution != 0 ? m_ShadowResolution : 2048u);
 
 		// IBL indices: the bake pass pushes them via SetIBLData only while IBL is enabled (it writes zeros
 		// when off), so a non-zero irradiance index means "baked AND on" — turning IBL off leaves the maps
@@ -280,141 +276,109 @@ namespace Snowstorm
 		m_CommandContext->Draw(3, 1, 0); // fullscreen triangle, no vertex/index buffer
 	}
 
-	void RendererSingleton::SetShadowData(const glm::mat4& lightViewProj, const uint32_t shadowMapIndex)
+	void RendererSingleton::SetShadowData(const glm::mat4& lightViewProj, const uint32_t shadowMapIndex, const uint32_t shadowResolution)
 	{
 		m_LightViewProj = lightViewProj;
 		m_ShadowMapIndex = shadowMapIndex;
-	}
-
-	const Ref<RenderTarget>& RendererSingleton::GetOrCreateShadowTarget()
-	{
-		// Resolution is a runtime quality setting (render.shadow.resolution). Clamp to a sane range and
-		// rebuild the target when it changes. GPUs are idle between frames here (single in-flight wait in
-		// BeginFrame), so recreating the image is safe at this call site (start of frame, before any pass).
-		const int requested = std::clamp(CVars::ShadowResolution.Get(), 256, 8192);
-		const auto size = static_cast<uint32_t>(requested);
-
-		if (!m_ShadowTarget || m_ShadowTarget->GetWidth() != size)
+		if (shadowResolution != 0)
 		{
-			m_ShadowTarget = CreateShadowDepthTarget(size, "Sun");
-			SS_CORE_ASSERT(m_ShadowTarget, "Failed to create shadow depth target");
+			m_ShadowResolution = shadowResolution;
 		}
-		return m_ShadowTarget;
 	}
 
-	void RendererSingleton::DrawShadowDepth(const PixelFormat depthFormat)
+	const Ref<DescriptorSet>& RendererSingleton::AcquireObjectSet(const Ref<Pipeline>& pipeline,
+	                                                              const uint32_t frameIndex,
+	                                                              const char* debugName)
 	{
-		if (!m_CommandContext || m_Batches.empty())
+		// One frame-wide storage buffer holds every instance; the set binds the whole buffer once (fixed
+		// capacity → committed once, never re-bound mid-frame). Cached per (pipeline, frame-in-flight).
+		EnsureInstanceBuffer(frameIndex, 0);
+
+		auto& perFrameObjectSets = m_ObjectSets[pipeline.get()];
+		if (perFrameObjectSets.empty())
+			perFrameObjectSets.resize(Renderer::GetFramesInFlight());
+
+		if (!perFrameObjectSets[frameIndex])
+		{
+			const auto& setLayouts = pipeline->GetSetLayouts();
+			SS_CORE_ASSERT(setLayouts.size() > 2 && setLayouts[2], "Pipeline missing set=2 (Object) layout");
+
+			DescriptorSetDesc setDesc{};
+			setDesc.DebugName = debugName;
+			perFrameObjectSets[frameIndex] = DescriptorSet::Create(setLayouts[2], setDesc);
+			SS_CORE_ASSERT(perFrameObjectSets[frameIndex], "Failed to create set=2 Object DescriptorSet");
+
+			BufferBinding bb{};
+			bb.Buffer = m_InstanceBuffers[frameIndex];
+			bb.Offset = 0;
+			bb.Range = 0; // whole buffer
+			perFrameObjectSets[frameIndex]->SetBuffer(0, bb);
+			perFrameObjectSets[frameIndex]->Commit();
+		}
+
+		return perFrameObjectSets[frameIndex];
+	}
+
+	bool RendererSingleton::WriteBatchInstancedDraw(BatchData& batch,
+	                                                const Ref<DescriptorSet>& objectSet,
+	                                                const char* overflowContext)
+	{
+		// Write this batch's instances into the frame buffer at the running cursor, then one instanced draw.
+		const auto instanceCount = static_cast<uint32_t>(batch.Instances.size());
+		const uint32_t firstInstance = m_InstanceWriteCursor;
+		if (firstInstance + instanceCount > m_InstanceBufferCapacity)
+		{
+			SS_CORE_ERROR("Instance buffer overflow{0} ({1}+{2} > {3}); dropping batch.",
+			              overflowContext, firstInstance, instanceCount, m_InstanceBufferCapacity);
+			return false;
+		}
+
+		m_InstanceBuffers[m_FrameIndex]->SetData(batch.Instances.data(),
+		                                         instanceCount * sizeof(InstanceData),
+		                                         static_cast<size_t>(firstInstance) * sizeof(InstanceData));
+		m_InstanceWriteCursor += instanceCount;
+
+		m_CommandContext->BindVertexBuffer(batch.Mesh->GetVertexBuffer(), 0, 0);
+		m_CommandContext->BindDescriptorSet(objectSet, 2);
+		m_CommandContext->DrawIndexed(batch.Mesh->GetIndexBuffer(),
+		                              batch.Mesh->GetIndexCount(),
+		                              instanceCount,
+		                              0,
+		                              0,
+		                              firstInstance);
+		return true;
+	}
+
+	void RendererSingleton::DrawBatchesDepthOnly(const Ref<Pipeline>& depthPipeline)
+	{
+		if (!m_CommandContext || m_Batches.empty() || !depthPipeline)
 		{
 			return;
 		}
 
-		// Lazy depth-only pipeline: mesh vertex layout (position is all the shadow VS reads), depth
-		// test+write ON, no color target. Rebuilt only if the depth format changes.
-		if (!m_ShadowPipeline || m_ShadowDepthFormat != depthFormat)
-		{
-			Ref<Shader> shader = Shader::Create("assets/shaders/Shadow.hlsl");
-			SS_CORE_ASSERT(shader, "Failed to load Shadow shader");
+		const auto& setLayouts = depthPipeline->GetSetLayouts();
+		SS_CORE_ASSERT(setLayouts.size() > 2 && setLayouts[0] && setLayouts[2], "Depth pipeline missing set 0/2");
 
-			// Same vertex layout as the lit mesh pipeline (set in AssetManagerSingleton): the shadow VS
-			// only consumes Position (location 0), but the buffer stride must match the Vertex struct.
-			VertexLayoutDesc vertexLayout{};
-			VertexBufferLayoutDesc vb{};
-			vb.Binding = 0;
-			vb.InputRate = VertexInputRate::PerVertex;
-			vb.Stride = sizeof(Vertex);
-			vb.Attributes = {
-			    {.Location = 0, .Format = VertexFormat::Float3, .Offset = static_cast<uint32_t>(offsetof(Vertex, Position))},
-			    {.Location = 1, .Format = VertexFormat::Float3, .Offset = static_cast<uint32_t>(offsetof(Vertex, Normal))},
-			    {.Location = 2, .Format = VertexFormat::Float2, .Offset = static_cast<uint32_t>(offsetof(Vertex, TexCoord))},
-			    {.Location = 3, .Format = VertexFormat::Float4, .Offset = static_cast<uint32_t>(offsetof(Vertex, Tangent))},
-			};
-			vertexLayout.Buffers = {vb};
-
-			PipelineDesc p{};
-			p.Type = PipelineType::Graphics;
-			p.Shader = shader;
-			p.VertexLayout = vertexLayout;
-			p.ColorFormats = {}; // depth-only: no color attachment
-			p.DepthFormat = depthFormat;
-			// Render front faces (no special cull) into the shadow map — i.e. store what the light sees
-			// first. The "second-depth" trick (front-face culling to store back faces) only works for
-			// watertight meshes; Sponza has single-sided floors/curtains/arches, so back-face storage made
-			// light-open surfaces sample against a nearer back face and read as falsely shadowed. Acne is
-			// handled by the slope-scaled + (future) normal-offset bias in the lit shader instead.
-			p.Raster.Cull = CullMode::None;
-			p.DepthStencil.EnableDepthTest = true;
-			p.DepthStencil.EnableDepthWrite = true;
-			p.DepthStencil.DepthCompare = CompareOp::Less;
-			p.DebugName = "ShadowPipeline";
-
-			m_ShadowPipeline = Pipeline::Create(p);
-			SS_CORE_ASSERT(m_ShadowPipeline, "Failed to create Shadow pipeline");
-			m_ShadowDepthFormat = depthFormat;
-		}
-
-		const auto& setLayouts = m_ShadowPipeline->GetSetLayouts();
-		SS_CORE_ASSERT(setLayouts.size() > 2 && setLayouts[0] && setLayouts[2], "Shadow pipeline missing set 0/2");
-
-		m_CommandContext->BindPipeline(m_ShadowPipeline);
+		m_CommandContext->BindPipeline(depthPipeline);
 
 		// set=0 Frame: AcquireFrameSet uploads FrameCB with m_ViewProj = the light's matrix (set by the
 		// preceding BeginScene), so the shadow VS transforms into light clip space.
-		const Ref<DescriptorSet> frameSet = AcquireFrameSet(m_ShadowPipeline, m_FrameIndex);
+		const Ref<DescriptorSet> frameSet = AcquireFrameSet(depthPipeline, m_FrameIndex);
 		m_CommandContext->BindDescriptorSet(frameSet, 0);
 
-		EnsureInstanceBuffer(m_FrameIndex, 0);
-
-		auto& perFrameObjectSets = m_ObjectSets[m_ShadowPipeline.get()];
-		if (perFrameObjectSets.empty())
-			perFrameObjectSets.resize(Renderer::GetFramesInFlight());
-		if (!perFrameObjectSets[m_FrameIndex])
-		{
-			DescriptorSetDesc setDesc{};
-			setDesc.DebugName = "Set2_Instances_Shadow";
-			perFrameObjectSets[m_FrameIndex] = DescriptorSet::Create(setLayouts[2], setDesc);
-			SS_CORE_ASSERT(perFrameObjectSets[m_FrameIndex], "Failed to create shadow set=2 DescriptorSet");
-
-			BufferBinding bb{};
-			bb.Buffer = m_InstanceBuffers[m_FrameIndex];
-			bb.Offset = 0;
-			bb.Range = 0; // whole buffer
-			perFrameObjectSets[m_FrameIndex]->SetBuffer(0, bb);
-			perFrameObjectSets[m_FrameIndex]->Commit();
-		}
-		const Ref<DescriptorSet>& objectSet = perFrameObjectSets[m_FrameIndex];
+		const Ref<DescriptorSet>& objectSet = AcquireObjectSet(depthPipeline, m_FrameIndex, "Set2_Instances_Shadow");
 
 		// One instanced depth draw per batch, appending into the shared instance buffer at the running
-		// cursor (NewFrame reset it; the camera pass appends after us). Mirrors FlushBatch's instance
-		// write + draw, minus materials/bindless. The shadow pass has its own BeginScene accumulation
-		// (all casters); the camera pass's BeginScene clears these batches and re-accumulates visible ones.
+		// cursor (NewFrame reset it; the camera pass appends after us). Same instance write + draw as the
+		// lit FlushBatch, minus materials/bindless. The shadow pass has its own BeginScene accumulation (all
+		// casters); the camera pass's BeginScene clears these batches and re-accumulates visible ones — so
+		// the batches are NOT cleared here (the camera pass owns clearing).
 		for (auto& batch : m_Batches)
 		{
 			if (batch.Instances.empty() || !batch.Mesh)
 				continue;
 
-			const auto instanceCount = static_cast<uint32_t>(batch.Instances.size());
-			const uint32_t firstInstance = m_InstanceWriteCursor;
-			if (firstInstance + instanceCount > m_InstanceBufferCapacity)
-			{
-				SS_CORE_ERROR("Instance buffer overflow in shadow pass ({0}+{1} > {2}); dropping batch.",
-				              firstInstance, instanceCount, m_InstanceBufferCapacity);
-				continue;
-			}
-
-			m_InstanceBuffers[m_FrameIndex]->SetData(batch.Instances.data(),
-			                                         instanceCount * sizeof(InstanceData),
-			                                         static_cast<size_t>(firstInstance) * sizeof(InstanceData));
-			m_InstanceWriteCursor += instanceCount;
-
-			m_CommandContext->BindVertexBuffer(batch.Mesh->GetVertexBuffer(), 0, 0);
-			m_CommandContext->BindDescriptorSet(objectSet, 2);
-			m_CommandContext->DrawIndexed(batch.Mesh->GetIndexBuffer(),
-			                              batch.Mesh->GetIndexCount(),
-			                              instanceCount,
-			                              0,
-			                              0,
-			                              firstInstance);
+			WriteBatchInstancedDraw(batch, objectSet, " in shadow pass");
 		}
 	}
 
@@ -456,56 +420,12 @@ namespace Snowstorm
 
 		// ---- Set 2: per-instance Object data (StructuredBuffer) ----
 		// One frame-wide storage buffer holds every instance; each batch writes its slice and draws
-		// with firstInstance = sliceStart, so SV_InstanceID indexes the right entries. The descriptor
-		// binds the whole buffer once (fixed capacity → committed once, never re-bound mid-frame).
-		EnsureInstanceBuffer(frameIndex, static_cast<uint32_t>(batch.Instances.size()));
+		// with firstInstance = sliceStart, so SV_InstanceID indexes the right entries.
+		const Ref<DescriptorSet>& objectSet = AcquireObjectSet(pipeline, frameIndex, "Set2_Instances");
 
-		auto& perFrameObjectSets = m_ObjectSets[pipeline.get()];
-		if (perFrameObjectSets.empty())
-			perFrameObjectSets.resize(Renderer::GetFramesInFlight());
-
-		if (!perFrameObjectSets[frameIndex])
-		{
-			DescriptorSetDesc setDesc{};
-			setDesc.DebugName = "Set2_Instances";
-			perFrameObjectSets[frameIndex] = DescriptorSet::Create(setLayouts[2], setDesc);
-			SS_CORE_ASSERT(perFrameObjectSets[frameIndex], "Failed to create set=2 Object DescriptorSet");
-
-			BufferBinding bb{};
-			bb.Buffer = m_InstanceBuffers[frameIndex];
-			bb.Offset = 0;
-			bb.Range = 0; // whole buffer
-			perFrameObjectSets[frameIndex]->SetBuffer(0, bb);
-			perFrameObjectSets[frameIndex]->Commit();
-		}
-
-		const Ref<DescriptorSet>& objectSet = perFrameObjectSets[frameIndex];
-
-		// Write this batch's instances into the frame buffer at the running cursor.
-		const auto instanceCount = static_cast<uint32_t>(batch.Instances.size());
-		const uint32_t firstInstance = m_InstanceWriteCursor;
-		if (firstInstance + instanceCount > m_InstanceBufferCapacity)
-		{
-			SS_CORE_ERROR("Instance buffer overflow ({0}+{1} > {2}); dropping batch.", firstInstance, instanceCount, m_InstanceBufferCapacity);
-			batch.Instances.clear();
-			return;
-		}
-
-		m_InstanceBuffers[frameIndex]->SetData(batch.Instances.data(),
-		                                       instanceCount * sizeof(InstanceData),
-		                                       static_cast<size_t>(firstInstance) * sizeof(InstanceData));
-		m_InstanceWriteCursor += instanceCount;
-
-		// Bind mesh buffers + set=2, then one instanced draw for the whole batch.
-		commandContext->BindVertexBuffer(batch.Mesh->GetVertexBuffer(), 0, 0);
-		commandContext->BindDescriptorSet(objectSet, 2);
-
-		commandContext->DrawIndexed(batch.Mesh->GetIndexBuffer(),
-		                            batch.Mesh->GetIndexCount(),
-		                            instanceCount,
-		                            0,
-		                            0,
-		                            firstInstance);
+		// Write this batch's slice + record the instanced draw (shared with the depth-only pass). On
+		// overflow the lit path clears the batch so a later pass doesn't retry the dropped instances.
+		WriteBatchInstancedDraw(batch, objectSet, "");
 
 		batch.Instances.clear();
 	}

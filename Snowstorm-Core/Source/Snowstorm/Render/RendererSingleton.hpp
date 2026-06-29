@@ -78,15 +78,23 @@ namespace Snowstorm
 
 		void Flush();
 
+		// Draw the currently-accumulated batches (from DrawMesh) depth-only, using the given depth pipeline
+		// (owned by ShadowPass) and the light's matrix (m_ViewProj, set by the preceding BeginScene with the
+		// light's view-projection). No materials/bindless. Call inside the shadow render pass; the batches'
+		// instances are appended into the shared instance buffer at the running cursor (NOT cleared — the
+		// camera pass clears + re-accumulates its own visible set).
+		void DrawBatchesDepthOnly(const Ref<Pipeline>& depthPipeline);
+
 		// Draw the procedural sky as a fullscreen triangle at the far plane. Call inside an active scene
 		// pass (between BeginScene/EndScene) AFTER opaque meshes, so depth is populated and the sky only
 		// fills uncovered pixels. Lazily builds its pipeline against the given color/depth formats.
 		void DrawSky(PixelFormat colorFormat, PixelFormat depthFormat);
 
 		// Set the directional shadow data the lit pass needs: the light's view-projection (world -> light
-		// clip) and the bindless index of the shadow depth texture (0 = no shadows). The camera pass's
-		// FrameCB picks these up so DefaultLit can reproject + compare. Call before the camera Flush().
-		void SetShadowData(const glm::mat4& lightViewProj, uint32_t shadowMapIndex);
+		// clip), the bindless index of the shadow depth texture (0 = no shadows), and the shadow map's
+		// resolution (for the PCF texel-size). The camera pass's FrameCB picks these up so DefaultLit can
+		// reproject + compare. Pushed by ShadowPass; call before the camera Flush().
+		void SetShadowData(const glm::mat4& lightViewProj, uint32_t shadowMapIndex, uint32_t shadowResolution);
 
 		// Set the baked IBL data the lit pass needs: bindless indices of the irradiance + prefiltered cubes
 		// and the BRDF LUT, plus the prefiltered mip count (drives the roughness->lod map). All zero = IBL
@@ -98,16 +106,6 @@ namespace Snowstorm
 		// these to capture the sky; exposed so the bake lives in its own pass, not the renderer.
 		[[nodiscard]] const LightDataBlock& GetLights() const { return m_Lights; }
 		[[nodiscard]] const EnvironmentDataBlock& GetEnvironment() const { return m_Environment; }
-
-		// Draw the currently-accumulated batches (from DrawMesh) into the bound depth-only shadow target,
-		// using a dedicated depth-only pipeline and the light's matrix (m_ViewProj, set by the preceding
-		// BeginScene with the light's view-projection). No materials/bindless. Call inside the shadow
-		// RenderGraph pass; the batches are consumed (instances cleared) like Flush().
-		void DrawShadowDepth(PixelFormat depthFormat);
-
-		// The shared shadow-map render target (lazily created at a fixed resolution). RenderSystem uses it
-		// as the shadow pass's target and reads its depth texture's bindless index for SetShadowData.
-		[[nodiscard]] const Ref<RenderTarget>& GetOrCreateShadowTarget();
 
 		// Stats from the most recently submitted scene pass (reset each BeginScene).
 		[[nodiscard]] const RenderStats& GetStats() const { return m_Stats; }
@@ -125,6 +123,17 @@ namespace Snowstorm
 		// Ensure the per-frame instance storage buffer for `frameIndex` exists and can hold at least
 		// `additionalNeeded` more elements past the current write cursor; (re)allocates if needed.
 		void EnsureInstanceBuffer(uint32_t frameIndex, uint32_t additionalNeeded);
+
+		// Acquire (creating on first use) the per-(pipeline, frame) set=2 Object descriptor set, bound once
+		// to the whole per-frame instance buffer. Shared by the lit mesh flush and the depth-only pass so
+		// the descriptor-set caching lives in one place. `debugName` labels the set on first creation.
+		const Ref<DescriptorSet>& AcquireObjectSet(const Ref<Pipeline>& pipeline, uint32_t frameIndex, const char* debugName);
+
+		// Write one batch's instances into the shared instance buffer at the running cursor and record a
+		// single instanced DrawIndexed against the already-bound objectSet. Returns false (and logs) if the
+		// batch would overflow the buffer — the caller decides whether to clear the batch. The shared core
+		// of FlushBatch and DrawBatchesDepthOnly (the instance-write + draw the depth and lit paths agree on).
+		bool WriteBatchInstancedDraw(BatchData& batch, const Ref<DescriptorSet>& objectSet, const char* overflowContext);
 
 	private:
 		Ref<CommandContext> m_CommandContext;
@@ -154,16 +163,12 @@ namespace Snowstorm
 		PixelFormat m_SkyColorFormat = PixelFormat::Unknown;
 		PixelFormat m_SkyDepthFormat = PixelFormat::Unknown;
 
-		// Lazily-built depth-only shadow pipeline (mesh vertex layout, no color target). Plus the current
-		// frame's light view-projection + shadow-map bindless index, folded into the camera pass's FrameCB.
-		Ref<Pipeline> m_ShadowPipeline;
-		PixelFormat m_ShadowDepthFormat = PixelFormat::Unknown;
+		// Current frame's directional-sun shadow data, pushed by ShadowPass via SetShadowData and folded
+		// into the camera pass's FrameCB. The pipeline/target live in ShadowPass now. ShadowMapIndex 0 =
+		// no shadows (fully lit). ShadowTexelSize is derived from the resolution CVar in AcquireFrameSet.
 		glm::mat4 m_LightViewProj{1.0f};
 		uint32_t m_ShadowMapIndex = 0;
-
-		// Shared shadow-map target (depth-only, sampleable). Resolution comes from the
-		// render.shadow.resolution CVar; rebuilt when it changes (see GetOrCreateShadowTarget).
-		Ref<RenderTarget> m_ShadowTarget;
+		uint32_t m_ShadowResolution = 2048; // mirror of the bound shadow map's size, for the texel-size calc
 
 		// Per-frame storage buffer holding all instances for the frame (set=2). Bound once; each batch
 		// indexes its slice via the draw's firstInstance (SV_InstanceID includes firstInstance). Fixed

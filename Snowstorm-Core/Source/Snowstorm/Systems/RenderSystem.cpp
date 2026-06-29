@@ -20,10 +20,7 @@
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererSingleton.hpp"
 #include "Snowstorm/Render/RenderTarget.hpp"
-#include "Snowstorm/Render/SceneBounds.hpp"
 #include "Snowstorm/Render/Texture.hpp"
-
-#include <glm/gtc/matrix_transform.hpp>
 
 namespace Snowstorm
 {
@@ -91,35 +88,6 @@ namespace Snowstorm
 			}
 
 			return pick;
-		}
-
-		// Fit an orthographic light frustum to the scene AABB and build the sun's view-projection. The
-		// light looks from the AABB center back along -lightDir, far enough to enclose the whole box; the
-		// ortho extents cover the box radius. Matches the camera's clip convention (RH, zero-to-one Z via
-		// GLM_FORCE_DEPTH_ZERO_TO_ONE). Returns false if the scene has no renderable bounds yet.
-		bool ComputeSunViewProj(World& world, const glm::vec3& lightDir, glm::mat4& outViewProj)
-		{
-			AABB sceneAABB;
-			if (!ComputeWorldRenderableAABB(world, sceneAABB))
-			{
-				return false;
-			}
-
-			const glm::vec3 center = sceneAABB.Center();
-			const float radius = glm::length(sceneAABB.Extents()) + 0.001f; // bounding-sphere radius
-
-			const glm::vec3 dir = glm::normalize(lightDir);
-			// Eye placed one radius back along the light so the whole sphere is in front of the near plane.
-			const glm::vec3 eye = center - dir * radius;
-			// Pick an up vector not parallel to the light direction.
-			const glm::vec3 up = (glm::abs(dir.y) > 0.99f) ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
-
-			const glm::mat4 view = glm::lookAtRH(eye, center, up);
-			// Ortho sized to the bounding sphere; depth spans 0..2r so the sphere fits between near/far.
-			const glm::mat4 proj = glm::orthoRH_ZO(-radius, radius, -radius, radius, 0.0f, 2.0f * radius);
-
-			outViewProj = proj * view;
-			return true;
 		}
 	}
 
@@ -195,7 +163,7 @@ namespace Snowstorm
 		// ALL renderable meshes (not a camera's visibility cache) — an off-screen caster still shadows
 		// on-screen geometry. If there is no directional light or no scene bounds, shadows are disabled
 		// (ShadowMapIndex = 0) and the lit shader falls back to fully lit.
-		renderer.SetShadowData(glm::mat4(1.0f), 0); // default: no shadows unless set up below
+		renderer.SetShadowData(glm::mat4(1.0f), 0, 0); // default: no shadows unless set up below
 
 		// Primary sun = first directional light (matches DirectionalLights[0] in the shader). Shadows are
 		// gated by the global render.shadows CVar (scalability kill-switch) AND the light's authored
@@ -211,16 +179,16 @@ namespace Snowstorm
 		}
 
 		glm::mat4 lightViewProj{1.0f};
-		if (CVars::Shadows.Get() && sunCasts && ComputeSunViewProj(*m_World, sunDir, lightViewProj))
+		if (CVars::Shadows.Get() && sunCasts && ShadowPass::ComputeSunViewProj(*m_World, sunDir, lightViewProj))
 		{
-			const Ref<RenderTarget>& shadowRT = renderer.GetOrCreateShadowTarget();
+			const Ref<RenderTarget>& shadowRT = m_ShadowPass.GetOrCreateShadowTarget();
 			const uint32_t shadowIndex =
 			    shadowRT->GetDesc().DepthAttachment->View->GetGlobalBindlessIndex();
 
 			const PixelFormat shadowDepthFmt =
 			    shadowRT->GetDesc().DepthAttachment->View->GetTexture()->GetDesc().Format;
 
-			renderer.SetShadowData(lightViewProj, shadowIndex);
+			renderer.SetShadowData(lightViewProj, shadowIndex, shadowRT->GetWidth());
 
 			graph.AddPass({.Name = "ShadowPass",
 			               .Target = shadowRT,
@@ -246,7 +214,7 @@ namespace Snowstorm
 					                                 mesh.MeshInstance, mat.MaterialInstance);
 				               }
 
-				               renderer.DrawShadowDepth(shadowDepthFmt);
+				               m_ShadowPass.RecordDepth(renderer, shadowDepthFmt);
 				               // The depth target is transitioned to shader-read by EndRenderPass (it's a
 				               // sampleable depth attachment) — can't barrier inside the rendering instance.
 			               }});
