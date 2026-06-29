@@ -232,47 +232,15 @@ namespace Snowstorm
 		m_PrefilteredMipCount = prefilteredMipCount;
 	}
 
-	void RendererSingleton::DrawSky(const PixelFormat colorFormat, const PixelFormat depthFormat)
+	void RendererSingleton::DrawFullscreenTriangle(const Ref<Pipeline>& pipeline)
 	{
-		if (!m_CommandContext)
+		if (!m_CommandContext || !pipeline)
 		{
 			return;
 		}
 
-		// Sky is opt-in: only the procedural-sky background mode draws. No environment / SolidColor mode
-		// leaves the render target's clear color showing (see EnvironmentDataBlock::DrawProceduralSky).
-		if (!m_Environment.DrawProceduralSky)
-		{
-			return;
-		}
-
-		// (Re)build the sky pipeline when first used or when the target formats change. Empty vertex
-		// layout (the VS generates a fullscreen triangle from SV_VertexID); depth test LessOrEqual with
-		// NO depth write so the sky sits at the far plane behind already-drawn geometry.
-		if (!m_SkyPipeline || m_SkyColorFormat != colorFormat || m_SkyDepthFormat != depthFormat)
-		{
-			Ref<Shader> shader = Shader::Create("assets/shaders/Sky.hlsl");
-			SS_CORE_ASSERT(shader, "Failed to load Sky shader");
-
-			PipelineDesc p{};
-			p.Type = PipelineType::Graphics;
-			p.Shader = shader;
-			p.ColorFormats = {colorFormat};
-			p.DepthFormat = depthFormat;
-			p.Raster.Cull = CullMode::None; // fullscreen triangle: don't cull by winding
-			p.DepthStencil.EnableDepthTest = true;
-			p.DepthStencil.EnableDepthWrite = false;
-			p.DepthStencil.DepthCompare = CompareOp::LessOrEqual;
-			p.DebugName = "SkyPipeline";
-
-			m_SkyPipeline = Pipeline::Create(p);
-			SS_CORE_ASSERT(m_SkyPipeline, "Failed to create Sky pipeline");
-			m_SkyColorFormat = colorFormat;
-			m_SkyDepthFormat = depthFormat;
-		}
-
-		m_CommandContext->BindPipeline(m_SkyPipeline);
-		m_CommandContext->BindDescriptorSet(AcquireFrameSet(m_SkyPipeline, m_FrameIndex), 0);
+		m_CommandContext->BindPipeline(pipeline);
+		m_CommandContext->BindDescriptorSet(AcquireFrameSet(pipeline, m_FrameIndex), 0);
 		m_CommandContext->Draw(3, 1, 0); // fullscreen triangle, no vertex/index buffer
 	}
 

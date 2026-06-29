@@ -299,7 +299,7 @@ namespace Snowstorm
 					                   rtDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 					               const PixelFormat depthFmt =
 					                   rtDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
-					               renderer.DrawSky(colorFmt, depthFmt);
+					               m_SkyPass.Draw(renderer, colorFmt, depthFmt);
 				               }
 
 				               renderer.EndScene();

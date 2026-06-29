@@ -85,10 +85,10 @@ namespace Snowstorm
 		// camera pass clears + re-accumulates its own visible set).
 		void DrawBatchesDepthOnly(const Ref<Pipeline>& depthPipeline);
 
-		// Draw the procedural sky as a fullscreen triangle at the far plane. Call inside an active scene
-		// pass (between BeginScene/EndScene) AFTER opaque meshes, so depth is populated and the sky only
-		// fills uncovered pixels. Lazily builds its pipeline against the given color/depth formats.
-		void DrawSky(PixelFormat colorFormat, PixelFormat depthFormat);
+		// Bind the given pipeline + its set=0 Frame descriptor (FrameCB) and draw a vertex-buffer-less
+		// fullscreen triangle (3 verts from SV_VertexID). Used by SkyPass; the FrameCB carries everything
+		// the fullscreen shader needs (InvViewProj, environment). No-op outside an active scene pass.
+		void DrawFullscreenTriangle(const Ref<Pipeline>& pipeline);
 
 		// Set the directional shadow data the lit pass needs: the light's view-projection (world -> light
 		// clip), the bindless index of the shadow depth texture (0 = no shadows), and the shadow map's
@@ -158,10 +158,6 @@ namespace Snowstorm
 		uint32_t m_PrefilteredCubeIndex = 0;
 		uint32_t m_BRDFLutIndex = 0;
 		uint32_t m_PrefilteredMipCount = 0;
-
-		Ref<Pipeline> m_SkyPipeline;
-		PixelFormat m_SkyColorFormat = PixelFormat::Unknown;
-		PixelFormat m_SkyDepthFormat = PixelFormat::Unknown;
 
 		// Current frame's directional-sun shadow data, pushed by ShadowPass via SetShadowData and folded
 		// into the camera pass's FrameCB. The pipeline/target live in ShadowPass now. ShadowMapIndex 0 =
