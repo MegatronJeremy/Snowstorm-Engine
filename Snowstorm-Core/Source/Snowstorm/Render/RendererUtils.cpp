@@ -79,4 +79,36 @@ namespace Snowstorm
 
 		return RenderTarget::Create(rtDesc);
 	}
+
+	Ref<Texture> CreateCubeTexture(const uint32_t size, const uint32_t mips, const PixelFormat format, const char* debugName)
+	{
+		TextureDesc td{};
+		td.Dimension = TextureDimension::TextureCube;
+		td.Format = format;
+		// Sampled (read in the lit shader), Storage (compute writes faces/mips), ColorAttachment (the env
+		// capture may render into faces), TransferSrc/Dst (mip blits if needed).
+		td.Usage = TextureUsage::Sampled | TextureUsage::Storage | TextureUsage::ColorAttachment |
+		           TextureUsage::TransferSrc | TextureUsage::TransferDst;
+		td.Width = size;
+		td.Height = size;
+		td.MipLevels = mips;
+		td.ArrayLayers = 6;
+		td.DebugName = debugName;
+		return Texture::Create(td);
+	}
+
+	Ref<TextureView> MakeFaceMipView(const Ref<Texture>& cube, const uint32_t face, const uint32_t mip)
+	{
+		const TextureDesc& cd = cube->GetDesc();
+		TextureViewDesc v{};
+		v.Dimension = TextureDimension::Texture2D; // single face+mip is a 2D view
+		v.Format = cd.Format;
+		v.Aspect = TextureAspect::Auto;
+		v.BaseMipLevel = mip;
+		v.MipLevelCount = 1;
+		v.BaseArrayLayer = face;
+		v.ArrayLayerCount = 1;
+		v.DebugName = std::string(cd.DebugName) + "_face" + std::to_string(face) + "_mip" + std::to_string(mip);
+		return TextureView::Create(cube, v);
+	}
 }

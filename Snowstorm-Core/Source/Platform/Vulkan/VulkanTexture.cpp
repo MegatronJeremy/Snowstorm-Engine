@@ -445,11 +445,15 @@ namespace Snowstorm
 
 		SetVulkanObjectName(device, reinterpret_cast<uint64_t>(m_ImageView), VK_OBJECT_TYPE_IMAGE_VIEW, m_Desc.DebugName.c_str());
 
-		// Only register with bindless if the texture is meant to be sampled
+		// Only register with bindless if the texture is meant to be sampled. A cube-dimension view goes to
+		// the cube array (binding 1, sampled as TextureCube); everything else to the 2D array (binding 0).
+		// Per-face/per-mip 2D views of a cube use Dimension Texture2D, so they correctly register as 2D.
 		if (HasUsage(vkTex->GetDesc().Usage, TextureUsage::Sampled))
 		{
 			auto& bindless = VulkanBindlessManager::Get();
-			SetGlobalBindlessIndex(bindless.RegisterTexture(m_ImageView));
+			SetGlobalBindlessIndex(m_Desc.Dimension == TextureDimension::TextureCube
+			                           ? bindless.RegisterCube(m_ImageView)
+			                           : bindless.RegisterTexture(m_ImageView));
 		}
 		else
 		{

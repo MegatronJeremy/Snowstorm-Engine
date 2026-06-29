@@ -14,8 +14,10 @@ namespace Snowstorm
 	{
 		m_Device = GetVulkanDevice();
 
-		// 1. Create Descriptor Pool with the UpdateAfterBind flag
-		VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MAX_BINDLESS_TEXTURES};
+		// 1. Create Descriptor Pool with the UpdateAfterBind flag. Two SAMPLED_IMAGE bindings live in one
+		// set: binding 0 = Texture2D[], binding 1 = TextureCube[] (both SAMPLED_IMAGE; the cube-ness is in
+		// the image view type). Pool must hold the sum of both arrays.
+		VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MAX_BINDLESS_TEXTURES + MAX_BINDLESS_CUBES};
 		VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
 		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
 		poolInfo.maxSets = 1;
@@ -23,24 +25,30 @@ namespace Snowstorm
 		poolInfo.pPoolSizes = &poolSize;
 		vkCreateDescriptorPool(m_Device, &poolInfo, nullptr, &m_DescriptorPool);
 
-		// 2. Create Layout with Bindless Flags
-		VkDescriptorSetLayoutBinding binding{};
-		binding.binding = 0;
-		binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-		binding.descriptorCount = MAX_BINDLESS_TEXTURES;
-		binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+		// 2. Create Layout with Bindless Flags. ALL_GRAPHICS (was Fragment-only) so cube env maps can also
+		// be sampled in other stages later; the 2D array keeps working in fragment shaders as before.
+		VkDescriptorSetLayoutBinding bindings[2]{};
+		bindings[0].binding = BINDING_TEXTURE2D;
+		bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+		bindings[0].descriptorCount = MAX_BINDLESS_TEXTURES;
+		bindings[0].stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
+		bindings[1].binding = BINDING_TEXTURECUBE;
+		bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+		bindings[1].descriptorCount = MAX_BINDLESS_CUBES;
+		bindings[1].stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
 
-		VkDescriptorBindingFlags flags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
-		                                 VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+		constexpr VkDescriptorBindingFlags bindingFlag = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+		                                                 VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+		const VkDescriptorBindingFlags flags[2] = {bindingFlag, bindingFlag};
 		VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO};
-		flagsInfo.bindingCount = 1;
-		flagsInfo.pBindingFlags = &flags;
+		flagsInfo.bindingCount = 2;
+		flagsInfo.pBindingFlags = flags;
 
 		VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
 		layoutInfo.pNext = &flagsInfo;
 		layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-		layoutInfo.bindingCount = 1;
-		layoutInfo.pBindings = &binding;
+		layoutInfo.bindingCount = 2;
+		layoutInfo.pBindings = bindings;
 		vkCreateDescriptorSetLayout(m_Device, &layoutInfo, nullptr, &m_Layout);
 
 		// 3. Allocate the one and only Global Set
@@ -72,7 +80,36 @@ namespace Snowstorm
 
 		VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
 		write.dstSet = m_DescriptorSet;
-		write.dstBinding = 0;
+		write.dstBinding = BINDING_TEXTURE2D;
+		write.dstArrayElement = index;
+		write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+		write.descriptorCount = 1;
+		write.pImageInfo = &imageInfo;
+
+		vkUpdateDescriptorSets(m_Device, 1, &write, 0, nullptr);
+		return index;
+	}
+
+	uint32_t VulkanBindlessManager::RegisterCube(const VkImageView imageView)
+	{
+		std::scoped_lock lock(m_IndexMutex);
+
+		SS_CORE_ASSERT(m_NextFreeCubeIndex < MAX_BINDLESS_CUBES, "Bindless cube array is full");
+		if (m_NextFreeCubeIndex >= MAX_BINDLESS_CUBES)
+		{
+			SS_CORE_ERROR("VulkanBindlessManager: out of bindless cube slots (max {0}); reusing slot 0", MAX_BINDLESS_CUBES);
+			return 0;
+		}
+
+		const uint32_t index = m_NextFreeCubeIndex++;
+
+		VkDescriptorImageInfo imageInfo{};
+		imageInfo.imageView = imageView;
+		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+		write.dstSet = m_DescriptorSet;
+		write.dstBinding = BINDING_TEXTURECUBE;
 		write.dstArrayElement = index;
 		write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 		write.descriptorCount = 1;

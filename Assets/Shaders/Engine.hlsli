@@ -107,4 +107,8 @@ struct InstanceData
 StructuredBuffer<InstanceData> Instances : register(t0, space2);
 
 // --- SPACE 3: Global Bindless Pool ---
+// Two parallel arrays in the same set: 2D textures (binding 0) and cubemaps (binding 1). Cube views
+// can't share the Texture2D[] array (distinct HLSL types), so IBL env/irradiance/prefilter cubemaps
+// are indexed into Cubemaps[] by a separate bindless index (see VulkanBindlessManager::RegisterCube).
 Texture2D Textures[] : register(t0, space3);
+TextureCube Cubemaps[] : register(t1, space3);
