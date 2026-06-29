@@ -84,6 +84,9 @@ namespace Snowstorm
 		// command buffer (before render passes). The generated cubes' bindless indices feed FrameCB.
 		void BakeIBL(const Ref<CommandContext>& commandContext);
 
+		// Whether the IBL maps have been baked (so callers can drain the GPU before the one-time bake).
+		[[nodiscard]] bool IsIBLBaked() const { return m_IBLBaked; }
+
 		// One-shot compute self-test (Phase 2 / #17-#18): lazily create a trivial compute pipeline, bind
 		// and dispatch it once in the given command context, and log the result. The pipeline is owned by
 		// this singleton so it tears down in the normal device-shutdown order (not at static-exit, which

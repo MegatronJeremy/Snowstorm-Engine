@@ -70,6 +70,18 @@ cbuffer FrameCB : register(b0, space0)
 	float _ShadowPad0;
 	float _ShadowPad1;
 	float _ShadowPad2;
+
+	// IBL: bindless indices of the baked maps (irradiance + prefiltered in Cubemaps[], BRDF LUT in
+	// Textures[]); 0 = IBL off (analytic hemisphere ambient). PrefilteredMipCount maps roughness->lod.
+	// Mirrors the FrameCB tail in RendererSingleton.cpp.
+	uint IrradianceCubeIndex;
+	uint PrefilteredCubeIndex;
+	uint BRDFLutIndex;
+	uint PrefilteredMipCount;
+	float IBLIntensity;
+	float _IBLPad0;
+	float _IBLPad1;
+	float _IBLPad2;
 };
 
 // --- SPACE 1: Material Data ---

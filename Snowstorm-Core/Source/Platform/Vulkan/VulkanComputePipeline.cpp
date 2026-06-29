@@ -33,7 +33,7 @@ namespace Snowstorm
 			ci.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
 			VkShaderModule mod = VK_NULL_HANDLE;
-			SS_CORE_ASSERT(vkCreateShaderModule(device, &ci, nullptr, &mod) == VK_SUCCESS, "Failed to create compute shader module");
+			SS_CORE_VERIFY(vkCreateShaderModule(device, &ci, nullptr, &mod) == VK_SUCCESS, "Failed to create compute shader module");
 			return mod;
 		}
 
@@ -76,7 +76,7 @@ namespace Snowstorm
 
 		// --- Reflect descriptor set layouts from the SPIR-V ---
 		SpvReflectShaderModule reflect;
-		SS_CORE_ASSERT(spvReflectCreateShaderModule(code.size(), code.data(), &reflect) == SPV_REFLECT_RESULT_SUCCESS,
+		SS_CORE_VERIFY(spvReflectCreateShaderModule(code.size(), code.data(), &reflect) == SPV_REFLECT_RESULT_SUCCESS,
 		               "Failed to reflect compute SPIR-V");
 
 		uint32_t setCount = 0;
@@ -143,7 +143,7 @@ namespace Snowstorm
 		layoutCI.pushConstantRangeCount = static_cast<uint32_t>(m_VkPushConstantRanges.size());
 		layoutCI.pPushConstantRanges = m_VkPushConstantRanges.empty() ? nullptr : m_VkPushConstantRanges.data();
 
-		SS_CORE_ASSERT(vkCreatePipelineLayout(m_Device, &layoutCI, nullptr, &m_PipelineLayout) == VK_SUCCESS,
+		SS_CORE_VERIFY(vkCreatePipelineLayout(m_Device, &layoutCI, nullptr, &m_PipelineLayout) == VK_SUCCESS,
 		               "Failed to create compute VkPipelineLayout");
 
 		// --- Compute pipeline ---
@@ -158,7 +158,7 @@ namespace Snowstorm
 		pipeCI.stage = stage;
 		pipeCI.layout = m_PipelineLayout;
 
-		SS_CORE_ASSERT(vkCreateComputePipelines(m_Device, VK_NULL_HANDLE, 1, &pipeCI, nullptr, &m_Pipeline) == VK_SUCCESS,
+		SS_CORE_VERIFY(vkCreateComputePipelines(m_Device, VK_NULL_HANDLE, 1, &pipeCI, nullptr, &m_Pipeline) == VK_SUCCESS,
 		               "Failed to create Vulkan compute pipeline");
 
 		vkDestroyShaderModule(m_Device, module, nullptr);

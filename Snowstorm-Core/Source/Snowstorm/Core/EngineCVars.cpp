@@ -28,4 +28,6 @@ namespace Snowstorm::CVars
 	CVar<bool> ComputeSelfTest{"compute.selftest", false, "Create+dispatch a trivial compute pipeline once at startup and log the result"};
 
 	CVar<bool> IBL{"render.ibl", false, "Bake + use image-based lighting from the sky (off = analytic hemisphere ambient)"};
+
+	CVar<float> IBLIntensity{"render.ibl.intensity", 0.75f, "Multiplier on the IBL ambient contribution"};
 }

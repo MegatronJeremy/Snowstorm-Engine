@@ -49,7 +49,27 @@ namespace Snowstorm
 			float _ShadowPad0 = 0.0f;
 			float _ShadowPad1 = 0.0f;
 			float _ShadowPad2 = 0.0f;
+
+			// IBL (Phase 6). Bindless indices of the baked maps: irradiance + prefiltered into the cube
+			// array (Cubemaps[]), BRDF LUT into the 2D array (Textures[]). 0 = IBL disabled (use the
+			// analytic hemisphere ambient). PrefilteredMipCount drives the roughness->lod mapping. MUST
+			// match the FrameCB tail in Engine.hlsli field-for-field.
+			uint32_t IrradianceCubeIndex = 0;
+			uint32_t PrefilteredCubeIndex = 0;
+			uint32_t BRDFLutIndex = 0;
+			uint32_t PrefilteredMipCount = 0;
+			float IBLIntensity = 1.0f; // separate ambient dial for IBL (irradiance is already convolved)
+			float _IBLPad0 = 0.0f;
+			float _IBLPad1 = 0.0f;
+			float _IBLPad2 = 0.0f;
 		};
+
+		// IBL bake resolutions (shared by AcquireFrameSet's mip-count and BakeIBL).
+		constexpr uint32_t kEnvCubeSize = 128;
+		constexpr uint32_t kIrradianceCubeSize = 32;
+		constexpr uint32_t kPrefilterCubeSize = 128;
+		constexpr uint32_t kPrefilterMips = 5; // roughness 0..1 across mips
+		constexpr uint32_t kBRDFLutSize = 256;
 	}
 
 	void RendererSingleton::NewFrame()
@@ -193,6 +213,18 @@ namespace Snowstorm
 		frame.ShadowSoft = CVars::ShadowSoft.Get() ? 1u : 0u;
 		frame.ShadowTexelSize = 1.0f / static_cast<float>(m_ShadowTarget ? m_ShadowTarget->GetWidth() : 2048u);
 
+		// IBL indices: only when the maps are baked AND IBL is currently enabled. Gating on the live CVar
+		// (not just m_IBLBaked) is what makes the toggle work — turning it off leaves the maps baked but
+		// writes 0 indices, so the shader falls back to the analytic ambient. 0 = off.
+		if (m_IBLBaked && CVars::IBL.Get())
+		{
+			frame.IrradianceCubeIndex = m_IrradianceCubeView->GetGlobalBindlessIndex();
+			frame.PrefilteredCubeIndex = m_PrefilteredCubeView->GetGlobalBindlessIndex();
+			frame.BRDFLutIndex = m_BRDFLutView->GetGlobalBindlessIndex();
+			frame.PrefilteredMipCount = kPrefilterMips;
+			frame.IBLIntensity = CVars::IBLIntensity.Get();
+		}
+
 		const Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
 		SS_CORE_ASSERT(frameUBO, "Frame UBO missing for frame descriptor set");
 		frameUBO->SetData(&frame, sizeof(FrameCB), 0);
@@ -293,12 +325,6 @@ namespace Snowstorm
 			float _p0 = 0.0f;
 			float _p1 = 0.0f;
 		};
-
-		constexpr uint32_t kEnvCubeSize = 128;
-		constexpr uint32_t kIrradianceCubeSize = 32;
-		constexpr uint32_t kPrefilterCubeSize = 128;
-		constexpr uint32_t kPrefilterMips = 5; // roughness 0..1 across mips
-		constexpr uint32_t kBRDFLutSize = 256;
 	}
 
 	void RendererSingleton::BakeIBL(const Ref<CommandContext>& commandContext)
@@ -496,7 +522,7 @@ namespace Snowstorm
 		commandContext->TransitionToSampled(m_BRDFLut);
 
 		m_IBLBaked = true;
-		SS_CORE_WARN("[IBL] baked all maps — irradiance={} prefiltered={} (cube bindless) brdfLut={} (2d bindless)",
+		SS_CORE_WARN("[IBL] baked all maps -- irradiance={} prefiltered={} (cube bindless) brdfLut={} (2d bindless)",
 		             m_IrradianceCubeView->GetGlobalBindlessIndex(),
 		             m_PrefilteredCubeView->GetGlobalBindlessIndex(),
 		             m_BRDFLutView->GetGlobalBindlessIndex());

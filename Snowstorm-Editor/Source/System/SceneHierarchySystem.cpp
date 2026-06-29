@@ -125,6 +125,24 @@ namespace Snowstorm
 		}
 
 		ImGui::Spacing();
+		EditorTheme::SectionHeader("Image-Based Lighting");
+
+		// IBL toggle: on -> bake the sky into irradiance/prefiltered/BRDF maps (compute) and use them for
+		// ambient (metals reflect the sky). Off -> the analytic hemisphere ambient. The bake runs once on
+		// first enable; until it completes the shader falls back to analytic, so toggling is seamless.
+		if (bool ibl = CVars::IBL.Get(); ImGui::Checkbox("Enabled##IBL", &ibl))
+		{
+			CVars::IBL.Set(ibl);
+		}
+		ImGui::TextDisabled("(bakes the sky into IBL maps on first enable)");
+
+		// Intensity: separate from the analytic SkyIntensity (irradiance is already convolved).
+		if (float iblIntensity = CVars::IBLIntensity.Get(); ImGui::SliderFloat("Intensity##IBL", &iblIntensity, 0.0f, 4.0f, "%.2f"))
+		{
+			CVars::IBLIntensity.Set(iblIntensity);
+		}
+
+		ImGui::Spacing();
 
 		// Last scene-pass GPU submission stats (RendererSingleton::RenderStats). With instancing,
 		// DrawCalls == Batches (one instanced draw per mesh+material) while Instances counts every

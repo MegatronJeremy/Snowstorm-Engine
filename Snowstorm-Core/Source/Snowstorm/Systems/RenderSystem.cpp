@@ -168,8 +168,15 @@ namespace Snowstorm
 
 		// Bake IBL maps from the sky (compute) when enabled. Lights/environment are already uploaded by
 		// the PreRender systems, so the bake reads the current sky. BakeIBL no-ops once baked.
-		if (CVars::IBL.Get())
+		//
+		// The bake registers descriptors (RegisterCube / SetTexture) and records compute dispatches into
+		// THIS frame's command buffer. When IBL is toggled on at runtime, prior frames are still in flight
+		// reading the bindless descriptor set — updating it under them corrupts state and crashes. Drain
+		// the GPU first so the one-time bake happens with nothing in flight. Only costs a stall on the
+		// single frame the bake runs (it no-ops thereafter), so this is cheap and correct.
+		if (CVars::IBL.Get() && !renderer.IsIBLBaked())
 		{
+			Renderer::WaitIdle();
 			renderer.BakeIBL(ctx);
 		}
 

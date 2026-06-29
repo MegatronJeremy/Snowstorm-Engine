@@ -145,6 +145,44 @@ float3 FresnelSchlick(float cosTheta, float3 F0)
 	return F0 + (1.0 - F0) * pow(saturate(1.0 - cosTheta), 5.0);
 }
 
+// Roughness-aware Fresnel for the ambient/IBL term (Sebastien Lagarde): rough surfaces shouldn't show
+// a full grazing Fresnel boost the way a smooth one does.
+float3 FresnelSchlickRoughness(float cosTheta, float3 F0, float roughness)
+{
+	const float3 fMax = max(float3(1.0 - roughness, 1.0 - roughness, 1.0 - roughness), F0);
+	return F0 + (fMax - F0) * pow(saturate(1.0 - cosTheta), 5.0);
+}
+
+// Split-sum image-based lighting: diffuse from the irradiance cube, specular from the prefiltered cube
+// (roughness -> mip) modulated by the BRDF LUT. Returns 0 (caller falls back to analytic ambient) when
+// IBL isn't baked (IrradianceCubeIndex == 0).
+float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness, float metallic, float ao)
+{
+	if (IrradianceCubeIndex == 0)
+	{
+		return float3(0, 0, 0);
+	}
+
+	const float NdotV = max(dot(N, V), 0.0);
+	const float3 F = FresnelSchlickRoughness(NdotV, F0, roughness);
+	const float3 kd = (1.0 - F) * (1.0 - metallic); // metals have no diffuse
+
+	// Diffuse: irradiance (already cosine-convolved) * albedo.
+	const float3 irradiance = Cubemaps[NonUniformResourceIndex(IrradianceCubeIndex)].SampleLevel(LinearSampler, N, 0).rgb;
+	const float3 diffuse = irradiance * albedo;
+
+	// Specular: prefiltered env at the reflection vector, lod from roughness; scaled by the BRDF LUT.
+	const float3 R = reflect(-V, N);
+	const float lod = roughness * float(max(PrefilteredMipCount, 1u) - 1u);
+	const float3 prefiltered = Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, R, lod).rgb;
+	const float2 brdf = Textures[NonUniformResourceIndex(BRDFLutIndex)].SampleLevel(LinearSampler, float2(NdotV, roughness), 0).rg;
+	const float3 specular = prefiltered * (F0 * brdf.x + brdf.y);
+
+	// Scale by the dedicated IBLIntensity dial (separate from SkyIntensity: the irradiance cube is
+	// already cosine-convolved, a different scale than the analytic hemisphere lerp). Tune to taste.
+	return (kd * diffuse + specular) * ao * IBLIntensity;
+}
+
 // World-space shading normal: perturb the geometric normal by the tangent-space normal map when one
 // is bound, otherwise fall back to the interpolated vertex normal.
 float3 ResolveNormal(PSInput i, uint normalIndex)
@@ -211,14 +249,17 @@ float4 main(PSInput i) : SV_Target0
 		Lo += (kd * albedo / PI + specular) * radiance * NdotL * shadow;
 	}
 
-	// Hemisphere ambient (IBL stopgap until #52). From the shared environment (FrameCB) — the SAME
-	// zenith/horizon/ground colors the sky pass shows,
-	// so the fill light always matches the visible sky. Upper hemisphere fades horizon->zenith by world-
-	// up; lower hemisphere reads the ground color. Scaled by SkyIntensity.
-	const float3 ambientEnv = (N.y >= 0.0)
-	                              ? lerp(SkyHorizonColor, SkyZenithColor, saturate(N.y))
-	                              : lerp(SkyHorizonColor, GroundColor, saturate(-N.y));
-	const float3 ambient = ambientEnv * SkyIntensity * albedo * ao;
+	// Ambient: prefer split-sum IBL (baked from the sky) when available — metals reflect the environment
+	// and specular picks up sky color. Falls back to the analytic hemisphere ambient (same zenith/horizon/
+	// ground colors the sky shows) when IBL isn't baked, so the look degrades gracefully.
+	float3 ambient = ComputeIBL(N, V, albedo, F0, roughness, metallic, ao);
+	if (IrradianceCubeIndex == 0)
+	{
+		const float3 ambientEnv = (N.y >= 0.0)
+		                              ? lerp(SkyHorizonColor, SkyZenithColor, saturate(N.y))
+		                              : lerp(SkyHorizonColor, GroundColor, saturate(-N.y));
+		ambient = ambientEnv * SkyIntensity * albedo * ao;
+	}
 
 	float3 color = Lo + ambient;
 
