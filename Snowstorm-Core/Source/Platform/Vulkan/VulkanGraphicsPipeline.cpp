@@ -2,9 +2,12 @@
 
 #include "Snowstorm/Core/Log.hpp"
 
+#include <array>
 #include <fstream>
 #include <algorithm>
+#include <map>
 #include <numeric>
+#include <utility>
 
 #define SPIRV_REFLECT_USE_SYSTEM_SPIRV_H
 #include <spirv_reflect.h>
@@ -53,6 +56,28 @@ namespace Snowstorm
 			SS_CORE_ASSERT(result == VK_SUCCESS, "Failed to create shader module!");
 
 			return shaderModule;
+		}
+
+		DescriptorType FromSpvDescriptorType(const SpvReflectDescriptorType t)
+		{
+			switch (t)
+			{
+			case SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+				return DescriptorType::UniformBuffer;
+			case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+				return DescriptorType::StorageBuffer;
+			case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+				return DescriptorType::SampledImage;
+			case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+				return DescriptorType::StorageImage;
+			case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLER:
+				return DescriptorType::Sampler;
+			case SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+				return DescriptorType::CombinedImageSampler;
+			default:
+				SS_CORE_ASSERT(false, "Unsupported SPIR-V descriptor type in graphics shader");
+				return DescriptorType::UniformBuffer;
+			}
 		}
 
 		struct Range
@@ -118,73 +143,153 @@ namespace Snowstorm
 		return 0;
 	}
 
-	void VulkanGraphicsPipeline::CreateDescriptorSetLayouts()
+	namespace
+	{
+		// The engine's fixed descriptor-set frequency convention (frequency-based sets, cf. Granite / Vulkan
+		// best-practice). Sets 0..2 are reflected from the shader; set 3 is the runtime bindless table from
+		// VulkanBindlessManager. The renderer reuses a descriptor set bound at slot N across pipelines
+		// (AcquireFrameSet etc.), so layouts MUST stay at their set-number index -- hence gap-fill, not pack.
+		constexpr uint32_t kReflectedSetCount = 3; // sets 0,1,2 come from reflection
+		constexpr uint32_t kBindlessSet = 3;       // set 3 is the bindless table (manager-owned)
+
+		// Accumulate reflected bindings across stages, keyed by (set, binding), OR-ing stage visibility so a
+		// resource used in both VS and FS gets AllGraphics rather than one stage.
+		void ReflectStageInto(const std::vector<char>& code,
+		                      const ShaderStage stage,
+		                      std::array<std::map<uint32_t, DescriptorBindingDesc>, kReflectedSetCount>& out)
+		{
+			SpvReflectShaderModule mod;
+			SS_CORE_VERIFY(spvReflectCreateShaderModule(code.size(), code.data(), &mod) == SPV_REFLECT_RESULT_SUCCESS,
+			               "Failed to reflect graphics SPIR-V for descriptor layouts");
+
+			uint32_t setCount = 0;
+			spvReflectEnumerateDescriptorSets(&mod, &setCount, nullptr);
+			std::vector<SpvReflectDescriptorSet*> sets(setCount);
+			spvReflectEnumerateDescriptorSets(&mod, &setCount, sets.data());
+
+			for (const SpvReflectDescriptorSet* s : sets)
+			{
+				if (s->set >= kReflectedSetCount)
+				{
+					// Set 3 (bindless) is sourced from the manager, not reflection -- skip it here.
+					continue;
+				}
+				auto& bindingMap = out[s->set];
+				for (uint32_t b = 0; b < s->binding_count; ++b)
+				{
+					const SpvReflectDescriptorBinding* rb = s->bindings[b];
+					if (const auto it = bindingMap.find(rb->binding); it != bindingMap.end())
+					{
+						// Same binding seen in another stage: widen visibility, keep the rest.
+						it->second.Visibility = it->second.Visibility | stage;
+						continue;
+					}
+					DescriptorBindingDesc d{};
+					d.Binding = rb->binding;
+					d.Type = FromSpvDescriptorType(rb->descriptor_type);
+					d.Count = rb->count;
+					d.Visibility = stage;
+					d.DebugName = rb->name ? rb->name : "";
+					bindingMap.emplace(rb->binding, d);
+				}
+			}
+
+			spvReflectDestroyShaderModule(&mod);
+		}
+
+		// Resource shape of one set: (binding -> (type, count)). Stage VISIBILITY is intentionally excluded --
+		// a depth-only shadow shader legitimately uses set 0 in the vertex stage only, while the lit shader
+		// uses it in both; that's compatible for descriptor-set reuse. Only the resource layout must match.
+		using SetSignature = std::map<uint32_t, std::pair<DescriptorType, uint32_t>>;
+
+		SetSignature SignatureOf(const std::map<uint32_t, DescriptorBindingDesc>& bindings)
+		{
+			SetSignature sig;
+			for (const auto& [binding, d] : bindings)
+			{
+				sig.emplace(binding, std::pair{d.Type, d.Count});
+			}
+			return sig;
+		}
+
+		// Assert that the shared sets (0 = Frame, 2 = Object) reflect an identical resource shape across every
+		// graphics pipeline -- the invariant the renderer's cross-pipeline descriptor-set reuse depends on.
+		// First pipeline to compile records the reference; later ones are checked against it. Debug-only.
+		void VerifySharedSetCompatibility(const std::array<std::map<uint32_t, DescriptorBindingDesc>, kReflectedSetCount>& setBindings)
+		{
+#ifdef SS_DEBUG
+			struct Reference
+			{
+				bool Seen = false;
+				SetSignature Sig;
+			};
+			static Reference s_shared[kReflectedSetCount]; // indexed by set; only 0 and 2 are checked
+
+			constexpr uint32_t kSharedSets[] = {0, 2};
+			for (const uint32_t set : kSharedSets)
+			{
+				SetSignature sig = SignatureOf(setBindings[set]);
+				if (sig.empty())
+				{
+					continue; // a pipeline that doesn't use this shared set can't conflict
+				}
+				Reference& ref = s_shared[set];
+				if (!ref.Seen)
+				{
+					ref.Seen = true;
+					ref.Sig = std::move(sig);
+				}
+				else
+				{
+					SS_CORE_ASSERT(ref.Sig == sig,
+					               "Graphics pipeline reflects an incompatible layout for a SHARED descriptor set "
+					               "(0=Frame / 2=Object). The renderer reuses these sets across pipelines, so their "
+					               "binding/type/count must match. Check the shader's register() declarations.");
+				}
+			}
+#else
+			(void)setBindings;
+#endif
+		}
+	}
+
+	void VulkanGraphicsPipeline::CreateDescriptorSetLayouts(const std::vector<char>& vertCode, const std::vector<char>& fragCode)
 	{
 		m_SetLayouts.clear();
 
-		// --- Set 0: Frame (reserved; bind camera/light globals later) ---
-		DescriptorSetLayoutDesc frame{};
-		frame.SetIndex = 0;
-		frame.DebugName = "Set0_Frame";
-		frame.Bindings = {
-		    DescriptorBindingDesc{
-		        .Binding = 0,
-		        .Type = DescriptorType::UniformBuffer,
-		        .Count = 1,
-		        .Visibility = ShaderStage::AllGraphics,
-		        .DebugName = "FrameCB"},
-		};
-		m_SetLayouts.push_back(DescriptorSetLayout::Create(frame));
-		SS_CORE_ASSERT(m_SetLayouts[0], "Failed to create frame DescriptorSetLayout");
+		// Reflect sets 0..2 from both stages, merging per-binding stage visibility.
+		std::array<std::map<uint32_t, DescriptorBindingDesc>, kReflectedSetCount> setBindings;
+		ReflectStageInto(vertCode, ShaderStage::Vertex, setBindings);
+		ReflectStageInto(fragCode, ShaderStage::Fragment, setBindings);
 
-		// --- Set 1: Material ---
-		DescriptorSetLayoutDesc material{};
-		material.SetIndex = 1;
-		material.DebugName = "Set1_Material_Bindless";
-		material.Bindings = {
-		    DescriptorBindingDesc{
-		        .Binding = 0,
-		        .Type = DescriptorType::UniformBuffer,
-		        .Count = 1,
-		        .Visibility = ShaderStage::AllGraphics,
-		        .DebugName = "MaterialCB"},
-		    DescriptorBindingDesc{
-		        .Binding = 1,
-		        .Type = DescriptorType::Sampler,
-		        .Count = 1,
-		        .Visibility = ShaderStage::Fragment,
-		        .DebugName = "LinearSampler"},
-		    // Clamp-to-edge sampler for lookup textures that must NOT wrap (e.g. the split-sum BRDF LUT:
-		    // a Repeat tap at NdotV~1 wraps to the grazing edge -> a hard seam). Engine-global, not
-		    // per-material overridable like LinearSampler above.
-		    DescriptorBindingDesc{
-		        .Binding = 2,
-		        .Type = DescriptorType::Sampler,
-		        .Count = 1,
-		        .Visibility = ShaderStage::Fragment,
-		        .DebugName = "ClampSampler"},
-		};
-		m_SetLayouts.push_back(DescriptorSetLayout::Create(material));
-		SS_CORE_ASSERT(m_SetLayouts[1], "Failed to create material DescriptorSetLayout");
+		// Build a layout per set 0..2 at its set-number INDEX (gap-fill empty sets with an empty layout) so
+		// the renderer's positional indexing (GetSetLayouts()[N] == set N) stays valid. A shader that doesn't
+		// touch a set still gets a (harmless) empty layout in that slot.
+		static const char* kSetNames[kReflectedSetCount] = {"Set0_Frame", "Set1_Material", "Set2_Object"};
+		for (uint32_t setIndex = 0; setIndex < kReflectedSetCount; ++setIndex)
+		{
+			DescriptorSetLayoutDesc layoutDesc{};
+			layoutDesc.SetIndex = setIndex;
+			layoutDesc.DebugName = kSetNames[setIndex];
+			for (const auto& [binding, desc] : setBindings[setIndex]) // std::map -> ascending binding order
+			{
+				layoutDesc.Bindings.push_back(desc);
+			}
+			m_SetLayouts.push_back(DescriptorSetLayout::Create(layoutDesc));
+			SS_CORE_ASSERT(m_SetLayouts[setIndex], "Failed to create reflected DescriptorSetLayout");
+		}
 
-		// --- Set 2: per-instance Object data (StructuredBuffer / storage) ---
-		DescriptorSetLayoutDesc object{};
-		object.SetIndex = 2;
-		object.DebugName = "Set2_Instances";
-		object.Bindings = {
-		    DescriptorBindingDesc{
-		        .Binding = 0,
-		        .Type = DescriptorType::StorageBuffer,
-		        .Count = 1,
-		        .Visibility = ShaderStage::AllGraphics,
-		        .DebugName = "Instances"},
-		};
-		m_SetLayouts.push_back(DescriptorSetLayout::Create(object));
-		SS_CORE_ASSERT(m_SetLayouts[2], "Failed to create object DescriptorSetLayout");
+		// Cross-pipeline compatibility: the renderer reuses a descriptor set bound at a slot across pipelines
+		// (e.g. AcquireFrameSet's set 0, the shared instance set 2). That is only sound if every pipeline
+		// reflects the SAME resource shape for those shared sets -- a silent layout drift would be UB. Assert
+		// it in debug. Set 1 (Material) is per-pipeline-instance and not shared, so it's exempt.
+		VerifySharedSetCompatibility(setBindings);
 
 		// --- Set 3: Global Bindless Textures ---
-		// We use the layout from the manager so it matches exactly
-		auto bindlessHandle = VulkanBindlessManager::Get().GetLayout();
+		// Sourced from the manager so it matches exactly (UPDATE_AFTER_BIND, partially-bound, runtime count
+		// -- none of which reflection can describe).
+		SS_CORE_ASSERT(m_SetLayouts.size() == kBindlessSet, "Bindless set must land at index 3");
+		void* bindlessHandle = VulkanBindlessManager::Get().GetLayout();
 		m_SetLayouts.push_back(DescriptorSetLayout::CreateFromExternal(bindlessHandle));
 	}
 
@@ -368,7 +473,7 @@ namespace Snowstorm
 		blend.pAttachments = blendAttachments.data();
 
 		// --- Pipeline layout / descriptors ---
-		CreateDescriptorSetLayouts();
+		CreateDescriptorSetLayouts(vertCode, fragCode);
 
 		// Validate push constant ranges early (better error message than Vulkan validation spam)
 		ValidatePushConstantRangesOrAssert(m_Desc.PushConstants);

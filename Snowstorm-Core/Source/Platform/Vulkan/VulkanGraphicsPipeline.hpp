@@ -25,7 +25,11 @@ namespace Snowstorm
 		[[nodiscard]] VkShaderStageFlags GetVkPushConstantStagesFor(uint32_t offset, uint32_t size) const;
 
 	private:
-		void CreateDescriptorSetLayouts();
+		// Build the descriptor set layouts by REFLECTING sets 0..2 from the vertex + fragment SPIR-V (merging
+		// per-binding stage visibility), placed at their set-number index (gap-filled to preserve the engine's
+		// positional set convention: 0=Frame, 1=Material, 2=Object). Set 3 (bindless) is sourced from
+		// VulkanBindlessManager, which reflection can't describe (UPDATE_AFTER_BIND / partially-bound / 10000).
+		void CreateDescriptorSetLayouts(const std::vector<char>& vertCode, const std::vector<char>& fragCode);
 
 	private:
 		PipelineDesc m_Desc{};
