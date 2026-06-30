@@ -3,8 +3,8 @@
 #include "IRenderPass.hpp"
 
 #include "Snowstorm/Lighting/LightingUniforms.hpp"
-#include "Snowstorm/Render/CommandContext.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
+#include "Snowstorm/Render/RenderGraph.hpp"
 #include "Snowstorm/Render/Sampler.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
@@ -13,19 +13,22 @@ namespace Snowstorm
 	// Bake the split-sum IBL maps from the procedural sky on compute (#52): sky -> env cube ->
 	// cosine-convolved irradiance cube + GGX-prefiltered (roughness mips) cube + a 2D BRDF integration
 	// LUT. Owns all four compute pipelines and the generated cubes/LUT so they survive across frames and
-	// tear down in the normal device-shutdown order. The baked maps' bindless indices feed FrameCB
-	// (consumed by DefaultLit's ComputeIBL); the renderer pulls them via SetIBLData each frame.
+	// tear down in the normal device-shutdown order.
+	//
+	// The bake is expressed as four graph compute passes (Part 2): each declares the maps it Writes and
+	// the env cube it Reads, and the RenderGraph inserts every Storage/Sampled transition at the pass
+	// boundaries — there are no hand-called barriers here anymore. The consuming mesh pass declares it
+	// Reads{Sampled} the three output maps, so the graph transitions them to shader-read before shading.
 	class IBLBakePass final : public IRenderPass
 	{
 	public:
 		[[nodiscard]] const char* Name() const override { return "IBLBake"; }
 
-		// Bake the maps from the given sky (sun = lights.Lights[0]). Lazy: bakes once, no-ops thereafter.
-		// Call inside a recording command buffer with the GPU drained (the bake updates the bindless set;
-		// in-flight frames reading it would corrupt — RenderSystem does Renderer::WaitIdle() first).
-		void Bake(const Ref<CommandContext>& commandContext,
-		          const LightDataBlock& lights,
-		          const EnvironmentDataBlock& environment);
+		// Create the bake resources (once) and append the four bake compute passes to this frame's graph.
+		// Call once, on the frame IBL is first enabled, with the GPU drained (resource creation updates the
+		// bindless set; RenderSystem does Renderer::WaitIdle() first). The dispatches then run inside
+		// graph.Execute, before the mesh pass that samples the maps. No-ops once baked.
+		void AddBakePasses(RenderGraph& graph, const LightDataBlock& lights, const EnvironmentDataBlock& environment);
 
 		[[nodiscard]] bool IsBaked() const { return m_Baked; }
 
@@ -35,7 +38,16 @@ namespace Snowstorm
 		[[nodiscard]] uint32_t BRDFLutIndex() const;
 		[[nodiscard]] uint32_t PrefilteredMipCount() const;
 
+		// The baked map textures, so the consuming pass can declare Reads{Sampled} on them. Null before bake.
+		[[nodiscard]] const Ref<Texture>& IrradianceCube() const { return m_IrradianceCube; }
+		[[nodiscard]] const Ref<Texture>& PrefilteredCube() const { return m_PrefilteredCube; }
+		[[nodiscard]] const Ref<Texture>& BRDFLut() const { return m_BRDFLut; }
+
 	private:
+		// One-time GPU-resource creation (pipelines, cubes, LUT, sampler). Registers the maps' views in the
+		// bindless arrays (updates the bindless descriptor set — caller must have drained the GPU first).
+		void EnsureResources();
+
 		Ref<Pipeline> m_CapturePipeline;    // sky -> env cube
 		Ref<Pipeline> m_IrradiancePipeline; // env cube -> irradiance cube
 		Ref<Pipeline> m_PrefilterPipeline;  // env cube -> prefiltered (roughness mips) cube

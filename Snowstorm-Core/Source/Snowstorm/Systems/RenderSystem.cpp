@@ -126,19 +126,21 @@ namespace Snowstorm
 		const Ref<CommandContext> ctx = Renderer::GetGraphicsCommandContext();
 		SS_CORE_ASSERT(ctx, "Renderer returned null CommandContext");
 
-		// Bake IBL maps from the sky (compute) when enabled. Lights/environment are already uploaded by
-		// the PreRender systems, so the bake reads the current sky (via the renderer's stored blocks).
-		// Bake no-ops once done.
+		RenderGraph graph;
+
+		// Bake IBL maps from the sky (compute) when enabled. Lights/environment are already uploaded by the
+		// PreRender systems, so the bake reads the current sky (via the renderer's stored blocks). The bake
+		// is appended as the graph's first passes (compute), so its dispatches run before the mesh pass that
+		// samples the maps; the graph inserts the Storage/Sampled transitions from the passes' declarations.
 		//
-		// The bake registers descriptors (RegisterCube / SetTexture) and records compute dispatches into
-		// THIS frame's command buffer. When IBL is toggled on at runtime, prior frames are still in flight
-		// reading the bindless descriptor set — updating it under them corrupts state and crashes. Drain
-		// the GPU first so the one-time bake happens with nothing in flight. Only costs a stall on the
-		// single frame the bake runs (it no-ops thereafter), so this is cheap and correct.
+		// One-time resource creation registers descriptors (RegisterCube / SetTexture) — updating the
+		// bindless set. When IBL is toggled on at runtime, prior frames are still in flight reading that set;
+		// updating it under them corrupts state and crashes. Drain the GPU first so the one-time creation
+		// happens with nothing in flight. Only a stall on the single frame the bake runs (no-ops after).
 		if (CVars::IBL.Get() && !m_IBLBakePass.IsBaked())
 		{
 			Renderer::WaitIdle();
-			m_IBLBakePass.Bake(ctx, renderer.GetLights(), renderer.GetEnvironment());
+			m_IBLBakePass.AddBakePasses(graph, renderer.GetLights(), renderer.GetEnvironment());
 		}
 
 		// Push the baked IBL indices into the renderer's FrameCB assembly — but only while IBL is enabled.
@@ -155,8 +157,6 @@ namespace Snowstorm
 		{
 			renderer.SetIBLData(0, 0, 0, 0);
 		}
-
-		RenderGraph graph;
 
 		// ---- Directional shadow pass (primary sun) ----
 		// Render scene depth from the sun's POV into the shared shadow map, before any camera pass. Uses
@@ -236,8 +236,21 @@ namespace Snowstorm
 
 			const std::string passName = std::string("MeshPass_") + std::to_string(static_cast<uint32_t>(vpEntity));
 
+			// Declare the IBL maps this pass samples (when baked): the graph transitions them from the
+			// Storage layout the bake left them in to shader-read, before shading. Real work only on the
+			// bake frame — idempotent (no-op) once they're already sampled. Replaces the bake's old
+			// hand-called TransitionToSampled on its output maps.
+			std::vector<RenderGraph::ResourceAccess> meshReads;
+			if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
+			{
+				meshReads = {{m_IBLBakePass.IrradianceCube(), RenderGraph::AccessState::Sampled},
+				             {m_IBLBakePass.PrefilteredCube(), RenderGraph::AccessState::Sampled},
+				             {m_IBLBakePass.BRDFLut(), RenderGraph::AccessState::Sampled}};
+			}
+
 			graph.AddPass({.Name = passName,
 			               .Target = vpRT.Target,
+			               .Reads = std::move(meshReads),
 			               .Execute = [&, cam](CommandContext& /*c*/)
 			               {
 				               // Camera world position is TransformComponent.Position (more reliable than mat[3] with your TRS)

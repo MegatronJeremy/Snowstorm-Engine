@@ -21,7 +21,9 @@ cbuffer IBLParams : register(b0, space0)
 	uint FaceIndex; // which cube face this dispatch writes (0..5)
 }
 
-RWTexture2D<float4> OutFace : register(u1, space0);
+// rgba16f matches the IBL cube texture format (RGBA16_SFloat); without the explicit format the SPIR-V
+// declares the default Rgba32f, which mismatches the bound R16G16B16A16 view (validation warns + UB).
+[[vk::image_format("rgba16f")]] RWTexture2D<float4> OutFace : register(u1, space0);
 
 // World direction for cube face `face` at face-UV in [-1,1]. Matches the standard D3D/Vulkan cube
 // face convention (+X,-X,+Y,-Y,+Z,-Z).

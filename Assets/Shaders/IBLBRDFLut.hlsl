@@ -7,7 +7,8 @@
 
 static const float PI = 3.14159265359;
 
-RWTexture2D<float4> OutLut : register(u0, space0);
+// rgba16f matches the BRDF LUT texture format (RGBA16_SFloat); see IBLCapture.hlsl for why this is explicit.
+[[vk::image_format("rgba16f")]] RWTexture2D<float4> OutLut : register(u0, space0);
 
 float RadicalInverseVdC(uint bits)
 {

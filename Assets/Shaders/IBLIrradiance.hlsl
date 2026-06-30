@@ -19,7 +19,8 @@ cbuffer IrradianceParams : register(b0, space0)
 // so the reflection-built compute pipeline layout stays self-contained (set 0 only).
 TextureCube EnvCube : register(t1, space0);
 SamplerState EnvSampler : register(s2, space0);
-RWTexture2D<float4> OutFace : register(u3, space0);
+// rgba16f matches the IBL cube texture format (RGBA16_SFloat); see IBLCapture.hlsl for why this is explicit.
+[[vk::image_format("rgba16f")]] RWTexture2D<float4> OutFace : register(u3, space0);
 
 float3 CubeFaceDirection(uint face, float2 uv)
 {
