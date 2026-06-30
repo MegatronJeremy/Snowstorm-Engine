@@ -268,8 +268,11 @@ namespace Snowstorm
 	                                       const float width, const float height,
 	                                       const float minDepth, const float maxDepth)
 	{
-		// Modern Vulkan: To flip Y without flipping the projection matrix in C++,
-		// we set Y to the height and height to negative.
+		// NOTE: this does NOT apply the Vulkan negative-height Y-flip (.y = y + height, .height = -height).
+		// The engine works in un-flipped clip space and is internally consistent that way -- the camera
+		// projection, sky ray reconstruction, and shadow-map UVs all assume no flip. Adding the flip here
+		// would require compensating in all of those at once. (Earlier this comment claimed a flip the code
+		// never did, which sent the #56 shadow work down a multi-hour red herring -- hence this warning.)
 		const VkViewport viewport{
 		    .x = x,
 		    .y = y,
