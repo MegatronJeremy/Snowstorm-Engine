@@ -2,6 +2,8 @@
 
 #include <imgui.h>
 
+#include <cstdio>
+
 #include "Snowstorm/ECS/SystemManager.hpp"
 #include "Snowstorm/ECS/SystemPhase.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
@@ -175,22 +177,192 @@ namespace Snowstorm
 		// individual system, so we target the actual hot spot instead of guessing. NOTE: a system that
 		// blocks on the GPU (RenderSystem -> BeginFrame fence wait) shows that stall in its time; see
 		// the "GPU wait" line to separate stall from real CPU cost.
+		//
+		// Every registered phase/system is rendered EVERY frame (no threshold-hiding) so the row layout is
+		// stable -- otherwise systems that idle some frames pop in and out and the whole panel flickers.
+		// Each value is an exponential moving average to damp single-frame jitter into a readable number.
 		const SystemManager& sm = m_World->GetSystemManager();
 		const auto& phaseMs = sm.GetPhaseTimingsMs();
 		const auto& sysMs = sm.GetSystemTimingsMs();
+
+		// EMA smoothing factor: ~0.1 averages over roughly the last ~10 frames -- responsive enough to see
+		// a real spike, smooth enough to read. Keyed by a stable id so values persist across frames.
+		constexpr float kSmooth = 0.1f;
+		const auto smoothed = [this](const std::string& key, const float sample) -> float
+		{
+			float& v = m_SmoothedMs[key];
+			v += kSmooth * (sample - v);
+			return v;
+		};
+
+		// Hysteresis visibility on the smoothed value: show once it rises past the high mark, hide only
+		// after it falls below the low mark. The gap between the two means a row hovering near the boundary
+		// stays put instead of strobing (a single threshold is exactly what would flicker).
+		constexpr float kShowAboveMs = 0.05f;
+		constexpr float kHideBelowMs = 0.01f; // matches Unreal stat slow default threshold
+		const auto rowVisible = [this](const std::string& key, const float ms) -> bool
+		{
+			bool& vis = m_RowVisible[key]; // defaults to false (hidden) on first sight
+			if (ms >= kShowAboveMs)
+			{
+				vis = true;
+			}
+			else if (ms < kHideBelowMs)
+			{
+				vis = false;
+			}
+			return vis;
+		};
+
+		// Color a time cell by magnitude so the expensive rows jump out at a glance (green->amber->red,
+		// the same heat ramp profilers use). Thresholds are in ms of CPU frame time.
+		const auto timeColor = [](const float ms) -> ImVec4
+		{
+			if (ms >= 4.0f)
+			{
+				return ImVec4(1.00f, 0.30f, 0.20f, 1.00f); // red: a real cost
+			}
+			if (ms >= 1.0f)
+			{
+				return ImVec4(1.00f, 0.65f, 0.19f, 1.00f); // amber: notable
+			}
+			if (ms >= 0.1f)
+			{
+				return ImVec4(0.60f, 0.50f, 0.38f, 1.00f); // dim: minor
+			}
+			return ImVec4(0.40f, 0.34f, 0.28f, 1.00f); // very dim: ~free
+		};
+
+		// Each row is a proportional bar (length = share of the slowest row), with the label + ms drawn on
+		// top. A bar reads pre-attentively -- the eye sees what's expensive without reading any number,
+		// which a column of digits can't do. This is how profiler overlays (Tracy, Unreal "stat unit")
+		// present per-scope time. The bar is heat-colored by magnitude; the text rides on top.
+		//
+		// Two passes: first find the slowest row so bars normalize to it (a fixed ms scale would leave
+		// every bar a sliver at 60fps, or clip at a spike). The smoothed values are cheap to recompute.
+		float maxMs = 0.0001f; // avoid div-by-zero when everything is ~free
 		for (size_t i = 0; i < phaseMs.size(); ++i)
 		{
-			if (phaseMs[i] < 0.005f) // hide phases that are essentially free
+			maxMs = std::max(maxMs, smoothed(std::string("phase:") + PhaseName(i), phaseMs[i]));
+			for (const auto& [name, ms] : sysMs[i])
+			{
+				maxMs = std::max(maxMs, smoothed("sys:" + name, ms));
+			}
+		}
+
+		// Bar fill at ~18% alpha so the heat color tints the row without drowning the text on top.
+		const auto barFill = [&timeColor](const float ms)
+		{
+			ImVec4 c = timeColor(ms);
+			c.w = 0.18f;
+			return ImGui::GetColorU32(c);
+		};
+
+		const float rowH = ImGui::GetTextLineHeight();
+		const auto row = [&](const char* label, const float ms, const bool isPhase)
+		{
+			const float fullW = ImGui::GetContentRegionAvail().x;
+			const ImVec2 p0 = ImGui::GetCursorScreenPos();
+
+			// Background bar: width proportional to this row's share of the slowest row.
+			const float barW = fullW * (ms / maxMs);
+			ImGui::GetWindowDrawList()->AddRectFilled(p0, ImVec2(p0.x + barW, p0.y + rowH), barFill(ms));
+
+			// Label on top: phases in the amber accent, systems indented + warm white, so the hierarchy
+			// (phase = heading, systems = its children) reads at a glance.
+			if (isPhase)
+			{
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.40f, 0.00f, 1.00f)); // amber accent
+				ImGui::TextUnformatted(label);
+			}
+			else
+			{
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.914f, 0.812f, 1.00f)); // warm white
+				ImGui::Text("  %s", label);
+			}
+			ImGui::PopStyleColor();
+
+			// ms on the same line, at a fixed x so the numbers form a readable column. Heat-colored
+			// (opaque) so the value itself also signals magnitude.
+			char buf[16];
+			std::snprintf(buf, sizeof(buf), "%.2f", ms);
+			ImGui::SameLine(fullW - 36.0f);
+			ImGui::PushStyleColor(ImGuiCol_Text, timeColor(ms));
+			ImGui::TextUnformatted(buf);
+			ImGui::PopStyleColor();
+		};
+
+		// Read the EMA cached by the maxMs pass above. Calling smoothed() again here would apply the decay
+		// twice per frame; this is a pure lookup so each value advances exactly once.
+		const auto cached = [this](const std::string& key) -> float
+		{
+			const auto it = m_SmoothedMs.find(key);
+			return it != m_SmoothedMs.end() ? it->second : 0.0f;
+		};
+
+		for (size_t i = 0; i < phaseMs.size(); ++i)
+		{
+			const std::string phaseKey = std::string("phase:") + PhaseName(i);
+			const float phaseVal = cached(phaseKey);
+
+			// A phase shows if its own total clears the bar OR any of its systems is currently visible, so an
+			// expanded phase keeps its heading even when the phase total alone would round to idle.
+			bool anySysVisible = false;
+			for (const auto& [name, ms] : sysMs[i])
+			{
+				if (rowVisible("sys:" + name, cached("sys:" + name)))
+				{
+					anySysVisible = true;
+					break;
+				}
+			}
+			if (!rowVisible(phaseKey, phaseVal) && !anySysVisible)
 			{
 				continue;
 			}
-			ImGui::Text("%-10s %.2f", PhaseName(i), phaseMs[i]);
+
+			row(PhaseName(i), phaseVal, true);
 			for (const auto& [name, ms] : sysMs[i])
 			{
-				if (ms >= 0.005f)
+				const std::string sysKey = "sys:" + name;
+				if (rowVisible(sysKey, cached(sysKey)))
 				{
-					ImGui::Text("  %-18s %.2f", name.c_str(), ms);
+					row(name.c_str(), cached(sysKey), false);
 				}
+			}
+		}
+
+		// ---- GPU passes (timestamp scopes from the render graph) ----
+		// Per-pass GPU execution time, the device-side counterpart to the CPU breakdown above. Each pass the
+		// graph runs (shadow, forward, the one-time IBL bakes, editor) brackets itself in a timestamp scope,
+		// and a pass may nest sub-scopes (Sky inside Forward) — scope.Depth drives the indent. Smoothed +
+		// bar-rendered the same way. Empty (whole section hidden) if the device lacks timestamp support.
+		if (const auto& gpuPasses = SingletonView<RendererSingleton>().GetGpuPassTimes(); !gpuPasses.empty())
+		{
+			ImGui::Spacing();
+			EditorTheme::SectionHeader("GPU passes (ms)");
+
+			// Normalize GPU bars to the slowest top-level GPU pass (depth 0) so the bars use the GPU section's
+			// own scale. Nested scopes are a fraction of their parent, so excluding them keeps the scale on the
+			// real passes. The row lambda captures maxMs by reference, so reassigning it retargets the bars.
+			maxMs = 0.0001f;
+			for (const GpuScope& scope : gpuPasses)
+			{
+				const float v = smoothed("gpu:" + scope.Name, scope.Milliseconds);
+				if (scope.Depth == 0)
+				{
+					maxMs = std::max(maxMs, v);
+				}
+			}
+
+			// Unlike the CPU systems, GPU passes are NOT hysteresis-hidden: the set is small + fixed, and a
+			// pass measuring ~0ms is useful information (e.g. "the sky is nearly free in this view"), not
+			// clutter. Always show every recorded scope; smoothing + cached() still feed each row.
+			for (const GpuScope& scope : gpuPasses)
+			{
+				const std::string key = "gpu:" + scope.Name;
+				// Depth 0 -> amber heading (top-level pass); deeper -> indented warm-white child (e.g. Sky).
+				row(scope.Name.c_str(), cached(key), scope.Depth == 0);
 			}
 		}
 

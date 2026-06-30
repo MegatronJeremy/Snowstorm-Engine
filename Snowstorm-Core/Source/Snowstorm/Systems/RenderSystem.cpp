@@ -126,6 +126,11 @@ namespace Snowstorm
 		const Ref<CommandContext> ctx = Renderer::GetGraphicsCommandContext();
 		SS_CORE_ASSERT(ctx, "Renderer returned null CommandContext");
 
+		// Resolve the PRIOR frame's per-pass GPU timestamps (this command buffer's last submission has
+		// retired) and reset the pool for this frame's scopes. Must run before any graph pass writes a
+		// scope. The resolved times feed the editor's "GPU passes" overlay (1-frame lag, like the frame total).
+		renderer.SetGpuPassTimes(ctx->CollectGpuScopes());
+
 		RenderGraph graph;
 
 		// Bake IBL maps from the sky (compute) when enabled. Lights/environment are already uploaded by the
@@ -190,7 +195,7 @@ namespace Snowstorm
 
 			renderer.SetShadowData(lightViewProj, shadowIndex, shadowRT->GetWidth());
 
-			graph.AddPass({.Name = "ShadowPass",
+			graph.AddPass({.Name = "Shadow",
 			               .Target = shadowRT,
 			               .Execute = [&, lightViewProj, shadowDepthFmt](CommandContext& /*c*/)
 			               {
@@ -220,6 +225,11 @@ namespace Snowstorm
 			               }});
 		}
 
+		// Suffix the forward pass with an index only when there's more than one viewport, so the common
+		// single-viewport case reads as just "Forward" in the profiler (not a meaningless entity id).
+		const bool multipleViewports = std::distance(viewportView.begin(), viewportView.end()) > 1;
+		uint32_t forwardPassIndex = 0;
+
 		for (const auto vpEntity : viewportView)
 		{
 			const auto& vpRT = reg.Read<RenderTargetComponent>(vpEntity);
@@ -234,7 +244,14 @@ namespace Snowstorm
 				continue;
 			}
 
-			const std::string passName = std::string("MeshPass_") + std::to_string(static_cast<uint32_t>(vpEntity));
+			// "Forward" = this engine shades in the geometry pass (DefaultLit fragment shader does PBR +
+			// shadows + IBL); there is no separate deferred lighting pass to time.
+			std::string passName = "Forward";
+			if (multipleViewports)
+			{
+				passName += "[" + std::to_string(forwardPassIndex) + "]";
+			}
+			++forwardPassIndex;
 
 			// Declare the IBL maps this pass samples (when baked): the graph transitions them from the
 			// Storage layout the bake left them in to shader-read, before shading. Real work only on the
@@ -251,7 +268,7 @@ namespace Snowstorm
 			graph.AddPass({.Name = passName,
 			               .Target = vpRT.Target,
 			               .Reads = std::move(meshReads),
-			               .Execute = [&, cam](CommandContext& /*c*/)
+			               .Execute = [&, cam](CommandContext& c)
 			               {
 				               // Camera world position is TransformComponent.Position (more reliable than mat[3] with your TRS)
 				               const glm::vec3 camPos = cam.Transform->Position;
@@ -305,6 +322,8 @@ namespace Snowstorm
 				               // Procedural sky after opaque meshes: depth is populated, so the far-plane
 				               // sky only fills uncovered pixels. Formats come from the target's own
 				               // attachments so the sky pipeline is render-pass-compatible with this pass.
+				               // Bracketed in a nested GPU scope (depth 1 under Forward) so the sky's cost
+				               // breaks out as its own line in the profiler while still summing into Forward.
 				               const auto& rtDesc = vpRT.Target->GetDesc();
 				               if (!rtDesc.ColorAttachments.empty() && rtDesc.DepthAttachment)
 				               {
@@ -312,7 +331,9 @@ namespace Snowstorm
 					                   rtDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 					               const PixelFormat depthFmt =
 					                   rtDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
+					               c.BeginGpuScope("Sky");
 					               m_SkyPass.Draw(renderer, colorFmt, depthFmt);
+					               c.EndGpuScope();
 				               }
 
 				               renderer.EndScene();
@@ -327,7 +348,7 @@ namespace Snowstorm
 		{
 			if (const Ref<RenderTarget> swapchain = Renderer::GetSwapchainTarget())
 			{
-				graph.AddPass({.Name = "EditorPass",
+				graph.AddPass({.Name = "Editor",
 				               .Target = swapchain,
 				               .Execute = [&](CommandContext& c)
 				               {

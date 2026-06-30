@@ -110,6 +110,11 @@ namespace Snowstorm
 		// Stats from the most recently submitted scene pass (reset each BeginScene).
 		[[nodiscard]] const RenderStats& GetStats() const { return m_Stats; }
 
+		// Per-pass GPU scopes (name, ms, nesting depth) resolved this frame from the graph's timestamp scopes.
+		// Set by RenderSystem each frame; read by the editor overlay. Empty if the device lacks timestamps.
+		void SetGpuPassTimes(std::vector<GpuScope> scopes) { m_GpuPassTimes = std::move(scopes); }
+		[[nodiscard]] const std::vector<GpuScope>& GetGpuPassTimes() const { return m_GpuPassTimes; }
+
 	private:
 		void FlushBatch(BatchData& batch,
 		                const Ref<CommandContext>& commandContext,
@@ -174,5 +179,8 @@ namespace Snowstorm
 		uint32_t m_InstanceWriteCursor = 0;         // elements written this frame
 
 		RenderStats m_Stats{};
+
+		// Per-pass GPU scopes from the most recent frame's timestamp scopes; see SetGpuPassTimes.
+		std::vector<GpuScope> m_GpuPassTimes;
 	};
 }

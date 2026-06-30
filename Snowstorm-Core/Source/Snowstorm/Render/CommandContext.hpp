@@ -5,8 +5,21 @@
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Render/DescriptorSet.hpp"
 
+#include <string>
+#include <vector>
+
 namespace Snowstorm
 {
+	// A resolved per-pass GPU timing scope. Depth is the nesting level (0 = top-level pass; a scope opened
+	// inside another, e.g. Sky within the Forward pass, has depth 1) so the editor can indent children. A
+	// parent's Milliseconds is inclusive of its children (standard profiler convention, cf. Unreal stat gpu).
+	struct GpuScope
+	{
+		std::string Name;
+		float Milliseconds = 0.0f;
+		uint32_t Depth = 0;
+	};
+
 	class CommandContext
 	{
 	public:
@@ -61,5 +74,20 @@ namespace Snowstorm
 
 		// Reset the internal state between passes if the backend needs it
 		virtual void ResetState() = 0;
+
+		// --- Per-pass GPU timing (timestamp queries) ---
+		// Bracket a render/compute pass with a named GPU scope: BeginGpuScope writes a start timestamp,
+		// EndGpuScope an end timestamp, into a per-frame query pool. The pair is resolved one frame later
+		// (when the slot's submission has finished) and reported by CollectGpuScopes. The RenderGraph wraps
+		// each pass in these, giving an Unreal "stat gpu" / RDG-style per-pass breakdown. Scopes may NEST
+		// (a pass can open a sub-scope, e.g. Sky inside Forward); the resolved GpuScope carries its Depth.
+		// No-op on backends/devices without timestamp support (results are then empty).
+		virtual void BeginGpuScope(const std::string& name) = 0;
+		virtual void EndGpuScope() = 0;
+
+		// Called once at frame start (before any scope): resolves the PREVIOUS use of this context's query
+		// pool into GpuScopes (name, ms, depth) and clears the recording state for the new frame. Returns the
+		// resolved scopes from that prior frame (empty if timestamps are unsupported or nothing was recorded).
+		virtual std::vector<GpuScope> CollectGpuScopes() = 0;
 	};
 }

@@ -57,6 +57,11 @@ namespace Snowstorm
 
 			ctx.ResetState();
 
+			// Bracket the pass in a named GPU scope so the per-pass timestamp pair lands in the query pool
+			// (resolved next frame -> the editor's "GPU passes" breakdown). The scope spans the transitions
+			// above too -- those are GPU work the pass causes -- matching how Unreal's RDG scopes a pass.
+			ctx.BeginGpuScope(pass.Name);
+
 			if (pass.IsCompute)
 			{
 				// Compute-only: no render target / dynamic-rendering instance, just record dispatches.
@@ -68,6 +73,8 @@ namespace Snowstorm
 				pass.Execute(ctx);
 				ctx.EndRenderPass();
 			}
+
+			ctx.EndGpuScope();
 		}
 	}
 }

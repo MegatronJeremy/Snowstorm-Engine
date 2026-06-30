@@ -13,6 +13,13 @@
 
 namespace Snowstorm
 {
+	namespace
+	{
+		// Max GPU scopes (passes) timed per frame. Covers shadow + mesh + sky + the 4 IBL bakes + editor
+		// with headroom; scopes past this are dropped with a warning rather than overflowing the pool.
+		constexpr uint32_t kMaxGpuScopes = 32;
+	}
+
 	VulkanCommandContext::VulkanCommandContext()
 	{
 		const VkDevice device = GetVulkanDevice();
@@ -26,12 +33,36 @@ namespace Snowstorm
 
 		VkResult result = vkAllocateCommandBuffers(device, &allocInfo, &m_CommandBuffer);
 		SS_CORE_ASSERT(result == VK_SUCCESS, "Failed to allocate Vulkan command buffer");
+
+		// Per-pass GPU timing pool. Capacity = kMaxGpuScopes pairs (2 timestamps each). Disabled if the
+		// device doesn't support timestamps (timestampPeriod == 0) -- scopes then no-op and report nothing.
+		VkPhysicalDeviceProperties props{};
+		vkGetPhysicalDeviceProperties(VulkanContext::Get().GetPhysicalDevice(), &props);
+		m_TimestampPeriodNs = props.limits.timestampPeriod;
+		m_TimestampsSupported = m_TimestampPeriodNs > 0.0f;
+		if (m_TimestampsSupported)
+		{
+			VkQueryPoolCreateInfo qpInfo{.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+			qpInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+			qpInfo.queryCount = kMaxGpuScopes * 2;
+			if (vkCreateQueryPool(device, &qpInfo, nullptr, &m_TimestampPool) != VK_SUCCESS)
+			{
+				SS_CORE_WARN("Failed to create per-pass timestamp pool; per-pass GPU timing disabled.");
+				m_TimestampsSupported = false;
+			}
+		}
 	}
 
 	VulkanCommandContext::~VulkanCommandContext()
 	{
 		const VkDevice device = GetVulkanDevice();
 		const VkCommandPool pool = GetGraphicsCommandPool();
+
+		if (m_TimestampPool != VK_NULL_HANDLE)
+		{
+			vkDestroyQueryPool(device, m_TimestampPool, nullptr);
+			m_TimestampPool = VK_NULL_HANDLE;
+		}
 
 		if (m_CommandBuffer != VK_NULL_HANDLE)
 		{
@@ -365,6 +396,88 @@ namespace Snowstorm
 		m_CurrentBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		m_CurrentGraphicsPipeline.reset();
 		m_CurrentComputePipeline.reset();
+	}
+
+	void VulkanCommandContext::BeginGpuScope(const std::string& name)
+	{
+		if (!m_TimestampsSupported)
+		{
+			return;
+		}
+		if (m_ScopeQueryCursor + 2 > kMaxGpuScopes * 2)
+		{
+			SS_CORE_WARN("GPU scope '{}' dropped: exceeded kMaxGpuScopes ({}) this frame.", name, kMaxGpuScopes);
+			return;
+		}
+		// Record the scope (its depth is the current open-scope nesting) and push it onto the open stack, so a
+		// nested EndGpuScope closes the right one.
+		const auto index = static_cast<uint32_t>(m_Scopes.size());
+		m_Scopes.push_back({.Name = name, .StartQuery = m_ScopeQueryCursor, .Depth = static_cast<uint32_t>(m_OpenScopes.size())});
+		m_OpenScopes.push_back(index);
+
+		// BOTH start and end stamps at BOTTOM_OF_PIPE (not TOP at the start). A start stamp at TOP_OF_PIPE
+		// fires when prior commands merely *reach* the command processor, before they finish executing -- so
+		// a scope's measured time would absorb the still-draining tail of the previous pass (the classic
+		// "Sky ate the mesh's time" symptom). Anchoring the start at BOTTOM_OF_PIPE means "all prior work has
+		// completed", so the delta to this scope's BOTTOM_OF_PIPE end is its own work. This is Tracy's fix
+		// (wolfpld/tracy#38); the TOP->BOTTOM idiom in the Vulkan samples is only correct for a single
+		// whole-frame timer, not adjacent/nested per-pass scopes.
+		vkCmdWriteTimestamp(m_CommandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_TimestampPool, m_ScopeQueryCursor);
+		m_ScopeQueryCursor += 2;
+		m_ScopesRecorded = true;
+	}
+
+	void VulkanCommandContext::EndGpuScope()
+	{
+		if (!m_TimestampsSupported || m_OpenScopes.empty())
+		{
+			return;
+		}
+		// Close the most recently opened scope (LIFO). Its end stamp goes in StartQuery+1 -- using the stored
+		// start slot, not the cursor, is what makes nesting correct (Begin A, Begin B, End B, End A).
+		const uint32_t index = m_OpenScopes.back();
+		m_OpenScopes.pop_back();
+		vkCmdWriteTimestamp(m_CommandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_TimestampPool, m_Scopes[index].StartQuery + 1);
+	}
+
+	std::vector<GpuScope> VulkanCommandContext::CollectGpuScopes()
+	{
+		std::vector<GpuScope> result;
+
+		if (!m_TimestampsSupported)
+		{
+			return result;
+		}
+
+		// Resolve the prior recording's pairs (its submission has retired -- BeginFrame waited on this slot's
+		// fence before re-recording). m_Scopes still holds that recording's records. ms = (end-start)*tick.
+		if (m_ScopesRecorded && !m_Scopes.empty())
+		{
+			const uint32_t queryCount = m_ScopeQueryCursor; // pairs written this recording
+			std::vector<uint64_t> stamps(queryCount, 0);
+			const VkDevice device = GetVulkanDevice();
+			if (vkGetQueryPoolResults(device, m_TimestampPool, 0, queryCount,
+			                          stamps.size() * sizeof(uint64_t), stamps.data(),
+			                          sizeof(uint64_t), VK_QUERY_RESULT_64_BIT) == VK_SUCCESS)
+			{
+				result.reserve(m_Scopes.size());
+				for (const ScopeRecord& scope : m_Scopes)
+				{
+					const uint64_t start = stamps[scope.StartQuery];
+					const uint64_t end = stamps[scope.StartQuery + 1];
+					const float ms = static_cast<float>(end - start) * m_TimestampPeriodNs * 1e-6f;
+					result.push_back({.Name = scope.Name, .Milliseconds = ms, .Depth = scope.Depth});
+				}
+			}
+		}
+
+		// Reset the pool for this frame's recording (outside any render pass -- called at frame start) and
+		// clear the records; this frame's BeginGpuScope calls will repopulate them.
+		vkCmdResetQueryPool(m_CommandBuffer, m_TimestampPool, 0, kMaxGpuScopes * 2);
+		m_Scopes.clear();
+		m_OpenScopes.clear();
+		m_ScopeQueryCursor = 0;
+		return result;
 	}
 
 	void VulkanCommandContext::BindVertexBuffer(const Ref<Buffer>& vertexBuffer,

@@ -64,8 +64,37 @@ namespace Snowstorm
 
 		void ResetState() override;
 
+		void BeginGpuScope(const std::string& name) override;
+		void EndGpuScope() override;
+		std::vector<GpuScope> CollectGpuScopes() override;
+
 	private:
 		VkCommandBuffer m_CommandBuffer = VK_NULL_HANDLE;
+
+		// --- Per-pass GPU timing (timestamp queries) ---
+		// One timestamp query pool owned by this context (the context is per-frame-in-flight, so the pool is
+		// naturally reused only after its prior submission has retired). Each BeginGpuScope/EndGpuScope pair
+		// consumes two query slots; CollectGpuScopes (at frame start) resolves the PRIOR recording's pairs to
+		// milliseconds, then resets for the new frame. Capacity is fixed; scopes past it are dropped + warned.
+		VkQueryPool m_TimestampPool = VK_NULL_HANDLE;
+		bool m_TimestampsSupported = false;
+		float m_TimestampPeriodNs = 0.0f; // ns per tick (VkPhysicalDeviceLimits::timestampPeriod)
+		uint32_t m_ScopeQueryCursor = 0;  // next free query slot in the current recording
+		bool m_ScopesRecorded = false;    // the pool holds a resolvable prior recording
+
+		// One record per scope opened this recording, in Begin order. StartQuery is the query slot of its
+		// start stamp (end stamp is StartQuery+1). Depth is the nesting level at Begin time. Kept until the
+		// next CollectGpuScopes, which resolves them against the now-retired pool, then clears for the frame.
+		struct ScopeRecord
+		{
+			std::string Name;
+			uint32_t StartQuery = 0;
+			uint32_t Depth = 0;
+		};
+		std::vector<ScopeRecord> m_Scopes;
+		// Stack of indices into m_Scopes for scopes still open (not yet EndGpuScope'd). Its size is the
+		// current nesting depth; EndGpuScope pops it to find which scope's end stamp to write.
+		std::vector<uint32_t> m_OpenScopes;
 
 		bool m_IsRendering = false;
 
