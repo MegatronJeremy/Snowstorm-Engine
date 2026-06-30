@@ -175,7 +175,11 @@ float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness,
 	const float3 R = reflect(-V, N);
 	const float lod = roughness * float(max(PrefilteredMipCount, 1u) - 1u);
 	const float3 prefiltered = Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, R, lod).rgb;
-	const float2 brdf = Textures[NonUniformResourceIndex(BRDFLutIndex)].SampleLevel(LinearSampler, float2(NdotV, roughness), 0).rg;
+
+	// BRDF LUT (split-sum scale+bias), indexed by (NdotV, roughness). Sampled through ClampSampler (NOT the
+	// wrapping LinearSampler): a LUT must clamp, or a bilinear tap at NdotV~1 wraps to the grazing edge and
+	// produces a hard brightness seam down the middle of the view.
+	const float2 brdf = Textures[NonUniformResourceIndex(BRDFLutIndex)].SampleLevel(ClampSampler, float2(NdotV, roughness), 0).rg;
 	const float3 specular = prefiltered * (F0 * brdf.x + brdf.y);
 
 	// Scale by the dedicated IBLIntensity dial (separate from SkyIntensity: the irradiance cube is

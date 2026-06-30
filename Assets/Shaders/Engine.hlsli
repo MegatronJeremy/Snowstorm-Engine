@@ -104,6 +104,9 @@ cbuffer MaterialCB : register(b0, space1)
 	float _MatPad1;
 };
 SamplerState LinearSampler : register(s1, space1);
+// Clamp-to-edge linear sampler for lookup textures that must not wrap (e.g. the BRDF LUT). Bound at the
+// fixed material binding 2; engine-global (every material binds the same one).
+SamplerState ClampSampler : register(s2, space1);
 
 // --- SPACE 2: Per-instance Object Data ---
 // One entry per instance, indexed by SV_InstanceID. Lets a single instanced DrawIndexed draw N

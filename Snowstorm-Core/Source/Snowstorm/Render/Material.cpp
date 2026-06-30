@@ -23,6 +23,22 @@ namespace Snowstorm
 
 		m_DefaultSampler = Sampler::Create(samp);
 		SS_CORE_ASSERT(m_DefaultSampler, "Failed to create default material sampler");
+
+		// Clamp-to-edge sampler for lookup textures that must not wrap (BRDF LUT). Same linear filtering,
+		// no anisotropy (a 2D LUT doesn't need it), and ClampToEdge so a bilinear tap at the u/v extremes
+		// can't wrap to the opposite edge.
+		SamplerDesc clamp{};
+		clamp.MinFilter = Filter::Linear;
+		clamp.MagFilter = Filter::Linear;
+		clamp.MipmapMode = SamplerMipmapMode::Linear;
+		clamp.AddressU = SamplerAddressMode::ClampToEdge;
+		clamp.AddressV = SamplerAddressMode::ClampToEdge;
+		clamp.AddressW = SamplerAddressMode::ClampToEdge;
+		clamp.EnableAnisotropy = false;
+		clamp.DebugName = "MaterialClampSampler";
+
+		m_ClampSampler = Sampler::Create(clamp);
+		SS_CORE_ASSERT(m_ClampSampler, "Failed to create clamp material sampler");
 	}
 
 	void Material::SetAlbedoTexture(const Ref<TextureView>& view)

@@ -154,6 +154,15 @@ namespace Snowstorm
 		        .Count = 1,
 		        .Visibility = ShaderStage::Fragment,
 		        .DebugName = "LinearSampler"},
+		    // Clamp-to-edge sampler for lookup textures that must NOT wrap (e.g. the split-sum BRDF LUT:
+		    // a Repeat tap at NdotV~1 wraps to the grazing edge -> a hard seam). Engine-global, not
+		    // per-material overridable like LinearSampler above.
+		    DescriptorBindingDesc{
+		        .Binding = 2,
+		        .Type = DescriptorType::Sampler,
+		        .Count = 1,
+		        .Visibility = ShaderStage::Fragment,
+		        .DebugName = "ClampSampler"},
 		};
 		m_SetLayouts.push_back(DescriptorSetLayout::Create(material));
 		SS_CORE_ASSERT(m_SetLayouts[1], "Failed to create material DescriptorSetLayout");

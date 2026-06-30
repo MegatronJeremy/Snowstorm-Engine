@@ -12,7 +12,8 @@ namespace Snowstorm
 	namespace
 	{
 		constexpr uint32_t kMaterialConstantsBinding = 0;
-		constexpr uint32_t kMaterialSamplerBinding = 1;
+		constexpr uint32_t kMaterialSamplerBinding = 1;      // LinearSampler (wrapping, per-instance)
+		constexpr uint32_t kMaterialClampSamplerBinding = 2; // ClampSampler (engine-global, for LUTs)
 	}
 
 	MaterialInstance::MaterialInstance(const Ref<Material>& baseMaterial)
@@ -105,6 +106,7 @@ namespace Snowstorm
 			const BufferBinding bb{.Buffer = m_UniformBuffers[frameIndex], .Offset = 0, .Range = sizeof(Material::Constants)};
 			m_MaterialDataSets[frameIndex]->SetBuffer(kMaterialConstantsBinding, bb);
 			m_MaterialDataSets[frameIndex]->SetSampler(kMaterialSamplerBinding, m_Sampler);
+			m_MaterialDataSets[frameIndex]->SetSampler(kMaterialClampSamplerBinding, m_Base->GetClampSampler());
 		}
 	}
 
@@ -126,6 +128,7 @@ namespace Snowstorm
 			const BufferBinding bb{.Buffer = m_UniformBuffers[frameIndex], .Offset = 0, .Range = sizeof(Material::Constants)};
 			m_MaterialDataSets[frameIndex]->SetBuffer(kMaterialConstantsBinding, bb);
 			m_MaterialDataSets[frameIndex]->SetSampler(kMaterialSamplerBinding, m_Sampler);
+			m_MaterialDataSets[frameIndex]->SetSampler(kMaterialClampSamplerBinding, m_Base->GetClampSampler());
 
 			m_MaterialDataSets[frameIndex]->Commit();
 

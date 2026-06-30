@@ -61,6 +61,10 @@ namespace Snowstorm
 		void SetSampler(const Ref<Sampler>& sampler) { m_DefaultSampler = sampler; }
 		[[nodiscard]] const Ref<Sampler>& GetSampler() const { return m_DefaultSampler; }
 
+		// Clamp-to-edge sampler for non-wrapping lookup textures (BRDF LUT). Engine-global: every material
+		// uses the same one, so it's not overridable like the default (wrapping) sampler above.
+		[[nodiscard]] const Ref<Sampler>& GetClampSampler() const { return m_ClampSampler; }
+
 		[[nodiscard]] const Constants& GetDefaultConstants() const { return m_DefaultConstants; }
 
 	private:
@@ -73,5 +77,6 @@ namespace Snowstorm
 		Ref<TextureView> m_AOTexture;
 		Ref<TextureView> m_EmissiveTexture;
 		Ref<Sampler> m_DefaultSampler;
+		Ref<Sampler> m_ClampSampler;
 	};
 }
