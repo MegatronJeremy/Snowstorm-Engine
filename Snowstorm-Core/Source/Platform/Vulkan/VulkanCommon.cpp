@@ -96,6 +96,38 @@ namespace Snowstorm
 		vkFreeCommandBuffers(device, pool, 1, &cmd);
 	}
 
+	StageAccess LayoutStageAccess(const VkImageLayout layout)
+	{
+		switch (layout)
+		{
+		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+			return {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT};
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+		case VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL:
+			return {VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+			        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT};
+		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+			return {VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_READ_BIT};
+		case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+			return {VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, 0};
+		case VK_IMAGE_LAYOUT_GENERAL:
+			// Storage image for compute read/write (UAV): both access bits so a GENERAL image can be read
+			// and written by the compute stage.
+			return {VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+			        VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT};
+		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+			// ALL_TRANSFER (not COPY): the transfer-dst image is later read by BOTH copy and blit (mipmap
+			// generation blits between levels). COPY_BIT alone wouldn't chain against the BLIT stage.
+			return {VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT};
+		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+			return {VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT};
+		default:
+			return {VK_PIPELINE_STAGE_2_NONE, 0};
+		}
+	}
+
 	void CmdTransitionImage(const VkCommandBuffer cmd,
 	                        const VkImage image,
 	                        const VkImageAspectFlags aspect,
@@ -107,20 +139,15 @@ namespace Snowstorm
 		VkImageMemoryBarrier2 barrier{};
 		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
 
-		// --- Correct Source Masks for UNDEFINED ---
-		if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED)
-		{
-			barrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-			barrier.srcAccessMask = 0;
-		}
-		else
-		{
-			barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-			barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
-		}
+		// Tight src/dst scopes derived from the layouts (see LayoutStageAccess). UNDEFINED old layout ->
+		// NONE/0 src: no prior work to wait on and the old contents are discarded.
+		const StageAccess src = LayoutStageAccess(oldLayout);
+		const StageAccess dst = LayoutStageAccess(newLayout);
 
-		barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-		barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
+		barrier.srcStageMask = (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED) ? VK_PIPELINE_STAGE_2_NONE : src.Stage;
+		barrier.srcAccessMask = (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED) ? 0 : src.Access;
+		barrier.dstStageMask = dst.Stage;
+		barrier.dstAccessMask = dst.Access;
 
 		barrier.oldLayout = oldLayout;
 		barrier.newLayout = newLayout;

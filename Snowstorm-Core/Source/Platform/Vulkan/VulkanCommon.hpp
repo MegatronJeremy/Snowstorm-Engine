@@ -30,6 +30,20 @@ namespace Snowstorm
 	// For per-frame streaming, prefer a frame-level upload context instead
 	void ImmediateSubmit(const std::function<void(VkCommandBuffer)>& record);
 
+	struct StageAccess
+	{
+		VkPipelineStageFlags2 Stage;
+		VkAccessFlags2 Access;
+	};
+
+	// Map an image layout to the pipeline stage + access that naturally touches the image in that layout.
+	// Used for BOTH sides of a transition barrier: the src scope comes from the old layout, the dst from the
+	// new one. Replaces the old catch-all srcStage=ALL_COMMANDS / access=MEMORY_READ|MEMORY_WRITE, which
+	// over-synchronized every transition and tripped best-practices validation (#29). UNDEFINED (the usual
+	// first-use old layout) -> NONE/0: nothing to wait on, contents discarded. Any unlisted layout falls to
+	// NONE/0, matching the prior behavior where an unmatched layout left the barrier scope at 0.
+	StageAccess LayoutStageAccess(VkImageLayout layout);
+
 	void CmdTransitionImage(
 	    VkCommandBuffer cmd,
 	    VkImage image,

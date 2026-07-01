@@ -296,7 +296,7 @@ namespace Snowstorm
 		               }});
 
 		m_Baked = true;
-		SS_CORE_WARN("[IBL] baked all maps -- irradiance={} prefiltered={} (cube bindless) brdfLut={} (2d bindless)",
+		SS_CORE_INFO("[IBL] baked all maps -- irradiance={} prefiltered={} (cube bindless) brdfLut={} (2d bindless)",
 		             m_IrradianceCubeView->GetGlobalBindlessIndex(),
 		             m_PrefilteredCubeView->GetGlobalBindlessIndex(),
 		             m_BRDFLutView->GetGlobalBindlessIndex());
