@@ -1,4 +1,4 @@
-#include "Engine.hlsli"
+#include "Include/Engine.hlsli"
 
 // Fullscreen-triangle vertex stage: emits one oversized triangle covering the whole screen from
 // SV_VertexID alone (no vertex buffer). Shared by any fullscreen pass — the procedural sky today, and

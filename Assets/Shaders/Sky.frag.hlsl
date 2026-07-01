@@ -1,5 +1,5 @@
-#include "Engine.hlsli"
-#include "SkyCommon.hlsli"
+#include "Include/Engine.hlsli"
+#include "Include/SkyCommon.hlsli"
 
 // Procedural sky background, fragment stage. Paired with Fullscreen.vert.hlsl (drawn after opaque
 // geometry at the far plane, depth test LessOrEqual + no depth write, so it only fills uncovered

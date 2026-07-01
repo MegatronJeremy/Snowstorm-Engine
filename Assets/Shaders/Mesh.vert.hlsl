@@ -1,4 +1,4 @@
-#include "Engine.hlsli"
+#include "Include/Engine.hlsli"
 
 // Standard mesh vertex stage: transforms an instanced mesh vertex by its per-instance Model then the
 // FrameCB ViewProj, and fills the full VSOutput (world pos/normal/tangent + UV + instance id). Shared

@@ -1,4 +1,4 @@
-#include "Engine.hlsli"
+#include "Include/Engine.hlsli"
 
 // Depth-only shadow pass, vertex stage. Renders scene geometry from the light's point of view into a
 // depth target; the lit pass later reprojects each fragment into this space and compares depth to

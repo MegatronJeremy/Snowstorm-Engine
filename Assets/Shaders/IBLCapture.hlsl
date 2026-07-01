@@ -1,4 +1,4 @@
-#include "SkyCommon.hlsli"
+#include "Include/SkyCommon.hlsli"
 
 // Capture the analytic procedural sky into one face of an HDR environment cubemap (linear HDR, no
 // tonemap). Dispatched once per face: the host binds a per-face UAV (a 2D view of the cube face) and

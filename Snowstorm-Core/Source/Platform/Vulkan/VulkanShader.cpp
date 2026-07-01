@@ -235,7 +235,11 @@ namespace Snowstorm
 			const std::wstring in = inputHlsl.wstring();
 			const std::wstring out = outputSpv.wstring();
 
-			const fs::path includePath = GetRepoRoot() / "assets" / "shaders" / "include";
+			// Include base is the shaders root; shaders reference headers explicitly as "Include/Foo.hlsli"
+			// (relative-to-file, so the IDE resolves them too — a bare "Foo.hlsli" needs the -I flag the IDE
+			// doesn't see). DXC also resolves quote-includes relative to the including file, so this -I is a
+			// belt-and-suspenders fallback.
+			const fs::path includePath = GetRepoRoot() / "assets" / "shaders";
 			const std::wstring includePathW = includePath.wstring();
 
 			std::wstring cmd;

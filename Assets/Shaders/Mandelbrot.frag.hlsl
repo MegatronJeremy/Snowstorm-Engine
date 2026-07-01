@@ -1,4 +1,4 @@
-#include "Engine.hlsli"
+#include "Include/Engine.hlsli"
 
 // Mandelbrot fragment stage: renders the fractal into a mesh quad using per-instance Extras0 params.
 // Pairs with the shared Mesh.vert.hlsl (it ignores the normal/tangent that VS fills). Was the

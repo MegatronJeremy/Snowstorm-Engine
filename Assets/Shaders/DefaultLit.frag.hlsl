@@ -1,4 +1,4 @@
-#include "Engine.hlsli"
+#include "Include/Engine.hlsli"
 
 // DefaultLit fragment stage: metallic-roughness PBR (Cook-Torrance) + normal mapping + directional
 // shadows + split-sum IBL, then exposure/ACES tonemap/sRGB encode. Paired with the shared
