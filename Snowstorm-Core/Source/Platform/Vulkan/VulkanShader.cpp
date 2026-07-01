@@ -17,21 +17,6 @@ namespace Snowstorm
 
 	namespace
 	{
-		enum class Section : uint8_t
-		{
-			None,
-			Vertex,
-			Fragment,
-			Compute
-		};
-
-		struct SplitResult
-		{
-			std::string Vertex;
-			std::string Fragment;
-			std::string Compute;
-		};
-
 		std::string ReadTextFileOrEmpty(const fs::path& p)
 		{
 			std::ifstream in(p, std::ios::in);
@@ -41,92 +26,6 @@ namespace Snowstorm
 			std::stringstream ss;
 			ss << in.rdbuf();
 			return ss.str();
-		}
-
-		bool WriteTextFile(const fs::path& p, const std::string& text)
-		{
-			std::ofstream out(p, std::ios::out | std::ios::trunc);
-			if (!out.is_open())
-				return false;
-			out.write(text.data(), static_cast<std::streamsize>(text.size()));
-			return true;
-		}
-
-		SplitResult SplitByTypeMarkers(const std::string& src)
-		{
-			SplitResult r{};
-			std::istringstream iss(src);
-			std::string line;
-
-			std::string vertexSource;
-			std::string fragmentSource;
-			std::string computeSource;
-			std::string sharedDefinitions;
-
-			Section cur = Section::None;
-
-			while (std::getline(iss, line))
-			{
-				std::string trimmed = line;
-				trimmed.erase(0, trimmed.find_first_not_of(" \t")); // basic trim
-
-				// 1. Detect Stage Markers
-				if (trimmed.starts_with("#type"))
-				{
-					if (trimmed.find("vertex") != std::string::npos)
-						cur = Section::Vertex;
-					else if (trimmed.find("fragment") != std::string::npos)
-						cur = Section::Fragment;
-					else if (trimmed.find("compute") != std::string::npos)
-						cur = Section::Compute;
-					else
-						cur = Section::None;
-					continue;
-				}
-
-				// 2. Detect shared constructs (structs, cbuffers, samplers, etc.)
-				// If we find a definition while inside a specific stage, we'll treat it as shared
-				// unless it's strictly local to a function (which we assume isn't the case for 'cbuffer')
-				bool isSharedConstruct = trimmed.starts_with("struct") ||
-				                         trimmed.starts_with("cbuffer") ||
-				                         trimmed.starts_with("Texture2D") ||
-				                         trimmed.starts_with("SamplerState") ||
-				                         trimmed.starts_with("static const");
-
-				// Note: This is a simple scanner. A more complex one would track { } braces.
-				// For now, we'll append global lines to sharedDefinitions.
-				if (cur == Section::None || isSharedConstruct)
-				{
-					// If it's a cbuffer or struct, we often want the whole block.
-					// In your current shader style, these are at the top or between sections.
-				}
-
-				// For your current engine architecture, let's stick to the "Global Header"
-				// but make it easier by moving definitions out of the stages in the HLSL files.
-				switch (cur)
-				{
-				case Section::None:
-					sharedDefinitions.append(line).push_back('\n');
-					break;
-				case Section::Vertex:
-					vertexSource.append(line).push_back('\n');
-					break;
-				case Section::Fragment:
-					fragmentSource.append(line).push_back('\n');
-					break;
-				case Section::Compute:
-					computeSource.append(line).push_back('\n');
-					break;
-				}
-			}
-
-			r.Vertex = sharedDefinitions + vertexSource;
-			r.Fragment = sharedDefinitions + fragmentSource;
-			// Only prepend shared defs to compute if the file actually has a compute stage (keep it empty
-			// otherwise, so callers can detect "no compute" by an empty string).
-			r.Compute = computeSource.empty() ? std::string{} : sharedDefinitions + computeSource;
-
-			return r;
 		}
 
 		// Simple 64-bit FNV-1a hash (good enough for cache keys)
@@ -170,7 +69,7 @@ namespace Snowstorm
 		// smaller version that catches any header edit. Headers are sorted so the hash is order-stable.
 		uint64_t HashIncludeHeaders()
 		{
-			const fs::path includeDir = GetRepoRoot() / "assets" / "shaders";
+			const fs::path includeDir = GetRepoRoot() / "assets" / "shaders" / "include";
 			std::error_code ec;
 			if (!fs::exists(includeDir, ec))
 			{
@@ -336,7 +235,7 @@ namespace Snowstorm
 			const std::wstring in = inputHlsl.wstring();
 			const std::wstring out = outputSpv.wstring();
 
-			const fs::path includePath = GetRepoRoot() / "assets" / "shaders";
+			const fs::path includePath = GetRepoRoot() / "assets" / "shaders" / "include";
 			const std::wstring includePathW = includePath.wstring();
 
 			std::wstring cmd;
@@ -391,10 +290,12 @@ namespace Snowstorm
 			return true;
 		}
 
-		// Compile a compute-only shader (a file whose only stage is `#type compute`) to a cached .spv.
-		// Mirrors CompileHlslWithTypesToSpirvCache but for the single cs_6_0 stage. Returns false (and
-		// leaves outComputeSpv empty) if the file has no compute section.
-		bool CompileComputeToSpirvCache(const std::string& sourcePath, std::string& outComputeSpv)
+		// Compile a single-stage HLSL file DIRECTLY (no #type split, no temp file — the file itself is a
+		// plain single-`main` shader) to a cached .spv for the given DXC profile. `flagsTag` distinguishes
+		// stage profiles in the cache key so a vert and frag of the same content don't collide. Returns
+		// false (outSpv empty) on failure.
+		bool CompileStageFileToSpirvCache(const std::string& sourcePath, const wchar_t* profile,
+		                                  const char* flagsTag, std::string& outSpv)
 		{
 			const fs::path srcPath(sourcePath);
 			const fs::path dxcExe = GetDxcExePath();
@@ -405,7 +306,6 @@ namespace Snowstorm
 				SS_CORE_ERROR("DXC not found at {}", dxcExe.string());
 				return false;
 			}
-
 			fs::create_directories(cacheDir);
 
 			const std::string fullText = ReadTextFileOrEmpty(srcPath);
@@ -415,133 +315,46 @@ namespace Snowstorm
 				return false;
 			}
 
-			const SplitResult split = SplitByTypeMarkers(fullText);
-			if (split.Compute.empty())
-			{
-				return false; // no compute section — caller falls back to the graphics path
-			}
-
-			// Same cache-key recipe as the graphics path (source + headers + flags), distinct profile tag.
-			constexpr const char* kFlagsKey = "v2_spirv_vulkan1.2_fvk-use-dx-layout_Zpr_cs6_main";
+			// Cache key: hash(source + all .hlsli headers + a per-profile flags tag). Same recipe as the
+			// legacy path; the flags tag keeps vs/ps/cs caches distinct.
 			uint64_t h = 0;
 			h ^= Hash64(fullText.data(), fullText.size());
 			h ^= HashIncludeHeaders();
-			h ^= Hash64(kFlagsKey, std::strlen(kFlagsKey));
+			h ^= Hash64(flagsTag, std::strlen(flagsTag));
 
 			const std::string key = ToHex64(h);
-			const std::string stem = srcPath.stem().string();
+			const std::string stem = srcPath.stem().string(); // e.g. "Mesh.vert" -> "Mesh.vert"
+			const fs::path outSpvPath = cacheDir / (stem + "_" + key + ".spv");
 
-			const fs::path tmpComp = cacheDir / (stem + "_" + key + ".comp.hlsl");
-			const fs::path outComp = cacheDir / (stem + "_" + key + ".comp.spv");
-
-			if (fs::exists(outComp))
+			if (fs::exists(outSpvPath))
 			{
-				outComputeSpv = outComp.string();
+				outSpv = outSpvPath.string();
 				return true;
 			}
 
-			if (!WriteTextFile(tmpComp, split.Compute))
-			{
-				SS_CORE_ERROR("Failed to write temp compute HLSL: {}", tmpComp.string());
-				return false;
-			}
-
-			if (!CompileStageWithDxc(dxcExe, tmpComp, outComp, L"cs_6_0"))
+			// Compile the real source file directly (DXC resolves #include via -I; the file is unmodified).
+			if (!CompileStageWithDxc(dxcExe, srcPath, outSpvPath, profile))
 			{
 				return false;
 			}
 
-			outComputeSpv = outComp.string();
+			outSpv = outSpvPath.string();
 			return true;
 		}
 
-		bool CompileHlslWithTypesToSpirvCache(const std::string& sourcePath,
-		                                      std::string& outVertSpv,
-		                                      std::string& outFragSpv)
-		{
-			const fs::path srcPath(sourcePath);
-			const fs::path dxcExe = GetDxcExePath();
-			const fs::path cacheDir = GetShaderCacheDir();
-
-			if (!fs::exists(dxcExe))
-			{
-				SS_CORE_ERROR("DXC not found at {}", dxcExe.string());
-				return false;
-			}
-
-			fs::create_directories(cacheDir);
-
-			const std::string fullText = ReadTextFileOrEmpty(srcPath);
-			if (fullText.empty())
-			{
-				SS_CORE_ERROR("Shader source is empty or missing: {}", sourcePath);
-				return false;
-			}
-
-			const SplitResult split = SplitByTypeMarkers(fullText);
-			if (split.Vertex.empty() || split.Fragment.empty())
-			{
-				SS_CORE_ERROR("Shader file must contain both '#type vertex' and '#type fragment': {}", sourcePath);
-				return false;
-			}
-
-			// Cache key: hash(source text + included headers + fixed flags). Including the headers is
-			// essential — they carry the shared cbuffer layouts (see HashIncludeHeaders).
-			constexpr const char* kFlagsKey = "v2_spirv_vulkan1.2_fvk-use-dx-layout_Zpr_vs6_ps6_main";
-			uint64_t h = 0;
-			h ^= Hash64(fullText.data(), fullText.size());
-			h ^= HashIncludeHeaders();
-			h ^= Hash64(kFlagsKey, std::strlen(kFlagsKey));
-
-			const std::string key = ToHex64(h);
-			const std::string stem = srcPath.stem().string(); // DefaultLit
-
-			// Temp input HLSL files (so DXC can report filenames and handle includes later)
-			const fs::path tmpVert = cacheDir / (stem + "_" + key + ".vert.hlsl");
-			const fs::path tmpFrag = cacheDir / (stem + "_" + key + ".frag.hlsl");
-
-			// Compiled outputs
-			const fs::path outVert = cacheDir / (stem + "_" + key + ".vert.spv");
-			const fs::path outFrag = cacheDir / (stem + "_" + key + ".frag.spv");
-
-			// If outputs already exist, reuse (fast hot reload when file timestamps change but content didn't)
-			if (fs::exists(outVert) && fs::exists(outFrag))
-			{
-				outVertSpv = outVert.string();
-				outFragSpv = outFrag.string();
-				return true;
-			}
-
-			if (!WriteTextFile(tmpVert, split.Vertex))
-			{
-				SS_CORE_ERROR("Failed to write temp vertex HLSL: {}", tmpVert.string());
-				return false;
-			}
-
-			if (!WriteTextFile(tmpFrag, split.Fragment))
-			{
-				SS_CORE_ERROR("Failed to write temp fragment HLSL: {}", tmpFrag.string());
-				return false;
-			}
-
-			if (!CompileStageWithDxc(dxcExe, tmpVert, outVert, L"vs_6_0"))
-			{
-				return false;
-			}
-
-			if (!CompileStageWithDxc(dxcExe, tmpFrag, outFrag, L"ps_6_0"))
-			{
-				return false;
-			}
-
-			outVertSpv = outVert.string();
-			outFragSpv = outFrag.string();
-			return true;
-		}
 	}
 
 	VulkanShader::VulkanShader(std::string filepath)
 	    : m_Filepath(std::move(filepath))
+	{
+		m_VertPath = m_Filepath; // single-path == a compute shader
+		Compile();
+	}
+
+	VulkanShader::VulkanShader(std::string vertPath, std::string fragPath)
+	    : m_Filepath(vertPath + "|" + fragPath) // composite label for logging / library keying
+	      ,
+	      m_VertPath(std::move(vertPath)), m_FragPath(std::move(fragPath))
 	{
 		Compile();
 	}
@@ -562,34 +375,39 @@ namespace Snowstorm
 
 	void VulkanShader::Compile()
 	{
-		const fs::path p(m_Filepath);
-
-		if (p.extension() != ".hlsl")
+		// Two-path graphics: separate vertex + fragment files, each a plain single-`main` HLSL file
+		// compiled directly (no #type split). The preferred form.
+		if (!m_FragPath.empty())
 		{
-			SS_CORE_ERROR("VulkanShader: runtime compile expects .hlsl, got {}", m_Filepath);
-			return;
-		}
-
-		// A file with a `#type compute` section is a compute shader (single stage); otherwise it's a
-		// vertex+fragment graphics shader. Try the compute path first — it returns false for files with
-		// no compute section, so we fall through to the graphics path.
-		if (std::string comp; CompileComputeToSpirvCache(m_Filepath, comp))
-		{
-			m_CompiledCompSpv = std::move(comp);
+			std::string vert, frag;
+			if (!CompileStageFileToSpirvCache(m_VertPath, L"vs_6_0", "v2_vulkan1.2_dxlayout_Zpr_vs6", vert) ||
+			    !CompileStageFileToSpirvCache(m_FragPath, L"ps_6_0", "v2_vulkan1.2_dxlayout_Zpr_ps6", frag))
+			{
+				SS_CORE_ERROR("VulkanShader: failed to compile graphics shader {}", m_Filepath);
+				return;
+			}
+			m_CompiledVertSpv = std::move(vert);
+			m_CompiledFragSpv = std::move(frag);
 			++m_Version;
 			return;
 		}
 
-		std::string vert, frag;
-		if (!CompileHlslWithTypesToSpirvCache(m_Filepath, vert, frag))
+		// Single-path: a compute shader. Since graphics shaders are now two-path (separate vert+frag
+		// files), a single-path shader is unambiguously compute — compile the file directly as cs_6_0.
+		const fs::path p(m_VertPath);
+		if (p.extension() != ".hlsl")
 		{
-			SS_CORE_ERROR("VulkanShader: failed to compile {}", m_Filepath);
+			SS_CORE_ERROR("VulkanShader: runtime compile expects .hlsl, got {}", m_VertPath);
 			return;
 		}
 
-		m_CompiledVertSpv = std::move(vert);
-		m_CompiledFragSpv = std::move(frag);
-
+		std::string comp;
+		if (!CompileStageFileToSpirvCache(m_VertPath, L"cs_6_0", "v2_vulkan1.2_dxlayout_Zpr_cs6", comp))
+		{
+			SS_CORE_ERROR("VulkanShader: failed to compile compute shader {}", m_VertPath);
+			return;
+		}
+		m_CompiledCompSpv = std::move(comp);
 		++m_Version;
 	}
 }

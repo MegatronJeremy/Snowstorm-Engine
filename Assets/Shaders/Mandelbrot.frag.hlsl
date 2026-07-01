@@ -1,23 +1,9 @@
 #include "Engine.hlsli"
 
-#type vertex
+// Mandelbrot fragment stage: renders the fractal into a mesh quad using per-instance Extras0 params.
+// Pairs with the shared Mesh.vert.hlsl (it ignores the normal/tangent that VS fills). Was the
+// fragment half of the old combined Mandelbrot.hlsl.
 
-VSOutput main(VSInput i, uint iid : SV_InstanceID)
-{
-	VSOutput o;
-	o.TexCoord = i.TexCoord;
-
-	const float4x4 model = Instances[iid].Model;
-	const float4 posWS = mul(float4(i.Position, 1.0), model);
-	o.PositionWS = posWS.xyz;
-	o.NormalWS = float3(0.0, 0.0, 1.0);
-	o.TangentWS = float4(1.0, 0.0, 0.0, 1.0); // unused by Mandelbrot, but VSOutput requires it set
-	o.PositionCS = mul(posWS, ViewProj);
-	o.InstanceID = iid;
-	return o;
-}
-
-#type fragment
 
 float3 hsv_to_rgb(float h, float s, float v)
 {

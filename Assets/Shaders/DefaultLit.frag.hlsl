@@ -1,28 +1,8 @@
 #include "Engine.hlsli"
 
-#type vertex
-
-VSOutput main(VSInput i, uint iid : SV_InstanceID)
-{
-	VSOutput o;
-
-	const float4x4 model = Instances[iid].Model;
-
-	const float4 posWS = mul(float4(i.Position, 1.0), model);
-	o.PositionWS = posWS.xyz;
-
-	// Normal matrix: for now, treat Model as rigid/affine (same as your GLSL mat3(model))
-	o.NormalWS = normalize(mul(i.Normal, (float3x3)model));
-	// Tangent to world space (same rigid/affine assumption); keep handedness w untouched.
-	o.TangentWS = float4(normalize(mul(i.Tangent.xyz, (float3x3)model)), i.Tangent.w);
-
-	o.TexCoord = i.TexCoord;
-	o.PositionCS = mul(posWS, ViewProj);
-	o.InstanceID = iid;
-	return o;
-}
-
-#type fragment
+// DefaultLit fragment stage: metallic-roughness PBR (Cook-Torrance) + normal mapping + directional
+// shadows + split-sum IBL, then exposure/ACES tonemap/sRGB encode. Paired with the shared
+// Mesh.vert.hlsl. Was the fragment half of the old combined DefaultLit.hlsl.
 
 static const float PI = 3.14159265359;
 

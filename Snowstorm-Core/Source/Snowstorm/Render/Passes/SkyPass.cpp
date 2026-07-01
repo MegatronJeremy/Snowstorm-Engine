@@ -17,7 +17,7 @@ namespace Snowstorm
 			return;
 		}
 
-		Ref<Shader> shader = Shader::Create("assets/shaders/Sky.hlsl");
+		Ref<Shader> shader = Shader::Create("assets/shaders/Fullscreen.vert.hlsl", "assets/shaders/Sky.frag.hlsl");
 		SS_CORE_ASSERT(shader, "Failed to load Sky shader");
 
 		PipelineDesc p{};

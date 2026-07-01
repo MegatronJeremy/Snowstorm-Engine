@@ -5,7 +5,6 @@
 // sets FaceIndex. Reconstructs the world direction for each texel from the cube-face basis, evaluates
 // the shared EvaluateSky, and writes it. First stage of the IBL bake (#52).
 
-#type compute
 
 cbuffer IBLParams : register(b0, space0)
 {

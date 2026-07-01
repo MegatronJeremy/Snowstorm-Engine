@@ -67,7 +67,7 @@ namespace Snowstorm
 			return;
 		}
 
-		Ref<Shader> shader = Shader::Create("assets/shaders/Shadow.hlsl");
+		Ref<Shader> shader = Shader::Create("assets/shaders/Shadow.vert.hlsl", "assets/shaders/Shadow.frag.hlsl");
 		SS_CORE_ASSERT(shader, "Failed to load Shadow shader");
 
 		// Same vertex layout as the lit mesh pipeline (set in AssetManagerSingleton): the shadow VS

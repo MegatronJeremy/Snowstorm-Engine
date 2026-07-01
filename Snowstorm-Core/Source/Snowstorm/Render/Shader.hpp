@@ -45,7 +45,10 @@ namespace Snowstorm
 			Compile();
 		}
 
+		// Single-path: a compute shader (one file).
 		static Ref<Shader> Create(const std::string& filepath);
+		// Two-path graphics: separate vertex + fragment files (each a plain single-`main` HLSL file).
+		static Ref<Shader> Create(const std::string& vertPath, const std::string& fragPath);
 
 	protected:
 		virtual void Compile() = 0;
@@ -55,6 +58,8 @@ namespace Snowstorm
 	{
 	public:
 		Ref<Shader> Load(const std::string& filepath);
+		// Two-path graphics load, keyed on "vert|frag" so vert/frag are hot-reloaded together.
+		Ref<Shader> Load(const std::string& vertPath, const std::string& fragPath);
 		Ref<Shader> Get(const std::string& filepath);
 
 		[[nodiscard]] bool Exists(const std::string& filepath) const;

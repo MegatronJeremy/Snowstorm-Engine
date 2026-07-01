@@ -2,7 +2,6 @@
 // Dispatched once per (mip, face); each mip corresponds to a roughness level (mip 0 = mirror, higher
 // mips = rougher). Split-sum specular IBL (Karis / LearnOpenGL). Third stage of the IBL bake (#52).
 
-#type compute
 
 static const float PI = 3.14159265359;
 

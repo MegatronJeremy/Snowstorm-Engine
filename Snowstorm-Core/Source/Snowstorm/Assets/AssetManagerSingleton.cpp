@@ -361,13 +361,14 @@ namespace Snowstorm
 		// Minimal preset-based pipeline creation.
 		// You can expand this to a PipelineLibrary later.
 
-		const std::string shaderPath =
+		// Both presets share the standard mesh vertex stage; only the fragment differs.
+		const std::string fragPath =
 		    (preset == PipelinePreset::Mandelbrot)
-		        ? "assets/shaders/Mandelbrot.hlsl"
-		        : "assets/shaders/DefaultLit.hlsl";
+		        ? "assets/shaders/Mandelbrot.frag.hlsl"
+		        : "assets/shaders/DefaultLit.frag.hlsl";
 
 		auto& shaderLib = m_World->GetSingleton<ShaderLibrarySingleton>();
-		Ref<Shader> shader = shaderLib.Load(shaderPath);
+		Ref<Shader> shader = shaderLib.Load("assets/shaders/Mesh.vert.hlsl", fragPath);
 
 		// Common vertex layout for Mesh::Vertex (matches your editor bootstrap)
 		VertexLayoutDesc vertexLayout{};

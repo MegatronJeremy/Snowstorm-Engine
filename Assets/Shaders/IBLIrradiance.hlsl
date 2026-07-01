@@ -3,7 +3,6 @@
 // IBL. Dispatched once per face. Standard Lambertian convolution (LearnOpenGL / Karis). Second stage
 // of the IBL bake (#52).
 
-#type compute
 
 static const float PI = 3.14159265359;
 

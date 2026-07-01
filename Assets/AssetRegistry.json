@@ -606,6 +606,11 @@
       "Type": "Texture"
     },
     {
+      "Handle": "7227917395068939805",
+      "Path": "assets/Shaders/Shadow.vert.hlsl",
+      "Type": "Shader"
+    },
+    {
       "Handle": "12957685215000086669",
       "Path": "assets/Meshes/Sponza/4871783166746854860.jpg",
       "Type": "Texture"
@@ -693,6 +698,36 @@
     {
       "Handle": "15195640344185446400",
       "Path": "assets/Shaders/Sky.hlsl",
+      "Type": "Shader"
+    },
+    {
+      "Handle": "488750427285843633",
+      "Path": "assets/Shaders/Shadow.frag.hlsl",
+      "Type": "Shader"
+    },
+    {
+      "Handle": "193176983517595641",
+      "Path": "assets/Shaders/DefaultLit.frag.hlsl",
+      "Type": "Shader"
+    },
+    {
+      "Handle": "4208737353450478391",
+      "Path": "assets/Shaders/Fullscreen.vert.hlsl",
+      "Type": "Shader"
+    },
+    {
+      "Handle": "17010282056374202154",
+      "Path": "assets/Shaders/Mandelbrot.frag.hlsl",
+      "Type": "Shader"
+    },
+    {
+      "Handle": "9891563901042276918",
+      "Path": "assets/Shaders/Mesh.vert.hlsl",
+      "Type": "Shader"
+    },
+    {
+      "Handle": "16906848014895715354",
+      "Path": "assets/Shaders/Sky.frag.hlsl",
       "Type": "Shader"
     }
   ]

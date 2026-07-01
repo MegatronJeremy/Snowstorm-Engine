@@ -6,6 +6,7 @@
 
 #include "RendererAPI.hpp"
 
+#include <algorithm>
 #include <filesystem>
 
 namespace Snowstorm
@@ -24,6 +25,30 @@ namespace Snowstorm
 
 		case RendererAPI::API::Vulkan:
 			return CreateRef<VulkanShader>(filepath);
+
+		case RendererAPI::API::DX12:
+			SS_CORE_ASSERT(false, "DX12 shader backend not implemented yet.");
+			return nullptr;
+		}
+
+		SS_CORE_ASSERT(false, "Unknown RendererAPI!");
+		return nullptr;
+	}
+
+	Ref<Shader> Shader::Create(const std::string& vertPath, const std::string& fragPath)
+	{
+		switch (RendererAPI::GetAPI())
+		{
+		case RendererAPI::API::None:
+			SS_CORE_ASSERT(false, "RendererAPI::None is currently not supported!");
+			return nullptr;
+
+		case RendererAPI::API::OpenGL:
+			SS_CORE_ASSERT(false, "OpenGL is not supported by this build/config.");
+			return nullptr;
+
+		case RendererAPI::API::Vulkan:
+			return CreateRef<VulkanShader>(vertPath, fragPath);
 
 		case RendererAPI::API::DX12:
 			SS_CORE_ASSERT(false, "DX12 shader backend not implemented yet.");
@@ -55,6 +80,25 @@ namespace Snowstorm
 		return shader;
 	}
 
+	Ref<Shader> ShaderLibrarySingleton::Load(const std::string& vertPath, const std::string& fragPath)
+	{
+		// Key on the composite so a (vert, frag) pair is one library entry; hot-reload watches the newer
+		// of the two files (editing either re-triggers). See ReloadAll's composite-key handling.
+		const std::string key = vertPath + "|" + fragPath;
+		if (Exists(key))
+		{
+			return Get(key);
+		}
+
+		auto shader = Shader::Create(vertPath, fragPath);
+		Add(shader, key);
+
+		m_LastModifications[key] = std::max(std::filesystem::last_write_time(vertPath),
+		                                    std::filesystem::last_write_time(fragPath));
+
+		return shader;
+	}
+
 	Ref<Shader> ShaderLibrarySingleton::Get(const std::string& filepath)
 	{
 		SS_CORE_ASSERT(Exists(filepath), "Shader not found!");
@@ -68,12 +112,26 @@ namespace Snowstorm
 
 	void ShaderLibrarySingleton::ReloadAll()
 	{
-		for (const auto& [filepath, lastModified] : m_LastModifications)
+		for (auto& [key, lastModified] : m_LastModifications)
 		{
-			if (std::filesystem::last_write_time(filepath) > lastModified)
+			// A key may be a single path or a composite "vert|frag" (two-path graphics shader). Take the
+			// newest mtime across its constituent file(s) so editing either stage triggers a recompile.
+			std::filesystem::file_time_type newest{};
+			const size_t sep = key.find('|');
+			if (sep == std::string::npos)
 			{
-				Get(filepath)->Recompile();
-				m_LastModifications[filepath] = std::filesystem::last_write_time(filepath);
+				newest = std::filesystem::last_write_time(key);
+			}
+			else
+			{
+				newest = std::max(std::filesystem::last_write_time(key.substr(0, sep)),
+				                  std::filesystem::last_write_time(key.substr(sep + 1)));
+			}
+
+			if (newest > lastModified)
+			{
+				Get(key)->Recompile();
+				lastModified = newest;
 			}
 		}
 	}

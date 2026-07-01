@@ -3,7 +3,6 @@
 // reconstruct specular IBL. Computed once (independent of the environment). Stage 4 of the IBL bake
 // (#52). (Karis / LearnOpenGL integrateBRDF.)
 
-#type compute
 
 static const float PI = 3.14159265359;
 
