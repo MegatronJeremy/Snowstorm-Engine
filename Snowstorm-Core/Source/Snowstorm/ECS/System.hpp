@@ -14,12 +14,21 @@ namespace Snowstorm
 		using WorldRef = World*;
 
 		explicit System(WorldRef world)
-			: m_World(std::move(world))
+		    : m_World(std::move(world))
 		{
 		}
 
 		/// Function that derived systems override
 		virtual void Execute(Timestep ts) = 0;
+
+		/// Whether this system runs while the editor is stopped (Edit mode). Default true: most systems
+		/// are infrastructure (resolve, culling, render, editor UI) that must always run. SIMULATION
+		/// systems — scripts, animators/rotators, anything that mutates the authored scene as if the game
+		/// were running — override this to false so they only tick in Play mode. Mirrors Unity's
+		/// [ExecuteAlways] / Unreal's bTickInEditor / Godot's @tool (a per-system opt-out here, since our
+		/// system set is mostly infra rather than gameplay). Consulted by SystemManager against
+		/// EditorStateSingleton; in a packaged runtime (no editor state) everything runs regardless.
+		[[nodiscard]] virtual bool RunsInEditMode() const { return true; }
 
 	protected:
 		/// Standard entity view for active components

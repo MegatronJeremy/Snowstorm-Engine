@@ -17,6 +17,7 @@
 #include "Snowstorm/World/EditorCommands.hpp"
 #include "Snowstorm/World/EditorHistorySingleton.hpp"
 #include "Snowstorm/World/EditorSelectionSingleton.hpp"
+#include "Snowstorm/World/EditorStateSingleton.hpp"
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -99,10 +100,16 @@ namespace Snowstorm
 		auto& reg = m_World->GetRegistry();
 		auto& selection = m_World->GetSingleton<EditorSelectionSingleton>();
 		auto& input = m_World->GetSingleton<InputStateSingleton>();
+		auto& editorState = m_World->GetSingleton<EditorStateSingleton>();
 
 		// Default to inactive each frame; the gizmo block below sets it true while dragging. Resetting here
 		// (not only in that block) means a `continue` that skips the block can't leave it stuck true.
 		selection.GizmoActive = false;
+
+		// Capture the viewport content rect now (top-left + width) so the Simulate toolbar can be drawn as a
+		// top-CENTER floating overlay AFTER the image below, without stealing a layout row above it.
+		const ImVec2 contentMin = ImGui::GetCursorScreenPos();
+		const float contentWidth = ImGui::GetContentRegionAvail().x;
 
 		for (const entt::entity e : viewportView)
 		{
@@ -237,6 +244,49 @@ namespace Snowstorm
 						FrameCameraOnEntity(*m_World, picked.Handle());
 					}
 				}
+			}
+		}
+
+		// ---- Simulate/Stop toolbar: a top-CENTER floating overlay (UE5 places play controls at the top of
+		// the viewport). Toggles Edit<->Simulate; in Edit the simulation systems are skipped so the authored
+		// scene stays still, and EditorLayer restores the pre-Simulate snapshot on Stop. Drawn last so it
+		// overlays the image; positioned absolutely so it doesn't consume a layout row. UE-style icon: green
+		// play triangle (stopped) / amber stop square (simulating), on the draw list so it needs no font glyph.
+		{
+			const bool simulating = editorState.IsSimulating();
+			constexpr float kBtn = 28.0f;
+			constexpr float kTopMargin = 8.0f;
+
+			ImGui::SetCursorScreenPos(ImVec2(contentMin.x + (contentWidth - kBtn) * 0.5f, contentMin.y + kTopMargin));
+			if (ImGui::InvisibleButton("##simulate", ImVec2(kBtn, kBtn)))
+			{
+				editorState.Current = simulating ? EditorStateSingleton::Mode::Edit : EditorStateSingleton::Mode::Simulate;
+			}
+			const bool hovered = ImGui::IsItemHovered();
+
+			const ImVec2 bmin = ImGui::GetItemRectMin();
+			const ImVec2 bmax = ImGui::GetItemRectMax();
+			ImDrawList* dl = ImGui::GetWindowDrawList();
+			const ImU32 bg = ImGui::GetColorU32(hovered ? ImVec4(0.30f, 0.14f, 0.02f, 0.95f) : ImVec4(0.08f, 0.07f, 0.04f, 0.85f));
+			dl->AddRectFilled(bmin, bmax, bg, 4.0f);
+			dl->AddRect(bmin, bmax, ImGui::GetColorU32(ImVec4(0.48f, 0.23f, 0.03f, 1.0f)), 4.0f); // amber border
+
+			const ImVec2 c{(bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f};
+			constexpr float r = 6.0f;
+			if (simulating)
+			{
+				const ImU32 amber = ImGui::GetColorU32(ImVec4(1.00f, 0.65f, 0.19f, 1.0f));
+				dl->AddRectFilled(ImVec2(c.x - r, c.y - r), ImVec2(c.x + r, c.y + r), amber, 1.0f);
+			}
+			else
+			{
+				const ImU32 green = ImGui::GetColorU32(ImVec4(0.30f, 0.85f, 0.30f, 1.0f));
+				dl->AddTriangleFilled(ImVec2(c.x - r * 0.7f, c.y - r), ImVec2(c.x - r * 0.7f, c.y + r),
+				                      ImVec2(c.x + r, c.y), green);
+			}
+			if (hovered)
+			{
+				ImGui::SetTooltip(simulating ? "Stop (return to Edit)" : "Simulate (run the scene)");
 			}
 		}
 

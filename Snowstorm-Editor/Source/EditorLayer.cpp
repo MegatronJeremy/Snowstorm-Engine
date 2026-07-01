@@ -34,6 +34,7 @@
 #include "Snowstorm/World/EditorCommandsSingleton.hpp"
 #include "Snowstorm/World/EditorHistorySingleton.hpp"
 #include "Snowstorm/World/EditorSelectionSingleton.hpp"
+#include "Snowstorm/World/EditorStateSingleton.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
 
 #include "StressScene.hpp"
@@ -343,6 +344,7 @@ namespace Snowstorm
 		singletonManager.RegisterSingleton<EditorSelectionSingleton>();
 		singletonManager.RegisterSingleton<EditorHistorySingleton>();
 		singletonManager.RegisterSingleton<EditorStatusBarSingleton>();
+		singletonManager.RegisterSingleton<EditorStateSingleton>();
 
 		// Editor UI systems. The UI phase is empty in a packaged runtime, so the engine
 		// systems (registered by RegisterCoreSystems) run identically with or without these.
@@ -628,6 +630,29 @@ namespace Snowstorm
 			const std::string path = std::move(m_PendingScenePath);
 			m_PendingScenePath.clear();
 			TryLoadWorldFromFile(path);
+		}
+
+		// Simulate/Stop transition (detected at the frame boundary, like the scene-open above, so the world
+		// is mutated with no render pass in flight). Edit->Simulate snapshots the world to a JSON string;
+		// Simulate->Stop restores it, discarding any edits made while simulating — the UE model (Simulate
+		// runs on a throwaway copy). Restore reuses the scene-transition recipe: drain the GPU, Clear(),
+		// deserialize, prewarm.
+		{
+			const bool simulating = m_ActiveWorld->GetSingleton<EditorStateSingleton>().IsSimulating();
+			if (simulating && !m_WasSimulating)
+			{
+				m_SimSnapshot = SceneSerializer::SerializeToString(*m_ActiveWorld);
+			}
+			else if (!simulating && m_WasSimulating)
+			{
+				Renderer::WaitIdle();
+				m_ActiveWorld->Clear();
+				m_ActiveWorld->GetSingleton<EditorHistorySingleton>().Clear();
+				SceneSerializer::DeserializeFromString(*m_ActiveWorld, m_SimSnapshot);
+				PrewarmSceneTextures();
+				m_SimSnapshot.clear();
+			}
+			m_WasSimulating = simulating;
 		}
 
 		// Publish the current scene file + unsaved-changes flag to the status bar. Done here (once per

@@ -16,6 +16,7 @@
 
 #include <nlohmann/json.hpp>
 #include <fstream>
+#include <sstream>
 
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Components/CameraRuntimeComponent.hpp"
@@ -290,7 +291,7 @@ namespace Snowstorm
 		return entity;
 	}
 
-	bool SceneSerializer::Serialize(const World& world, const std::string& filePath)
+	std::string SceneSerializer::SerializeToString(const World& world)
 	{
 		json root;
 		root["Scene"] = {{"Version", 1}, {"Name", "Untitled"}};
@@ -310,26 +311,20 @@ namespace Snowstorm
 			}
 		}
 
-		std::ofstream out(filePath);
-		if (!out.is_open())
-		{
-			return false;
-		}
-
-		out << root.dump(2);
-		return true;
+		return root.dump(2);
 	}
 
-	bool SceneSerializer::Deserialize(World& world, const std::string& filePath)
+	bool SceneSerializer::DeserializeFromString(World& world, const std::string& jsonText)
 	{
-		std::ifstream in(filePath);
-		if (!in.is_open())
+		json root;
+		try
+		{
+			root = json::parse(jsonText);
+		}
+		catch (const json::parse_error&)
 		{
 			return false;
 		}
-
-		json root;
-		in >> root;
 
 		if (!root.contains("Entities") || !root["Entities"].is_array())
 		{
@@ -342,5 +337,30 @@ namespace Snowstorm
 		}
 
 		return true;
+	}
+
+	bool SceneSerializer::Serialize(const World& world, const std::string& filePath)
+	{
+		std::ofstream out(filePath);
+		if (!out.is_open())
+		{
+			return false;
+		}
+
+		out << SerializeToString(world);
+		return true;
+	}
+
+	bool SceneSerializer::Deserialize(World& world, const std::string& filePath)
+	{
+		std::ifstream in(filePath);
+		if (!in.is_open())
+		{
+			return false;
+		}
+
+		std::stringstream ss;
+		ss << in.rdbuf();
+		return DeserializeFromString(world, ss.str());
 	}
 }

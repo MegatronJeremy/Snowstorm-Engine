@@ -12,6 +12,7 @@
 #include "TrackedRegistry.hpp"
 
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/World/EditorStateSingleton.hpp"
 
 namespace Snowstorm
 {
@@ -42,6 +43,16 @@ namespace Snowstorm
 		{
 			using clock = std::chrono::steady_clock;
 
+			// Editor Edit mode gate: while stopped, skip simulation systems (those that opt out via
+			// RunsInEditMode() == false). Resolved once per frame. A packaged runtime has no
+			// EditorStateSingleton, so `editMode` stays false and everything runs — the gate is
+			// editor-only. (See EditorStateSingleton / System::RunsInEditMode.)
+			bool editMode = false;
+			if (m_World && m_World->HasSingleton<EditorStateSingleton>())
+			{
+				editMode = m_World->GetSingleton<EditorStateSingleton>().Current == EditorStateSingleton::Mode::Edit;
+			}
+
 			// Phases run in enum order; systems within a phase run in registration order. Time each
 			// phase AND each system on the CPU so the editor overlay shows exactly where the frame goes.
 			for (size_t i = 0; i < m_Phases.size(); ++i)
@@ -49,8 +60,14 @@ namespace Snowstorm
 				const auto phaseStart = clock::now();
 				for (size_t j = 0; j < m_Phases[i].size(); ++j)
 				{
+					System& sys = *m_Phases[i][j];
+					if (editMode && !sys.RunsInEditMode())
+					{
+						m_Timings[i][j].second = 0.0f; // skipped this frame (Edit mode)
+						continue;
+					}
 					const auto sysStart = clock::now();
-					m_Phases[i][j]->Execute(ts);
+					sys.Execute(ts);
 					const auto sysEnd = clock::now();
 					m_Timings[i][j].second = std::chrono::duration<float, std::milli>(sysEnd - sysStart).count();
 				}

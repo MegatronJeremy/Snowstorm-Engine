@@ -60,5 +60,11 @@ namespace Snowstorm
 		// resources (descriptor sets, meshes) that the in-progress frame's render pass still binds.
 		std::string m_PendingScenePath;
 		bool m_HasPendingScene = false;
+
+		// Simulate/Edit transition tracking. On Edit->Simulate we snapshot the world to m_SimSnapshot (scene
+		// JSON); on Simulate->Stop we restore it, so edits made while simulating are discarded (UE model).
+		// m_WasSimulating is last frame's mode so OnUpdate can detect the edge.
+		bool m_WasSimulating = false;
+		std::string m_SimSnapshot;
 	};
 }
