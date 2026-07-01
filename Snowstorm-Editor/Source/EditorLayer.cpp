@@ -632,27 +632,27 @@ namespace Snowstorm
 			TryLoadWorldFromFile(path);
 		}
 
-		// Simulate/Stop transition (detected at the frame boundary, like the scene-open above, so the world
-		// is mutated with no render pass in flight). Edit->Simulate snapshots the world to a JSON string;
-		// Simulate->Stop restores it, discarding any edits made while simulating — the UE model (Simulate
-		// runs on a throwaway copy). Restore reuses the scene-transition recipe: drain the GPU, Clear(),
-		// deserialize, prewarm.
+		// Play/Stop transition (detected at the frame boundary, like the scene-open above, so the world is
+		// mutated with no render pass in flight). Edit->Play snapshots the world to a JSON string;
+		// Play->Stop restores it, discarding any edits made while playing — play runs on a throwaway copy
+		// (the UE model). Restore reuses the scene-transition recipe: drain the GPU, Clear(), deserialize,
+		// prewarm.
 		{
-			const bool simulating = m_ActiveWorld->GetSingleton<EditorStateSingleton>().IsSimulating();
-			if (simulating && !m_WasSimulating)
+			const bool playing = m_ActiveWorld->GetSingleton<EditorStateSingleton>().IsPlaying();
+			if (playing && !m_WasPlaying)
 			{
-				m_SimSnapshot = SceneSerializer::SerializeToString(*m_ActiveWorld);
+				m_PlaySnapshot = SceneSerializer::SerializeToString(*m_ActiveWorld);
 			}
-			else if (!simulating && m_WasSimulating)
+			else if (!playing && m_WasPlaying)
 			{
 				Renderer::WaitIdle();
 				m_ActiveWorld->Clear();
 				m_ActiveWorld->GetSingleton<EditorHistorySingleton>().Clear();
-				SceneSerializer::DeserializeFromString(*m_ActiveWorld, m_SimSnapshot);
+				SceneSerializer::DeserializeFromString(*m_ActiveWorld, m_PlaySnapshot);
 				PrewarmSceneTextures();
-				m_SimSnapshot.clear();
+				m_PlaySnapshot.clear();
 			}
-			m_WasSimulating = simulating;
+			m_WasPlaying = playing;
 		}
 
 		// Publish the current scene file + unsaved-changes flag to the status bar. Done here (once per

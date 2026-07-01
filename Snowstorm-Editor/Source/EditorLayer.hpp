@@ -61,10 +61,10 @@ namespace Snowstorm
 		std::string m_PendingScenePath;
 		bool m_HasPendingScene = false;
 
-		// Simulate/Edit transition tracking. On Edit->Simulate we snapshot the world to m_SimSnapshot (scene
-		// JSON); on Simulate->Stop we restore it, so edits made while simulating are discarded (UE model).
-		// m_WasSimulating is last frame's mode so OnUpdate can detect the edge.
-		bool m_WasSimulating = false;
-		std::string m_SimSnapshot;
+		// Play/Edit transition tracking. On Edit->Play we snapshot the world to m_PlaySnapshot (scene JSON);
+		// on Play->Stop we restore it, so edits made while playing are discarded (UE model). m_WasPlaying is
+		// last frame's mode so OnUpdate can detect the edge.
+		bool m_WasPlaying = false;
+		std::string m_PlaySnapshot;
 	};
 }

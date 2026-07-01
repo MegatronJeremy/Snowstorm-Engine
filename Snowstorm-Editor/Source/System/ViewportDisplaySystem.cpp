@@ -106,7 +106,7 @@ namespace Snowstorm
 		// (not only in that block) means a `continue` that skips the block can't leave it stuck true.
 		selection.GizmoActive = false;
 
-		// Capture the viewport content rect now (top-left + width) so the Simulate toolbar can be drawn as a
+		// Capture the viewport content rect now (top-left + width) so the Play toolbar can be drawn as a
 		// top-CENTER floating overlay AFTER the image below, without stealing a layout row above it.
 		const ImVec2 contentMin = ImGui::GetCursorScreenPos();
 		const float contentWidth = ImGui::GetContentRegionAvail().x;
@@ -247,20 +247,20 @@ namespace Snowstorm
 			}
 		}
 
-		// ---- Simulate/Stop toolbar: a top-CENTER floating overlay (UE5 places play controls at the top of
-		// the viewport). Toggles Edit<->Simulate; in Edit the simulation systems are skipped so the authored
-		// scene stays still, and EditorLayer restores the pre-Simulate snapshot on Stop. Drawn last so it
-		// overlays the image; positioned absolutely so it doesn't consume a layout row. UE-style icon: green
-		// play triangle (stopped) / amber stop square (simulating), on the draw list so it needs no font glyph.
+		// ---- Play/Stop toolbar: a top-CENTER floating overlay (UE5 places play controls at the top of the
+		// viewport). Toggles Edit<->Play; in Edit the simulation systems are skipped so the authored scene
+		// stays still, and EditorLayer restores the pre-Play snapshot on Stop. Drawn last so it overlays the
+		// image; positioned absolutely so it doesn't consume a layout row. UE-style icon: green play
+		// triangle (stopped) / amber stop square (playing), on the draw list so it needs no font glyph.
 		{
-			const bool simulating = editorState.IsSimulating();
+			const bool playing = editorState.IsPlaying();
 			constexpr float kBtn = 28.0f;
 			constexpr float kTopMargin = 8.0f;
 
 			ImGui::SetCursorScreenPos(ImVec2(contentMin.x + (contentWidth - kBtn) * 0.5f, contentMin.y + kTopMargin));
-			if (ImGui::InvisibleButton("##simulate", ImVec2(kBtn, kBtn)))
+			if (ImGui::InvisibleButton("##playstop", ImVec2(kBtn, kBtn)))
 			{
-				editorState.Current = simulating ? EditorStateSingleton::Mode::Edit : EditorStateSingleton::Mode::Simulate;
+				editorState.Current = playing ? EditorStateSingleton::Mode::Edit : EditorStateSingleton::Mode::Play;
 			}
 			const bool hovered = ImGui::IsItemHovered();
 
@@ -273,7 +273,7 @@ namespace Snowstorm
 
 			const ImVec2 c{(bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f};
 			constexpr float r = 6.0f;
-			if (simulating)
+			if (playing)
 			{
 				const ImU32 amber = ImGui::GetColorU32(ImVec4(1.00f, 0.65f, 0.19f, 1.0f));
 				dl->AddRectFilled(ImVec2(c.x - r, c.y - r), ImVec2(c.x + r, c.y + r), amber, 1.0f);
@@ -286,7 +286,7 @@ namespace Snowstorm
 			}
 			if (hovered)
 			{
-				ImGui::SetTooltip(simulating ? "Stop (return to Edit)" : "Simulate (run the scene)");
+				ImGui::SetTooltip(playing ? "Stop (return to Edit)" : "Play (run the scene)");
 			}
 		}
 
