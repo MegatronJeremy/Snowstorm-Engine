@@ -343,8 +343,8 @@
             0.02012000046670437
           ],
           "Material": "13869174114393927166",
-          "MaxIterations": 248,
-          "Zoom": 0.055080052465200424
+          "MaxIterations": 150,
+          "Zoom": 4.0
         }
       },
       "Name": "Mandelbrot Controller Entity",

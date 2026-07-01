@@ -2,6 +2,10 @@
 
 #include "MandelbrotControllerComponent.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
+#include "Snowstorm/World/EditorStateSingleton.hpp"
+
+#include <algorithm>
+#include <cmath>
 
 namespace Snowstorm
 {
@@ -10,17 +14,12 @@ namespace Snowstorm
 		auto& reg = m_World->GetRegistry();
 		auto& assets = SingletonView<AssetManagerSingleton>();
 
-		static float time = 0.0f; // Animation timer
-		time += ts.GetSeconds(); // Accumulate time for smooth animation
-
-		// first reset all entities
-		for (const auto mandelbrotInitView = InitView<MandelbrotControllerComponent>(); const auto entity : mandelbrotInitView)
-		{
-			auto& mc = reg.Write<MandelbrotControllerComponent>(entity);
-			mc.Center = {-1.25066f, 0.02012f};
-			mc.Zoom = 4.0f;
-			mc.MaxIterations = 1000;
-		}
+		// The zoom is an ANIMATION -> only advance it while playing, so the fractal holds still while the
+		// scene is being authored. Params are still uploaded to the material every frame (below) so it
+		// renders correctly in Edit too. Guarded via HasSingleton so a packaged runtime (no editor state)
+		// always animates.
+		const bool playing = !m_World->HasSingleton<EditorStateSingleton>() ||
+		                     m_World->GetSingleton<EditorStateSingleton>().IsPlaying();
 
 		for (const auto mandelbrotView = View<MandelbrotControllerComponent>(); const auto entity : mandelbrotView)
 		{
@@ -33,21 +32,24 @@ namespace Snowstorm
 				continue;
 			}
 
-			// Exponential Zoom-In for Deep Fractal Exploration
-			constexpr float zoomDecayRate = 0.9f;
-			mandelbrotComponent.Zoom *= std::pow(zoomDecayRate, ts.GetSeconds());
+			if (playing)
+			{
+				// Exponential zoom-in for deep fractal exploration.
+				constexpr float zoomDecayRate = 0.9f;
+				mandelbrotComponent.Zoom *= std::pow(zoomDecayRate, ts.GetSeconds());
 
-			// Adaptive Iterations for Detail Resolution
-			mandelbrotComponent.MaxIterations = static_cast<int>(100 + 80.0 * std::log10(4.0f / mandelbrotComponent.Zoom));
+				// Adaptive iteration count: more iterations as we zoom in, so newly-revealed detail keeps
+				// resolving instead of collapsing into the flat interior. Clamped to a sane ceiling.
+				const float depth = std::log10(4.0f / std::max(mandelbrotComponent.Zoom, 1e-9f));
+				mandelbrotComponent.MaxIterations = std::clamp(static_cast<int>(150.0f + 120.0f * depth), 150, 2000);
+			}
 
 			mandelbrotMaterial->SetObjectExtras0(
-				glm::vec4{
-					mandelbrotComponent.Center.x,
-					mandelbrotComponent.Center.y,
-					mandelbrotComponent.Zoom,
-					static_cast<float>(mandelbrotComponent.MaxIterations)
-				}
-			);
+			    glm::vec4{
+			        mandelbrotComponent.Center.x,
+			        mandelbrotComponent.Center.y,
+			        mandelbrotComponent.Zoom,
+			        static_cast<float>(mandelbrotComponent.MaxIterations)});
 		}
 	}
 }
