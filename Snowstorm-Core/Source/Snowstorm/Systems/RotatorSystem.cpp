@@ -2,6 +2,7 @@
 
 #include "Snowstorm/Components/RotatorComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
+#include "Snowstorm/World/EditorSelectionSingleton.hpp"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
@@ -15,8 +16,25 @@ namespace Snowstorm
 		auto& reg = m_World->GetRegistry();
 		const float dt = ts.GetSeconds();
 
+		// The entity currently being dragged by the editor gizmo (if any). While it's manipulated we skip
+		// its rotation so the animation doesn't fight the manual edit (jitter through the Euler round-trip).
+		// Editor-only singleton: guarded so the runtime (no editor) is unaffected. Editor-authoring-wins.
+		Entity gizmoHeld;
+		if (m_World->HasSingleton<EditorSelectionSingleton>())
+		{
+			if (const auto& sel = m_World->GetSingleton<EditorSelectionSingleton>(); sel.GizmoActive)
+			{
+				gizmoHeld = sel.Selected;
+			}
+		}
+
 		for (const auto view = View<TransformComponent, RotatorComponent>(); const entt::entity e : view)
 		{
+			if (gizmoHeld && gizmoHeld.Handle() == e)
+			{
+				continue; // being manipulated by the gizmo this frame -> don't fight it
+			}
+
 			const auto& rot = reg.Read<RotatorComponent>(e);
 
 			const float lenSq = glm::dot(rot.Axis, rot.Axis);

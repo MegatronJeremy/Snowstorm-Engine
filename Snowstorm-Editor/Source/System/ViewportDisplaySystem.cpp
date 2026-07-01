@@ -18,8 +18,10 @@
 #include "Snowstorm/World/EditorHistorySingleton.hpp"
 #include "Snowstorm/World/EditorSelectionSingleton.hpp"
 
+#include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/euler_angles.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
 
 #include <imgui.h>
@@ -98,6 +100,10 @@ namespace Snowstorm
 		auto& selection = m_World->GetSingleton<EditorSelectionSingleton>();
 		auto& input = m_World->GetSingleton<InputStateSingleton>();
 
+		// Default to inactive each frame; the gizmo block below sets it true while dragging. Resetting here
+		// (not only in that block) means a `continue` that skips the block can't leave it stuck true.
+		selection.GizmoActive = false;
+
 		for (const entt::entity e : viewportView)
 		{
 			// ---- Interaction flags
@@ -163,16 +169,20 @@ namespace Snowstorm
 				                         static_cast<ImGuizmo::OPERATION>(m_GizmoOp), ImGuizmo::WORLD,
 				                         glm::value_ptr(model)))
 				{
-					// Decompose the manipulated matrix back into the TRS component. Rotation is written
-					// as Euler radians; TransformComponent applies Y->X->Z so combined rotations are an
-					// approximation, but translate/scale are exact (the common authoring case).
+					// Decompose the manipulated matrix back into the TRS component. Euler angles MUST be
+					// extracted in the SAME Y->X->Z order that TransformComponent::GetTransformMatrix
+					// composes them (Ry*Rx*Rz) -- glm::eulerAngles() uses a different fixed order, so its
+					// output rebuilt Y->X->Z is a DIFFERENT orientation. That mismatch made the object jump
+					// every drag frame, the gizmo re-read the jumped matrix, and it spiralled ("freaks out").
+					// extractEulerAngleYXZ is the exact inverse of the compose order (same as RotatorSystem).
 					glm::vec3 scale, translation, skew;
-					glm::vec3 rotationEuler;
 					glm::vec4 perspective;
 					glm::quat rotation;
 					if (glm::decompose(model, scale, rotation, translation, skew, perspective))
 					{
-						rotationEuler = glm::eulerAngles(rotation);
+						float yaw = 0.0f, pitch = 0.0f, roll = 0.0f; // Y, X, Z
+						glm::extractEulerAngleYXZ(glm::mat4_cast(rotation), yaw, pitch, roll);
+						const glm::vec3 rotationEuler(pitch, yaw, roll); // TransformComponent stores (X,Y,Z)
 						selected.PatchComponent<TransformComponent>([&](TransformComponent& t)
 						                                            {
 							t.Position = translation;
@@ -204,6 +214,11 @@ namespace Snowstorm
 				// Selection lost mid-drag — abandon the in-progress capture.
 				m_GizmoDragging = false;
 			}
+
+			// Publish the drag state so transform-writing systems (RotatorSystem) skip the selected entity
+			// while it's being manipulated — otherwise the animation and the gizmo fight over Rotation and
+			// the values jitter through the lossy Euler round-trip.
+			selection.GizmoActive = usingGizmo;
 
 			// ---- Mouse picking: left-click in the viewport, not on the gizmo.
 			if (ImGui::IsWindowHovered() && !usingGizmo && !ImGuizmo::IsOver() &&

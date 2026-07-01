@@ -12,5 +12,11 @@ namespace Snowstorm
 	{
 	public:
 		Entity Selected;
+
+		// True while the viewport gizmo is actively being dragged (ImGuizmo::IsUsing()). Set by
+		// ViewportDisplaySystem each frame. Systems that also write the selected entity's transform
+		// (e.g. RotatorSystem) skip it while this is set, so the animation doesn't fight the manual edit
+		// -- the editor-authoring-wins convention (cf. Unreal not ticking an actor you're manipulating).
+		bool GizmoActive = false;
 	};
 }
