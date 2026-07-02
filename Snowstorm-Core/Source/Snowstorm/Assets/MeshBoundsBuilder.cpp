@@ -80,7 +80,7 @@ namespace Snowstorm
 		}
 
 		Assimp::Importer importer;
-		// Match MeshLibrarySingleton::Load(filepath, submeshIndex): pre-transform so the submesh is in model space.
+		// Match MeshLibrary::Load(filepath, submeshIndex): pre-transform so the submesh is in model space.
 		const aiScene* scene = importer.ReadFile(filepath.string(),
 		                                         aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_PreTransformVertices);
 

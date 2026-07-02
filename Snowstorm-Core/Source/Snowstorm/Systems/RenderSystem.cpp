@@ -18,7 +18,7 @@
 #include "Snowstorm/Lighting/LightingComponents.hpp"
 #include "Snowstorm/Render/RenderGraph.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
-#include "Snowstorm/Render/RendererSingleton.hpp"
+#include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/RenderTarget.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
@@ -94,7 +94,7 @@ namespace Snowstorm
 	void RenderSystem::Execute(const Timestep /*ts*/)
 	{
 		auto& reg = m_World->GetRegistry();
-		auto& renderer = SingletonView<RendererSingleton>();
+		auto& renderer = ServiceView<RendererService>();
 
 		const auto viewportView = View<const ViewportComponent, const RenderTargetComponent>();
 

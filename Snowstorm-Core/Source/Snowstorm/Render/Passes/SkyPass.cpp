@@ -1,9 +1,11 @@
 #include "SkyPass.hpp"
 
+#include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/Log.hpp"
-#include "Snowstorm/Render/RendererSingleton.hpp"
+#include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/Shader.hpp"
+#include "Snowstorm/Service/ServiceManager.hpp"
 
 namespace Snowstorm
 {
@@ -17,7 +19,9 @@ namespace Snowstorm
 			return;
 		}
 
-		Ref<Shader> shader = Shader::Create("assets/shaders/Fullscreen.vert.hlsl", "assets/shaders/Sky.frag.hlsl");
+		// Load via the app-scoped ShaderLibrary (not Shader::Create) so the shader is registered for hot-reload.
+		Ref<Shader> shader = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load(
+		    "assets/shaders/Fullscreen.vert.hlsl", "assets/shaders/Sky.frag.hlsl");
 		SS_CORE_ASSERT(shader, "Failed to load Sky shader");
 
 		PipelineDesc p{};
@@ -37,7 +41,7 @@ namespace Snowstorm
 		m_DepthFormat = depthFormat;
 	}
 
-	void SkyPass::Draw(RendererSingleton& renderer, const PixelFormat colorFormat, const PixelFormat depthFormat)
+	void SkyPass::Draw(RendererService& renderer, const PixelFormat colorFormat, const PixelFormat depthFormat)
 	{
 		// Sky is opt-in: only the procedural-sky background mode draws. No environment / SolidColor mode
 		// leaves the render target's clear color showing (see EnvironmentDataBlock::DrawProceduralSky).

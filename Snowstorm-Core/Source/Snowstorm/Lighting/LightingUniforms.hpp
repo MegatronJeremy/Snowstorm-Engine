@@ -45,7 +45,7 @@ namespace Snowstorm
 		glm::vec4 ShadowAtlasRect = {0, 0, 1, 1};
 	};
 
-	// Mirrored field-for-field into the C++ FrameCB (RendererSingleton.cpp, which embeds this struct) and
+	// Mirrored field-for-field into the C++ FrameCB (RendererService.cpp, which embeds this struct) and
 	// the HLSL cbuffer FrameCB (Engine.hlsli). New arrays are appended AFTER the directional block so the
 	// existing directional offsets don't move. Keep all three in lockstep -- a layout drift silently
 	// corrupts lighting (the "FrameCB mirror trap").
@@ -64,7 +64,7 @@ namespace Snowstorm
 		float SpotPadding[3] = {0, 0, 0};
 	};
 
-	// CPU-side environment values handed to the renderer (RendererSingleton::UploadEnvironment), which
+	// CPU-side environment values handed to the renderer (RendererService::UploadEnvironment), which
 	// folds the colors into FrameCB and uses DrawProceduralSky to decide whether to run the sky pass.
 	// Default state = inactive (no EnvironmentComponent in the scene): no sky, and zeroed colors so the
 	// ambient term contributes nothing (surfaces lit only by direct lights), matching engines that give

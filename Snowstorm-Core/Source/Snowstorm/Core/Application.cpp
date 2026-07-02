@@ -5,6 +5,7 @@
 
 #include <ranges>
 
+#include "Snowstorm/Core/CoreServices.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 
@@ -30,6 +31,10 @@ namespace Snowstorm
 		m_LayerStack = CreateScope<LayerStack>();
 
 		Renderer::Init(m_Window->GetNativeWindow());
+
+		// GPU subsystems (renderer + shader/mesh caches) are application-scoped and device-bound, so they
+		// register here — after the device exists, before any World is created. Shared across all Worlds.
+		RegisterCoreServices(*m_ServiceManager);
 
 		// Component reflection (RTTR) + editor/serializer registration happen via per-component static
 		// initializers (RTTR_REGISTRATION + AUTO_REGISTER_COMPONENT). Snowstorm-Core is a static lib, so

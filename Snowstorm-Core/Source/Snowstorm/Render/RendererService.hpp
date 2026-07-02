@@ -10,6 +10,7 @@
 #include "Snowstorm/Render/MaterialInstance.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Render/Texture.hpp"
+#include "Snowstorm/Service/Service.hpp"
 
 #include <unordered_map>
 
@@ -46,7 +47,9 @@ namespace Snowstorm
 		uint32_t Triangles = 0; // total triangles submitted
 	};
 
-	class RendererSingleton final : public Singleton
+	// Application-scoped renderer subsystem: owns per-frame batching, descriptor-set caches, and FrameCB
+	// assembly for the Vulkan device. Device-lifetime, shared across every World (see RegisterCoreServices).
+	class RendererService final : public Service
 	{
 	public:
 		// Call once per frame, before any BeginScene, after Renderer::BeginFrame(). Resets the per-frame
@@ -173,7 +176,7 @@ namespace Snowstorm
 		// no shadows (fully lit). ShadowTexelSize is derived from the resolution CVar in AcquireFrameSet.
 		glm::mat4 m_LightViewProj{1.0f};
 		uint32_t m_ShadowMapIndex = 0;
-		uint32_t m_ShadowResolution = 2048; // mirror of the bound shadow map's size, for the texel-size calc
+		uint32_t m_ShadowResolution = 2048;  // mirror of the bound shadow map's size, for the texel-size calc
 		uint32_t m_SpotShadowAtlasIndex = 0; // bindless index of the spot shadow atlas (0 = spots unshadowed)
 
 		// Per-frame storage buffer holding all instances for the frame (set=2). Bound once; each batch

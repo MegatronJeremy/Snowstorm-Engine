@@ -13,6 +13,11 @@ namespace Snowstorm
 
 		[[nodiscard]] const PipelineDesc& GetDesc() const override { return m_Desc; }
 
+		// Shader hot-reload: destroy the current VkPipeline/layout/set-layouts and rebuild them from m_Desc
+		// (whose Shader now has freshly recompiled SPIR-V on disk), swapping m_Pipeline in place so existing
+		// Ref<Pipeline> holders bind the new one next frame. No-op if the shader version hasn't advanced.
+		void Reload() override;
+
 		// Pipeline interface
 		[[nodiscard]] const std::vector<Ref<DescriptorSetLayout>>& GetSetLayouts() const override { return m_SetLayouts; }
 
@@ -31,6 +36,14 @@ namespace Snowstorm
 		// VulkanBindlessManager, which reflection can't describe (UPDATE_AFTER_BIND / partially-bound / 10000).
 		void CreateDescriptorSetLayouts(const std::vector<char>& vertCode, const std::vector<char>& fragCode);
 
+		// Build all GPU objects (shader modules, layout, VkPipeline) from m_Desc. Shared by the constructor
+		// and Reload(). Records the shader version it built against so Reload() can skip no-op rebuilds.
+		void Build();
+
+		// Tear down the VkPipeline + layout + reflected set layouts (idempotent). Reload() calls this before
+		// re-Build(); the destructor calls it too. Does NOT wait for device idle — callers do that once.
+		void Destroy();
+
 	private:
 		PipelineDesc m_Desc{};
 
@@ -41,5 +54,14 @@ namespace Snowstorm
 		std::vector<Ref<DescriptorSetLayout>> m_SetLayouts;
 
 		std::vector<VkPushConstantRange> m_VkPushConstantRanges;
+
+		// Shader version this pipeline was last built against. Reload() rebuilds only when it advances.
+		uint64_t m_BuiltShaderVersion = 0;
+
+		// Compact fingerprint of the reflected descriptor-set + push-constant layout, recomputed on every
+		// Build(). Reload() compares old vs new: if it changed, the shader edit altered its binding interface,
+		// which would invalidate the renderer's cached descriptor sets (keyed by pipeline pointer) — we log
+		// and keep the old pipeline instead of silently corrupting bindings. Set-layout hot-swap is future work.
+		std::string m_LayoutSignature;
 	};
 }

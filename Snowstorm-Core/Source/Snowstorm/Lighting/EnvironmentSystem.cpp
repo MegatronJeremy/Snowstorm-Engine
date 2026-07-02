@@ -3,13 +3,13 @@
 #include "EnvironmentComponent.hpp"
 #include "LightingUniforms.hpp"
 
-#include "Snowstorm/Render/RendererSingleton.hpp"
+#include "Snowstorm/Render/RendererService.hpp"
 
 namespace Snowstorm
 {
 	void EnvironmentSystem::Execute(Timestep /*ts*/)
 	{
-		auto& renderer = SingletonView<RendererSingleton>();
+		auto& renderer = ServiceView<RendererService>();
 
 		// Use the first EnvironmentComponent found. A scene need not author one: the default-constructed
 		// block is inactive (no sky pass, zeroed ambient), so surfaces are lit by direct lights only —

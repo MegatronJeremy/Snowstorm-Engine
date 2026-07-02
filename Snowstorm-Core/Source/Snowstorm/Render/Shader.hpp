@@ -6,7 +6,7 @@
 #include <unordered_map>
 
 #include "Snowstorm/Core/Base.hpp"
-#include "Snowstorm/ECS/Singleton.hpp"
+#include "Snowstorm/Service/Service.hpp"
 
 namespace Snowstorm
 {
@@ -54,7 +54,9 @@ namespace Snowstorm
 		virtual void Compile() = 0;
 	};
 
-	class ShaderLibrarySingleton final : public Singleton
+	// Application-scoped shader cache: owns compiled shaders keyed by source path and drives hot-reload
+	// (ReloadAll re-checks mtimes). Device-lifetime, shared across every World (see RegisterCoreServices).
+	class ShaderLibrary final : public Service
 	{
 	public:
 		Ref<Shader> Load(const std::string& filepath);

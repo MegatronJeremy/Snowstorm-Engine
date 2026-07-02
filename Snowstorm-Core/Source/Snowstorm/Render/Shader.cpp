@@ -59,13 +59,13 @@ namespace Snowstorm
 		return nullptr;
 	}
 
-	void ShaderLibrarySingleton::Add(const Ref<Shader>& shader, const std::string& filepath)
+	void ShaderLibrary::Add(const Ref<Shader>& shader, const std::string& filepath)
 	{
 		SS_CORE_ASSERT(!Exists(filepath), "Shader already exists!");
 		m_Shaders[filepath] = shader;
 	}
 
-	Ref<Shader> ShaderLibrarySingleton::Load(const std::string& filepath)
+	Ref<Shader> ShaderLibrary::Load(const std::string& filepath)
 	{
 		if (Exists(filepath))
 		{
@@ -80,7 +80,7 @@ namespace Snowstorm
 		return shader;
 	}
 
-	Ref<Shader> ShaderLibrarySingleton::Load(const std::string& vertPath, const std::string& fragPath)
+	Ref<Shader> ShaderLibrary::Load(const std::string& vertPath, const std::string& fragPath)
 	{
 		// Key on the composite so a (vert, frag) pair is one library entry; hot-reload watches the newer
 		// of the two files (editing either re-triggers). See ReloadAll's composite-key handling.
@@ -99,18 +99,18 @@ namespace Snowstorm
 		return shader;
 	}
 
-	Ref<Shader> ShaderLibrarySingleton::Get(const std::string& filepath)
+	Ref<Shader> ShaderLibrary::Get(const std::string& filepath)
 	{
 		SS_CORE_ASSERT(Exists(filepath), "Shader not found!");
 		return m_Shaders[filepath];
 	}
 
-	bool ShaderLibrarySingleton::Exists(const std::string& filepath) const
+	bool ShaderLibrary::Exists(const std::string& filepath) const
 	{
 		return m_Shaders.contains(filepath);
 	}
 
-	void ShaderLibrarySingleton::ReloadAll()
+	void ShaderLibrary::ReloadAll()
 	{
 		for (auto& [key, lastModified] : m_LastModifications)
 		{

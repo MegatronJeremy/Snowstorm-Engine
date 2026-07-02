@@ -7,7 +7,7 @@
 
 namespace Snowstorm
 {
-	class RendererSingleton;
+	class RendererService;
 
 	// Procedural-sky background pass: draws a fullscreen triangle at the far plane (depth test
 	// LessOrEqual, no depth write) AFTER opaque meshes, so the sky only fills uncovered pixels. Owns its
@@ -21,7 +21,7 @@ namespace Snowstorm
 		// Draw the sky into the current scene pass. No-op unless the environment opted into the procedural
 		// sky (the renderer gates on EnvironmentDataBlock::DrawProceduralSky). Lazily builds the pipeline
 		// for the given color/depth formats. Call after the camera Flush(), before EndScene().
-		void Draw(RendererSingleton& renderer, PixelFormat colorFormat, PixelFormat depthFormat);
+		void Draw(RendererService& renderer, PixelFormat colorFormat, PixelFormat depthFormat);
 
 	private:
 		void EnsurePipeline(PixelFormat colorFormat, PixelFormat depthFormat);

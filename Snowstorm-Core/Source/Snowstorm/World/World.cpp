@@ -9,9 +9,6 @@
 #include "Snowstorm/Components/TagComponent.hpp"
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Events/Event.hpp"
-#include "Snowstorm/Render/MeshLibrarySingleton.hpp"
-#include "Snowstorm/Render/RendererSingleton.hpp"
-#include "Snowstorm/Render/Shader.hpp"
 #include "Snowstorm/Systems/CameraControllerSystem.hpp"
 #include "Snowstorm/World/EditorCommandsSingleton.hpp"
 
@@ -22,12 +19,10 @@ namespace Snowstorm
 		m_SystemManager = CreateScope<SystemManager>(this);
 		m_SingletonManager = CreateScope<SingletonManager>();
 
+		// World-scoped, per-scene state only. The renderer + shader/mesh libraries are device-lifetime and
+		// now live in the application's ServiceManager (see RegisterCoreServices), shared across all Worlds.
 		m_SingletonManager->RegisterSingleton<InputStateSingleton>();
-
-		m_SingletonManager->RegisterSingleton<ShaderLibrarySingleton>();
-		m_SingletonManager->RegisterSingleton<MeshLibrarySingleton>();
 		m_SingletonManager->RegisterSingleton<EditorCommandsSingleton>();
-		m_SingletonManager->RegisterSingleton<RendererSingleton>();
 
 		m_SingletonManager->RegisterSingleton<AssetManagerSingleton>(this);
 

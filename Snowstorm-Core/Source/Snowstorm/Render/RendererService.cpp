@@ -1,4 +1,4 @@
-#include "RendererSingleton.hpp"
+#include "RendererService.hpp"
 
 #include "Camera.hpp"
 #include "Snowstorm/Core/Base.hpp"
@@ -61,7 +61,7 @@ namespace Snowstorm
 		};
 	}
 
-	void RendererSingleton::NewFrame()
+	void RendererService::NewFrame()
 	{
 		// Reset the shared instance-buffer cursor once per frame. Each pass (shadow, camera, ...) then
 		// appends its instances and records draws with firstInstance at the running cursor, so passes
@@ -69,7 +69,7 @@ namespace Snowstorm
 		m_InstanceWriteCursor = 0;
 	}
 
-	void RendererSingleton::BeginScene(const CameraRuntimeComponent& cameraRt,
+	void RendererService::BeginScene(const CameraRuntimeComponent& cameraRt,
 	                                   const glm::vec3& cameraWorldPosition,
 	                                   const Ref<CommandContext>& commandContext,
 	                                   const uint32_t frameIndex)
@@ -86,7 +86,7 @@ namespace Snowstorm
 		m_Stats = RenderStats{};
 	}
 
-	void RendererSingleton::EndScene()
+	void RendererService::EndScene()
 	{
 		Flush();
 
@@ -94,7 +94,7 @@ namespace Snowstorm
 		m_FrameIndex = 0;
 	}
 
-	void RendererSingleton::DrawMesh(const glm::mat4& transform,
+	void RendererService::DrawMesh(const glm::mat4& transform,
 	                                 const Ref<Mesh>& mesh,
 	                                 const Ref<MaterialInstance>& materialInstance,
 	                                 const uint32_t albedoTextureIndex,
@@ -130,17 +130,17 @@ namespace Snowstorm
 		batch->Instances.push_back(instance);
 	}
 
-	void RendererSingleton::UploadLights(const LightDataBlock& lightData)
+	void RendererService::UploadLights(const LightDataBlock& lightData)
 	{
 		m_Lights = lightData;
 	}
 
-	void RendererSingleton::UploadEnvironment(const EnvironmentDataBlock& environment)
+	void RendererService::UploadEnvironment(const EnvironmentDataBlock& environment)
 	{
 		m_Environment = environment;
 	}
 
-	void RendererSingleton::Flush()
+	void RendererService::Flush()
 	{
 		if (!m_CommandContext)
 		{
@@ -153,7 +153,7 @@ namespace Snowstorm
 		}
 	}
 
-	Ref<DescriptorSet> RendererSingleton::AcquireFrameSet(const Ref<Pipeline>& pipeline, const uint32_t frameIndex)
+	Ref<DescriptorSet> RendererService::AcquireFrameSet(const Ref<Pipeline>& pipeline, const uint32_t frameIndex)
 	{
 		const auto& setLayouts = pipeline->GetSetLayouts();
 		SS_CORE_ASSERT(!setLayouts.empty() && setLayouts[0], "Pipeline missing set=0 (Frame) layout");
@@ -222,7 +222,7 @@ namespace Snowstorm
 		return perFrameFrameSets[frameIndex];
 	}
 
-	void RendererSingleton::SetIBLData(const uint32_t irradianceIndex,
+	void RendererService::SetIBLData(const uint32_t irradianceIndex,
 	                                   const uint32_t prefilteredIndex,
 	                                   const uint32_t brdfLutIndex,
 	                                   const uint32_t prefilteredMipCount)
@@ -233,7 +233,7 @@ namespace Snowstorm
 		m_PrefilteredMipCount = prefilteredMipCount;
 	}
 
-	void RendererSingleton::DrawFullscreenTriangle(const Ref<Pipeline>& pipeline)
+	void RendererService::DrawFullscreenTriangle(const Ref<Pipeline>& pipeline)
 	{
 		if (!m_CommandContext || !pipeline)
 		{
@@ -245,7 +245,7 @@ namespace Snowstorm
 		m_CommandContext->Draw(3, 1, 0); // fullscreen triangle, no vertex/index buffer
 	}
 
-	void RendererSingleton::SetShadowData(const glm::mat4& lightViewProj, const uint32_t shadowMapIndex, const uint32_t shadowResolution)
+	void RendererService::SetShadowData(const glm::mat4& lightViewProj, const uint32_t shadowMapIndex, const uint32_t shadowResolution)
 	{
 		m_LightViewProj = lightViewProj;
 		m_ShadowMapIndex = shadowMapIndex;
@@ -255,7 +255,7 @@ namespace Snowstorm
 		}
 	}
 
-	const Ref<DescriptorSet>& RendererSingleton::AcquireObjectSet(const Ref<Pipeline>& pipeline,
+	const Ref<DescriptorSet>& RendererService::AcquireObjectSet(const Ref<Pipeline>& pipeline,
 	                                                              const uint32_t frameIndex,
 	                                                              const char* debugName)
 	{
@@ -288,7 +288,7 @@ namespace Snowstorm
 		return perFrameObjectSets[frameIndex];
 	}
 
-	bool RendererSingleton::WriteBatchInstancedDraw(BatchData& batch,
+	bool RendererService::WriteBatchInstancedDraw(BatchData& batch,
 	                                                const Ref<DescriptorSet>& objectSet,
 	                                                const char* overflowContext)
 	{
@@ -318,7 +318,7 @@ namespace Snowstorm
 		return true;
 	}
 
-	void RendererSingleton::DrawBatchesDepthOnly(const Ref<Pipeline>& depthPipeline, const glm::mat4& lightViewProj)
+	void RendererService::DrawBatchesDepthOnly(const Ref<Pipeline>& depthPipeline, const glm::mat4& lightViewProj)
 	{
 		if (!m_CommandContext || m_Batches.empty() || !depthPipeline)
 		{
@@ -350,7 +350,7 @@ namespace Snowstorm
 		}
 	}
 
-	void RendererSingleton::FlushBatch(BatchData& batch,
+	void RendererService::FlushBatch(BatchData& batch,
 	                                   const Ref<CommandContext>& commandContext,
 	                                   const uint32_t frameIndex)
 	{
@@ -398,7 +398,7 @@ namespace Snowstorm
 		batch.Instances.clear();
 	}
 
-	void RendererSingleton::EnsureInstanceBuffer(const uint32_t frameIndex, uint32_t /*additionalNeeded*/)
+	void RendererService::EnsureInstanceBuffer(const uint32_t frameIndex, uint32_t /*additionalNeeded*/)
 	{
 		if (m_InstanceBuffers.size() <= frameIndex)
 		{

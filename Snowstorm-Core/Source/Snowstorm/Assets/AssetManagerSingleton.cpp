@@ -4,9 +4,11 @@
 #include "AssetFileTime.hpp"
 #include "MeshBoundsBuilder.hpp"
 #include "MeshMetaCache.hpp"
+#include "Snowstorm/Core/Application.hpp"
+#include "Snowstorm/Service/ServiceManager.hpp"
 #include "Snowstorm/World/World.hpp"
 #include "Snowstorm/World/Entity.hpp"
-#include "Snowstorm/Render/MeshLibrarySingleton.hpp"
+#include "Snowstorm/Render/MeshLibrary.hpp"
 #include "Snowstorm/Render/Shader.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
@@ -274,7 +276,7 @@ namespace Snowstorm
 			}
 		}
 
-		auto& meshLib = m_World->GetSingleton<MeshLibrarySingleton>();
+		auto& meshLib = Application::Get().GetServiceManager().GetService<MeshLibrary>();
 		Ref<Mesh> mesh = (sub.SubmeshIndex >= 0)
 		                     ? meshLib.Load(filePath.string(), sub.SubmeshIndex)
 		                     : meshLib.Load(filePath.string());
@@ -312,7 +314,7 @@ namespace Snowstorm
 		if (!meta)
 			return nullptr;
 
-		auto& shaderLib = m_World->GetSingleton<ShaderLibrarySingleton>();
+		auto& shaderLib = Application::Get().GetServiceManager().GetService<ShaderLibrary>();
 		Ref<Shader> shader = shaderLib.Load(meta->Path.string());
 
 		// Only cache successes — see GetMesh: caching a null on a failed dxc compile permanently poisons
@@ -367,7 +369,7 @@ namespace Snowstorm
 		        ? "assets/shaders/Mandelbrot.frag.hlsl"
 		        : "assets/shaders/DefaultLit.frag.hlsl";
 
-		auto& shaderLib = m_World->GetSingleton<ShaderLibrarySingleton>();
+		auto& shaderLib = Application::Get().GetServiceManager().GetService<ShaderLibrary>();
 		Ref<Shader> shader = shaderLib.Load("assets/shaders/Mesh.vert.hlsl", fragPath);
 
 		// Common vertex layout for Mesh::Vertex (matches your editor bootstrap)

@@ -9,7 +9,7 @@
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererAPI.hpp"
-#include "Snowstorm/Render/RendererSingleton.hpp"
+#include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/World/World.hpp"
 #include "Snowstorm/Components/VisibilityCacheComponent.hpp"
 #include "Service/EditorTheme.hpp"
@@ -146,10 +146,10 @@ namespace Snowstorm
 
 		ImGui::Spacing();
 
-		// Last scene-pass GPU submission stats (RendererSingleton::RenderStats). With instancing,
+		// Last scene-pass GPU submission stats (RendererService::RenderStats). With instancing,
 		// DrawCalls == Batches (one instanced draw per mesh+material) while Instances counts every
 		// object — a big gap between Instances and DrawCalls means instancing is doing its job.
-		const RenderStats& stats = SingletonView<RendererSingleton>().GetStats();
+		const RenderStats& stats = ServiceView<RendererService>().GetStats();
 		ImGui::Text("Draw calls: %u", stats.DrawCalls);
 		ImGui::Text("Batches:    %u", stats.Batches);
 		ImGui::Text("Instances:  %u", stats.Instances);
@@ -337,7 +337,7 @@ namespace Snowstorm
 		// graph runs (shadow, forward, the one-time IBL bakes, editor) brackets itself in a timestamp scope,
 		// and a pass may nest sub-scopes (Sky inside Forward) — scope.Depth drives the indent. Smoothed +
 		// bar-rendered the same way. Empty (whole section hidden) if the device lacks timestamp support.
-		if (const auto& gpuPasses = SingletonView<RendererSingleton>().GetGpuPassTimes(); !gpuPasses.empty())
+		if (const auto& gpuPasses = ServiceView<RendererService>().GetGpuPassTimes(); !gpuPasses.empty())
 		{
 			ImGui::Spacing();
 			EditorTheme::SectionHeader("GPU passes (ms)");

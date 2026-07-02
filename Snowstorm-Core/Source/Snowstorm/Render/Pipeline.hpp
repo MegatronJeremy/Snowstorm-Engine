@@ -5,6 +5,7 @@
 #include "Snowstorm/Core/Base.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -16,7 +17,7 @@ namespace Snowstorm
 	enum class PipelineType : uint8_t
 	{
 		Graphics = 0,
-		Compute  = 1
+		Compute = 1
 	};
 
 	enum class PrimitiveTopology : uint8_t
@@ -63,12 +64,12 @@ namespace Snowstorm
 	{
 		Unknown = 0,
 
-		Float,   // 1x32-bit
-		Float2,  // 2x32-bit
-		Float3,  // 3x32-bit
-		Float4,  // 4x32-bit
+		Float,  // 1x32-bit
+		Float2, // 2x32-bit
+		Float3, // 3x32-bit
+		Float4, // 4x32-bit
 
-		UInt,    // 1x32-bit
+		UInt, // 1x32-bit
 		UInt2,
 		UInt3,
 		UInt4,
@@ -111,7 +112,7 @@ namespace Snowstorm
 
 	struct PipelineDepthStencilState
 	{
-		bool EnableDepthTest  = false;
+		bool EnableDepthTest = false;
 		bool EnableDepthWrite = false;
 		CompareOp DepthCompare = CompareOp::LessOrEqual;
 
@@ -171,9 +172,24 @@ namespace Snowstorm
 		// Modern: pipelines own descriptor set layouts (set 0=material, set 1=frame, etc.)
 		[[nodiscard]] virtual const std::vector<Ref<DescriptorSetLayout>>& GetSetLayouts() const = 0;
 
+		// Shader hot-reload: rebuild the backend pipeline object (GPU state + shader modules) in place from
+		// GetDesc(), which still references the same Shader — whose SPIR-V has been recompiled on disk. The
+		// backend swaps its internal handle, so every holder of this Ref<Pipeline> transparently binds the
+		// new pipeline next frame (no re-wiring). Safe only when the shader's descriptor/vertex layout is
+		// unchanged (editing shader math): a binding-layout change would invalidate the renderer's cached
+		// descriptor sets, so backends log and refuse rather than corrupt state. See ShaderReloadSystem.
+		virtual void Reload() {}
+
 		static Ref<Pipeline> Create(const PipelineDesc& desc);
+
+		// Invoke `fn` for every live pipeline (the registry holds weak refs populated by Create). Used by the
+		// shader-reload sweep to find pipelines whose shader recompiled. Dead entries are pruned as it walks.
+		static void ForEachLive(const std::function<void(const Ref<Pipeline>&)>& fn);
 
 	protected:
 		Pipeline() = default;
+
+		// Called by Create() after construction to enrol the pipeline in the live registry.
+		static void Register(const Ref<Pipeline>& pipeline);
 	};
 }

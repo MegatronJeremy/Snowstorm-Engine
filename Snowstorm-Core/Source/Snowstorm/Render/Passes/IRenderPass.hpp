@@ -2,7 +2,7 @@
 
 namespace Snowstorm
 {
-	// Base for the first-class render passes extracted out of RendererSingleton. Each pass owns its own
+	// Base for the first-class render passes extracted out of RendererService. Each pass owns its own
 	// pipelines/targets/state and is held by RenderSystem, so it persists across frames and tears down in
 	// the normal device-shutdown window (Renderer::WaitIdle drains the GPU before worlds/systems die).
 	//

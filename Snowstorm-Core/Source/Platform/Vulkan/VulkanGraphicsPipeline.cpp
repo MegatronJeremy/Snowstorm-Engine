@@ -266,6 +266,7 @@ namespace Snowstorm
 		// the renderer's positional indexing (GetSetLayouts()[N] == set N) stays valid. A shader that doesn't
 		// touch a set still gets a (harmless) empty layout in that slot.
 		static const char* kSetNames[kReflectedSetCount] = {"Set0_Frame", "Set1_Material", "Set2_Object"};
+		m_LayoutSignature.clear();
 		for (uint32_t setIndex = 0; setIndex < kReflectedSetCount; ++setIndex)
 		{
 			DescriptorSetLayoutDesc layoutDesc{};
@@ -274,6 +275,10 @@ namespace Snowstorm
 			for (const auto& [binding, desc] : setBindings[setIndex]) // std::map -> ascending binding order
 			{
 				layoutDesc.Bindings.push_back(desc);
+				// Fold (set, binding, type, count) into the layout signature. Stage visibility is deliberately
+				// excluded (it doesn't affect descriptor-set compatibility, and a math edit can shift it).
+				m_LayoutSignature += "s" + std::to_string(setIndex) + "b" + std::to_string(desc.Binding) +
+				                     "t" + std::to_string(static_cast<int>(desc.Type)) + "x" + std::to_string(desc.Count) + ";";
 			}
 			m_SetLayouts.push_back(DescriptorSetLayout::Create(layoutDesc));
 			SS_CORE_ASSERT(m_SetLayouts[setIndex], "Failed to create reflected DescriptorSetLayout");
@@ -303,7 +308,11 @@ namespace Snowstorm
 		SS_CORE_ASSERT(m_Desc.Shader, "PipelineDesc.Shader must be set");
 
 		m_Device = GetVulkanDevice();
+		Build();
+	}
 
+	void VulkanGraphicsPipeline::Build()
+	{
 		// --- Shader modules ---
 		const std::string vertPath = m_Desc.Shader->GetCompiledPath(ShaderStageKind::Vertex);
 		const std::string fragPath = m_Desc.Shader->GetCompiledPath(ShaderStageKind::Fragment);
@@ -564,22 +573,65 @@ namespace Snowstorm
 
 		vkDestroyShaderModule(m_Device, fragModule, nullptr);
 		vkDestroyShaderModule(m_Device, vertModule, nullptr);
+
+		m_BuiltShaderVersion = m_Desc.Shader->GetVersion();
+	}
+
+	void VulkanGraphicsPipeline::Destroy()
+	{
+		// Caller is responsible for device idle. Destroy in reverse creation order.
+		if (m_Pipeline != VK_NULL_HANDLE)
+		{
+			vkDestroyPipeline(m_Device, m_Pipeline, nullptr);
+			m_Pipeline = VK_NULL_HANDLE;
+		}
+		if (m_PipelineLayout != VK_NULL_HANDLE)
+		{
+			vkDestroyPipelineLayout(m_Device, m_PipelineLayout, nullptr);
+			m_PipelineLayout = VK_NULL_HANDLE;
+		}
+		// Drop the reflected set layouts (the bindless set 3 is external/manager-owned and not destroyed here).
+		m_SetLayouts.clear();
+	}
+
+	void VulkanGraphicsPipeline::Reload()
+	{
+		// Nothing to do if the shader hasn't recompiled since we last built.
+		if (m_Desc.Shader->GetVersion() == m_BuiltShaderVersion)
+		{
+			return;
+		}
+
+		// The new SPIR-V might declare a different binding interface. Reflect it first (cheap) and compare
+		// against the signature we built with: if it changed, the renderer's cached descriptor sets (keyed by
+		// this pipeline pointer, allocated from the OLD set layout) would be incompatible. Rebuilding anyway
+		// would corrupt bindings, so refuse and keep the working pipeline — a restart picks up the new layout.
+		const std::string prevSignature = m_LayoutSignature;
+
+		// Drain all in-flight frames once before touching GPU objects any command buffer might reference.
+		vkDeviceWaitIdle(m_Device);
+		Destroy();
+		Build();
+
+		if (m_LayoutSignature != prevSignature)
+		{
+			SS_CORE_WARN("Shader hot-reload for '{}' changed the descriptor/binding layout. The live pipeline "
+			             "was rebuilt, but cached descriptor sets may be stale — restart the app if bindings "
+			             "misbehave. (Layout hot-swap is not yet supported.)",
+			             m_Desc.Shader->GetPath());
+		}
+		else
+		{
+			SS_CORE_INFO("Hot-reloaded graphics pipeline '{}' (shader v{}).", m_Desc.DebugName, m_BuiltShaderVersion);
+		}
 	}
 
 	VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
 	{
-		if (m_Pipeline != VK_NULL_HANDLE)
+		if (m_Pipeline != VK_NULL_HANDLE || m_PipelineLayout != VK_NULL_HANDLE)
 		{
 			vkDeviceWaitIdle(m_Device);
-			vkDestroyPipeline(m_Device, m_Pipeline, nullptr);
-			m_Pipeline = VK_NULL_HANDLE;
-		}
-
-		if (m_PipelineLayout != VK_NULL_HANDLE)
-		{
-			vkDeviceWaitIdle(m_Device);
-			vkDestroyPipelineLayout(m_Device, m_PipelineLayout, nullptr);
-			m_PipelineLayout = VK_NULL_HANDLE;
+			Destroy();
 		}
 	}
 }

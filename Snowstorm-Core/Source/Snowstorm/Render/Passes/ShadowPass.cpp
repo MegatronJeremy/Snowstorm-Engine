@@ -1,14 +1,16 @@
 #include "ShadowPass.hpp"
 
+#include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Math/Bounds.hpp"
 #include "Snowstorm/Render/Mesh.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
-#include "Snowstorm/Render/RendererSingleton.hpp"
+#include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
 #include "Snowstorm/Render/Shader.hpp"
+#include "Snowstorm/Service/ServiceManager.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -67,7 +69,10 @@ namespace Snowstorm
 			return;
 		}
 
-		Ref<Shader> shader = Shader::Create("assets/shaders/Shadow.vert.hlsl", "assets/shaders/Shadow.frag.hlsl");
+		// Load via the app-scoped ShaderLibrary (not Shader::Create) so the shader is registered for
+		// hot-reload — the reload sweep then rebuilds this pipeline when the source changes.
+		Ref<Shader> shader = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load(
+		    "assets/shaders/Shadow.vert.hlsl", "assets/shaders/Shadow.frag.hlsl");
 		SS_CORE_ASSERT(shader, "Failed to load Shadow shader");
 
 		// Same vertex layout as the lit mesh pipeline (set in AssetManagerSingleton): the shadow VS
@@ -111,7 +116,7 @@ namespace Snowstorm
 		m_DepthFormat = depthFormat;
 	}
 
-	void ShadowPass::RecordDepth(RendererSingleton& renderer, const PixelFormat depthFormat, const glm::mat4& lightViewProj)
+	void ShadowPass::RecordDepth(RendererService& renderer, const PixelFormat depthFormat, const glm::mat4& lightViewProj)
 	{
 		EnsurePipeline(depthFormat);
 		renderer.DrawBatchesDepthOnly(m_Pipeline, lightViewProj);

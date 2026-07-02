@@ -1,11 +1,13 @@
 #include "IBLBakePass.hpp"
 
+#include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Render/Shader.hpp"
+#include "Snowstorm/Service/ServiceManager.hpp"
 
 #include <glm/glm.hpp>
 
@@ -81,10 +83,13 @@ namespace Snowstorm
 			return;
 		}
 
-		Ref<Shader> captureCs = Shader::Create("assets/shaders/IBLCapture.hlsl");
-		Ref<Shader> irradianceCs = Shader::Create("assets/shaders/IBLIrradiance.hlsl");
-		Ref<Shader> prefilterCs = Shader::Create("assets/shaders/IBLPrefilter.hlsl");
-		Ref<Shader> brdfCs = Shader::Create("assets/shaders/IBLBRDFLut.hlsl");
+		// Load via the app-scoped ShaderLibrary (not Shader::Create) so these compute shaders register for
+		// hot-reload; the reload sweep then rebuilds the bake pipelines when a source changes.
+		auto& shaderLib = Application::Get().GetServiceManager().GetService<ShaderLibrary>();
+		Ref<Shader> captureCs = shaderLib.Load("assets/shaders/IBLCapture.hlsl");
+		Ref<Shader> irradianceCs = shaderLib.Load("assets/shaders/IBLIrradiance.hlsl");
+		Ref<Shader> prefilterCs = shaderLib.Load("assets/shaders/IBLPrefilter.hlsl");
+		Ref<Shader> brdfCs = shaderLib.Load("assets/shaders/IBLBRDFLut.hlsl");
 		if (!captureCs || !irradianceCs || !prefilterCs || !brdfCs)
 		{
 			SS_CORE_ERROR("[IBL] failed to load bake compute shaders");

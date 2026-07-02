@@ -67,7 +67,11 @@ namespace Snowstorm
 		SS_CORE_ASSERT(m_Desc.Shader, "PipelineDesc.Shader must be set");
 
 		m_Device = GetVulkanDevice();
+		Build();
+	}
 
+	void VulkanComputePipeline::Build()
+	{
 		const std::string compPath = m_Desc.Shader->GetCompiledPath(ShaderStageKind::Compute);
 		SS_CORE_ASSERT(!compPath.empty(), "Compute pipeline shader has no compiled compute SPIR-V (missing #type compute?)");
 
@@ -92,6 +96,7 @@ namespace Snowstorm
 			orderedSets[s->set] = s;
 		}
 
+		m_LayoutSignature.clear();
 		for (const auto& [setIndex, set] : orderedSets)
 		{
 			DescriptorSetLayoutDesc layoutDesc{};
@@ -108,6 +113,9 @@ namespace Snowstorm
 				binding.Visibility = ShaderStage::Compute;
 				binding.DebugName = rb->name ? rb->name : "";
 				layoutDesc.Bindings.push_back(binding);
+				// (set, binding, type, count) -> layout signature (see the graphics pipeline for rationale).
+				m_LayoutSignature += "s" + std::to_string(setIndex) + "b" + std::to_string(binding.Binding) +
+				                     "t" + std::to_string(static_cast<int>(binding.Type)) + "x" + std::to_string(binding.Count) + ";";
 			}
 
 			m_SetLayouts.push_back(DescriptorSetLayout::Create(layoutDesc));
@@ -162,21 +170,56 @@ namespace Snowstorm
 		               "Failed to create Vulkan compute pipeline");
 
 		vkDestroyShaderModule(m_Device, module, nullptr);
+
+		m_BuiltShaderVersion = m_Desc.Shader->GetVersion();
 	}
 
-	VulkanComputePipeline::~VulkanComputePipeline()
+	void VulkanComputePipeline::Destroy()
 	{
 		if (m_Pipeline != VK_NULL_HANDLE)
 		{
-			vkDeviceWaitIdle(m_Device);
 			vkDestroyPipeline(m_Device, m_Pipeline, nullptr);
 			m_Pipeline = VK_NULL_HANDLE;
 		}
 		if (m_PipelineLayout != VK_NULL_HANDLE)
 		{
-			vkDeviceWaitIdle(m_Device);
 			vkDestroyPipelineLayout(m_Device, m_PipelineLayout, nullptr);
 			m_PipelineLayout = VK_NULL_HANDLE;
+		}
+		m_SetLayouts.clear();
+	}
+
+	void VulkanComputePipeline::Reload()
+	{
+		if (m_Desc.Shader->GetVersion() == m_BuiltShaderVersion)
+		{
+			return;
+		}
+
+		const std::string prevSignature = m_LayoutSignature;
+
+		vkDeviceWaitIdle(m_Device);
+		Destroy();
+		Build();
+
+		if (m_LayoutSignature != prevSignature)
+		{
+			SS_CORE_WARN("Compute shader hot-reload for '{}' changed the descriptor/binding layout; cached "
+			             "descriptor sets may be stale — restart if bindings misbehave.",
+			             m_Desc.Shader->GetPath());
+		}
+		else
+		{
+			SS_CORE_INFO("Hot-reloaded compute pipeline '{}' (shader v{}).", m_Desc.DebugName, m_BuiltShaderVersion);
+		}
+	}
+
+	VulkanComputePipeline::~VulkanComputePipeline()
+	{
+		if (m_Pipeline != VK_NULL_HANDLE || m_PipelineLayout != VK_NULL_HANDLE)
+		{
+			vkDeviceWaitIdle(m_Device);
+			Destroy();
 		}
 	}
 

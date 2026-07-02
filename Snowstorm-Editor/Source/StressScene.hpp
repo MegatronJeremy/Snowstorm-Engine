@@ -7,7 +7,7 @@ namespace Snowstorm
 	class World;
 
 	// Tunables for the stress-test showcase scene. Defaults are sized to stress a temporal upscaler
-	// without overwhelming the per-object draw path (see RendererSingleton: one DrawIndexed/object).
+	// without overwhelming the per-object draw path (see RendererService: one DrawIndexed/object).
 	struct StressSceneParams
 	{
 		// High-frequency albedo field: GridDim x GridDim tiles of checkerboard/sheet textures.

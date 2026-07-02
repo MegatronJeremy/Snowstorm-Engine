@@ -1,4 +1,4 @@
-#include "MeshLibrarySingleton.hpp"
+#include "MeshLibrary.hpp"
 
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
@@ -56,7 +56,7 @@ namespace Snowstorm
 		}
 	}
 
-	Ref<Mesh> MeshLibrarySingleton::Load(const std::string& filepath)
+	Ref<Mesh> MeshLibrary::Load(const std::string& filepath)
 	{
 		if (m_Meshes.contains(filepath))
 		{
@@ -101,7 +101,7 @@ namespace Snowstorm
 		return mesh;
 	}
 
-	Ref<Mesh> MeshLibrarySingleton::Load(const std::string& filepath, const int submeshIndex)
+	Ref<Mesh> MeshLibrary::Load(const std::string& filepath, const int submeshIndex)
 	{
 		// Cache key embeds the submesh index so different parts of the same file stay distinct.
 		const std::string cacheKey = filepath + "?submesh=" + std::to_string(submeshIndex);
@@ -153,12 +153,12 @@ namespace Snowstorm
 		return result;
 	}
 
-	void MeshLibrarySingleton::Clear()
+	void MeshLibrary::Clear()
 	{
 		m_Meshes.clear();
 	}
 
-	bool MeshLibrarySingleton::Remove(const std::string& filepath)
+	bool MeshLibrary::Remove(const std::string& filepath)
 	{
 		return m_Meshes.erase(filepath) > 0;
 	}

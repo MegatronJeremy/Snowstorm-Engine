@@ -2,6 +2,7 @@
 
 #include <entt/entt.hpp>
 
+#include <Snowstorm/Core/Application.hpp>
 #include <Snowstorm/Core/Timestep.hpp>
 #include <Snowstorm/Utility/NonCopyable.hpp>
 #include <Snowstorm/World/World.hpp>
@@ -62,11 +63,20 @@ namespace Snowstorm
 			return m_World->GetRegistry().ChangedView<Components...>();
 		}
 
-		/// Returns a singleton present in the system's context
+		/// Returns a WORLD-scoped singleton (per-scene state: input, editor commands, asset manager).
 		template <typename T>
 		[[nodiscard]] T& SingletonView()
 		{
 			return m_World->GetSingleton<T>();
+		}
+
+		/// Returns an APPLICATION-scoped service (device-lifetime subsystems: renderer, shader/mesh
+		/// libraries). Symmetric with SingletonView but resolves against the app's ServiceManager, so the
+		/// same instance is shared across every World — the correct scope for GPU resource caches.
+		template <typename T>
+		[[nodiscard]] T& ServiceView()
+		{
+			return Application::Get().GetServiceManager().GetService<T>();
 		}
 
 		WorldRef m_World;

@@ -10,7 +10,7 @@
 
 namespace Snowstorm
 {
-	class RendererSingleton;
+	class RendererService;
 	class World;
 
 	// Directional-sun shadow pass: renders scene depth from the light's POV into a shared depth-only,
@@ -35,7 +35,7 @@ namespace Snowstorm
 		// transforming by `lightViewProj` (pushed as a per-draw push constant, so one command buffer can
 		// render many light views: the sun plus each spot atlas tile). Lazily builds the depth pipeline for
 		// `depthFormat`. Call inside a shadow render pass after the renderer's caster DrawMesh accumulation.
-		void RecordDepth(RendererSingleton& renderer, PixelFormat depthFormat, const glm::mat4& lightViewProj);
+		void RecordDepth(RendererService& renderer, PixelFormat depthFormat, const glm::mat4& lightViewProj);
 
 		// Build a spot light's perspective world->light-clip matrix (FOV = 2*outer cone half-angle, square
 		// aspect, near..Range). Pure + static so the gather (LightingSystem) can compute it before the pass.

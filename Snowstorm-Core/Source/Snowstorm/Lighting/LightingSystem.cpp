@@ -7,7 +7,7 @@
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Passes/ShadowPass.hpp"
-#include "Snowstorm/Render/RendererSingleton.hpp"
+#include "Snowstorm/Render/RendererService.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -18,7 +18,7 @@ namespace Snowstorm
 	void LightingSystem::Execute(Timestep ts)
 	{
 		auto lightView = View<DirectionalLightComponent>();
-		auto& renderer3DSingleton = SingletonView<RendererSingleton>();
+		auto& renderer3DSingleton = ServiceView<RendererService>();
 
 		LightDataBlock lightData;
 		bool droppedLights = false;
