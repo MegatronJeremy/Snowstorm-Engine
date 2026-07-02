@@ -9,6 +9,28 @@ struct DirectionalLight
 	float Padding;
 };
 
+// Positional lights. Mirror GPUPointLight / GPUSpotLight in LightingUniforms.hpp field-for-field.
+// Cone angles arrive as cos(angle) so the shader compares against dot() with no trig.
+struct PointLight
+{
+	float3 Position;
+	float Range;
+	float3 Color;
+	float Intensity;
+};
+
+struct SpotLight
+{
+	float3 Position;
+	float Range;
+	float3 Color;
+	float Intensity;
+	float3 Direction;
+	float CosInner;
+	float CosOuter;
+	float3 Padding;
+};
+
 struct VSInput
 {
 	float3 Position : TEXCOORD0;
@@ -38,6 +60,8 @@ struct PSInput
 };
 
 static const int MAX_DIRECTIONAL_LIGHTS = 4;
+static const int MAX_POINT_LIGHTS = 16;
+static const int MAX_SPOT_LIGHTS = 16;
 
 // --- SPACE 0: Global Frame Data ---
 cbuffer FrameCB : register(b0, space0)
@@ -49,6 +73,16 @@ cbuffer FrameCB : register(b0, space0)
 	DirectionalLight DirectionalLights[4];
 	int LightCount;
 	float3 _Pad1;
+
+	// Positional lights. Appended after the directional block; mirrors LightDataBlock's tail (each count
+	// followed by a float3 pad to keep the next array 16-byte aligned).
+	PointLight PointLights[16];
+	int PointCount;
+	float3 _PointPad;
+
+	SpotLight SpotLights[16];
+	int SpotCount;
+	float3 _SpotPad;
 
 	// Environment: shared by the sky pass and the DefaultLit ambient term. Mirrors the FrameCB tail in
 	// RendererSingleton.cpp field-for-field (each float3 register-packed with the trailing float).

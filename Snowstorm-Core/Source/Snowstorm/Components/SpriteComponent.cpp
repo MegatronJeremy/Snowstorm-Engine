@@ -12,7 +12,7 @@ namespace Snowstorm
 
 		registration::class_<SpriteComponent>("Snowstorm::SpriteComponent")
 		    .constructor()
-		    .property("TilingFactor", &SpriteComponent::TilingFactor)
+		    .property("TilingFactor", &SpriteComponent::TilingFactor)(metadata("Min", 0.0f), metadata("Speed", 0.1f))
 		    .property("TintColor", &SpriteComponent::TintColor)(metadata("Color", true)); // inspector: color picker
 	}
 

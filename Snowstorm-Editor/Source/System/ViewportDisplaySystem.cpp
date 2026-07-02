@@ -11,6 +11,7 @@
 #include "Snowstorm/Components/IDComponent.hpp"
 #include "Snowstorm/Core/KeyCodes.hpp"
 #include "Snowstorm/Input/InputStateSingleton.hpp"
+#include "Snowstorm/Lighting/LightingComponents.hpp"
 #include "Snowstorm/Math/Bounds.hpp"
 #include "Snowstorm/Math/Picking.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
@@ -25,15 +26,24 @@
 #include <glm/gtx/euler_angles.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
 
+#include <glm/geometric.hpp>
+
 #include <imgui.h>
 #include <ImGuizmo.h>
 
+#include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace Snowstorm
 {
 	namespace
 	{
+		// Constant screen radius (px) of a light's billboard icon -- the little disc drawn at the light's
+		// origin. It's BOTH the visible marker and the click hitbox, so "what you see is what you click"
+		// (Unreal/Unity icon picking). Drawing and PickEntity share this constant so they never drift.
+		constexpr float kLightIconRadiusPx = 9.0f;
+
 		// Find the camera entity rendering into the given viewport (prefer Primary), so the gizmo and
 		// picking use the same view/projection the scene was rendered with. Mirrors RenderSystem's
 		// FindCameraForViewport but only needs the runtime matrices.
@@ -86,7 +96,279 @@ namespace Snowstorm
 					hit = e;
 				}
 			}
+
+			// Lights have no mesh to raycast, so they're picked by their billboard icon: a light is a hit if
+			// the click lands within the icon's screen radius of its projected origin (Unity/Unreal icon
+			// picking). The icon is drawn at the same radius (kLightIconRadiusPx) so the hitbox matches the
+			// visible marker. Depth-ordered via distance-along-ray against bestT so a mesh in front wins.
+			auto tryPickLightAt = [&](const glm::vec3& worldPos, const entt::entity e)
+			{
+				const glm::vec4 clip = viewProj * glm::vec4(worldPos, 1.0f);
+				if (clip.w <= 1e-5f)
+				{
+					return; // behind camera
+				}
+				const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+				// NDC -> viewport-local pixels (same Y-flip as ScreenPointToRay's inverse). px/py here are
+				// already relative to the viewport top-left, so no rect offset is added.
+				const float sx = (ndc.x * 0.5f + 0.5f) * width;
+				const float sy = (0.5f - ndc.y * 0.5f) * height;
+				if (glm::abs(sx - px) > kLightIconRadiusPx || glm::abs(sy - py) > kLightIconRadiusPx)
+				{
+					return;
+				}
+				const float t = glm::dot(worldPos - ray.Origin, ray.Direction); // distance along the view ray
+				if (t > 0.0f && t < bestT)
+				{
+					bestT = t;
+					hit = e;
+				}
+			};
+
+			for (auto pv = reg.view<const PointLightComponent, const TransformComponent>(); const entt::entity e : pv)
+			{
+				tryPickLightAt(reg.Read<TransformComponent>(e).Position, e);
+			}
+			for (auto sv = reg.view<const SpotLightComponent, const TransformComponent>(); const entt::entity e : sv)
+			{
+				tryPickLightAt(reg.Read<TransformComponent>(e).Position, e);
+			}
+			for (auto dv = reg.view<const DirectionalLightComponent, const TransformComponent>(); const entt::entity e : dv)
+			{
+				tryPickLightAt(reg.Read<TransformComponent>(e).Position, e);
+			}
+
 			return hit;
+		}
+
+		// Project a world point to viewport pixel coordinates via the camera's ViewProjection. Returns false
+		// when the point is at/behind the camera plane (w <= 0), where the perspective divide is invalid and
+		// the projected position would flip -- callers skip drawing rather than draw a garbage line.
+		bool WorldToScreen(const glm::vec3& world, const glm::mat4& viewProj,
+		                   const ImVec2& rectMin, const ImVec2& rectSize, ImVec2& outPx)
+		{
+			const glm::vec4 clip = viewProj * glm::vec4(world, 1.0f);
+			if (clip.w <= 1e-5f)
+			{
+				return false;
+			}
+			const glm::vec3 ndc = glm::vec3(clip) / clip.w; // [-1,1]
+			// NDC -> viewport pixels. This is the exact inverse of ScreenPointToRay's pixel->NDC mapping
+			// (Picking.hpp), which is the proven convention: X maps straight through, Y is FLIPPED because
+			// ImGui screen space grows downward while NDC +Y is up. (Earlier this omitted the flip, which
+			// mirrored every gizmo vertically about the viewport center -- cone in the wrong place, drag up
+			// moving it down.)
+			outPx.x = rectMin.x + (ndc.x * 0.5f + 0.5f) * rectSize.x;
+			outPx.y = rectMin.y + (0.5f - ndc.y * 0.5f) * rectSize.y;
+			return true;
+		}
+
+		// Draw a closed polyline ring of `segments` points, centered at `center`, spanning the plane defined
+		// by orthonormal `axisA`/`axisB` scaled by `radius`. Points that fail to project (behind camera) break
+		// the ring rather than connecting across the screen. Shared by the point-light sphere and spot cap.
+		void DrawWorldRing(ImDrawList* dl, const glm::vec3& center, const glm::vec3& axisA, const glm::vec3& axisB,
+		                   float radius, const glm::mat4& viewProj, const ImVec2& rectMin, const ImVec2& rectSize,
+		                   ImU32 color, int segments = 32)
+		{
+			ImVec2 prev{};
+			bool prevOk = false;
+			for (int k = 0; k <= segments; ++k)
+			{
+				const float a = (static_cast<float>(k) / static_cast<float>(segments)) * 2.0f * 3.14159265f;
+				const glm::vec3 p = center + (axisA * std::cos(a) + axisB * std::sin(a)) * radius;
+				ImVec2 px{};
+				const bool ok = WorldToScreen(p, viewProj, rectMin, rectSize, px);
+				if (ok && prevOk)
+				{
+					dl->AddLine(prev, px, color, 1.5f);
+				}
+				prev = px;
+				prevOk = ok;
+			}
+		}
+
+		// Pack a light color (+ selection highlight) into an ImU32. Selected lights draw at full alpha and a
+		// touch brighter; unselected are dimmer so the viewport isn't noisy with many lights.
+		ImU32 LightGizmoColor(const glm::vec3& c, bool selected)
+		{
+			const float boost = selected ? 1.0f : 0.65f;
+			const ImVec4 col{std::min(c.r * boost + (selected ? 0.15f : 0.0f), 1.0f),
+			                 std::min(c.g * boost + (selected ? 0.15f : 0.0f), 1.0f),
+			                 std::min(c.b * boost + (selected ? 0.15f : 0.0f), 1.0f),
+			                 selected ? 1.0f : 0.75f};
+			return ImGui::GetColorU32(col);
+		}
+
+		// Light type, used to pick a distinguishing icon glyph. Textured sprites (a real bulb/spot/sun image,
+		// like Unreal) are deliberately not used here -- these are cheap draw-list glyphs so no texture/bindless
+		// icon pipeline is needed (see the follow-up issue for the textured version).
+		enum class LightIconKind
+		{
+			Point,       // omnidirectional dot
+			Spot,        // cone symbol (triangle)
+			Directional, // sun (radiating rays)
+		};
+
+		// Draw the billboard icon (a constant-screen-size filled disc + dark outline) at a light's projected
+		// origin, with a small dark glyph on top that differs per light type so you can tell types apart at a
+		// glance. The disc is the always-visible marker AND the click hitbox (PickEntity uses the same radius),
+		// so the icon IS the hitbox. Dark glyph/outline reads on both light and dark backgrounds.
+		void DrawLightIcon(ImDrawList* dl, const glm::vec3& worldPos, const glm::mat4& viewProj,
+		                   const ImVec2& rectMin, const ImVec2& rectSize, ImU32 color, LightIconKind kind)
+		{
+			ImVec2 c{};
+			if (!WorldToScreen(worldPos, viewProj, rectMin, rectSize, c))
+			{
+				return; // behind camera
+			}
+			const ImU32 dark = ImGui::GetColorU32(ImVec4(0, 0, 0, 0.85f));
+			dl->AddCircleFilled(c, kLightIconRadiusPx, color, 16);
+			dl->AddCircle(c, kLightIconRadiusPx, dark, 16, 1.5f);
+
+			const float r = kLightIconRadiusPx;
+			switch (kind)
+			{
+			case LightIconKind::Point:
+				// A small solid dot in the center -> "radiates from a point".
+				dl->AddCircleFilled(c, r * 0.32f, dark, 12);
+				break;
+			case LightIconKind::Spot:
+				// A downward triangle (cone symbol).
+				dl->AddTriangleFilled(ImVec2(c.x - r * 0.5f, c.y - r * 0.4f),
+				                      ImVec2(c.x + r * 0.5f, c.y - r * 0.4f),
+				                      ImVec2(c.x, c.y + r * 0.55f), dark);
+				break;
+			case LightIconKind::Directional:
+				// Four short rays past the disc edge (sun), on the diagonals so they don't hide the outline.
+				for (int k = 0; k < 4; ++k)
+				{
+					const float a = 0.785398f + static_cast<float>(k) * 1.5707964f; // 45deg + k*90deg
+					const ImVec2 d{std::cos(a), std::sin(a)};
+					dl->AddLine(ImVec2(c.x + d.x * r * 1.1f, c.y + d.y * r * 1.1f),
+					            ImVec2(c.x + d.x * r * 1.7f, c.y + d.y * r * 1.7f), color, 1.5f);
+				}
+				break;
+			}
+		}
+
+		// Draw one spot-light cone wireframe at a given half-angle: the base ring at Range, plus four edge
+		// lines from the apex to the rim. Used twice per selected spot -- once for the OUTER angle (where the
+		// light fully cuts off) and once for the INNER angle (where falloff begins), matching how Unreal/Unity
+		// show both cones. right/up span the base plane; dir is the spot's forward axis.
+		void DrawSpotCone(ImDrawList* dl, const glm::vec3& apex, const glm::vec3& dir, const glm::vec3& right,
+		                  const glm::vec3& up, float range, float halfAngleRad, const glm::mat4& viewProj,
+		                  const ImVec2& rectMin, const ImVec2& rectSize, ImU32 color)
+		{
+			const glm::vec3 baseCenter = apex + dir * range;
+			const float baseRadius = range * std::tan(halfAngleRad);
+
+			DrawWorldRing(dl, baseCenter, right, up, baseRadius, viewProj, rectMin, rectSize, color);
+
+			ImVec2 apexPx{};
+			if (!WorldToScreen(apex, viewProj, rectMin, rectSize, apexPx))
+			{
+				return;
+			}
+			for (int k = 0; k < 4; ++k)
+			{
+				const float a = (static_cast<float>(k) / 4.0f) * 2.0f * 3.14159265f;
+				const glm::vec3 rim = baseCenter + (right * std::cos(a) + up * std::sin(a)) * baseRadius;
+				ImVec2 rimPx{};
+				if (WorldToScreen(rim, viewProj, rectMin, rectSize, rimPx))
+				{
+					dl->AddLine(apexPx, rimPx, color, 1.5f);
+				}
+			}
+		}
+
+		// Draw editor gizmos for every point/spot light. The billboard ICON is always drawn (it's the
+		// always-visible locator + click target). The range WIREFRAME (point = three orthogonal rings; spot =
+		// cone: base ring + four apex->rim edges) is drawn ONLY for the selected light -- this is how Unreal/
+		// Unity/Godot do it: drawing every light's range shape at once turns the viewport into spaghetti, so
+		// the shape is contextual detail for the thing you're editing. Position/direction come from the entity
+		// transform, the same source LightingSystem gathers from, so the gizmo matches what's actually lit.
+		void DrawLightGizmos(TrackedRegistry& reg, const glm::mat4& viewProj, const ImVec2& rectMin,
+		                     const ImVec2& rectSize, const Entity selected)
+		{
+			ImDrawList* dl = ImGui::GetWindowDrawList();
+			const entt::entity selectedHandle = selected ? selected.Handle() : entt::null;
+
+			constexpr glm::vec3 kX{1, 0, 0}, kY{0, 1, 0}, kZ{0, 0, 1};
+
+			for (auto view = reg.view<const PointLightComponent, const TransformComponent>();
+			     const entt::entity e : view)
+			{
+				const auto& light = reg.Read<PointLightComponent>(e);
+				const glm::vec3 pos = reg.Read<TransformComponent>(e).Position;
+				const bool isSelected = e == selectedHandle;
+				const ImU32 col = LightGizmoColor(light.Color, isSelected);
+				DrawLightIcon(dl, pos, viewProj, rectMin, rectSize, col, LightIconKind::Point);
+				if (isSelected)
+				{
+					DrawWorldRing(dl, pos, kX, kY, light.Range, viewProj, rectMin, rectSize, col);
+					DrawWorldRing(dl, pos, kX, kZ, light.Range, viewProj, rectMin, rectSize, col);
+					DrawWorldRing(dl, pos, kY, kZ, light.Range, viewProj, rectMin, rectSize, col);
+				}
+			}
+
+			for (auto view = reg.view<const SpotLightComponent, const TransformComponent>();
+			     const entt::entity e : view)
+			{
+				const auto& light = reg.Read<SpotLightComponent>(e);
+				const auto& transform = reg.Read<TransformComponent>(e);
+				const glm::vec3 apex = transform.Position;
+				const bool isSelected = e == selectedHandle;
+				const ImU32 col = LightGizmoColor(light.Color, isSelected);
+
+				// Icon at the spot's apex (its origin) -- the click target, always drawn.
+				DrawLightIcon(dl, apex, viewProj, rectMin, rectSize, col, LightIconKind::Spot);
+				if (!isSelected)
+				{
+					continue; // cone wireframe only for the selected light
+				}
+
+				const glm::mat3 rot = glm::mat3(transform.GetTransformMatrix());
+				const glm::vec3 dir = glm::normalize(rot * glm::vec3(0, 0, -1)); // engine forward = -Z
+				// Basis spanning the cone's base plane (any two axes orthogonal to dir).
+				glm::vec3 up = std::abs(dir.y) > 0.99f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
+				const glm::vec3 right = glm::normalize(glm::cross(dir, up));
+				up = glm::normalize(glm::cross(right, dir));
+
+				const float outer = glm::radians(std::max(light.OuterAngleDeg, light.InnerAngleDeg));
+				const float inner = glm::radians(std::min(light.InnerAngleDeg, light.OuterAngleDeg));
+
+				// Outer cone (full cutoff) at full color; inner cone (where falloff begins) dimmer so the two
+				// read as distinct -- same as Unreal/Unity spot gizmos showing both angles.
+				DrawSpotCone(dl, apex, dir, right, up, light.Range, outer, viewProj, rectMin, rectSize, col);
+				const ImU32 innerCol = ImGui::GetColorU32(ImVec4(ImColor(col).Value.x, ImColor(col).Value.y,
+				                                                 ImColor(col).Value.z, 0.35f));
+				DrawSpotCone(dl, apex, dir, right, up, light.Range, inner, viewProj, rectMin, rectSize, innerCol);
+			}
+
+			// Directional lights are positionless in principle, but one placed at a TransformComponent gets a
+			// sun icon there for selection/manipulation (Unreal's DirectionalLight actor works the same way --
+			// only its rotation matters, but it has a location for the gizmo). Positionless directional lights
+			// (no transform) simply get no icon, as before. Selected -> draw an arrow along the light Direction.
+			for (auto view = reg.view<const DirectionalLightComponent, const TransformComponent>();
+			     const entt::entity e : view)
+			{
+				const auto& light = reg.Read<DirectionalLightComponent>(e);
+				const glm::vec3 pos = reg.Read<TransformComponent>(e).Position;
+				const bool isSelected = e == selectedHandle;
+				const ImU32 col = LightGizmoColor(light.Color, isSelected);
+				DrawLightIcon(dl, pos, viewProj, rectMin, rectSize, col, LightIconKind::Directional);
+
+				if (isSelected && glm::length(light.Direction) > 1e-4f)
+				{
+					const glm::vec3 dir = glm::normalize(light.Direction);
+					ImVec2 a{}, b{};
+					if (WorldToScreen(pos, viewProj, rectMin, rectSize, a) &&
+					    WorldToScreen(pos + dir * 2.0f, viewProj, rectMin, rectSize, b))
+					{
+						dl->AddLine(a, b, col, 1.5f);
+					}
+				}
+			}
 		}
 	}
 
@@ -167,9 +449,15 @@ namespace Snowstorm
 			ImGuizmo::SetRect(imageStart.x, imageStart.y, vp.Size.x, vp.Size.y);
 
 			bool usingGizmo = false;
+			// Whether a transform gizmo was actually drawn this frame. ImGuizmo::IsOver() is STATELESS across
+			// frames -- when Manipulate() isn't called (nothing selected), IsOver() returns its last cached
+			// value at the last gizmo's location. Without this guard, after deselecting a light the frozen
+			// IsOver()==true over the old spot blocked re-picking that same light until you clicked elsewhere.
+			bool gizmoDrawn = false;
 			Entity selected = selection.Selected;
 			if (selected && selected.HasComponent<TransformComponent>())
 			{
+				gizmoDrawn = true;
 				glm::mat4 model = selected.GetComponent<TransformComponent>().GetTransformMatrix();
 
 				if (ImGuizmo::Manipulate(glm::value_ptr(camRt.View), glm::value_ptr(camRt.Projection),
@@ -227,12 +515,19 @@ namespace Snowstorm
 			// the values jitter through the lossy Euler round-trip.
 			selection.GizmoActive = usingGizmo;
 
-			// ---- Mouse picking: left-click in the viewport, not on the gizmo.
-			if (ImGui::IsWindowHovered() && !usingGizmo && !ImGuizmo::IsOver() &&
+			// ---- Mouse picking: left-click in the viewport, not on the gizmo. Only consult ImGuizmo::IsOver()
+			// when a gizmo was actually drawn this frame (see gizmoDrawn) -- otherwise its stale cached value
+			// blocks picking.
+			if (ImGui::IsWindowHovered() && !usingGizmo && !(gizmoDrawn && ImGuizmo::IsOver()) &&
 			    input.MousePressedThisFrame.test(0))
 			{
-				const float localX = input.MousePos.x - imageStart.x;
-				const float localY = input.MousePos.y - imageStart.y;
+				// Use ImGui's mouse position, NOT InputStateSingleton::MousePos: the latter is in a different
+				// Y origin (off by the title-bar height, ~23px) from the ImGui screen space that imageStart,
+				// the gizmo, and the light gizmos all live in. Mixing them put the pick point ~23px below the
+				// cursor -- invisible for large mesh AABBs, fatal for the small light icon hitbox.
+				const ImVec2 mouse = ImGui::GetIO().MousePos;
+				const float localX = mouse.x - imageStart.x;
+				const float localY = mouse.y - imageStart.y;
 				if (localX >= 0.0f && localY >= 0.0f && localX <= vp.Size.x && localY <= vp.Size.y)
 				{
 					const Entity picked{PickEntity(reg, camRt.ViewProjection, localX, localY, vp.Size.x, vp.Size.y), m_World};
@@ -245,6 +540,13 @@ namespace Snowstorm
 					}
 				}
 			}
+
+			// ---- Positional-light gizmos: wireframe range sphere (point) / cone (spot), drawn on the
+			// viewport draw list projected through this camera. Editor-only viz (UE/Unity draw the same);
+			// lights are moved with the normal transform gizmo. Tinted by the light color; the selected
+			// light is drawn brighter/thicker so it stands out. Drawn here, inside the per-viewport block,
+			// so camRt/imageStart/vp are in scope.
+			DrawLightGizmos(reg, camRt.ViewProjection, imageStart, ImVec2{vp.Size.x, vp.Size.y}, selection.Selected);
 		}
 
 		// ---- Play/Stop toolbar: a top-CENTER floating overlay (UE5 places play controls at the top of the

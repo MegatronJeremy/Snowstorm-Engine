@@ -167,6 +167,24 @@ float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness,
 	return (kd * diffuse + specular) * ao * IBLIntensity;
 }
 
+// One light's Cook-Torrance contribution (diffuse + specular), given the already-normalized light
+// direction L and the incoming radiance (color * intensity, pre-attenuation). Shared by the
+// directional, point, and spot loops -- only how L/radiance are computed differs per light type.
+float3 ShadePBR(float3 N, float3 V, float3 L, float3 F0, float3 albedo, float metallic, float roughness, float3 radiance)
+{
+	const float3 H = normalize(V + L);
+	const float NdotL = max(dot(N, L), 0.0);
+
+	const float D = DistributionGGX(N, H, roughness);
+	const float G = GeometrySmith(N, V, L, roughness);
+	const float3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
+
+	const float3 specular = (D * G * F) / max(4.0 * max(dot(N, V), 0.0) * NdotL, 1e-4);
+	const float3 kd = (1.0 - F) * (1.0 - metallic); // metals have no diffuse
+
+	return (kd * albedo / PI + specular) * radiance * NdotL;
+}
+
 // World-space shading normal: perturb the geometric normal by the tangent-space normal map when one
 // is bound, otherwise fall back to the interpolated vertex normal.
 float3 ResolveNormal(PSInput i, uint normalIndex)
@@ -211,26 +229,58 @@ float4 main(PSInput i) : SV_Target0
 	const float3 F0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
 
 	float3 Lo = float3(0, 0, 0);
+
+	// --- Directional lights (the sun). Only light 0 casts shadows in this single-map implementation.
 	const int count = clamp(LightCount, 0, MAX_DIRECTIONAL_LIGHTS);
 	[loop] for (int l = 0; l < count; ++l)
 	{
 		const float3 L = normalize(-DirectionalLights[l].Direction);
-		const float3 H = normalize(V + L);
-		const float NdotL = max(dot(N, L), 0.0);
 		const float3 radiance = DirectionalLights[l].Color * DirectionalLights[l].Intensity;
+		// Shadow multiplies the whole contribution; ambient is unaffected so shadows stay lit-but-dim.
+		const float shadow = (l == 0) ? SampleSunShadow(i.PositionWS, max(dot(N, L), 0.0)) : 1.0;
+		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * shadow;
+	}
 
-		const float D = DistributionGGX(N, H, roughness);
-		const float G = GeometrySmith(N, V, L, roughness);
-		const float3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
+	// --- Point lights: inverse-square falloff with a smooth windowed cutoff at Range (UE4/Frostbite).
+	// Unshadowed. The window ((1-(d/R)^4)^2) drives the contribution to exactly zero at d==Range instead
+	// of an abrupt clip, so there's no hard lit/unlit edge.
+	const int pointCount = clamp(PointCount, 0, MAX_POINT_LIGHTS);
+	[loop] for (int p = 0; p < pointCount; ++p)
+	{
+		const float3 toLight = PointLights[p].Position - i.PositionWS;
+		const float dist = length(toLight);
+		const float3 L = toLight / max(dist, 1e-4);
 
-		const float3 specular = (D * G * F) / max(4.0 * max(dot(N, V), 0.0) * NdotL, 1e-4);
-		const float3 kd = (1.0 - F) * (1.0 - metallic); // metals have no diffuse
+		const float range = max(PointLights[p].Range, 1e-4);
+		const float window = pow(saturate(1.0 - pow(dist / range, 4.0)), 2.0);
+		const float atten = window / max(dist * dist, 1e-4);
 
-		// Only the primary sun (light 0) casts shadows in this single-map implementation; other
-		// directionals are unshadowed. Ambient is unaffected, so shadowed areas stay lit-but-dim.
-		const float shadow = (l == 0) ? SampleSunShadow(i.PositionWS, NdotL) : 1.0;
+		const float3 radiance = PointLights[p].Color * PointLights[p].Intensity * atten;
+		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance);
+	}
 
-		Lo += (kd * albedo / PI + specular) * radiance * NdotL * shadow;
+	// --- Spot lights: point attenuation multiplied by a smooth cone falloff between the inner/outer
+	// half-angles (stored as cosines). -L is the light->surface direction compared to the spot's
+	// forward axis. Unshadowed.
+	const int spotCount = clamp(SpotCount, 0, MAX_SPOT_LIGHTS);
+	[loop] for (int s = 0; s < spotCount; ++s)
+	{
+		const float3 toLight = SpotLights[s].Position - i.PositionWS;
+		const float dist = length(toLight);
+		const float3 L = toLight / max(dist, 1e-4);
+
+		const float range = max(SpotLights[s].Range, 1e-4);
+		const float window = pow(saturate(1.0 - pow(dist / range, 4.0)), 2.0);
+		const float atten = window / max(dist * dist, 1e-4);
+
+		// Cone falloff: 1 inside the inner angle, smoothly to 0 at the outer angle. cos() decreases with
+		// angle, so a larger dot() == closer to the axis == more lit.
+		const float cosAngle = dot(-L, SpotLights[s].Direction);
+		const float denom = max(SpotLights[s].CosInner - SpotLights[s].CosOuter, 1e-4);
+		const float cone = pow(saturate((cosAngle - SpotLights[s].CosOuter) / denom), 2.0);
+
+		const float3 radiance = SpotLights[s].Color * SpotLights[s].Intensity * atten * cone;
+		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance);
 	}
 
 	// Ambient: prefer split-sum IBL (baked from the sky) when available — metals reflect the environment

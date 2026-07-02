@@ -12,6 +12,8 @@
 #include <imgui_stdlib.h> // ImGui::InputText(const char*, std::string*) — grows the buffer, no truncation
 
 #include <algorithm>
+#include <cfloat>
+#include <climits>
 #include <cmath>
 #include <cstdint>
 
@@ -495,17 +497,25 @@ namespace Snowstorm
 			const NumericMeta meta = ReadNumericMeta(prop);
 			LabelLeft(name.c_str());
 			bool edited;
+			// AlwaysClamp: ImGui's min/max only bound the DRAG/slide gesture by default; Ctrl+click text entry
+			// still lets a user TYPE an out-of-range value (e.g. -5 into a Min=0 field). This flag clamps typed
+			// input too, so a bound is a real invariant, not just a drag limit. Applied wherever a bound exists.
 			if (meta.HasRange())
 			{
 				// Both bounds known -> slider that can't leave the range.
-				edited = ImGui::SliderFloat(hidden.c_str(), &val, meta.Min, meta.Max, meta.FormatOr("%.3f"));
+				edited = ImGui::SliderFloat(hidden.c_str(), &val, meta.Min, meta.Max, meta.FormatOr("%.3f"), ImGuiSliderFlags_AlwaysClamp);
 			}
 			else
 			{
 				const float speed = meta.HasSpeed ? meta.Speed : AutoSpeed(val);
-				const float lo = meta.HasMin ? meta.Min : 0.0f;
-				const float hi = meta.HasMax ? meta.Max : 0.0f; // lo==hi -> DragFloat leaves it unbounded
-				edited = ImGui::DragFloat(hidden.c_str(), &val, speed, lo, hi, meta.FormatOr("%.3f"));
+				// ImGui::DragFloat only clamps when lo < hi. For a ONE-SIDED bound (just Min, or just Max)
+				// the missing side must be +/-FLT_MAX, not 0 -- otherwise lo==hi==0 and the drag is fully
+				// unbounded, silently ignoring the Min/Max (this is why lone-Min fields never clamped).
+				const float lo = meta.HasMin ? meta.Min : (meta.HasMax ? -FLT_MAX : 0.0f);
+				const float hi = meta.HasMax ? meta.Max : (meta.HasMin ? FLT_MAX : 0.0f); // no bounds -> lo==hi==0 -> unbounded
+				// AlwaysClamp only when there's actually a bound; an unbounded field must stay free to type any value.
+				const ImGuiSliderFlags flags = (meta.HasMin || meta.HasMax) ? ImGuiSliderFlags_AlwaysClamp : 0;
+				edited = ImGui::DragFloat(hidden.c_str(), &val, speed, lo, hi, meta.FormatOr("%.3f"), flags);
 			}
 			if (edited)
 			{
@@ -518,16 +528,20 @@ namespace Snowstorm
 			const NumericMeta meta = ReadNumericMeta(prop);
 			LabelLeft(name.c_str());
 			bool edited;
+			// AlwaysClamp: clamp typed (Ctrl+click) input to the bounds too, not just the drag -- see the float path.
 			if (meta.HasRange())
 			{
-				edited = ImGui::SliderInt(hidden.c_str(), &val, static_cast<int>(meta.Min), static_cast<int>(meta.Max));
+				edited = ImGui::SliderInt(hidden.c_str(), &val, static_cast<int>(meta.Min), static_cast<int>(meta.Max), "%d", ImGuiSliderFlags_AlwaysClamp);
 			}
 			else
 			{
 				const float speed = meta.HasSpeed ? meta.Speed : 1.0f;
-				const int lo = meta.HasMin ? static_cast<int>(meta.Min) : 0;
-				const int hi = meta.HasMax ? static_cast<int>(meta.Max) : 0; // lo==hi -> unbounded
-				edited = ImGui::DragInt(hidden.c_str(), &val, speed, lo, hi);
+				// One-sided bounds need the missing side at the int extreme, not 0 (see the float path above),
+				// or DragInt would treat lo==hi==0 as unbounded and ignore a lone Min/Max.
+				const int lo = meta.HasMin ? static_cast<int>(meta.Min) : (meta.HasMax ? INT_MIN : 0);
+				const int hi = meta.HasMax ? static_cast<int>(meta.Max) : (meta.HasMin ? INT_MAX : 0); // no bounds -> lo==hi==0 -> unbounded
+				const ImGuiSliderFlags flags = (meta.HasMin || meta.HasMax) ? ImGuiSliderFlags_AlwaysClamp : 0;
+				edited = ImGui::DragInt(hidden.c_str(), &val, speed, lo, hi, "%d", flags);
 			}
 			if (edited)
 			{

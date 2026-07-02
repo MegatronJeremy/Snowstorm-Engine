@@ -49,6 +49,16 @@ namespace Snowstorm
 		return s_ComponentRegistry;
 	}
 
+	// Per-component invariant enforcement, applied to the working copy after an inspector edit (and any
+	// other code that wants self-consistent state). Default is a no-op; specialize for a component that has
+	// a cross-field invariant the generic property loop can't express (e.g. spot inner<=outer angle). This
+	// is the engine's small equivalent of Unreal's PostEditChangeProperty clamp. The specialization must be
+	// visible in the TU that instantiates RegisterComponent<T> (i.e. put it above AUTO_REGISTER_COMPONENT(T)).
+	template <typename T>
+	void NormalizeComponent(T&)
+	{
+	}
+
 	bool RenderProperty(const rttr::property& prop, const rttr::instance& instance);
 
 	// 2-column (label | value) table wrapping a component's properties. Long labels are clipped
@@ -190,6 +200,10 @@ namespace Snowstorm
 
 				if (changed)
 				{
+					// Enforce any cross-field invariant on the edited copy before it's committed (no-op for
+					// most components; e.g. spot lights clamp OuterAngle >= InnerAngle here).
+					NormalizeComponent(working);
+
 					// Capture the pre-edit state once at the start of the interaction (for undo), then
 					// apply the live edit. The matching FinalizeEdit happens in PollComponentEditEnd below.
 					OnComponentEditBegin(entity, type);
