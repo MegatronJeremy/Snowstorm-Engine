@@ -14,43 +14,42 @@ float4 SampleBindless(uint index, float2 uv)
 	return Textures[NonUniformResourceIndex(index)].Sample(LinearSampler, uv);
 }
 
-// Directional-sun shadow factor: 1 = fully lit, 0 = fully shadowed. Reprojects the world position into
-// light clip space, then does a 3x3 PCF compare against the stored shadow-map depth. Manual PCF keeps
-// the existing bindless SAMPLED_IMAGE model (no comparison-sampler descriptor). NdotL drives a
-// slope-scaled bias to kill acne on grazing surfaces; ShadowStrength lets shadows be lightened.
-float SampleSunShadow(float3 positionWS, float NdotL)
+// Shared shadow factor: 1 = fully lit, 0 = fully shadowed. Reprojects the world position through a light
+// matrix, then does a 3x3 PCF compare against a bindless depth texture. `atlasRect` (xy = UV offset,
+// zw = UV scale) maps the light's [0,1] UV into its sub-rect of the texture: (0,0,1,1) for a dedicated
+// map (the sun), or a tile rect for a spot in the shared atlas. PCF taps are CLAMPED to the rect so a
+// tap near a tile edge can't bleed into a neighbour tile. Manual PCF keeps the bindless SAMPLED_IMAGE
+// model (no comparison-sampler descriptor). NdotL drives a slope-scaled bias; ShadowStrength lightens.
+float SampleShadowFactor(uint texIndex, float4x4 lightViewProj, float4 atlasRect, float3 positionWS, float NdotL)
 {
-	if (ShadowMapIndex == 0)
-	{
-		return 1.0; // no shadow map bound
-	}
-
-	float4 lightClip = mul(float4(positionWS, 1.0), LightViewProj);
+	float4 lightClip = mul(float4(positionWS, 1.0), lightViewProj);
 	float3 ndc = lightClip.xyz / lightClip.w;
 
-	// Outside the light frustum (depth or XY) => treat as lit, don't darken unshadowed areas.
-	if (ndc.z > 1.0 || ndc.z < 0.0)
+	// Behind the light or outside its depth range => treat as lit. (w<=0 guards points behind a
+	// perspective spot, where the divide flips.)
+	if (lightClip.w <= 0.0 || ndc.z > 1.0 || ndc.z < 0.0)
 	{
 		return 1.0;
 	}
 
-	// Clip XY [-1,1] -> UV [0,1]. NO Y-flip: the engine's SetViewport does NOT apply the Vulkan
-	// negative-height flip (despite its comment), so the whole renderer is internally consistent in
-	// un-flipped clip space. Flipping here would mismatch the shadow map's own rasterization.
-	float2 uv = ndc.xy * float2(0.5, 0.5) + 0.5;
-	if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
+	// Clip XY [-1,1] -> light UV [0,1]. NO Y-flip: the engine's SetViewport does NOT apply the Vulkan
+	// negative-height flip, so the whole renderer is internally consistent in un-flipped clip space.
+	float2 lightUV = ndc.xy * 0.5 + 0.5;
+	if (lightUV.x < 0.0 || lightUV.x > 1.0 || lightUV.y < 0.0 || lightUV.y > 1.0)
 	{
-		return 1.0;
+		return 1.0; // outside this light's frustum footprint
 	}
 
-	// Depth bias: a constant floor plus a slope-scaled term (more bias on surfaces grazing the light).
-	// The floor matters even for light-facing surfaces (shadow-map texel quantization causes acne there
-	// too); a pure slope term collapses to ~0 at high NdotL and lets acne through.
+	// Depth bias: constant floor + slope-scaled term (more bias on surfaces grazing the light). The floor
+	// matters even for light-facing surfaces (texel quantization causes acne there too).
 	const float bias = ShadowBias + ShadowBias * 4.0 * (1.0 - NdotL);
-
 	const float currentDepth = ndc.z - bias;
 
-	// Soft (3x3 PCF, averaged compares) or hard (single tap), per the render.shadow.soft quality setting.
+	// Atlas remap + tile clamp bounds (in atlas UV space). ShadowTexelSize is per full-texture texel;
+	// scale by the rect so a tile's PCF step matches its sub-resolution.
+	const float2 rectMin = atlasRect.xy;
+	const float2 rectMax = atlasRect.xy + atlasRect.zw;
+
 	float visibility;
 	if (ShadowSoft != 0)
 	{
@@ -59,8 +58,9 @@ float SampleSunShadow(float3 positionWS, float NdotL)
 		{
 			[unroll] for (int dx = -1; dx <= 1; ++dx)
 			{
-				const float2 offset = float2(dx, dy) * ShadowTexelSize;
-				const float storedDepth = SampleBindless(ShadowMapIndex, uv + offset).r;
+				const float2 tap = lightUV + float2(dx, dy) * ShadowTexelSize;
+				const float2 atlasUV = clamp(atlasRect.xy + tap * atlasRect.zw, rectMin, rectMax);
+				const float storedDepth = SampleBindless(texIndex, atlasUV).r;
 				sum += (currentDepth <= storedDepth) ? 1.0 : 0.0;
 			}
 		}
@@ -68,12 +68,33 @@ float SampleSunShadow(float3 positionWS, float NdotL)
 	}
 	else
 	{
-		const float storedDepth = SampleBindless(ShadowMapIndex, uv).r;
+		const float2 atlasUV = clamp(atlasRect.xy + lightUV * atlasRect.zw, rectMin, rectMax);
+		const float storedDepth = SampleBindless(texIndex, atlasUV).r;
 		visibility = (currentDepth <= storedDepth) ? 1.0 : 0.0;
 	}
 
-	// ShadowStrength scales how dark shadows get (1 = full occlusion -> visibility, 0 = no shadowing).
 	return lerp(1.0, visibility, ShadowStrength);
+}
+
+// Directional-sun shadow: dedicated map (full-texture rect), gated by ShadowMapIndex (0 = no shadows).
+float SampleSunShadow(float3 positionWS, float NdotL)
+{
+	if (ShadowMapIndex == 0)
+	{
+		return 1.0;
+	}
+	return SampleShadowFactor(ShadowMapIndex, LightViewProj, float4(0, 0, 1, 1), positionWS, NdotL);
+}
+
+// Spot shadow: samples the shared atlas at the spot's tile. Gated by the atlas index being bound AND the
+// spot having been assigned a tile (ShadowIndex >= 0).
+float SampleSpotShadow(SpotLight spot, float3 positionWS, float NdotL)
+{
+	if (SpotShadowAtlasIndex == 0 || spot.ShadowIndex < 0)
+	{
+		return 1.0;
+	}
+	return SampleShadowFactor(SpotShadowAtlasIndex, spot.ShadowViewProj, spot.ShadowAtlasRect, positionWS, NdotL);
 }
 
 // ACES filmic tonemap (Narkowicz fit): compress unbounded linear HDR into [0,1] with a filmic
@@ -279,8 +300,11 @@ float4 main(PSInput i) : SV_Target0
 		const float denom = max(SpotLights[s].CosInner - SpotLights[s].CosOuter, 1e-4);
 		const float cone = pow(saturate((cosAngle - SpotLights[s].CosOuter) / denom), 2.0);
 
+		// Shadow: 1 when unshadowed / this spot casts no shadow. NdotL uses the surface normal vs L.
+		const float spotShadow = SampleSpotShadow(SpotLights[s], i.PositionWS, max(dot(N, L), 0.0));
+
 		const float3 radiance = SpotLights[s].Color * SpotLights[s].Intensity * atten * cone;
-		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance);
+		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * spotShadow;
 	}
 
 	// Ambient: prefer split-sum IBL (baked from the sky) when available — metals reflect the environment

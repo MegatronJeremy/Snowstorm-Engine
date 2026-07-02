@@ -41,8 +41,8 @@ namespace Snowstorm
 			float ShadowBias = 0.0015f;
 			float ShadowTexelSize = 1.0f / 2048.0f;
 			float ShadowStrength = 1.0f;
-			uint32_t ShadowSoft = 1; // 1 = 3x3 PCF, 0 = hard single tap
-			float _ShadowPad0 = 0.0f;
+			uint32_t ShadowSoft = 1;                  // 1 = 3x3 PCF, 0 = hard single tap
+			uint32_t SpotShadowAtlasIndex = 0;        // bindless index of the spot shadow atlas (0 = spots unshadowed)
 			float _ShadowPad1 = 0.0f;
 			float _ShadowPad2 = 0.0f;
 
@@ -201,6 +201,7 @@ namespace Snowstorm
 		frame.ShadowStrength = CVars::ShadowStrength.Get();
 		frame.ShadowSoft = CVars::ShadowSoft.Get() ? 1u : 0u;
 		frame.ShadowTexelSize = 1.0f / static_cast<float>(m_ShadowResolution != 0 ? m_ShadowResolution : 2048u);
+		frame.SpotShadowAtlasIndex = m_SpotShadowAtlasIndex;
 
 		// IBL indices: the bake pass pushes them via SetIBLData only while IBL is enabled (it writes zeros
 		// when off), so a non-zero irradiance index means "baked AND on" — turning IBL off leaves the maps
@@ -317,7 +318,7 @@ namespace Snowstorm
 		return true;
 	}
 
-	void RendererSingleton::DrawBatchesDepthOnly(const Ref<Pipeline>& depthPipeline)
+	void RendererSingleton::DrawBatchesDepthOnly(const Ref<Pipeline>& depthPipeline, const glm::mat4& lightViewProj)
 	{
 		if (!m_CommandContext || m_Batches.empty() || !depthPipeline)
 		{
@@ -325,14 +326,13 @@ namespace Snowstorm
 		}
 
 		const auto& setLayouts = depthPipeline->GetSetLayouts();
-		SS_CORE_ASSERT(setLayouts.size() > 2 && setLayouts[0] && setLayouts[2], "Depth pipeline missing set 0/2");
+		SS_CORE_ASSERT(setLayouts.size() > 2 && setLayouts[2], "Depth pipeline missing set 2 (instances)");
 
 		m_CommandContext->BindPipeline(depthPipeline);
 
-		// set=0 Frame: AcquireFrameSet uploads FrameCB with m_ViewProj = the light's matrix (set by the
-		// preceding BeginScene), so the shadow VS transforms into light clip space.
-		const Ref<DescriptorSet> frameSet = AcquireFrameSet(depthPipeline, m_FrameIndex);
-		m_CommandContext->BindDescriptorSet(frameSet, 0);
+		// The light's world->clip matrix travels as a per-draw push constant (see Shadow.vert.hlsl); no
+		// set=0/FrameCB binding here, so one caller can re-invoke this with different matrices in one pass.
+		m_CommandContext->PushConstants(&lightViewProj, sizeof(glm::mat4), 0);
 
 		const Ref<DescriptorSet>& objectSet = AcquireObjectSet(depthPipeline, m_FrameIndex, "Set2_Instances_Shadow");
 

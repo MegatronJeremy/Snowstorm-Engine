@@ -4,7 +4,9 @@
 #include "LightingUniforms.hpp"
 
 #include "Snowstorm/Components/TransformComponent.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Render/Passes/ShadowPass.hpp"
 #include "Snowstorm/Render/RendererSingleton.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -69,6 +71,8 @@ namespace Snowstorm
 		// Spot lights: position + forward (-Z) from the transform; cone half-angles stored as cosines so
 		// the shader compares against dot() with no per-fragment trig. OuterAngle is clamped >= InnerAngle
 		// so cos(inner) >= cos(outer) and the falloff denominator stays positive.
+		const bool shadowsEnabled = CVars::Shadows.Get(); // global scalability kill-switch
+		int nextShadowTile = 0;                           // next free atlas tile for a shadow-casting spot
 		bool droppedSpot = false;
 		for (auto spotView = View<SpotLightComponent, TransformComponent>(); auto entity : spotView)
 		{
@@ -86,6 +90,23 @@ namespace Snowstorm
 			const float inner = glm::radians(light.InnerAngleDeg);
 			const float outer = glm::radians(std::max(light.OuterAngleDeg, light.InnerAngleDeg));
 
+			// Assign a shadow atlas tile to this spot if it casts and shadows are globally enabled and a tile
+			// is free (cap = ShadowPass::kMaxShadowSpots). ShadowIndex < 0 => unshadowed. The atlas is a
+			// kSpotAtlasCols x kSpotAtlasCols grid; tile i sits at (col,row) with a 1/cols UV rect. The matrix
+			// and rect are pure math here; RenderSystem renders each assigned tile and binds the atlas texture.
+			int shadowIndex = -1;
+			glm::mat4 shadowViewProj(1.0f);
+			glm::vec4 atlasRect(0, 0, 1, 1);
+			if (shadowsEnabled && light.CastShadows && nextShadowTile < ShadowPass::kMaxShadowSpots)
+			{
+				shadowIndex = nextShadowTile++;
+				shadowViewProj = ShadowPass::ComputeSpotViewProj(transform.Position, forward, outer, light.Range);
+				constexpr float inv = 1.0f / static_cast<float>(ShadowPass::kSpotAtlasCols);
+				const int col = shadowIndex % static_cast<int>(ShadowPass::kSpotAtlasCols);
+				const int row = shadowIndex / static_cast<int>(ShadowPass::kSpotAtlasCols);
+				atlasRect = {static_cast<float>(col) * inv, static_cast<float>(row) * inv, inv, inv};
+			}
+
 			lightData.SpotLights[lightData.SpotCount++] = {
 			    .Position = transform.Position,
 			    .Range = light.Range,
@@ -94,7 +115,10 @@ namespace Snowstorm
 			    .Direction = forward,
 			    .CosInner = std::cos(inner),
 			    .CosOuter = std::cos(outer),
-			    .Padding = {}};
+			    .ShadowIndex = shadowIndex,
+			    .ShadowPad = {0, 0},
+			    .ShadowViewProj = shadowViewProj,
+			    .ShadowAtlasRect = atlasRect};
 		}
 		if (droppedSpot)
 		{

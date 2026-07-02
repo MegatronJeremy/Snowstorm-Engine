@@ -36,7 +36,13 @@ namespace Snowstorm
 		glm::vec3 Direction;
 		float CosInner;
 		float CosOuter;
-		glm::vec3 Padding = {0, 0, 0};
+		// Shadow: ShadowIndex < 0 means this spot casts no shadow (shader skips the sample). Otherwise
+		// ShadowViewProj reprojects world -> this spot's light clip, and ShadowAtlasRect (xy = UV offset,
+		// zw = UV scale) maps that into the spot's tile of the shared atlas. Kept in 16-byte rows.
+		int ShadowIndex = -1;
+		glm::vec2 ShadowPad = {0, 0};
+		glm::mat4 ShadowViewProj = glm::mat4(1.0f);
+		glm::vec4 ShadowAtlasRect = {0, 0, 1, 1};
 	};
 
 	// Mirrored field-for-field into the C++ FrameCB (RendererSingleton.cpp, which embeds this struct) and

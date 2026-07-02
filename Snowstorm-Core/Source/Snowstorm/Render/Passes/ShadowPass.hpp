@@ -31,10 +31,24 @@ namespace Snowstorm
 		// Used as the shadow pass's target and as the source of the depth texture's bindless index.
 		[[nodiscard]] const Ref<RenderTarget>& GetOrCreateShadowTarget();
 
-		// Record the depth-only draw of the renderer's accumulated batches into the bound shadow target.
-		// Lazily builds the depth pipeline for `depthFormat`. Call inside the shadow render pass, after the
-		// renderer's BeginScene (with the light matrix) + caster DrawMesh calls.
-		void RecordDepth(RendererSingleton& renderer, PixelFormat depthFormat);
+		// Record the depth-only draw of the renderer's accumulated batches into the bound shadow target,
+		// transforming by `lightViewProj` (pushed as a per-draw push constant, so one command buffer can
+		// render many light views: the sun plus each spot atlas tile). Lazily builds the depth pipeline for
+		// `depthFormat`. Call inside a shadow render pass after the renderer's caster DrawMesh accumulation.
+		void RecordDepth(RendererSingleton& renderer, PixelFormat depthFormat, const glm::mat4& lightViewProj);
+
+		// Build a spot light's perspective world->light-clip matrix (FOV = 2*outer cone half-angle, square
+		// aspect, near..Range). Pure + static so the gather (LightingSystem) can compute it before the pass.
+		static glm::mat4 ComputeSpotViewProj(const glm::vec3& position, const glm::vec3& direction,
+		                                     float outerAngleRad, float range);
+
+		// Lazily create/return the spot shadow ATLAS target: one depth texture holding kSpotAtlasCols x
+		// kSpotAtlasCols tiles, each `render.shadow.resolution` px. Rebuilt when the resolution CVar changes.
+		[[nodiscard]] const Ref<RenderTarget>& GetOrCreateSpotAtlas();
+
+		// Atlas is a square grid of kSpotAtlasCols x kSpotAtlasCols tiles (2x2 => up to 4 shadow-casting spots).
+		static constexpr uint32_t kSpotAtlasCols = 2;
+		static constexpr int kMaxShadowSpots = static_cast<int>(kSpotAtlasCols * kSpotAtlasCols);
 
 	private:
 		void EnsurePipeline(PixelFormat depthFormat);
@@ -44,5 +58,8 @@ namespace Snowstorm
 
 		// Shared shadow-map target (depth-only, sampleable). Resolution from render.shadow.resolution.
 		Ref<RenderTarget> m_Target;
+
+		// Spot shadow atlas (depth-only, sampleable): kSpotAtlasCols^2 tiles packed into one texture.
+		Ref<RenderTarget> m_SpotAtlas;
 	};
 }

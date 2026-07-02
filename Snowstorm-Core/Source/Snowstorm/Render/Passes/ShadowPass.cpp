@@ -91,6 +91,10 @@ namespace Snowstorm
 		p.VertexLayout = vertexLayout;
 		p.ColorFormats = {}; // depth-only: no color attachment
 		p.DepthFormat = depthFormat;
+		// Per-draw light view-projection via a 64-byte vertex-stage push constant (see Shadow.vert.hlsl):
+		// lets one command buffer render many light views (sun + each spot atlas tile), which a single
+		// cached FrameCB can't express.
+		p.PushConstants = {{.Offset = 0, .Size = sizeof(glm::mat4), .Stages = ShaderStage::Vertex}};
 		// Render front faces (no special cull) into the shadow map — i.e. store what the light sees
 		// first. The "second-depth" trick (front-face culling to store back faces) only works for
 		// watertight meshes; Sponza has single-sided floors/curtains/arches, so back-face storage made
@@ -107,9 +111,36 @@ namespace Snowstorm
 		m_DepthFormat = depthFormat;
 	}
 
-	void ShadowPass::RecordDepth(RendererSingleton& renderer, const PixelFormat depthFormat)
+	void ShadowPass::RecordDepth(RendererSingleton& renderer, const PixelFormat depthFormat, const glm::mat4& lightViewProj)
 	{
 		EnsurePipeline(depthFormat);
-		renderer.DrawBatchesDepthOnly(m_Pipeline);
+		renderer.DrawBatchesDepthOnly(m_Pipeline, lightViewProj);
+	}
+
+	glm::mat4 ShadowPass::ComputeSpotViewProj(const glm::vec3& position, const glm::vec3& direction,
+	                                          const float outerAngleRad, const float range)
+	{
+		const glm::vec3 dir = glm::normalize(direction);
+		// Up vector not parallel to the spot axis (same guard as the sun path).
+		const glm::vec3 up = (glm::abs(dir.y) > 0.99f) ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+		const glm::mat4 view = glm::lookAtRH(position, position + dir, up);
+		// Full FOV = twice the outer half-angle; square aspect (square tile); near small, far = Range.
+		// Clamp FOV below pi so the projection stays valid for very wide cones.
+		const float fov = std::min(2.0f * outerAngleRad, 3.10f);
+		const glm::mat4 proj = glm::perspectiveRH_ZO(fov, 1.0f, 0.05f, std::max(range, 0.1f));
+		return proj * view;
+	}
+
+	const Ref<RenderTarget>& ShadowPass::GetOrCreateSpotAtlas()
+	{
+		const int requested = std::clamp(CVars::ShadowResolution.Get(), 256, 8192);
+		const auto atlasSize = static_cast<uint32_t>(requested) * kSpotAtlasCols; // grid of tiles
+
+		if (!m_SpotAtlas || m_SpotAtlas->GetWidth() != atlasSize)
+		{
+			m_SpotAtlas = CreateShadowDepthTarget(atlasSize, "SpotAtlas");
+			SS_CORE_ASSERT(m_SpotAtlas, "Failed to create spot shadow atlas");
+		}
+		return m_SpotAtlas;
 	}
 }

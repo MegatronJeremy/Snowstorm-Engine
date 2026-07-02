@@ -28,7 +28,8 @@ namespace Snowstorm
 		    .property("Intensity", &SpotLightComponent::Intensity)(metadata("Min", 0.0f), metadata("Speed", 0.01f))
 		    .property("Range", &SpotLightComponent::Range)(metadata("Min", 0.0f), metadata("Speed", 0.1f))
 		    .property("InnerAngleDeg", &SpotLightComponent::InnerAngleDeg)(metadata("Min", 0.0f), metadata("Max", 89.0f), metadata("Speed", 0.5f))
-		    .property("OuterAngleDeg", &SpotLightComponent::OuterAngleDeg)(metadata("Min", 0.0f), metadata("Max", 89.0f), metadata("Speed", 0.5f));
+		    .property("OuterAngleDeg", &SpotLightComponent::OuterAngleDeg)(metadata("Min", 0.0f), metadata("Max", 89.0f), metadata("Speed", 0.5f))
+		    .property("CastShadows", &SpotLightComponent::CastShadows); // inspector: checkbox
 	}
 
 	// Spot cone invariant: the outer angle must be >= the inner angle, or the falloff denominator

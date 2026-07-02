@@ -79,11 +79,11 @@ namespace Snowstorm
 		void Flush();
 
 		// Draw the currently-accumulated batches (from DrawMesh) depth-only, using the given depth pipeline
-		// (owned by ShadowPass) and the light's matrix (m_ViewProj, set by the preceding BeginScene with the
-		// light's view-projection). No materials/bindless. Call inside the shadow render pass; the batches'
-		// instances are appended into the shared instance buffer at the running cursor (NOT cleared — the
-		// camera pass clears + re-accumulates its own visible set).
-		void DrawBatchesDepthOnly(const Ref<Pipeline>& depthPipeline);
+		// (owned by ShadowPass). `lightViewProj` is pushed as a per-draw push constant (the shadow VS reads
+		// it from there, NOT FrameCB), so the SAME accumulated batches can be re-rendered for multiple light
+		// views in one pass (the spot atlas draws each tile with a different matrix). No materials/bindless,
+		// no set 0. Instances are appended at the running cursor (NOT cleared — the camera pass owns clearing).
+		void DrawBatchesDepthOnly(const Ref<Pipeline>& depthPipeline, const glm::mat4& lightViewProj);
 
 		// Bind the given pipeline + its set=0 Frame descriptor (FrameCB) and draw a vertex-buffer-less
 		// fullscreen triangle (3 verts from SV_VertexID). Used by SkyPass; the FrameCB carries everything
@@ -95,6 +95,10 @@ namespace Snowstorm
 		// resolution (for the PCF texel-size). The camera pass's FrameCB picks these up so DefaultLit can
 		// reproject + compare. Pushed by ShadowPass; call before the camera Flush().
 		void SetShadowData(const glm::mat4& lightViewProj, uint32_t shadowMapIndex, uint32_t shadowResolution);
+
+		// Bindless index of the spot shadow atlas (0 = spots unshadowed). Per-spot shadow matrices + atlas
+		// rects travel inside the GPUSpotLight entries; this is the one shared texture index the shader needs.
+		void SetSpotShadowAtlasIndex(const uint32_t index) { m_SpotShadowAtlasIndex = index; }
 
 		// Set the baked IBL data the lit pass needs: bindless indices of the irradiance + prefiltered cubes
 		// and the BRDF LUT, plus the prefiltered mip count (drives the roughness->lod map). All zero = IBL
@@ -170,6 +174,7 @@ namespace Snowstorm
 		glm::mat4 m_LightViewProj{1.0f};
 		uint32_t m_ShadowMapIndex = 0;
 		uint32_t m_ShadowResolution = 2048; // mirror of the bound shadow map's size, for the texel-size calc
+		uint32_t m_SpotShadowAtlasIndex = 0; // bindless index of the spot shadow atlas (0 = spots unshadowed)
 
 		// Per-frame storage buffer holding all instances for the frame (set=2). Bound once; each batch
 		// indexes its slice via the draw's firstInstance (SV_InstanceID includes firstInstance). Fixed

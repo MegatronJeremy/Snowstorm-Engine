@@ -28,7 +28,12 @@ struct SpotLight
 	float3 Direction;
 	float CosInner;
 	float CosOuter;
-	float3 Padding;
+	// Shadow: ShadowIndex < 0 => no shadow. ShadowViewProj reprojects world -> this spot's light clip;
+	// ShadowAtlasRect (xy = UV offset, zw = UV scale) maps that into the spot's tile of the atlas.
+	int ShadowIndex;
+	float2 ShadowPad;
+	float4x4 ShadowViewProj;
+	float4 ShadowAtlasRect;
 };
 
 struct VSInput
@@ -100,8 +105,8 @@ cbuffer FrameCB : register(b0, space0)
 	float ShadowBias;
 	float ShadowTexelSize;
 	float ShadowStrength;
-	uint ShadowSoft; // 1 = 3x3 PCF, 0 = hard single tap
-	float _ShadowPad0;
+	uint ShadowSoft;           // 1 = 3x3 PCF, 0 = hard single tap
+	uint SpotShadowAtlasIndex; // bindless index of the spot shadow atlas (0 = spots unshadowed)
 	float _ShadowPad1;
 	float _ShadowPad2;
 

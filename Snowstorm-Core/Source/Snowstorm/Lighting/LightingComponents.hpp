@@ -37,5 +37,10 @@ namespace Snowstorm
 		float Range = 10.0f;
 		float InnerAngleDeg = 20.0f; // full intensity within this half-angle
 		float OuterAngleDeg = 30.0f; // zero past this half-angle (must be >= InnerAngleDeg)
+
+		// Whether this spot casts shadows (per-light toggle, like DirectionalLightComponent::CastShadows).
+		// Shadow-casting spots are assigned an atlas tile up to a cap; the global render.shadows CVar is the
+		// scalability kill-switch above this.
+		bool CastShadows = true;
 	};
 }

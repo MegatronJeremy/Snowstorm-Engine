@@ -219,10 +219,80 @@ namespace Snowstorm
 					                                 mesh.MeshInstance, mat.MaterialInstance);
 				               }
 
-				               m_ShadowPass.RecordDepth(renderer, shadowDepthFmt);
+				               m_ShadowPass.RecordDepth(renderer, shadowDepthFmt, lightViewProj);
 				               // The depth target is transitioned to shader-read by EndRenderPass (it's a
 				               // sampleable depth attachment) — can't barrier inside the rendering instance.
 			               }});
+		}
+
+		// ---- Spot shadow atlas pass ----
+		// LightingSystem already assigned each shadow-casting spot a tile (ShadowIndex >= 0), its perspective
+		// matrix, and its atlas UV rect. Render ALL casters' depth once per tile into the shared atlas (each
+		// tile a viewport/scissor rect + its own push-constant matrix). One pass, N tiles. Skipped entirely
+		// when no spot casts (SpotShadowAtlasIndex stays 0 -> shader treats spots as unshadowed).
+		renderer.SetSpotShadowAtlasIndex(0);
+		{
+			const LightDataBlock& lights = renderer.GetLights();
+			int shadowSpotCount = 0;
+			for (int s = 0; s < lights.SpotCount; ++s)
+			{
+				if (lights.SpotLights[s].ShadowIndex >= 0)
+				{
+					++shadowSpotCount;
+				}
+			}
+
+			if (CVars::Shadows.Get() && shadowSpotCount > 0)
+			{
+				const Ref<RenderTarget>& atlasRT = m_ShadowPass.GetOrCreateSpotAtlas();
+				const uint32_t atlasIndex = atlasRT->GetDesc().DepthAttachment->View->GetGlobalBindlessIndex();
+				const PixelFormat atlasFmt = atlasRT->GetDesc().DepthAttachment->View->GetTexture()->GetDesc().Format;
+				const uint32_t tilePx = atlasRT->GetWidth() / ShadowPass::kSpotAtlasCols;
+
+				renderer.SetSpotShadowAtlasIndex(atlasIndex);
+
+				graph.AddPass({.Name = "SpotShadows",
+				               .Target = atlasRT,
+				               .Execute = [&, atlasFmt, tilePx](CommandContext& c)
+				               {
+					               // One caster accumulation shared by every tile (BeginScene sets nothing the
+					               // depth draw needs beyond the batches — the matrix travels per-draw as a PC).
+					               CameraRuntimeComponent lightCam{};
+					               lightCam.ViewProjection = glm::mat4(1.0f);
+					               renderer.BeginScene(lightCam, glm::vec3(0.0f), ctx, frameIndex);
+
+					               for (const auto casters = View<const TransformComponent, const MeshComponent, const MaterialComponent, const VisibilityComponent>();
+					                    const auto e : casters)
+					               {
+						               const auto& mesh = reg.Read<MeshComponent>(e);
+						               const auto& mat = reg.Read<MaterialComponent>(e);
+						               if (!mesh.MeshInstance || !mat.MaterialInstance)
+						               {
+							               continue;
+						               }
+						               renderer.DrawMesh(reg.Read<TransformComponent>(e).GetTransformMatrix(),
+						                                 mesh.MeshInstance, mat.MaterialInstance);
+					               }
+
+					               // Render each shadow-casting spot into its tile: scissor+viewport to the tile
+					               // rect, then a depth draw with that spot's matrix (push constant).
+					               const LightDataBlock& ld = renderer.GetLights();
+					               for (int s = 0; s < ld.SpotCount; ++s)
+					               {
+						               const GPUSpotLight& spot = ld.SpotLights[s];
+						               if (spot.ShadowIndex < 0)
+						               {
+							               continue;
+						               }
+						               const auto col = static_cast<uint32_t>(spot.ShadowIndex) % ShadowPass::kSpotAtlasCols;
+						               const auto row = static_cast<uint32_t>(spot.ShadowIndex) / ShadowPass::kSpotAtlasCols;
+						               c.SetViewport(static_cast<float>(col * tilePx), static_cast<float>(row * tilePx),
+						                             static_cast<float>(tilePx), static_cast<float>(tilePx), 0.0f, 1.0f);
+						               c.SetScissor(col * tilePx, row * tilePx, tilePx, tilePx);
+						               m_ShadowPass.RecordDepth(renderer, atlasFmt, spot.ShadowViewProj);
+					               }
+				               }});
+			}
 		}
 
 		// Suffix the forward pass with an index only when there's more than one viewport, so the common
