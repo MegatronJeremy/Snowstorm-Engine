@@ -15,8 +15,8 @@ namespace Snowstorm::EditorTheme
 	{
 		// NERV / Evangelion palette: near-black bg, amber primary, warm-white readable text
 		// (text is intentionally NOT the accent color so it stays crisp), red for warnings.
-		constexpr ImVec4 Black{0.039f, 0.039f, 0.031f, 1.00f};    // window bg (#0a0a08)
-		constexpr ImVec4 Panel{0.078f, 0.067f, 0.039f, 1.00f};    // child/frame bg (#14110a)
+		constexpr ImVec4 Black{0.039f, 0.039f, 0.031f, 1.00f}; // window bg (#0a0a08)
+		constexpr ImVec4 Panel{0.078f, 0.067f, 0.039f, 1.00f}; // child/frame bg (#14110a)
 		constexpr ImVec4 PanelHover{0.16f, 0.12f, 0.05f, 1.00f};
 
 		constexpr ImVec4 Green{1.00f, 0.40f, 0.00f, 1.00f};       // primary accent: amber (#ff6600)
@@ -26,16 +26,16 @@ namespace Snowstorm::EditorTheme
 		// Medium amber for hover/active backgrounds that sit UNDER warm-white text. Bright amber
 		// here makes the light text unreadable (light-on-light), so text-bearing widget states use
 		// these dim/medium tones; bright amber is reserved for thin elements with no text on top.
-		constexpr ImVec4 HoverBg{0.30f, 0.14f, 0.02f, 1.00f};     // dim amber, text stays readable
-		constexpr ImVec4 ActiveBg{0.46f, 0.22f, 0.03f, 1.00f};    // medium amber, still readable
+		constexpr ImVec4 HoverBg{0.30f, 0.14f, 0.02f, 1.00f};  // dim amber, text stays readable
+		constexpr ImVec4 ActiveBg{0.46f, 0.22f, 0.03f, 1.00f}; // medium amber, still readable
 
-		constexpr ImVec4 Magenta{1.00f, 0.65f, 0.19f, 1.00f};     // secondary/active: bright amber
+		constexpr ImVec4 Magenta{1.00f, 0.65f, 0.19f, 1.00f}; // secondary/active: bright amber
 		constexpr ImVec4 MagentaDim{0.48f, 0.24f, 0.03f, 1.00f};
 
-		constexpr ImVec4 Text{1.00f, 0.914f, 0.812f, 1.00f};      // warm white, readable (#ffe9cf)
+		constexpr ImVec4 Text{1.00f, 0.914f, 0.812f, 1.00f}; // warm white, readable (#ffe9cf)
 		constexpr ImVec4 TextDim{0.60f, 0.50f, 0.38f, 1.00f};
-		constexpr ImVec4 Border{0.48f, 0.227f, 0.03f, 1.00f};     // amber border (#7a3a08)
-		constexpr ImVec4 Alert{1.00f, 0.10f, 0.05f, 1.00f};       // NERV red (#ff1a0d)
+		constexpr ImVec4 Border{0.48f, 0.227f, 0.03f, 1.00f}; // amber border (#7a3a08)
+		constexpr ImVec4 Alert{1.00f, 0.10f, 0.05f, 1.00f};   // NERV red (#ff1a0d)
 	}
 
 	void ApplyEvangelion()
@@ -139,10 +139,10 @@ namespace Snowstorm::EditorTheme
 	{
 		// Try a few common names so dropping any one of them into Assets/Fonts just works.
 		static constexpr std::array candidates = {
-			"Assets/Fonts/ShareTechMono-Regular.ttf",
-			"Assets/Fonts/JetBrainsMono-Regular.ttf",
-			"Assets/Fonts/IBMPlexMono-Regular.ttf",
-			"Assets/Fonts/Hack-Regular.ttf",
+		    "Assets/Fonts/ShareTechMono-Regular.ttf",
+		    "Assets/Fonts/JetBrainsMono-Regular.ttf",
+		    "Assets/Fonts/IBMPlexMono-Regular.ttf",
+		    "Assets/Fonts/Hack-Regular.ttf",
 		};
 
 		for (const char* path : candidates)
@@ -174,6 +174,31 @@ namespace Snowstorm::EditorTheme
 		ImGui::TextUnformatted(("// " + upper).c_str());
 		ImGui::PopStyleColor();
 		ImGui::Separator();
+	}
+
+	bool PrimaryButton(const char* label, const float width)
+	{
+		std::string upper(label);
+		for (char& ch : upper)
+		{
+			ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+		}
+
+		// Bright-amber fill with near-black text — the one high-emphasis action per panel. Bright amber
+		// under text is normally unreadable (see the theme notes), so we force dark text on top here.
+		ImGui::PushStyleColor(ImGuiCol_Button, Green);
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, GreenBright);
+		ImGui::PushStyleColor(ImGuiCol_ButtonActive, GreenBright);
+		ImGui::PushStyleColor(ImGuiCol_Text, Black);
+		const float w = (width > 0.0f) ? width : ImGui::GetContentRegionAvail().x;
+		const bool clicked = ImGui::Button(upper.c_str(), ImVec2(w, 0.0f));
+		ImGui::PopStyleColor(4);
+		return clicked;
+	}
+
+	unsigned int AccentColor()
+	{
+		return ImGui::GetColorU32(Green);
 	}
 
 	void WarningBanner(const char* text)

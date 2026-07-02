@@ -1,16 +1,25 @@
+#include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
 #include <rttr/registration.h>
 
+#include <cmath>
+
 #include "SceneHierarchyPanel.hpp"
 
 #include "Snowstorm/Components/CameraComponent.hpp"
+#include "Snowstorm/Components/CameraRuntimeComponent.hpp"
 #include "Snowstorm/Components/ComponentRegistry.hpp"
 #include "Snowstorm/Components/IDComponent.hpp"
+#include "Snowstorm/Components/MaterialComponent.hpp"
+#include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/RenderTargetComponent.hpp"
 #include "Snowstorm/Components/TagComponent.hpp"
+#include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Components/ViewportComponent.hpp"
+#include "Snowstorm/Components/VisibilityComponents.hpp"
 #include "Snowstorm/Core/KeyCodes.hpp"
+#include "Snowstorm/Lighting/LightingComponents.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
@@ -38,6 +47,111 @@ namespace Snowstorm
 			return !entity.HasComponent<ViewportComponent>() &&
 			       !entity.HasComponent<RenderTargetComponent>() &&
 			       !entity.HasComponent<CameraComponent>();
+		}
+
+		// Stable asset handles for the "3D Object" presets (from Assets/AssetRegistry.json). Handles are the
+		// engine's stable references; if these meshes/material are ever removed the preset just spawns an
+		// unresolved (invisible) mesh rather than crashing.
+		constexpr uint64_t kCubeMeshHandle = 5810267832183663728ull;
+		constexpr uint64_t kQuadMeshHandle = 12112538743247314239ull;
+		constexpr uint64_t kWhiteMaterialHandle = 14863079243352112687ull;
+
+		// A new entity spawns a few units IN FRONT OF the editor camera, facing where the camera looks
+		// (Unreal Place Actors / Unity scene-view spawn) — so it lands in view instead of at the origin
+		// (which, in a large scene like Sponza, means hunting for it). Falls back to the origin + a downward
+		// facing if no camera is found. Returns the spawn position and a forward direction for the preset.
+		void EditorSpawnPose(World& world, glm::vec3& outPos, glm::vec3& outForward)
+		{
+			outPos = glm::vec3(0.0f);
+			outForward = glm::vec3(0.0f, -1.0f, 0.0f); // default: aim down
+
+			// Prefer the primary camera's runtime transform (the editor fly-camera).
+			auto& reg = world.GetRegistry();
+			for (auto view = reg.view<const CameraComponent, const CameraRuntimeComponent, const TransformComponent>();
+			     const entt::entity e : view)
+			{
+				const auto& cam = reg.Read<CameraComponent>(e);
+				if (!cam.Primary)
+				{
+					continue;
+				}
+				const auto& rt = reg.Read<CameraRuntimeComponent>(e);
+				const glm::vec3 camPos = reg.Read<TransformComponent>(e).Position;
+				// Camera forward = -Z of the view matrix's inverse == the third row of the view basis negated.
+				// The view matrix rows are the camera basis; row 2 is the camera's +Z (backward), so forward
+				// is its negation.
+				const glm::vec3 forward = -glm::normalize(glm::vec3(rt.View[0][2], rt.View[1][2], rt.View[2][2]));
+				outForward = forward;
+				outPos = camPos + forward * 5.0f;
+				return;
+			}
+		}
+
+		// Convert a forward direction to a TransformComponent Euler rotation (X=pitch, Y=yaw, Z=roll) that
+		// makes the entity's -Z axis point along `forward` — matches how spot/camera forward is derived
+		// (ForwardFromPitchYaw in CameraControllerSystem). Roll is left 0.
+		glm::vec3 EulerFromForward(const glm::vec3& forward)
+		{
+			const glm::vec3 f = glm::normalize(forward);
+			const float yaw = std::atan2(-f.x, -f.z); // -Z forward convention
+			const float pitch = std::asin(glm::clamp(f.y, -1.0f, 1.0f));
+			return {pitch, yaw, 0.0f};
+		}
+
+		// The kind of glyph to draw beside a Create-menu row. These mirror the viewport light gizmo icons
+		// (ViewportDisplaySystem) so the menu and the scene read the same visual language.
+		enum class CreateIcon
+		{
+			Empty,
+			Directional,
+			Point,
+			Spot,
+			Cube
+		};
+
+		// Draw a small draw-list glyph for a Create-menu row and advance the ImGui cursor past it, so a
+		// text label can sit to its right. Tinted `color`. Cheap vector art (no texture) matching the
+		// gizmo glyphs: sun rays / bulb dot / spot triangle / cube wireframe / empty ring.
+		void DrawCreateIcon(CreateIcon kind, ImU32 color)
+		{
+			ImDrawList* dl = ImGui::GetWindowDrawList();
+			const float h = ImGui::GetTextLineHeight();
+			const ImVec2 p = ImGui::GetCursorScreenPos();
+			const ImVec2 c{p.x + h * 0.5f, p.y + h * 0.5f};
+			const float r = h * 0.32f;
+
+			switch (kind)
+			{
+			case CreateIcon::Empty:
+				dl->AddCircle(c, r, color, 12, 1.5f);
+				break;
+			case CreateIcon::Point:
+				dl->AddCircleFilled(c, r * 0.55f, color, 12);
+				dl->AddCircle(c, r, color, 12, 1.0f);
+				break;
+			case CreateIcon::Spot:
+				dl->AddTriangleFilled(ImVec2(c.x - r, c.y - r * 0.8f), ImVec2(c.x + r, c.y - r * 0.8f),
+				                      ImVec2(c.x, c.y + r), color);
+				break;
+			case CreateIcon::Directional:
+				dl->AddCircleFilled(c, r * 0.5f, color, 12);
+				for (int k = 0; k < 8; ++k)
+				{
+					const float a = static_cast<float>(k) * 0.785398f;
+					const ImVec2 d{std::cos(a), std::sin(a)};
+					dl->AddLine(ImVec2(c.x + d.x * r * 0.8f, c.y + d.y * r * 0.8f),
+					            ImVec2(c.x + d.x * r * 1.4f, c.y + d.y * r * 1.4f), color, 1.0f);
+				}
+				break;
+			case CreateIcon::Cube:
+				dl->AddRect(ImVec2(c.x - r, c.y - r), ImVec2(c.x + r, c.y + r), color, 0.0f, 0, 1.5f);
+				dl->AddLine(ImVec2(c.x - r, c.y - r), ImVec2(c.x - r * 0.4f, c.y - r * 1.5f), color, 1.0f);
+				dl->AddLine(ImVec2(c.x + r, c.y - r), ImVec2(c.x + r * 1.6f, c.y - r * 1.5f), color, 1.0f);
+				dl->AddLine(ImVec2(c.x - r * 0.4f, c.y - r * 1.5f), ImVec2(c.x + r * 1.6f, c.y - r * 1.5f), color, 1.0f);
+				break;
+			}
+			ImGui::Dummy(ImVec2(h, h)); // reserve the icon cell so the label lays out to its right
+			ImGui::SameLine();
 		}
 	}
 
@@ -102,15 +216,106 @@ namespace Snowstorm
 			}
 		}
 
-		if (ImGui::Button("+ Create Entity") && cmds.CreateEntity)
+		// "+ Create" menu: preset entities (Unity GameObject menu / Unreal Place Actors). Each preset
+		// spawns a fully-formed entity in front of the editor camera, renames it, selects it, and records
+		// one undo step -- instead of the old bare-entity button that left you hand-assembling components.
+		// The configurator lambda adds the preset's components to the freshly created entity.
+		const auto createPreset = [&](const char* presetName, const auto& configure)
 		{
-			const Entity created = cmds.CreateEntity();
-			SetSelected(created);
-			if (created)
+			if (!cmds.CreateEntity)
 			{
-				m_World->GetSingleton<EditorHistorySingleton>().Push(
-				    CreateRef<AddEntityCommand>(created.GetComponent<IDComponent>().Id, "Create Entity"));
+				return;
 			}
+			Entity created = cmds.CreateEntity();
+			if (!created)
+			{
+				return;
+			}
+			created.GetComponentMutable_Untracked<TagComponent>().Tag = presetName;
+
+			glm::vec3 pos, forward;
+			EditorSpawnPose(*m_World, pos, forward);
+			auto& tr = created.AddComponent<TransformComponent>();
+			tr.Position = pos;
+
+			configure(created, forward);
+
+			SetSelected(created);
+			m_World->GetSingleton<EditorHistorySingleton>().Push(
+			    CreateRef<AddEntityCommand>(created.GetComponent<IDComponent>().Id, "Create Entity"));
+		};
+
+		// Preset configurators, reused by both the "+ CREATE" popup and the right-click context menu.
+		const auto addDirectional = [](Entity e, const glm::vec3& fwd)
+		{
+			auto& dl = e.AddComponent<DirectionalLightComponent>();
+			dl.Direction = fwd;
+			dl.Color = glm::vec3(1.0f, 0.98f, 0.95f);
+			dl.Intensity = 1.0f;
+			e.AddComponent<VisibilityComponent>();
+		};
+		const auto addPoint = [](Entity e, const glm::vec3&)
+		{
+			auto& pl = e.AddComponent<PointLightComponent>();
+			pl.Color = glm::vec3(1.0f);
+			pl.Intensity = 50.0f;
+			pl.Range = 10.0f;
+			e.AddComponent<VisibilityComponent>();
+		};
+		const auto addSpot = [](Entity e, const glm::vec3& fwd)
+		{
+			e.GetComponentMutable_Untracked<TransformComponent>().Rotation = EulerFromForward(fwd);
+			auto& sl = e.AddComponent<SpotLightComponent>();
+			sl.Color = glm::vec3(1.0f);
+			sl.Intensity = 80.0f;
+			sl.Range = 20.0f;
+			e.AddComponent<VisibilityComponent>();
+		};
+		const auto addMesh = [](const uint64_t meshHandle)
+		{
+			return [meshHandle](Entity e, const glm::vec3&)
+			{
+				e.AddComponent<MeshComponent>().MeshHandle = AssetHandle{meshHandle};
+				e.AddComponent<MaterialComponent>().Material = AssetHandle{kWhiteMaterialHandle};
+				e.AddComponent<VisibilityComponent>();
+			};
+		};
+
+		// One flat, icon-prefixed row. Returns true if clicked (so the caller closes its popup).
+		const ImU32 accent = EditorTheme::AccentColor();
+		const auto row = [&](CreateIcon icon, const char* label) -> bool
+		{
+			DrawCreateIcon(icon, accent);
+			return ImGui::Selectable(label);
+		};
+
+		// The menu body, shared verbatim by the primary-button popup and the right-click context menu.
+		const auto drawCreateItems = [&]()
+		{
+			EditorTheme::SectionHeader("Create");
+			if (row(CreateIcon::Empty, "Empty Entity"))
+				createPreset("Empty", [](Entity, const glm::vec3&) {});
+			if (row(CreateIcon::Directional, "Directional Light"))
+				createPreset("Directional Light", addDirectional);
+			if (row(CreateIcon::Point, "Point Light"))
+				createPreset("Point Light", addPoint);
+			if (row(CreateIcon::Spot, "Spot Light"))
+				createPreset("Spot Light", addSpot);
+			if (row(CreateIcon::Cube, "Cube"))
+				createPreset("Cube", addMesh(kCubeMeshHandle));
+			if (row(CreateIcon::Cube, "Plane"))
+				createPreset("Plane", addMesh(kQuadMeshHandle));
+		};
+
+		// Primary amber command-console action + its dropdown.
+		if (EditorTheme::PrimaryButton("+ Create"))
+		{
+			ImGui::OpenPopup("##createmenu");
+		}
+		if (ImGui::BeginPopup("##createmenu"))
+		{
+			drawCreateItems();
+			ImGui::EndPopup();
 		}
 		ImGui::Separator();
 
@@ -123,7 +328,16 @@ namespace Snowstorm
 			DrawEntityNode(entity);
 		}
 
-		// Clicking empty space clears selection (but not while a right-click context menu is up).
+		// Right-click empty hierarchy space -> the same Create menu (Unity/Unreal both do this). Window
+		// context popup so it only opens over empty space, not over an entity row (rows have their own menu).
+		// Reuses drawCreateItems verbatim so the button and right-click never drift.
+		if (ImGui::BeginPopupContextWindow("##createcontext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems))
+		{
+			drawCreateItems();
+			ImGui::EndPopup();
+		}
+
+		// Left-clicking empty space clears selection (right-click is reserved for the Create menu above).
 		if (ImGui::IsMouseDown(0) && ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered())
 		{
 			SetSelected({});

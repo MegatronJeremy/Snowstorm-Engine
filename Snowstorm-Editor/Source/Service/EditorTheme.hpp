@@ -8,6 +8,14 @@ namespace Snowstorm::EditorTheme
 	// Use at the top of a panel to give it the terminal look.
 	void SectionHeader(const char* label);
 
+	// A full-width amber PRIMARY action button (the NERV command-console look): bright amber fill,
+	// dark text, uppercased label. `width` <= 0 stretches to the content region. Returns true when
+	// clicked. For the one prominent action per panel (e.g. "+ CREATE"); ordinary buttons stay default.
+	bool PrimaryButton(const char* label, float width = -1.0f);
+
+	// The theme's amber accent as a packed ImU32 (for draw-list glyphs that should match the accent).
+	unsigned int AccentColor();
+
 	// A red NERV-style warning banner: "■ <text>" on a dim red bar. For alerts/empty states.
 	void WarningBanner(const char* text);
 
