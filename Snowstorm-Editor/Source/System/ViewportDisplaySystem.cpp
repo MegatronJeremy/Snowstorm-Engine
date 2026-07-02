@@ -97,10 +97,14 @@ namespace Snowstorm
 				}
 			}
 
-			// Lights have no mesh to raycast, so they're picked by their billboard icon: a light is a hit if
-			// the click lands within the icon's screen radius of its projected origin (Unity/Unreal icon
-			// picking). The icon is drawn at the same radius (kLightIconRadiusPx) so the hitbox matches the
-			// visible marker. Depth-ordered via distance-along-ray against bestT so a mesh in front wins.
+			// Lights have no mesh to raycast, so they're picked by their billboard ICON: a hit if the click
+			// lands within the icon's screen radius of its projected origin (Unity/Unreal icon picking). An
+			// icon is a screen-space OVERLAY, so an icon hit ALWAYS wins over a mesh hit regardless of depth
+			// (otherwise a huge enclosing mesh like the whole Sponza model — whose AABB starts nearer the
+			// camera — steals every click). Among lights, the nearest-to-camera icon wins. Tracked in its own
+			// bestLightT so it never competes with the mesh bestT.
+			entt::entity lightHit = entt::null;
+			float bestLightT = std::numeric_limits<float>::max();
 			auto tryPickLightAt = [&](const glm::vec3& worldPos, const entt::entity e)
 			{
 				const glm::vec4 clip = viewProj * glm::vec4(worldPos, 1.0f);
@@ -118,10 +122,10 @@ namespace Snowstorm
 					return;
 				}
 				const float t = glm::dot(worldPos - ray.Origin, ray.Direction); // distance along the view ray
-				if (t > 0.0f && t < bestT)
+				if (t > 0.0f && t < bestLightT)
 				{
-					bestT = t;
-					hit = e;
+					bestLightT = t;
+					lightHit = e;
 				}
 			};
 
@@ -138,7 +142,8 @@ namespace Snowstorm
 				tryPickLightAt(reg.Read<TransformComponent>(e).Position, e);
 			}
 
-			return hit;
+			// Icon overlay beats geometry: if any light icon was under the cursor, select it over the mesh.
+			return (lightHit != entt::null) ? lightHit : hit;
 		}
 
 		// Project a world point to viewport pixel coordinates via the camera's ViewProjection. Returns false
@@ -447,6 +452,15 @@ namespace Snowstorm
 			ImGuizmo::SetOrthographic(false);
 			ImGuizmo::SetDrawlist();
 			ImGuizmo::SetRect(imageStart.x, imageStart.y, vp.Size.x, vp.Size.y);
+
+			// Make the gizmo a larger, thicker click target. The defaults draw thin rings that are easy to
+			// miss — a near-miss falls through to entity picking and deselects the object (its gizmo then
+			// vanishes, reading as "rotation doesn't work"). Bigger radius + thicker rotation rings cut the
+			// miss rate. (Rotation jumps at steep pitch are a separate gimbal-lock issue in Euler storage.)
+			ImGuizmo::SetGizmoSizeClipSpace(0.16f); // default 0.1
+			ImGuizmo::Style& gizmoStyle = ImGuizmo::GetStyle();
+			gizmoStyle.RotationLineThickness = 4.0f;      // default 2
+			gizmoStyle.RotationOuterLineThickness = 4.0f; // default 3
 
 			bool usingGizmo = false;
 			// Whether a transform gizmo was actually drawn this frame. ImGuizmo::IsOver() is STATELESS across
