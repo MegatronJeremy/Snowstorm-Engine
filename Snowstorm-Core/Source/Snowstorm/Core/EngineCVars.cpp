@@ -11,6 +11,8 @@ namespace Snowstorm::CVars
 
 	CVar<std::string> BakeScene{"scene.bake", "", "Bake a scene to Assets/Scenes/<name>.world then exit. Value: 'stress' (procedural) or a model path (.gltf/.glb/.obj/.fbx)"};
 
+	CVar<std::string> DumpMeshTangents{"debug.dump_mesh_tangents", "", "Analyze a model's UV/tangent structure across seams (#74) then exit. Value: model path"};
+
 	CVar<bool> VSync{"display.vsync", true, "VSync on (FIFO, locked to refresh) or off (uncapped present)"};
 
 	CVar<std::string> StartupScene{"startup.scene", "", "Path to a .world to load at startup (empty = Startup.world); e.g. assets/scenes/Sponza.world"};

@@ -11,6 +11,7 @@
 #include "Singletons/EditorNotificationsSingleton.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Core/MeshDiagnostics.hpp"
 
 #include "Snowstorm/Components/ComponentRegistry.hpp"
 #include "Snowstorm/Components/CameraComponent.hpp"
@@ -256,6 +257,15 @@ namespace Snowstorm
 
 	void EditorLayer::LoadOrCreateStartupWorld()
 	{
+		// One-shot mesh diagnostic (CVar debug.dump_mesh_tangents, #74): analyze a model's UV/tangent
+		// structure to the log, then exit. Headless-friendly; runs before anything loads a scene.
+		if (const std::string& dumpPath = CVars::DumpMeshTangents.Get(); !dumpPath.empty())
+		{
+			DumpMeshTangentReport(dumpPath);
+			Application::Get().Close();
+			return;
+		}
+
 		// One-shot bake tool (CVar scene.bake): populate a fresh scene, save it to a .world, then exit.
 		// "stress" = the procedural recipe; anything else is a model path to import. Returns true when a
 		// bake was requested (the app is closing) so we don't also load a startup scene afterwards.

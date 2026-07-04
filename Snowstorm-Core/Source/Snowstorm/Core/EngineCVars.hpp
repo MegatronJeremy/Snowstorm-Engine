@@ -27,6 +27,11 @@ namespace Snowstorm::CVars
 	// file is just a path, so any model can be baked, not only the hardcoded Sponza.
 	extern CVar<std::string> BakeScene;
 
+	// One-shot mesh-tangent diagnostic (#74). Value = path to a model (.gltf/.glb/.obj/.fbx). At startup,
+	// imports it with the engine's exact assimp flags, analyzes each submesh for mirrored-UV charts and
+	// tangent-handedness structure across UV seams, writes a report to the log, then exits. Empty = off.
+	extern CVar<std::string> DumpMeshTangents;
+
 	// Startup VSync state. On (default) = FIFO (locked to refresh, no tearing); off = uncapped present
 	// (MAILBOX/IMMEDIATE). Runtime-toggleable from the editor's Settings panel.
 	extern CVar<bool> VSync;
