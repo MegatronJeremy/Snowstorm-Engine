@@ -73,9 +73,20 @@ namespace Snowstorm
 		VmaAllocationCreateInfo allocCI{};
 		allocCI.usage = VMA_MEMORY_USAGE_AUTO;
 
-		// If it's only used as an attachment, AUTO is fine. If you plan to Map(), you'd use host-visible.
-		// For now, always device local; uploads go through staging in SetData().
-		allocCI.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+		// Force a dedicated VkDeviceMemory block only for render-target-class images (color/depth attachments
+		// and storage/UAV images): they're large, long-lived, and drivers give dedicated allocations a
+		// fast-clear / compression edge. Plain sampled textures (the bulk — every material map, the 1x1
+		// defaults) are left to VMA, which sub-allocates them from shared pools and still promotes to
+		// dedicated when the driver reports VkMemoryDedicatedRequirements. Blanket-dedicated burned a whole
+		// allocation on every tiny texture (best-practices #69), wasting memory + VkDeviceMemory slots
+		// (maxMemoryAllocationCount).
+		const bool isRenderTarget = HasUsage(m_Desc.Usage, TextureUsage::ColorAttachment) ||
+		                            HasUsage(m_Desc.Usage, TextureUsage::DepthStencil) ||
+		                            HasUsage(m_Desc.Usage, TextureUsage::Storage);
+		if (isRenderTarget)
+		{
+			allocCI.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+		}
 
 		const VmaAllocator allocator = GetAllocator();
 
