@@ -361,10 +361,20 @@ namespace Snowstorm
 		}
 		m_SwapchainFormat = surfaceFormat.format;
 
+		// Request one more than the surface minimum (min is usually 2 = double buffering, which locks the
+		// GPU to an integer fraction of the refresh rate when it can't keep up). +1 gives triple buffering
+		// so present has a spare image to work with. Clamp to maxImageCount (0 = no upper bound). This is
+		// the driver-recommended default (Vulkan best-practices #31).
+		uint32_t desiredImageCount = caps.minImageCount + 1;
+		if (caps.maxImageCount > 0 && desiredImageCount > caps.maxImageCount)
+		{
+			desiredImageCount = caps.maxImageCount;
+		}
+
 		VkSwapchainCreateInfoKHR swapInfo{};
 		swapInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
 		swapInfo.surface = m_Surface;
-		swapInfo.minImageCount = caps.minImageCount;
+		swapInfo.minImageCount = desiredImageCount;
 		swapInfo.imageFormat = m_SwapchainFormat;
 		swapInfo.imageColorSpace = surfaceFormat.colorSpace;
 		swapInfo.imageExtent = m_SwapchainExtent;
