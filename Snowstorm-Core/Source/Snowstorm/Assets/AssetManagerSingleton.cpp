@@ -294,8 +294,11 @@ namespace Snowstorm
 		}
 
 		auto& meshLib = Application::Get().GetServiceManager().GetService<MeshLibrary>();
+		// Submeshes go through the cooked-blob cache (keyed by handle) so a scene with N parts parses the
+		// source file at most once total, not once per part. Whole-file loads keep the plain path (they
+		// flatten every submesh and aren't the startup hot spot).
 		Ref<Mesh> mesh = (sub.SubmeshIndex >= 0)
-		                     ? meshLib.Load(filePath.string(), sub.SubmeshIndex)
+		                     ? meshLib.LoadCached(filePath.string(), sub.SubmeshIndex, handle)
 		                     : meshLib.Load(filePath.string());
 
 		if (mesh && haveBounds)

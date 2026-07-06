@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include "Mesh.hpp"
 
+#include "Snowstorm/Assets/AssetTypes.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Service/Service.hpp"
 
@@ -20,6 +21,12 @@ namespace Snowstorm
 		// by their node hierarchy (aiProcess_PreTransformVertices) so each part sits in model space;
 		// this is what model import uses to spawn one entity per part. submeshIndex must be in range.
 		Ref<Mesh> Load(const std::string& filepath, int submeshIndex);
+
+		// Cooked-cache load: tries the on-disk cooked blob for `handle` first (no Assimp parse), and only
+		// re-parses the source + re-cooks on a cache miss/stale. This is the fast startup path — the plain
+		// Load() overloads above re-parse the whole file every call (fine for one-off imports, but O(N-full-
+		// parses) for an N-submesh scene). Prefer this from GetMesh where a stable handle exists.
+		Ref<Mesh> LoadCached(const std::string& filepath, int submeshIndex, AssetHandle handle);
 
 		void Clear();
 		bool Remove(const std::string& filepath);

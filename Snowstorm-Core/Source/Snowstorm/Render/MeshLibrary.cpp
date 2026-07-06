@@ -4,6 +4,8 @@
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 
+#include "Snowstorm/Assets/AssetFileTime.hpp"
+#include "Snowstorm/Assets/MeshCache.hpp"
 #include "Snowstorm/Core/Log.hpp"
 
 #include <glm/geometric.hpp>
@@ -149,6 +151,82 @@ namespace Snowstorm
 		}
 
 		Ref<Mesh> result = CreateRef<Mesh>(vertices, indices);
+		m_Meshes[cacheKey] = result;
+		return result;
+	}
+
+	namespace
+	{
+		// Parse one submesh of a model file into CPU-side vertex/index arrays (the cook step). Same import
+		// flags as MeshLibrary::Load(file, submeshIndex) so cooked geometry is identical to the live path.
+		// Returns false on parse failure / out-of-range submesh.
+		bool CookSubmesh(const std::string& filepath, const int submeshIndex, CookedMesh& out)
+		{
+			Assimp::Importer importer;
+			const aiScene* scene = importer.ReadFile(filepath,
+			                                         aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_JoinIdenticalVertices | aiProcess_PreTransformVertices | aiProcess_CalcTangentSpace);
+
+			if (!scene || !scene->mRootNode || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE)
+			{
+				SS_CORE_ERROR("Failed to load mesh: {} | Assimp Error: {}", filepath, importer.GetErrorString());
+				return false;
+			}
+
+			if (submeshIndex < 0 || static_cast<uint32_t>(submeshIndex) >= scene->mNumMeshes)
+			{
+				SS_CORE_ERROR("Submesh index {} out of range ({} meshes) for {}", submeshIndex, scene->mNumMeshes, filepath);
+				return false;
+			}
+
+			const aiMesh* mesh = scene->mMeshes[submeshIndex];
+
+			out.Vertices.clear();
+			out.Indices.clear();
+			out.Vertices.reserve(mesh->mNumVertices);
+			for (uint32_t j = 0; j < mesh->mNumVertices; j++)
+			{
+				out.Vertices.push_back(ReadVertex(mesh, j));
+			}
+			for (uint32_t j = 0; j < mesh->mNumFaces; j++)
+			{
+				const aiFace& face = mesh->mFaces[j];
+				for (uint32_t k = 0; k < face.mNumIndices; k++)
+				{
+					out.Indices.push_back(face.mIndices[k]);
+				}
+			}
+
+			return !out.Vertices.empty() && !out.Indices.empty();
+		}
+	}
+
+	Ref<Mesh> MeshLibrary::LoadCached(const std::string& filepath, const int submeshIndex, const AssetHandle handle)
+	{
+		const std::string cacheKey = filepath + "?submesh=" + std::to_string(submeshIndex);
+		if (const auto it = m_Meshes.find(cacheKey); it != m_Meshes.end())
+		{
+			return it->second;
+		}
+
+		const uint64_t sourceTime = GetFileWriteTimeU64(filepath);
+
+		// Fast path: read the cooked blob (no Assimp). Stale/missing -> nullopt, fall through to re-cook.
+		CookedMesh cooked;
+		if (auto blob = MeshCacheIO::Load(handle, sourceTime))
+		{
+			cooked = std::move(*blob);
+		}
+		else
+		{
+			// Cache miss: parse the source ONCE, then persist the cooked blob for next startup.
+			if (!CookSubmesh(filepath, submeshIndex, cooked))
+			{
+				return nullptr;
+			}
+			(void)MeshCacheIO::Save(handle, sourceTime, cooked);
+		}
+
+		Ref<Mesh> result = CreateRef<Mesh>(cooked.Vertices, cooked.Indices);
 		m_Meshes[cacheKey] = result;
 		return result;
 	}
