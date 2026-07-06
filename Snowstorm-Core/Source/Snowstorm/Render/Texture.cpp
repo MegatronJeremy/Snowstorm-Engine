@@ -40,8 +40,7 @@ namespace Snowstorm
 	{
 		int w = 0, h = 0, channels = 0;
 
-		// Force 4 channels so SetData is predictable (RGBA8)
-		// TODO makes this varied according to the bool srgb, if passing normals/roughness map
+		// Force 4 channels so SetData is predictable (RGBA8).
 		stbi_uc* pixels = stbi_load(filePath.string().c_str(), &w, &h, &channels, 4);
 		SS_CORE_ASSERT(pixels, "Failed to load texture image: {}", filePath.string());
 
@@ -56,9 +55,11 @@ namespace Snowstorm
 		desc.ArrayLayers = 1;
 		desc.Usage = TextureUsage::Sampled | TextureUsage::TransferDst | TextureUsage::TransferSrc;
 
-		// Pick the correct format for your engine:
-		// If you have an sRGB format enum, use it when srgb=true.
-		desc.Format = PixelFormat::RGBA8_UNorm; // or PixelFormat::RGBA8_sRGB
+		// Color intent decides the sampled color space: albedo/emissive are authored in sRGB and must be
+		// decoded to linear on sample (srgb=true); normal/metallic-roughness/AO are data maps whose values
+		// are NOT gamma-encoded and must be read verbatim (srgb=false). Sampling a normal map as sRGB skews
+		// every channel and breaks lighting — the caller picks the flag per slot (see GetTextureView).
+		desc.Format = srgb ? PixelFormat::RGBA8_sRGB : PixelFormat::RGBA8_UNorm;
 
 		desc.DebugName = filePath.filename().string();
 
