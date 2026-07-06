@@ -140,9 +140,10 @@ namespace Snowstorm
 	{
 		UpdateGPU(frameIndex);
 
+		// Bind the pipeline only. Set 1 (this material's data) is no longer bound here: the caller binds
+		// it together with sets 0 and 2 in a single contiguous BindDescriptorSets right before the draw
+		// (see RendererService::FlushBatch), so all per-draw sets land in one call. GetDescriptorSet
+		// exposes the set-1 handle for that batched bind.
 		ctx.BindPipeline(m_Base->GetPipeline());
-
-		// Bind this material's unique data (Set 1)
-		ctx.BindDescriptorSet(m_MaterialDataSets[frameIndex], 1);
 	}
 }

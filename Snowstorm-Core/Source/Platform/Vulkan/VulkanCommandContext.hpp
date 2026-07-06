@@ -36,6 +36,8 @@ namespace Snowstorm
 
 		void BindDescriptorSet(const Ref<DescriptorSet>& descriptorSet, uint32_t setIndex) override;
 
+		void BindDescriptorSets(uint32_t firstSet, const std::vector<Ref<DescriptorSet>>& sets) override;
+
 		void BindDescriptorSet(const Ref<DescriptorSet>& descriptorSet,
 		                       uint32_t setIndex,
 		                       const uint32_t* dynamicOffsets,
@@ -67,6 +69,10 @@ namespace Snowstorm
 		void BeginGpuScope(const std::string& name) override;
 		void EndGpuScope() override;
 		std::vector<GpuScope> CollectGpuScopes() override;
+
+		void BeginDebugLabel(const std::string& name, float r, float g, float b) override;
+		void EndDebugLabel() override;
+		void InsertDebugLabel(const std::string& name, float r, float g, float b) override;
 
 	private:
 		VkCommandBuffer m_CommandBuffer = VK_NULL_HANDLE;

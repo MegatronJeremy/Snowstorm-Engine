@@ -48,7 +48,7 @@ namespace Snowstorm
 
 		void SetSampler(const Ref<Sampler>& sampler);
 
-		// Bind pipeline + set=1 (Material) for this instance
+		// Bind the pipeline for this instance (set 1 is bound by the caller in a batched BindDescriptorSets).
 		void Apply(CommandContext& ctx, uint32_t frameIndex);
 
 		// Materials only own their specific data Set (not the global texture set)

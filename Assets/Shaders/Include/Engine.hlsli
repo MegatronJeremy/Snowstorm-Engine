@@ -1,5 +1,9 @@
 // Engine.hlsli - The Unified Pipeline Layout
 
+// Vertex layout (VSInput) + per-instance object buffer (set 2). Split out so depth-only passes can
+// include just that minimal interface; the lit path gets it transitively here.
+#include "Include/MeshInput.hlsli"
+
 // --- Common structs ---
 struct DirectionalLight
 {
@@ -34,14 +38,6 @@ struct SpotLight
 	float2 ShadowPad;
 	float4x4 ShadowViewProj;
 	float4 ShadowAtlasRect;
-};
-
-struct VSInput
-{
-	float3 Position : TEXCOORD0;
-	float3 Normal : TEXCOORD1;
-	float2 TexCoord : TEXCOORD2;
-	float4 Tangent : TEXCOORD3; // xyz = tangent, w = bitangent handedness sign (glTF/assimp convention)
 };
 
 struct VSOutput
@@ -147,18 +143,7 @@ SamplerState LinearSampler : register(s1, space1);
 // fixed material binding 2; engine-global (every material binds the same one).
 SamplerState ClampSampler : register(s2, space1);
 
-// --- SPACE 2: Per-instance Object Data ---
-// One entry per instance, indexed by SV_InstanceID. Lets a single instanced DrawIndexed draw N
-// objects that share a mesh+material, with per-object transform / albedo / extras. Layout must match
-// the C++ InstanceData struct in RendererSingleton exactly.
-struct InstanceData
-{
-	float4x4 Model;
-	uint AlbedoTextureIndex; // per-instance albedo override (0 = use material default)
-	float3 _Pad0;
-	float4 Extras0;
-};
-StructuredBuffer<InstanceData> Instances : register(t0, space2);
+// SPACE 2 (per-instance object data: InstanceData + Instances) lives in MeshInput.hlsli, included above.
 
 // --- SPACE 3: Global Bindless Pool ---
 // Two parallel arrays in the same set: 2D textures (binding 0) and cubemaps (binding 1). Cube views

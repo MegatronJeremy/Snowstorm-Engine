@@ -142,10 +142,11 @@ namespace Snowstorm
 		const Ref<DescriptorSet>& AcquireObjectSet(const Ref<Pipeline>& pipeline, uint32_t frameIndex, const char* debugName);
 
 		// Write one batch's instances into the shared instance buffer at the running cursor and record a
-		// single instanced DrawIndexed against the already-bound objectSet. Returns false (and logs) if the
-		// batch would overflow the buffer — the caller decides whether to clear the batch. The shared core
-		// of FlushBatch and DrawBatchesDepthOnly (the instance-write + draw the depth and lit paths agree on).
-		bool WriteBatchInstancedDraw(BatchData& batch, const Ref<DescriptorSet>& objectSet, const char* overflowContext);
+		// single instanced DrawIndexed. Descriptor sets (including set 2) must already be bound by the
+		// caller. Returns false (and logs) if the batch would overflow the buffer — the caller decides
+		// whether to clear the batch. The shared core of FlushBatch and DrawBatchesDepthOnly (the
+		// instance-write + draw the depth and lit paths agree on).
+		bool WriteBatchInstancedDraw(BatchData& batch, const char* overflowContext);
 
 	private:
 		Ref<CommandContext> m_CommandContext;

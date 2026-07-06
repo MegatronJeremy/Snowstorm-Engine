@@ -5,11 +5,14 @@
 namespace Snowstorm
 {
 	VulkanDescriptorSetLayout::VulkanDescriptorSetLayout(DescriptorSetLayoutDesc desc)
-		: m_Desc(std::move(desc))
+	    : m_Desc(std::move(desc))
 	{
 		m_Device = GetVulkanDevice();
 
-		SS_CORE_ASSERT(!m_Desc.Bindings.empty(), "DescriptorSetLayoutDesc must have at least one binding");
+		// An EMPTY binding list is valid: the pipeline builder gap-fills descriptor sets a shader doesn't
+		// touch with an empty layout so the renderer's positional set indexing (GetSetLayouts()[N] == set N)
+		// stays intact — e.g. the depth-only shadow shader uses only set 2, so sets 0/1 are empty. Vulkan
+		// accepts a zero-binding VkDescriptorSetLayout (bindingCount = 0), so just build one.
 
 		std::vector<VkDescriptorSetLayoutBinding> bindings;
 		std::vector<VkDescriptorBindingFlags> bindingFlags;
@@ -66,8 +69,7 @@ namespace Snowstorm
 	}
 
 	VulkanDescriptorSetLayout::VulkanDescriptorSetLayout(void* internalHandle)
-		: m_Layout(static_cast<VkDescriptorSetLayout>(internalHandle))
-		  , m_IsLayoutOwner(false)
+	    : m_Layout(static_cast<VkDescriptorSetLayout>(internalHandle)), m_IsLayoutOwner(false)
 	{
 		m_Device = GetVulkanDevice();
 		m_Desc.DebugName = "External_Layout_Wrapper";

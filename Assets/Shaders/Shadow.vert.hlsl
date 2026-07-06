@@ -1,4 +1,8 @@
-#include "Include/Engine.hlsli"
+// Depth-only pass: include ONLY the minimal mesh interface (VSInput + set-2 Instances), not the full
+// Engine.hlsli. Pulling in Engine.hlsli dragged FrameCB (set 0), MaterialCB (set 1) and the bindless
+// arrays (set 3) into this shader's SPIR-V, so a debugger flagged those sets as referenced-but-unbound
+// on every shadow draw even though this pass only binds set 2.
+#include "Include/MeshInput.hlsli"
 
 // Depth-only shadow pass, vertex stage. Renders scene geometry from the light's point of view into a
 // depth target; the lit pass later reprojects each fragment into this space and compares depth to

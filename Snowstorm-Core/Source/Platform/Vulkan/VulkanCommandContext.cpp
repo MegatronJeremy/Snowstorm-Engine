@@ -304,6 +304,36 @@ namespace Snowstorm
 		    nullptr);
 	}
 
+	void VulkanCommandContext::BindDescriptorSets(const uint32_t firstSet, const std::vector<Ref<DescriptorSet>>& sets)
+	{
+		SS_CORE_ASSERT(m_CurrentPipelineLayout != VK_NULL_HANDLE,
+		               "BindDescriptorSets called before BindPipeline (need pipeline layout)");
+		if (sets.empty())
+		{
+			return;
+		}
+
+		// Unpack to raw handles for one contiguous vkCmdBindDescriptorSets. Sets must be non-null; the
+		// caller guarantees they map to ascending, gap-free set indices starting at firstSet.
+		std::vector<VkDescriptorSet> handles;
+		handles.reserve(sets.size());
+		for (const auto& set : sets)
+		{
+			SS_CORE_ASSERT(set, "BindDescriptorSets: null descriptor set in range");
+			handles.push_back(std::static_pointer_cast<VulkanDescriptorSet>(set)->GetHandle());
+		}
+
+		vkCmdBindDescriptorSets(
+		    m_CommandBuffer,
+		    m_CurrentBindPoint,
+		    m_CurrentPipelineLayout,
+		    firstSet,
+		    static_cast<uint32_t>(handles.size()),
+		    handles.data(),
+		    0,
+		    nullptr);
+	}
+
 	void VulkanCommandContext::BindDescriptorSet(const Ref<DescriptorSet>& descriptorSet,
 	                                             const uint32_t setIndex,
 	                                             const uint32_t* dynamicOffsets,
@@ -369,6 +399,12 @@ namespace Snowstorm
 
 	void VulkanCommandContext::BeginGpuScope(const std::string& name)
 	{
+		// Emit the RenderDoc/PIX region label FIRST, unconditionally: it is independent of timestamp support
+		// and of the scope-overflow drop below. The RenderGraph always calls Begin/EndGpuScope in balanced
+		// pairs, so labels stay balanced even when a scope is dropped for timing or timestamps are absent.
+		// Grey by default; the timer path doesn't affect it.
+		BeginDebugLabel(name, 0.55f, 0.65f, 0.85f);
+
 		if (!m_TimestampsSupported)
 		{
 			return;
@@ -398,6 +434,10 @@ namespace Snowstorm
 
 	void VulkanCommandContext::EndGpuScope()
 	{
+		// Close the debug-label region FIRST and unconditionally, mirroring BeginGpuScope: it must balance
+		// every BeginDebugLabel regardless of timestamp support or whether the timer scope was dropped.
+		EndDebugLabel();
+
 		if (!m_TimestampsSupported || m_OpenScopes.empty())
 		{
 			return;
@@ -407,6 +447,47 @@ namespace Snowstorm
 		const uint32_t index = m_OpenScopes.back();
 		m_OpenScopes.pop_back();
 		vkCmdWriteTimestamp(m_CommandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_TimestampPool, m_Scopes[index].StartQuery + 1);
+	}
+
+	void VulkanCommandContext::BeginDebugLabel(const std::string& name, const float r, const float g, const float b)
+	{
+		// volk loads vkCmdBeginDebugUtilsLabelEXT only when VK_EXT_debug_utils is enabled; a null pointer
+		// means the extension is off, so skip rather than crash (same guard as SetVulkanObjectName).
+		if (vkCmdBeginDebugUtilsLabelEXT == nullptr)
+		{
+			return;
+		}
+		VkDebugUtilsLabelEXT label{VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT};
+		label.pLabelName = name.c_str();
+		label.color[0] = r;
+		label.color[1] = g;
+		label.color[2] = b;
+		label.color[3] = 1.0f;
+		vkCmdBeginDebugUtilsLabelEXT(m_CommandBuffer, &label);
+	}
+
+	void VulkanCommandContext::EndDebugLabel()
+	{
+		if (vkCmdEndDebugUtilsLabelEXT == nullptr)
+		{
+			return;
+		}
+		vkCmdEndDebugUtilsLabelEXT(m_CommandBuffer);
+	}
+
+	void VulkanCommandContext::InsertDebugLabel(const std::string& name, const float r, const float g, const float b)
+	{
+		if (vkCmdInsertDebugUtilsLabelEXT == nullptr)
+		{
+			return;
+		}
+		VkDebugUtilsLabelEXT label{VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT};
+		label.pLabelName = name.c_str();
+		label.color[0] = r;
+		label.color[1] = g;
+		label.color[2] = b;
+		label.color[3] = 1.0f;
+		vkCmdInsertDebugUtilsLabelEXT(m_CommandBuffer, &label);
 	}
 
 	std::vector<GpuScope> VulkanCommandContext::CollectGpuScopes()

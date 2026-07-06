@@ -44,6 +44,13 @@ namespace Snowstorm
 		                               const uint32_t* dynamicOffsets,
 		                               uint32_t dynamicOffsetCount) = 0;
 
+		// Bind a CONTIGUOUS run of descriptor sets [firstSet, firstSet+count) in a single backend call
+		// (one vkCmdBindDescriptorSets). Prefer this over N single-set binds when a draw's sets are known
+		// together: it's the "bind the whole set table at once" pattern real engines use (Unreal/Unity),
+		// fewer driver calls, and it avoids leaving graphics debuggers unsure whether an earlier-bound set
+		// is still current. The sets must be non-null and land at ascending, gap-free set indices.
+		virtual void BindDescriptorSets(uint32_t firstSet, const std::vector<Ref<DescriptorSet>>& sets) = 0;
+
 		virtual void BindVertexBuffer(const Ref<Buffer>& vertexBuffer, uint32_t binding = 0, uint64_t offset = 0) = 0;
 
 		virtual void BindGlobalResources() = 0;
@@ -89,5 +96,16 @@ namespace Snowstorm
 		// pool into GpuScopes (name, ms, depth) and clears the recording state for the new frame. Returns the
 		// resolved scopes from that prior frame (empty if timestamps are unsupported or nothing was recorded).
 		virtual std::vector<GpuScope> CollectGpuScopes() = 0;
+
+		// --- Debug labels (VK_EXT_debug_utils / RenderDoc, PIX, Nsight) ---
+		// Annotate the command stream so a graphics debugger shows named, nestable regions in its event
+		// browser instead of opaque draw indices. Begin/End bracket a region (must be balanced, may nest);
+		// Insert drops a one-off marker. Independent of GPU timing — the RenderGraph drives these from the
+		// same per-pass scope as BeginGpuScope, but a device with no timestamp support still gets labels.
+		// Default no-op: only the Vulkan backend (when debug-utils is enabled) overrides them. The color is
+		// an RGBA tint the debugger uses to shade the region; components in [0,1], default a neutral grey.
+		virtual void BeginDebugLabel(const std::string& /*name*/, float /*r*/ = 0.6f, float /*g*/ = 0.6f, float /*b*/ = 0.6f) {}
+		virtual void EndDebugLabel() {}
+		virtual void InsertDebugLabel(const std::string& /*name*/, float /*r*/ = 0.6f, float /*g*/ = 0.6f, float /*b*/ = 0.6f) {}
 	};
 }

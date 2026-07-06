@@ -40,8 +40,8 @@ namespace Snowstorm
 			float ShadowBias = 0.0015f;
 			float ShadowTexelSize = 1.0f / 2048.0f;
 			float ShadowStrength = 1.0f;
-			uint32_t ShadowSoft = 1;                  // 1 = 3x3 PCF, 0 = hard single tap
-			uint32_t SpotShadowAtlasIndex = 0;        // bindless index of the spot shadow atlas (0 = spots unshadowed)
+			uint32_t ShadowSoft = 1;           // 1 = 3x3 PCF, 0 = hard single tap
+			uint32_t SpotShadowAtlasIndex = 0; // bindless index of the spot shadow atlas (0 = spots unshadowed)
 			float _ShadowPad1 = 0.0f;
 			float _ShadowPad2 = 0.0f;
 
@@ -69,9 +69,9 @@ namespace Snowstorm
 	}
 
 	void RendererService::BeginScene(const CameraRuntimeComponent& cameraRt,
-	                                   const glm::vec3& cameraWorldPosition,
-	                                   const Ref<CommandContext>& commandContext,
-	                                   const uint32_t frameIndex)
+	                                 const glm::vec3& cameraWorldPosition,
+	                                 const Ref<CommandContext>& commandContext,
+	                                 const uint32_t frameIndex)
 	{
 		SS_CORE_ASSERT(commandContext, "Renderer requires a valid CommandContext");
 
@@ -94,10 +94,10 @@ namespace Snowstorm
 	}
 
 	void RendererService::DrawMesh(const glm::mat4& transform,
-	                                 const Ref<Mesh>& mesh,
-	                                 const Ref<MaterialInstance>& materialInstance,
-	                                 const uint32_t albedoTextureIndex,
-	                                 const glm::vec4& extras0)
+	                               const Ref<Mesh>& mesh,
+	                               const Ref<MaterialInstance>& materialInstance,
+	                               const uint32_t albedoTextureIndex,
+	                               const glm::vec4& extras0)
 	{
 		SS_CORE_ASSERT(m_CommandContext, "DrawMesh called outside of BeginScene/EndScene");
 		SS_CORE_ASSERT(mesh, "Mesh must be valid");
@@ -222,9 +222,9 @@ namespace Snowstorm
 	}
 
 	void RendererService::SetIBLData(const uint32_t irradianceIndex,
-	                                   const uint32_t prefilteredIndex,
-	                                   const uint32_t brdfLutIndex,
-	                                   const uint32_t prefilteredMipCount)
+	                                 const uint32_t prefilteredIndex,
+	                                 const uint32_t brdfLutIndex,
+	                                 const uint32_t prefilteredMipCount)
 	{
 		m_IrradianceCubeIndex = irradianceIndex;
 		m_PrefilteredCubeIndex = prefilteredIndex;
@@ -255,8 +255,8 @@ namespace Snowstorm
 	}
 
 	const Ref<DescriptorSet>& RendererService::AcquireObjectSet(const Ref<Pipeline>& pipeline,
-	                                                              const uint32_t frameIndex,
-	                                                              const char* debugName)
+	                                                            const uint32_t frameIndex,
+	                                                            const char* debugName)
 	{
 		// One frame-wide storage buffer holds every instance; the set binds the whole buffer once (fixed
 		// capacity → committed once, never re-bound mid-frame). Cached per (pipeline, frame-in-flight).
@@ -288,8 +288,7 @@ namespace Snowstorm
 	}
 
 	bool RendererService::WriteBatchInstancedDraw(BatchData& batch,
-	                                                const Ref<DescriptorSet>& objectSet,
-	                                                const char* overflowContext)
+	                                              const char* overflowContext)
 	{
 		// Write this batch's instances into the frame buffer at the running cursor, then one instanced draw.
 		const auto instanceCount = static_cast<uint32_t>(batch.Instances.size());
@@ -306,8 +305,9 @@ namespace Snowstorm
 		                                         static_cast<size_t>(firstInstance) * sizeof(InstanceData));
 		m_InstanceWriteCursor += instanceCount;
 
+		// Descriptor sets (incl. set 2 = objectSet) are bound by the caller before this helper runs, so a
+		// pass can bind its full contiguous set range in one call. Here we only stream geometry + draw.
 		m_CommandContext->BindVertexBuffer(batch.Mesh->GetVertexBuffer(), 0, 0);
-		m_CommandContext->BindDescriptorSet(objectSet, 2);
 		m_CommandContext->DrawIndexed(batch.Mesh->GetIndexBuffer(),
 		                              batch.Mesh->GetIndexCount(),
 		                              instanceCount,
@@ -340,18 +340,22 @@ namespace Snowstorm
 		// lit FlushBatch, minus materials/bindless. The shadow pass has its own BeginScene accumulation (all
 		// casters); the camera pass's BeginScene clears these batches and re-accumulates visible ones — so
 		// the batches are NOT cleared here (the camera pass owns clearing).
+		// Depth pass uses only set 2 (instances); the light matrix rides a push constant. Bind it once —
+		// objectSet is the same for every batch this pass.
+		m_CommandContext->BindDescriptorSet(objectSet, 2);
+
 		for (auto& batch : m_Batches)
 		{
 			if (batch.Instances.empty() || !batch.Mesh)
 				continue;
 
-			WriteBatchInstancedDraw(batch, objectSet, " in shadow pass");
+			WriteBatchInstancedDraw(batch, " in shadow pass");
 		}
 	}
 
 	void RendererService::FlushBatch(BatchData& batch,
-	                                   const Ref<CommandContext>& commandContext,
-	                                   const uint32_t frameIndex)
+	                                 const Ref<CommandContext>& commandContext,
+	                                 const uint32_t frameIndex)
 	{
 		if (batch.Instances.empty())
 			return;
@@ -365,12 +369,8 @@ namespace Snowstorm
 		m_Stats.DrawCalls += 1;
 		m_Stats.Triangles += batchInstanceCount * (batch.Mesh->GetIndexCount() / 3u);
 
-		// Bind pipeline + set=1 (Material) for this instance
+		// Bind the pipeline (set 1 is bound below in the batched call, not by Apply).
 		batch.MaterialInstance->Apply(*commandContext, frameIndex);
-
-		// Bind engine globals
-		// called once per pipeline change or once per frame
-		commandContext->BindGlobalResources();
 
 		const Ref<Pipeline>& pipeline = batch.MaterialInstance->GetPipeline();
 		SS_CORE_ASSERT(pipeline, "MaterialInstance has no pipeline");
@@ -379,20 +379,22 @@ namespace Snowstorm
 		SS_CORE_ASSERT(setLayouts.size() > 2, "Pipeline must provide set layouts 0..2");
 		SS_CORE_ASSERT(setLayouts[0] && setLayouts[2], "Pipeline missing set=0 and/or set=2 layouts");
 
-		// ---- Set 0: Frame ---- (created on demand + uploaded; shared with the sky pass)
+		// Set 0 (Frame, shared with the sky pass), set 1 (this material's data), set 2 (per-instance
+		// object buffer; each batch writes its slice and draws with firstInstance = sliceStart). These
+		// three are contiguous, so bind them in ONE vkCmdBindDescriptorSets right after the pipeline
+		// instead of three separate calls that left graphics debuggers reporting earlier sets as stale.
 		const Ref<DescriptorSet> frameSet = AcquireFrameSet(pipeline, frameIndex);
-
-		// Bind set 0 after the pipeline is bound (pipeline already bound by MaterialInstance::Apply)
-		commandContext->BindDescriptorSet(frameSet, 0);
-
-		// ---- Set 2: per-instance Object data (StructuredBuffer) ----
-		// One frame-wide storage buffer holds every instance; each batch writes its slice and draws
-		// with firstInstance = sliceStart, so SV_InstanceID indexes the right entries.
+		const Ref<DescriptorSet>& materialSet = batch.MaterialInstance->GetDescriptorSet(frameIndex);
 		const Ref<DescriptorSet>& objectSet = AcquireObjectSet(pipeline, frameIndex, "Set2_Instances");
+		commandContext->BindDescriptorSets(0, {frameSet, materialSet, objectSet});
+
+		// Set 3 (bindless table) is owned by the bindless manager (a raw VkDescriptorSet, not a pooled
+		// DescriptorSet), so it binds separately — still after the pipeline, before the draw.
+		commandContext->BindGlobalResources();
 
 		// Write this batch's slice + record the instanced draw (shared with the depth-only pass). On
 		// overflow the lit path clears the batch so a later pass doesn't retry the dropped instances.
-		WriteBatchInstancedDraw(batch, objectSet, "");
+		WriteBatchInstancedDraw(batch, "");
 
 		batch.Instances.clear();
 	}

@@ -8,6 +8,7 @@
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <iostream>
+#include <string>
 
 #include "Snowstorm/Core/EngineCVars.hpp"
 
@@ -97,7 +98,26 @@ namespace Snowstorm
 		const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtCount);
 
 		std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtCount);
-		if (enableValidationLayers)
+
+		// Enable VK_EXT_debug_utils whenever the runtime offers it, NOT only under validation. It provides
+		// both object naming (SetVulkanObjectName) and command-buffer labels (BeginGpuScope -> RenderDoc
+		// event regions); gating it on validation hid pass names in plain Debug/RenderDoc captures. The
+		// validation *messenger* below stays validation-gated — this only enables the extension itself.
+		{
+			uint32_t extCount = 0;
+			vkEnumerateInstanceExtensionProperties(nullptr, &extCount, nullptr);
+			std::vector<VkExtensionProperties> available(extCount);
+			vkEnumerateInstanceExtensionProperties(nullptr, &extCount, available.data());
+			for (const auto& ext : available)
+			{
+				if (strcmp(ext.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0)
+				{
+					m_DebugUtilsAvailable = true;
+					break;
+				}
+			}
+		}
+		if (m_DebugUtilsAvailable)
 		{
 			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 		}
@@ -155,10 +175,24 @@ namespace Snowstorm
 			                               const VkDebugUtilsMessengerCallbackDataEXT* data,
 			                               void* /*user*/) -> VkBool32
 			{
+				// Active command-buffer label stack when the message fired: turns a bare validation string
+				// into "[Forward > Sky] <message>" so an error names the pass it happened in. Populated by
+				// our BeginDebugLabel scopes (RenderGraph per-pass) — empty outside any labeled region.
+				std::string scope;
+				for (uint32_t i = 0; i < data->cmdBufLabelCount; ++i)
+				{
+					scope += (i == 0) ? "[" : " > ";
+					scope += data->pCmdBufLabels[i].pLabelName;
+				}
+				if (!scope.empty())
+				{
+					scope += "] ";
+				}
+
 				// Only ERROR severity should halt; warnings/info/verbose just log.
 				if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
 				{
-					SS_CORE_ERROR("Vulkan Validation: {0}", data->pMessage);
+					SS_CORE_ERROR("Vulkan Validation: {0}{1}", scope, data->pMessage);
 
 					// When validation.nonfatal is set, log every error and keep running instead of
 					// asserting on the first one. Lets a single run (e.g. the smoke test) surface
@@ -173,11 +207,11 @@ namespace Snowstorm
 				}
 				else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
 				{
-					SS_CORE_WARN("Vulkan Validation: {0}", data->pMessage);
+					SS_CORE_WARN("Vulkan Validation: {0}{1}", scope, data->pMessage);
 				}
 				else
 				{
-					SS_CORE_TRACE("Vulkan Validation: {0}", data->pMessage);
+					SS_CORE_TRACE("Vulkan Validation: {0}{1}", scope, data->pMessage);
 				}
 				// Per spec, apps must return VK_FALSE (VK_TRUE aborts the triggering call).
 				return VK_FALSE;
