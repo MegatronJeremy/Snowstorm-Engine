@@ -5,6 +5,13 @@
 
 namespace Snowstorm
 {
+	// Canonical color format of the offscreen scene render target. The scene is rendered here and later
+	// composed to the (BGRA) swapchain by the ImGui/present pass — it is NOT the surface format. Any
+	// pipeline that draws into the scene target must declare this as its color format to stay
+	// render-pass-compatible; sourcing it from Renderer::GetSurfaceFormat() (the swapchain) only worked
+	// while both happened to map to the same Vulkan format (#62).
+	constexpr PixelFormat kSceneColorFormat = PixelFormat::RGBA8_UNorm;
+
 	Ref<RenderTarget> CreateDefaultSceneRenderTarget(uint32_t w, uint32_t h, const char* debugPrefix);
 
 	// Depth-only, square render target for a directional shadow map: a D32_Float depth texture that is

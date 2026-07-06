@@ -12,6 +12,7 @@
 #include "Snowstorm/Render/Shader.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
+#include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Assets/MaterialAssetIO.hpp"
 
@@ -390,7 +391,9 @@ namespace Snowstorm
 		p.Type = PipelineType::Graphics;
 		p.Shader = shader;
 		p.VertexLayout = vertexLayout;
-		p.ColorFormats = {Renderer::GetSurfaceFormat()};
+		// Meshes render into the offscreen scene target (not the swapchain), so the pipeline's color
+		// format must match that target — not Renderer::GetSurfaceFormat() (#62).
+		p.ColorFormats = {kSceneColorFormat};
 
 		p.DepthFormat = PixelFormat::D32_Float;
 		p.DepthStencil.EnableDepthTest = true; // TODO these shouldn't be enabled always...

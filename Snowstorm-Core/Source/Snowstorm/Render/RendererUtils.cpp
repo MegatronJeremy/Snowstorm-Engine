@@ -6,7 +6,7 @@ namespace Snowstorm
 	{
 		TextureDesc colorDesc{};
 		colorDesc.Dimension = TextureDimension::Texture2D;
-		colorDesc.Format = PixelFormat::RGBA8_UNorm;
+		colorDesc.Format = kSceneColorFormat;
 		colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled;
 		colorDesc.Width = w;
 		colorDesc.Height = h;
