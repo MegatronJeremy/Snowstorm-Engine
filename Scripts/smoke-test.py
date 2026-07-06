@@ -17,8 +17,17 @@ Usage (from repo root or anywhere):
     py Scripts/smoke-test.py --config Release # test the Release build instead of Debug
     py Scripts/smoke-test.py --only Editor    # run a single target
     py Scripts/smoke-test.py --warnings-fail  # treat [warning] lines as failures too
+    py Scripts/smoke-test.py --scene assets/scenes/Sponza.world   # boot a specific scene
+    py Scripts/smoke-test.py --cold --scene assets/scenes/Sponza.world  # wipe cook caches first
 
 Exit code: 0 if every target passed, 1 otherwise.
+
+The --cold flag deletes the cooked-asset caches (assets/cache/mesh, assets/cache/texture)
+before running, so the run exercises the expensive first-import path (Assimp parse + stb
+decode + async cook) instead of the fast warm path. This catches cold-only regressions
+(e.g. a cook step that re-parses per-submesh and thrashes the worker pool) that a warm run
+hides. Pair it with --scene to point at a heavy scene like Sponza, and give it a generous
+--timeout since a cold cook is legitimately slower than a warm load.
 """
 import argparse
 import os
@@ -66,8 +75,19 @@ def scan_output(text: str, markers: list[str]) -> list[str]:
     return hits
 
 
+def clear_cook_caches(repo_root: Path) -> None:
+    """Delete the cooked-asset caches so the next run exercises the cold first-import path."""
+    import shutil
+    for rel in ("Assets/cache/mesh", "Assets/cache/texture"):
+        d = repo_root / rel
+        if d.is_dir():
+            shutil.rmtree(d, ignore_errors=True)
+            print(f"  cold: cleared {rel}")
+
+
 def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
-               warnings_fail: bool, layer_path: Path | None, strict: bool) -> bool:
+               warnings_fail: bool, layer_path: Path | None, strict: bool,
+               scene: str | None) -> bool:
     print(f"\n=== {name} :: {exe.name} ===")
     if not exe.exists():
         print(f"  FAIL: executable not found at {exe}")
@@ -83,6 +103,10 @@ def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
     # overhead and best-practices is advisory/noisy, so it's opt-in rather than part of every run.
     if strict:
         env["SS_VALIDATION_EXTRA"] = "1"
+    # Boot directly into a chosen scene (matches the CVar/env the editor reads). Lets the smoke
+    # harness exercise a heavy scene (Sponza) headlessly instead of the default startup world.
+    if scene:
+        env["SS_STARTUP_SCENE"] = scene
     # Point Vulkan at the vcpkg validation layers, matching Generate-Solution.py and the
     # VS debugger environment. Without this the loader can't find the layers the engine
     # requests, and init crashes instead of running -> false failures.
@@ -147,6 +171,8 @@ def main() -> int:
     ap.add_argument("--only", default=None, help="Run only this target by name (e.g. Editor)")
     ap.add_argument("--warnings-fail", action="store_true", help="Treat [warning] lines as failures")
     ap.add_argument("--strict", action="store_true", help="Enable extra Vulkan validation (synchronization + best-practices)")
+    ap.add_argument("--scene", default=None, help="Boot directly into this scene (sets SS_STARTUP_SCENE), e.g. assets/scenes/Sponza.world")
+    ap.add_argument("--cold", action="store_true", help="Delete cooked-asset caches first, to exercise the cold first-import path")
     args = ap.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -165,11 +191,14 @@ def main() -> int:
     print(f"Build dir : {build_dir}  (config: {args.config})")
     print(f"Frames    : {args.frames}   Timeout: {args.timeout}s/app   Strict: {args.strict}")
 
+    if args.cold:
+        clear_cook_caches(repo_root)
+
     results = {}
     for name, rel in targets:
         exe = build_dir / rel.format(config=args.config)
         results[name] = run_target(name, exe, repo_root, args.frames, args.timeout,
-                                    args.warnings_fail, layer_path, args.strict)
+                                    args.warnings_fail, layer_path, args.strict, args.scene)
 
     print("\n=== Summary ===")
     all_ok = True
