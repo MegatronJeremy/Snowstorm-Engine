@@ -1,9 +1,13 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
+#include <optional>
 #include <string>
 
 #include "RenderEnums.hpp"
+#include "Snowstorm/Assets/AssetTypes.hpp"
+#include "Snowstorm/Assets/TextureCache.hpp"
 #include "Snowstorm/Core/Base.hpp"
 
 namespace Snowstorm
@@ -17,13 +21,13 @@ namespace Snowstorm
 
 	enum class TextureUsage : uint8_t
 	{
-		None            = 0,
-		Sampled         = 1u << 0, // SRV
-		Storage         = 1u << 1, // UAV
+		None = 0,
+		Sampled = 1u << 0,         // SRV
+		Storage = 1u << 1,         // UAV
 		ColorAttachment = 1u << 2, // RTV
-		DepthStencil    = 1u << 3, // DSV
-		TransferSrc     = 1u << 4,
-		TransferDst     = 1u << 5,
+		DepthStencil = 1u << 3,    // DSV
+		TransferSrc = 1u << 4,
+		TransferDst = 1u << 5,
 	};
 
 	constexpr TextureUsage operator|(TextureUsage a, TextureUsage b)
@@ -43,7 +47,7 @@ namespace Snowstorm
 
 	enum class TextureAspect : uint8_t
 	{
-		Auto = 0,     // derived from format
+		Auto = 0, // derived from format
 		Color,
 		Depth,
 		Stencil,
@@ -52,13 +56,13 @@ namespace Snowstorm
 
 	struct TextureDesc
 	{
-		TextureDimension	Dimension	= TextureDimension::Texture2D;
-		PixelFormat			Format		= PixelFormat::RGBA8_UNorm;
-		TextureUsage		Usage		= TextureUsage::Sampled | TextureUsage::TransferDst;
+		TextureDimension Dimension = TextureDimension::Texture2D;
+		PixelFormat Format = PixelFormat::RGBA8_UNorm;
+		TextureUsage Usage = TextureUsage::Sampled | TextureUsage::TransferDst;
 
-		uint32_t Width       = 1;
-		uint32_t Height      = 1;
-		uint32_t MipLevels   = 1;
+		uint32_t Width = 1;
+		uint32_t Height = 1;
+		uint32_t MipLevels = 1;
 		uint32_t ArrayLayers = 1; // Cube usually 6 (or 6*N for cube arrays)
 		uint32_t SampleCount = 1;
 
@@ -68,17 +72,17 @@ namespace Snowstorm
 	struct TextureViewDesc
 	{
 		// If Unknown/Auto, view inherits from texture where possible
-		TextureDimension	Dimension	= TextureDimension::Unknown;
-		PixelFormat			Format		= PixelFormat::Unknown;
-		TextureAspect		Aspect		= TextureAspect::Auto;
+		TextureDimension Dimension = TextureDimension::Unknown;
+		PixelFormat Format = PixelFormat::Unknown;
+		TextureAspect Aspect = TextureAspect::Auto;
 
-		uint32_t BaseMipLevel	= 0;
-		uint32_t MipLevelCount	= 1;
+		uint32_t BaseMipLevel = 0;
+		uint32_t MipLevelCount = 1;
 
-		uint32_t BaseArrayLayer		= 0;
-		uint32_t ArrayLayerCount	= 1;
+		uint32_t BaseArrayLayer = 0;
+		uint32_t ArrayLayerCount = 1;
 
-		std::string DebugName =	"UnnamedTextureView";
+		std::string DebugName = "UnnamedTextureView";
 	};
 
 	class TextureView;
@@ -97,7 +101,7 @@ namespace Snowstorm
 
 		[[nodiscard]] virtual Ref<TextureView> GetDefaultView() = 0;
 
-		[[nodiscard]] uint32_t GetWidth() const  { return GetDesc().Width; }
+		[[nodiscard]] uint32_t GetWidth() const { return GetDesc().Width; }
 		[[nodiscard]] uint32_t GetHeight() const { return GetDesc().Height; }
 
 		// Upload whole texture content (backend decides staging/queue)
@@ -108,6 +112,16 @@ namespace Snowstorm
 
 		static Ref<Texture> Create(const TextureDesc& desc);
 		static Ref<Texture> Create(const std::filesystem::path& filePath, bool srgb = true);
+
+		// Build a GPU texture from already-decoded RGBA8 pixels (main thread — creates the Vulkan image +
+		// uploads). Split out of Create(path) so the CPU decode can run on a worker (see DecodeCPU) and
+		// only this GPU step stays on the main thread. `srgb` picks the sampled color space (format).
+		static Ref<Texture> CreateFromPixels(const CookedTexture& cooked, bool srgb, const std::string& debugName);
+
+		// CPU-only decode: return the RGBA8 pixels for a source image, from the cooked .sstex blob if fresh
+		// else by stb-decoding (and writing the blob). No GPU work, so safe on a JobSystem worker. Returns
+		// nullopt on decode failure. `handle`/`sourceWriteTime` key the cook cache.
+		static std::optional<CookedTexture> DecodeCPU(const std::filesystem::path& filePath, AssetHandle handle, uint64_t sourceWriteTime);
 
 	protected:
 		Texture() = default;
@@ -129,7 +143,7 @@ namespace Snowstorm
 		[[nodiscard]] virtual const TextureViewDesc& GetDesc() const = 0;
 		[[nodiscard]] virtual const Ref<Texture>& GetTexture() const = 0;
 
-		// Handle used for UI/ImGui binding 
+		// Handle used for UI/ImGui binding
 		[[nodiscard]] virtual uint64_t GetUIID() const = 0;
 
 		// View identity comparison (same underlying view/descriptor)

@@ -19,6 +19,12 @@ namespace Snowstorm
 		bool TryLoadWorldFromFile(const std::string& scenePath);
 		void LoadOrCreateStartupWorld();
 
+		// Queue a scene to load at the next frame boundary (see OnUpdate's pending-scene handling). Loading
+		// is deferred so the editor keeps presenting frames — clear color + loading overlay — instead of
+		// blocking in-place; also the safe point to free the old scene's GPU resources. Caller ensures the
+		// path exists.
+		void RequestSceneLoad(const std::string& scenePath);
+
 		// Handle the scene.bake CVar: if set, populate a fresh scene ("stress" recipe or a model path),
 		// save it to Assets/Scenes/<name>.world, close the app, and return true. Returns false (no-op)
 		// when no bake was requested, so the normal startup-load path proceeds.
@@ -60,6 +66,11 @@ namespace Snowstorm
 		// resources (descriptor sets, meshes) that the in-progress frame's render pass still binds.
 		std::string m_PendingScenePath;
 		bool m_HasPendingScene = false;
+
+		// Frames that have gone through OnUpdate (≈ presented). Used to hold the startup scene load until at
+		// least one empty frame has presented, so the window shows editor chrome + a loading overlay instead
+		// of a white/frozen framebuffer while the first (heavy) scene loads.
+		uint64_t m_FramesPresented = 0;
 
 		// Play/Edit transition tracking. On Edit->Play we snapshot the world to m_PlaySnapshot (scene JSON);
 		// on Play->Stop we restore it, so edits made while playing are discarded (UE model). m_WasPlaying is

@@ -90,6 +90,29 @@ namespace Snowstorm
 		return index;
 	}
 
+	void VulkanBindlessManager::WriteTexture(const uint32_t index, const VkImageView imageView)
+	{
+		std::scoped_lock lock(m_IndexMutex);
+
+		// Repoint an EXISTING slot (must have been handed out by RegisterTexture). Does not touch
+		// m_NextFreeIndex — no new slot is allocated.
+		SS_CORE_ASSERT(index < m_NextFreeIndex, "WriteTexture: slot {} was never registered", index);
+
+		VkDescriptorImageInfo imageInfo{};
+		imageInfo.imageView = imageView;
+		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+		write.dstSet = m_DescriptorSet;
+		write.dstBinding = BINDING_TEXTURE2D;
+		write.dstArrayElement = index;
+		write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+		write.descriptorCount = 1;
+		write.pImageInfo = &imageInfo;
+
+		vkUpdateDescriptorSets(m_Device, 1, &write, 0, nullptr);
+	}
+
 	uint32_t VulkanBindlessManager::RegisterCube(const VkImageView imageView)
 	{
 		std::scoped_lock lock(m_IndexMutex);

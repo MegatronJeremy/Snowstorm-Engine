@@ -55,23 +55,27 @@ namespace Snowstorm
 			if (mc.MeshInstance)
 			{
 				reg.patch<MeshComponent>(e, [](MeshComponent& m)
-				{
-					m.MeshInstance.reset();
-				});
+				                         { m.MeshInstance.reset(); });
 			}
 			return;
 		}
 
-		// Resolve desired mesh
-		Ref<Mesh> resolved = assets.GetMesh(mc.MeshHandle);
+		// Resolve desired mesh asynchronously: returns the mesh if resident, else null while a worker
+		// loads it (the GPU upload lands on the main thread in ProcessCompletedLoads). A null result here
+		// just means "not ready yet" — this system re-runs the safety-net loop each frame (mc.MeshInstance
+		// still null), so the entity resolves as soon as its mesh arrives. Keeps the main thread from
+		// blocking on ~100 blob reads + GPU uploads in one frame (the load freeze, #84).
+		Ref<Mesh> resolved = assets.GetMeshAsync(mc.MeshHandle);
+		if (!resolved)
+		{
+			return; // still loading; try again next frame
+		}
 
 		// Only write if something actually changed
 		if (mc.MeshInstance != resolved)
 		{
 			reg.patch<MeshComponent>(e, [&](MeshComponent& m)
-			{
-				m.MeshInstance = resolved;
-			});
+			                         { m.MeshInstance = resolved; });
 		}
 	}
 }

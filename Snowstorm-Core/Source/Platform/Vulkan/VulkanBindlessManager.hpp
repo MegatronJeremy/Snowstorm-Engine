@@ -22,6 +22,12 @@ namespace Snowstorm
 		uint32_t RegisterTexture(VkImageView imageView);
 		uint32_t RegisterCube(VkImageView imageView);
 
+		// Repoint an already-allocated 2D texture slot at a different image view (UPDATE_AFTER_BIND makes
+		// this legal while the set is bound). Used by async texture loading: a slot is first registered with
+		// a placeholder view, then rewritten to the real texture when its decode+upload finishes — the slot
+		// index (baked into material constants) never changes, so no material needs patching. Main thread.
+		void WriteTexture(uint32_t index, VkImageView imageView);
+
 		[[nodiscard]] VkDescriptorSet GetDescriptorSet() const { return m_DescriptorSet; }
 		[[nodiscard]] VkDescriptorSetLayout GetLayout() const { return m_Layout; }
 

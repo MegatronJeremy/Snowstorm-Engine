@@ -90,15 +90,16 @@ namespace Snowstorm
 			const MaterialOverridesComponent* ov = hasOverrides ? reg.try_get_const<MaterialOverridesComponent>(e) : nullptr;
 
 			// Pre-warm albedo-override textures here (resolve phase), so RenderSystem's lookup during
-			// command recording is a pure cache hit. Creating a texture registers it in the bindless
-			// set; doing that mid-render-pass invalidates the bound descriptor set.
+			// command recording is a pure cache hit. Async: this registers a stable placeholder bindless
+			// slot immediately (safe outside the render pass) and loads the real pixels on a worker; the
+			// slot is rewritten in place when the decode finishes, so nothing re-registers mid-render.
 			if (ov)
 			{
 				for (const MaterialOverride& o : ov->Overrides)
 				{
 					if (o.Type == MaterialOverrideType::Texture && o.Texture != 0)
 					{
-						(void)assets.GetTextureView(o.Texture);
+						(void)assets.GetTextureViewAsync(o.Texture);
 					}
 				}
 			}

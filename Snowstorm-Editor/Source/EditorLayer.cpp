@@ -42,6 +42,7 @@
 
 #include "System/CameraFocusSystem.hpp"
 #include "System/ContentBrowserSystem.hpp"
+#include "System/LoadingOverlaySystem.hpp"
 #include "Singletons/EditorStatusBarSingleton.hpp"
 #include "System/DockspaceSetupSystem.hpp"
 #include "System/StatusBarSystem.hpp"
@@ -134,6 +135,12 @@ namespace Snowstorm
 		LoadOrCreateStartupWorld();
 	}
 
+	void EditorLayer::RequestSceneLoad(const std::string& scenePath)
+	{
+		m_PendingScenePath = scenePath;
+		m_HasPendingScene = true;
+	}
+
 	bool EditorLayer::TryLoadWorldFromFile(const std::string& scenePath)
 	{
 		if (!std::filesystem::exists(scenePath))
@@ -183,7 +190,7 @@ namespace Snowstorm
 			{
 				if (o.Type == MaterialOverrideType::Texture && o.Texture != 0)
 				{
-					(void)assets.GetTextureView(o.Texture); // registers it in the bindless set now
+					(void)assets.GetTextureViewAsync(o.Texture); // reserve slot now, decode on a worker
 				}
 			}
 		}
@@ -274,35 +281,38 @@ namespace Snowstorm
 			return;
 		}
 
-		// Optional startup-scene override (CVar startup.scene / env SS_STARTUP_SCENE). Lets the smoke
-		// harness boot directly into a chosen scene headlessly — e.g. Sponza, to exercise the PBR
-		// sampling path that Startup.world doesn't. Fail loud and fall through to the default if the
-		// override path can't be loaded, rather than silently booting the wrong scene.
-		if (const std::string& overridePath = CVars::StartupScene.Get(); !overridePath.empty())
+		// Resolve which scene to boot, then DEFER the actual load into the frame loop (via the same
+		// pending-scene path the Content Browser uses). Loading in OnAttach would run the whole scene
+		// deserialize + IBL bake + asset kick-off BEFORE the first frame ever presents — so the window
+		// shows an uninitialized (white) framebuffer and the loading overlay (a UI-phase system) can't
+		// run yet. Deferring lets the editor present frames immediately (clear color + loading bar) while
+		// assets stream in. The one-shot tools above (dump/bake) stay synchronous — they exit the app.
+		//
+		// Optional startup-scene override (CVar startup.scene / env SS_STARTUP_SCENE): boot a chosen scene
+		// headlessly (e.g. Sponza for the smoke harness). Existence is checked now; the load happens in
+		// the frame loop. If the override is missing we fall through to the default.
+		if (const std::string& overridePath = CVars::StartupScene.Get();
+		    !overridePath.empty() && std::filesystem::exists(overridePath))
 		{
-			if (TryLoadWorldFromFile(overridePath))
-			{
-				m_ActiveScenePath = overridePath;
-				SS_CORE_INFO("Loaded startup-scene override '{}'.", overridePath);
-				return;
-			}
-			SS_CORE_ERROR("startup.scene override '{}' failed to load; falling back to default.", overridePath);
+			RequestSceneLoad(overridePath);
+			return;
 		}
 
-		// Pick any extension you like; this is just a placeholder until serialization lands.
 		static constexpr const char* kStartupScenePath = "assets/scenes/Startup.world";
-		m_ActiveScenePath = kStartupScenePath;
-
-		if (!TryLoadWorldFromFile(kStartupScenePath))
+		if (std::filesystem::exists(kStartupScenePath))
 		{
-			// First-run: create a default scene that INCLUDES render target + cameras and save it.
-			CreateMainViewportEntity();
-			CreateCameraEntities();
-			CreateDemoEntities();
-			PrewarmSceneTextures();
-
-			SaveActiveScene();
+			RequestSceneLoad(kStartupScenePath);
+			return;
 		}
+
+		// First-run: no saved scene exists. Create a default in-place (cheap — no heavy assets) and save
+		// it; this is a one-time path so a brief synchronous build is fine.
+		m_ActiveScenePath = kStartupScenePath;
+		CreateMainViewportEntity();
+		CreateCameraEntities();
+		CreateDemoEntities();
+		PrewarmSceneTextures();
+		SaveActiveScene();
 	}
 
 	bool EditorLayer::SaveWorldToFile(const std::string& scenePath) const
@@ -369,6 +379,7 @@ namespace Snowstorm
 		systemManager.RegisterSystem<SceneHierarchySystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<ContentBrowserSystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<CameraFocusSystem>(SystemPhase::UI);
+		systemManager.RegisterSystem<LoadingOverlaySystem>(SystemPhase::UI);
 
 		// Editor example
 		systemManager.RegisterSystem<MandelbrotControllerSystem>(SystemPhase::PreRender);
@@ -631,16 +642,21 @@ namespace Snowstorm
 	{
 		SS_PROFILE_FUNCTION();
 
-		// Apply a deferred scene open at the frame boundary, before any system runs this frame. The
-		// previous frame is fully submitted by now; TryLoadWorldFromFile drains the GPU and rebuilds
-		// the world cleanly, with no render pass in progress binding the resources we're freeing.
-		if (m_HasPendingScene)
+		// Apply a deferred scene open at the frame boundary. A scene load is heavy (deserialize + asset
+		// kick-off) and BLOCKS the frame it runs in — so if we ran it on the very first frame, that frame
+		// wouldn't present until the load finished, leaving the window white/frozen. Instead, let the
+		// pending scene wait until at least one frame has actually PRESENTED (an empty world: black clear +
+		// dockspace + loading overlay), THEN load on the next frame. The user sees the editor chrome and a
+		// loading indicator immediately instead of a white lockup. (Mid-session opens from the Content
+		// Browser already have prior frames on screen, so the one-frame wait is invisible there too.)
+		if (m_HasPendingScene && m_FramesPresented > 0)
 		{
 			m_HasPendingScene = false;
 			const std::string path = std::move(m_PendingScenePath);
 			m_PendingScenePath.clear();
 			TryLoadWorldFromFile(path);
 		}
+		++m_FramesPresented;
 
 		// Play/Stop transition (detected at the frame boundary, like the scene-open above, so the world is
 		// mutated with no render pass in flight). Edit->Play snapshots the world to a JSON string;

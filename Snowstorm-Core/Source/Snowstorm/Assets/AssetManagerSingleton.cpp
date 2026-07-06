@@ -5,6 +5,7 @@
 #include "MeshBoundsBuilder.hpp"
 #include "MeshMetaCache.hpp"
 #include "Snowstorm/Core/Application.hpp"
+#include "Snowstorm/Core/JobSystem.hpp"
 #include "Snowstorm/Service/ServiceManager.hpp"
 #include "Snowstorm/World/World.hpp"
 #include "Snowstorm/World/Entity.hpp"
@@ -15,6 +16,9 @@
 #include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Assets/MaterialAssetIO.hpp"
+
+#include "Platform/Vulkan/VulkanBindlessManager.hpp"
+#include "Platform/Vulkan/VulkanTexture.hpp"
 
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
@@ -320,6 +324,198 @@ namespace Snowstorm
 		return mesh;
 	}
 
+	Ref<Mesh> AssetManagerSingleton::GetMeshAsync(const AssetHandle handle)
+	{
+		if (handle == 0)
+			return nullptr;
+
+		// Already resident -> return immediately (the common steady-state case).
+		if (const auto it = m_MeshCache.find(handle); it != m_MeshCache.end())
+		{
+			return it->second;
+		}
+
+		// Already being loaded -> nothing to do, caller retries next frame.
+		if (m_InFlightMeshes.contains(handle))
+		{
+			return nullptr;
+		}
+
+		const AssetMetadata* meta = ResolveMetaOrWarn(handle, AssetType::Mesh, "mesh");
+		if (!meta)
+		{
+			return nullptr;
+		}
+
+		const SubmeshRef sub = ParseSubmeshPath(meta->Path.string());
+
+		// Whole-file loads flatten every submesh and are rare (not the startup hot path); keep them
+		// synchronous rather than growing a second async code path for them.
+		if (sub.SubmeshIndex < 0)
+		{
+			return GetMesh(handle);
+		}
+
+		// Submit the CPU cook/blob-read to a worker. GPU upload is deferred to ProcessCompletedLoads on the
+		// main thread. Capture by value (handle, paths) — the singleton outlives the app's JobSystem, which
+		// is joined at shutdown before this singleton is destroyed, so `this` stays valid for the job.
+		m_InFlightMeshes.insert(handle);
+		++m_PendingTotal;
+
+		auto& jobs = Application::Get().GetServiceManager().GetService<JobSystem>();
+		auto& meshLib = Application::Get().GetServiceManager().GetService<MeshLibrary>();
+
+		const std::string filePath = sub.FilePath;
+		const int submeshIndex = sub.SubmeshIndex;
+
+		(void)jobs.Submit([this, &meshLib, handle, filePath, submeshIndex]()
+		                  {
+			CompletedMeshLoad done;
+			done.Handle = handle;
+			done.FilePath = filePath;
+			done.SubmeshIndex = submeshIndex;
+
+			// CPU-only work on the worker: read the cooked blob or parse+cook the source. No GPU, no
+			// m_MeshCache/m_Meshes access (those are main-thread-only).
+			if (auto cooked = meshLib.LoadCookedCPU(filePath, submeshIndex, handle))
+			{
+				done.Cooked = std::move(*cooked);
+				done.Success = true;
+			}
+
+			std::lock_guard lock(m_CompletedMutex);
+			m_CompletedMeshes.push_back(std::move(done)); });
+
+		return nullptr;
+	}
+
+	void AssetManagerSingleton::ProcessCompletedLoads()
+	{
+		// Move both completed batches out under the lock, then do the GPU work unlocked (workers keep producing).
+		std::vector<CompletedMeshLoad> meshBatch;
+		std::vector<CompletedTextureLoad> texBatch;
+		{
+			std::lock_guard lock(m_CompletedMutex);
+			meshBatch.swap(m_CompletedMeshes);
+			texBatch.swap(m_CompletedTextures);
+		}
+
+		// Per-frame GPU-finalize budget (see the texture note below): each mesh Buffer::Create is a staging
+		// copy + vkQueueWaitIdle, so finalizing all 25 Sponza meshes in one frame is a ~second-long stall.
+		// Cap and re-queue the remainder.
+		constexpr size_t kMaxMeshFinalizePerFrame = 6;
+
+		size_t meshDone = 0;
+		if (!meshBatch.empty())
+		{
+			auto& meshLib = Application::Get().GetServiceManager().GetService<MeshLibrary>();
+			for (; meshDone < meshBatch.size() && meshDone < kMaxMeshFinalizePerFrame; ++meshDone)
+			{
+				CompletedMeshLoad& done = meshBatch[meshDone];
+				m_InFlightMeshes.erase(done.Handle.Value());
+
+				if (!done.Success)
+				{
+					SS_CORE_ERROR("Async mesh load failed for handle {}", done.Handle.Value());
+					continue;
+				}
+
+				// GPU upload happens HERE, on the main thread (Vulkan requirement).
+				Ref<Mesh> mesh = meshLib.FinalizeCooked(done.FilePath, done.SubmeshIndex, done.Cooked);
+				if (mesh)
+				{
+					// Attach cached bounds if present (same as the sync path; bounds are disk-cached JSON).
+					if (auto cachedMeta = MeshMetaCacheIO::Load(done.Handle))
+					{
+						mesh->SetBounds(cachedMeta->Bounds);
+					}
+					m_MeshCache[done.Handle.Value()] = mesh;
+				}
+			}
+		}
+
+		// Re-queue meshes not finalized this frame (they stay in-flight; still counted by PendingLoadCount).
+		if (meshDone < meshBatch.size())
+		{
+			std::lock_guard lock(m_CompletedMutex);
+			for (size_t i = meshDone; i < meshBatch.size(); ++i)
+			{
+				m_CompletedMeshes.push_back(std::move(meshBatch[i]));
+			}
+		}
+
+		// Budget GPU finalization per frame. Each texture upload is a staging copy + mip blit + a
+		// vkQueueWaitIdle, so finalizing all of Sponza's ~69 textures in ONE frame produces a single
+		// ~1s frame — long enough for the OS to flag the window "not responding" and too fast for the
+		// loading bar to ever show. Cap the count per call and re-queue the rest for the next frame, so
+		// the work spreads over ~N/budget frames: the app keeps pumping (responsive) and the overlay is
+		// visible while pending drains. Meshes are cheaper but budgeted too for the same reason.
+		constexpr size_t kMaxTextureFinalizePerFrame = 4;
+
+		size_t texDone = 0;
+		for (; texDone < texBatch.size() && texDone < kMaxTextureFinalizePerFrame; ++texDone)
+		{
+			CompletedTextureLoad& done = texBatch[texDone];
+			m_InFlightTextures.erase(done.Key);
+
+			if (!done.Success)
+			{
+				SS_CORE_ERROR("Async texture load failed for handle {} (slot stays placeholder)", done.Handle.Value());
+				continue;
+			}
+
+			// GPU upload (main thread), then repoint the placeholder's bindless slot at the real image. The
+			// slot index baked into material constants is unchanged — the pixels just swap in. Keep the real
+			// texture + view alive (m_ResidentTextures / the cache view) so the image outlives the slot write.
+			Ref<Texture> real = Texture::CreateFromPixels(done.Cooked, done.Srgb, done.DebugName);
+			if (!real)
+			{
+				continue;
+			}
+			Ref<TextureView> realView = TextureView::Create(real, MakeFullViewDesc(real->GetDesc()));
+
+			const auto vkView = std::static_pointer_cast<VulkanTextureView>(realView);
+			VulkanBindlessManager::Get().WriteTexture(done.Slot, vkView->GetImageView());
+
+			// realView auto-registered its own slot at creation, but materials reference `done.Slot` (the
+			// placeholder's), which we just repointed to this image. Override the view's reported index to
+			// done.Slot so any later GetGlobalBindlessIndex() read is consistent with what materials sample.
+			// (The view's own incidental slot is leaked until bindless slot recycling exists — bounded, see
+			// the 10k budget; #follow-up.)
+			realView->SetGlobalBindlessIndex(done.Slot);
+
+			m_ResidentTextures[done.Key] = real;
+			// Swap the cache entry from the placeholder view to the real view so a later GetTextureView(Async)
+			// returns the real one. Both share slot `done.Slot` on the GPU now.
+			(done.Srgb ? m_TextureViewCache : m_TextureViewCacheLinear)[done.Handle.Value()] = realView;
+		}
+
+		// Re-queue the textures we didn't finalize this frame (they stay in-flight; PendingLoadCount still
+		// counts them, so the loading bar keeps showing until the whole batch drains).
+		if (texDone < texBatch.size())
+		{
+			std::lock_guard lock(m_CompletedMutex);
+			for (size_t i = texDone; i < texBatch.size(); ++i)
+			{
+				m_CompletedTextures.push_back(std::move(texBatch[i]));
+			}
+		}
+
+		// Once nothing is in flight (meshes AND textures) AND nothing is waiting to be finalized, reset the
+		// progress high-water mark for the next load burst.
+		if (m_InFlightMeshes.empty() && m_InFlightTextures.empty())
+		{
+			m_PendingTotal = 0;
+		}
+	}
+
+	uint32_t AssetManagerSingleton::PendingLoadCount() const
+	{
+		// Both meshes and textures still loading OR waiting for GPU finalize. (Textures re-queued past the
+		// per-frame finalize budget remain in m_InFlightTextures until actually finalized.)
+		return static_cast<uint32_t>(m_InFlightMeshes.size() + m_InFlightTextures.size());
+	}
+
 	Ref<Shader> AssetManagerSingleton::GetShader(const AssetHandle handle)
 	{
 		if (handle == 0)
@@ -372,6 +568,87 @@ namespace Snowstorm
 
 		cache[handle] = view;
 		return view;
+	}
+
+	Ref<TextureView> AssetManagerSingleton::EnsurePlaceholderView(const std::string& debugName)
+	{
+		// One shared 1x1 opaque-magenta source; each async texture gets its OWN view of it (its own
+		// bindless slot) so completion can rewrite that slot independently. Magenta = obvious "not loaded
+		// yet" tell if a swap ever fails to land.
+		if (!m_PlaceholderTexture)
+		{
+			TextureDesc desc{};
+			desc.Width = 1;
+			desc.Height = 1;
+			desc.Format = PixelFormat::RGBA8_UNorm;
+			desc.Usage = TextureUsage::Sampled | TextureUsage::TransferDst;
+			desc.DebugName = "AsyncTexturePlaceholder";
+			m_PlaceholderTexture = Texture::Create(desc);
+			const uint32_t magenta = 0xFFFF00FF; // RGBA little-endian: R=FF,G=00,B=FF,A=FF
+			m_PlaceholderTexture->SetData(&magenta, sizeof(magenta));
+		}
+		TextureViewDesc vd{};
+		vd.DebugName = debugName + " (loading)";
+		return TextureView::Create(m_PlaceholderTexture, vd);
+	}
+
+	Ref<TextureView> AssetManagerSingleton::GetTextureViewAsync(const AssetHandle handle, const bool srgb)
+	{
+		if (handle == 0)
+			return nullptr;
+
+		auto& cache = srgb ? m_TextureViewCache : m_TextureViewCacheLinear;
+		if (const auto it = cache.find(handle); it != cache.end())
+		{
+			return it->second; // resident real texture, or a placeholder already being loaded
+		}
+
+		const AssetMetadata* meta = ResolveMetaOrWarn(handle, AssetType::Texture, "texture");
+		if (!meta)
+		{
+			return nullptr;
+		}
+
+		// Reserve a stable bindless slot NOW via a placeholder view; materials bake this slot. The slot is
+		// rewritten to the real image on completion, so the index never changes.
+		Ref<TextureView> placeholder = EnsurePlaceholderView(meta->Path.filename().string());
+		cache[handle] = placeholder;
+
+		// Combine handle + color space into the in-flight/cache key (a texture can load as both).
+		const uint64_t key = handle.Value() ^ (srgb ? 0x1ULL : 0x0ULL) << 63;
+		if (m_InFlightTextures.contains(key))
+		{
+			return placeholder;
+		}
+		m_InFlightTextures.insert(key);
+		++m_PendingTotal;
+
+		auto& jobs = Application::Get().GetServiceManager().GetService<JobSystem>();
+		const std::string path = meta->Path.string();
+		const std::string debugName = meta->Path.filename().string();
+		const uint64_t sourceTime = GetFileWriteTimeU64(path);
+		const uint32_t slot = placeholder->GetGlobalBindlessIndex();
+
+		(void)jobs.Submit([this, key, handle, srgb, slot, path, sourceTime, debugName]()
+		                  {
+			CompletedTextureLoad done;
+			done.Key = key;
+			done.Handle = handle;
+			done.Srgb = srgb;
+			done.Slot = slot;
+			done.DebugName = debugName;
+
+			// CPU-only on the worker: cooked-blob read or stb decode (+ cache write). No GPU.
+			if (auto cooked = Texture::DecodeCPU(path, handle, sourceTime))
+			{
+				done.Cooked = std::move(*cooked);
+				done.Success = true;
+			}
+
+			std::lock_guard lock(m_CompletedMutex);
+			m_CompletedTextures.push_back(std::move(done)); });
+
+		return placeholder;
 	}
 
 	Ref<Pipeline> AssetManagerSingleton::GetOrCreatePipeline(const PipelinePreset preset)
@@ -503,30 +780,33 @@ namespace Snowstorm
 		base.SetAlphaCutoff(matAsset.AlphaCutoff);
 
 		// Albedo + emissive sample as sRGB; normal / metallic-roughness / AO are data maps and MUST be
-		// sampled linear (sRGB on a normal map = wrong lighting). GetTextureView caches per color space.
+		// sampled linear (sRGB on a normal map = wrong lighting). GetTextureViewAsync returns a placeholder
+		// on a stable bindless slot immediately and decodes the real pixels on a worker; the material bakes
+		// the slot index now and the texture pops in when ready (no main-thread decode stall — this is what
+		// removed the multi-second import/load freeze, #84). Caches per color space.
 		if (matAsset.AlbedoTexture != 0)
 		{
-			if (const Ref<TextureView> v = GetTextureView(matAsset.AlbedoTexture, true))
+			if (const Ref<TextureView> v = GetTextureViewAsync(matAsset.AlbedoTexture, true))
 				base.SetAlbedoTexture(v);
 		}
 		if (matAsset.NormalTexture != 0)
 		{
-			if (const Ref<TextureView> v = GetTextureView(matAsset.NormalTexture, false))
+			if (const Ref<TextureView> v = GetTextureViewAsync(matAsset.NormalTexture, false))
 				base.SetNormalTexture(v);
 		}
 		if (matAsset.MetallicRoughnessTexture != 0)
 		{
-			if (const Ref<TextureView> v = GetTextureView(matAsset.MetallicRoughnessTexture, false))
+			if (const Ref<TextureView> v = GetTextureViewAsync(matAsset.MetallicRoughnessTexture, false))
 				base.SetMetallicRoughnessTexture(v);
 		}
 		if (matAsset.AOTexture != 0)
 		{
-			if (const Ref<TextureView> v = GetTextureView(matAsset.AOTexture, false))
+			if (const Ref<TextureView> v = GetTextureViewAsync(matAsset.AOTexture, false))
 				base.SetAOTexture(v);
 		}
 		if (matAsset.EmissiveTexture != 0)
 		{
-			if (const Ref<TextureView> v = GetTextureView(matAsset.EmissiveTexture, true))
+			if (const Ref<TextureView> v = GetTextureViewAsync(matAsset.EmissiveTexture, true))
 				base.SetEmissiveTexture(v);
 		}
 	}

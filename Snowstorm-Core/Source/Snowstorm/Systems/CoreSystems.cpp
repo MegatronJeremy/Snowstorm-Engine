@@ -7,6 +7,7 @@
 
 #include "Snowstorm/Lighting/EnvironmentSystem.hpp"
 #include "Snowstorm/Lighting/LightingSystem.hpp"
+#include "Snowstorm/Systems/AssetLoadSystem.hpp"
 #include "Snowstorm/Systems/CameraControllerSystem.hpp"
 #include "Snowstorm/Systems/CameraRuntimeUpdateSystem.hpp"
 #include "Snowstorm/Systems/MaterialResolveSystem.hpp"
@@ -31,6 +32,8 @@ namespace Snowstorm
 		sm.RegisterSystem<RotatorSystem>(SystemPhase::Logic);
 
 		sm.RegisterSystem<ShaderReloadSystem>(SystemPhase::AssetSync);
+		// Pump worker-completed async loads (GPU finalize) before the Resolve phase consumes them.
+		sm.RegisterSystem<AssetLoadSystem>(SystemPhase::AssetSync);
 
 		sm.RegisterSystem<CameraRuntimeUpdateSystem>(SystemPhase::Resolve);
 		sm.RegisterSystem<MeshResolveSystem>(SystemPhase::Resolve);
