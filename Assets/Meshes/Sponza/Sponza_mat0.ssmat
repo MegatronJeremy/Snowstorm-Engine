@@ -1,5 +1,7 @@
 {
   "AlbedoTexture": "13384042819138552953",
+  "AlphaCutoff": 0.5,
+  "AlphaMask": true,
   "BaseColor": [
     0.5879999995231628,
     0.5879999995231628,

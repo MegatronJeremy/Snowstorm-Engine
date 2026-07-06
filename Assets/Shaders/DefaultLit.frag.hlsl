@@ -236,7 +236,18 @@ float4 main(PSInput i) : SV_Target0
 	// so objects sharing one material can each show a different texture (and still batch).
 	const uint instAlbedo = Instances[i.InstanceID].AlbedoTextureIndex;
 	const uint albedoIndex = (instAlbedo != 0) ? instAlbedo : AlbedoTextureIndex;
-	const float3 albedo = (albedoIndex != 0 ? SampleBindless(albedoIndex, i.TexCoord).rgb : float3(1, 1, 1)) * BaseColor.rgb;
+	const float4 albedoSample = (albedoIndex != 0) ? SampleBindless(albedoIndex, i.TexCoord) : float4(1, 1, 1, 1);
+
+	// Alpha-cutout (glTF MASK): discard texels whose alpha (texture * BaseColor.a) is below the cutoff,
+	// BEFORE any lighting so masked-out fragments cost nothing and don't write depth. clip() discards when
+	// its argument is < 0. Opaque-pass masking only — no blending/sorting. Off (AlphaMaskEnabled == 0) for
+	// normal materials, so this is a no-op there.
+	if (AlphaMaskEnabled != 0)
+	{
+		clip(albedoSample.a * BaseColor.a - AlphaCutoff);
+	}
+
+	const float3 albedo = albedoSample.rgb * BaseColor.rgb;
 
 	// Metallic-roughness from the packed MR texture (glTF: G = roughness, B = metallic) * factors.
 	float roughness = Roughness;

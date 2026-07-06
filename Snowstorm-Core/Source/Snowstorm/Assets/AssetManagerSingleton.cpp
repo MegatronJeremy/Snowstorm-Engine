@@ -24,6 +24,7 @@
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+#include <assimp/GltfMaterial.h> // AI_MATKEY_GLTF_ALPHAMODE / ALPHACUTOFF
 
 namespace Snowstorm
 {
@@ -117,6 +118,21 @@ namespace Snowstorm
 			aiColor3D emissive(0.0f, 0.0f, 0.0f);
 			if (aiMat->Get(AI_MATKEY_COLOR_EMISSIVE, emissive) == AI_SUCCESS)
 				matAsset.EmissiveColor = glm::vec3(emissive.r, emissive.g, emissive.b);
+
+			// glTF alpha mode: MASK -> alpha-cutout (opaque-pass discard below cutoff). BLEND is not yet
+			// supported (needs a sorted transparent pass, #82) so it falls through as opaque for now.
+			// OPAQUE / absent -> AlphaMask stays false.
+			aiString alphaMode;
+			if (aiMat->Get(AI_MATKEY_GLTF_ALPHAMODE, alphaMode) == AI_SUCCESS)
+			{
+				if (strcmp(alphaMode.C_Str(), "MASK") == 0)
+				{
+					matAsset.AlphaMask = true;
+					ai_real cutoff = matAsset.AlphaCutoff;
+					if (aiMat->Get(AI_MATKEY_GLTF_ALPHACUTOFF, cutoff) == AI_SUCCESS)
+						matAsset.AlphaCutoff = cutoff;
+				}
+			}
 
 			// Resolve+import one texture slot. Tries `type`, then `fallback` (for formats that store a
 			// map under a legacy slot, e.g. OBJ normal-as-HEIGHT). Embedded textures ("*0") are not yet
@@ -480,6 +496,8 @@ namespace Snowstorm
 		base.SetMetallic(matAsset.Metallic);
 		base.SetRoughness(matAsset.Roughness);
 		base.SetEmissiveColor(matAsset.EmissiveColor);
+		base.SetAlphaMask(matAsset.AlphaMask);
+		base.SetAlphaCutoff(matAsset.AlphaCutoff);
 
 		// Albedo + emissive sample as sRGB; normal / metallic-roughness / AO are data maps and MUST be
 		// sampled linear (sRGB on a normal map = wrong lighting). GetTextureView caches per color space.

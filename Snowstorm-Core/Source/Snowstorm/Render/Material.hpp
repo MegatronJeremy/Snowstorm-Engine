@@ -30,10 +30,10 @@ namespace Snowstorm
 			uint32_t MetallicRoughnessTextureIndex = 0;
 			uint32_t AOTextureIndex = 0;
 			uint32_t EmissiveTextureIndex = 0;
-			uint32_t _Pad0 = 0;
+			uint32_t AlphaMaskEnabled = 0; // 1 = alpha-cutout (glTF MASK): discard texels below AlphaCutoff
 
 			glm::vec3 EmissiveColor = glm::vec3(0.0f);
-			float _Pad1 = 0.0f;
+			float AlphaCutoff = 0.5f; // albedo.a threshold for the mask (glTF default 0.5); unused unless masked
 		};
 
 		explicit Material(const Ref<Pipeline>& pipeline);
@@ -57,6 +57,12 @@ namespace Snowstorm
 		void SetMetallic(const float v) { m_DefaultConstants.Metallic = v; }
 		void SetRoughness(const float v) { m_DefaultConstants.Roughness = v; }
 		void SetEmissiveColor(const glm::vec3& c) { m_DefaultConstants.EmissiveColor = c; }
+
+		// Alpha-cutout (glTF MASK): when enabled, the shader discards albedo texels whose alpha is below
+		// AlphaCutoff. Stays in the opaque pass (depth write on, no blend/sort) — this is masking, not
+		// translucency. Used by foliage/fences with alpha-keyed textures (e.g. Sponza plants).
+		void SetAlphaMask(const bool enabled) { m_DefaultConstants.AlphaMaskEnabled = enabled ? 1u : 0u; }
+		void SetAlphaCutoff(const float cutoff) { m_DefaultConstants.AlphaCutoff = cutoff; }
 
 		void SetSampler(const Ref<Sampler>& sampler) { m_DefaultSampler = sampler; }
 		[[nodiscard]] const Ref<Sampler>& GetSampler() const { return m_DefaultSampler; }

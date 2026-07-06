@@ -53,5 +53,10 @@ namespace Snowstorm
 		float Metallic = 0.0f;
 		float Roughness = 1.0f;
 		glm::vec3 EmissiveColor = glm::vec3(0.0f);
+
+		// Alpha-cutout (glTF alphaMode MASK): discard albedo texels with alpha < AlphaCutoff. Opaque-pass
+		// masking (no blending/sorting); used by foliage/fence textures. AlphaMask off = fully opaque.
+		bool AlphaMask = false;
+		float AlphaCutoff = 0.5f; // glTF default
 	};
 }

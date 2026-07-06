@@ -133,10 +133,10 @@ cbuffer MaterialCB : register(b0, space1)
 	uint MetallicRoughnessTextureIndex; // glTF packing: G = roughness, B = metallic
 	uint AOTextureIndex;
 	uint EmissiveTextureIndex;
-	uint _MatPad0;
+	uint AlphaMaskEnabled; // 1 = alpha-cutout (glTF MASK): discard texels below AlphaCutoff
 
 	float3 EmissiveColor;
-	float _MatPad1;
+	float AlphaCutoff; // albedo.a threshold for the mask (glTF default 0.5); unused unless masked
 };
 SamplerState LinearSampler : register(s1, space1);
 // Clamp-to-edge linear sampler for lookup textures that must not wrap (e.g. the BRDF LUT). Bound at the
