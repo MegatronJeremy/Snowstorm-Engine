@@ -18,9 +18,13 @@ float3 TonemapACES(float3 x)
 	return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
 }
 
+// Exact IEC 61966-2-1 piecewise sRGB encode (must match DefaultLit's LinearToSRGB, #55).
 float3 LinearToSRGB(float3 c)
 {
-	return pow(max(c, 0.0), 1.0 / 2.2);
+	c = max(c, 0.0);
+	const float3 lo = c * 12.92;
+	const float3 hi = 1.055 * pow(c, 1.0 / 2.4) - 0.055;
+	return lerp(hi, lo, step(c, 0.0031308));
 }
 
 // Must match Fullscreen.vert.hlsl's FullscreenVSOut (SV_Position + NDC).

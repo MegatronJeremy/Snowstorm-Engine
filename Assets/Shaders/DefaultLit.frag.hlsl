@@ -111,9 +111,15 @@ float3 TonemapACES(float3 x)
 
 // Encode linear -> sRGB. The scene target is a UNORM image displayed as sRGB with no hardware
 // encode, so we gamma-encode in the shader; without this the whole image reads too dark.
+// Exact IEC 61966-2-1 piecewise curve: a linear toe (12.92 * c) below the threshold and a
+// 1.055 * c^(1/2.4) - 0.055 shoulder above — not the pow(1/2.2) approximation, which lacks the
+// linear segment and darkens deep shadows (#55). Deleted once a hardware-sRGB present path lands.
 float3 LinearToSRGB(float3 c)
 {
-	return pow(max(c, 0.0), 1.0 / 2.2);
+	c = max(c, 0.0);
+	const float3 lo = c * 12.92;
+	const float3 hi = 1.055 * pow(c, 1.0 / 2.4) - 0.055;
+	return lerp(hi, lo, step(c, 0.0031308));
 }
 
 // --- Cook-Torrance terms ---
