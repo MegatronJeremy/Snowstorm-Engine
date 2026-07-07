@@ -2,8 +2,10 @@
 
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
+#include <nlohmann/json.hpp>
 #include <cstddef> // offsetof
 #include <filesystem>
+#include <fstream>
 #include <limits>
 
 #include "Examples/MandelbrotSet/MandelbrotControllerComponent.hpp"
@@ -17,6 +19,7 @@
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Components/DoNotSerializeComponent.hpp"
 #include "Snowstorm/Components/CameraControllerComponent.hpp"
+#include "Snowstorm/Components/CameraControllerRuntimeComponent.hpp"
 #include "Snowstorm/Components/CameraTargetComponent.hpp"
 #include "Snowstorm/Components/IDComponent.hpp"
 #include "Snowstorm/Components/MaterialComponent.hpp"
@@ -187,6 +190,14 @@ namespace Snowstorm
 
 		m_ActiveScenePath = scenePath;
 
+		// Restore this scene's saved editor camera viewpoint (editor-only sidecar). Absolute transform, so
+		// no dependency on async-streamed bounds. If there's no sidecar (first time opening the scene),
+		// frame the camera to the scene's renderable bounds so it opens looking at content, not at nothing.
+		if (!LoadEditorCameraSidecar(scenePath))
+		{
+			FrameImportedSceneCamera();
+		}
+
 		SS_CORE_INFO("Scene '{}' loaded.", scenePath);
 		return true;
 	}
@@ -345,6 +356,11 @@ namespace Snowstorm
 			auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
 			assets.SaveRegistry("assets/AssetRegistry.json");
 		}
+
+		// Persist the editor camera viewpoint for THIS scene as editor-only metadata (a "<scene>.editor"
+		// sidecar), so reopening the scene returns the camera to where it was left — the per-scene position
+		// that used to live in the (now host-owned, unserialized) camera entity.
+		SaveEditorCameraSidecar(scenePath);
 
 		// Mark the history's current depth as the clean baseline, so the status bar drops its "*" until
 		// the next edit. Single choke point for all saves (Ctrl+S, bake, first-run), so this covers them.
@@ -615,6 +631,100 @@ namespace Snowstorm
 				cv.Mask = Visibility::Game; // e.g. “Game” viewport would use this
 			}
 		}
+	}
+
+	Entity EditorLayer::FindEditorCamera() const
+	{
+		auto& reg = m_ActiveWorld->GetRegistry();
+		for (const auto view = reg.view<CameraComponent, TransformComponent, DoNotSerializeComponent>();
+		     const entt::entity e : view)
+		{
+			if (reg.Read<CameraComponent>(e).Primary)
+			{
+				return Entity{e, m_ActiveWorld.get()};
+			}
+		}
+		return {};
+	}
+
+	namespace
+	{
+		// The editor camera viewpoint lives beside its scene as "<scene>.editor" — editor-only metadata,
+		// deliberately NOT inside the .world (which is portable scene content). Mirrors how Unreal keeps the
+		// per-level editor camera as editor data and Godot stores editor state separately from the scene.
+		std::string EditorSidecarPath(const std::string& scenePath)
+		{
+			return scenePath + ".editor";
+		}
+	} // namespace
+
+	void EditorLayer::SaveEditorCameraSidecar(const std::string& scenePath) const
+	{
+		const Entity cam = FindEditorCamera();
+		if (!cam)
+		{
+			return;
+		}
+
+		const auto& tr = m_ActiveWorld->GetRegistry().Read<TransformComponent>(cam.Handle());
+
+		nlohmann::json j;
+		j["Version"] = 1;
+		j["Camera"]["Position"] = {tr.Position.x, tr.Position.y, tr.Position.z};
+		j["Camera"]["Rotation"] = {tr.Rotation.x, tr.Rotation.y, tr.Rotation.z};
+
+		std::ofstream out(EditorSidecarPath(scenePath));
+		if (out.is_open())
+		{
+			out << j.dump(2);
+		}
+	}
+
+	bool EditorLayer::LoadEditorCameraSidecar(const std::string& scenePath) const
+	{
+		std::ifstream in(EditorSidecarPath(scenePath));
+		if (!in.is_open())
+		{
+			return false; // no saved viewpoint for this scene (e.g. first open) — caller may auto-frame
+		}
+
+		nlohmann::json j;
+		try
+		{
+			in >> j;
+		}
+		catch (const nlohmann::json::parse_error&)
+		{
+			return false;
+		}
+
+		const Entity cam = FindEditorCamera();
+		if (!cam || !j.contains("Camera"))
+		{
+			return false;
+		}
+
+		const auto& c = j["Camera"];
+		auto& reg = m_ActiveWorld->GetRegistry();
+		auto& tr = reg.Write<TransformComponent>(cam.Handle());
+		if (c.contains("Position") && c["Position"].is_array() && c["Position"].size() == 3)
+		{
+			tr.Position = {c["Position"][0], c["Position"][1], c["Position"][2]};
+		}
+		if (c.contains("Rotation") && c["Rotation"].is_array() && c["Rotation"].size() == 3)
+		{
+			tr.Rotation = {c["Rotation"][0], c["Rotation"][1], c["Rotation"][2]};
+		}
+
+		// The controller caches target yaw/pitch and re-seeds them from the transform only while
+		// uninitialized. Drop that cache so the restored rotation isn't immediately eased back to the old
+		// target on the next controller tick.
+		if (reg.any_of<CameraControllerRuntimeComponent>(cam.Handle()))
+		{
+			reg.Write<CameraControllerRuntimeComponent>(cam.Handle()).Initialized = false;
+		}
+
+		return true;
 	}
 
 	void EditorLayer::AddDefaultLightRig() const

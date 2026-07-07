@@ -44,6 +44,18 @@ namespace Snowstorm
 		void CreateDemoEntities() const;
 		void CreateCameraEntities() const;
 
+		// Per-scene editor camera viewpoint, stored as editor-only metadata in a "<scene>.editor" sidecar
+		// (kept out of the serialized scene, cf. Unreal per-level editor camera / Godot editor state). The
+		// editor Scene-view camera is host-owned and persists across loads, so without this every scene
+		// would open at the same position; the sidecar restores each scene's last-saved viewpoint. Save
+		// writes the primary editor camera's transform; Load applies it (returns false if no sidecar).
+		void SaveEditorCameraSidecar(const std::string& scenePath) const;
+		bool LoadEditorCameraSidecar(const std::string& scenePath) const;
+
+		// The primary editor Scene-view camera entity (Primary CameraComponent + DoNotSerialize). Invalid
+		// if it doesn't exist yet. Single lookup point for the per-scene camera save/restore.
+		[[nodiscard]] Entity FindEditorCamera() const;
+
 		// Position the primary camera so the whole scene's renderable bounds are in view and fit the
 		// near/far planes to its size. Pure camera move (no lights, no save) — shares the framing math
 		// with the editor's Frame command so an unknown-scale import (e.g. Sponza) is never off-screen.
