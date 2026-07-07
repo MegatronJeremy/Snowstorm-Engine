@@ -78,8 +78,8 @@ namespace Snowstorm
 		m_CommandContext = commandContext;
 		m_FrameIndex = frameIndex;
 
-		m_ViewProj = cameraRt.ViewProjection;
-		m_CameraPosition = cameraWorldPosition;
+		m_FrameData.ViewProjection = cameraRt.ViewProjection;
+		m_FrameData.CameraPosition = cameraWorldPosition;
 
 		m_Batches.clear();
 		m_Stats = RenderStats{};
@@ -131,12 +131,12 @@ namespace Snowstorm
 
 	void RendererService::UploadLights(const LightDataBlock& lightData)
 	{
-		m_Lights = lightData;
+		m_FrameData.Lights = lightData;
 	}
 
 	void RendererService::UploadEnvironment(const EnvironmentDataBlock& environment)
 	{
-		m_Environment = environment;
+		m_FrameData.Environment = environment;
 	}
 
 	void RendererService::Flush()
@@ -185,32 +185,33 @@ namespace Snowstorm
 
 		// Refresh the UBO contents every call (safe + simple; optimize later). Single source of truth for
 		// FrameCB assembly, including InvViewProj used by the sky pass.
+		const FrameData& fd = m_FrameData;
 		FrameCB frame{};
-		frame.ViewProj = m_ViewProj;
-		frame.InvViewProj = glm::inverse(m_ViewProj);
-		frame.CameraPosition = m_CameraPosition;
+		frame.ViewProj = fd.ViewProjection;
+		frame.InvViewProj = glm::inverse(fd.ViewProjection);
+		frame.CameraPosition = fd.CameraPosition;
 		frame.Exposure = CVars::Exposure.Get();
-		frame.Lights = m_Lights;
-		frame.SkyZenithColor = m_Environment.SkyZenithColor;
-		frame.SkyHorizonColor = m_Environment.SkyHorizonColor;
-		frame.GroundColor = m_Environment.GroundColor;
-		frame.SkyIntensity = m_Environment.SkyIntensity;
-		frame.LightViewProj = m_LightViewProj;
-		frame.ShadowMapIndex = m_ShadowMapIndex;
+		frame.Lights = fd.Lights;
+		frame.SkyZenithColor = fd.Environment.SkyZenithColor;
+		frame.SkyHorizonColor = fd.Environment.SkyHorizonColor;
+		frame.GroundColor = fd.Environment.GroundColor;
+		frame.SkyIntensity = fd.Environment.SkyIntensity;
+		frame.LightViewProj = fd.Shadow.LightViewProj;
+		frame.ShadowMapIndex = fd.Shadow.ShadowMapIndex;
 		frame.ShadowStrength = CVars::ShadowStrength.Get();
 		frame.ShadowSoft = CVars::ShadowSoft.Get() ? 1u : 0u;
-		frame.ShadowTexelSize = 1.0f / static_cast<float>(m_ShadowResolution != 0 ? m_ShadowResolution : 2048u);
-		frame.SpotShadowAtlasIndex = m_SpotShadowAtlasIndex;
+		frame.ShadowTexelSize = 1.0f / static_cast<float>(fd.Shadow.ShadowResolution != 0 ? fd.Shadow.ShadowResolution : 2048u);
+		frame.SpotShadowAtlasIndex = fd.Shadow.SpotShadowAtlasIndex;
 
 		// IBL indices: the bake pass pushes them via SetIBLData only while IBL is enabled (it writes zeros
 		// when off), so a non-zero irradiance index means "baked AND on" — turning IBL off leaves the maps
 		// baked but the stored indices go to 0 and the shader falls back to the analytic ambient. 0 = off.
-		if (m_IrradianceCubeIndex != 0)
+		if (fd.IBL.IrradianceCubeIndex != 0)
 		{
-			frame.IrradianceCubeIndex = m_IrradianceCubeIndex;
-			frame.PrefilteredCubeIndex = m_PrefilteredCubeIndex;
-			frame.BRDFLutIndex = m_BRDFLutIndex;
-			frame.PrefilteredMipCount = m_PrefilteredMipCount;
+			frame.IrradianceCubeIndex = fd.IBL.IrradianceCubeIndex;
+			frame.PrefilteredCubeIndex = fd.IBL.PrefilteredCubeIndex;
+			frame.BRDFLutIndex = fd.IBL.BRDFLutIndex;
+			frame.PrefilteredMipCount = fd.IBL.PrefilteredMipCount;
 			frame.IBLIntensity = CVars::IBLIntensity.Get();
 		}
 
@@ -226,10 +227,10 @@ namespace Snowstorm
 	                                 const uint32_t brdfLutIndex,
 	                                 const uint32_t prefilteredMipCount)
 	{
-		m_IrradianceCubeIndex = irradianceIndex;
-		m_PrefilteredCubeIndex = prefilteredIndex;
-		m_BRDFLutIndex = brdfLutIndex;
-		m_PrefilteredMipCount = prefilteredMipCount;
+		m_FrameData.IBL.IrradianceCubeIndex = irradianceIndex;
+		m_FrameData.IBL.PrefilteredCubeIndex = prefilteredIndex;
+		m_FrameData.IBL.BRDFLutIndex = brdfLutIndex;
+		m_FrameData.IBL.PrefilteredMipCount = prefilteredMipCount;
 	}
 
 	void RendererService::DrawFullscreenTriangle(const Ref<Pipeline>& pipeline)
@@ -246,11 +247,11 @@ namespace Snowstorm
 
 	void RendererService::SetShadowData(const glm::mat4& lightViewProj, const uint32_t shadowMapIndex, const uint32_t shadowResolution)
 	{
-		m_LightViewProj = lightViewProj;
-		m_ShadowMapIndex = shadowMapIndex;
+		m_FrameData.Shadow.LightViewProj = lightViewProj;
+		m_FrameData.Shadow.ShadowMapIndex = shadowMapIndex;
 		if (shadowResolution != 0)
 		{
-			m_ShadowResolution = shadowResolution;
+			m_FrameData.Shadow.ShadowResolution = shadowResolution;
 		}
 	}
 

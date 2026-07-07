@@ -7,6 +7,7 @@
 #include "Snowstorm/Components/CameraRuntimeComponent.hpp"
 #include "Snowstorm/Lighting/LightingUniforms.hpp"
 #include "Snowstorm/Render/DescriptorSet.hpp"
+#include "Snowstorm/Render/FrameData.hpp"
 #include "Snowstorm/Render/MaterialInstance.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Render/Texture.hpp"
@@ -101,7 +102,7 @@ namespace Snowstorm
 
 		// Bindless index of the spot shadow atlas (0 = spots unshadowed). Per-spot shadow matrices + atlas
 		// rects travel inside the GPUSpotLight entries; this is the one shared texture index the shader needs.
-		void SetSpotShadowAtlasIndex(const uint32_t index) { m_SpotShadowAtlasIndex = index; }
+		void SetSpotShadowAtlasIndex(const uint32_t index) { m_FrameData.Shadow.SpotShadowAtlasIndex = index; }
 
 		// Set the baked IBL data the lit pass needs: bindless indices of the irradiance + prefiltered cubes
 		// and the BRDF LUT, plus the prefiltered mip count (drives the roughness->lod map). All zero = IBL
@@ -111,8 +112,8 @@ namespace Snowstorm
 
 		// Current frame's lights / environment (uploaded by the PreRender systems). The IBL bake reads
 		// these to capture the sky; exposed so the bake lives in its own pass, not the renderer.
-		[[nodiscard]] const LightDataBlock& GetLights() const { return m_Lights; }
-		[[nodiscard]] const EnvironmentDataBlock& GetEnvironment() const { return m_Environment; }
+		[[nodiscard]] const LightDataBlock& GetLights() const { return m_FrameData.Lights; }
+		[[nodiscard]] const EnvironmentDataBlock& GetEnvironment() const { return m_FrameData.Environment; }
 
 		// Stats from the most recently submitted scene pass (reset each BeginScene).
 		[[nodiscard]] const RenderStats& GetStats() const { return m_Stats; }
@@ -152,10 +153,10 @@ namespace Snowstorm
 		Ref<CommandContext> m_CommandContext;
 		uint32_t m_FrameIndex = 0;
 
-		glm::mat4 m_ViewProj{1.0f};
-		glm::vec3 m_CameraPosition{0.0f};
-		LightDataBlock m_Lights{};
-		EnvironmentDataBlock m_Environment{};
+		// All per-frame render inputs (camera, lights, environment, shadow + IBL blocks) in one struct that
+		// the passes populate and AcquireFrameSet reads to build the GPU FrameCB (#72). Replaces the loose
+		// per-feature scalars that used to sit directly on the service.
+		FrameData m_FrameData{};
 
 		std::vector<BatchData> m_Batches;
 
@@ -164,21 +165,6 @@ namespace Snowstorm
 		std::unordered_map<const Pipeline*, std::vector<Ref<DescriptorSet>>> m_ObjectSets;
 
 		std::unordered_map<const DescriptorSet*, Ref<Buffer>> m_FrameUniformBuffers;
-
-		// --- IBL data (the maps themselves are owned by IBLBakePass; the renderer just stores the bindless
-		// indices the bake pushes via SetIBLData, mirroring the shadow data above). 0 = IBL off. ---
-		uint32_t m_IrradianceCubeIndex = 0;
-		uint32_t m_PrefilteredCubeIndex = 0;
-		uint32_t m_BRDFLutIndex = 0;
-		uint32_t m_PrefilteredMipCount = 0;
-
-		// Current frame's directional-sun shadow data, pushed by ShadowPass via SetShadowData and folded
-		// into the camera pass's FrameCB. The pipeline/target live in ShadowPass now. ShadowMapIndex 0 =
-		// no shadows (fully lit). ShadowTexelSize is derived from the resolution CVar in AcquireFrameSet.
-		glm::mat4 m_LightViewProj{1.0f};
-		uint32_t m_ShadowMapIndex = 0;
-		uint32_t m_ShadowResolution = 2048;  // mirror of the bound shadow map's size, for the texel-size calc
-		uint32_t m_SpotShadowAtlasIndex = 0; // bindless index of the spot shadow atlas (0 = spots unshadowed)
 
 		// Per-frame storage buffer holding all instances for the frame (set=2). Bound once; each batch
 		// indexes its slice via the draw's firstInstance (SV_InstanceID includes firstInstance). Fixed
