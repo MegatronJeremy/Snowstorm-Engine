@@ -20,9 +20,11 @@ namespace Snowstorm
 	// (the "key"); this is the dome that wraps everything. Later upgrade seam: IBL (#52) replaces the
 	// analytic ambient with an irradiance map captured from these same colors.
 	//
-	// Presence is opt-in, like Unreal's SkyAtmosphere/SkyLight actors: a scene WITHOUT this component gets
-	// no sky pass AND no ambient fill (surfaces lit only by direct lights), so adding the component visibly
-	// does something. Defaults match the constants the sky/ambient shaders shipped with.
+	// A scene WITHOUT this component falls back to a built-in DEFAULT environment (these same defaults,
+	// procedural sky on) rather than nothing — see EnvironmentSystem — so an empty/loading world shows the
+	// sky instead of a black viewport, matching Godot's default WorldEnvironment / Unity's default skybox.
+	// Authoring the component overrides that default (e.g. custom colors, or Background=SolidColor to turn
+	// the sky off). Defaults match the constants the sky/ambient shaders shipped with.
 	struct EnvironmentComponent
 	{
 		BackgroundMode Background = BackgroundMode::ProceduralSky;

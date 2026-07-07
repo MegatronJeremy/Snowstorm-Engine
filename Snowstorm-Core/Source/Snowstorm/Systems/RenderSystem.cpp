@@ -149,12 +149,11 @@ namespace Snowstorm
 		// runtime environment edits generally (#64).
 		const EnvironmentDataBlock& env = renderer.GetEnvironment();
 
-		// A real (non-empty) environment has a positive sky intensity. The default-constructed block used
-		// before a scene loads has SkyIntensity == 0 — baking IBL from that convolves a black sky into black
-		// ambient AND wastes a full bake (WaitIdle + 4 compute passes). So gate the bake on a real sky: this
-		// avoids the redundant empty-first-frame bake entirely (the startup scene load is deferred a frame,
-		// so frame 1's env IS the empty default), and the env-change re-bake below still fires once Sponza's
-		// sky arrives.
+		// Only bake IBL from an active sky. EnvironmentSystem now supplies a default sky (SkyIntensity=1)
+		// when no scene authors one, so the empty/loading world bakes a valid default environment (not the
+		// old black-sky-into-black-ambient case). The gate still skips a scene that explicitly disables the
+		// sky (SkyIntensity=0, e.g. a SolidColor background), where a bake would convolve black. The
+		// env-change re-bake below re-runs when a scene's authored sky differs from what was baked.
 		const bool haveRealEnvironment = env.SkyIntensity > 0.0f;
 
 		if (m_IBLBakePass.IsBaked() && (!m_BakedEnvironment || *m_BakedEnvironment != env))
