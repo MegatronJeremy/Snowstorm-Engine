@@ -12,6 +12,12 @@ namespace Snowstorm::CVars
 	// test to drive the app headlessly.
 	extern CVar<int> SmokeFrames;
 
+	// Frame-time watchdog (milliseconds). When > 0, any single frame whose CPU time exceeds this logs an
+	// [error] naming the duration. The smoke harness treats [error] as a failure, so a per-frame stall
+	// (a hitch/freeze that N-frames-then-exit smoke otherwise passes right over) becomes a hard, headless-
+	// reproducible failure. 0 (default) disables it. First frame is exempt (one-time init/pipeline warmup).
+	extern CVar<int> MaxFrameMs;
+
 	// Log every Vulkan validation error and keep running instead of asserting on the first one.
 	extern CVar<bool> ValidationNonFatal;
 

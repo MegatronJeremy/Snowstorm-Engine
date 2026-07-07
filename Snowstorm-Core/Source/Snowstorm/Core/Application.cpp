@@ -79,11 +79,18 @@ namespace Snowstorm
 			SS_CORE_INFO("Smoke mode: running {0} frames then exiting.", smokeFramesLeft);
 		}
 
+		// Frame-time watchdog: when debug.max_frame_ms > 0, a single CPU frame exceeding it logs [error].
+		// The smoke harness treats [error] as failure, so a per-frame stall (hitch/freeze) that the
+		// N-frames-then-exit smoke would otherwise sail past becomes a hard, headless-reproducible failure.
+		const int maxFrameMs = CVars::MaxFrameMs.Get();
+		uint64_t frameNo = 0;
+
 		while (m_Running)
 		{
 			SS_PROFILE_SCOPE("RunLoop");
 
-			const auto time = static_cast<float>(glfwGetTime()); // Platform::GetTime
+			const double frameStart = glfwGetTime();
+			const auto time = static_cast<float>(frameStart); // Platform::GetTime
 			const Timestep ts = time - m_LastFrameTime;
 			m_LastFrameTime = time;
 
@@ -103,6 +110,18 @@ namespace Snowstorm
 			}
 
 			m_Window->OnUpdate();
+
+			// Watchdog check. Frame 0 is exempt: one-time init (pipeline/shader/resource warmup) legitimately
+			// takes longer and isn't the per-frame stall we're hunting.
+			if (maxFrameMs > 0 && frameNo > 0)
+			{
+				const double frameMs = (glfwGetTime() - frameStart) * 1000.0;
+				if (frameMs > static_cast<double>(maxFrameMs))
+				{
+					SS_CORE_ERROR("Frame-time watchdog: frame {0} took {1:.1f} ms (budget {2} ms)", frameNo, frameMs, maxFrameMs);
+				}
+			}
+			++frameNo;
 
 			if (smokeMode && --smokeFramesLeft == 0)
 			{

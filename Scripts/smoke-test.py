@@ -87,7 +87,7 @@ def clear_cook_caches(repo_root: Path) -> None:
 
 def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
                warnings_fail: bool, layer_path: Path | None, strict: bool,
-               scene: str | None) -> bool:
+               scene: str | None, max_frame_ms: int) -> bool:
     print(f"\n=== {name} :: {exe.name} ===")
     if not exe.exists():
         print(f"  FAIL: executable not found at {exe}")
@@ -103,6 +103,11 @@ def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
     # overhead and best-practices is advisory/noisy, so it's opt-in rather than part of every run.
     if strict:
         env["SS_VALIDATION_EXTRA"] = "1"
+    # Frame-time watchdog: any single frame over this many ms logs [error] -> fails the run. Catches
+    # per-frame stalls (hitches/freezes) that plain N-frames smoke sails past — a single multi-second
+    # frame still counts as "a frame" and passes otherwise. 0 = off.
+    if max_frame_ms and max_frame_ms > 0:
+        env["SS_DEBUG_MAX_FRAME_MS"] = str(max_frame_ms)  # CVar debug.max_frame_ms
     # Boot directly into a chosen scene (matches the CVar/env the editor reads). Lets the smoke
     # harness exercise a heavy scene (Sponza) headlessly instead of the default startup world.
     if scene:
@@ -173,6 +178,7 @@ def main() -> int:
     ap.add_argument("--strict", action="store_true", help="Enable extra Vulkan validation (synchronization + best-practices)")
     ap.add_argument("--scene", default=None, help="Boot directly into this scene (sets SS_STARTUP_SCENE), e.g. assets/scenes/Sponza.world")
     ap.add_argument("--cold", action="store_true", help="Delete cooked-asset caches first, to exercise the cold first-import path")
+    ap.add_argument("--max-frame-ms", type=int, default=0, help="Fail if any single frame exceeds this many ms (0 = off). Catches per-frame stalls/freezes.")
     args = ap.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -198,7 +204,7 @@ def main() -> int:
     for name, rel in targets:
         exe = build_dir / rel.format(config=args.config)
         results[name] = run_target(name, exe, repo_root, args.frames, args.timeout,
-                                    args.warnings_fail, layer_path, args.strict, args.scene)
+                                    args.warnings_fail, layer_path, args.strict, args.scene, args.max_frame_ms)
 
     print("\n=== Summary ===")
     all_ok = True
