@@ -60,6 +60,36 @@ namespace Snowstorm
 		}
 	}
 
+	bool ComputeMeshBoundsFromVertices(const std::vector<Vertex>& vertices, MeshBounds& out)
+	{
+		if (vertices.empty())
+		{
+			return false;
+		}
+
+		glm::vec3 mn{std::numeric_limits<float>::max()};
+		glm::vec3 mx{std::numeric_limits<float>::lowest()};
+		for (const Vertex& v : vertices)
+		{
+			mn = glm::min(mn, v.Position);
+			mx = glm::max(mx, v.Position);
+		}
+
+		const glm::vec3 center = (mn + mx) * 0.5f;
+		float r2 = 0.0f;
+		for (const Vertex& v : vertices)
+		{
+			const glm::vec3 d = v.Position - center;
+			r2 = std::max(r2, glm::dot(d, d));
+		}
+
+		out.Box.Min = mn;
+		out.Box.Max = mx;
+		out.Sphere.Center = center;
+		out.Sphere.Radius = std::sqrt(r2);
+		return true;
+	}
+
 	bool ComputeMeshBoundsAssimp(const std::filesystem::path& filepath, MeshBounds& out)
 	{
 		Assimp::Importer importer;

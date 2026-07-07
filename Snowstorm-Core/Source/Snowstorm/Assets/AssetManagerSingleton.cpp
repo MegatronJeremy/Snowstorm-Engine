@@ -424,10 +424,32 @@ namespace Snowstorm
 				Ref<Mesh> mesh = meshLib.FinalizeCooked(done.FilePath, done.SubmeshIndex, done.Cooked);
 				if (mesh)
 				{
-					// Attach cached bounds if present (same as the sync path; bounds are disk-cached JSON).
+					// Bounds: prefer the disk-cached sidecar, but ALWAYS fall back to computing from the
+					// cooked vertices we already have in hand. This fallback is essential and was missing:
+					// on a cold load the .json sidecar may not exist yet, so without it the mesh kept its
+					// default zero bounds and got frustum-culled the moment the camera moved off-center
+					// (the "Sponza disappears" bug). Computing from the cooked verts is cheap, needs no
+					// Assimp, and works cold; persist it so later loads hit the sidecar.
+					MeshBounds bounds{};
+					bool haveBounds = false;
 					if (auto cachedMeta = MeshMetaCacheIO::Load(done.Handle))
 					{
-						mesh->SetBounds(cachedMeta->Bounds);
+						bounds = cachedMeta->Bounds;
+						haveBounds = true;
+					}
+					else if (ComputeMeshBoundsFromVertices(done.Cooked.Vertices, bounds))
+					{
+						haveBounds = true;
+						MeshMetaCache out{};
+						out.Handle = done.Handle;
+						out.SourcePath = done.FilePath;
+						out.SourceWriteTime = GetFileWriteTimeU64(done.FilePath);
+						out.Bounds = bounds;
+						(void)MeshMetaCacheIO::Save(out);
+					}
+					if (haveBounds)
+					{
+						mesh->SetBounds(bounds);
 					}
 					m_MeshCache[done.Handle.Value()] = mesh;
 				}
