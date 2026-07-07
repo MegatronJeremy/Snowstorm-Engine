@@ -15,7 +15,13 @@ namespace Snowstorm
 {
 	namespace
 	{
-		// World-space AABB of one entity's mesh. Returns false if the entity has no resolvable mesh.
+		// World-space AABB of one entity's mesh. Uses the ALREADY-RESOLVED MeshInstance (populated
+		// asynchronously by MeshResolveSystem) — it must NOT call the blocking AssetManager::GetMesh:
+		// this runs every frame from ComputeWorldRenderableAABB (shadow fitting), and a synchronous
+		// GetMesh here would load every scene mesh's GPU data on the first shadow frame, blocking the
+		// main thread for ~1s (the whole point of async streaming is defeated otherwise). An entity whose
+		// mesh hasn't streamed in yet is simply skipped; it joins the bounds the frame its mesh arrives
+		// (bounds are recomputed each frame).
 		bool EntityAABB(World& world, const entt::entity e, AABB& out)
 		{
 			auto& reg = world.GetRegistry();
@@ -24,11 +30,10 @@ namespace Snowstorm
 				return false;
 			}
 
-			auto& assets = world.GetSingleton<AssetManagerSingleton>();
-			const Ref<Mesh> mesh = assets.GetMesh(reg.Read<MeshComponent>(e).MeshHandle);
+			const Ref<Mesh>& mesh = reg.Read<MeshComponent>(e).MeshInstance;
 			if (!mesh)
 			{
-				return false;
+				return false; // not resolved yet — skip until it streams in
 			}
 
 			out = TransformAABB(mesh->GetBounds().Box, reg.Read<TransformComponent>(e).GetTransformMatrix());
