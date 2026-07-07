@@ -73,7 +73,7 @@ namespace Snowstorm
 		const float dt = ts.GetSeconds();
 
 		const auto camCtrlView =
-		View<CameraComponent, TransformComponent, CameraControllerComponent, CameraTargetComponent>();
+		    View<CameraComponent, TransformComponent, CameraControllerComponent, CameraTargetComponent>();
 
 		const auto vpInteractView = View<ViewportInteractionComponent>();
 
@@ -150,20 +150,20 @@ namespace Snowstorm
 			return;
 		}
 
-		// Optional: if UI wants capture, bail (hook ImGui later)
-		if (input.WantCaptureMouse || input.WantCaptureKeyboard)
-		{
-			SetCursorLocked(false);
-			return;
-		}
+		// NOTE: do NOT bail on WantCaptureMouse here. The viewport is itself an ImGui window (the scene is
+		// drawn into an ImGui::Image), so ImGui reports WantCaptureMouse=true whenever the cursor is over
+		// it — which is exactly when we DO want camera input. vpI.Focused (ImGui::IsWindowFocused on the
+		// Viewport) is the correct "user is driving the scene, not another panel" gate, and a focused text
+		// field elsewhere steals that focus, so this is already covered. (Guarding on WantCaptureMouse here
+		// was what killed viewport RMB-look/WASD once the capture flags were actually wired up.)
 
 		const bool isPerspective = (cam.Projection == CameraComponent::ProjectionType::Perspective);
 
 		// GLFW mouse buttons are 0..7 typically; you should map Mouse::ButtonRight to 1 (GLFW_MOUSE_BUTTON_RIGHT)
 		constexpr int rightButton = Mouse::ButtonRight;
 		const bool rightClickHeld = rightButton < static_cast<int>(InputStateSingleton::MaxMouseButtons)
-		? input.MouseDown.test(rightButton)
-		: false;
+		                                ? input.MouseDown.test(rightButton)
+		                                : false;
 
 		// Cursor lock toggle based on RMB edge
 		const bool lockEngagedThisFrame = rightClickHeld && !rtState.WasRightClickHeld;
@@ -190,8 +190,8 @@ namespace Snowstorm
 		auto isKeyDown = [&](const int key) -> bool
 		{
 			return (key >= 0 && std::cmp_less(key, InputStateSingleton::MaxKeys))
-			? input.Down.test(static_cast<size_t>(key))
-			: false;
+			           ? input.Down.test(static_cast<size_t>(key))
+			           : false;
 		};
 
 		// ---- Mouse look: 1:1 with mouse movement (delta is already frame-rate independent;
@@ -233,8 +233,8 @@ namespace Snowstorm
 				{
 					auto& mutableCtrl = reg.Write<CameraControllerComponent>(activeCam);
 					mutableCtrl.MoveSpeed = glm::clamp(
-						mutableCtrl.MoveSpeed * std::pow(ctrl.SpeedAdjustStep, scrollY),
-						ctrl.MinMoveSpeed, ctrl.MaxMoveSpeed);
+					    mutableCtrl.MoveSpeed * std::pow(ctrl.SpeedAdjustStep, scrollY),
+					    ctrl.MinMoveSpeed, ctrl.MaxMoveSpeed);
 				}
 				else if (isPerspective)
 				{
@@ -253,34 +253,46 @@ namespace Snowstorm
 
 		if (rightClickHeld)
 		{
-			if (isKeyDown(Key::D)) moveDir += right;
-			if (isKeyDown(Key::A)) moveDir -= right;
+			if (isKeyDown(Key::D))
+				moveDir += right;
+			if (isKeyDown(Key::A))
+				moveDir -= right;
 
 			if (isPerspective)
 			{
-				if (isKeyDown(Key::W)) moveDir += forward;
-				if (isKeyDown(Key::S)) moveDir -= forward;
-				if (isKeyDown(Key::E)) moveDir += up;
-				if (isKeyDown(Key::Q)) moveDir -= up;
+				if (isKeyDown(Key::W))
+					moveDir += forward;
+				if (isKeyDown(Key::S))
+					moveDir -= forward;
+				if (isKeyDown(Key::E))
+					moveDir += up;
+				if (isKeyDown(Key::Q))
+					moveDir -= up;
 			}
 			else
 			{
-				if (isKeyDown(Key::W)) moveDir += up;
-				if (isKeyDown(Key::S)) moveDir -= up;
-				if (isKeyDown(Key::E)) moveDir += forward;
-				if (isKeyDown(Key::Q)) moveDir -= forward;
+				if (isKeyDown(Key::W))
+					moveDir += up;
+				if (isKeyDown(Key::S))
+					moveDir -= up;
+				if (isKeyDown(Key::E))
+					moveDir += forward;
+				if (isKeyDown(Key::Q))
+					moveDir -= forward;
 			}
 		}
 
 		// Sprint / slow modifiers.
 		float speed = ctrl.MoveSpeed;
-		if (isKeyDown(Key::LeftShift) || isKeyDown(Key::RightShift)) speed *= ctrl.SprintMultiplier;
-		if (isKeyDown(Key::LeftControl) || isKeyDown(Key::RightControl)) speed *= ctrl.SlowMultiplier;
+		if (isKeyDown(Key::LeftShift) || isKeyDown(Key::RightShift))
+			speed *= ctrl.SprintMultiplier;
+		if (isKeyDown(Key::LeftControl) || isKeyDown(Key::RightControl))
+			speed *= ctrl.SlowMultiplier;
 
 		// Target velocity from input; ease the actual velocity toward it for accel/decel.
 		const glm::vec3 targetVel = (glm::dot(moveDir, moveDir) > 0.0f)
-		? glm::normalize(moveDir) * speed
-		: glm::vec3(0.0f);
+		                                ? glm::normalize(moveDir) * speed
+		                                : glm::vec3(0.0f);
 
 		const float moveA = SmoothAlpha(ctrl.MoveSmoothing, dt);
 		rtState.MoveVelocity += (targetVel - rtState.MoveVelocity) * moveA;

@@ -790,6 +790,7 @@ namespace Snowstorm
 			auto& input = m_ActiveWorld->GetSingleton<InputStateSingleton>();
 			input.WantCaptureKeyboard = io.WantCaptureKeyboard;
 			input.WantCaptureMouse = io.WantCaptureMouse;
+			input.WantTextInput = io.WantTextInput; // precise "a text field is active" (see InputStateSingleton)
 		}
 
 		// Apply a deferred scene open at the frame boundary. A scene load is heavy (deserialize + asset

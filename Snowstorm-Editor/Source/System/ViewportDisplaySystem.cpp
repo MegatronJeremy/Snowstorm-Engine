@@ -441,7 +441,7 @@ namespace Snowstorm
 			// Cycle gizmo operation with W/E/R while the viewport is hovered — but not while ImGui owns the
 			// keyboard (e.g. typing in the console / a text field), so those letters don't double as gizmo
 			// hotkeys mid-edit.
-			if (ImGui::IsWindowHovered() && !input.WantCaptureKeyboard)
+			if (ImGui::IsWindowHovered() && !input.WantTextInput)
 			{
 				if (input.PressedThisFrame.test(Key::W))
 					m_GizmoOp = ImGuizmo::TRANSLATE;

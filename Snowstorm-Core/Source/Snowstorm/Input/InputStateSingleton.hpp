@@ -44,8 +44,17 @@ namespace Snowstorm
 		// Optional: window focus gating
 		bool WindowFocused = true;
 
-		// Optional: UI capture (ImGui etc). If true, gameplay/editor camera systems should ignore input.
+		// UI capture, published from ImGui each frame by the editor (Core stays ImGui-free).
+		//   WantCaptureMouse    - some ImGui widget wants the mouse. NOTE: the viewport is itself an ImGui
+		//                         window (scene drawn into an Image), so this is TRUE over the viewport —
+		//                         do NOT use it to gate viewport/camera input; use the viewport's own focus.
+		//   WantCaptureKeyboard - ImGui wants the keyboard, INCLUDING keyboard-nav of a focused window (so
+		//                         it's true just from clicking the viewport). Too broad for shortcut gating.
+		//   WantTextInput       - a TEXT FIELD is active. This is the precise "user is typing" signal that
+		//                         keyboard shortcuts (F, Ctrl+S, gizmo keys, console toggle) should gate on,
+		//                         so they still work over a focused viewport but not while editing text.
 		bool WantCaptureMouse = false;
 		bool WantCaptureKeyboard = false;
+		bool WantTextInput = false;
 	};
 }

@@ -68,7 +68,7 @@ namespace Snowstorm
 		    ctrlDown && input.PressedThisFrame.test(Key::S);
 
 		// Optional: don't fire while typing in an input field
-		if (savePressed && !input.WantCaptureKeyboard)
+		if (savePressed && !input.WantTextInput)
 		{
 			if (cmds.SaveScene)
 			{
@@ -85,7 +85,7 @@ namespace Snowstorm
 		// Scale-gizmo key, so it is deliberately not used here).
 		auto& history = SingletonView<EditorHistorySingleton>();
 		auto& status = SingletonView<EditorStatusBarSingleton>();
-		if (ctrlDown && !input.WantCaptureKeyboard)
+		if (ctrlDown && !input.WantTextInput)
 		{
 			const bool shift = input.Down.test(Key::LeftShift) || input.Down.test(Key::RightShift);
 
@@ -102,7 +102,7 @@ namespace Snowstorm
 		// Backtick toggles the developer console (the classic Quake/Unreal console key). Edge-triggered and
 		// suppressed while typing, so pressing ` inside the console's own input types a character instead of
 		// closing it.
-		if (input.PressedThisFrame.test(Key::GraveAccent) && !input.WantCaptureKeyboard)
+		if (input.PressedThisFrame.test(Key::GraveAccent) && !input.WantTextInput)
 		{
 			ConsoleSystem::s_Open = !ConsoleSystem::s_Open;
 		}

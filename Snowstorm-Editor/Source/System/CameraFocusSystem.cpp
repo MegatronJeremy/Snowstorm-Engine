@@ -12,8 +12,12 @@ namespace Snowstorm
 	{
 		const auto& input = SingletonView<InputStateSingleton>();
 
-		// Edge-triggered: act only on the frame F goes down, and never while a text field has the keyboard.
-		if (input.WantCaptureKeyboard || !input.PressedThisFrame.test(static_cast<size_t>(Key::F)))
+		// Edge-triggered: act only on the frame F goes down, and never while a TEXT FIELD is active. Gating
+		// on WantTextInput (not WantCaptureKeyboard) is deliberate: focusing the viewport makes ImGui set
+		// WantCaptureKeyboard for keyboard-nav, which would wrongly swallow F over the viewport — the exact
+		// place F should work. WantTextInput is true only while editing text (console/rename), where F must
+		// type instead of framing.
+		if (input.WantTextInput || !input.PressedThisFrame.test(static_cast<size_t>(Key::F)))
 		{
 			return;
 		}
