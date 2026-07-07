@@ -40,6 +40,7 @@
 #include "Snowstorm/World/EditorCommandsSingleton.hpp"
 #include "Snowstorm/World/EditorHistorySingleton.hpp"
 #include "Snowstorm/World/EditorSelectionSingleton.hpp"
+#include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/World/EditorStateSingleton.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
 
@@ -776,6 +777,20 @@ namespace Snowstorm
 	void EditorLayer::OnUpdate(const Timestep ts)
 	{
 		SS_PROFILE_FUNCTION();
+
+		// Publish ImGui's input-capture state into the shared InputStateSingleton BEFORE the world runs its
+		// systems this frame. Editor shortcuts (F/framing, gizmo keys, Ctrl+S, console toggle) and the
+		// camera controller gate on WantCaptureKeyboard/Mouse to avoid firing while the user is typing in a
+		// text field or interacting with a panel — but nothing was ever setting those flags (they defaulted
+		// to false), so e.g. typing "F" in the console also framed the scene. ImGui is the authority on who
+		// owns the keyboard/mouse this frame; copy its verdict here. Core stays ImGui-free — this lives in
+		// the editor, the only place that links ImGui.
+		{
+			const ImGuiIO& io = ImGui::GetIO();
+			auto& input = m_ActiveWorld->GetSingleton<InputStateSingleton>();
+			input.WantCaptureKeyboard = io.WantCaptureKeyboard;
+			input.WantCaptureMouse = io.WantCaptureMouse;
+		}
 
 		// Apply a deferred scene open at the frame boundary. A scene load is heavy (deserialize + asset
 		// kick-off) and BLOCKS the frame it runs in — so if we ran it on the very first frame, that frame
