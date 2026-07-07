@@ -79,8 +79,12 @@ A CVar named `validation.extra` is set by env `SS_VALIDATION_EXTRA` **or** CLI `
 anything but `0`/`false`/`off`/`no`). Run any executable with `--list-cvars` (or `--help`) to print
 every CVar with its value, type, env name, and description. Current CVars: `smoke.frames`,
 `validation.nonfatal`, `validation.extra` (the smoke harness still sets the matching env vars, so
-nothing about running it changed). Resolution is read-once at startup — runtime mutation (ImGui
-panel) and a config-file source are planned follow-ups, not yet implemented.
+nothing about running it changed). Startup resolution is read-once (env → CLI), but CVars can now also
+be **edited live at runtime** from the editor's *Debug > Console Variables* panel (`CVarPanelSystem`):
+it lists every CVar with a type-appropriate widget (checkbox/int/float) plus a `name value` command
+line, via typed accessors on `ICVar` (`GetKind`/`Get*`/`Set*`). Most engine CVars are read per-frame
+through `.Get()` (shadows, IBL, exposure, shadow quality), so edits take effect immediately. A
+config-file source is still a planned follow-up.
 
 ## Layout
 

@@ -2,6 +2,8 @@
 
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Debug/Instrumentor.hpp"
+
+#include "System/CVarPanelSystem.hpp"
 #include "Snowstorm/World/EditorCommandsSingleton.hpp"
 #include "Snowstorm/World/EditorHistorySingleton.hpp"
 #include "Snowstorm/World/World.hpp"
@@ -149,6 +151,12 @@ namespace Snowstorm
 
 			if (ImGui::BeginMenu("Debug"))
 			{
+				if (ImGui::MenuItem("Console Variables", nullptr, CVarPanelSystem::s_Open))
+				{
+					CVarPanelSystem::s_Open = !CVarPanelSystem::s_Open;
+				}
+				ImGui::Separator();
+
 				// Chrome-tracing capture: records the next N frames (main thread + JobSystem workers) to a
 				// JSON openable in chrome://tracing / ui.perfetto.dev. Disabled while a capture is in flight.
 				const bool capturing = Instrumentor::Get().IsCapturing() || Instrumentor::Get().IsCapturePending();

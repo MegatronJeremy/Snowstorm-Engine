@@ -11,15 +11,28 @@
 // This replaces scattered std::getenv() reads with a single, typed, discoverable registry
 // (run with --list-cvars or --help to print them all).
 //
-// Resolution is read-once at startup, which matches the previous getenv behaviour and is required
-// for startup-critical flags (e.g. Vulkan validation, read during instance creation). Runtime
-// mutation (e.g. an ImGui panel) and a config-file source are intentional follow-ups.
+// Startup resolution is read-once (env → CLI), which matches the previous getenv behaviour and is
+// required for startup-critical flags (e.g. Vulkan validation, read during instance creation). Values
+// can also be edited live at runtime via the typed accessors below (GetKind/Get*/Set*) — the editor's
+// Debug > Console Variables panel does this; most engine CVars are read per-frame so edits apply
+// immediately. A config-file source is still an intentional follow-up.
 //
 // Naming: a CVar named "validation.extra" maps to env var SS_VALIDATION_EXTRA and CLI
 // --validation.extra[=value]. Dots/dashes become underscores; the env name is uppercased and
 // prefixed with SS_.
 namespace Snowstorm
 {
+	// Concrete value type of a CVar, so a UI (the editor's CVar panel) can pick the right widget
+	// (checkbox / int drag / float drag / text) and read/write the value with the correct type — without
+	// RTTI or string round-tripping. Mirrors the CVar<T> specializations that exist (bool/int/float/string).
+	enum class CVarKind : uint8_t
+	{
+		Bool,
+		Int,
+		Float,
+		String
+	};
+
 	class ICVar
 	{
 	public:
@@ -36,6 +49,17 @@ namespace Snowstorm
 		virtual std::string GetTypeName() const = 0;
 		virtual void SetFromString(const std::string& value) = 0;
 
+		// Typed introspection for a live-editing UI. Kind selects the widget; the typed getters/setters
+		// read/write the value directly. Calling a getter/setter that doesn't match Kind() is a misuse and
+		// returns a zero/default (the UI always dispatches on Kind() first).
+		[[nodiscard]] virtual CVarKind GetKind() const = 0;
+		[[nodiscard]] virtual bool GetBool() const { return false; }
+		[[nodiscard]] virtual int GetInt() const { return 0; }
+		[[nodiscard]] virtual float GetFloat() const { return 0.0f; }
+		virtual void SetBool(bool) {}
+		virtual void SetInt(int) {}
+		virtual void SetFloat(float) {}
+
 	private:
 		std::string m_Name;
 		std::string m_Description;
@@ -47,7 +71,7 @@ namespace Snowstorm
 	{
 	public:
 		CVar(std::string name, T defaultValue, std::string description)
-			: ICVar(std::move(name), std::move(description)), m_Value(std::move(defaultValue))
+		    : ICVar(std::move(name), std::move(description)), m_Value(std::move(defaultValue))
 		{
 		}
 
@@ -58,6 +82,16 @@ namespace Snowstorm
 		std::string GetValueString() const override;
 		std::string GetTypeName() const override;
 		void SetFromString(const std::string& value) override;
+
+		// Typed introspection for the live-editing UI. Fully specialized in CVar.cpp per T (bool/int/float/
+		// string): GetKind plus the matching typed getter/setter; non-matching accessors keep ICVar defaults.
+		[[nodiscard]] CVarKind GetKind() const override;
+		[[nodiscard]] bool GetBool() const override;
+		[[nodiscard]] int GetInt() const override;
+		[[nodiscard]] float GetFloat() const override;
+		void SetBool(bool v) override;
+		void SetInt(int v) override;
+		void SetFloat(float v) override;
 
 	private:
 		T m_Value;

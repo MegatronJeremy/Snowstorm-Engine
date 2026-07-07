@@ -47,6 +47,7 @@
 
 #include "System/CameraFocusSystem.hpp"
 #include "System/ContentBrowserSystem.hpp"
+#include "System/CVarPanelSystem.hpp"
 #include "System/LoadingOverlaySystem.hpp"
 #include "Singletons/EditorStatusBarSingleton.hpp"
 #include "System/DockspaceSetupSystem.hpp"
@@ -407,6 +408,7 @@ namespace Snowstorm
 		systemManager.RegisterSystem<ContentBrowserSystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<CameraFocusSystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<LoadingOverlaySystem>(SystemPhase::UI);
+		systemManager.RegisterSystem<CVarPanelSystem>(SystemPhase::UI);
 
 		// Editor example
 		systemManager.RegisterSystem<MandelbrotControllerSystem>(SystemPhase::PreRender);
