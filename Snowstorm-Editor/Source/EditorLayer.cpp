@@ -645,11 +645,17 @@ namespace Snowstorm
 		// Apply a deferred scene open at the frame boundary. A scene load is heavy (deserialize + asset
 		// kick-off) and BLOCKS the frame it runs in — so if we ran it on the very first frame, that frame
 		// wouldn't present until the load finished, leaving the window white/frozen. Instead, let the
-		// pending scene wait until at least one frame has actually PRESENTED (an empty world: black clear +
-		// dockspace + loading overlay), THEN load on the next frame. The user sees the editor chrome and a
-		// loading indicator immediately instead of a white lockup. (Mid-session opens from the Content
-		// Browser already have prior frames on screen, so the one-frame wait is invisible there too.)
-		if (m_HasPendingScene && m_FramesPresented > 0)
+		// pending scene wait until the editor chrome is actually VISIBLE, THEN load on the next frame, so
+		// the image held on screen during the blocking load shows populated panels + a loading overlay.
+		//
+		// Why > 1 and not > 0: ImGui hides a window on its first "appearing" frame (it renders once
+		// invisibly to measure auto-size), so on frame 0 every panel is Hidden — a frame-0 present shows
+		// a black viewport with NO panels. The panels only become visible on frame 1. So we must let TWO
+		// frames present (0: panels appearing/hidden, 1: panels visible) before blocking on the load on
+		// frame 2; otherwise the load stalls with frame 0's panel-less image frozen on screen — which
+		// read as "the editor starts blank and only fills in when the scene loads". (Mid-session opens
+		// from the Content Browser already have visible panels on screen, so this wait is invisible there.)
+		if (m_HasPendingScene && m_FramesPresented > 1)
 		{
 			m_HasPendingScene = false;
 			const std::string path = std::move(m_PendingScenePath);

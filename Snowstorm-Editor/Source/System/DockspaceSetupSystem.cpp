@@ -64,9 +64,14 @@ namespace Snowstorm
 		{
 			const ImGuiID dockspaceID = ImGui::GetID("MyDockSpace");
 
-			// On first run (no imgui.ini), the dock node is empty and every panel floats at the
-			// default position, all stacked at the top-left. Build a sensible default layout once;
-			// after that the user's imgui.ini takes over and this branch is skipped.
+			// On first run (no imgui.ini) the dock node is empty and every panel floats at the top-left.
+			// Build a sensible default layout on the very first frame so all panels appear docked
+			// immediately (empty, as placeholders, until the scene loads) rather than after a one-frame
+			// delay. When imgui.ini is present the node already exists and this branch is skipped, so the
+			// user's saved layout is respected. Note: the status bar's BeginViewportSideBar reports its
+			// reserved strip into the viewport work-area only "for next frame", so the DockSpace host
+			// window's work-area settles by ~one status-bar height between frame 0 and frame 1 — a single
+			// sub-frame settle, invisible in practice, and the price of showing everything immediately.
 			if (ImGui::DockBuilderGetNode(dockspaceID) == nullptr)
 			{
 				BuildDefaultLayout(dockspaceID);

@@ -10,7 +10,7 @@ namespace Snowstorm
 	{
 	public:
 		explicit DockspaceSetupSystem(const WorldRef& world)
-			: System(world)
+		    : System(world)
 		{
 		}
 
