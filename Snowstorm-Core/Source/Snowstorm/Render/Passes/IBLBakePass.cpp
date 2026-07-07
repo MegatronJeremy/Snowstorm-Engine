@@ -96,6 +96,16 @@ namespace Snowstorm
 			return;
 		}
 
+		// Compute shaders compile asynchronously (ShaderLibrary::Load submits to a worker). Building a
+		// compute pipeline from a not-ready shader would assert on empty SPIR-V, so bail until all four are
+		// ready — m_CapturePipeline stays null and AddBakePasses retries next frame (the bake is already
+		// re-driven per frame and gated on a real environment in RenderSystem). This is the compute-side
+		// mirror of GetOrCreatePipeline's readiness gate.
+		if (!captureCs->IsReady() || !irradianceCs->IsReady() || !prefilterCs->IsReady() || !brdfCs->IsReady())
+		{
+			return;
+		}
+
 		const auto makeComputePipe = [](const Ref<Shader>& cs, const char* name)
 		{
 			PipelineDesc p{};

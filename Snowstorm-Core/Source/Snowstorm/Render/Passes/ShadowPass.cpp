@@ -75,6 +75,14 @@ namespace Snowstorm
 		    "assets/shaders/Shadow.vert.hlsl", "assets/shaders/Shadow.frag.hlsl");
 		SS_CORE_ASSERT(shader, "Failed to load Shadow shader");
 
+		// Shader compiles async; bail until ready so we don't build the pipeline from empty SPIR-V.
+		// EnsurePipeline is called every frame, so it retries; the shadow pass simply doesn't run until
+		// the shader is compiled (shadows fade in with the geometry).
+		if (!shader->IsReady())
+		{
+			return;
+		}
+
 		// Same vertex layout as the lit mesh pipeline (set in AssetManagerSingleton): the shadow VS
 		// only consumes Position (location 0), but the buffer stride must match the Vertex struct.
 		VertexLayoutDesc vertexLayout{};

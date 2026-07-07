@@ -690,6 +690,16 @@ namespace Snowstorm
 		auto& shaderLib = Application::Get().GetServiceManager().GetService<ShaderLibrary>();
 		Ref<Shader> shader = shaderLib.Load("assets/shaders/Mesh.vert.hlsl", fragPath);
 
+		// Shaders compile asynchronously (ShaderLibrary::Load submits to a worker). Until the SPIR-V is
+		// ready we can't build the pipeline — return null WITHOUT caching, so a later frame retries once the
+		// compile finishes. Caching null here would poison the preset permanently (same hazard the mesh/
+		// material caches guard against). The material stays unresolved and the object simply isn't drawn
+		// yet; it pops in over the sky when its pipeline is created.
+		if (!shader || !shader->IsReady())
+		{
+			return nullptr;
+		}
+
 		// Common vertex layout for Mesh::Vertex (matches your editor bootstrap)
 		VertexLayoutDesc vertexLayout{};
 		VertexBufferLayoutDesc vb{};

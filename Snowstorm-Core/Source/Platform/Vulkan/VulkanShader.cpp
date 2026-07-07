@@ -5,7 +5,10 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <memory>
+#include <mutex>
 #include <sstream>
+#include <unordered_map>
 #include <vector>
 
 #define WIN32_LEAN_AND_MEAN
@@ -336,6 +339,35 @@ namespace Snowstorm
 				return true;
 			}
 
+			// Now that shader compilation runs on JobSystem workers, the SAME output .spv can be requested by
+			// two workers at once — e.g. Mesh.vert.hlsl is shared by the DefaultLit and Mandelbrot pipelines,
+			// so both hash to the identical output path. Two dxc.exe processes writing that file concurrently
+			// corrupt it / fail. Serialize per output path: hold a per-key lock across the exists-check +
+			// compile, so the first compiles and the second sees the finished file. A global map of these
+			// locks is guarded by its own mutex. (Keyed by the full output path, so distinct shaders never
+			// contend.)
+			static std::mutex s_MapMutex;
+			static std::unordered_map<std::string, std::unique_ptr<std::mutex>> s_PathLocks;
+			std::mutex* pathLock = nullptr;
+			{
+				std::lock_guard mapLock(s_MapMutex);
+				auto& slot = s_PathLocks[outSpvPath.string()];
+				if (!slot)
+				{
+					slot = std::make_unique<std::mutex>();
+				}
+				pathLock = slot.get();
+			}
+
+			std::lock_guard compileLock(*pathLock);
+
+			// Re-check under the lock: another worker may have finished this exact output while we waited.
+			if (fs::exists(outSpvPath))
+			{
+				outSpv = outSpvPath.string();
+				return true;
+			}
+
 			// Compile the real source file directly (DXC resolves #include via -I; the file is unmodified).
 			if (!CompileStageWithDxc(dxcExe, srcPath, outSpvPath, profile))
 			{
@@ -348,11 +380,14 @@ namespace Snowstorm
 
 	}
 
+	// NOTE: the constructors deliberately do NOT compile. Compilation spawns dxc.exe (seconds on a cold
+	// cache) and is kicked onto a JobSystem worker by ShaderLibrary::Load right after construction, so the
+	// object exists immediately in a not-ready state and the main thread never blocks. Compile() is called
+	// on the worker (and synchronously by Recompile() for hot-reload).
 	VulkanShader::VulkanShader(std::string filepath)
 	    : m_Filepath(std::move(filepath))
 	{
 		m_VertPath = m_Filepath; // single-path == a compute shader
-		Compile();
 	}
 
 	VulkanShader::VulkanShader(std::string vertPath, std::string fragPath)
@@ -360,11 +395,13 @@ namespace Snowstorm
 	      ,
 	      m_VertPath(std::move(vertPath)), m_FragPath(std::move(fragPath))
 	{
-		Compile();
 	}
 
 	std::string VulkanShader::GetCompiledPath(const ShaderStageKind stage) const
 	{
+		// Empty until Compile() finishes (m_Ready). Callers gate on IsReady()/non-empty before building a
+		// pipeline; returning empty here is the "not ready yet" signal, not an error.
+		std::lock_guard lock(m_Mutex);
 		switch (stage)
 		{
 		case ShaderStageKind::Vertex:
@@ -379,6 +416,11 @@ namespace Snowstorm
 
 	void VulkanShader::Compile()
 	{
+		// Runs on a JobSystem worker (or synchronously via Recompile). The slow dxc.exe work happens OUTSIDE
+		// the lock; only the short result-publish is locked, then m_Ready is released so a main-thread reader
+		// sees a fully-populated result or nothing. m_VertPath/m_FragPath are immutable post-construction, so
+		// reading them here is race-free.
+
 		// Two-path graphics: separate vertex + fragment files, each a plain single-`main` HLSL file
 		// compiled directly (no #type split). The preferred form.
 		if (!m_FragPath.empty())
@@ -388,11 +430,15 @@ namespace Snowstorm
 			    !CompileStageFileToSpirvCache(m_FragPath, L"ps_6_0", "v2_vulkan1.2_dxlayout_Zpr_ps6", frag))
 			{
 				SS_CORE_ERROR("VulkanShader: failed to compile graphics shader {}", m_Filepath);
-				return;
+				return; // leaves m_Ready false: the pipeline never builds, rather than building from garbage
 			}
-			m_CompiledVertSpv = std::move(vert);
-			m_CompiledFragSpv = std::move(frag);
-			++m_Version;
+			{
+				std::lock_guard lock(m_Mutex);
+				m_CompiledVertSpv = std::move(vert);
+				m_CompiledFragSpv = std::move(frag);
+			}
+			m_Version.fetch_add(1, std::memory_order_relaxed);
+			m_Ready.store(true, std::memory_order_release);
 			return;
 		}
 
@@ -411,7 +457,11 @@ namespace Snowstorm
 			SS_CORE_ERROR("VulkanShader: failed to compile compute shader {}", m_VertPath);
 			return;
 		}
-		m_CompiledCompSpv = std::move(comp);
-		++m_Version;
+		{
+			std::lock_guard lock(m_Mutex);
+			m_CompiledCompSpv = std::move(comp);
+		}
+		m_Version.fetch_add(1, std::memory_order_relaxed);
+		m_Ready.store(true, std::memory_order_release);
 	}
 }

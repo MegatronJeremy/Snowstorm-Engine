@@ -28,7 +28,10 @@ namespace Snowstorm
 
 			if (!mandelbrotMaterial)
 			{
-				SS_WARN("Could not find Mandelbrot material!");
+				// Null is the expected transient while the material's shader is still compiling
+				// asynchronously (cold cache) — the instance resolves once its pipeline is ready. Skip
+				// quietly; a genuinely broken shader/material is reported once by the shader/pipeline path,
+				// not per-frame here (this used to spam the log every frame during a cold start).
 				continue;
 			}
 

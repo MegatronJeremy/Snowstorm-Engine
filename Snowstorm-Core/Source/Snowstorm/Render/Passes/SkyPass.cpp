@@ -24,6 +24,14 @@ namespace Snowstorm
 		    "assets/shaders/Fullscreen.vert.hlsl", "assets/shaders/Sky.frag.hlsl");
 		SS_CORE_ASSERT(shader, "Failed to load Sky shader");
 
+		// Shader compiles async; bail until ready. m_Pipeline stays null and Draw's DrawFullscreenTriangle
+		// null-guards, so the sky simply isn't drawn until its shader is compiled (the clear color shows for
+		// those first frames). EnsurePipeline is called every Draw, so it retries.
+		if (!shader->IsReady())
+		{
+			return;
+		}
+
 		PipelineDesc p{};
 		p.Type = PipelineType::Graphics;
 		p.Shader = shader;

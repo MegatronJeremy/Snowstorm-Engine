@@ -2,6 +2,8 @@
 
 #include "Platform/Vulkan/VulkanShader.hpp"
 
+#include "Snowstorm/Core/Application.hpp"
+#include "Snowstorm/Core/JobSystem.hpp"
 #include "Snowstorm/Core/Log.hpp"
 
 #include "RendererAPI.hpp"
@@ -74,6 +76,7 @@ namespace Snowstorm
 
 		auto shader = Shader::Create(filepath);
 		Add(shader, filepath);
+		SubmitAsyncCompile(shader);
 
 		m_LastModifications[filepath] = std::filesystem::last_write_time(filepath);
 
@@ -92,11 +95,46 @@ namespace Snowstorm
 
 		auto shader = Shader::Create(vertPath, fragPath);
 		Add(shader, key);
+		SubmitAsyncCompile(shader);
 
 		m_LastModifications[key] = std::max(std::filesystem::last_write_time(vertPath),
 		                                    std::filesystem::last_write_time(fragPath));
 
 		return shader;
+	}
+
+	void ShaderLibrary::SubmitAsyncCompile(const Ref<Shader>& shader)
+	{
+		// Compile off the main thread so a cold cache (dxc.exe spawn per stage, seconds total) doesn't
+		// block the frame loop — the editor keeps presenting chrome + sky + a progress bar while shaders
+		// build, and each material's pipeline is created once its shader reports ready (see
+		// AssetManagerSingleton::GetOrCreatePipeline). Warm-cache "compiles" are near-instant fs::exists
+		// checks that still run on the worker (harmless).
+		// Reset the high-water total when starting a fresh batch (nothing was in flight), so the bar reads
+		// e.g. "2/11" per cold start rather than accumulating across the app's lifetime.
+		if (m_PendingCompiles.load(std::memory_order_relaxed) == 0)
+		{
+			m_PendingCompileTotal = 0;
+		}
+		m_PendingCompiles.fetch_add(1, std::memory_order_relaxed);
+		++m_PendingCompileTotal;
+
+		// No JobSystem (e.g. a headless unit-test context without an Application) -> compile synchronously so
+		// behaviour degrades safely instead of never becoming ready.
+		if (!Application::Get().GetServiceManager().ServiceRegistered<JobSystem>())
+		{
+			shader->Recompile();
+			m_PendingCompiles.fetch_sub(1, std::memory_order_relaxed);
+			return;
+		}
+
+		auto& jobs = Application::Get().GetServiceManager().GetService<JobSystem>();
+		// Capture the Ref by value so the shader stays alive until the compile finishes even if the library
+		// entry is replaced. Recompile() is thread-safe (see VulkanShader::Compile).
+		(void)jobs.Submit([this, shader]
+		                  {
+			shader->Recompile();
+			m_PendingCompiles.fetch_sub(1, std::memory_order_relaxed); });
 	}
 
 	Ref<Shader> ShaderLibrary::Get(const std::string& filepath)

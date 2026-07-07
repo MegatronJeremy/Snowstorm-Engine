@@ -70,6 +70,12 @@ namespace Snowstorm
 		for (auto e : ChangedView<MaterialOverridesComponent>())
 			dirty.insert(e);
 
+		// Re-attempt entities that couldn't resolve on a previous frame because their pipeline wasn't ready
+		// (shaders compiling async). Cleared and rebuilt below as each either resolves or stays pending.
+		for (const entt::entity e : m_PendingResolve)
+			dirty.insert(e);
+		m_PendingResolve.clear();
+
 		for (const entt::entity e : dirty)
 		{
 			if (!reg.any_of<MaterialComponent>(e))
@@ -113,6 +119,13 @@ namespace Snowstorm
 				// Shared instance — objects with the same material (even with per-instance albedo
 				// overrides) collapse into one instanced draw.
 				const Ref<MaterialInstance> shared = assets.GetMaterialInstance(mcRead.Material);
+				// Null = pipeline not ready (shader still compiling). Retry next frame instead of leaving it
+				// permanently unresolved; don't overwrite a previously-resolved instance with null.
+				if (!shared)
+				{
+					m_PendingResolve.insert(e);
+					continue;
+				}
 				auto& mc = reg.Write<MaterialComponent>(e);
 				mc.MaterialInstance = shared;
 				continue;
@@ -122,8 +135,8 @@ namespace Snowstorm
 			Ref<MaterialInstance> unique = assets.CreateMaterialInstanceUnique(mcRead.Material);
 			if (!unique)
 			{
-				auto& mc = reg.Write<MaterialComponent>(e);
-				mc.MaterialInstance.reset();
+				// Pipeline not ready yet (shader compiling) — retry next frame.
+				m_PendingResolve.insert(e);
 				continue;
 			}
 

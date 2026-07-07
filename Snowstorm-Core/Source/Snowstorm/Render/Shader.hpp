@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <unordered_map>
 #include <filesystem>
 #include <string>
@@ -37,6 +38,11 @@ namespace Snowstorm
 		// Compiled artifact path in cache folder (e.g. assets/cache/shaders/X_<hash>.vert.spv)
 		[[nodiscard]] virtual std::string GetCompiledPath(ShaderStageKind stage) const = 0;
 
+		// True once compilation has finished and the SPIR-V artifact paths are available. Compilation runs
+		// asynchronously on a JobSystem worker (see ShaderLibrary::Load), so a freshly-loaded shader is NOT
+		// ready immediately on a cold cache; pipeline creation must poll this rather than assume readiness.
+		[[nodiscard]] virtual bool IsReady() const = 0;
+
 		// Changes whenever recompilation produced new artifacts
 		[[nodiscard]] virtual uint64_t GetVersion() const = 0;
 
@@ -68,10 +74,25 @@ namespace Snowstorm
 
 		void ReloadAll();
 
+		// Async-compile progress for a loading bar (same idiom as AssetManagerSingleton's
+		// PendingLoadCount/Total). PendingCompileCount = shaders still compiling right now; PendingCompileTotal
+		// = high-water mark since the queue was last empty, so a bar reads "compiled = total - pending".
+		[[nodiscard]] uint32_t PendingCompileCount() const { return m_PendingCompiles.load(std::memory_order_relaxed); }
+		[[nodiscard]] uint32_t PendingCompileTotal() const { return m_PendingCompileTotal; }
+
 	private:
 		void Add(const Ref<Shader>& shader, const std::string& filepath);
 
+		// Kick a shader's compile onto a JobSystem worker (falls back to synchronous if no JobSystem), and
+		// track it for the progress counters. Shared by both Load overloads.
+		void SubmitAsyncCompile(const Ref<Shader>& shader);
+
 		std::unordered_map<std::string, Ref<Shader>> m_Shaders;
 		std::unordered_map<std::string, std::filesystem::file_time_type> m_LastModifications;
+
+		// In-flight async compiles. Incremented on submit, decremented by the worker when done. Atomic
+		// because workers touch the count off the main thread; the total resets to 0 when the count hits 0.
+		std::atomic<uint32_t> m_PendingCompiles{0};
+		uint32_t m_PendingCompileTotal = 0;
 	};
 }
