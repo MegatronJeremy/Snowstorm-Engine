@@ -7,6 +7,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
+# MSVC compiles the TUs of a single target serially by default; /MP fans them across cores. Our
+# targets glob dozens-to-hundreds of .cpp, so this is the single biggest clean-build speedup. Applied
+# globally (all targets) and only for MSVC. Combined with the precompiled header wired on Snowstorm-Core.
+if(MSVC)
+    add_compile_options(/MP)
+endif()
+
 # 1. Add subdirectories for core and the executables
 # This must happen before setting target properties
 add_subdirectory(Snowstorm-Core)

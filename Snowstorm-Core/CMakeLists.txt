@@ -15,6 +15,12 @@ file(GLOB_RECURSE CORE_SOURCES
 )
 target_sources(Snowstorm-Core PRIVATE ${CORE_SOURCES})
 
+# Precompiled header. pch.h existed and was #included by ~24 TUs but was NEVER actually precompiled
+# (no target_precompile_headers), so every TU re-parsed <Windows.h>/spdlog/STL from scratch. Wiring it
+# here force-includes it into all Core TUs and compiles it once. PRIVATE: the PCH is a Core build-speed
+# detail, not part of Core's public interface — executables get their own (or none).
+target_precompile_headers(Snowstorm-Core PRIVATE Source/pch.h)
+
 find_package(assimp CONFIG REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
