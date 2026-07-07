@@ -18,9 +18,16 @@ namespace Snowstorm
 	// albedo (sRGB) and data-map (linear) views of the same source.
 	struct CookedTexture
 	{
-		uint32_t Width = 0;
+		uint32_t Width = 0; // base (mip 0) dimensions
 		uint32_t Height = 0;
-		std::vector<uint8_t> Pixels; // tightly packed RGBA8, size == Width*Height*4
+
+		// Full mip chain, level 0 = base. Precomputed at cook time (CPU box-downsample) so the runtime
+		// upload is a pure staging->image COPY per level — no vkCmdBlitImage, which lets the whole upload
+		// run on a transfer-only queue (blit requires a graphics queue). Levels[i] is tightly packed RGBA8
+		// of size max(1,W>>i) * max(1,H>>i) * 4. A single-level texture (e.g. the 1x1 defaults) has one entry.
+		std::vector<std::vector<uint8_t>> Levels;
+
+		[[nodiscard]] uint32_t MipLevels() const { return static_cast<uint32_t>(Levels.size()); }
 	};
 
 	class TextureCacheIO

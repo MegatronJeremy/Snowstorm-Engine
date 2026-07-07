@@ -104,8 +104,14 @@ namespace Snowstorm
 		[[nodiscard]] uint32_t GetWidth() const { return GetDesc().Width; }
 		[[nodiscard]] uint32_t GetHeight() const { return GetDesc().Height; }
 
-		// Upload whole texture content (backend decides staging/queue)
+		// Upload whole texture content into mip 0 (backend decides staging/queue). For a mipped texture the
+		// backend may generate the rest; prefer SetMipData when the full chain is precomputed.
 		virtual void SetData(const void* data, uint32_t size) = 0;
+
+		// Upload a PRECOMPUTED mip chain: levels[i] is tightly packed RGBA8 for mip i. Each level is a pure
+		// staging->image copy (no blit), so this can run entirely on a transfer queue. levels.size() must
+		// equal the texture's MipLevels.
+		virtual void SetMipData(const std::vector<std::vector<uint8_t>>& levels) = 0;
 
 		// Resource identity comparison (same underlying GPU resource)
 		virtual bool operator==(const Texture& other) const = 0;

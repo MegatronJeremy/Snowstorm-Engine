@@ -23,6 +23,7 @@ namespace Snowstorm
 		Ref<TextureView> GetDefaultView() override;
 
 		void SetData(const void* data, uint32_t size) override;
+		void SetMipData(const std::vector<std::vector<uint8_t>>& levels) override;
 
 		bool operator==(const Texture& other) const override;
 

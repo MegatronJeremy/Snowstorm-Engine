@@ -9,7 +9,9 @@ namespace Snowstorm
 	namespace
 	{
 		constexpr uint32_t kMagic = 0x58455453; // "STEX"
-		constexpr uint32_t kVersion = 1;
+		// v2: stores the full precomputed mip chain (v1 stored only the base level). Bumping forces a
+		// re-cook, which is fine — .sstex is a derived cache.
+		constexpr uint32_t kVersion = 2;
 
 		struct Header
 		{
@@ -18,7 +20,7 @@ namespace Snowstorm
 			uint64_t SourceWriteTime = 0;
 			uint32_t Width = 0;
 			uint32_t Height = 0;
-			uint64_t ByteCount = 0; // == Width*Height*4
+			uint32_t MipLevels = 0;
 		};
 	}
 
@@ -46,14 +48,24 @@ namespace Snowstorm
 		if (h.SourceWriteTime != sourceWriteTime) // source changed -> re-decode
 			return std::nullopt;
 
-		if (h.Width == 0 || h.Height == 0 || h.ByteCount != static_cast<uint64_t>(h.Width) * h.Height * 4)
+		if (h.Width == 0 || h.Height == 0 || h.MipLevels == 0)
 			return std::nullopt;
 
 		CookedTexture tex;
 		tex.Width = h.Width;
 		tex.Height = h.Height;
-		tex.Pixels.resize(h.ByteCount);
-		in.read(reinterpret_cast<char*>(tex.Pixels.data()), static_cast<std::streamsize>(h.ByteCount));
+		tex.Levels.resize(h.MipLevels);
+
+		// Each level is length-prefixed (u64) so a malformed file can't be mistaken for valid data.
+		for (uint32_t i = 0; i < h.MipLevels; ++i)
+		{
+			uint64_t byteCount = 0;
+			in.read(reinterpret_cast<char*>(&byteCount), sizeof(byteCount));
+			if (!in || byteCount == 0)
+				return std::nullopt;
+			tex.Levels[i].resize(byteCount);
+			in.read(reinterpret_cast<char*>(tex.Levels[i].data()), static_cast<std::streamsize>(byteCount));
+		}
 
 		if (!in)
 		{
@@ -66,7 +78,7 @@ namespace Snowstorm
 
 	bool TextureCacheIO::Save(const AssetHandle handle, const uint64_t sourceWriteTime, const CookedTexture& tex)
 	{
-		if (tex.Pixels.empty() || tex.Width == 0 || tex.Height == 0)
+		if (tex.Levels.empty() || tex.Width == 0 || tex.Height == 0)
 			return false;
 
 		const auto path = GetCachePath(handle);
@@ -77,7 +89,7 @@ namespace Snowstorm
 		h.SourceWriteTime = sourceWriteTime;
 		h.Width = tex.Width;
 		h.Height = tex.Height;
-		h.ByteCount = tex.Pixels.size();
+		h.MipLevels = tex.MipLevels();
 
 		const auto tmp = path.string() + ".tmp";
 		{
@@ -85,7 +97,12 @@ namespace Snowstorm
 			if (!out.is_open())
 				return false;
 			out.write(reinterpret_cast<const char*>(&h), sizeof(h));
-			out.write(reinterpret_cast<const char*>(tex.Pixels.data()), static_cast<std::streamsize>(tex.Pixels.size()));
+			for (const auto& level : tex.Levels)
+			{
+				const uint64_t byteCount = level.size();
+				out.write(reinterpret_cast<const char*>(&byteCount), sizeof(byteCount));
+				out.write(reinterpret_cast<const char*>(level.data()), static_cast<std::streamsize>(byteCount));
+			}
 			if (!out)
 				return false;
 		}

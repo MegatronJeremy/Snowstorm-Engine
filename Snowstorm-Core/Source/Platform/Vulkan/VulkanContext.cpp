@@ -250,16 +250,50 @@ namespace Snowstorm
 				}
 			}
 			if (m_PhysicalDevice != VK_NULL_HANDLE)
+			{
+				// Prefer a DEDICATED transfer family (TRANSFER_BIT set, GRAPHICS/COMPUTE clear) — that's the
+				// async-DMA path that uploads without contending the graphics queue. Fall back to the graphics
+				// family (transfer is implicitly supported there) when the GPU exposes no dedicated one; then
+				// m_TransferQueueFamily == m_GraphicsQueueFamily and HasDedicatedTransferQueue() is false.
+				m_TransferQueueFamily = m_GraphicsQueueFamily;
+				for (uint32_t i = 0; i < queueCount; ++i)
+				{
+					const bool hasTransfer = (props[i].queueFlags & VK_QUEUE_TRANSFER_BIT) != 0;
+					const bool hasGraphics = (props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
+					const bool hasCompute = (props[i].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0;
+					if (hasTransfer && !hasGraphics && !hasCompute)
+					{
+						m_TransferQueueFamily = i;
+						break;
+					}
+				}
 				break;
+			}
 		}
 
 		// 4. Logical Device
 		float queuePriority = 1.0f;
-		VkDeviceQueueCreateInfo queueCreate{};
-		queueCreate.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-		queueCreate.queueFamilyIndex = m_GraphicsQueueFamily;
-		queueCreate.queueCount = 1;
-		queueCreate.pQueuePriorities = &queuePriority;
+		std::vector<VkDeviceQueueCreateInfo> queueCreates;
+		{
+			VkDeviceQueueCreateInfo gfx{};
+			gfx.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+			gfx.queueFamilyIndex = m_GraphicsQueueFamily;
+			gfx.queueCount = 1;
+			gfx.pQueuePriorities = &queuePriority;
+			queueCreates.push_back(gfx);
+
+			// Request the transfer family too, but only when it's a distinct family (a second
+			// VkDeviceQueueCreateInfo for the SAME family index is invalid).
+			if (m_TransferQueueFamily != m_GraphicsQueueFamily)
+			{
+				VkDeviceQueueCreateInfo xfer{};
+				xfer.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+				xfer.queueFamilyIndex = m_TransferQueueFamily;
+				xfer.queueCount = 1;
+				xfer.pQueuePriorities = &queuePriority;
+				queueCreates.push_back(xfer);
+			}
+		}
 
 		// Core features (extend as needed)
 		VkPhysicalDeviceFeatures supportedFeatures{};
@@ -284,8 +318,8 @@ namespace Snowstorm
 
 		VkDeviceCreateInfo devInfo{};
 		devInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-		devInfo.queueCreateInfoCount = 1;
-		devInfo.pQueueCreateInfos = &queueCreate;
+		devInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreates.size());
+		devInfo.pQueueCreateInfos = queueCreates.data();
 		devInfo.pEnabledFeatures = &enabledFeatures;
 		devInfo.enabledExtensionCount = static_cast<uint32_t>(std::size(deviceExtensions));
 		devInfo.ppEnabledExtensionNames = deviceExtensions;
@@ -315,6 +349,11 @@ namespace Snowstorm
 		VK_CHECK(vkCreateDevice(m_PhysicalDevice, &devInfo, nullptr, &m_Device));
 		volkLoadDevice(m_Device);
 		vkGetDeviceQueue(m_Device, m_GraphicsQueueFamily, 0, &m_GraphicsQueue);
+		// Transfer queue: the dedicated family's queue when distinct, else the graphics queue handle (aliased).
+		vkGetDeviceQueue(m_Device, m_TransferQueueFamily, 0, &m_TransferQueue);
+		SS_CORE_INFO("Vulkan queues: graphics family {}, transfer family {}{}.",
+		             m_GraphicsQueueFamily, m_TransferQueueFamily,
+		             HasDedicatedTransferQueue() ? " (dedicated)" : " (shared with graphics)");
 
 		// 5. Graphics command pool (for transient command buffers)
 		VkCommandPoolCreateInfo poolInfo{};
@@ -322,6 +361,21 @@ namespace Snowstorm
 		poolInfo.queueFamilyIndex = m_GraphicsQueueFamily;
 		poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 		VK_CHECK(vkCreateCommandPool(m_Device, &poolInfo, nullptr, &m_GraphicsCommandPool));
+
+		// Transfer command pool. A separate pool on the transfer family when dedicated; otherwise reuse the
+		// graphics pool (same family — a distinct pool would be redundant).
+		if (HasDedicatedTransferQueue())
+		{
+			VkCommandPoolCreateInfo xferPool{};
+			xferPool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+			xferPool.queueFamilyIndex = m_TransferQueueFamily;
+			xferPool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+			VK_CHECK(vkCreateCommandPool(m_Device, &xferPool, nullptr, &m_TransferCommandPool));
+		}
+		else
+		{
+			m_TransferCommandPool = m_GraphicsCommandPool;
+		}
 
 		// 6. VMA Allocator
 		VmaVulkanFunctions vmaFunctions{};
@@ -516,6 +570,13 @@ namespace Snowstorm
 	{
 		DestroySwapchain();
 		vkDestroySurfaceKHR(m_Instance, m_Surface, nullptr);
+
+		// Destroy the transfer pool first, but only if it's a distinct object (when shared with graphics it
+		// aliases m_GraphicsCommandPool — destroying it here then again below would be a double-free).
+		if (m_TransferCommandPool != VK_NULL_HANDLE && m_TransferCommandPool != m_GraphicsCommandPool)
+		{
+			vkDestroyCommandPool(m_Device, m_TransferCommandPool, nullptr);
+		}
 
 		if (m_GraphicsCommandPool != VK_NULL_HANDLE)
 		{

@@ -30,6 +30,12 @@ namespace Snowstorm
 	// For per-frame streaming, prefer a frame-level upload context instead
 	void ImmediateSubmit(const std::function<void(VkCommandBuffer)>& record);
 
+	// Like ImmediateSubmit, but records + submits on the dedicated TRANSFER queue (fence-scoped wait). Used
+	// for async asset uploads so the staging->image/buffer DMA doesn't occupy the graphics queue. When the
+	// GPU has no dedicated transfer family this aliases the graphics queue (still correct, just not async).
+	// Records only transfer-capable commands (copies) — NOT blits (those need a graphics queue).
+	void TransferSubmit(const std::function<void(VkCommandBuffer)>& record);
+
 	struct StageAccess
 	{
 		VkPipelineStageFlags2 Stage;

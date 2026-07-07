@@ -319,6 +319,111 @@ namespace Snowstorm
 		vmaDestroyBuffer(allocator, staging, stagingAlloc);
 	}
 
+	void VulkanTexture::SetMipData(const std::vector<std::vector<uint8_t>>& levels)
+	{
+		SS_CORE_ASSERT(m_Image != VK_NULL_HANDLE, "SetMipData on invalid texture");
+		SS_CORE_ASSERT(!levels.empty() && levels.size() == m_Desc.MipLevels,
+		               "SetMipData: level count must match MipLevels");
+		SS_CORE_ASSERT(HasUsage(m_Desc.Usage, TextureUsage::TransferDst), "Texture needs TransferDst");
+
+		const VkDevice device = GetVulkanDevice();
+		const VmaAllocator allocator = GetAllocator();
+		VulkanContext& ctx = VulkanContext::Get();
+		const uint32_t xferFamily = ctx.GetTransferQueueFamilyIndex();
+		const uint32_t gfxFamily = ctx.GetGraphicsQueueFamilyIndex();
+		const bool ownershipTransfer = ctx.HasDedicatedTransferQueue();
+
+		const VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+		const VkImageLayout finalLayout = GetReadyLayout();
+
+		// Pack all mip levels into one staging buffer; record per-level copy offsets.
+		VkDeviceSize total = 0;
+		std::vector<VkDeviceSize> levelOffset(levels.size());
+		for (size_t i = 0; i < levels.size(); ++i)
+		{
+			levelOffset[i] = total;
+			total += levels[i].size();
+		}
+
+		VkBuffer staging = VK_NULL_HANDLE;
+		VmaAllocation stagingAlloc = nullptr;
+		VkBufferCreateInfo bufCI{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+		bufCI.size = total;
+		bufCI.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		bufCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		VmaAllocationCreateInfo stagingAllocCI{};
+		stagingAllocCI.usage = VMA_MEMORY_USAGE_AUTO;
+		stagingAllocCI.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+		VmaAllocationInfo allocInfo{};
+		VkResult res = vmaCreateBuffer(allocator, &bufCI, &stagingAllocCI, &staging, &stagingAlloc, &allocInfo);
+		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to create staging buffer for mip upload");
+
+		auto* dst = static_cast<uint8_t*>(allocInfo.pMappedData);
+		for (size_t i = 0; i < levels.size(); ++i)
+		{
+			std::memcpy(dst + levelOffset[i], levels[i].data(), levels[i].size());
+		}
+		vmaFlushAllocation(allocator, stagingAlloc, 0, total);
+
+		// --- Transfer queue: copy every level, then RELEASE ownership to the graphics family. Pure copies
+		// (no blit), so this runs entirely on the transfer queue — the graphics queue never touches the
+		// upload DMA, which is the whole point (no frame stall). ---
+		TransferSubmit([&](const VkCommandBuffer cmd)
+		               {
+			CmdTransitionImage(cmd, m_Image, aspect, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, m_Desc.MipLevels, 1);
+
+			uint32_t mw = m_Desc.Width, mh = m_Desc.Height;
+			for (uint32_t i = 0; i < m_Desc.MipLevels; ++i)
+			{
+				VkBufferImageCopy region{};
+				region.bufferOffset = levelOffset[i];
+				region.imageSubresource = {aspect, i, 0, 1};
+				region.imageExtent = {mw, mh, 1};
+				vkCmdCopyBufferToImage(cmd, staging, m_Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+				mw = std::max(1u, mw / 2u);
+				mh = std::max(1u, mh / 2u);
+			}
+
+			// Transition TRANSFER_DST -> finalLayout. With a dedicated transfer family this barrier ALSO
+			// releases queue-family ownership (src=transfer, dst=graphics); the matching acquire runs on the
+			// graphics queue below. Without dedicated transfer (families equal) it's a plain layout transition.
+			VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+			b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+			b.newLayout = finalLayout;
+			b.srcQueueFamilyIndex = ownershipTransfer ? xferFamily : VK_QUEUE_FAMILY_IGNORED;
+			b.dstQueueFamilyIndex = ownershipTransfer ? gfxFamily : VK_QUEUE_FAMILY_IGNORED;
+			b.image = m_Image;
+			b.subresourceRange = {aspect, 0, m_Desc.MipLevels, 0, 1};
+			b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			b.dstAccessMask = 0; // release: dst scope is defined by the acquire on the other queue
+			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+			                     0, 0, nullptr, 0, nullptr, 1, &b); });
+
+		// --- Graphics queue: ACQUIRE the image so it's usable for sampling. Only needed for a real
+		// cross-family transfer; when the transfer queue IS the graphics queue the release above already
+		// left the image in finalLayout for this queue. TransferSubmit waited on its fence, so the copies
+		// are complete before this acquire records. ---
+		if (ownershipTransfer)
+		{
+			ImmediateSubmit([&](const VkCommandBuffer cmd)
+			                {
+				VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+				b.oldLayout = finalLayout;
+				b.newLayout = finalLayout;
+				b.srcQueueFamilyIndex = xferFamily;
+				b.dstQueueFamilyIndex = gfxFamily;
+				b.image = m_Image;
+				b.subresourceRange = {aspect, 0, m_Desc.MipLevels, 0, 1};
+				b.srcAccessMask = 0; // acquire: src scope defined by the release
+				b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+				vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+				                     0, 0, nullptr, 0, nullptr, 1, &b); });
+		}
+
+		m_CurrentLayout = finalLayout;
+		vmaDestroyBuffer(allocator, staging, stagingAlloc);
+	}
+
 	bool VulkanTexture::operator==(const Texture& other) const
 	{
 		const auto* rhs = dynamic_cast<const VulkanTexture*>(&other);

@@ -44,6 +44,15 @@ namespace Snowstorm
 
 		uint32_t GetGraphicsQueueFamilyIndex() const { return m_GraphicsQueueFamily; }
 
+		// Dedicated transfer queue for async asset uploads (staging->image/buffer DMA off the graphics
+		// queue). Falls back to the graphics queue/family when the GPU exposes no separate transfer family
+		// — in that case HasDedicatedTransferQueue() is false and callers skip the cross-queue ownership
+		// transfer (it would be a same-queue no-op).
+		VkQueue GetTransferQueue() const { return m_TransferQueue; }
+		uint32_t GetTransferQueueFamilyIndex() const { return m_TransferQueueFamily; }
+		VkCommandPool GetTransferCommandPool() const { return m_TransferCommandPool; }
+		[[nodiscard]] bool HasDedicatedTransferQueue() const { return m_TransferQueueFamily != m_GraphicsQueueFamily; }
+
 		VmaAllocator GetAllocator() const { return m_Allocator; }
 
 		VkCommandPool GetGraphicsCommandPool() const { return m_GraphicsCommandPool; }
@@ -72,6 +81,12 @@ namespace Snowstorm
 
 		VkQueue m_GraphicsQueue = VK_NULL_HANDLE;
 		uint32_t m_GraphicsQueueFamily = 0;
+
+		// Transfer queue for async uploads. When the GPU has a dedicated transfer family these differ from
+		// the graphics ones; otherwise they alias the graphics queue/family (same handle, same index).
+		VkQueue m_TransferQueue = VK_NULL_HANDLE;
+		uint32_t m_TransferQueueFamily = 0;
+		VkCommandPool m_TransferCommandPool = VK_NULL_HANDLE;
 
 		VmaAllocator m_Allocator = nullptr;
 
