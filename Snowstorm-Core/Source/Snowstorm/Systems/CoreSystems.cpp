@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "CoreSystems.hpp"
 
 #include "Snowstorm/ECS/SystemManager.hpp"

@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "MeshDiagnostics.hpp"
 
 #include "Snowstorm/Core/Log.hpp"

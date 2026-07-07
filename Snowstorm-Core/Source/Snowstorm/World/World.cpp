@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "World.hpp"
 
 #include "Entity.hpp"

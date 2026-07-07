@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "EditorCommands.hpp"
 
 #include "Snowstorm/Components/ComponentRegistry.hpp"

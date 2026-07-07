@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "SceneBounds.hpp"
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"

@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "Buffer.hpp"
 
 #include "RendererAPI.hpp"

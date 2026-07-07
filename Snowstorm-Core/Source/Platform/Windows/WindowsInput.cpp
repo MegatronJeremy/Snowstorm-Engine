@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "Snowstorm/Core/Input.hpp"
 #include "Snowstorm/Core/Application.hpp"
 

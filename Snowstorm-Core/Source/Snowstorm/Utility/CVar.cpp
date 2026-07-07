@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "CVar.hpp"
 
 #include "Snowstorm/Core/Log.hpp"

@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "EditorHistorySingleton.hpp"
 
 #include "Snowstorm/World/EditorCommands.hpp"

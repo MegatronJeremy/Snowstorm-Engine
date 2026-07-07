@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "WindowsWindow.hpp"
 
 #include "Snowstorm/Events/ApplicationEvent.hpp"

@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "EngineCVars.hpp"
 
 namespace Snowstorm::CVars

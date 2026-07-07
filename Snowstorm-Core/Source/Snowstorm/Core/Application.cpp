@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "Application.hpp"
 
 #include <GLFW/glfw3.h>

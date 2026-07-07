@@ -1,4 +1,3 @@
-#include "pch.h"
 #include "Snowstorm/Core/Window.hpp"
 
 #ifdef SS_PLATFORM_WINDOWS

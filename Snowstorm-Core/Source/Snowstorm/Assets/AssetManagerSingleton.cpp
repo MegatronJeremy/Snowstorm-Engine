@@ -1,4 +1,3 @@
-﻿#include "pch.h"
 #include "AssetManagerSingleton.hpp"
 
 #include "AssetFileTime.hpp"

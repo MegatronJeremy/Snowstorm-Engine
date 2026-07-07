@@ -1,4 +1,3 @@
-﻿#include "pch.h"
 #include "MaterialAssetIO.hpp"
 
 #include <nlohmann/json.hpp>
