@@ -12,6 +12,7 @@
 #include "TrackedRegistry.hpp"
 
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Debug/Instrumentor.hpp"
 #include "Snowstorm/World/EditorStateSingleton.hpp"
 
 namespace Snowstorm
@@ -57,6 +58,7 @@ namespace Snowstorm
 			// phase AND each system on the CPU so the editor overlay shows exactly where the frame goes.
 			for (size_t i = 0; i < m_Phases.size(); ++i)
 			{
+				SS_PROFILE_SCOPE(SystemPhaseName(static_cast<SystemPhase>(i)));
 				const auto phaseStart = clock::now();
 				for (size_t j = 0; j < m_Phases[i].size(); ++j)
 				{
@@ -66,6 +68,9 @@ namespace Snowstorm
 						m_Timings[i][j].second = 0.0f; // skipped this frame (Edit mode)
 						continue;
 					}
+					// Timeline event per system (profiler capture) alongside the always-on ms timing the
+					// Performance panel reads. Name comes from m_Timings (the reflected system type name).
+					SS_PROFILE_SCOPE(m_Timings[i][j].first.c_str());
 					const auto sysStart = clock::now();
 					sys.Execute(ts);
 					const auto sysEnd = clock::now();

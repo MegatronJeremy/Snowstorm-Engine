@@ -1,6 +1,7 @@
 #include "EditorMenuSystem.hpp"
 
 #include "Snowstorm/Core/Application.hpp"
+#include "Snowstorm/Debug/Instrumentor.hpp"
 #include "Snowstorm/World/EditorCommandsSingleton.hpp"
 #include "Snowstorm/World/EditorHistorySingleton.hpp"
 #include "Snowstorm/World/World.hpp"
@@ -141,6 +142,29 @@ namespace Snowstorm
 				if (ImGui::MenuItem(redoLabel.c_str(), "Ctrl+Y", false, history.CanRedo()))
 				{
 					RedoAction(history, *m_World, status);
+				}
+
+				ImGui::EndMenu();
+			}
+
+			if (ImGui::BeginMenu("Debug"))
+			{
+				// Chrome-tracing capture: records the next N frames (main thread + JobSystem workers) to a
+				// JSON openable in chrome://tracing / ui.perfetto.dev. Disabled while a capture is in flight.
+				const bool capturing = Instrumentor::Get().IsCapturing() || Instrumentor::Get().IsCapturePending();
+				if (ImGui::MenuItem("Capture 1 Frame", nullptr, false, !capturing))
+				{
+					Instrumentor::Get().RequestCapture(1, "SnowstormCapture.json");
+					notify.Push("Profiler: capturing 1 frame -> SnowstormCapture.json", EditorToastType::Info);
+				}
+				if (ImGui::MenuItem("Capture 10 Frames", nullptr, false, !capturing))
+				{
+					Instrumentor::Get().RequestCapture(10, "SnowstormCapture.json");
+					notify.Push("Profiler: capturing 10 frames -> SnowstormCapture.json", EditorToastType::Info);
+				}
+				if (capturing)
+				{
+					ImGui::TextDisabled("capturing...");
 				}
 
 				ImGui::EndMenu();

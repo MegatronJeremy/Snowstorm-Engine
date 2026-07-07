@@ -1,5 +1,6 @@
 #include "WindowsWindow.hpp"
 
+#include "Snowstorm/Debug/Instrumentor.hpp"
 #include "Snowstorm/Events/ApplicationEvent.hpp"
 #include "Snowstorm/Events/KeyEvent.hpp"
 #include "Snowstorm/Events/MouseEvent.hpp"

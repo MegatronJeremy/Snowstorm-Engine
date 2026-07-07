@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Debug/Instrumentor.hpp"
 #include "Snowstorm/Utility/CVar.hpp"
 
 #include <string_view>
@@ -31,17 +32,17 @@ inline int main(int argc, char** argv)
 		}
 	}
 
+	// Capture application startup (device/pipeline/asset init) — this happens before the frame loop, so
+	// the on-demand per-frame capture can't reach it. Runtime frames are captured on demand from the
+	// editor (Instrumentor::RequestCapture -> written when the frame budget elapses); shutdown is not
+	// interesting enough to auto-capture.
 	SS_PROFILE_BEGIN_SESSION("Startup", "SnowstormProfile-Startup.json");
 	const auto app = Snowstorm::CreateApplication();
 	SS_PROFILE_END_SESSION();
 
-	SS_PROFILE_BEGIN_SESSION("Runtime", "SnowstormProfile-Runtime.json");
 	app->Run();
-	SS_PROFILE_END_SESSION();
 
-	SS_PROFILE_BEGIN_SESSION("Shutdown", "SnowstormProfile-Shutdown.json");
 	delete app;
-	SS_PROFILE_END_SESSION();
 }
 
 #else

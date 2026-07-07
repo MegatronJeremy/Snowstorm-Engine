@@ -1,6 +1,7 @@
 #include "JobSystem.hpp"
 
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Debug/Instrumentor.hpp"
 
 namespace Snowstorm
 {
@@ -61,6 +62,10 @@ namespace Snowstorm
 				m_Tasks.pop();
 			}
 
+			// Timeline event per worker task — this is what makes the cross-thread capture show worker
+			// overlap vs. the main thread. (Generic label for now; threading a per-submit name through
+			// Submit() is a follow-up.)
+			SS_PROFILE_SCOPE("JobTask");
 			task(); // packaged_task captures exceptions into its future; never throws out here.
 		}
 	}

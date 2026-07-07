@@ -6,6 +6,7 @@
 
 #include "Snowstorm/Core/CoreServices.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Debug/Instrumentor.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 
 namespace Snowstorm
@@ -84,8 +85,24 @@ namespace Snowstorm
 		const int maxFrameMs = CVars::MaxFrameMs.Get();
 		uint64_t frameNo = 0;
 
+		// Headless profiler capture: if profile.capture_frames > 0, request a capture once a few frames of
+		// warmup have passed (pipeline/asset init on frame 0-2 isn't representative of steady-state). This
+		// makes the profiler driveable without the editor button — e.g. for smoke/offline trace analysis.
+		const int profileCaptureFrames = CVars::ProfileCaptureFrames.Get();
+		bool profileRequested = false;
+
 		while (m_Running)
 		{
+			if (profileCaptureFrames > 0 && !profileRequested && frameNo == 3)
+			{
+				Instrumentor::Get().RequestCapture(profileCaptureFrames, CVars::ProfileCapturePath.Get());
+				profileRequested = true;
+			}
+
+			// Drive on-demand frame capture (editor "Capture Frames" button). Must run before the frame
+			// body so the whole frame's scopes are recorded; ends a capture once its frame budget elapses.
+			Instrumentor::Get().OnFrameBoundary();
+
 			SS_PROFILE_SCOPE("RunLoop");
 
 			const double frameStart = glfwGetTime();

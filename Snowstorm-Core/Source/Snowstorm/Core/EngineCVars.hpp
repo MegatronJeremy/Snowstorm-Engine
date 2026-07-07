@@ -12,6 +12,15 @@ namespace Snowstorm::CVars
 	// test to drive the app headlessly.
 	extern CVar<int> SmokeFrames;
 
+	// Profiler capture (headless-driveable). When > 0, capture this many frames of the chrome-tracing
+	// timeline starting a few frames in (past one-time warmup), write it to profile.capture.path, then
+	// keep running. Lets the profiler be exercised without the editor button — e.g. the smoke harness can
+	// produce a trace for offline/automated analysis. 0 (default) = capture only on demand from the editor.
+	extern CVar<int> ProfileCaptureFrames;
+
+	// Output path for the profile.capture_frames trace (chrome://tracing / Perfetto JSON).
+	extern CVar<std::string> ProfileCapturePath;
+
 	// Frame-time watchdog (milliseconds). When > 0, any single frame whose CPU time exceeds this logs an
 	// [error] naming the duration. The smoke harness treats [error] as a failure, so a per-frame stall
 	// (a hitch/freeze that N-frames-then-exit smoke otherwise passes right over) becomes a hard, headless-

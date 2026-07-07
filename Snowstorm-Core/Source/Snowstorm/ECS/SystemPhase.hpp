@@ -19,4 +19,21 @@ namespace Snowstorm
 		Render,    // submit (RenderSystem — always last)
 		_Count
 	};
+
+	// Human-readable phase name for profiler timeline labels / logs. Stable strings (static storage), so
+	// the returned pointer is safe to hold. Falls through to "Phase?" for an out-of-range value.
+	inline const char* SystemPhaseName(const SystemPhase phase)
+	{
+		switch (phase)
+		{
+		case SystemPhase::Init:      return "Init";
+		case SystemPhase::Logic:     return "Logic";
+		case SystemPhase::AssetSync: return "AssetSync";
+		case SystemPhase::UI:        return "UI";
+		case SystemPhase::Resolve:   return "Resolve";
+		case SystemPhase::PreRender: return "PreRender";
+		case SystemPhase::Render:    return "Render";
+		default:                     return "Phase?";
+		}
+	}
 }

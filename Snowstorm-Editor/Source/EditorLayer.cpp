@@ -14,6 +14,7 @@
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/MeshDiagnostics.hpp"
+#include "Snowstorm/Debug/Instrumentor.hpp"
 
 #include "Snowstorm/Components/ComponentRegistry.hpp"
 #include "Snowstorm/Components/CameraComponent.hpp"

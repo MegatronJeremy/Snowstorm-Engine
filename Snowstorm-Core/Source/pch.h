@@ -51,8 +51,7 @@
 
 // --- Engine headers that are low-churn and pulled in almost everywhere ---
 #include "Snowstorm/Core/Base.hpp"
-#include "Snowstorm/Core/Log.hpp"       // -> spdlog + fmt (heavy)
-#include "Snowstorm/Debug/Instrumentor.hpp"
+#include "Snowstorm/Core/Log.hpp" // -> spdlog + fmt (heavy)
 
 #ifdef SS_PLATFORM_WINDOWS
 #include <Windows.h>
