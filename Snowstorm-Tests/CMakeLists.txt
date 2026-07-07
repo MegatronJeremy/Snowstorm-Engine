@@ -29,5 +29,13 @@ target_link_libraries(Snowstorm-Tests PRIVATE
     Catch2::Catch2WithMain
 )
 
+# Copy dependent runtime DLLs next to the test exe (Core drags in TracyClient.dll; see
+# Snowstorm-Editor/CMakeLists.txt for the rationale).
+add_custom_command(TARGET Snowstorm-Tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_RUNTIME_DLLS:Snowstorm-Tests> $<TARGET_FILE_DIR:Snowstorm-Tests>
+    COMMAND_EXPAND_LISTS
+)
+
 # Run the whole suite as one CTest entry (Catch2 returns non-zero on any failure).
 add_test(NAME unit COMMAND Snowstorm-Tests)

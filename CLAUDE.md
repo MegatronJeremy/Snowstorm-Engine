@@ -251,7 +251,13 @@ Worked example — **asset pipeline** (the engine's current biggest simplificati
     GPU timestamps.
   - The **frame-time watchdog** (`debug.max_frame_ms` CVar / `--max-frame-ms` smoke flag) turns a
     per-frame stall into a headless `[error]` naming the exact frame + duration.
-  - The **profiler** (`SS_PROFILE_SCOPE`, chrome://tracing JSON) for a full timeline.
+  - The **profiler** (`SS_PROFILE_SCOPE` / `SS_PROFILE_FUNCTION`) for a full cross-thread timeline. Two
+    back-ends behind the same macros: **Tracy** (primary, live — connect the Tracy GUI to a running Debug
+    build over the network; `TRACY_ENABLE` is on in Debug) and a **headless JSON fallback**
+    (`profile.capture_frames` / `profile.capture_path` CVars dump a chrome://tracing / Perfetto file with
+    no GUI, for automated/offline trace analysis). Instrumented spots: frame-loop phases, every ECS system,
+    and JobSystem worker tasks. One `SS_PROFILE_SCOPE` per lexical scope (it declares a fixed-name RAII
+    object — two in the same block is a redefinition; nest them).
   A whole debugging session was once burned scattering probes to find a load spike that the Performance
   panel would have pinned to `RenderSystem`/shadow-fit in one glance (and the fix — read the panel — was
   already built). If the existing readouts genuinely don't cover the spot, ADD a permanent, toggleable

@@ -31,3 +31,10 @@ target_include_directories(Snowstorm-Runtime PUBLIC
 target_link_libraries(Snowstorm-Runtime PUBLIC
     $<LINK_LIBRARY:WHOLE_ARCHIVE,Snowstorm-Core>
 )
+
+# Copy dependent runtime DLLs next to the exe (see Snowstorm-Editor/CMakeLists.txt for the rationale).
+add_custom_command(TARGET Snowstorm-Runtime POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_RUNTIME_DLLS:Snowstorm-Runtime> $<TARGET_FILE_DIR:Snowstorm-Runtime>
+    COMMAND_EXPAND_LISTS
+)

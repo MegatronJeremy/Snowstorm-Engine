@@ -96,9 +96,13 @@ TEST_CASE("Instrumentor: a second session starts clean (no leakage from the firs
 	std::remove(path.c_str());
 
 	SS_PROFILE_BEGIN_SESSION("first", path);
+	// Each SS_PROFILE_SCOPE must be alone in its block: it declares a fixed-name RAII object (Tracy's
+	// zone var), so two in the same scope is a redefinition. Nest them to emit two distinct events.
 	{
 		SS_PROFILE_SCOPE("a");
-		SS_PROFILE_SCOPE("b");
+		{
+			SS_PROFILE_SCOPE("b");
+		}
 	}
 	SS_PROFILE_END_SESSION();
 

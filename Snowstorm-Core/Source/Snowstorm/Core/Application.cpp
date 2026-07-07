@@ -144,6 +144,10 @@ namespace Snowstorm
 				SS_CORE_INFO("Smoke mode: frame budget reached, requesting shutdown.");
 				m_Running = false;
 			}
+
+			// End-of-frame marker: Tracy uses this to segment its timeline into frames (enables the
+			// per-frame view / frame-time graph). No-op for the JSON tracer.
+			SS_PROFILE_FRAME_MARK();
 		}
 	}
 

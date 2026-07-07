@@ -36,3 +36,13 @@ target_link_libraries(Snowstorm-Editor PUBLIC
     $<LINK_LIBRARY:WHOLE_ARCHIVE,Snowstorm-Core>  # keep self-registration TUs (see note above)
     imguizmo::imguizmo
 )
+
+# Copy every runtime DLL this exe depends on next to it after build. vcpkg's automatic applocal deploy
+# covers most (assimp, etc.) but missed TracyClient.dll, so launching outside the vcpkg bin dir (e.g. the
+# smoke harness) failed with STATUS_DLL_NOT_FOUND. TARGET_RUNTIME_DLLS is the CMake-blessed, complete
+# list — copying it explicitly makes the exe self-contained in its output dir. No-op when the list is empty.
+add_custom_command(TARGET Snowstorm-Editor POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_RUNTIME_DLLS:Snowstorm-Editor> $<TARGET_FILE_DIR:Snowstorm-Editor>
+    COMMAND_EXPAND_LISTS
+)

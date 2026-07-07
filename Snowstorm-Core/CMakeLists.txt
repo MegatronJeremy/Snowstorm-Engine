@@ -37,6 +37,12 @@ find_package(gli CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
 find_package(unofficial-spirv-reflect CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(Tracy CONFIG REQUIRED)
+
+# Tracy is only compiled in when TRACY_ENABLE is defined; otherwise every Tracy macro is a no-op (zero
+# overhead). Enable it in Debug only, matching the engine's SS_PROFILE gating — profiling a Release build
+# is a deliberate opt-in you'd do by adding this define to that config, not the default.
+target_compile_definitions(Snowstorm-Core PUBLIC $<$<CONFIG:Debug>:TRACY_ENABLE>)
 
 target_include_directories(Snowstorm-Core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
@@ -61,4 +67,5 @@ target_link_libraries(Snowstorm-Core PUBLIC
     gli
     unofficial::spirv-reflect
     nlohmann_json::nlohmann_json
+    Tracy::TracyClient
 )

@@ -252,8 +252,20 @@ namespace Snowstorm
 	};
 }
 
-// Profiling is compiled in for debug builds, out for release. Define SS_PROFILE=0/1 before this header
-// to force it. When off, every macro expands to nothing (zero overhead, no atomic load).
+// -------------------------------------------------------------------------------------------------
+// Profiling macros. Two back-ends behind one set of macros:
+//   * Tracy (primary, interactive): when TRACY_ENABLE is defined (Debug, via CMake). The Tracy GUI
+//     connects to the running app over a socket and shows a live, cross-thread, per-frame timeline —
+//     the professional workflow. Near-zero cost when no profiler is connected.
+//   * The JSON tracer above (headless fallback): dumps a chrome://tracing file, driveable with no GUI
+//     (profile.capture_frames CVar) for automated/offline trace analysis. Only records while a capture
+//     session is active, so it's free otherwise.
+// A scope emits to BOTH so `SS_PROFILE_SCOPE` works the same whether you're live-profiling with Tracy
+// or capturing a JSON file headlessly.
+//
+// SS_PROFILE gates the JSON tracer (follows SS_DEBUG unless forced). Tracy is gated independently by
+// TRACY_ENABLE so the two can be toggled separately.
+// -------------------------------------------------------------------------------------------------
 #ifndef SS_PROFILE
 #ifdef SS_DEBUG
 #define SS_PROFILE 1
@@ -262,16 +274,40 @@ namespace Snowstorm
 #endif
 #endif
 
+#if defined(TRACY_ENABLE)
+#include <tracy/Tracy.hpp>
+#include <cstring>
+// Tracy needs a per-scope RAII object; ZoneScoped captures the source location. Our scope names are
+// often runtime strings (system/phase names), which ZoneScopedN (literal-only) can't take — so pair
+// ZoneScoped with ZoneName, which accepts a runtime (ptr,len) and copies it into the trace.
+#define SS_TRACY_SCOPE(name) \
+	ZoneScoped;              \
+	ZoneName((name), ::strlen(name))
+#define SS_TRACY_FRAME_MARK() FrameMark
+#else
+#define SS_TRACY_SCOPE(name)
+#define SS_TRACY_FRAME_MARK()
+#endif
+
 #if SS_PROFILE
-#define SS_PROFILE_CONCAT_INNER(a, b) a##b
-#define SS_PROFILE_CONCAT(a, b) SS_PROFILE_CONCAT_INNER(a, b)
+#define SS_PROFILE_JSON_SCOPE(name) ::Snowstorm::InstrumentationTimer SS_PROFILE_CONCAT(ssTimer, __LINE__)(name)
 #define SS_PROFILE_BEGIN_SESSION(name, filepath) ::Snowstorm::Instrumentor::Get().BeginSession(name, filepath)
 #define SS_PROFILE_END_SESSION() ::Snowstorm::Instrumentor::Get().EndSession()
-#define SS_PROFILE_SCOPE(name) ::Snowstorm::InstrumentationTimer SS_PROFILE_CONCAT(ssTimer, __LINE__)(name)
-#define SS_PROFILE_FUNCTION() SS_PROFILE_SCOPE(__FUNCSIG__)
 #else
+#define SS_PROFILE_JSON_SCOPE(name)
 #define SS_PROFILE_BEGIN_SESSION(name, filepath)
 #define SS_PROFILE_END_SESSION()
-#define SS_PROFILE_SCOPE(name)
-#define SS_PROFILE_FUNCTION()
 #endif
+
+// Combined macros used by engine code. Expand to Tracy + JSON as each back-end is enabled; to nothing
+// when both are off. NOTE (like all scope-profiler macros, incl. Tracy's own): these declare RAII
+// objects, so use them as standalone statements at the top of a scope — not as the body of a braceless
+// `if`. Every current call site does this.
+#define SS_PROFILE_CONCAT_INNER(a, b) a##b
+#define SS_PROFILE_CONCAT(a, b) SS_PROFILE_CONCAT_INNER(a, b)
+#define SS_PROFILE_SCOPE(name)   \
+	SS_TRACY_SCOPE(name);        \
+	SS_PROFILE_JSON_SCOPE(name)
+#define SS_PROFILE_FUNCTION() SS_PROFILE_SCOPE(__FUNCSIG__)
+// Mark a frame boundary (Tracy uses this to segment the timeline per frame). No-op for the JSON tracer.
+#define SS_PROFILE_FRAME_MARK() SS_TRACY_FRAME_MARK()

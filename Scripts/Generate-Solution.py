@@ -25,6 +25,7 @@ PACKAGES = [
     "spirv-reflect",
     "nlohmann-json",
     "catch2",
+    "tracy",  # real-time frame/sampling profiler (client lib); connect the Tracy GUI to a running build
 ]
 
 # Pin the v143 toolset to a concrete MSVC version. Without this, "-T v143" resolves
