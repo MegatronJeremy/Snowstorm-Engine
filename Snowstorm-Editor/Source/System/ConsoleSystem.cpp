@@ -12,7 +12,9 @@
 
 namespace Snowstorm
 {
-	bool ConsoleSystem::s_Open = false;
+	// Open by default: the console is part of the persistent bottom dock (see DockspaceSetupSystem), so it
+	// shows the log stream on launch like a pro editor's Output Log rather than being a hidden toggle.
+	bool ConsoleSystem::s_Open = true;
 
 	namespace
 	{

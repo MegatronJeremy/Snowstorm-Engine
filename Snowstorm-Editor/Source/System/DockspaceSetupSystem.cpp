@@ -100,7 +100,13 @@ namespace Snowstorm
 		ImGui::DockBuilderDockWindow("Scene Hierarchy", dockLeft);
 		ImGui::DockBuilderDockWindow("Settings", dockLeft);
 		ImGui::DockBuilderDockWindow("Properties", dockRight);
+		// Bottom strip is a tab group: Content Browser + CVar panel + Console (the Unreal Output Log /
+		// Unity Console model). Docking them here means toggling from the Debug menu shows/hides them in
+		// place instead of at a random screen position. Console is docked LAST so it's the active front tab
+		// on a fresh layout — the log is visible by default, one click from the content browser.
 		ImGui::DockBuilderDockWindow("Content Browser", dockBottom);
+		ImGui::DockBuilderDockWindow("Console Variables", dockBottom);
+		ImGui::DockBuilderDockWindow("Console", dockBottom);
 		ImGui::DockBuilderDockWindow("Viewport", dockCentral);
 
 		ImGui::DockBuilderFinish(dockspaceID);
