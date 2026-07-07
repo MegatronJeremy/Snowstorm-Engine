@@ -79,5 +79,15 @@ namespace Snowstorm
 		// Whether the procedural sky background pass should run (BackgroundMode::ProceduralSky with an
 		// active component). SolidColor / no component => false => the render target's clear color shows.
 		bool DrawProceduralSky = false;
+
+		// Value equality so the renderer can detect when the environment changed (e.g. after a scene load)
+		// and re-bake IBL, which is otherwise frozen at whatever environment the first bake saw.
+		bool operator==(const EnvironmentDataBlock& o) const
+		{
+			return SkyZenithColor == o.SkyZenithColor && SkyHorizonColor == o.SkyHorizonColor &&
+			       GroundColor == o.GroundColor && SkyIntensity == o.SkyIntensity &&
+			       DrawProceduralSky == o.DrawProceduralSky;
+		}
+		bool operator!=(const EnvironmentDataBlock& o) const { return !(*this == o); }
 	};
 }

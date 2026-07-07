@@ -32,6 +32,13 @@ namespace Snowstorm
 
 		[[nodiscard]] bool IsBaked() const { return m_Baked; }
 
+		// Force the next AddBakePasses to re-bake (clears m_Baked). Call when the inputs the maps were
+		// baked from change — the sky/environment or the sun — e.g. after a scene load. Without this the
+		// maps stay frozen at whatever environment was current on the first-ever bake (a black/empty world
+		// baked before the scene streamed in => black ambient). The GPU resources are reused; only the
+		// dispatches re-run. Implements the "re-bake on environment change" follow-up (#64).
+		void Invalidate() { m_Baked = false; }
+
 		// Bindless indices of the baked maps (valid once IsBaked()). 0 before the bake.
 		[[nodiscard]] uint32_t IrradianceIndex() const;
 		[[nodiscard]] uint32_t PrefilteredIndex() const;

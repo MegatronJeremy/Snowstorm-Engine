@@ -142,10 +142,22 @@ namespace Snowstorm
 		// bindless set. When IBL is toggled on at runtime, prior frames are still in flight reading that set;
 		// updating it under them corrupts state and crashes. Drain the GPU first so the one-time creation
 		// happens with nothing in flight. Only a stall on the single frame the bake runs (no-ops after).
+		// Re-bake IBL when the environment changes. The maps are convolved from the sky, so a bake done
+		// against a stale environment (notably the empty/default world that renders on the first frame,
+		// before the deferred startup scene loads) leaves ambient frozen at that state — black ambient for
+		// a scene that streamed in afterwards. Detecting the change and invalidating fixes that and covers
+		// runtime environment edits generally (#64).
+		const EnvironmentDataBlock& env = renderer.GetEnvironment();
+		if (m_IBLBakePass.IsBaked() && (!m_BakedEnvironment || *m_BakedEnvironment != env))
+		{
+			m_IBLBakePass.Invalidate();
+		}
+
 		if (CVars::IBL.Get() && !m_IBLBakePass.IsBaked())
 		{
 			Renderer::WaitIdle();
-			m_IBLBakePass.AddBakePasses(graph, renderer.GetLights(), renderer.GetEnvironment());
+			m_IBLBakePass.AddBakePasses(graph, renderer.GetLights(), env);
+			m_BakedEnvironment = env;
 		}
 
 		// Push the baked IBL indices into the renderer's FrameCB assembly — but only while IBL is enabled.
