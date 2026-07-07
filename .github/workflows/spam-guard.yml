@@ -1,0 +1,124 @@
+name: spam-guard
+
+# Heuristic spam/scam filter for issues and issue/PR comments. Public repos attract bots that scrape
+# freshly-opened issues and reply with a lure — an unsolicited archive ("I made a tool, download this
+# .zip") engineered from your own issue text, or a bounty/airdrop/"verify your account" link. This
+# flags posts from NON-contributors that carry an attachment/executable link or lure keywords, then
+# MINIMIZES (hides) them as spam and labels the thread for review. It never deletes and never touches
+# posts from members/owners/collaborators/prior contributors — so a genuine first-time contributor is
+# at worst hidden-and-labelled (reversible), never lost. Tune KEYWORDS / patterns over time.
+
+on:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created, edited]
+
+# Least privilege: only what the actions below need.
+permissions:
+  issues: write        # add labels, post the notice comment
+  pull-requests: write # issue_comment fires for PR comments too; minimizing needs this scope
+
+concurrency:
+  group: spam-guard-${{ github.event.issue.number || github.event.comment.id }}
+  cancel-in-progress: false
+
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Screen for spam
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // --- Gather the post (issue body or comment body) and its author association. ---
+            const isComment = !!context.payload.comment;
+            const post = isComment ? context.payload.comment : context.payload.issue;
+            if (!post) return;
+
+            const body = (post.body || '').toLowerCase();
+            const assoc = post.author_association; // OWNER | MEMBER | COLLABORATOR | CONTRIBUTOR | FIRST_TIME_CONTRIBUTOR | NONE | ...
+
+            // Trusted authors are never screened. Anyone who has landed a contribution here, or is on the
+            // repo, is exempt — the filter targets drive-by accounts with no standing.
+            const TRUSTED = ['OWNER', 'MEMBER', 'COLLABORATOR', 'CONTRIBUTOR'];
+            if (TRUSTED.includes(assoc)) {
+              core.info(`Skipping trusted author (association=${assoc}).`);
+              return;
+            }
+
+            // --- Heuristics. A post is flagged if it links a downloadable artifact OR matches lure text.
+            // Attachment/executable links are the strongest single signal: legit newcomers open PRs, they
+            // don't drop archives/binaries into a thread.
+            const ATTACHMENT = /(github\.com\/user-attachments\/|\.zip|\.7z|\.rar|\.exe|\.msi|\.scr|\.bat|\.dll)\b/i;
+            const KEYWORDS = [
+              'airdrop', 'bounty', 'claim your', 'connect your wallet', 'wallet',
+              'verify your account', 'verify your identity', 'free nitro', 'gift card',
+              'download this', 'i made a tool', 'i whipped up', 'run this script',
+              'double your', 'crypto', 'telegram', 't.me/',
+            ];
+
+            const hasAttachment = ATTACHMENT.test(post.body || '');
+            const matchedKeywords = KEYWORDS.filter(k => body.includes(k));
+            const flagged = hasAttachment || matchedKeywords.length > 0;
+
+            if (!flagged) {
+              core.info('Post looks clean; no action.');
+              return;
+            }
+
+            const reasons = [
+              hasAttachment ? 'links a downloadable artifact (attachment/archive/executable)' : null,
+              matchedKeywords.length ? `matched keywords: ${matchedKeywords.join(', ')}` : null,
+              `author association: ${assoc}`,
+            ].filter(Boolean);
+            core.warning(`Flagged as possible spam — ${reasons.join('; ')}`);
+
+            const issueNumber = context.payload.issue.number;
+
+            // --- Label the thread for human review (create the label on first use). ---
+            const LABEL = 'possible-spam';
+            try {
+              await github.rest.issues.getLabel({ ...context.repo, name: LABEL });
+            } catch {
+              await github.rest.issues.createLabel({
+                ...context.repo, name: LABEL, color: 'b60205',
+                description: 'Auto-flagged by spam-guard; review before trusting',
+              });
+            }
+            await github.rest.issues.addLabels({ ...context.repo, issue_number: issueNumber, labels: [LABEL] });
+
+            // --- Minimize the offending comment as spam (hide, don't delete — reversible). Only comments
+            // can be minimized; a flagged issue BODY is just labelled + noticed (can't hide an issue body).
+            if (isComment) {
+              try {
+                await github.graphql(
+                  `mutation($id: ID!) {
+                     minimizeComment(input: { subjectId: $id, classifier: SPAM }) {
+                       minimizedComment { isMinimized }
+                     }
+                   }`,
+                  { id: post.node_id }
+                );
+                core.info('Comment minimized as SPAM.');
+              } catch (e) {
+                core.warning(`Could not minimize comment: ${e.message}`);
+              }
+            }
+
+            // --- Leave one notice so the maintainer (and any reader) knows why it was hidden, and warning
+            // future readers not to run the attachment. Idempotent-ish: edits re-run, but a short repeated
+            // note is acceptable and rare.
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: issueNumber,
+              body: [
+                '⚠️ **Auto-flagged by spam-guard** (heuristic).',
+                '',
+                `A post from a non-contributor was flagged: ${reasons.join('; ')}.`,
+                'If it links a file/script, **do not download or run it** until a maintainer verifies it.',
+                '',
+                '_Maintainer: review, then report+block the user via GitHub if it is spam, or remove the_',
+                '_`possible-spam` label and unhide the comment if this was a false positive._',
+              ].join('\n'),
+            });
