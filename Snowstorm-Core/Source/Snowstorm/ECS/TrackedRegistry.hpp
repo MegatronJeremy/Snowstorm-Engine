@@ -331,10 +331,32 @@ namespace Snowstorm
 		// ---------------------------------------------------------------------
 
 		/// Clears everything (entities + components + tracking state).
-		/// Use this for "Open Scene" semantics.
+		/// Use this for full teardown.
 		void Clear()
 		{
 			m_Registry.clear();
+			ClearTrackedComponents();
+		}
+
+		/// Destroys all entities EXCEPT those carrying the Keep tag, then resets tracking state.
+		/// "Open Scene" semantics: wipe the scene's content but preserve engine-owned entities (the
+		/// editor's persistent Scene-view camera/viewport, tagged DoNotSerializeComponent) across a load.
+		template <typename Keep>
+		void ClearExcept()
+		{
+			// Collect first, then destroy: destroying while iterating a storage invalidates the iterator.
+			std::vector<entt::entity> doomed;
+			for (const auto entity : m_Registry.template view<entt::entity>())
+			{
+				if (!m_Registry.template any_of<Keep>(entity))
+				{
+					doomed.push_back(entity);
+				}
+			}
+			for (const auto entity : doomed)
+			{
+				m_Registry.destroy(entity);
+			}
 			ClearTrackedComponents();
 		}
 
@@ -359,4 +381,3 @@ namespace Snowstorm
 		std::unordered_set<entt::entity> m_DestroyedEntities;
 	};
 }
-

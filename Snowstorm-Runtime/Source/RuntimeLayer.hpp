@@ -21,6 +21,10 @@ namespace Snowstorm
 		void OnUpdate(Timestep ts) override;
 
 	private:
+		// Host-owned game camera + viewport, created before the scene loads (scenes no longer author a
+		// camera/viewport — see EditorLayer for the editor's equivalent persistent Scene-view camera).
+		void CreateRuntimeCameraAndViewport() const;
+
 		Ref<World> m_World;
 		std::string m_ScenePath;
 	};

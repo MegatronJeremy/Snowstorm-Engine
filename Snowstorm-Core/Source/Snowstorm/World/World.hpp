@@ -39,6 +39,11 @@ namespace Snowstorm
 
 		void Clear() const;
 
+		// "Open Scene" wipe: destroys scene entities but keeps engine-owned ones tagged
+		// DoNotSerializeComponent (the editor's persistent Scene-view camera/viewport) alive across the
+		// load. Use this for scene transitions; Clear() is full teardown.
+		void ClearSceneEntities() const;
+
 		[[nodiscard]] SystemManager& GetSystemManager();
 		[[nodiscard]] const SystemManager& GetSystemManager() const;
 

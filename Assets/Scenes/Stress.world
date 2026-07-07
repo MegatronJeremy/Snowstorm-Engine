@@ -27,7 +27,7 @@
         },
         "Snowstorm::TransformComponent": {
           "Position": [
-            0.08522415161132813,
+            0.08522415161132812,
             3.58492112159729,
             -6.9640703201293945
           ],
@@ -82,7 +82,7 @@
           ],
           "Rotation": [
             0.47302502393722534,
-            0.37831073999404907,
+            0.3783107399940491,
             0.3980218172073364
           ],
           "Scale": [
@@ -709,7 +709,7 @@
             0.8982375264167786,
             0.04711196944117546
           ],
-          "SpeedDegPerSec": 23.825637817382813
+          "SpeedDegPerSec": 23.825637817382812
         },
         "Snowstorm::TransformComponent": {
           "Position": [
@@ -9431,7 +9431,7 @@
           "Position": [
             -8.532390594482422,
             1.5,
-            -11.811843872070313
+            -11.811843872070312
           ],
           "Rotation": [
             0.0,
@@ -10091,7 +10091,7 @@
           ],
           "Rotation": [
             0.0,
-            2.8758926391601563,
+            2.8758926391601562,
             0.0
           ],
           "Scale": [
@@ -34794,126 +34794,6 @@
       },
       "Name": "Stress Light A",
       "UUID": "3007107955713369540"
-    },
-    {
-      "Components": {
-        "Snowstorm::CameraComponent": {
-          "AspectRatio": 1.7777777910232544,
-          "FixedAspectRatio": false,
-          "OrthographicFar": 10.0,
-          "OrthographicNear": -10.0,
-          "OrthographicSize": 10.0,
-          "PerspectiveFOV": 0.785398006439209,
-          "PerspectiveFar": 1000.0,
-          "PerspectiveNear": 0.10000000149011612,
-          "Primary": false,
-          "Projection": "Perspective"
-        },
-        "Snowstorm::CameraControllerComponent": {
-          "LookSensitivity": 0.10000000149011612,
-          "LookSmoothing": 30.0,
-          "MaxMoveSpeed": 500.0,
-          "MinMoveSpeed": 0.10000000149011612,
-          "MoveSmoothing": 15.0,
-          "MoveSpeed": 5.0,
-          "RotationEnabled": true,
-          "SlowMultiplier": 0.25,
-          "SpeedAdjustStep": 1.100000023841858,
-          "SprintMultiplier": 4.0,
-          "ZoomSpeed": 5.0
-        },
-        "Snowstorm::CameraTargetComponent": {
-          "TargetViewport": "13989978359899458743"
-        },
-        "Snowstorm::CameraVisibilityComponent": {
-          "Mask": 2
-        },
-        "Snowstorm::TransformComponent": {
-          "Position": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "Rotation": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "Scale": [
-            1.0,
-            1.0,
-            1.0
-          ]
-        }
-      },
-      "Name": "Clip-Space Entity",
-      "UUID": "8907777760325466219"
-    },
-    {
-      "Components": {
-        "Snowstorm::CameraComponent": {
-          "AspectRatio": 1.7777777910232544,
-          "FixedAspectRatio": false,
-          "OrthographicFar": 10.0,
-          "OrthographicNear": -10.0,
-          "OrthographicSize": 10.0,
-          "PerspectiveFOV": 0.785398006439209,
-          "PerspectiveFar": 1000.0,
-          "PerspectiveNear": 0.10000000149011612,
-          "Primary": true,
-          "Projection": "Perspective"
-        },
-        "Snowstorm::CameraControllerComponent": {
-          "LookSensitivity": 0.10000000149011612,
-          "LookSmoothing": 30.0,
-          "MaxMoveSpeed": 500.0,
-          "MinMoveSpeed": 0.10000000149011612,
-          "MoveSmoothing": 15.0,
-          "MoveSpeed": 5.0,
-          "RotationEnabled": true,
-          "SlowMultiplier": 0.25,
-          "SpeedAdjustStep": 1.100000023841858,
-          "SprintMultiplier": 4.0,
-          "ZoomSpeed": 5.0
-        },
-        "Snowstorm::CameraTargetComponent": {
-          "TargetViewport": "13989978359899458743"
-        },
-        "Snowstorm::CameraVisibilityComponent": {
-          "Mask": 1
-        },
-        "Snowstorm::TransformComponent": {
-          "Position": [
-            0.0,
-            0.0,
-            15.0
-          ],
-          "Rotation": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "Scale": [
-            1.0,
-            1.0,
-            1.0
-          ]
-        }
-      },
-      "Name": "Camera Entity",
-      "UUID": "15639608856600293687"
-    },
-    {
-      "Components": {
-        "Snowstorm::ViewportComponent": {
-          "Size": [
-            1920.0,
-            1009.0
-          ]
-        }
-      },
-      "Name": "Main Viewport",
-      "UUID": "13989978359899458743"
     }
   ],
   "Scene": {

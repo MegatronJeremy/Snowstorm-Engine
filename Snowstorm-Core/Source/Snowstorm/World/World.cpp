@@ -7,6 +7,7 @@
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Components/IDComponent.hpp"
 #include "Snowstorm/Components/TagComponent.hpp"
+#include "Snowstorm/Components/DoNotSerializeComponent.hpp"
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Events/Event.hpp"
 #include "Snowstorm/Systems/CameraControllerSystem.hpp"
@@ -99,6 +100,11 @@ namespace Snowstorm
 	void World::Clear() const
 	{
 		m_SystemManager->GetRegistry().Clear();
+	}
+
+	void World::ClearSceneEntities() const
+	{
+		m_SystemManager->GetRegistry().ClearExcept<DoNotSerializeComponent>();
 	}
 
 	SystemManager& World::GetSystemManager()

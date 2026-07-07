@@ -15,6 +15,7 @@
 
 #include "Snowstorm/Components/ComponentRegistry.hpp"
 #include "Snowstorm/Components/CameraComponent.hpp"
+#include "Snowstorm/Components/DoNotSerializeComponent.hpp"
 #include "Snowstorm/Components/CameraControllerComponent.hpp"
 #include "Snowstorm/Components/CameraTargetComponent.hpp"
 #include "Snowstorm/Components/IDComponent.hpp"
@@ -132,6 +133,16 @@ namespace Snowstorm
 
 		RegisterCoreSystems(*m_ActiveWorld); // engine systems (shared with a future runtime)
 		RegisterEditorSystems();             // editor-only systems on top
+
+		// Create the editor's persistent Scene-view camera + viewport BEFORE any scene loads. They are
+		// tagged DoNotSerialize (see CreateMainViewportEntity/CreateCameraEntities), so they survive scene
+		// loads (World::ClearSceneEntities keeps them) and are never written to a .world. This is the
+		// Unity/Unreal model: the editor owns the Scene-view camera, the scene does not. Effect: a camera +
+		// viewport exist from frame 0, so the (default) sky renders immediately instead of a black viewport
+		// while the deferred startup scene streams in.
+		CreateMainViewportEntity();
+		CreateCameraEntities();
+
 		LoadOrCreateStartupWorld();
 	}
 
@@ -157,8 +168,10 @@ namespace Snowstorm
 		// for the GPU to go idle before wiping — the standard "safe point" for a scene transition.
 		Renderer::WaitIdle();
 
-		// "Open Scene" semantics: wipe world entities first.
-		m_ActiveWorld->Clear();
+		// "Open Scene" semantics: wipe scene entities first, but KEEP the editor's persistent Scene-view
+		// camera + viewport (tagged DoNotSerialize) alive across the load — so the viewport keeps rendering
+		// the sky through the transition instead of going black.
+		m_ActiveWorld->ClearSceneEntities();
 
 		// Undo history references the old scene's entities by UUID; drop it so undo can't touch a world
 		// that no longer exists.
@@ -204,14 +217,12 @@ namespace Snowstorm
 			return false; // no bake requested
 		}
 
-		// Every bake follows the same ritual: a fresh scene needs the viewport + cameras, then a recipe
-		// populates it, then we prewarm + save + close. The two recipes differ only in how they fill the
-		// world and what they name the output, so factor the shared steps and pass in just those two.
+		// Every bake follows the same ritual: a recipe populates the world, then we prewarm + save + close.
+		// The editor's persistent camera + viewport already exist (created in OnAttach) and are used for
+		// framing; they are DoNotSerialize, so the saved .world contains scene content only — no editor
+		// camera/viewport — which is exactly the new model (scenes don't author the editor camera).
 		const auto bake = [this](const std::string& outPath, const std::function<bool()>& populate)
 		{
-			CreateMainViewportEntity();
-			CreateCameraEntities();
-
 			if (!populate())
 			{
 				SS_CORE_ERROR("Scene bake produced nothing; not writing '{}'.", outPath);
@@ -306,10 +317,9 @@ namespace Snowstorm
 		}
 
 		// First-run: no saved scene exists. Create a default in-place (cheap — no heavy assets) and save
-		// it; this is a one-time path so a brief synchronous build is fine.
+		// it; this is a one-time path so a brief synchronous build is fine. The camera + viewport already
+		// exist (created persistently in OnAttach), so only scene content is added here.
 		m_ActiveScenePath = kStartupScenePath;
-		CreateMainViewportEntity();
-		CreateCameraEntities();
 		CreateDemoEntities();
 		PrewarmSceneTextures();
 		SaveActiveScene();
@@ -392,6 +402,12 @@ namespace Snowstorm
 		const uint32_t windowHeight = window.GetHeight();
 
 		m_RenderTargetEntity = m_ActiveWorld->CreateEntity("Main Viewport");
+
+		// Editor-owned: persists across scene loads and is never written to a scene file (cf. Unity's
+		// editor Scene-view camera/target, which live outside the scene). Combined with the persistent
+		// editor camera, this guarantees a camera + viewport exist from frame 0 so the sky renders before
+		// any scene loads — no black viewport during startup/scene transitions.
+		m_RenderTargetEntity.AddComponent<DoNotSerializeComponent>();
 
 		m_RenderTargetEntity.AddComponent<ViewportComponent>(glm::vec2{static_cast<float>(windowWidth), static_cast<float>(windowHeight)});
 
@@ -540,6 +556,9 @@ namespace Snowstorm
 		// --- Main camera (Scene camera)
 		{
 			auto cameraEntity = m_ActiveWorld->CreateEntity("Camera Entity");
+			// Editor-owned Scene-view camera: persists across scene loads, never serialized (cf. Unity's
+			// editor Scene camera, Unreal's viewport-client camera). It renders the editor viewport.
+			cameraEntity.AddComponent<DoNotSerializeComponent>();
 			cameraEntity.AddComponent<TransformComponent>();
 
 			// Serialized camera data (your new CameraComponent)
@@ -574,6 +593,7 @@ namespace Snowstorm
 		// --- Second camera (example: Game camera or “clip space”)
 		{
 			auto secondCamera = m_ActiveWorld->CreateEntity("Clip-Space Entity");
+			secondCamera.AddComponent<DoNotSerializeComponent>();
 			secondCamera.AddComponent<TransformComponent>();
 
 			{
@@ -678,7 +698,9 @@ namespace Snowstorm
 			else if (!playing && m_WasPlaying)
 			{
 				Renderer::WaitIdle();
-				m_ActiveWorld->Clear();
+				// Keep the persistent editor camera/viewport (the play snapshot excludes them, since they
+				// are DoNotSerialize); only scene content is restored from the snapshot.
+				m_ActiveWorld->ClearSceneEntities();
 				m_ActiveWorld->GetSingleton<EditorHistorySingleton>().Clear();
 				SceneSerializer::DeserializeFromString(*m_ActiveWorld, m_PlaySnapshot);
 				PrewarmSceneTextures();

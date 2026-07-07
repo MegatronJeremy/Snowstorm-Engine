@@ -3,6 +3,7 @@
 #include "Snowstorm/Components/IDComponent.hpp"
 #include "Snowstorm/Components/TagComponent.hpp"
 #include "Snowstorm/Components/ComponentRegistry.hpp"
+#include "Snowstorm/Components/DoNotSerializeComponent.hpp"
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Components/MaterialComponent.hpp"
@@ -302,6 +303,13 @@ namespace Snowstorm
 		auto view = reg.view<IDComponent, TagComponent>();
 		for (const entt::entity e : view)
 		{
+			// Skip engine-owned entities tagged DoNotSerialize (editor Scene-view camera/viewport): they
+			// live above the scene and are recreated by the editor, not loaded from the file.
+			if (reg.any_of<DoNotSerializeComponent>(e))
+			{
+				continue;
+			}
+
 			Entity entity{e, const_cast<World*>(&world)};
 
 			json entJ;

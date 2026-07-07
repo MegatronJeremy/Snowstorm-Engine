@@ -3,6 +3,7 @@
     {
       "Components": {
         "Snowstorm::SpotLightComponent": {
+          "CastShadows": true,
           "Color": [
             0.0,
             0.4285719394683838,
@@ -81,7 +82,7 @@
           ],
           "Material": "13869174114393927166",
           "MaxIterations": 150,
-          "Zoom": 4.0
+          "Zoom": 3.9855329990386963
         }
       },
       "Name": "Mandelbrot Controller Entity",
@@ -315,130 +316,6 @@
       },
       "Name": "Directional Light A",
       "UUID": "13084783285429280438"
-    },
-    {
-      "Components": {
-        "Snowstorm::CameraComponent": {
-          "AspectRatio": 1.7777777910232544,
-          "FixedAspectRatio": false,
-          "OrthographicFar": 10.0,
-          "OrthographicNear": -10.0,
-          "OrthographicSize": 10.0,
-          "PerspectiveFOV": 0.785398006439209,
-          "PerspectiveFar": 1000.0,
-          "PerspectiveNear": 0.009999999776482582,
-          "Primary": false,
-          "Projection": "Perspective"
-        },
-        "Snowstorm::CameraControllerComponent": {
-          "LookSensitivity": 0.10000000149011612,
-          "LookSmoothing": 30.0,
-          "MaxMoveSpeed": 500.0,
-          "MinMoveSpeed": 0.10000000149011612,
-          "MoveSmoothing": 15.0,
-          "MoveSpeed": 5.0,
-          "RotationEnabled": true,
-          "SlowMultiplier": 0.25,
-          "SpeedAdjustStep": 1.100000023841858,
-          "SprintMultiplier": 4.0,
-          "ZoomSpeed": 5.0
-        },
-        "Snowstorm::CameraTargetComponent": {
-          "TargetViewport": "17586729191764668718"
-        },
-        "Snowstorm::CameraVisibilityComponent": {
-          "Mask": 2
-        },
-        "Snowstorm::TransformComponent": {
-          "Position": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "Rotation": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "Scale": [
-            1.0,
-            1.0,
-            1.0
-          ]
-        }
-      },
-      "Name": "Clip-Space Entity",
-      "UUID": "6468564207961718819"
-    },
-    {
-      "Components": {
-        "Snowstorm::CameraComponent": {
-          "AspectRatio": 1.7777777910232544,
-          "FixedAspectRatio": false,
-          "OrthographicFar": 10.0,
-          "OrthographicNear": -10.0,
-          "OrthographicSize": 10.0,
-          "PerspectiveFOV": 0.785398006439209,
-          "PerspectiveFar": 1000.0,
-          "PerspectiveNear": 0.009999999776482582,
-          "Primary": true,
-          "Projection": "Perspective"
-        },
-        "Snowstorm::CameraControllerComponent": {
-          "LookSensitivity": 0.10000000149011612,
-          "LookSmoothing": 30.0,
-          "MaxMoveSpeed": 500.0,
-          "MinMoveSpeed": 0.10000000149011612,
-          "MoveSmoothing": 15.0,
-          "MoveSpeed": 5.0,
-          "RotationEnabled": true,
-          "SlowMultiplier": 0.25,
-          "SpeedAdjustStep": 1.100000023841858,
-          "SprintMultiplier": 4.0,
-          "ZoomSpeed": 5.0
-        },
-        "Snowstorm::CameraTargetComponent": {
-          "TargetViewport": "17586729191764668718"
-        },
-        "Snowstorm::CameraVisibilityComponent": {
-          "Mask": 1
-        },
-        "Snowstorm::TransformComponent": {
-          "Position": [
-            6.352713584899902,
-            6.580813407897949,
-            12.724528312683105
-          ],
-          "Rotation": [
-            -0.4310973584651947,
-            0.6126050353050232,
-            0.0
-          ],
-          "Scale": [
-            1.0,
-            1.0,
-            1.0
-          ]
-        }
-      },
-      "Name": "Camera Entity",
-      "UUID": "222261355913641524"
-    },
-    {
-      "Components": {
-        "Snowstorm::ViewportComponent": {
-          "Size": [
-            1207.0,
-            680.0
-          ]
-        },
-        "Snowstorm::ViewportInteractionComponent": {
-          "Focused": true,
-          "Hovered": true
-        }
-      },
-      "Name": "Main Viewport",
-      "UUID": "17586729191764668718"
     }
   ],
   "Scene": {
