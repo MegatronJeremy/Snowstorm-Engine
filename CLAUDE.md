@@ -239,6 +239,25 @@ Worked example — **asset pipeline** (the engine's current biggest simplificati
 
 ### How to debug effectively (don't guess in a loop)
 
+- **Use the instrumentation that already exists BEFORE writing ad-hoc probes.** This engine already has
+  rich, always-on timing/state readouts — check them first instead of scattering `SS_CORE_WARN` probes:
+  - The editor's **Performance panel** (`Snowstorm-Editor/System/SceneHierarchySystem.cpp`) shows
+    per-phase + per-**system** CPU ms, per-**pass GPU** ms (timestamp scopes), draw/batch/instance/
+    triangle counts, and cull stats — smoothed and heat-colored. A "which part of the frame is slow"
+    question is usually answered by reading this, not by instrumenting.
+  - `SystemManager::GetSystemTimingsMs()` / `GetPhaseTimingsMs()` — per-system/phase CPU time (the same
+    data the panel draws), queryable in code.
+  - `CommandContext::BeginGpuScope`/`CollectGpuScopes` (`RendererService::GetGpuPassTimes()`) — per-pass
+    GPU timestamps.
+  - The **frame-time watchdog** (`debug.max_frame_ms` CVar / `--max-frame-ms` smoke flag) turns a
+    per-frame stall into a headless `[error]` naming the exact frame + duration.
+  - The **profiler** (`SS_PROFILE_SCOPE`, chrome://tracing JSON) for a full timeline.
+  A whole debugging session was once burned scattering probes to find a load spike that the Performance
+  panel would have pinned to `RenderSystem`/shadow-fit in one glance (and the fix — read the panel — was
+  already built). If the existing readouts genuinely don't cover the spot, ADD a permanent, toggleable
+  diagnostic there (extend the panel / add a scope / a CVar-gated log) rather than a throwaway probe —
+  see "Build the engine to be debuggable" below. Reserve ad-hoc probes for gaps the standing tools can't
+  reach, and strip them before committing.
 - **Bisect, don't guess.** When behavior contradicts the code, the bug is somewhere between "what I
   believe is true" and "what's observed." Add a probe that splits that gap in half and *prove* which
   side is wrong, rather than changing code speculatively and re-running. One well-placed probe beats
