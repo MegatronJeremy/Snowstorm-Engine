@@ -148,12 +148,21 @@ namespace Snowstorm
 		// a scene that streamed in afterwards. Detecting the change and invalidating fixes that and covers
 		// runtime environment edits generally (#64).
 		const EnvironmentDataBlock& env = renderer.GetEnvironment();
+
+		// A real (non-empty) environment has a positive sky intensity. The default-constructed block used
+		// before a scene loads has SkyIntensity == 0 — baking IBL from that convolves a black sky into black
+		// ambient AND wastes a full bake (WaitIdle + 4 compute passes). So gate the bake on a real sky: this
+		// avoids the redundant empty-first-frame bake entirely (the startup scene load is deferred a frame,
+		// so frame 1's env IS the empty default), and the env-change re-bake below still fires once Sponza's
+		// sky arrives.
+		const bool haveRealEnvironment = env.SkyIntensity > 0.0f;
+
 		if (m_IBLBakePass.IsBaked() && (!m_BakedEnvironment || *m_BakedEnvironment != env))
 		{
 			m_IBLBakePass.Invalidate();
 		}
 
-		if (CVars::IBL.Get() && !m_IBLBakePass.IsBaked())
+		if (CVars::IBL.Get() && haveRealEnvironment && !m_IBLBakePass.IsBaked())
 		{
 			Renderer::WaitIdle();
 			m_IBLBakePass.AddBakePasses(graph, renderer.GetLights(), env);
