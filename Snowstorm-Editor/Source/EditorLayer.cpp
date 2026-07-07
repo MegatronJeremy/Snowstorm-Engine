@@ -46,6 +46,7 @@
 #include "StressScene.hpp"
 
 #include "System/CameraFocusSystem.hpp"
+#include "System/ConsoleSystem.hpp"
 #include "System/ContentBrowserSystem.hpp"
 #include "System/CVarPanelSystem.hpp"
 #include "System/LoadingOverlaySystem.hpp"
@@ -409,6 +410,7 @@ namespace Snowstorm
 		systemManager.RegisterSystem<CameraFocusSystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<LoadingOverlaySystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<CVarPanelSystem>(SystemPhase::UI);
+		systemManager.RegisterSystem<ConsoleSystem>(SystemPhase::UI);
 
 		// Editor example
 		systemManager.RegisterSystem<MandelbrotControllerSystem>(SystemPhase::PreRender);

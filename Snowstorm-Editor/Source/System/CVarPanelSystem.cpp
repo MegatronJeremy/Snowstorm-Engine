@@ -27,33 +27,10 @@ namespace Snowstorm
 
 		auto& registry = CVarRegistry::Get();
 
-		// --- Command line: "cvar.name value" sets a CVar by name (uses the string setter, so it works for
-		// every type). Enter submits; unknown names / bad values are reported to the log.
-		ImGui::TextDisabled("Set a variable: type \"name value\" and press Enter");
-		ImGui::SetNextItemWidth(-1.0f);
-		if (ImGui::InputText("##cvarcmd", m_Command, sizeof(m_Command), ImGuiInputTextFlags_EnterReturnsTrue))
-		{
-			std::string line = m_Command;
-			const size_t sep = line.find(' ');
-			if (sep != std::string::npos)
-			{
-				const std::string name = line.substr(0, sep);
-				const std::string value = line.substr(sep + 1);
-				if (ICVar* cvar = registry.Find(name))
-				{
-					cvar->SetFromString(value);
-					SS_INFO("CVar '{0}' set to '{1}'", name, cvar->GetValueString());
-				}
-				else
-				{
-					SS_WARN("Unknown CVar: '{0}'", name);
-				}
-			}
-			m_Command[0] = '\0';
-			ImGui::SetKeyboardFocusHere(-1); // keep focus in the input for rapid entry
-		}
-
-		ImGui::Separator();
+		// This panel is the VISUAL editor (checkbox/slider per variable). Typed "name value" commands live
+		// in the Console (Debug > Console), which shares its input with the log stream — so the command line
+		// that used to be here moved there. Keep this panel focused on browsing + direct widget tweaking.
+		ImGui::TextDisabled("Tip: use the Console (Debug > Console) to set variables by name.");
 
 		// --- Name filter for the list below.
 		ImGui::SetNextItemWidth(-1.0f);

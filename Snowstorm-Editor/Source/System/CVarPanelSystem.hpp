@@ -29,7 +29,6 @@ namespace Snowstorm
 		static bool s_Open;
 
 	private:
-		char m_Command[256] = {}; // console input buffer: "cvar.name value"
-		char m_Filter[128] = {};  // name substring filter for the list
+		char m_Filter[128] = {}; // name substring filter for the list
 	};
 }

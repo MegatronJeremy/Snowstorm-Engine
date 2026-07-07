@@ -3,6 +3,7 @@
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Debug/Instrumentor.hpp"
 
+#include "System/ConsoleSystem.hpp"
 #include "System/CVarPanelSystem.hpp"
 #include "Snowstorm/World/EditorCommandsSingleton.hpp"
 #include "Snowstorm/World/EditorHistorySingleton.hpp"
@@ -151,6 +152,10 @@ namespace Snowstorm
 
 			if (ImGui::BeginMenu("Debug"))
 			{
+				if (ImGui::MenuItem("Console", nullptr, ConsoleSystem::s_Open))
+				{
+					ConsoleSystem::s_Open = !ConsoleSystem::s_Open;
+				}
 				if (ImGui::MenuItem("Console Variables", nullptr, CVarPanelSystem::s_Open))
 				{
 					CVarPanelSystem::s_Open = !CVarPanelSystem::s_Open;
