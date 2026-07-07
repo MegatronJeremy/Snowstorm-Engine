@@ -215,26 +215,12 @@ namespace Snowstorm
 		std::memcpy(allocInfo.pMappedData, data, size);
 		vmaFlushAllocation(allocator, stagingAlloc, 0, size);
 
-		// Record copy into a one-off command buffer
-		const VkCommandPool pool = GetGraphicsCommandPool();
-		VkCommandBuffer cmd = VK_NULL_HANDLE;
-
-		VkCommandBufferAllocateInfo allocCI2{};
-		allocCI2.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		allocCI2.commandPool = pool;
-		allocCI2.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-		allocCI2.commandBufferCount = 1;
-
-		res = vkAllocateCommandBuffers(device, &allocCI2, &cmd);
-		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to allocate upload command buffer");
-
-		VkCommandBufferBeginInfo begin{};
-		begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-		res = vkBeginCommandBuffer(cmd, &begin);
-		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to begin upload command buffer");
-
+		// Record the copy + mip-gen + layout transitions into a fence-scoped one-off submit. ImmediateSubmit
+		// waits on a per-submission FENCE (not vkQueueWaitIdle), so uploading N textures no longer stalls the
+		// whole graphics queue N times (the 69x-per-Sponza-load spike). The staging buffer must outlive the
+		// GPU work, so it's destroyed AFTER ImmediateSubmit returns (the fence has been waited on by then).
+		ImmediateSubmit([&](const VkCommandBuffer cmd)
+		                {
 		const uint32_t layers =
 		    (m_Desc.Dimension == TextureDimension::TextureCube && m_Desc.ArrayLayers == 1) ? 6u : m_Desc.ArrayLayers;
 
@@ -326,26 +312,10 @@ namespace Snowstorm
 			CmdTransitionImage(cmd, m_Image, aspect, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, finalLayout, m_Desc.MipLevels, layers);
 		}
 
-		m_CurrentLayout = finalLayout;
+		m_CurrentLayout = finalLayout; }); // ImmediateSubmit: records the above, submits, waits on its fence, frees the command buffer.
 
-		res = vkEndCommandBuffer(cmd);
-		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to end upload command buffer");
-
-		// Submit + wait (simple and safe; optimize later with per-frame upload queues)
-		const VkQueue queue = GetGraphicsQueue();
-
-		VkSubmitInfo submit{};
-		submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		submit.commandBufferCount = 1;
-		submit.pCommandBuffers = &cmd;
-
-		res = vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
-		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to submit upload command buffer");
-
-		vkQueueWaitIdle(queue);
-
-		vkFreeCommandBuffers(device, pool, 1, &cmd);
-
+		// Safe to free staging now — ImmediateSubmit has waited on the upload's fence, so the GPU is done
+		// reading it.
 		vmaDestroyBuffer(allocator, staging, stagingAlloc);
 	}
 
