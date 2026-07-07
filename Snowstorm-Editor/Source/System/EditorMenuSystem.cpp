@@ -99,6 +99,14 @@ namespace Snowstorm
 			}
 		}
 
+		// Backtick toggles the developer console (the classic Quake/Unreal console key). Edge-triggered and
+		// suppressed while typing, so pressing ` inside the console's own input types a character instead of
+		// closing it.
+		if (input.PressedThisFrame.test(Key::GraveAccent) && !input.WantCaptureKeyboard)
+		{
+			ConsoleSystem::s_Open = !ConsoleSystem::s_Open;
+		}
+
 		// --- UI
 		if (ImGui::BeginMenuBar())
 		{
@@ -152,7 +160,7 @@ namespace Snowstorm
 
 			if (ImGui::BeginMenu("Debug"))
 			{
-				if (ImGui::MenuItem("Console", nullptr, ConsoleSystem::s_Open))
+				if (ImGui::MenuItem("Console", "`", ConsoleSystem::s_Open))
 				{
 					ConsoleSystem::s_Open = !ConsoleSystem::s_Open;
 				}
@@ -291,6 +299,13 @@ namespace Snowstorm
 			row("Right-click > Rename", "Rename the entity");
 			row("Right-click > Duplicate", "Duplicate the entity");
 			row("Right-click > Delete", "Delete the entity");
+			ImGui::EndTable();
+		}
+
+		section("Debug");
+		if (ImGui::BeginTable("debug", 2, tableFlags))
+		{
+			row("`  (backtick)", "Toggle the developer console");
 			ImGui::EndTable();
 		}
 
