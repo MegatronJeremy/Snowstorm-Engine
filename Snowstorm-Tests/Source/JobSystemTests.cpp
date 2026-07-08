@@ -82,3 +82,86 @@ TEST_CASE("ParallelFor with grainSize >= count runs inline without error", "[job
 	    { calls.fetch_add(1); }, 1000 /* grain > count -> inline */);
 	REQUIRE(calls.load() == 1); // single inline invocation over the whole range
 }
+
+// ParallelGather is the primitive VisibilitySystem's parallel frustum cull is built on. The contract:
+// every emitted value appears, in INDEX order (deterministic regardless of scheduling), matching a
+// serial copy_if exactly — for counts that are and aren't multiples of the grain, and for the inline
+// fast path.
+TEST_CASE("ParallelGather matches serial copy_if in value and order", "[jobsystem]")
+{
+	JobSystem jobs;
+
+	for (const size_t count : {size_t{0}, size_t{1}, size_t{255}, size_t{256}, size_t{257}, size_t{10000}})
+	{
+		// Gather the even numbers in [0, count). Emitting the index itself makes the expected order the
+		// natural ascending order, so any reordering by the parallel merge would show up immediately.
+		const std::vector<size_t> got = jobs.ParallelGather<size_t>(
+		    count,
+		    [](const size_t i, auto&& emit)
+		    {
+			    if (i % 2 == 0)
+			    {
+				    emit(i);
+			    }
+		    },
+		    64);
+
+		std::vector<size_t> expected;
+		for (size_t i = 0; i < count; ++i)
+		{
+			if (i % 2 == 0)
+			{
+				expected.push_back(i);
+			}
+		}
+
+		REQUIRE(got == expected); // same values AND same order as the serial computation
+	}
+}
+
+TEST_CASE("ParallelGather is deterministic across repeated runs", "[jobsystem]")
+{
+	JobSystem jobs;
+	constexpr size_t count = 50000;
+
+	const auto run = [&jobs]
+	{
+		return jobs.ParallelGather<size_t>(
+		    count,
+		    [](const size_t i, auto&& emit)
+		    {
+			    if (i % 3 == 0)
+			    {
+				    emit(i * 2); // emit a transformed value, not just a filter
+			    }
+		    },
+		    128);
+	};
+
+	const std::vector<size_t> a = run();
+	const std::vector<size_t> b = run();
+	REQUIRE(a == b); // scheduling must not change the result (order or contents)
+}
+
+TEST_CASE("ParallelGather can emit multiple values per index", "[jobsystem]")
+{
+	JobSystem jobs;
+	constexpr size_t count = 1000;
+
+	// Each index emits itself twice -> result is [0,0,1,1,2,2,...] in order.
+	const std::vector<size_t> got = jobs.ParallelGather<size_t>(
+	    count,
+	    [](const size_t i, auto&& emit)
+	    {
+		    emit(i);
+		    emit(i);
+	    },
+	    64);
+
+	REQUIRE(got.size() == count * 2);
+	for (size_t i = 0; i < count; ++i)
+	{
+		REQUIRE(got[i * 2] == i);
+		REQUIRE(got[i * 2 + 1] == i);
+	}
+}

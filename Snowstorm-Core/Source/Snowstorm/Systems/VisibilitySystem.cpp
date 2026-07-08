@@ -14,6 +14,13 @@
 #include "Snowstorm/Math/Bounds.hpp"
 #include "Snowstorm/Components/VisibilityCacheComponent.hpp"
 
+#include "Snowstorm/Core/Application.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Core/JobSystem.hpp"
+
+#include <atomic>
+#include <vector>
+
 namespace Snowstorm
 {
 	bool VisibilitySystem::IsVisibilityDirtyThisFrame() const
@@ -87,8 +94,16 @@ namespace Snowstorm
 		// Cameras that can produce visibility
 		const auto camView = reg.view<TransformComponent, CameraRuntimeComponent, CameraTargetComponent, CameraVisibilityComponent>();
 
-		// Renderables we cull (meshes)
+		// Renderables we cull (meshes). Snapshot the candidate set ONCE into a contiguous array: it's the
+		// same for every camera (only the frustum/mask differ), and ParallelGather needs an index-able
+		// range to slice across workers (an EnTT multi-component view isn't random-access).
 		const auto meshView = reg.view<TransformComponent, MeshComponent, MaterialComponent, VisibilityComponent>();
+		const std::vector<entt::entity> candidates(meshView.begin(), meshView.end());
+
+		auto& jobs = Application::Get().GetServiceManager().GetService<JobSystem>();
+		// ecs.parallel off (or CVar) -> grain >= count forces ParallelGather's inline serial path, so the
+		// on/off toggle is a pure perf switch with identical (deterministic, ordered) output.
+		const size_t grain = CVars::EcsParallel.Get() ? size_t{256} : candidates.size() + 1;
 
 		for (const entt::entity camE : camView)
 		{
@@ -102,57 +117,69 @@ namespace Snowstorm
 				continue;
 			}
 
-			// Ensure cache exists; clear it. (This is fine: it's a runtime list for THIS frame)
-			auto& cache = reg.emplace_or_replace<VisibilityCacheComponent>(camE);
-			cache.VisibleMeshes.clear();
-			cache.VisibleMeshes.reserve(256);
-			cache.Considered = 0;
-
 			const VisibilityMask camMask = camVis.Mask;
 
-			for (const entt::entity e : meshView)
-			{
-				const auto& mesh = reg.Read<MeshComponent>(e);
-				const auto& mat = reg.Read<MaterialComponent>(e);
-				const auto& vis = reg.Read<VisibilityComponent>(e);
+			// Diagnostic counter: renderables eligible for this camera (resolved + layer-matched) before the
+			// frustum test. Incremented from worker threads, so it's atomic — it's touched at most once per
+			// candidate and never read in the hot path, so the single-counter contention is negligible next
+			// to the frustum math (and it's order-independent, unlike the gathered list).
+			std::atomic<uint32_t> considered{0};
 
-				// Must be resolved
-				if (!mesh.MeshInstance || !mat.MaterialInstance)
-				{
-					continue;
-				}
+			// Parallel frustum cull: each candidate is tested independently (reads only, no shared writes)
+			// and emits its own entity iff visible. ParallelGather returns the passers in deterministic
+			// index order, so the visible set + draw order match the old serial loop bit-for-bit.
+			std::vector<entt::entity> visible = jobs.ParallelGather<entt::entity>(
+			    candidates.size(),
+			    [&](const size_t i, auto&& emit)
+			    {
+				    const entt::entity e = candidates[i];
+				    const auto& mesh = reg.Read<MeshComponent>(e);
+				    const auto& mat = reg.Read<MaterialComponent>(e);
+				    const auto& vis = reg.Read<VisibilityComponent>(e);
 
-				// Layer filtering
-				if ((vis.Mask & camMask) == 0)
-				{
-					continue;
-				}
+				    // Must be resolved
+				    if (!mesh.MeshInstance || !mat.MaterialInstance)
+				    {
+					    return;
+				    }
 
-				// Eligible for this camera (resolved + layer-matched); frustum culling decides the rest.
-				cache.Considered++;
+				    // Layer filtering
+				    if ((vis.Mask & camMask) == 0)
+				    {
+					    return;
+				    }
 
-				// Frustum culling
-				const auto& tr = reg.Read<TransformComponent>(e);
-				const glm::mat4 M = tr.GetTransformMatrix();
+				    // Eligible for this camera (resolved + layer-matched); frustum culling decides the rest.
+				    considered.fetch_add(1, std::memory_order_relaxed);
 
-				const MeshBounds& localB = mesh.MeshInstance->GetBounds();
+				    // Frustum culling
+				    const auto& tr = reg.Read<TransformComponent>(e);
+				    const glm::mat4 M = tr.GetTransformMatrix();
 
-				// Sphere first (cheap)
-				const Sphere ws = TransformSphere(localB.Sphere, M);
-				if (!camRT.frustum.IntersectsSphere(ws.Center, ws.Radius))
-				{
-					continue;
-				}
+				    const MeshBounds& localB = mesh.MeshInstance->GetBounds();
 
-				// AABB second (tighter)
-				const AABB wa = TransformAABB(localB.Box, M);
-				if (!camRT.frustum.IntersectsAABB(wa))
-				{
-					continue;
-				}
+				    // Sphere first (cheap)
+				    const Sphere ws = TransformSphere(localB.Sphere, M);
+				    if (!camRT.frustum.IntersectsSphere(ws.Center, ws.Radius))
+				    {
+					    return;
+				    }
 
-				cache.VisibleMeshes.push_back(e);
-			}
+				    // AABB second (tighter)
+				    const AABB wa = TransformAABB(localB.Box, M);
+				    if (!camRT.frustum.IntersectsAABB(wa))
+				    {
+					    return;
+				    }
+
+				    emit(e);
+			    },
+			    grain);
+
+			// Publish this frame's result on the main thread (tracked write; runtime-only cache).
+			auto& cache = reg.emplace_or_replace<VisibilityCacheComponent>(camE);
+			cache.VisibleMeshes = std::move(visible);
+			cache.Considered = considered.load(std::memory_order_relaxed);
 		}
 	}
 }

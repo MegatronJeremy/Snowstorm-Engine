@@ -4,13 +4,16 @@
 #include "Snowstorm/Core/Log.hpp" // SS_CORE_ASSERT expands to log macros; make the header self-contained
 #include "Snowstorm/Service/Service.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <functional>
 #include <future>
+#include <iterator>
 #include <mutex>
 #include <queue>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace Snowstorm
@@ -102,6 +105,88 @@ namespace Snowstorm
 			{
 				f.get();
 			}
+		}
+
+		// Parallel map-with-filter (the gather sibling of ParallelFor): run `body(index, emit)` over
+		// [0, count) across the worker pool, where `emit(value)` may be called zero or more times per index
+		// to produce results. Returns every emitted value concatenated in INDEX order — deterministic
+		// regardless of thread scheduling: chunk c's output always precedes chunk c+1's, and within a chunk
+		// values come out in ascending index. That determinism is deliberate (keeps serial == parallel
+		// bit-for-bit, and downstream batching stable), and it's why this uses per-chunk buckets + an
+		// ordered serial merge rather than a shared concurrent container (which would add cache-line
+		// contention and non-deterministic order for no gain in this producer/consumer pattern).
+		//
+		// Each chunk fills its OWN bucket, so there is zero contention in the parallel phase; the only
+		// serial cost is the final O(total emitted) concat. `body` must be safe to run concurrently on
+		// disjoint indices (typically it only reads shared state and emits derived values). Degrades to a
+		// single inline pass on the calling thread under the same conditions as ParallelFor.
+		template <typename T, typename Fn>
+		std::vector<T> ParallelGather(const size_t count, Fn&& body, const size_t grainSize = 256)
+		{
+			std::vector<T> result;
+			if (count == 0)
+			{
+				return result;
+			}
+
+			// Inline fast path: nothing to gain from tasking — emit straight into the result.
+			if (grainSize == 0 || count <= grainSize || m_Workers.size() <= 1)
+			{
+				const auto emit = [&result](T value)
+				{ result.push_back(std::move(value)); };
+				for (size_t i = 0; i < count; ++i)
+				{
+					body(i, emit);
+				}
+				return result;
+			}
+
+			const size_t chunkCount = (count + grainSize - 1) / grainSize;
+
+			// One bucket per chunk, indexed BY CHUNK (not by worker) so the merge order is deterministic no
+			// matter which worker runs which chunk. Each task owns buckets[c] exclusively -> no sharing.
+			std::vector<std::vector<T>> buckets(chunkCount);
+
+			const auto runChunk = [&body, &buckets, grainSize, count](const size_t c)
+			{
+				const size_t begin = c * grainSize;
+				const size_t end = std::min(begin + grainSize, count);
+				std::vector<T>& bucket = buckets[c];
+				const auto emit = [&bucket](T value)
+				{ bucket.push_back(std::move(value)); };
+				for (size_t i = begin; i < end; ++i)
+				{
+					body(i, emit);
+				}
+			};
+
+			// Submit all chunks except the last; run the last inline on this thread while workers churn.
+			std::vector<std::future<void>> futures;
+			futures.reserve(chunkCount - 1);
+			for (size_t c = 0; c + 1 < chunkCount; ++c)
+			{
+				futures.push_back(Submit([&runChunk, c]
+				                         { runChunk(c); }));
+			}
+			runChunk(chunkCount - 1); // caller-thread chunk
+
+			for (std::future<void>& f : futures)
+			{
+				f.get();
+			}
+
+			// Ordered merge: concat buckets 0..chunkCount-1 into one contiguous result.
+			size_t total = 0;
+			for (const std::vector<T>& b : buckets)
+			{
+				total += b.size();
+			}
+			result.reserve(total);
+			for (std::vector<T>& b : buckets)
+			{
+				result.insert(result.end(), std::make_move_iterator(b.begin()), std::make_move_iterator(b.end()));
+			}
+			return result;
 		}
 
 	private:
