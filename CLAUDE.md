@@ -185,6 +185,22 @@ end. Call out which parts are intentionally deferred and why, and prefer shortcu
 *smaller version of* the real thing (so they extend later) over ones that would have to be ripped
 out. When the "real" way is genuinely cheap, just do it the real way.
 
+**Counterweight — actively guard against bloat.** "Long-term-correct" is NOT "more layers." Before
+adding any new abstraction, base class, wrapper, config knob, or indirection, ask out loud: *does this
+earn its keep, or is it speculative?* An abstraction with one caller/subclass, a wrapper that only
+saves a few lines, a second way to do something the codebase already does — these are bloat, not
+rigor. Prefer the load-bearing primitive over sugar layered on top of it; prefer one clear way to do a
+thing over two. On every new feature/implementation, explicitly weigh whether it *adds* surface area
+(a concept a future reader must learn, a decision they must make) against what it removes, and say so.
+When a proposed piece optimizes the rare case while taxing the common case, that's backwards — cut it.
+The bias toward the production-grade design (above) and the bias against bloat are the same instinct:
+build the real shape, but only the parts that are actually load-bearing. When in doubt, leave it out —
+re-adding a thin wrapper later is cheap; ripping out an entangled one that grew callers is not. A
+worked example: a CRTP `EntitySystem` base was built to wrap the `ParallelForEach` primitive for
+single-query systems, then cut — it had one subclass, only fit the one-query case (multi-loop systems
+drop back to the primitive anyway), and added a "which base do I derive?" decision to every new
+system, all to save ~5 lines. The primitive was the real abstraction; the wrapper was bloat.
+
 Worked example — **asset pipeline** (the engine's current biggest simplification):
 
 - **Real engines separate source assets from cooked runtime assets.** The file you drop in
