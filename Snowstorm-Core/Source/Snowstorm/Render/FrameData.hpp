@@ -41,5 +41,9 @@ namespace Snowstorm
 			uint32_t BRDFLutIndex = 0;
 			uint32_t PrefilteredMipCount = 0;
 		} IBL;
+
+		// Bindless index of the HDR scene-color texture the post-process pass samples (set by RenderSystem
+		// per viewport, right before the post pass). Only the tonemap pass reads it; 0 elsewhere.
+		uint32_t SceneColorIndex = 0;
 	};
 }

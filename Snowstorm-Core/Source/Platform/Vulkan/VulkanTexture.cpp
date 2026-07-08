@@ -70,6 +70,11 @@ namespace Snowstorm
 		if (m_Desc.Dimension == TextureDimension::TextureCube)
 			imageCI.flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 
+		// Let views alias this image with a different (compatible) format — e.g. a UNORM sample view over
+		// an sRGB attachment image so ImGui reads raw bytes while the hardware sRGB-encodes on write.
+		if (m_Desc.MutableFormat)
+			imageCI.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+
 		VmaAllocationCreateInfo allocCI{};
 		allocCI.usage = VMA_MEMORY_USAGE_AUTO;
 

@@ -117,6 +117,13 @@ cbuffer FrameCB : register(b0, space0)
 	float _IBLPad0;
 	float _IBLPad1;
 	float _IBLPad2;
+
+	// Post-process: bindless index of the HDR scene-color texture the tonemap pass samples (#53). Only
+	// the post pass reads it. Trailing row. MUST match FrameCB in RendererService.cpp field-for-field.
+	uint SceneColorIndex;
+	float _PostPad0;
+	float _PostPad1;
+	float _PostPad2;
 };
 
 // --- SPACE 1: Material Data ---

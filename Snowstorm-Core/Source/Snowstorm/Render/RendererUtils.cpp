@@ -49,6 +49,64 @@ namespace Snowstorm
 		return RenderTarget::Create(rtDesc);
 	}
 
+	Ref<RenderTarget> CreatePresentTarget(uint32_t w, uint32_t h, const char* debugPrefix)
+	{
+		// LDR, color-only target for the tonemapped result. No depth (fullscreen post pass doesn't test
+		// depth). sRGB storage so the hardware encodes on write; MutableFormat so ImGui can alias it with a
+		// UNORM sample view (CreatePresentSampleView). Sampled usage is required for that sample view.
+		TextureDesc colorDesc{};
+		colorDesc.Dimension = TextureDimension::Texture2D;
+		colorDesc.Format = kPresentColorFormat; // RGBA8_sRGB
+		colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled;
+		colorDesc.MutableFormat = true;
+		colorDesc.Width = w;
+		colorDesc.Height = h;
+		colorDesc.DebugName = std::string(debugPrefix) + "_Present";
+
+		Ref<Texture> colorTex = Texture::Create(colorDesc);
+
+		// Attachment view in the native sRGB format: rendering into it triggers the hardware linear->sRGB
+		// encode. (This view also auto-registers a bindless slot as it's Sampled; unused for present, cheap.)
+		Ref<TextureView> colorView = TextureView::Create(colorTex, MakeFullViewDesc(colorDesc));
+
+		RenderTargetDesc rtDesc{};
+		rtDesc.Width = w;
+		rtDesc.Height = h;
+		rtDesc.IsSwapchainTarget = false;
+
+		RenderTargetAttachment colorAtt{};
+		colorAtt.View = colorView;
+		colorAtt.AttachmentIndex = 0;
+		colorAtt.ClearColor = {0.0f, 0.0f, 0.0f, 1.0f};
+		colorAtt.LoadOp = RenderTargetLoadOp::Clear;
+		colorAtt.StoreOp = RenderTargetStoreOp::Store;
+		rtDesc.ColorAttachments.push_back(colorAtt);
+		// No depth attachment.
+
+		return RenderTarget::Create(rtDesc);
+	}
+
+	Ref<TextureView> CreatePresentSampleView(const Ref<RenderTarget>& presentTarget)
+	{
+		if (!presentTarget)
+		{
+			return nullptr;
+		}
+		const auto& desc = presentTarget->GetDesc();
+		if (desc.ColorAttachments.empty() || !desc.ColorAttachments[0].View)
+		{
+			return nullptr;
+		}
+
+		// Alias the sRGB present image with a UNORM view so ImGui samples the encoded bytes verbatim (no
+		// hardware sRGB decode). Same subresource range as the attachment view, only the format differs.
+		const Ref<Texture>& img = desc.ColorAttachments[0].View->GetTexture();
+		TextureViewDesc v = MakeFullViewDesc(img->GetDesc());
+		v.Format = kPresentSampleFormat; // UNORM twin
+		v.DebugName = "PresentSample_UNORM";
+		return TextureView::Create(img, v);
+	}
+
 	Ref<RenderTarget> CreateShadowDepthTarget(const uint32_t size, const char* debugPrefix)
 	{
 		TextureDesc depthDesc{};

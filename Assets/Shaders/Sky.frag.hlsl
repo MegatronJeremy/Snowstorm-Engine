@@ -6,26 +6,8 @@
 // pixels). Interim stand-in for a real cubemap skybox (#35) / IBL (#52); reuses the same
 // FrameCB.InvViewProj ray reconstruction those will need.
 
-// Mirrors DefaultLit's output transform so the sky shares the scene's exposure/tonemap/encode. When
-// the post-process pass (#53) centralizes this, both shaders drop their inline copy.
-float3 TonemapACES(float3 x)
-{
-	const float a = 2.51;
-	const float b = 0.03;
-	const float c = 2.43;
-	const float d = 0.59;
-	const float e = 0.14;
-	return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
-}
-
-// Exact IEC 61966-2-1 piecewise sRGB encode (must match DefaultLit's LinearToSRGB, #55).
-float3 LinearToSRGB(float3 c)
-{
-	c = max(c, 0.0);
-	const float3 lo = c * 12.92;
-	const float3 hi = 1.055 * pow(c, 1.0 / 2.4) - 0.055;
-	return lerp(hi, lo, step(c, 0.0031308));
-}
+// Tonemap + sRGB encode moved to the post-process pass (Tonemap.frag.hlsl, #53). The sky writes raw
+// linear radiance into the HDR scene target, which the post pass then tonemaps alongside the meshes.
 
 // Must match Fullscreen.vert.hlsl's FullscreenVSOut (SV_Position + NDC).
 struct SkyPSIn
@@ -46,9 +28,8 @@ float4 main(SkyPSIn i) : SV_Target0
 	// sun's toSun is the negated light direction, zeroed when there is no directional light.
 	const float3 toSun = (LightCount > 0) ? normalize(-DirectionalLights[0].Direction) : float3(0, 0, 0);
 	const float3 sunColor = (LightCount > 0) ? DirectionalLights[0].Color * DirectionalLights[0].Intensity : float3(0, 0, 0);
-	float3 sky = EvaluateSky(ray, SkyZenithColor, SkyHorizonColor, GroundColor, toSun, sunColor);
+	const float3 sky = EvaluateSky(ray, SkyZenithColor, SkyHorizonColor, GroundColor, toSun, sunColor);
 
-	sky = TonemapACES(sky * Exposure);
-	sky = LinearToSRGB(sky);
+	// Output raw linear radiance; the post-process pass (Tonemap.frag.hlsl, #53) applies exposure/ACES/sRGB.
 	return float4(sky, 1.0);
 }

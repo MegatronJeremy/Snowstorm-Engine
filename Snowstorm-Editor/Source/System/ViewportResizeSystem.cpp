@@ -8,6 +8,7 @@
 #include "Snowstorm/Components/RenderTargetComponent.hpp"
 #include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Core/Application.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererUtils.hpp"
 
 namespace Snowstorm
@@ -73,22 +74,28 @@ namespace Snowstorm
 				h = windowH;
 			}
 
-			// Rebuild RT only when necessary.
+			// Rebuild the HDR scene target + LDR present target together, only when missing or resized.
 			{
 				const auto& rt = reg.Read<RenderTargetComponent>(vpEntity);
-				if (!rt.Target)
+				const bool missing = !rt.Target || !rt.PresentTarget;
+				const bool resized = rt.Target && (rt.Target->GetDesc().Width != w || rt.Target->GetDesc().Height != h);
+				if (missing || resized)
 				{
+					// Drain the GPU before dropping the old targets: replacing the Ref destroys the VkImage/
+					// view immediately, but in-flight frames may still be sampling them (the post-process pass
+					// reads the scene target through the bindless array, and ImGui samples the present target).
+					// Freeing a resource the GPU is mid-read of is a device-lost fault. Only on an actual
+					// resize (`resized`), not first-time creation (`missing`) where nothing is in flight yet.
+					// Matches VulkanContext::RecreateSwapchain, which likewise waits idle before teardown.
+					if (resized)
+					{
+						Renderer::WaitIdle();
+					}
+
 					auto& rtW = reg.Write<RenderTargetComponent>(vpEntity);
 					rtW.Target = CreateDefaultSceneRenderTarget(w, h, "Viewport");
-				}
-				else
-				{
-					const auto& desc = rt.Target->GetDesc();
-					if (desc.Width != w || desc.Height != h)
-					{
-						auto& rtW = reg.Write<RenderTargetComponent>(vpEntity);
-						rtW.Target = CreateDefaultSceneRenderTarget(w, h, "Viewport");
-					}
+					rtW.PresentTarget = CreatePresentTarget(w, h, "Viewport");
+					rtW.PresentSampleView = CreatePresentSampleView(rtW.PresentTarget);
 				}
 			}
 		}

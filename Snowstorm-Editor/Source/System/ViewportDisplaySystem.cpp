@@ -419,21 +419,18 @@ namespace Snowstorm
 			reg.WriteIfChanged<ViewportComponent>(e, [&](auto& vp)
 			                                      { vp.Size = {panelSize.x, panelSize.y}; });
 
-			// ---- Draw
+			// ---- Draw. Sample the present target's UNORM view (the tonemapped, hardware-sRGB-encoded
+			// result), NOT the HDR scene target and NOT the sRGB attachment view. The UNORM view reads the
+			// encoded bytes verbatim; the sRGB view would hardware-decode to linear and display too dark.
+			// Falls back to nothing until the present sample view exists.
 			const auto& rt = reg.Read<RenderTargetComponent>(e);
-			if (!rt.Target)
-			{
-				continue;
-			}
-
-			const auto& desc = rt.Target->GetDesc();
-			if (desc.ColorAttachments.empty() || !desc.ColorAttachments[0].View)
+			if (!rt.PresentSampleView)
 			{
 				continue;
 			}
 
 			const ImVec2 imageStart = ImGui::GetCursorScreenPos(); // top-left of the image in screen space
-			const uint64_t textureID = desc.ColorAttachments[0].View->GetUIID();
+			const uint64_t textureID = rt.PresentSampleView->GetUIID();
 			const auto& vp = reg.Read<ViewportComponent>(e);
 
 			ImGui::Image(textureID, ImVec2{vp.Size.x, vp.Size.y}, ImVec2{0, 1}, ImVec2{1, 0});

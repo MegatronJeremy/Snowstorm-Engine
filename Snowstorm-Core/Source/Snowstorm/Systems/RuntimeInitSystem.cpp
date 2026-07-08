@@ -98,7 +98,7 @@ namespace Snowstorm
 
 			bool needsCreate = false;
 
-			if (!rtc.Target)
+			if (!rtc.Target || !rtc.PresentTarget)
 			{
 				needsCreate = true;
 			}
@@ -115,6 +115,8 @@ namespace Snowstorm
 			{
 				auto& wRtc = reg.Write<RenderTargetComponent>(e);
 				wRtc.Target = CreateDefaultSceneRenderTarget(w, h, "Viewport");
+				wRtc.PresentTarget = CreatePresentTarget(w, h, "Viewport");
+				wRtc.PresentSampleView = CreatePresentSampleView(wRtc.PresentTarget);
 			}
 		}
 

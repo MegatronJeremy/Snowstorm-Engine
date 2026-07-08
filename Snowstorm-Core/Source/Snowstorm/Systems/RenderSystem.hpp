@@ -3,6 +3,7 @@
 #include "Snowstorm/ECS/System.hpp"
 #include "Snowstorm/Lighting/LightingUniforms.hpp"
 #include "Snowstorm/Render/Passes/IBLBakePass.hpp"
+#include "Snowstorm/Render/Passes/PostProcessPass.hpp"
 #include "Snowstorm/Render/Passes/ShadowPass.hpp"
 #include "Snowstorm/Render/Passes/SkyPass.hpp"
 
@@ -26,6 +27,7 @@ namespace Snowstorm
 		IBLBakePass m_IBLBakePass;
 		ShadowPass m_ShadowPass;
 		SkyPass m_SkyPass;
+		PostProcessPass m_PostProcessPass;
 
 		// The environment the IBL maps were last baked from. When the live environment differs (e.g. a scene
 		// finished loading after the deferred startup load, so the first bake saw an empty/default world), we

@@ -96,6 +96,15 @@ namespace Snowstorm
 		// the fullscreen shader needs (InvViewProj, environment). No-op outside an active scene pass.
 		void DrawFullscreenTriangle(const Ref<Pipeline>& pipeline);
 
+		// Post-process fullscreen draw: like DrawFullscreenTriangle but also binds the set=3 bindless table
+		// (the tonemap shader samples the HDR scene color via a bindless index in FrameCB.SceneColorIndex)
+		// and does NOT require an active BeginScene (it runs as its own graph pass with its own command
+		// context + frame index). Sets SceneColorIndex into FrameData so AcquireFrameSet uploads it.
+		void DrawPostProcess(const Ref<Pipeline>& pipeline,
+		                     const Ref<CommandContext>& commandContext,
+		                     uint32_t frameIndex,
+		                     uint32_t sceneColorBindlessIndex);
+
 		// Set the directional shadow data the lit pass needs: the light's view-projection (world -> light
 		// clip), the bindless index of the shadow depth texture (0 = no shadows), and the shadow map's
 		// resolution (for the PCF texel-size). The camera pass's FrameCB picks these up so DefaultLit can

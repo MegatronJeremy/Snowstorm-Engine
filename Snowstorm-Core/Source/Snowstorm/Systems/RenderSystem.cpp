@@ -428,6 +428,31 @@ namespace Snowstorm
 
 				               renderer.EndScene();
 			               }});
+
+			// Post-process (tonemap): read the HDR scene color, write exposure/ACES/sRGB into the LDR present
+			// target that ImGui samples. Declared as a Sampled read of the HDR color so the graph transitions
+			// it from color-attachment to shader-read before this pass. Skipped if the present target or the
+			// HDR color's bindless index isn't ready.
+			if (vpRT.PresentTarget)
+			{
+				const auto& hdrDesc = vpRT.Target->GetDesc();
+				const auto& ppDesc = vpRT.PresentTarget->GetDesc();
+				if (!hdrDesc.ColorAttachments.empty() && hdrDesc.ColorAttachments[0].View &&
+				    !ppDesc.ColorAttachments.empty() && ppDesc.ColorAttachments[0].View)
+				{
+					const Ref<TextureView> hdrColorView = hdrDesc.ColorAttachments[0].View;
+					const uint32_t sceneColorIndex = hdrColorView->GetGlobalBindlessIndex();
+					const PixelFormat presentFmt = ppDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+
+					graph.AddPass({.Name = "PostProcess",
+					               .Target = vpRT.PresentTarget,
+					               .Reads = {{hdrColorView->GetTexture(), RenderGraph::AccessState::Sampled}},
+					               .Execute = [&, sceneColorIndex, presentFmt](CommandContext& c)
+					               {
+						               m_PostProcessPass.Draw(renderer, ctx, frameIndex, sceneColorIndex, presentFmt);
+					               }});
+				}
+			}
 		}
 
 		// ImGui pass to swapchain. This is the ONLY pass that composes the swapchain today,

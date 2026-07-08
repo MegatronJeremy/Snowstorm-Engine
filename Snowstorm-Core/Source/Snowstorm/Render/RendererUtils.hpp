@@ -5,14 +5,35 @@
 
 namespace Snowstorm
 {
-	// Canonical color format of the offscreen scene render target. The scene is rendered here and later
-	// composed to the (BGRA) swapchain by the ImGui/present pass — it is NOT the surface format. Any
-	// pipeline that draws into the scene target must declare this as its color format to stay
-	// render-pass-compatible; sourcing it from Renderer::GetSurfaceFormat() (the swapchain) only worked
-	// while both happened to map to the same Vulkan format (#62).
-	constexpr PixelFormat kSceneColorFormat = PixelFormat::RGBA8_UNorm;
+	// Canonical color format of the offscreen scene render target: linear HDR float (#53/#79). The forward
+	// + sky passes write UNTONEMAPPED linear radiance here; the post-process pass reads it and applies
+	// exposure/ACES/sRGB. An 8-bit target would clip highlights >1.0 before the tonemapper ever saw them,
+	// so HDR storage is what makes tonemap-in-post correct (the same reason Unreal/Unity use float16 scene
+	// color). Any pipeline drawing into the scene target must declare this color format to stay
+	// render-pass-compatible.
+	constexpr PixelFormat kSceneColorFormat = PixelFormat::RGBA16_SFloat;
 
+	// Storage format of the LDR present target: 8-bit sRGB. The post-process pass writes LINEAR and the
+	// hardware sRGB-encodes on write (#79), so the shader no longer gamma-encodes. The image is created
+	// MutableFormat so ImGui can sample it through a UNORM view (raw encoded bytes) — see
+	// CreatePresentSampleView / RenderTargetComponent::PresentSampleView.
+	constexpr PixelFormat kPresentColorFormat = PixelFormat::RGBA8_sRGB;
+
+	// The UNORM twin of kPresentColorFormat, used for the ImGui sample view over the sRGB present image.
+	constexpr PixelFormat kPresentSampleFormat = PixelFormat::RGBA8_UNorm;
+
+	// HDR scene target: color (kSceneColorFormat) + depth (D32). Written by the forward/sky passes, then
+	// sampled by the post-process pass. Sampled usage auto-registers the color view for bindless.
 	Ref<RenderTarget> CreateDefaultSceneRenderTarget(uint32_t w, uint32_t h, const char* debugPrefix);
+
+	// LDR present target: a single sRGB color attachment (kPresentColorFormat), no depth, MutableFormat so
+	// a UNORM sample view can alias it. The post-process pass renders the tonemapped (still linear) result
+	// here and the hardware encodes sRGB on write.
+	Ref<RenderTarget> CreatePresentTarget(uint32_t w, uint32_t h, const char* debugPrefix);
+
+	// Build the UNORM sample view over a present target's sRGB image, for ImGui to read the encoded bytes
+	// without a hardware sRGB decode. Pass the RenderTarget returned by CreatePresentTarget.
+	Ref<TextureView> CreatePresentSampleView(const Ref<RenderTarget>& presentTarget);
 
 	// Depth-only, square render target for a directional shadow map: a D32_Float depth texture that is
 	// both a depth attachment (written by the shadow pass) and sampled (read by the lit shader). No color

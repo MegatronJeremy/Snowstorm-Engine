@@ -66,6 +66,12 @@ namespace Snowstorm
 		uint32_t ArrayLayers = 1; // Cube usually 6 (or 6*N for cube arrays)
 		uint32_t SampleCount = 1;
 
+		// Allow views of this image to use a different (compatible) format than Format — sets
+		// VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT. Needed to alias an sRGB storage image with a UNORM sample
+		// view (hardware sRGB encode on attachment write, raw-byte read for ImGui). Off by default (the
+		// flag disables some compression, so only set it where a second view format is actually required).
+		bool MutableFormat = false;
+
 		std::string DebugName = "UnnamedTexture";
 	};
 

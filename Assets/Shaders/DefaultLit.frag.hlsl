@@ -97,30 +97,8 @@ float SampleSpotShadow(SpotLight spot, float3 positionWS, float NdotL)
 	return SampleShadowFactor(SpotShadowAtlasIndex, spot.ShadowViewProj, spot.ShadowAtlasRect, positionWS, NdotL);
 }
 
-// ACES filmic tonemap (Narkowicz fit): compress unbounded linear HDR into [0,1] with a filmic
-// shoulder/toe, so bright spots roll off instead of clipping flat white. Cheap, no LUT.
-float3 TonemapACES(float3 x)
-{
-	const float a = 2.51;
-	const float b = 0.03;
-	const float c = 2.43;
-	const float d = 0.59;
-	const float e = 0.14;
-	return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
-}
-
-// Encode linear -> sRGB. The scene target is a UNORM image displayed as sRGB with no hardware
-// encode, so we gamma-encode in the shader; without this the whole image reads too dark.
-// Exact IEC 61966-2-1 piecewise curve: a linear toe (12.92 * c) below the threshold and a
-// 1.055 * c^(1/2.4) - 0.055 shoulder above — not the pow(1/2.2) approximation, which lacks the
-// linear segment and darkens deep shadows (#55). Deleted once a hardware-sRGB present path lands.
-float3 LinearToSRGB(float3 c)
-{
-	c = max(c, 0.0);
-	const float3 lo = c * 12.92;
-	const float3 hi = 1.055 * pow(c, 1.0 / 2.4) - 0.055;
-	return lerp(hi, lo, step(c, 0.0031308));
-}
+// Tonemap + sRGB encode moved to the post-process pass (Tonemap.frag.hlsl, #53). This shader outputs
+// raw linear HDR into the scene target that the post pass then tonemaps.
 
 // --- Cook-Torrance terms ---
 float DistributionGGX(float3 N, float3 H, float roughness)
@@ -348,11 +326,8 @@ float4 main(PSInput i) : SV_Target0
 		color += EmissiveColor;
 	}
 
-	// Output transform: linear HDR -> exposure -> filmic tonemap -> sRGB encode. Without this the raw
-	// linear BRDF result clips to flat white at highlights and reads too dark elsewhere on an sRGB
-	// display. Exposure is the FrameCB knob (CVar render.exposure).
-	color = TonemapACES(color * Exposure);
-	color = LinearToSRGB(color);
-
+	// Output raw LINEAR HDR radiance into the HDR scene target. The exposure/ACES/sRGB output transform
+	// now lives once in the post-process pass (Tonemap.frag.hlsl, #53), which samples this target — the
+	// mesh and sky shaders no longer tonemap inline.
 	return float4(color, BaseColor.a);
 }
