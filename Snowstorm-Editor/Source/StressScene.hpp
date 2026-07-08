@@ -23,6 +23,12 @@ namespace Snowstorm
 		// Disocclusion layer: rotating occluders in front of the field that reveal/hide background.
 		int OccluderCount = 18;
 
+		// Heavy data-parallel ECS workload (thesis demonstrator for #85). Spawns this many
+		// Transform+Rotator-ONLY entities (no mesh/material/visibility), so RotatorSystem's per-entity
+		// quaternion loop scales to N without inflating draw submission — the per-system timing then
+		// isolates the serial-vs-parallel win. 0 (default) = none. Set high (10k–100k) for the benchmark.
+		int RotatorCount = 0;
+
 		uint32_t Seed = 1337u; // fixed seed -> reproducible scene (for before/after benchmarks)
 	};
 

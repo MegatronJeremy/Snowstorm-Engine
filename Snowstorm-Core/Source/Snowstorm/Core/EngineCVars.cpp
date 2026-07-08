@@ -8,6 +8,10 @@ namespace Snowstorm::CVars
 
 	CVar<bool> FrameStats{"debug.frame_stats", false, "Log a once-per-second frame breakdown (total / GPU-wait / GPU-frame / CPU-submit)"};
 
+	CVar<bool> EcsParallel{"ecs.parallel", true, "Run data-parallel systems (System::ParallelForEach) across JobSystem workers (off = serial)"};
+
+	CVar<int> StressRotators{"stress.rotators", 0, "Bare Transform+Rotator entities the stress bake spawns (heavy data-parallel ECS workload for the #85 benchmark)"};
+
 	CVar<int> ProfileCaptureFrames{"profile.capture_frames", 0, "Capture N frames of the chrome-tracing profile at startup then keep running (0 = editor-only)"};
 
 	CVar<std::string> ProfileCapturePath{"profile.capture_path", "SnowstormCapture.json", "Output path for profile.capture_frames"};

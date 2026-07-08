@@ -116,6 +116,18 @@ namespace Snowstorm
 			return m_Registry.get<T>(entity);
 		}
 
+		/// Explicitly mark component(s) changed on an entity WITHOUT taking a reference. This is the
+		/// write-back primitive for the data-parallel path (System::ParallelForEach<Write<T>...>): worker
+		/// threads mutate components in place (bypassing the tracking map, which is not thread-safe), then a
+		/// single-threaded pass after the barrier calls this to restore ChangedView semantics. Conservative
+		/// like Unity DOTS RW-access — marks changed even if the value didn't actually change. NOT
+		/// thread-safe itself (touches the shared map): only call it from the post-barrier serial pass.
+		template <typename... Ts>
+		void MarkChanged(const entt::entity entity)
+		{
+			(m_ChangedComponents[entity].insert(std::type_index(typeid(Ts))), ...);
+		}
+
 		/// WriteIfChanged<T>(entity, fn):
 		/// - Reads the component
 		/// - Applies fn(copy)

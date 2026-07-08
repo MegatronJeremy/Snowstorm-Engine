@@ -21,6 +21,17 @@ namespace Snowstorm::CVars
 	// Output path for the profile.capture_frames trace (chrome://tracing / Perfetto JSON).
 	extern CVar<std::string> ProfileCapturePath;
 
+	// Data-parallel ECS toggle. When true (default), systems that opt into System::ParallelForEach split
+	// their per-entity loop across JobSystem workers; when false they run the identical loop serially on
+	// the main thread. Same build, one flag — the before/after switch for measuring the parallel win and a
+	// kill-switch if a parallel path ever misbehaves.
+	extern CVar<bool> EcsParallel;
+
+	// Number of bare Transform+Rotator entities the stress bake ("scene.bake stress") spawns, on top of
+	// the renderable fields. These carry no mesh/material, so they load only RotatorSystem's per-entity
+	// loop — the heavy, pure workload for the parallel-ECS before/after benchmark (#85). 0 (default) = none.
+	extern CVar<int> StressRotators;
+
 	// Headless frame-stats logging. When true, log a once-per-second breakdown of the frame: total CPU
 	// frame time, the GPU present-wait (fence stall in BeginFrame), real GPU execution time, and the
 	// derived CPU-submit time (frame - wait). Lets the CPU-vs-GPU-bound split be measured without the

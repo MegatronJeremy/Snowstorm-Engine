@@ -105,3 +105,29 @@ TEST_CASE("Clear wipes entities and all tracking state", "[ecs]")
 	REQUIRE_FALSE(reg.valid(e));
 	REQUIRE(reg.AddedView<Position>().empty());
 }
+
+TEST_CASE("MarkChanged flags components changed without taking a reference", "[ecs]")
+{
+	// MarkChanged is the write-back primitive for the data-parallel path: workers mutate components in
+	// place (bypassing the tracking map), then a serial pass calls MarkChanged to restore ChangedView.
+	TrackedRegistry reg;
+	const auto e = reg.create();
+	reg.emplace<Position>(e, 1, 1);
+	reg.emplace<Velocity>(e);
+	reg.ClearTrackedComponents(); // simulate "start of a fresh frame"
+
+	// Mutate in place the way a parallel worker would (no tracking touched yet)...
+	reg.get<Position>(e).x = 42;
+	REQUIRE_FALSE(reg.WasChanged<Position>(e)); // in-place write is invisible to tracking
+
+	// ...then the post-barrier mark pass restores the Changed event (conservative, value-independent).
+	reg.MarkChanged<Position>(e);
+	REQUIRE(reg.WasChanged<Position>(e));
+	REQUIRE(reg.ChangedView<Position>().contains(e));
+	REQUIRE(reg.Read<Position>(e).x == 42); // the in-place value is intact
+
+	// Variadic form marks several component types at once (mirrors Write<A>, Write<B> in one loop).
+	REQUIRE_FALSE(reg.WasChanged<Velocity>(e));
+	reg.MarkChanged<Position, Velocity>(e);
+	REQUIRE(reg.WasChanged<Velocity>(e));
+}

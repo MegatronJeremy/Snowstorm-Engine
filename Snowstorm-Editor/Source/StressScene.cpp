@@ -142,7 +142,25 @@ namespace Snowstorm
 			++spawned;
 		}
 
-		SS_CORE_INFO("Stress scene built: {} renderables (grid {}x{}, {} pillars, {} occluders)",
-		             spawned, params.GridDim, params.GridDim, params.ThinCount, params.OccluderCount);
+		// ---- Heavy data-parallel ECS field: Transform+Rotator-only entities (#85 demonstrator) ----
+		// No mesh/material/visibility -> these never touch the draw path; they exist purely to give
+		// RotatorSystem a large, pure per-entity workload so the serial-vs-parallel win is measurable.
+		int rotators = 0;
+		for (int i = 0; i < params.RotatorCount; ++i)
+		{
+			Entity e = world.CreateEntity("Rotator");
+
+			auto& tr = e.AddComponent<TransformComponent>();
+			tr.Position = {frand(-half, half), frand(0.0f, 8.0f), frand(-half, half)};
+			tr.Rotation = {frand(0.0f, glm::radians(360.0f)), frand(0.0f, glm::radians(360.0f)), frand(0.0f, glm::radians(360.0f))};
+
+			auto& rot = e.AddComponent<RotatorComponent>();
+			rot.Axis = glm::normalize(glm::vec3(frand(-1.0f, 1.0f), 1.0f, frand(-1.0f, 1.0f)));
+			rot.SpeedDegPerSec = frand(15.0f, 90.0f);
+			++rotators;
+		}
+
+		SS_CORE_INFO("Stress scene built: {} renderables (grid {}x{}, {} pillars, {} occluders) + {} bare rotators",
+		             spawned, params.GridDim, params.GridDim, params.ThinCount, params.OccluderCount, rotators);
 	}
 }
