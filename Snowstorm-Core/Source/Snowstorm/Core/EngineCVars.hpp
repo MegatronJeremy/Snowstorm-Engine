@@ -21,6 +21,12 @@ namespace Snowstorm::CVars
 	// Output path for the profile.capture_frames trace (chrome://tracing / Perfetto JSON).
 	extern CVar<std::string> ProfileCapturePath;
 
+	// Headless frame-stats logging. When true, log a once-per-second breakdown of the frame: total CPU
+	// frame time, the GPU present-wait (fence stall in BeginFrame), real GPU execution time, and the
+	// derived CPU-submit time (frame - wait). Lets the CPU-vs-GPU-bound split be measured without the
+	// editor's Performance panel (which is the interactive equivalent). Off by default.
+	extern CVar<bool> FrameStats;
+
 	// Frame-time watchdog (milliseconds). When > 0, any single frame whose CPU time exceeds this logs an
 	// [error] naming the duration. The smoke harness treats [error] as a failure, so a per-frame stall
 	// (a hitch/freeze that N-frames-then-exit smoke otherwise passes right over) becomes a hard, headless-

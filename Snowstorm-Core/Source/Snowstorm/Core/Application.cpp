@@ -91,6 +91,14 @@ namespace Snowstorm
 		const int profileCaptureFrames = CVars::ProfileCaptureFrames.Get();
 		bool profileRequested = false;
 
+		// Headless frame-stats accumulation (debug.frame_stats): average the frame / GPU-wait / GPU-frame
+		// over a ~1s window and log the split, so the CPU-vs-GPU-bound question is answerable without the
+		// editor Performance panel. CPU-submit = total frame - GPU present-wait (the fence stall folded
+		// into RenderSystem). Off unless the CVar is set.
+		const bool frameStats = CVars::FrameStats.Get();
+		double statAccumMs = 0.0, statWaitMs = 0.0, statGpuMs = 0.0;
+		int statFrames = 0;
+
 		while (m_Running)
 		{
 			if (profileCaptureFrames > 0 && !profileRequested && frameNo == 3)
@@ -138,6 +146,25 @@ namespace Snowstorm
 				}
 			}
 			++frameNo;
+
+			if (frameStats && frameNo > 3) // skip warmup frames
+			{
+				const double frameMs = (glfwGetTime() - frameStart) * 1000.0;
+				statAccumMs += frameMs;
+				statWaitMs += Renderer::GetLastGpuWaitMs();
+				statGpuMs += Renderer::GetLastGpuFrameMs();
+				if (++statFrames >= 60)
+				{
+					const double n = static_cast<double>(statFrames);
+					const double frame = statAccumMs / n;
+					const double wait = statWaitMs / n;
+					const double gpu = statGpuMs / n;
+					SS_CORE_INFO("FrameStats: frame={0:.2f}ms  cpu-submit={1:.2f}ms  gpu-wait={2:.2f}ms  gpu-exec={3:.2f}ms",
+					             frame, frame - wait, wait, gpu);
+					statAccumMs = statWaitMs = statGpuMs = 0.0;
+					statFrames = 0;
+				}
+			}
 
 			if (smokeMode && --smokeFramesLeft == 0)
 			{
