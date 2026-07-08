@@ -98,10 +98,11 @@ namespace Snowstorm
 		// Share ONE sink instance across both loggers so ordering is preserved and the pattern matches the
 		// stdout sink (set in Log::Init). The sink formats with the pattern set on it here.
 		const auto sink = std::make_shared<LogBufferSink>();
-		// Same layout as the stdout sink but WITHOUT the color range markers (%^/%$): those expand to ANSI
-		// terminal escape codes, which would show up as garbage in the ImGui console. The console colors by
-		// Level itself.
-		sink->set_pattern("[%T] [%l] %n: %v");
+		// Layout for the in-editor console: "[HH:MM:SS] LOGGER: message". No color markers (%^/%$ -> ANSI
+		// escapes, garbage in ImGui) and NO level field (%l) — the console renders its own fixed-width,
+		// colored level tag from Entry::LevelValue, so baking the variable-width "[warning]" text into the
+		// string would just misalign the columns. Level still travels structurally via Entry::LevelValue.
+		sink->set_pattern("[%T] %n: %v");
 
 		if (const auto& core = Log::GetCoreLogger())
 		{

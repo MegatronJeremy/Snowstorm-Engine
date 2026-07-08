@@ -217,6 +217,11 @@ namespace Snowstorm
 			return;
 		}
 
+		// Center it each time it opens (it's a transient reference dialog, not a dockable panel — so unlike
+		// the console/CVar panels it shouldn't dock; it should just appear front-and-center like a dialog).
+		// ImGuiCond_Appearing re-centers on every toggle-on while still letting the user drag it meanwhile.
+		const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+		ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 		ImGui::SetNextWindowSize(ImVec2(440.0f, 0.0f), ImGuiCond_FirstUseEver);
 		if (!ImGui::Begin("Keyboard & Mouse Shortcuts", &m_ShowShortcuts))
 		{
@@ -261,6 +266,7 @@ namespace Snowstorm
 		if (ImGui::BeginTable("sel", 2, tableFlags))
 		{
 			row("Left Mouse (viewport)", "Select entity under cursor");
+			row("Escape", "Clear selection (hides the gizmo)");
 			row("W", "Translate gizmo");
 			row("E", "Rotate gizmo");
 			row("R", "Scale gizmo");
@@ -302,10 +308,12 @@ namespace Snowstorm
 			ImGui::EndTable();
 		}
 
-		section("Debug");
+		section("Debug / Console");
 		if (ImGui::BeginTable("debug", 2, tableFlags))
 		{
 			row("`  (backtick)", "Toggle the developer console");
+			row("Tab (in console)", "Autocomplete command / CVar (repeat to cycle)");
+			row("Up / Down (in console)", "Cycle command history");
 			ImGui::EndTable();
 		}
 

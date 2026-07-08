@@ -393,6 +393,14 @@ namespace Snowstorm
 		// (not only in that block) means a `continue` that skips the block can't leave it stuck true.
 		selection.GizmoActive = false;
 
+		// Escape clears the selection (and thus the gizmo, which only draws for a selected entity) — the
+		// standard editor deselect (Unity/Unreal/Godot). Gated on !WantTextInput so pressing Esc while
+		// typing in the console/a field just cancels the field (ImGui handles that) instead of deselecting.
+		if (selection.Selected && input.PressedThisFrame.test(Key::Escape) && !input.WantTextInput)
+		{
+			selection.Selected = {};
+		}
+
 		// Capture the viewport content rect now (top-left + width) so the Play toolbar can be drawn as a
 		// top-CENTER floating overlay AFTER the image below, without stealing a layout row above it.
 		const ImVec2 contentMin = ImGui::GetCursorScreenPos();
