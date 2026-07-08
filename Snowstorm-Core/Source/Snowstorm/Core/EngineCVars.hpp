@@ -32,6 +32,11 @@ namespace Snowstorm::CVars
 	// loop — the heavy, pure workload for the parallel-ECS before/after benchmark (#85). 0 (default) = none.
 	extern CVar<int> StressRotators;
 
+	// One-shot headless benchmark: build throwaway worlds with a sweep of bare-rotator counts, time
+	// RotatorSystem serial (ecs.parallel off) vs parallel (on), log a speedup table, then exit. Isolates
+	// the ECS loop from the renderer/vsync/GPU — the #85 thesis measurement. Off (default) = normal boot.
+	extern CVar<bool> EcsBenchmark;
+
 	// Headless frame-stats logging. When true, log a once-per-second breakdown of the frame: total CPU
 	// frame time, the GPU present-wait (fence stall in BeginFrame), real GPU execution time, and the
 	// derived CPU-submit time (frame - wait). Lets the CPU-vs-GPU-bound split be measured without the

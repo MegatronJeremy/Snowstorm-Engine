@@ -30,6 +30,7 @@
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Components/VisibilityComponents.hpp"
+#include "Snowstorm/ECS/ParallelEcsBenchmark.hpp"
 #include "Snowstorm/ECS/SystemManager.hpp"
 #include "Snowstorm/Lighting/LightingComponents.hpp"
 #include "Snowstorm/Math/CameraFraming.hpp"
@@ -297,6 +298,15 @@ namespace Snowstorm
 		if (const std::string& dumpPath = CVars::DumpMeshTangents.Get(); !dumpPath.empty())
 		{
 			DumpMeshTangentReport(dumpPath);
+			Application::Get().Close();
+			return;
+		}
+
+		// One-shot data-parallel ECS benchmark (CVar ecs.benchmark): time RotatorSystem serial vs parallel
+		// across a sweep of entity counts, log a table, then exit. Headless — no scene/renderer needed.
+		if (CVars::EcsBenchmark.Get())
+		{
+			RunParallelEcsBenchmark();
 			Application::Get().Close();
 			return;
 		}
