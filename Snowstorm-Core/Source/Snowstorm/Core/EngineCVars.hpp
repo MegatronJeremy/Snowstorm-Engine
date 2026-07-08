@@ -32,6 +32,12 @@ namespace Snowstorm::CVars
 	// loop — the heavy, pure workload for the parallel-ECS before/after benchmark (#85). 0 (default) = none.
 	extern CVar<int> StressRotators;
 
+	// Number of unique-material cubes the stress bake spawns. Each gets a distinct BaseColor override ->
+	// a unique MaterialInstance -> it can't batch, so it becomes its own vkCmdDrawIndexed. The worst case
+	// for the serial draw-recording path; used to measure whether draw submission ever becomes the frame
+	// bottleneck (the parallel-command-recording go/no-go). 0 (default) = none.
+	extern CVar<int> StressUniqueDraws;
+
 	// One-shot headless benchmark: build throwaway worlds with a sweep of bare-rotator counts, time
 	// RotatorSystem serial (ecs.parallel off) vs parallel (on), log a speedup table, then exit. Isolates
 	// the ECS loop from the renderer/vsync/GPU — the #85 thesis measurement. Off (default) = normal boot.

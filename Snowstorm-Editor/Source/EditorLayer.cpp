@@ -265,7 +265,8 @@ namespace Snowstorm
 			bake("assets/scenes/Stress.world", [this]
 			     {
 				StressSceneParams params;
-				params.RotatorCount = CVars::StressRotators.Get(); // heavy data-parallel workload for #85 (0 = none)
+				params.RotatorCount = CVars::StressRotators.Get();      // heavy data-parallel workload for #85 (0 = none)
+				params.UniqueDrawCount = CVars::StressUniqueDraws.Get(); // unique-material draws to stress submission (0 = none)
 				BuildStressScene(*m_ActiveWorld, params);
 				return true; });
 		}

@@ -29,6 +29,13 @@ namespace Snowstorm
 		// isolates the serial-vs-parallel win. 0 (default) = none. Set high (10k–100k) for the benchmark.
 		int RotatorCount = 0;
 
+		// Draw-submission stress (thesis: does draw recording ever bottleneck?). Spawns this many cube
+		// renderables, EACH with a unique per-entity BaseColor override -> a unique MaterialInstance ->
+		// NeedsUniqueInstance defeats instancing, so every object is its OWN vkCmdDrawIndexed. This is the
+		// worst case for the serial draw-recording path (one draw/object, plus RendererService's O(batches)
+		// batch scan per DrawMesh). 0 (default) = none. Set high (1k–10k) to measure cpu-submit scaling.
+		int UniqueDrawCount = 0;
+
 		uint32_t Seed = 1337u; // fixed seed -> reproducible scene (for before/after benchmarks)
 	};
 

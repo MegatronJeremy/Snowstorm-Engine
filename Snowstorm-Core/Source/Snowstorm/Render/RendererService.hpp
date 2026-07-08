@@ -13,7 +13,9 @@
 #include "Snowstorm/Render/Texture.hpp"
 #include "Snowstorm/Service/Service.hpp"
 
+#include <cstdint>
 #include <unordered_map>
+#include <utility>
 
 namespace Snowstorm
 {
@@ -159,6 +161,23 @@ namespace Snowstorm
 		FrameData m_FrameData{};
 
 		std::vector<BatchData> m_Batches;
+
+		// Index into m_Batches keyed by the (mesh, material-instance) raw-pointer pair, so DrawMesh finds an
+		// existing batch in O(1) instead of a linear scan. Without this, N unique-material draws cost O(N^2)
+		// in batch matching (measured: ~11ms of superlinear overhead at 10k unique draws). Rebuilt each
+		// frame alongside m_Batches (both cleared in BeginScene). Exact pair key (not a packed hash) so
+		// distinct pairs that hash-collide still compare unequal — no wrong-batch merges.
+		using BatchKey = std::pair<const Mesh*, const MaterialInstance*>;
+		struct BatchKeyHash
+		{
+			size_t operator()(const BatchKey& k) const noexcept
+			{
+				const auto a = reinterpret_cast<uintptr_t>(k.first);
+				const auto b = reinterpret_cast<uintptr_t>(k.second);
+				return std::hash<uintptr_t>{}(a) ^ (std::hash<uintptr_t>{}(b) + 0x9e3779b97f4a7c15ull + (a << 6) + (a >> 2));
+			}
+		};
+		std::unordered_map<BatchKey, size_t, BatchKeyHash> m_BatchIndex;
 
 		// Cached per-pipeline sets, per frame-in-flight
 		std::unordered_map<const Pipeline*, std::vector<Ref<DescriptorSet>>> m_FrameSets;

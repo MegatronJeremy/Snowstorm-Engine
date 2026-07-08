@@ -82,6 +82,7 @@ namespace Snowstorm
 		m_FrameData.CameraPosition = cameraWorldPosition;
 
 		m_Batches.clear();
+		m_BatchIndex.clear();
 		m_Stats = RenderStats{};
 	}
 
@@ -103,24 +104,18 @@ namespace Snowstorm
 		SS_CORE_ASSERT(mesh, "Mesh must be valid");
 		SS_CORE_ASSERT(materialInstance, "MaterialInstance must be valid");
 
-		BatchData* batch = nullptr;
-		for (auto& b : m_Batches)
-		{
-			if (b.Mesh == mesh && b.MaterialInstance == materialInstance)
-			{
-				batch = &b;
-				break;
-			}
-		}
-
-		if (!batch)
+		// O(1) batch lookup by (mesh, material-instance). Linear scan here was O(N^2) across N unique-
+		// material draws (see m_BatchIndex). try_emplace inserts the index only when the pair is new.
+		const BatchKey key{mesh.get(), materialInstance.get()};
+		const auto [it, inserted] = m_BatchIndex.try_emplace(key, m_Batches.size());
+		if (inserted)
 		{
 			BatchData newBatch;
 			newBatch.Mesh = mesh;
 			newBatch.MaterialInstance = materialInstance;
 			m_Batches.push_back(std::move(newBatch));
-			batch = &m_Batches.back();
 		}
+		BatchData* batch = &m_Batches[it->second];
 
 		InstanceData instance{};
 		instance.Model = transform;

@@ -14,6 +14,7 @@
 
 #include <glm/glm.hpp>
 
+#include <cmath>
 #include <random>
 
 namespace Snowstorm
@@ -52,6 +53,19 @@ namespace Snowstorm
 			o.Name = "AlbedoTexture";
 			o.Type = MaterialOverrideType::Texture;
 			o.Texture = texture;
+			ov.Overrides.push_back(o);
+		}
+
+		// A unique BaseColor (Color-type) override forces MaterialResolveSystem::NeedsUniqueInstance ->
+		// a per-entity MaterialInstance -> the object can't batch, so it becomes its own vkCmdDrawIndexed.
+		// This is the deliberate instancing-defeat used to stress the serial draw-recording path.
+		void AddUniqueColorOverride(Entity e, const glm::vec4& color)
+		{
+			auto& ov = e.AddOrReplaceComponent<MaterialOverridesComponent>();
+			MaterialOverride o;
+			o.Name = "BaseColor";
+			o.Type = MaterialOverrideType::Color;
+			o.Color = color;
 			ov.Overrides.push_back(o);
 		}
 	}
@@ -160,7 +174,31 @@ namespace Snowstorm
 			++rotators;
 		}
 
-		SS_CORE_INFO("Stress scene built: {} renderables (grid {}x{}, {} pillars, {} occluders) + {} bare rotators",
-		             spawned, params.GridDim, params.GridDim, params.ThinCount, params.OccluderCount, rotators);
+		// ---- Draw-submission stress: unique-material cubes (one vkCmdDrawIndexed each) ----
+		// Each gets a distinct BaseColor -> unique MaterialInstance -> can't batch. Stresses the serial
+		// draw-recording path (and RendererService's O(batches) per-DrawMesh scan) to measure whether draw
+		// submission ever becomes the frame bottleneck (the parallel-command-recording go/no-go).
+		int uniqueDraws = 0;
+		if (params.UniqueDrawCount > 0)
+		{
+			// Lay them out on a rough grid so they're on-screen and actually rendered (not frustum-culled).
+			const int side = static_cast<int>(std::ceil(std::sqrt(static_cast<float>(params.UniqueDrawCount))));
+			for (int i = 0; i < params.UniqueDrawCount; ++i)
+			{
+				const int gx = i % side;
+				const int gz = i / side;
+				const glm::vec3 pos = {static_cast<float>(gx) * 1.2f - static_cast<float>(side) * 0.6f,
+				                       frand(0.0f, 6.0f),
+				                       static_cast<float>(gz) * 1.2f - static_cast<float>(side) * 0.6f};
+				Entity e = MakeRenderable(world, "Unique Draw", cubeMesh, whiteMat, pos,
+				                          {0.0f, 0.0f, 0.0f}, {0.4f, 0.4f, 0.4f});
+				// Distinct color per object -> unique instance -> defeats batching.
+				AddUniqueColorOverride(e, glm::vec4(frand(0.1f, 1.0f), frand(0.1f, 1.0f), frand(0.1f, 1.0f), 1.0f));
+				++uniqueDraws;
+			}
+		}
+
+		SS_CORE_INFO("Stress scene built: {} renderables (grid {}x{}, {} pillars, {} occluders) + {} bare rotators + {} unique-draw cubes",
+		             spawned, params.GridDim, params.GridDim, params.ThinCount, params.OccluderCount, rotators, uniqueDraws);
 	}
 }
