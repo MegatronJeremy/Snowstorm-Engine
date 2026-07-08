@@ -121,6 +121,22 @@ see, so treat it as part of the feature, not an afterthought.
   the editor/serializer registry from a per-component static initializer (`RTTR_REGISTRATION { ... }` +
   `AUTO_REGISTER_COMPONENT(T)` in each `Components/*.cpp`; see `Components/ComponentRegistry.hpp`).
   Core is a static lib, so the executables link it `WHOLE_ARCHIVE` to keep those initializer TUs.
+- **Data-parallelism is a first-class option for systems — always consider it.** When adding a new
+  system (or extending/reworking one), explicitly ask whether its per-entity work is *pure and
+  independent* (each entity reads/writes only its OWN components, no shared accumulator, no renderer/
+  asset-manager/singleton calls, no `TrackedRegistry` mutation APIs in the loop) and would benefit from
+  running across `JobSystem` workers. If so, use the existing primitives instead of a hand-rolled serial
+  loop: `System::ParallelForEach<Read<T>/Write<T>...>` for in-place per-entity updates (the DOTS
+  IJobEntity model; RotatorSystem is the reference), or `JobSystem::ParallelGather<T>(count, body, emit)`
+  for parallel filter/collect into a list (VisibilitySystem's frustum cull is the reference). Both take
+  a grain size, degrade to an inline serial pass for small N (parallel only when it pays), gate on the
+  `ecs.parallel` CVar for a pure serial-vs-parallel A/B, and preserve deterministic (bit-identical)
+  output so `ChangedView`/draw order stay stable. Most systems will NOT qualify (they submit to the
+  renderer, touch singletons, run scripts, or scatter into shared state) — those stay serial on plain
+  `System`, and that's the correct call, not a missed optimization. The point is to make the
+  parallel-vs-serial decision *consciously* each time, not default to serial by habit. Note the current
+  ceiling: the O(n) post-barrier change-mark (#91) caps end-to-end speedup at scale even when the
+  compute parallelizes near-linearly — measure with `--ecs.benchmark` rather than assuming a win.
 - **Rendering:** backend-agnostic interfaces in `Render/` (`RendererAPI`, `Renderer`, `Pipeline`,
   `Shader`, `Buffer`, `Texture`, `Material`, `RenderGraph`, ...). The concrete implementation lives
   in `Platform/Vulkan/` (volk + Vulkan Memory Allocator + spirv-reflect; shaders compiled to SPIR-V
