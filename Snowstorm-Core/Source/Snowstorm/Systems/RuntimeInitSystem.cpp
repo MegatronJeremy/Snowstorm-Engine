@@ -98,7 +98,7 @@ namespace Snowstorm
 
 			bool needsCreate = false;
 
-			if (!rtc.Target || !rtc.PresentTarget)
+			if (!rtc.Target || !rtc.PresentTarget || !rtc.AAIntermediateTarget)
 			{
 				needsCreate = true;
 			}
@@ -117,6 +117,8 @@ namespace Snowstorm
 				wRtc.Target = CreateDefaultSceneRenderTarget(w, h, "Viewport");
 				wRtc.PresentTarget = CreatePresentTarget(w, h, "Viewport");
 				wRtc.PresentSampleView = CreatePresentSampleView(wRtc.PresentTarget);
+				wRtc.AAIntermediateTarget = CreatePresentTarget(w, h, "ViewportAA");
+				wRtc.AAIntermediateSampleView = CreatePresentSampleView(wRtc.AAIntermediateTarget);
 			}
 		}
 

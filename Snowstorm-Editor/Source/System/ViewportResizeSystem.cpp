@@ -77,7 +77,7 @@ namespace Snowstorm
 			// Rebuild the HDR scene target + LDR present target together, only when missing or resized.
 			{
 				const auto& rt = reg.Read<RenderTargetComponent>(vpEntity);
-				const bool missing = !rt.Target || !rt.PresentTarget;
+				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget;
 				const bool resized = rt.Target && (rt.Target->GetDesc().Width != w || rt.Target->GetDesc().Height != h);
 				if (missing || resized)
 				{
@@ -96,6 +96,11 @@ namespace Snowstorm
 					rtW.Target = CreateDefaultSceneRenderTarget(w, h, "Viewport");
 					rtW.PresentTarget = CreatePresentTarget(w, h, "Viewport");
 					rtW.PresentSampleView = CreatePresentSampleView(rtW.PresentTarget);
+					// AA intermediate: same sRGB-store + UNORM-sample pair (FXAA renders present <- intermediate).
+					// Always allocated (one extra RGBA8 target/viewport, negligible); the FXAA pass only uses it
+					// when render.aa != 0.
+					rtW.AAIntermediateTarget = CreatePresentTarget(w, h, "ViewportAA");
+					rtW.AAIntermediateSampleView = CreatePresentSampleView(rtW.AAIntermediateTarget);
 				}
 			}
 		}

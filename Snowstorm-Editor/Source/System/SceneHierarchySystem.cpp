@@ -86,6 +86,25 @@ namespace Snowstorm
 		}
 
 		ImGui::Spacing();
+		EditorTheme::SectionHeader("Post-Processing");
+
+		// Anti-aliasing mode. Index maps 1:1 to render.aa (0=None, 1=FXAA). FXAA is a spatial post-process
+		// pass that runs after tonemap; a baseline for the upscaler comparison. Read per-frame, so it flips
+		// live.
+		{
+			const char* aaLabels[] = {"None", "FXAA"};
+			int aa = CVars::AAMode.Get();
+			if (aa < 0 || aa > 1)
+			{
+				aa = 0;
+			}
+			if (ImGui::Combo("Anti-Aliasing", &aa, aaLabels, 2))
+			{
+				CVars::AAMode.Set(aa);
+			}
+		}
+
+		ImGui::Spacing();
 		EditorTheme::SectionHeader("Shadows");
 
 		// Global shadow toggle (scalability kill-switch). The per-light "Cast Shadows" flag in the

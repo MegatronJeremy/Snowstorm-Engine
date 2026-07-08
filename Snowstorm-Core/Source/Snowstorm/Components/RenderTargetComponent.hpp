@@ -17,5 +17,12 @@ namespace Snowstorm
 		// reads the already-encoded bytes raw — sampling the sRGB view would hardware-decode to linear and
 		// display too dark. Null until the present target is (re)created.
 		Ref<TextureView> PresentSampleView;
+
+		// AA intermediate (only used when render.aa != 0): tonemap renders here instead of the present
+		// target, then the FXAA pass reads this and writes the present target. Same sRGB-store +
+		// UNORM-sample-view pair as the present target (FXAA samples the UNORM view = gamma-space bytes,
+		// which is what FXAA wants). Null when AA is off.
+		Ref<RenderTarget> AAIntermediateTarget;
+		Ref<TextureView> AAIntermediateSampleView;
 	};
 }

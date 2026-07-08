@@ -450,6 +450,8 @@ namespace Snowstorm
 		rtc.Target = CreateDefaultSceneRenderTarget(windowWidth, windowHeight, "Main Viewport");
 		rtc.PresentTarget = CreatePresentTarget(windowWidth, windowHeight, "Main Viewport");
 		rtc.PresentSampleView = CreatePresentSampleView(rtc.PresentTarget);
+		rtc.AAIntermediateTarget = CreatePresentTarget(windowWidth, windowHeight, "Main Viewport AA");
+		rtc.AAIntermediateSampleView = CreatePresentSampleView(rtc.AAIntermediateTarget);
 	}
 
 	void EditorLayer::CreateDemoEntities() const

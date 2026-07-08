@@ -88,6 +88,11 @@ namespace Snowstorm::CVars
 	// brighten, lower to darken. Runtime-tweakable from the editor's Settings panel.
 	extern CVar<float> Exposure;
 
+	// Anti-aliasing mode: 0 = None, 1 = FXAA (spatial post-process AA, runs after tonemap). A thesis
+	// baseline for the neural upscaler comparison. Runtime-tweakable from the editor's Settings panel;
+	// read per-frame by RenderSystem, so toggling it takes effect live.
+	extern CVar<int> AAMode;
+
 	// --- Shadows (quality settings; runtime-tweakable from the editor's Settings panel) ---
 	// Global shadow kill-switch (scalability layer, like Unity Quality Settings / UE sg.ShadowQuality).
 	// Off = skip the shadow pass entirely; the per-light CastShadows flag is the authored on/off above it.

@@ -429,28 +429,55 @@ namespace Snowstorm
 				               renderer.EndScene();
 			               }});
 
-			// Post-process (tonemap): read the HDR scene color, write exposure/ACES/sRGB into the LDR present
-			// target that ImGui samples. Declared as a Sampled read of the HDR color so the graph transitions
-			// it from color-attachment to shader-read before this pass. Skipped if the present target or the
-			// HDR color's bindless index isn't ready.
-			if (vpRT.PresentTarget)
+			// Post-process (tonemap): read the HDR scene color, write exposure/ACES into an sRGB LDR target
+			// (hardware sRGB-encodes on write). Declared as a Sampled read of the HDR color so the graph
+			// transitions it from color-attachment to shader-read first. Skipped if targets/index aren't ready.
+			//
+			// AA routing: with FXAA on, tonemap renders the AA intermediate and a following FXAA pass resolves
+			// it into the present target; with AA off, tonemap writes the present target directly (no FXAA
+			// pass). read.aa is read per-frame so the Settings toggle flips live.
+			const bool fxaaOn = CVars::AAMode.Get() == 1 && vpRT.AAIntermediateTarget && vpRT.AAIntermediateSampleView;
+			const Ref<RenderTarget> tonemapTarget = fxaaOn ? vpRT.AAIntermediateTarget : vpRT.PresentTarget;
+
+			if (tonemapTarget)
 			{
 				const auto& hdrDesc = vpRT.Target->GetDesc();
-				const auto& ppDesc = vpRT.PresentTarget->GetDesc();
+				const auto& tmDesc = tonemapTarget->GetDesc();
 				if (!hdrDesc.ColorAttachments.empty() && hdrDesc.ColorAttachments[0].View &&
-				    !ppDesc.ColorAttachments.empty() && ppDesc.ColorAttachments[0].View)
+				    !tmDesc.ColorAttachments.empty() && tmDesc.ColorAttachments[0].View)
 				{
 					const Ref<TextureView> hdrColorView = hdrDesc.ColorAttachments[0].View;
 					const uint32_t sceneColorIndex = hdrColorView->GetGlobalBindlessIndex();
-					const PixelFormat presentFmt = ppDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+					const PixelFormat tmFmt = tmDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 
 					graph.AddPass({.Name = "PostProcess",
-					               .Target = vpRT.PresentTarget,
+					               .Target = tonemapTarget,
 					               .Reads = {{hdrColorView->GetTexture(), RenderGraph::AccessState::Sampled}},
-					               .Execute = [&, sceneColorIndex, presentFmt](CommandContext& c)
+					               .Execute = [&, sceneColorIndex, tmFmt](CommandContext& c)
 					               {
-						               m_PostProcessPass.Draw(renderer, ctx, frameIndex, sceneColorIndex, presentFmt);
+						               m_PostProcessPass.Draw(renderer, ctx, frameIndex, sceneColorIndex, tmFmt);
 					               }});
+
+					// FXAA resolve: intermediate (tonemapped LDR) -> present target. Gated on render.aa.
+					if (fxaaOn && vpRT.PresentTarget)
+					{
+						const auto& presentDesc = vpRT.PresentTarget->GetDesc();
+						if (!presentDesc.ColorAttachments.empty() && presentDesc.ColorAttachments[0].View)
+						{
+							const Ref<Texture> aaImage = vpRT.AAIntermediateTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+							const Ref<TextureView> aaSampleView = vpRT.AAIntermediateSampleView;
+							const PixelFormat presentFmt = presentDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+							const glm::vec2 rcpFrame = {1.0f / static_cast<float>(tmDesc.Width), 1.0f / static_cast<float>(tmDesc.Height)};
+
+							graph.AddPass({.Name = "FXAA",
+							               .Target = vpRT.PresentTarget,
+							               .Reads = {{aaImage, RenderGraph::AccessState::Sampled}},
+							               .Execute = [&, aaSampleView, rcpFrame, presentFmt](CommandContext& c)
+							               {
+								               m_FxaaPass.Draw(ctx, frameIndex, aaSampleView, rcpFrame, presentFmt);
+							               }});
+						}
+					}
 				}
 			}
 		}
