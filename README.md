@@ -13,19 +13,31 @@ Dear ImGui editor. The rendering abstraction currently targets **Vulkan**; Direc
 
 - **Backend-agnostic rendering** — engine-facing interfaces (`Renderer`, `Pipeline`, `Shader`,
   `Material`, `RenderGraph`, ...) with a Vulkan implementation built on volk, Vulkan Memory
-  Allocator, and SPIR-V reflection. HLSL shaders are compiled to SPIR-V via `dxc`.
+  Allocator, and SPIR-V reflection. Bindless textures, a render-graph with automatic resource
+  transitions, a dedicated transfer queue for uploads, and GPU-timestamped passes.
+- **PBR & lighting** — metallic-roughness materials with normal/AO/emissive maps, a procedural sky,
+  image-based lighting (compute-baked irradiance/prefilter/BRDF), directional + spot shadow maps,
+  and alpha-cutout support.
 - **Entity-Component-System** — built on [EnTT](https://github.com/skypjack/entt), organised into
-  Systems, Singletons, and Services, with RTTR-based component reflection.
-- **Editor** — Dear ImGui dockspace with a scene hierarchy panel, viewport, and notifications.
-- **Asset & scene pipeline** — mesh/material/texture assets (assimp, stb, gli) and JSON scene
-  serialization.
-- **Engine foundations** — layer stack, event bus, input handling, logging (spdlog), and a
-  built-in profiler that emits Chrome-tracing JSON.
+  Systems (phased), Singletons, and Services, with RTTR-based component reflection.
+- **Editor** — Dear ImGui dockspace with scene hierarchy, inspector, viewport (ImGuizmo transform
+  gizmos, click-to-select, camera framing), content browser, a performance panel (per-system CPU +
+  per-pass GPU timings), and a developer console with live log stream + command input +
+  autocomplete.
+- **Asset & scene pipeline** — mesh/material/texture assets (assimp, stb, gli) compiled to cooked
+  binary caches, loaded **asynchronously** off the main thread via a job system (with a loading
+  bar); JSON scene serialization. Shaders (HLSL → SPIR-V via `dxc`) also compile async + cached.
+- **Console variables** — a typed CVar registry (env / CLI / live-editable from the editor) gating
+  engine flags like shadows, IBL, exposure, and validation.
+- **Engine foundations** — layer stack, event bus, input handling, a job-system thread pool,
+  logging (spdlog), and profiling via **Tracy** (live) with a headless Chrome-tracing JSON fallback.
+- **Tested & CI'd** — Catch2 unit tests, a headless smoke-test harness, and GitHub Actions for
+  build / clang-format lint / shader compilation.
 
 ## Tech stack
 
-C++20 · CMake · vcpkg · Vulkan · GLFW · GLM · EnTT · Dear ImGui · spdlog · assimp · RTTR ·
-Vulkan Memory Allocator · volk · SPIRV-Reflect · nlohmann/json · stb · gli
+C++20 · CMake · vcpkg · Vulkan · GLFW · GLM · EnTT · Dear ImGui (+ ImGuizmo) · spdlog · assimp ·
+RTTR · Vulkan Memory Allocator · volk · SPIRV-Reflect · nlohmann/json · stb · gli · Tracy · Catch2
 
 ## Getting started
 
@@ -67,14 +79,28 @@ up automatically via the `VK_ADD_LAYER_PATH` environment variable.
 | **Snowstorm-Core** | static library | All engine code: platform-independent code under `Source/Snowstorm/`, backend code under `Source/Platform/` (Vulkan, Windows). |
 | **Snowstorm-Editor** | executable | The editor (ImGui dockspace, scene hierarchy, viewport); the default startup project. |
 | **Snowstorm-Runtime** | executable | Editor-free "player": runs the same engine systems as the editor without any tooling. Work in progress — see `docs/RUNTIME_REFACTOR.md`. |
+| **Snowstorm-Tests** | executable | Catch2 unit tests (run via CTest). |
 
 ```
-Assets/      runtime assets (Shaders, Meshes, Materials, Scenes, Textures)
-Scripts/     solution generation (Generate-Solution.py / .bat)
-Tools/dxc/   DirectX Shader Compiler (HLSL -> SPIR-V)
+Assets/       runtime assets (Shaders, Meshes, Materials, Scenes, Textures) + cooked caches
+Scripts/      solution generation (Generate-Solution.py / .bat) + smoke-test.py
+Tools/dxc/    DirectX Shader Compiler (HLSL -> SPIR-V)
+Tools/tracy/  Tracy profiler GUI (connect to a running Debug build)
 ```
 
 Executables link the Core static library and add its `Source/` directory to their include path.
+
+## Testing
+
+```bat
+:: unit tests (after building)
+build\Snowstorm-Tests\Debug\Snowstorm-Tests.exe
+
+:: headless smoke test — boots each executable for N frames and checks for crashes / errors
+py Scripts\smoke-test.py
+```
+
+The smoke test needs a real GPU/display (Vulkan), so it is a local gate, not a CI job.
 
 ## License
 
