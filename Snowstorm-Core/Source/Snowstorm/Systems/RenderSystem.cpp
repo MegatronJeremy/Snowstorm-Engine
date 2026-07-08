@@ -446,13 +446,44 @@ namespace Snowstorm
 				if (!hdrDesc.ColorAttachments.empty() && hdrDesc.ColorAttachments[0].View &&
 				    !tmDesc.ColorAttachments.empty() && tmDesc.ColorAttachments[0].View)
 				{
-					const Ref<TextureView> hdrColorView = hdrDesc.ColorAttachments[0].View;
-					const uint32_t sceneColorIndex = hdrColorView->GetGlobalBindlessIndex();
+					// Internal-resolution upscale (#43): when the scene Target is smaller than the viewport
+					// (render.scale < 1), bilinear-resample it into the full-res SceneUpscaleTarget, and have
+					// tonemap read THAT. At scale 1.0 the upscale pass is skipped and tonemap reads Target
+					// directly (today's path, byte-identical). Both compare Target vs the full present size.
+					const bool upscaling = vpRT.SceneUpscaleTarget &&
+					                       (hdrDesc.Width != tmDesc.Width || hdrDesc.Height != tmDesc.Height);
+
+					// The HDR color view tonemap samples: the upscaled full-res image when upscaling, else the
+					// scene Target directly.
+					Ref<TextureView> sceneColorView = hdrDesc.ColorAttachments[0].View;
+
+					if (upscaling)
+					{
+						const auto& upDesc = vpRT.SceneUpscaleTarget->GetDesc();
+						if (!upDesc.ColorAttachments.empty() && upDesc.ColorAttachments[0].View)
+						{
+							const Ref<TextureView> lowResView = hdrDesc.ColorAttachments[0].View; // low-res scene
+							const Ref<TextureView> upView = upDesc.ColorAttachments[0].View;      // full-res dest
+							const PixelFormat upFmt = upView->GetTexture()->GetDesc().Format;
+
+							graph.AddPass({.Name = "Upscale",
+							               .Target = vpRT.SceneUpscaleTarget,
+							               .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
+							               .Execute = [&, lowResView, upFmt](CommandContext& c)
+							               {
+								               m_UpscalePass.Draw(ctx, frameIndex, lowResView, upFmt);
+							               }});
+
+							sceneColorView = upView; // tonemap now reads the upscaled full-res image
+						}
+					}
+
+					const uint32_t sceneColorIndex = sceneColorView->GetGlobalBindlessIndex();
 					const PixelFormat tmFmt = tmDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 
 					graph.AddPass({.Name = "PostProcess",
 					               .Target = tonemapTarget,
-					               .Reads = {{hdrColorView->GetTexture(), RenderGraph::AccessState::Sampled}},
+					               .Reads = {{sceneColorView->GetTexture(), RenderGraph::AccessState::Sampled}},
 					               .Execute = [&, sceneColorIndex, tmFmt](CommandContext& c)
 					               {
 						               m_PostProcessPass.Draw(renderer, ctx, frameIndex, sceneColorIndex, tmFmt);

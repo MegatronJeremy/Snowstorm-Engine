@@ -3,8 +3,21 @@
 #include "Snowstorm/Core/Base.hpp"
 #include "Texture.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+
 namespace Snowstorm
 {
+	// Scene-target extent for a given viewport size + internal render scale (#43): round(dim * scale),
+	// floored at 1 so a tiny viewport or small scale never yields a zero-size image. Shared by the editor
+	// and runtime viewport-sizing paths so both compute the low-res target identically.
+	inline uint32_t ScaledExtent(uint32_t dim, float scale)
+	{
+		const auto scaled = static_cast<uint32_t>(std::lround(static_cast<float>(dim) * scale));
+		return std::max(1u, scaled);
+	}
+
 	// Canonical color format of the offscreen scene render target: linear HDR float (#53/#79). The forward
 	// + sky passes write UNTONEMAPPED linear radiance here; the post-process pass reads it and applies
 	// exposure/ACES/sRGB. An 8-bit target would clip highlights >1.0 before the tonemapper ever saw them,

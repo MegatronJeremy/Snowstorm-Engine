@@ -2,6 +2,7 @@
 
 #include <imgui.h>
 
+#include <cmath>
 #include <cstdio>
 
 #include "Snowstorm/ECS/SystemManager.hpp"
@@ -101,6 +102,27 @@ namespace Snowstorm
 			if (ImGui::Combo("Anti-Aliasing", &aa, aaLabels, 2))
 			{
 				CVars::AAMode.Set(aa);
+			}
+		}
+
+		// Internal render scale (#43): the scene renders at this fraction of viewport res, then an upscale
+		// pass brings it back to full size — the seam the neural super-resolution upscaler plugs into.
+		// Changing it rebuilds the scene target at the start of the next frame (ViewportResizeSystem).
+		{
+			constexpr float kScales[] = {1.0f, 0.75f, 0.5f, 0.33f};
+			const char* labels[] = {"Native (100%)", "75%", "50%", "33%"};
+			const float current = CVars::RenderScale.Get();
+			int idx = 0; // default Native
+			for (int i = 0; i < 4; ++i)
+			{
+				if (std::abs(kScales[i] - current) < 0.01f)
+				{
+					idx = i;
+				}
+			}
+			if (ImGui::Combo("Render Scale", &idx, labels, 4))
+			{
+				CVars::RenderScale.Set(kScales[idx]);
 			}
 		}
 

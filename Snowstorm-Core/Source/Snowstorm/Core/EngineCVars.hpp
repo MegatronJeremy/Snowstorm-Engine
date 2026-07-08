@@ -93,6 +93,15 @@ namespace Snowstorm::CVars
 	// read per-frame by RenderSystem, so toggling it takes effect live.
 	extern CVar<int> AAMode;
 
+	// Internal render scale (#43): the scene renders into a target sized at this fraction of the viewport,
+	// then an upscale pass brings it back to full res. 1.0 = native (upscale skipped); 0.5 = quarter the
+	// pixels. The seam the neural super-resolution upscaler plugs into. Clamp with ClampedRenderScale().
+	extern CVar<float> RenderScale;
+
+	// render.scale clamped to the supported range [0.25, 1.0]. Use this everywhere the value is consumed
+	// so a hand-edited config / CLI can't request a degenerate (<=0) or >native scale.
+	[[nodiscard]] float ClampedRenderScale();
+
 	// --- Shadows (quality settings; runtime-tweakable from the editor's Settings panel) ---
 	// Global shadow kill-switch (scalability layer, like Unity Quality Settings / UE sg.ShadowQuality).
 	// Off = skip the shadow pass entirely; the per-light CastShadows flag is the authored on/off above it.

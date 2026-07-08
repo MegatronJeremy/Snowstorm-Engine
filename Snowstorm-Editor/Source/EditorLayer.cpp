@@ -447,12 +447,14 @@ namespace Snowstorm
 
 		m_RenderTargetEntity.AddComponent<ViewportComponent>(glm::vec2{static_cast<float>(windowWidth), static_cast<float>(windowHeight)});
 
+		// Initial full-res targets; ViewportResizeSystem rebuilds Target at render.scale on the first frame.
 		auto& rtc = m_RenderTargetEntity.AddComponent<RenderTargetComponent>();
 		rtc.Target = CreateDefaultSceneRenderTarget(windowWidth, windowHeight, "Main Viewport");
 		rtc.PresentTarget = CreatePresentTarget(windowWidth, windowHeight, "Main Viewport");
 		rtc.PresentSampleView = CreatePresentSampleView(rtc.PresentTarget);
 		rtc.AAIntermediateTarget = CreatePresentTarget(windowWidth, windowHeight, "Main Viewport AA");
 		rtc.AAIntermediateSampleView = CreatePresentSampleView(rtc.AAIntermediateTarget);
+		rtc.SceneUpscaleTarget = CreateDefaultSceneRenderTarget(windowWidth, windowHeight, "Main Viewport Upscale");
 	}
 
 	void EditorLayer::CreateDemoEntities() const

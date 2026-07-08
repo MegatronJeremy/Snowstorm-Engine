@@ -24,5 +24,12 @@ namespace Snowstorm
 		// which is what FXAA wants). Null when AA is off.
 		Ref<RenderTarget> AAIntermediateTarget;
 		Ref<TextureView> AAIntermediateSampleView;
+
+		// Internal-resolution upscale target (#43): when render.scale < 1, the forward/sky passes render
+		// into a SMALLER Target, the UpscalePass bilinear-samples it into this FULL-viewport-size HDR
+		// (RGBA16F) target, and tonemap then reads THIS instead of Target. When scale == 1 it's unused
+		// (tonemap reads Target directly). The neural upscaler later replaces UpscalePass's shader, writing
+		// the same target. Full-res, same format as Target's color so tonemap's bindless Load matches.
+		Ref<RenderTarget> SceneUpscaleTarget;
 	};
 }

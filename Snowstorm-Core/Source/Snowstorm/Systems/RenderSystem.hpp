@@ -7,6 +7,7 @@
 #include "Snowstorm/Render/Passes/PostProcessPass.hpp"
 #include "Snowstorm/Render/Passes/ShadowPass.hpp"
 #include "Snowstorm/Render/Passes/SkyPass.hpp"
+#include "Snowstorm/Render/Passes/UpscalePass.hpp"
 
 #include <optional>
 
@@ -30,6 +31,7 @@ namespace Snowstorm
 		SkyPass m_SkyPass;
 		PostProcessPass m_PostProcessPass;
 		FxaaPass m_FxaaPass;
+		UpscalePass m_UpscalePass;
 
 		// The environment the IBL maps were last baked from. When the live environment differs (e.g. a scene
 		// finished loading after the deferred startup load, so the first bake saw an empty/default world), we

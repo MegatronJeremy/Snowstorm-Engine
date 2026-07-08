@@ -8,6 +8,7 @@
 #include "Snowstorm/Components/RenderTargetComponent.hpp"
 #include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Core/Application.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererUtils.hpp"
 
@@ -74,26 +75,34 @@ namespace Snowstorm
 				h = windowH;
 			}
 
-			// Rebuild the HDR scene target + LDR present target together, only when missing or resized.
+			// Rebuild the scene + present + AA + upscale targets together, when missing, viewport-resized,
+			// OR the internal render scale changed (which resizes only the low-res scene Target).
 			{
+				// Scene Target renders at render.scale (#43); everything downstream stays full viewport res.
+				const float scale = CVars::ClampedRenderScale();
+				const uint32_t sw = ScaledExtent(w, scale);
+				const uint32_t sh = ScaledExtent(h, scale);
+
 				const auto& rt = reg.Read<RenderTargetComponent>(vpEntity);
-				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget;
-				const bool resized = rt.Target && (rt.Target->GetDesc().Width != w || rt.Target->GetDesc().Height != h);
-				if (missing || resized)
+				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget;
+				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Compare each
+				// against its own expected extent so a scale change (Target only) still triggers a rebuild.
+				const bool viewportResized = rt.PresentTarget && (rt.PresentTarget->GetDesc().Width != w || rt.PresentTarget->GetDesc().Height != h);
+				const bool scaleChanged = rt.Target && (rt.Target->GetDesc().Width != sw || rt.Target->GetDesc().Height != sh);
+				if (missing || viewportResized || scaleChanged)
 				{
 					// Drain the GPU before dropping the old targets: replacing the Ref destroys the VkImage/
 					// view immediately, but in-flight frames may still be sampling them (the post-process pass
 					// reads the scene target through the bindless array, and ImGui samples the present target).
-					// Freeing a resource the GPU is mid-read of is a device-lost fault. Only on an actual
-					// resize (`resized`), not first-time creation (`missing`) where nothing is in flight yet.
-					// Matches VulkanContext::RecreateSwapchain, which likewise waits idle before teardown.
-					if (resized)
+					// Freeing a resource the GPU is mid-read of is a device-lost fault. Only when replacing an
+					// existing target (not first-time creation, where nothing is in flight yet).
+					if (!missing)
 					{
 						Renderer::WaitIdle();
 					}
 
 					auto& rtW = reg.Write<RenderTargetComponent>(vpEntity);
-					rtW.Target = CreateDefaultSceneRenderTarget(w, h, "Viewport");
+					rtW.Target = CreateDefaultSceneRenderTarget(sw, sh, "Viewport"); // low-res when scale < 1
 					rtW.PresentTarget = CreatePresentTarget(w, h, "Viewport");
 					rtW.PresentSampleView = CreatePresentSampleView(rtW.PresentTarget);
 					// AA intermediate: same sRGB-store + UNORM-sample pair (FXAA renders present <- intermediate).
@@ -101,6 +110,9 @@ namespace Snowstorm
 					// when render.aa != 0.
 					rtW.AAIntermediateTarget = CreatePresentTarget(w, h, "ViewportAA");
 					rtW.AAIntermediateSampleView = CreatePresentSampleView(rtW.AAIntermediateTarget);
+					// Full-res HDR upscale target: the UpscalePass writes it from the low-res Target; tonemap
+					// reads it when scale < 1. Same format as the scene Target so tonemap's bindless Load matches.
+					rtW.SceneUpscaleTarget = CreateDefaultSceneRenderTarget(w, h, "ViewportUpscale");
 				}
 			}
 		}

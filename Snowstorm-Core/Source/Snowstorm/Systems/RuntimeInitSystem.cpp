@@ -17,6 +17,7 @@
 #include "Snowstorm/Components/CameraRuntimeComponent.hpp"
 #include "Snowstorm/Components/CameraControllerRuntimeComponent.hpp"
 
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Render/RendererUtils.hpp"
 
 namespace Snowstorm
@@ -96,16 +97,23 @@ namespace Snowstorm
 
 			auto& rtc = reg.Ensure<RenderTargetComponent>(e);
 
+			// Scene Target renders at render.scale (#43); present/AA/upscale stay full viewport res.
+			const float scale = CVars::ClampedRenderScale();
+			const uint32_t sw = ScaledExtent(w, scale);
+			const uint32_t sh = ScaledExtent(h, scale);
+
 			bool needsCreate = false;
 
-			if (!rtc.Target || !rtc.PresentTarget || !rtc.AAIntermediateTarget)
+			if (!rtc.Target || !rtc.PresentTarget || !rtc.AAIntermediateTarget || !rtc.SceneUpscaleTarget)
 			{
 				needsCreate = true;
 			}
 			else
 			{
-				const auto& desc = rtc.Target->GetDesc();
-				if (desc.Width != w || desc.Height != h)
+				// Present tracks full size; Target tracks scaled size — check each so a scale change rebuilds.
+				const auto& presentDesc = rtc.PresentTarget->GetDesc();
+				const auto& targetDesc = rtc.Target->GetDesc();
+				if (presentDesc.Width != w || presentDesc.Height != h || targetDesc.Width != sw || targetDesc.Height != sh)
 				{
 					needsCreate = true;
 				}
@@ -114,11 +122,12 @@ namespace Snowstorm
 			if (needsCreate)
 			{
 				auto& wRtc = reg.Write<RenderTargetComponent>(e);
-				wRtc.Target = CreateDefaultSceneRenderTarget(w, h, "Viewport");
+				wRtc.Target = CreateDefaultSceneRenderTarget(sw, sh, "Viewport");
 				wRtc.PresentTarget = CreatePresentTarget(w, h, "Viewport");
 				wRtc.PresentSampleView = CreatePresentSampleView(wRtc.PresentTarget);
 				wRtc.AAIntermediateTarget = CreatePresentTarget(w, h, "ViewportAA");
 				wRtc.AAIntermediateSampleView = CreatePresentSampleView(wRtc.AAIntermediateTarget);
+				wRtc.SceneUpscaleTarget = CreateDefaultSceneRenderTarget(w, h, "ViewportUpscale");
 			}
 		}
 
