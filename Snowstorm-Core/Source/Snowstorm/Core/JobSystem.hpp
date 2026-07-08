@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Core/Log.hpp" // SS_CORE_ASSERT expands to log macros; make the header self-contained
 #include "Snowstorm/Service/Service.hpp"
 
 #include <atomic>
@@ -55,6 +56,53 @@ namespace Snowstorm
 
 		// Number of worker threads in the pool (>= 1).
 		[[nodiscard]] size_t WorkerCount() const { return m_Workers.size(); }
+
+		// Data-parallel loop over [0, count): splits the range into chunks of ~grainSize and runs them
+		// across the worker pool, blocking until all are done (the Unity DOTS / Unreal ParallelFor model).
+		// `body(begin, end)` is invoked once per chunk with a half-open sub-range; it must be safe to run
+		// concurrently on disjoint indices (the caller guarantees no data races between chunks).
+		//
+		// Degrades cleanly: if there's effectively no parallelism to be had (<=1 worker, count <= grainSize,
+		// or grainSize == 0), the whole range runs inline on the calling thread with no task overhead — so
+		// small N never pays the submit/sync cost. The last chunk also always runs inline so the calling
+		// thread does useful work instead of just waiting.
+		template <typename Fn>
+		void ParallelFor(const size_t count, Fn&& body, const size_t grainSize = 256)
+		{
+			if (count == 0)
+			{
+				return;
+			}
+
+			// Inline fast path: nothing to gain from tasking.
+			if (grainSize == 0 || count <= grainSize || m_Workers.size() <= 1)
+			{
+				body(size_t{0}, count);
+				return;
+			}
+
+			const size_t chunkCount = (count + grainSize - 1) / grainSize;
+
+			// Submit all chunks except the last; run the last inline on this thread while workers churn.
+			std::vector<std::future<void>> futures;
+			futures.reserve(chunkCount - 1);
+			for (size_t c = 0; c + 1 < chunkCount; ++c)
+			{
+				const size_t begin = c * grainSize;
+				const size_t end = begin + grainSize;
+				futures.push_back(Submit([&body, begin, end]
+				                         { body(begin, end); }));
+			}
+
+			const size_t lastBegin = (chunkCount - 1) * grainSize;
+			body(lastBegin, count); // caller-thread chunk
+
+			// Barrier: wait for every worker chunk. get() also propagates any exception a chunk threw.
+			for (std::future<void>& f : futures)
+			{
+				f.get();
+			}
+		}
 
 	private:
 		void WorkerLoop();
