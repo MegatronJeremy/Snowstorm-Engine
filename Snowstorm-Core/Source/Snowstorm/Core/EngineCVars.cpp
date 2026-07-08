@@ -28,23 +28,26 @@ namespace Snowstorm::CVars
 
 	CVar<std::string> DumpMeshTangents{"debug.dump_mesh_tangents", "", "Analyze a model's UV/tangent structure across seams (#74) then exit. Value: model path"};
 
-	CVar<bool> VSync{"display.vsync", true, "VSync on (FIFO, locked to refresh) or off (uncapped present)"};
+	// User settings below are tagged CVarFlags::Persist: saved to / restored from the config file so they
+	// survive an editor restart. One-shot/dev CVars above (smoke/bake/validation/benchmark/startup) stay
+	// unflagged — they must remain CLI/env-driven and never leak into user config.
+	CVar<bool> VSync{"display.vsync", true, "VSync on (FIFO, locked to refresh) or off (uncapped present)", CVarFlags::Persist};
 
 	CVar<std::string> StartupScene{"startup.scene", "", "Path to a .world to load at startup (empty = Startup.world); e.g. assets/scenes/Sponza.world"};
 
-	CVar<float> Exposure{"render.exposure", 1.0f, "Linear exposure multiplier applied before tonemapping (1.0 = neutral)"};
+	CVar<float> Exposure{"render.exposure", 1.0f, "Linear exposure multiplier applied before tonemapping (1.0 = neutral)", CVarFlags::Persist};
 
-	CVar<int> AAMode{"render.aa", 0, "Anti-aliasing: 0 = None, 1 = FXAA (spatial post-process AA)"};
+	CVar<int> AAMode{"render.aa", 0, "Anti-aliasing: 0 = None, 1 = FXAA (spatial post-process AA)", CVarFlags::Persist};
 
-	CVar<bool> Shadows{"render.shadows", true, "Global directional shadow toggle (off = skip the shadow pass)"};
+	CVar<bool> Shadows{"render.shadows", true, "Global directional shadow toggle (off = skip the shadow pass)", CVarFlags::Persist};
 
-	CVar<int> ShadowResolution{"render.shadow.resolution", 2048, "Shadow-map resolution (square); changing it rebuilds the shadow target"};
+	CVar<int> ShadowResolution{"render.shadow.resolution", 2048, "Shadow-map resolution (square); changing it rebuilds the shadow target", CVarFlags::Persist};
 
-	CVar<bool> ShadowSoft{"render.shadow.soft", true, "Soft shadows (3x3 PCF) when on, hard single-tap when off"};
+	CVar<bool> ShadowSoft{"render.shadow.soft", true, "Soft shadows (3x3 PCF) when on, hard single-tap when off", CVarFlags::Persist};
 
-	CVar<float> ShadowStrength{"render.shadow.strength", 1.0f, "Shadow darkness (1 = full occlusion, 0 = none)"};
+	CVar<float> ShadowStrength{"render.shadow.strength", 1.0f, "Shadow darkness (1 = full occlusion, 0 = none)", CVarFlags::Persist};
 
-	CVar<bool> IBL{"render.ibl", true, "Bake + use image-based lighting from the sky (off = analytic hemisphere ambient)"};
+	CVar<bool> IBL{"render.ibl", true, "Bake + use image-based lighting from the sky (off = analytic hemisphere ambient)", CVarFlags::Persist};
 
-	CVar<float> IBLIntensity{"render.ibl.intensity", 0.75f, "Multiplier on the IBL ambient contribution"};
+	CVar<float> IBLIntensity{"render.ibl.intensity", 0.75f, "Multiplier on the IBL ambient contribution", CVarFlags::Persist};
 }

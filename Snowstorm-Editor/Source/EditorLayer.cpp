@@ -13,6 +13,7 @@
 #include "Singletons/EditorNotificationsSingleton.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Utility/CVar.hpp"
 #include "Snowstorm/Core/MeshDiagnostics.hpp"
 #include "Snowstorm/Debug/Instrumentor.hpp"
 
@@ -789,6 +790,14 @@ namespace Snowstorm
 	void EditorLayer::OnDetach()
 	{
 		SS_PROFILE_FUNCTION();
+
+		// Persist user settings (render.*, display.*) so they survive a restart. Skipped in smoke/headless
+		// runs (smoke.frames > 0) so automated runs stay side-effect-free and reproducible — they tear down
+		// the layer stack too, so without this guard they'd overwrite the config with test state.
+		if (CVars::SmokeFrames.Get() == 0)
+		{
+			CVarRegistry::Get().SaveConfig(CVarRegistry::kConfigPath);
+		}
 	}
 
 	void EditorLayer::OnUpdate(const Timestep ts)

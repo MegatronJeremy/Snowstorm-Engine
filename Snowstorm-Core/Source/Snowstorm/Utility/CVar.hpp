@@ -33,10 +33,28 @@ namespace Snowstorm
 		String
 	};
 
+	// Behaviour flags for a CVar. Persist = save/restore this CVar through the config file
+	// (CVarRegistry::Save/LoadConfig). Opt-in: user-facing settings (render.*, display.*) set it; one-shot
+	// dev flags (smoke.frames, scene.bake, validation.*) leave it off so they never leak into user config.
+	enum class CVarFlags : uint8_t
+	{
+		None = 0,
+		Persist = 1 << 0,
+	};
+
+	inline CVarFlags operator&(CVarFlags a, CVarFlags b)
+	{
+		return static_cast<CVarFlags>(static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
+	}
+	inline CVarFlags operator|(CVarFlags a, CVarFlags b)
+	{
+		return static_cast<CVarFlags>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
+	}
+
 	class ICVar
 	{
 	public:
-		ICVar(std::string name, std::string description);
+		ICVar(std::string name, std::string description, CVarFlags flags = CVarFlags::None);
 		virtual ~ICVar() = default;
 
 		const std::string& GetName() const { return m_Name; }
@@ -44,6 +62,9 @@ namespace Snowstorm
 
 		// The environment-variable name this CVar reads (e.g. "SS_VALIDATION_EXTRA").
 		const std::string& GetEnvName() const { return m_EnvName; }
+
+		// True if this CVar is saved to / restored from the config file (CVarFlags::Persist).
+		[[nodiscard]] bool IsPersistent() const { return (m_Flags & CVarFlags::Persist) == CVarFlags::Persist; }
 
 		virtual std::string GetValueString() const = 0;
 		virtual std::string GetTypeName() const = 0;
@@ -64,14 +85,15 @@ namespace Snowstorm
 		std::string m_Name;
 		std::string m_Description;
 		std::string m_EnvName;
+		CVarFlags m_Flags;
 	};
 
 	template <typename T>
 	class CVar final : public ICVar
 	{
 	public:
-		CVar(std::string name, T defaultValue, std::string description)
-		    : ICVar(std::move(name), std::move(description)), m_Value(std::move(defaultValue))
+		CVar(std::string name, T defaultValue, std::string description, CVarFlags flags = CVarFlags::None)
+		    : ICVar(std::move(name), std::move(description), flags), m_Value(std::move(defaultValue))
 		{
 		}
 
@@ -100,6 +122,10 @@ namespace Snowstorm
 	class CVarRegistry
 	{
 	public:
+		// Default config-file path (working-dir relative, like assets/AssetRegistry.json). Shared by the
+		// startup load (Initialize) and the editor's shutdown save so both agree on the location.
+		static constexpr const char* kConfigPath = "SnowstormConfig.cfg";
+
 		static CVarRegistry& Get();
 
 		// Called by ICVar's constructor; not for direct use.
@@ -113,6 +139,12 @@ namespace Snowstorm
 		ICVar* Find(const std::string& name) const;
 
 		void PrintAll() const;
+
+		// Config-file source (lowest priority, below env/CLI). LoadConfig reads `key=value` lines and applies
+		// them to persistent CVars only; a missing file is a silent no-op. SaveConfig writes every persistent
+		// CVar's current value. Called by Initialize (load) and the editor on shutdown (save).
+		void LoadConfig(const std::string& path);
+		void SaveConfig(const std::string& path) const;
 
 	private:
 		std::vector<ICVar*> m_Ordered;

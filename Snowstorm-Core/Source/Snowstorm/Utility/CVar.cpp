@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <fstream>
+#include <sstream>
 
 namespace Snowstorm
 {
@@ -39,8 +41,8 @@ namespace Snowstorm
 		}
 	}
 
-	ICVar::ICVar(std::string name, std::string description)
-	    : m_Name(std::move(name)), m_Description(std::move(description)), m_EnvName(ToEnvName(m_Name))
+	ICVar::ICVar(std::string name, std::string description, CVarFlags flags)
+	    : m_Name(std::move(name)), m_Description(std::move(description)), m_EnvName(ToEnvName(m_Name)), m_Flags(flags)
 	{
 		CVarRegistry::Get().Register(this);
 	}
@@ -271,6 +273,10 @@ namespace Snowstorm
 
 	void CVarRegistry::Initialize(const int argc, char** argv)
 	{
+		// 0. Config file (lowest priority). Loaded first so environment and CLI below can override it,
+		// giving the resolution order: default -> config -> env -> CLI.
+		LoadConfig(kConfigPath);
+
 		// 1. Environment (lower priority).
 		for (ICVar* cvar : m_Ordered)
 		{
@@ -321,6 +327,91 @@ namespace Snowstorm
 			SS_CORE_INFO("  {0} = {1} [{2}]  (env {3})  - {4}",
 			             cvar->GetName(), cvar->GetValueString(), cvar->GetTypeName(),
 			             cvar->GetEnvName(), cvar->GetDescription());
+		}
+	}
+
+	void CVarRegistry::LoadConfig(const std::string& path)
+	{
+		std::ifstream file(path);
+		if (!file) // missing file (e.g. first run) is a normal no-op, not an error
+		{
+			return;
+		}
+
+		int applied = 0;
+		std::string line;
+		while (std::getline(file, line))
+		{
+			// Trim leading whitespace; skip blanks and '#' comments.
+			const size_t start = line.find_first_not_of(" \t\r");
+			if (start == std::string::npos || line[start] == '#')
+			{
+				continue;
+			}
+
+			const size_t eq = line.find('=', start);
+			if (eq == std::string::npos)
+			{
+				continue;
+			}
+
+			// key = trim(substr before '='), value = substr after '=' (leading space trimmed, verbatim after).
+			std::string key = line.substr(start, eq - start);
+			if (const size_t keyEnd = key.find_last_not_of(" \t\r"); keyEnd != std::string::npos)
+			{
+				key.erase(keyEnd + 1);
+			}
+			std::string value = line.substr(eq + 1);
+			if (const size_t valStart = value.find_first_not_of(" \t"); valStart != std::string::npos)
+			{
+				value.erase(0, valStart);
+			}
+			else
+			{
+				value.clear();
+			}
+			if (const size_t valEnd = value.find_last_not_of(" \t\r"); valEnd != std::string::npos)
+			{
+				value.erase(valEnd + 1);
+			}
+
+			ICVar* cvar = Find(key);
+			if (!cvar)
+			{
+				SS_CORE_WARN("CVar config: unknown key '{0}' in {1} (ignored)", key, path);
+				continue;
+			}
+			// Only persistent CVars are honoured from config, so a hand-edited file can't flip dev/one-shot
+			// flags (validation, smoke, bake, ...) that must stay CLI/env-driven.
+			if (!cvar->IsPersistent())
+			{
+				SS_CORE_WARN("CVar config: '{0}' is not a persistent setting (ignored)", key);
+				continue;
+			}
+			cvar->SetFromString(value);
+			++applied;
+		}
+
+		SS_CORE_INFO("CVar config: loaded {0} setting(s) from {1}", applied, path);
+	}
+
+	void CVarRegistry::SaveConfig(const std::string& path) const
+	{
+		std::ofstream file(path, std::ios::trunc);
+		if (!file)
+		{
+			SS_CORE_WARN("CVar config: could not open {0} for writing", path);
+			return;
+		}
+
+		file << "# Snowstorm settings (persistent CVars). Auto-written on editor shutdown.\n";
+		file << "# Overridden by SS_* environment vars and --cvar CLI args.\n";
+		for (const ICVar* cvar : m_Ordered)
+		{
+			if (cvar->IsPersistent())
+			{
+				file << cvar->GetName() << " = " << cvar->GetValueString() << "\n";
+			}
 		}
 	}
 }
