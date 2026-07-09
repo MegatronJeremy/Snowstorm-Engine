@@ -116,6 +116,11 @@ namespace Snowstorm::CVars
 	// compare.split clamped to [0, 1] (viewport fraction of the divider).
 	[[nodiscard]] float ClampedCompareSplit();
 
+	// Temporal sub-pixel camera jitter (#44): Halton(2,3) offset applied to the color projection each
+	// frame — the substrate a temporal upscaler/TAA accumulates. Motion vectors + frustum culling keep the
+	// unjittered matrices. Read per-frame by CameraJitterSystem; forced off in compare mode. Persist.
+	extern CVar<bool> Jitter;
+
 	// --- Shadows (quality settings; runtime-tweakable from the editor's Settings panel) ---
 	// Global shadow kill-switch (scalability layer, like Unity Quality Settings / UE sg.ShadowQuality).
 	// Off = skip the shadow pass entirely; the per-light CastShadows flag is the authored on/off above it.

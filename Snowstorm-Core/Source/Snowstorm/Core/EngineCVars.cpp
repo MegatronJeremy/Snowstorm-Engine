@@ -41,6 +41,8 @@ namespace Snowstorm::CVars
 
 	CVar<bool> Compare{"render.compare", false, "Split-screen A/B: left = upscaled (render.scale), right = full-res ground truth. Renders the scene twice; FXAA off both sides so the only variable is the upscaler (#43)", CVarFlags::Persist};
 
+	CVar<bool> Jitter{"render.jitter", false, "Temporal sub-pixel camera jitter (Halton 2,3): offsets the color projection a fraction of a pixel each frame — the substrate a temporal upscaler/TAA accumulates. Motion vectors + culling stay unjittered. Without a temporal resolve yet, this shows as sub-pixel shimmer (#44)", CVarFlags::Persist};
+
 	CVar<float> CompareSplit{"compare.split", 0.5f, "Compare-mode divider position (0 = all ground truth, 1 = all upscaled). Draggable in the viewport. Clamped to [0, 1]", CVarFlags::Persist};
 
 	CVar<int> AAMode{"render.aa", 0, "Anti-aliasing: 0 = None, 1 = FXAA (spatial post-process AA)", CVarFlags::Persist};

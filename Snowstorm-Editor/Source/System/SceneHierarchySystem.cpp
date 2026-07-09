@@ -140,6 +140,14 @@ namespace Snowstorm
 			CVars::Compare.Set(compare);
 		}
 
+		// Temporal jitter (#44): sub-pixel Halton(2,3) offset on the color projection — the substrate a
+		// temporal upscaler accumulates. Without a temporal resolve yet it shows as sub-pixel shimmer;
+		// forced off in compare mode (clean A/B). Motion vectors + culling stay unjittered.
+		if (bool jitter = CVars::Jitter.Get(); ImGui::Checkbox("Temporal Jitter (Halton 2,3)", &jitter))
+		{
+			CVars::Jitter.Set(jitter);
+		}
+
 		// Debug view (#44): Motion Vectors visualizes per-pixel screen-space velocity as color (the
 		// temporal-upscaling substrate). Index maps 1:1 to render.debugview (0=Normal, 1=Motion Vectors).
 		// When on, a velocity pass runs and the tonemap step shows velocity instead of the scene.

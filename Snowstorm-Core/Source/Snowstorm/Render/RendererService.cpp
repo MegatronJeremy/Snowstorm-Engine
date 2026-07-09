@@ -74,19 +74,29 @@ namespace Snowstorm
 		// appends its instances and records draws with firstInstance at the running cursor, so passes
 		// don't overwrite each other's data within the frame.
 		m_InstanceWriteCursor = 0;
+
+		// Monotonic frame counter (never wraps in practice: 64-bit). Drives the temporal jitter Halton
+		// index (#44) and is the reusable "which frame is this" primitive (cf. Unreal GFrameCounter) for
+		// any future frame-phased effect. Incremented once per frame here, before any pass runs.
+		++m_FrameCounter;
 	}
 
 	void RendererService::BeginScene(const CameraRuntimeComponent& cameraRt,
 	                                 const glm::vec3& cameraWorldPosition,
 	                                 const Ref<CommandContext>& commandContext,
-	                                 const uint32_t frameIndex)
+	                                 const uint32_t frameIndex,
+	                                 const bool useJitteredProjection)
 	{
 		SS_CORE_ASSERT(commandContext, "Renderer requires a valid CommandContext");
 
 		m_CommandContext = commandContext;
 		m_FrameIndex = frameIndex;
 
-		m_FrameData.ViewProjection = cameraRt.ViewProjection;
+		// The forward COLOR pass passes useJitteredProjection=true so FrameCB.ViewProj (and the sky's
+		// derived InvViewProj) carry the temporal sub-pixel offset (#44). Every other caller — shadow,
+		// velocity, ground-truth — leaves it false and gets the unjittered VP, so motion vectors and depth
+		// stay geometrically true. JitteredViewProjection == ViewProjection when render.jitter is off.
+		m_FrameData.ViewProjection = useJitteredProjection ? cameraRt.JitteredViewProjection : cameraRt.ViewProjection;
 		m_FrameData.PrevViewProjection = cameraRt.PrevViewProjection; // motion vectors (#44)
 		m_FrameData.CameraPosition = cameraWorldPosition;
 

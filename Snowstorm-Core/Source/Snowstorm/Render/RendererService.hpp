@@ -62,10 +62,14 @@ namespace Snowstorm
 		// clobbering the others' already-recorded draws.
 		void NewFrame();
 
+		// useJitteredProjection (#44): when true, FrameCB.ViewProj uses cameraRt.JitteredViewProjection (the
+		// temporal sub-pixel offset) instead of the canonical ViewProjection. Only the forward COLOR pass
+		// sets it; shadow/velocity/ground-truth pass false so their matrices stay geometrically true.
 		void BeginScene(const CameraRuntimeComponent& cameraRt,
 		                const glm::vec3& cameraWorldPosition,
 		                const Ref<CommandContext>& commandContext,
-		                uint32_t frameIndex);
+		                uint32_t frameIndex,
+		                bool useJitteredProjection = false);
 
 		void EndScene();
 
@@ -155,6 +159,10 @@ namespace Snowstorm
 		// Stats from the most recently submitted scene pass (reset each BeginScene).
 		[[nodiscard]] const RenderStats& GetStats() const { return m_Stats; }
 
+		// Monotonic frame counter, incremented once per NewFrame(). Drives the temporal jitter Halton index
+		// (#44); a general "which frame is this" primitive for any frame-phased effect. 64-bit — never wraps.
+		[[nodiscard]] uint64_t GetFrameCounter() const { return m_FrameCounter; }
+
 		// Per-pass GPU scopes (name, ms, nesting depth) resolved this frame from the graph's timestamp scopes.
 		// Set by RenderSystem each frame; read by the editor overlay. Empty if the device lacks timestamps.
 		void SetGpuPassTimes(std::vector<GpuScope> scopes) { m_GpuPassTimes = std::move(scopes); }
@@ -226,6 +234,8 @@ namespace Snowstorm
 		std::vector<Ref<Buffer>> m_InstanceBuffers; // indexed by frame-in-flight
 		uint32_t m_InstanceBufferCapacity = 0;      // in InstanceData elements
 		uint32_t m_InstanceWriteCursor = 0;         // elements written this frame
+
+		uint64_t m_FrameCounter = 0; // monotonic; ++ per NewFrame() (temporal jitter index, #44)
 
 		RenderStats m_Stats{};
 

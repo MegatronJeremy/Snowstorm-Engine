@@ -347,7 +347,7 @@ namespace Snowstorm
 			// visibility cache), so it's invoked once normally and twice in compare mode (the instance-buffer
 			// cursor appends across BeginScene calls, like the shadow passes). IBL maps are declared as reads
 			// so the graph transitions them to shader-read before shading.
-			const auto addForward = [&](const Ref<RenderTarget>& hdrTarget, const std::string& name)
+			const auto addForward = [&](const Ref<RenderTarget>& hdrTarget, const std::string& name, const bool jittered)
 			{
 				std::vector<RenderGraph::ResourceAccess> meshReads;
 				if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
@@ -360,10 +360,10 @@ namespace Snowstorm
 				graph.AddPass({.Name = name,
 				               .Target = hdrTarget,
 				               .Reads = std::move(meshReads),
-				               .Execute = [&, cam, hdrTarget](CommandContext& c)
+				               .Execute = [&, cam, hdrTarget, jittered](CommandContext& c)
 				               {
 					               const glm::vec3 camPos = cam.Transform->Position;
-					               renderer.BeginScene(*cam.Rt, camPos, ctx, frameIndex);
+					               renderer.BeginScene(*cam.Rt, camPos, ctx, frameIndex, jittered);
 
 					               auto& assets = SingletonView<AssetManagerSingleton>();
 
@@ -506,7 +506,8 @@ namespace Snowstorm
 			}
 
 			// ---- Primary (upscaled) path ----
-			addForward(vpRT.Target, "Forward" + passSuffix);
+			// Jittered: the color pass gets the temporal sub-pixel offset (#44). Velocity + GT stay unjittered.
+			addForward(vpRT.Target, "Forward" + passSuffix, true);
 
 			// FXAA only outside compare mode (compare forces it off for a clean upscaler-only A/B).
 			const bool fxaaOn = !comparing && CVars::AAMode.Get() == 1 && vpRT.AAIntermediateTarget && vpRT.AAIntermediateSampleView;
@@ -567,7 +568,7 @@ namespace Snowstorm
 			if (comparing && !vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty() &&
 			    vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View)
 			{
-				addForward(vpRT.GroundTruthTarget, "ForwardGT" + passSuffix);
+				addForward(vpRT.GroundTruthTarget, "ForwardGT" + passSuffix, false); // ground truth: never jittered
 				addTonemap(vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View, vpRT.GroundTruthPresentTarget, "PostProcessGT", RendererService::TonemapParams{});
 			}
 		}

@@ -8,6 +8,7 @@
 #include "Snowstorm/Lighting/LightingSystem.hpp"
 #include "Snowstorm/Systems/AssetLoadSystem.hpp"
 #include "Snowstorm/Systems/CameraControllerSystem.hpp"
+#include "Snowstorm/Systems/CameraJitterSystem.hpp"
 #include "Snowstorm/Systems/CameraRuntimeUpdateSystem.hpp"
 #include "Snowstorm/Systems/MaterialResolveSystem.hpp"
 #include "Snowstorm/Systems/MeshResolveSystem.hpp"
@@ -42,6 +43,9 @@ namespace Snowstorm
 		sm.RegisterSystem<EnvironmentSystem>(SystemPhase::PreRender);
 		sm.RegisterSystem<LightingSystem>(SystemPhase::PreRender);
 		sm.RegisterSystem<VisibilitySystem>(SystemPhase::PreRender);
+		// Temporal jitter (#44): fill each camera's JitteredViewProjection every frame. After the runtime
+		// update (Resolve) so Projection/View exist; reads the unjittered VP, writes a jittered copy.
+		sm.RegisterSystem<CameraJitterSystem>(SystemPhase::PreRender);
 
 		sm.RegisterSystem<RenderSystem>(SystemPhase::Render);
 
