@@ -68,7 +68,8 @@ static const int MAX_SPOT_LIGHTS = 16;
 cbuffer FrameCB : register(b0, space0)
 {
 	float4x4 ViewProj;
-	float4x4 InvViewProj; // world-ray reconstruction for the sky pass
+	float4x4 InvViewProj;  // world-ray reconstruction for the sky pass
+	float4x4 PrevViewProj; // last frame's VP -- motion vectors (#44); mirrors FrameCB in RendererService.cpp
 	float3 CameraPosition;
 	float Exposure; // linear pre-tonemap multiplier (was _Pad0; same 16-byte slot)
 	DirectionalLight DirectionalLights[4];

@@ -48,13 +48,13 @@ namespace Snowstorm
 	}
 
 	void PostProcessPass::Draw(RendererService& renderer, const Ref<CommandContext>& ctx, const uint32_t frameIndex,
-	                           const uint32_t sceneColorBindlessIndex, const PixelFormat colorFormat)
+	                           const RendererService::TonemapParams& params, const PixelFormat colorFormat)
 	{
 		EnsurePipeline(colorFormat);
 		if (!m_Pipeline)
 		{
 			return; // shader not compiled yet
 		}
-		renderer.DrawPostProcess(m_Pipeline, ctx, frameIndex, sceneColorBindlessIndex);
+		renderer.DrawPostProcess(m_Pipeline, ctx, frameIndex, params);
 	}
 }

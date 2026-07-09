@@ -24,6 +24,7 @@ struct VSInput
 struct InstanceData
 {
 	float4x4 Model;
+	float4x4 PrevModel;      // last frame's world matrix -- for motion vectors (#44)
 	uint AlbedoTextureIndex; // per-instance albedo override (0 = use material default)
 	float3 _Pad0;
 	float4 Extras0;

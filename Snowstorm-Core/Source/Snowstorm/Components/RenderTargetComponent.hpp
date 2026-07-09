@@ -40,5 +40,13 @@ namespace Snowstorm
 		Ref<RenderTarget> GroundTruthTarget;
 		Ref<RenderTarget> GroundTruthPresentTarget;
 		Ref<TextureView> GroundTruthPresentSampleView;
+
+		// Screen-space motion vectors (#44), only rendered when render.debugview != 0 or temporal upscaling
+		// is active. The velocity pass draws visible meshes with a shader that outputs
+		// (currClipUV - prevClipUV) into .xy (RGBA16F). Reuses the scene Target's DEPTH so occluded
+		// fragments don't overwrite nearer ones (depth-test LessEqual, depth-write off) — hence it's sized
+		// to the SCALED scene Target, not the full viewport. Sampled so the tonemap debug branch + the
+		// future temporal resolve can read it via bindless. Null until first allocated.
+		Ref<RenderTarget> VelocityTarget;
 	};
 }

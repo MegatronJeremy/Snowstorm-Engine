@@ -85,7 +85,7 @@ namespace Snowstorm
 
 				const auto& rt = reg.Read<RenderTargetComponent>(vpEntity);
 				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget ||
-				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget;
+				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget || !rt.VelocityTarget;
 				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Compare each
 				// against its own expected extent so a scale change (Target only) still triggers a rebuild.
 				const bool viewportResized = rt.PresentTarget && (rt.PresentTarget->GetDesc().Width != w || rt.PresentTarget->GetDesc().Height != h);
@@ -119,6 +119,10 @@ namespace Snowstorm
 					rtW.GroundTruthTarget = CreateDefaultSceneRenderTarget(w, h, "ViewportGT");
 					rtW.GroundTruthPresentTarget = CreatePresentTarget(w, h, "ViewportGT");
 					rtW.GroundTruthPresentSampleView = CreatePresentSampleView(rtW.GroundTruthPresentTarget);
+					// Motion-vector target (#44): full viewport res (its own depth) so the tonemap debug view
+					// reads it 1:1 via integer Load(). Always allocated (negligible); only rendered when
+					// render.debugview != 0.
+					rtW.VelocityTarget = CreateVelocityTarget(w, h, "Viewport");
 				}
 			}
 		}

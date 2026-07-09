@@ -35,6 +35,11 @@ namespace Snowstorm
 	// The UNORM twin of kPresentColorFormat, used for the ImGui sample view over the sRGB present image.
 	constexpr PixelFormat kPresentSampleFormat = PixelFormat::RGBA8_UNorm;
 
+	// Motion-vector storage format (#44): signed float so the .xy velocity can be negative, 16-bit for
+	// sub-pixel precision across the screen. RG16F isn't wired in the RHI, so RGBA16F is used (.xy carries
+	// velocity, .zw unused). Any pipeline drawing into the velocity target must declare this color format.
+	constexpr PixelFormat kVelocityFormat = PixelFormat::RGBA16_SFloat;
+
 	// HDR scene target: color (kSceneColorFormat) + depth (D32). Written by the forward/sky passes, then
 	// sampled by the post-process pass. Sampled usage auto-registers the color view for bindless.
 	Ref<RenderTarget> CreateDefaultSceneRenderTarget(uint32_t w, uint32_t h, const char* debugPrefix);
@@ -43,6 +48,15 @@ namespace Snowstorm
 	// write color only — e.g. the internal-res UpscalePass destination (#43). Its pipeline declares no
 	// depth format, so the target must not carry a depth attachment or dynamic-rendering validation fails.
 	Ref<RenderTarget> CreateColorOnlyHDRTarget(uint32_t w, uint32_t h, const char* debugPrefix);
+
+	// Motion-vector target (#44): RGBA16F color (.xy = screen-space velocity) + its OWN D32 depth. The
+	// velocity pass re-renders the visible meshes with depth test+write ON so only the nearest fragment's
+	// velocity survives (self-contained depth — NOT shared with the scene target, which avoids cross-pass
+	// depth-aliasing barriers in the render graph). Color cleared to 0 (zero motion where nothing draws).
+	// Sized to the FULL viewport res so the tonemap debug view reads it 1:1 with integer Load() (no
+	// sampler). When the temporal upscaler lands it may want velocity at the internal render res instead —
+	// revisit the size then. Sampled for the tonemap debug branch + the future temporal resolve.
+	Ref<RenderTarget> CreateVelocityTarget(uint32_t w, uint32_t h, const char* debugPrefix);
 
 	// LDR present target: a single sRGB color attachment (kPresentColorFormat), no depth, MutableFormat so
 	// a UNORM sample view can alias it. The post-process pass renders the tonemapped (still linear) result

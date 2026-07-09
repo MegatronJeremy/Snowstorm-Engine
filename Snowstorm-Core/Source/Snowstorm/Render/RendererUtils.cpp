@@ -49,6 +49,56 @@ namespace Snowstorm
 		return RenderTarget::Create(rtDesc);
 	}
 
+	Ref<RenderTarget> CreateVelocityTarget(uint32_t w, uint32_t h, const char* debugPrefix)
+	{
+		// Motion vectors (#44): RGBA16F color (.xy = velocity, cleared to 0) + its own D32 depth so the
+		// velocity pass depth-tests occlusion (nearest fragment's velocity wins). Self-contained depth
+		// (not the scene target's) keeps the render graph free of cross-pass depth-aliasing barriers.
+		TextureDesc colorDesc{};
+		colorDesc.Dimension = TextureDimension::Texture2D;
+		colorDesc.Format = kVelocityFormat;
+		colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled;
+		colorDesc.Width = w;
+		colorDesc.Height = h;
+		colorDesc.DebugName = std::string(debugPrefix) + "_Velocity";
+
+		Ref<Texture> colorTex = Texture::Create(colorDesc);
+		Ref<TextureView> colorView = TextureView::Create(colorTex, MakeFullViewDesc(colorDesc));
+
+		TextureDesc depthDesc{};
+		depthDesc.Dimension = TextureDimension::Texture2D;
+		depthDesc.Format = PixelFormat::D32_Float;
+		depthDesc.Usage = TextureUsage::DepthStencil;
+		depthDesc.Width = w;
+		depthDesc.Height = h;
+		depthDesc.DebugName = std::string(debugPrefix) + "_VelocityDepth";
+
+		Ref<Texture> depthTex = Texture::Create(depthDesc);
+		Ref<TextureView> depthView = TextureView::Create(depthTex, MakeFullViewDesc(depthDesc));
+
+		RenderTargetDesc rtDesc{};
+		rtDesc.Width = w;
+		rtDesc.Height = h;
+		rtDesc.IsSwapchainTarget = false;
+
+		RenderTargetAttachment colorAtt{};
+		colorAtt.View = colorView;
+		colorAtt.AttachmentIndex = 0;
+		colorAtt.ClearColor = {0.0f, 0.0f, 0.0f, 0.0f}; // zero motion where nothing draws
+		colorAtt.LoadOp = RenderTargetLoadOp::Clear;
+		colorAtt.StoreOp = RenderTargetStoreOp::Store;
+		rtDesc.ColorAttachments.push_back(colorAtt);
+
+		DepthStencilAttachment depthAtt{};
+		depthAtt.View = depthView;
+		depthAtt.ClearDepth = 1.0f;
+		depthAtt.DepthLoadOp = RenderTargetLoadOp::Clear;
+		depthAtt.DepthStoreOp = RenderTargetStoreOp::Store;
+		rtDesc.DepthAttachment = depthAtt;
+
+		return RenderTarget::Create(rtDesc);
+	}
+
 	Ref<RenderTarget> CreatePresentTarget(uint32_t w, uint32_t h, const char* debugPrefix)
 	{
 		// LDR, color-only target for the tonemapped result. No depth (fullscreen post pass doesn't test

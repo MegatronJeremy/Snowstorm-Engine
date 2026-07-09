@@ -93,6 +93,11 @@ namespace Snowstorm::CVars
 	// read per-frame by RenderSystem, so toggling it takes effect live.
 	extern CVar<int> AAMode;
 
+	// Viewport debug overlay (#44): 0 = Normal, 1 = Motion Vectors. When 1, a dedicated velocity pass emits
+	// per-pixel screen-space motion into the velocity target and the tonemap step visualizes it as color
+	// instead of the tonemapped scene. Gates the (otherwise skipped) velocity pass; read per-frame.
+	extern CVar<int> DebugView;
+
 	// Internal render scale (#43): the scene renders into a target sized at this fraction of the viewport,
 	// then an upscale pass brings it back to full res. 1.0 = native (upscale skipped); 0.5 = quarter the
 	// pixels. The seam the neural super-resolution upscaler plugs into. Clamp with ClampedRenderScale().

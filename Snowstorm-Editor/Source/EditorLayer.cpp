@@ -458,6 +458,8 @@ namespace Snowstorm
 		rtc.GroundTruthTarget = CreateDefaultSceneRenderTarget(windowWidth, windowHeight, "Main Viewport GT");
 		rtc.GroundTruthPresentTarget = CreatePresentTarget(windowWidth, windowHeight, "Main Viewport GT");
 		rtc.GroundTruthPresentSampleView = CreatePresentSampleView(rtc.GroundTruthPresentTarget);
+		// Motion-vector target (#44); ViewportResizeSystem rebuilds it at render.scale on the first frame.
+		rtc.VelocityTarget = CreateVelocityTarget(windowWidth, windowHeight, "Main Viewport");
 	}
 
 	void EditorLayer::CreateDemoEntities() const

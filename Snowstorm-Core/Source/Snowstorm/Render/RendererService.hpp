@@ -20,16 +20,17 @@
 namespace Snowstorm
 {
 	// Per-instance GPU record uploaded to the set=2 StructuredBuffer, indexed by SV_InstanceID.
-	// Layout MUST match the HLSL InstanceData struct in Engine.hlsli exactly (std430-style).
+	// Layout MUST match the HLSL InstanceData struct in MeshInput.hlsli exactly (std430-style).
 	struct InstanceData
 	{
 		glm::mat4 Model{1.0f};
+		glm::mat4 PrevModel{1.0f};       // last frame's world matrix — for motion vectors (#44)
 		uint32_t AlbedoTextureIndex = 0; // per-instance albedo override (0 = material default)
 		glm::vec3 _Pad0{0.0f};
 		glm::vec4 Extras0{0.0f};
 	};
-	static_assert(sizeof(InstanceData) == sizeof(glm::mat4) + sizeof(glm::vec4) + sizeof(glm::vec4),
-	              "InstanceData layout must match HLSL (mat4 + uint+pad3 + vec4)");
+	static_assert(sizeof(InstanceData) == 2 * sizeof(glm::mat4) + sizeof(glm::vec4) + sizeof(glm::vec4),
+	              "InstanceData layout must match HLSL (mat4 Model + mat4 PrevModel + uint+pad3 + vec4)");
 
 	struct BatchData
 	{
@@ -70,11 +71,14 @@ namespace Snowstorm
 
 		// Submit one renderable. Per-instance albedo index (0 = material default) and extras travel in
 		// the instance buffer so objects sharing (mesh, material) batch into a single instanced draw.
+		// prevTransform is last frame's world matrix (for motion vectors, #44); defaults to `transform`
+		// (zero velocity) so callers that don't track it — shadow/velocity-agnostic paths — stay correct.
 		void DrawMesh(const glm::mat4& transform,
 		              const Ref<Mesh>& mesh,
 		              const Ref<MaterialInstance>& materialInstance,
 		              uint32_t albedoTextureIndex = 0,
-		              const glm::vec4& extras0 = glm::vec4(0.0f));
+		              const glm::vec4& extras0 = glm::vec4(0.0f),
+		              const glm::mat4& prevTransform = glm::mat4(1.0f));
 
 		void UploadLights(const LightDataBlock& lightData);
 
@@ -91,19 +95,41 @@ namespace Snowstorm
 		// no set 0. Instances are appended at the running cursor (NOT cleared — the camera pass owns clearing).
 		void DrawBatchesDepthOnly(const Ref<Pipeline>& depthPipeline, const glm::mat4& lightViewProj);
 
+		// Draw the currently-accumulated batches through a velocity pipeline (VelocityPass, #44), emitting
+		// per-pixel screen-space motion. Like DrawBatchesDepthOnly but pushes BOTH matrices — viewProj and
+		// prevViewProj (128-byte vertex push constant, matching Velocity.vert.hlsl) — and the pipeline has a
+		// color attachment (RGBA16F velocity) plus its own depth. Instances carry Model + PrevModel (from the
+		// set=2 buffer), so the vertex stage projects each vertex in both frames. Instances appended at the
+		// running cursor (NOT cleared — the caller's own BeginScene accumulation owns clearing).
+		void DrawBatchesVelocity(const Ref<Pipeline>& velocityPipeline,
+		                         const glm::mat4& viewProj,
+		                         const glm::mat4& prevViewProj);
+
 		// Bind the given pipeline + its set=0 Frame descriptor (FrameCB) and draw a vertex-buffer-less
 		// fullscreen triangle (3 verts from SV_VertexID). Used by SkyPass; the FrameCB carries everything
 		// the fullscreen shader needs (InvViewProj, environment). No-op outside an active scene pass.
 		void DrawFullscreenTriangle(const Ref<Pipeline>& pipeline);
 
+		// Per-draw tonemap push constant (mirrors TonemapPush in Tonemap.frag.hlsl field-for-field). The
+		// scene-color index + debug fields travel per-draw (not via FrameCB) because compare mode records
+		// the tonemap pass twice per frame and a shared UBO would leave both draws with the last-written
+		// values. DebugMode 0 = normal; 1 = motion-vector view (samples DebugTexIndex, scaled by DebugScale).
+		struct TonemapParams
+		{
+			uint32_t SceneColorIndex = 0;
+			uint32_t DebugMode = 0;
+			uint32_t DebugTexIndex = 0;
+			float DebugScale = 1.0f;
+		};
+
 		// Post-process fullscreen draw: like DrawFullscreenTriangle but also binds the set=3 bindless table
-		// (the tonemap shader samples the HDR scene color via a bindless index in FrameCB.SceneColorIndex)
-		// and does NOT require an active BeginScene (it runs as its own graph pass with its own command
-		// context + frame index). Sets SceneColorIndex into FrameData so AcquireFrameSet uploads it.
+		// (the tonemap shader samples the HDR scene color / velocity via bindless indices in the push
+		// constant) and does NOT require an active BeginScene (it runs as its own graph pass with its own
+		// command context + frame index). The params ride a per-draw push constant.
 		void DrawPostProcess(const Ref<Pipeline>& pipeline,
 		                     const Ref<CommandContext>& commandContext,
 		                     uint32_t frameIndex,
-		                     uint32_t sceneColorBindlessIndex);
+		                     const TonemapParams& params);
 
 		// Set the directional shadow data the lit pass needs: the light's view-projection (world -> light
 		// clip), the bindless index of the shadow depth texture (0 = no shadows), and the shadow map's

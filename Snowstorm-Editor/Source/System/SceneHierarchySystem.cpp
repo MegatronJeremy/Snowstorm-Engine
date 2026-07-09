@@ -140,6 +140,22 @@ namespace Snowstorm
 			CVars::Compare.Set(compare);
 		}
 
+		// Debug view (#44): Motion Vectors visualizes per-pixel screen-space velocity as color (the
+		// temporal-upscaling substrate). Index maps 1:1 to render.debugview (0=Normal, 1=Motion Vectors).
+		// When on, a velocity pass runs and the tonemap step shows velocity instead of the scene.
+		{
+			const char* dbgLabels[] = {"Normal", "Motion Vectors"};
+			int dbg = CVars::DebugView.Get();
+			if (dbg < 0 || dbg > 1)
+			{
+				dbg = 0;
+			}
+			if (ImGui::Combo("Debug View", &dbg, dbgLabels, 2))
+			{
+				CVars::DebugView.Set(dbg);
+			}
+		}
+
 		ImGui::Spacing();
 		EditorTheme::SectionHeader("Shadows");
 

@@ -11,9 +11,16 @@
 // runs this pass twice in one frame (upscaled + ground truth), and a shared per-frame FrameCB UBO would
 // hold only the last-written index by GPU-execution time — both draws would sample the same image. A
 // push constant is recorded per-draw, so each tonemap gets its own source.
+//
+// DebugMode (#44): 0 = normal tonemapped scene; 1 = motion-vector visualization — instead of the scene,
+// sample the velocity target (DebugTexIndex) and map the screen-space velocity to color so moving pixels
+// light up and static ones stay black. DebugScale amplifies the tiny per-frame UV deltas to a visible range.
 [[vk::push_constant]] struct TonemapPush
 {
 	uint SceneColorIndex;
+	uint DebugMode;
+	uint DebugTexIndex;
+	float DebugScale;
 } gTonemap;
 
 // ACES filmic tonemap (Narkowicz fit): compress unbounded linear HDR into [0,1] with a filmic
@@ -46,6 +53,18 @@ float4 main(FullscreenVSOut input) : SV_Target
 	// scene target — so the integer texel coord is a straight copy (no Y flip). The editor's existing
 	// ImGui::Image flip ({0,1},{1,0}) then displays it right-side up, exactly as before this pass existed.
 	const int2 texel = int2(input.PositionCS.xy);
+
+	// Motion-vector debug view (#44): visualize screen-space velocity as color. R = +x motion, G = +y
+	// motion (abs, scaled); static pixels stay black, faster pixels brighter. The velocity target is the
+	// same resolution as the present target (see CreateVelocityTarget), so Load() is a 1:1 fetch too.
+	if (gTonemap.DebugMode == 1)
+	{
+		const float2 vel = Textures[NonUniformResourceIndex(gTonemap.DebugTexIndex)].Load(int3(texel, 0)).xy;
+		// Output is LINEAR (hardware sRGB-encodes on write), so the debug color would gamma-brighten; keep
+		// it simple — the goal is "does it move", not a calibrated readout.
+		return float4(saturate(abs(vel) * gTonemap.DebugScale), 0.0, 1.0);
+	}
+
 	const float3 hdr = Textures[NonUniformResourceIndex(gTonemap.SceneColorIndex)].Load(int3(texel, 0)).rgb;
 
 	// Output LINEAR; the sRGB-format present target hardware-encodes on write (#79).

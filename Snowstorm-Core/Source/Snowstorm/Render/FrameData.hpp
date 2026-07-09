@@ -16,6 +16,7 @@ namespace Snowstorm
 	{
 		// Camera (set in BeginScene).
 		glm::mat4 ViewProjection{1.0f};
+		glm::mat4 PrevViewProjection{1.0f}; // last frame's VP — for motion vectors (#44)
 		glm::vec3 CameraPosition{0.0f};
 
 		// Scene lighting + environment (uploaded by the PreRender systems).

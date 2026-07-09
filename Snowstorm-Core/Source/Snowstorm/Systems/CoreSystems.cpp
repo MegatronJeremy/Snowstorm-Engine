@@ -11,6 +11,7 @@
 #include "Snowstorm/Systems/CameraRuntimeUpdateSystem.hpp"
 #include "Snowstorm/Systems/MaterialResolveSystem.hpp"
 #include "Snowstorm/Systems/MeshResolveSystem.hpp"
+#include "Snowstorm/Systems/PrevTransformSnapshotSystem.hpp"
 #include "Snowstorm/Systems/RenderSystem.hpp"
 #include "Snowstorm/Systems/RotatorSystem.hpp"
 #include "Snowstorm/Systems/RuntimeInitSystem.hpp"
@@ -43,5 +44,9 @@ namespace Snowstorm
 		sm.RegisterSystem<VisibilitySystem>(SystemPhase::PreRender);
 
 		sm.RegisterSystem<RenderSystem>(SystemPhase::Render);
+
+		// End-of-frame: snapshot this frame's transforms into the *Prev* slots for next frame's motion
+		// vectors (#44). Registered AFTER RenderSystem so it captures the values the frame just rendered.
+		sm.RegisterSystem<PrevTransformSnapshotSystem>(SystemPhase::Render);
 	}
 }

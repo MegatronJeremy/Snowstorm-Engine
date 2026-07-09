@@ -121,10 +121,10 @@ namespace Snowstorm
 		for (const auto camE : camView)
 		{
 			const bool dirtyDirect =
-			addedCams.contains(camE) ||
-			changedCamsA.contains(camE) ||
-			changedCamsB.contains(camE) ||
-			changedCamsC.contains(camE);
+			    addedCams.contains(camE) ||
+			    changedCamsA.contains(camE) ||
+			    changedCamsB.contains(camE) ||
+			    changedCamsC.contains(camE);
 
 			const auto& ct = camView.get<CameraTargetComponent>(camE);
 			if (ct.TargetViewportEntity == entt::null)
@@ -159,8 +159,9 @@ namespace Snowstorm
 
 			auto& rt = reg.Write<CameraRuntimeComponent>(camE);
 
-			// Preserve previous VP for motion vectors / temporal stuff
-			rt.PrevViewProjection = rt.ViewProjection;
+			// NOTE: PrevViewProjection is snapshotted at end-of-frame by PrevTransformSnapshotSystem
+			// (prev = current), not here — so a static camera (which early-outs above and never reaches
+			// this line) still gets a fresh prev == current each frame instead of a stale value.
 
 			// TransformComponent in your code behaves like a matrix already
 			const glm::mat4 world = tr;

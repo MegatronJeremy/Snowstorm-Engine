@@ -4,6 +4,7 @@
 
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
+#include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
 namespace Snowstorm
@@ -22,12 +23,12 @@ namespace Snowstorm
 	public:
 		[[nodiscard]] const char* Name() const override { return "PostProcess"; }
 
-		// Tonemap the HDR scene color into the current (LDR) render target. `sceneColorBindlessIndex` is the
-		// bindless slot of the HDR scene color view; `colorFormat` is the present target's format (drives
-		// the lazy pipeline build). Records into `ctx` (the graph's per-frame command context). No-op until
-		// the shader has compiled.
+		// Tonemap the HDR scene color into the current (LDR) render target. `params` carries the HDR scene
+		// color bindless slot + the motion-vector debug fields (#44); `colorFormat` is the present target's
+		// format (drives the lazy pipeline build). Records into `ctx` (the graph's per-frame command
+		// context). No-op until the shader has compiled.
 		void Draw(RendererService& renderer, const Ref<CommandContext>& ctx, uint32_t frameIndex,
-		          uint32_t sceneColorBindlessIndex, PixelFormat colorFormat);
+		          const RendererService::TonemapParams& params, PixelFormat colorFormat);
 
 	private:
 		void EnsurePipeline(PixelFormat colorFormat);

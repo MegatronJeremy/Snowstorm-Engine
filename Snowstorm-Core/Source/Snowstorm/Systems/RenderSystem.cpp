@@ -7,6 +7,7 @@
 #include "Snowstorm/Components/MaterialComponent.hpp"
 #include "Snowstorm/Components/MaterialOverridesComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
+#include "Snowstorm/Components/PrevTransformComponent.hpp"
 #include "Snowstorm/Components/RenderTargetComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Components/ViewportComponent.hpp"
@@ -420,19 +421,89 @@ namespace Snowstorm
 			};
 
 			// Tonemap an HDR scene-color view into an LDR target (exposure/ACES; hardware sRGB-encodes on
-			// write). Declares the HDR color as a Sampled read so the graph transitions it first.
-			const auto addTonemap = [&](const Ref<TextureView>& hdrColorView, const Ref<RenderTarget>& dstTarget, const std::string& name)
+			// write). Declares the HDR color as a Sampled read so the graph transitions it first. `params`
+			// carries the scene-color bindless index (filled here) plus any motion-vector debug fields set by
+			// the caller (#44) — the debug branch samples the velocity target instead of the scene.
+			const auto addTonemap = [&](const Ref<TextureView>& hdrColorView, const Ref<RenderTarget>& dstTarget,
+			                            const std::string& name, RendererService::TonemapParams params,
+			                            const Ref<Texture>& extraRead = nullptr)
 			{
-				const uint32_t sceneColorIndex = hdrColorView->GetGlobalBindlessIndex();
+				params.SceneColorIndex = hdrColorView->GetGlobalBindlessIndex();
 				const PixelFormat dstFmt = dstTarget->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+				// The debug branch samples the velocity target (extraRead) via bindless, so declare it Sampled
+				// too — the graph then transitions it to shader-read before this pass, like the HDR scene color.
+				std::vector<RenderGraph::ResourceAccess> reads{{hdrColorView->GetTexture(), RenderGraph::AccessState::Sampled}};
+				if (extraRead)
+				{
+					reads.push_back({extraRead, RenderGraph::AccessState::Sampled});
+				}
 				graph.AddPass({.Name = name,
 				               .Target = dstTarget,
-				               .Reads = {{hdrColorView->GetTexture(), RenderGraph::AccessState::Sampled}},
-				               .Execute = [&, sceneColorIndex, dstFmt](CommandContext& c)
+				               .Reads = std::move(reads),
+				               .Execute = [&, params, dstFmt](CommandContext& c)
 				               {
-					               m_PostProcessPass.Draw(renderer, ctx, frameIndex, sceneColorIndex, dstFmt);
+					               m_PostProcessPass.Draw(renderer, ctx, frameIndex, params, dstFmt);
 				               }});
 			};
+
+			// ---- Motion-vector pass (#44) ----
+			// Only when the debug view asks for it (later: also when temporal upscaling is active). Re-renders
+			// the visible meshes into the velocity target, projecting each vertex by this frame's and last
+			// frame's matrices (per-object PrevModel from PrevTransformComponent, camera PrevViewProj from the
+			// runtime component). Self-contained target (own depth), so no ordering constraint vs forward.
+			const int debugView = CVars::DebugView.Get();
+			const bool velocityNeeded = debugView == 1 && vpRT.VelocityTarget &&
+			                            !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
+			                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
+			if (velocityNeeded)
+			{
+				const auto& velDesc = vpRT.VelocityTarget->GetDesc();
+				const PixelFormat velColorFmt = velDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+				const PixelFormat velDepthFmt = velDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
+				const glm::mat4 viewProj = cam.Rt->ViewProjection;
+				const glm::mat4 prevViewProj = cam.Rt->PrevViewProjection;
+
+				graph.AddPass({.Name = "Velocity" + passSuffix,
+				               .Target = vpRT.VelocityTarget,
+				               .Execute = [&, cam, velColorFmt, velDepthFmt, viewProj, prevViewProj](CommandContext& c)
+				               {
+					               renderer.BeginScene(*cam.Rt, cam.Transform->Position, ctx, frameIndex);
+
+					               for (const auto& cache = reg.Read<VisibilityCacheComponent>(cam.Entity);
+					                    const entt::entity e : cache.VisibleMeshes)
+					               {
+						               const auto& tr = reg.Read<TransformComponent>(e);
+						               const auto& mesh = reg.Read<MeshComponent>(e);
+						               const auto& mat = reg.Read<MaterialComponent>(e);
+						               if (!mesh.MeshInstance || !mat.MaterialInstance)
+						               {
+							               continue;
+						               }
+						               // Last frame's world matrix; PrevTransformSnapshotSystem writes it end-of-frame.
+						               // Missing (object created this frame) -> use current => zero velocity (correct).
+						               glm::mat4 prevModel = tr.GetTransformMatrix();
+						               if (const auto* pt = reg.try_get_const<PrevTransformComponent>(e))
+						               {
+							               prevModel = pt->PrevModel;
+						               }
+						               renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, 0,
+						                                 glm::vec4(0.0f), prevModel);
+					               }
+
+					               m_VelocityPass.RecordVelocity(renderer, velColorFmt, velDepthFmt, viewProj, prevViewProj);
+				               }});
+			}
+
+			// Tonemap debug params (#44): when the motion-vector view is on, the tonemap step visualizes the
+			// velocity target instead of the scene. Amplify the tiny per-frame UV deltas so slow motion is
+			// visible. Applied to the primary path only (compare mode keeps its GT side normal).
+			RendererService::TonemapParams primaryTonemap{};
+			if (velocityNeeded)
+			{
+				primaryTonemap.DebugMode = 1;
+				primaryTonemap.DebugTexIndex = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
+				primaryTonemap.DebugScale = 40.0f; // per-frame UV velocity is small; scale to a visible range
+			}
 
 			// ---- Primary (upscaled) path ----
 			addForward(vpRT.Target, "Forward" + passSuffix);
@@ -470,7 +541,8 @@ namespace Snowstorm
 					}
 				}
 
-				addTonemap(sceneColorView, tonemapTarget, "PostProcess");
+				const Ref<Texture> velocityRead = velocityNeeded ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture() : nullptr;
+				addTonemap(sceneColorView, tonemapTarget, "PostProcess", primaryTonemap, velocityRead);
 
 				// FXAA resolve: AA intermediate (tonemapped LDR) -> present target. Gated on render.aa.
 				if (fxaaOn && vpRT.PresentTarget && !vpRT.PresentTarget->GetDesc().ColorAttachments.empty() &&
@@ -496,7 +568,7 @@ namespace Snowstorm
 			    vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View)
 			{
 				addForward(vpRT.GroundTruthTarget, "ForwardGT" + passSuffix);
-				addTonemap(vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View, vpRT.GroundTruthPresentTarget, "PostProcessGT");
+				addTonemap(vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View, vpRT.GroundTruthPresentTarget, "PostProcessGT", RendererService::TonemapParams{});
 			}
 		}
 

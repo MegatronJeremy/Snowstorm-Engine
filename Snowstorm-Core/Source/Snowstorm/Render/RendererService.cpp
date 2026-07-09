@@ -15,7 +15,8 @@ namespace Snowstorm
 		struct FrameCB
 		{
 			glm::mat4 ViewProj;
-			glm::mat4 InvViewProj; // for reconstructing world-space rays (sky pass); mirrors Engine.hlsli FrameCB
+			glm::mat4 InvViewProj;  // for reconstructing world-space rays (sky pass); mirrors Engine.hlsli FrameCB
+			glm::mat4 PrevViewProj; // last frame's VP — for motion vectors (#44); mirrors Engine.hlsli FrameCB
 			glm::vec3 CameraPosition;
 			float Exposure = 1.0f; // linear pre-tonemap multiplier (mirrors Engine.hlsli FrameCB)
 
@@ -86,6 +87,7 @@ namespace Snowstorm
 		m_FrameIndex = frameIndex;
 
 		m_FrameData.ViewProjection = cameraRt.ViewProjection;
+		m_FrameData.PrevViewProjection = cameraRt.PrevViewProjection; // motion vectors (#44)
 		m_FrameData.CameraPosition = cameraWorldPosition;
 
 		m_Batches.clear();
@@ -105,7 +107,8 @@ namespace Snowstorm
 	                               const Ref<Mesh>& mesh,
 	                               const Ref<MaterialInstance>& materialInstance,
 	                               const uint32_t albedoTextureIndex,
-	                               const glm::vec4& extras0)
+	                               const glm::vec4& extras0,
+	                               const glm::mat4& prevTransform)
 	{
 		SS_CORE_ASSERT(m_CommandContext, "DrawMesh called outside of BeginScene/EndScene");
 		SS_CORE_ASSERT(mesh, "Mesh must be valid");
@@ -126,6 +129,7 @@ namespace Snowstorm
 
 		InstanceData instance{};
 		instance.Model = transform;
+		instance.PrevModel = prevTransform;
 		instance.AlbedoTextureIndex = albedoTextureIndex;
 		instance.Extras0 = extras0;
 		batch->Instances.push_back(instance);
@@ -191,6 +195,7 @@ namespace Snowstorm
 		FrameCB frame{};
 		frame.ViewProj = fd.ViewProjection;
 		frame.InvViewProj = glm::inverse(fd.ViewProjection);
+		frame.PrevViewProj = fd.PrevViewProjection; // motion vectors (#44)
 		frame.CameraPosition = fd.CameraPosition;
 		frame.Exposure = CVars::Exposure.Get();
 		frame.Lights = fd.Lights;
@@ -250,7 +255,7 @@ namespace Snowstorm
 	void RendererService::DrawPostProcess(const Ref<Pipeline>& pipeline,
 	                                      const Ref<CommandContext>& commandContext,
 	                                      const uint32_t frameIndex,
-	                                      const uint32_t sceneColorBindlessIndex)
+	                                      const TonemapParams& params)
 	{
 		if (!commandContext || !pipeline)
 		{
@@ -258,16 +263,17 @@ namespace Snowstorm
 		}
 
 		// Runs as its own graph pass (outside BeginScene/EndScene), so set the command context + frame index
-		// locally for AcquireFrameSet (FrameCB carries exposure etc.). The scene-color index is a PER-DRAW
-		// PUSH CONSTANT, not a FrameCB field: compare mode records this pass twice per frame (upscaled +
-		// ground truth), and a shared FrameCB UBO would leave both draws sampling the last-written index.
+		// locally for AcquireFrameSet (FrameCB carries exposure etc.). The params (scene-color index + debug
+		// fields) are a PER-DRAW PUSH CONSTANT, not FrameCB fields: compare mode records this pass twice per
+		// frame (upscaled + ground truth), and a shared FrameCB UBO would leave both draws with the last-
+		// written values.
 		m_CommandContext = commandContext;
 		m_FrameIndex = frameIndex;
 
 		commandContext->BindPipeline(pipeline);
 		commandContext->BindDescriptorSet(AcquireFrameSet(pipeline, frameIndex), 0);
-		commandContext->BindGlobalResources(); // set=3 bindless table (scene color lives here)
-		commandContext->PushConstants(&sceneColorBindlessIndex, sizeof(uint32_t), 0);
+		commandContext->BindGlobalResources(); // set=3 bindless table (scene color / velocity live here)
+		commandContext->PushConstants(&params, sizeof(TonemapParams), 0);
 		commandContext->Draw(3, 1, 0);
 
 		m_CommandContext.reset();
@@ -380,6 +386,44 @@ namespace Snowstorm
 				continue;
 
 			WriteBatchInstancedDraw(batch, " in shadow pass");
+		}
+	}
+
+	void RendererService::DrawBatchesVelocity(const Ref<Pipeline>& velocityPipeline,
+	                                          const glm::mat4& viewProj,
+	                                          const glm::mat4& prevViewProj)
+	{
+		if (!m_CommandContext || m_Batches.empty() || !velocityPipeline)
+		{
+			return;
+		}
+
+		const auto& setLayouts = velocityPipeline->GetSetLayouts();
+		SS_CORE_ASSERT(setLayouts.size() > 2 && setLayouts[2], "Velocity pipeline missing set 2 (instances)");
+
+		m_CommandContext->BindPipeline(velocityPipeline);
+
+		// Both camera matrices ride a single 128-byte vertex push constant (see Velocity.vert.hlsl); no
+		// set=0/FrameCB binding, mirroring the depth-only pass. Per-object Model + PrevModel come from set 2.
+		struct VelocityPush
+		{
+			glm::mat4 ViewProj;
+			glm::mat4 PrevViewProj;
+		} push{viewProj, prevViewProj};
+		m_CommandContext->PushConstants(&push, sizeof(push), 0);
+
+		const Ref<DescriptorSet>& objectSet = AcquireObjectSet(velocityPipeline, m_FrameIndex, "Set2_Instances_Velocity");
+		m_CommandContext->BindDescriptorSet(objectSet, 2);
+
+		// One instanced draw per batch, appending into the shared instance buffer at the running cursor.
+		// The batches are NOT cleared here — the caller's BeginScene accumulation owns clearing (same
+		// contract as DrawBatchesDepthOnly).
+		for (auto& batch : m_Batches)
+		{
+			if (batch.Instances.empty() || !batch.Mesh)
+				continue;
+
+			WriteBatchInstancedDraw(batch, " in velocity pass");
 		}
 	}
 
