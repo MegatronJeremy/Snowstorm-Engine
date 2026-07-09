@@ -84,7 +84,8 @@ namespace Snowstorm
 				const uint32_t sh = ScaledExtent(h, scale);
 
 				const auto& rt = reg.Read<RenderTargetComponent>(vpEntity);
-				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget;
+				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget ||
+				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget;
 				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Compare each
 				// against its own expected extent so a scale change (Target only) still triggers a rebuild.
 				const bool viewportResized = rt.PresentTarget && (rt.PresentTarget->GetDesc().Width != w || rt.PresentTarget->GetDesc().Height != h);
@@ -112,7 +113,12 @@ namespace Snowstorm
 					rtW.AAIntermediateSampleView = CreatePresentSampleView(rtW.AAIntermediateTarget);
 					// Full-res HDR upscale target: the UpscalePass writes it from the low-res Target; tonemap
 					// reads it when scale < 1. Same format as the scene Target so tonemap's bindless Load matches.
-					rtW.SceneUpscaleTarget = CreateDefaultSceneRenderTarget(w, h, "ViewportUpscale");
+					rtW.SceneUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportUpscale");
+					// Ground-truth targets (compare mode, #43 part 2): full-res HDR scene + its LDR present pair.
+					// Always allocated (negligible); only rendered into when render.compare is on.
+					rtW.GroundTruthTarget = CreateDefaultSceneRenderTarget(w, h, "ViewportGT");
+					rtW.GroundTruthPresentTarget = CreatePresentTarget(w, h, "ViewportGT");
+					rtW.GroundTruthPresentSampleView = CreatePresentSampleView(rtW.GroundTruthPresentTarget);
 				}
 			}
 		}

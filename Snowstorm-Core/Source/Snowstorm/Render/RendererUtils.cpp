@@ -86,6 +86,39 @@ namespace Snowstorm
 		return RenderTarget::Create(rtDesc);
 	}
 
+	Ref<RenderTarget> CreateColorOnlyHDRTarget(uint32_t w, uint32_t h, const char* debugPrefix)
+	{
+		// HDR color, NO depth — for a fullscreen HDR post pass (e.g. UpscalePass) whose pipeline declares no
+		// depth format. A depth attachment here would mismatch the pipeline's (undefined) depth format under
+		// dynamic rendering. Sampled so tonemap can bindless-Load the result.
+		TextureDesc colorDesc{};
+		colorDesc.Dimension = TextureDimension::Texture2D;
+		colorDesc.Format = kSceneColorFormat; // RGBA16F, matches the scene target so tonemap's Load matches
+		colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled;
+		colorDesc.Width = w;
+		colorDesc.Height = h;
+		colorDesc.DebugName = std::string(debugPrefix) + "_Color";
+
+		Ref<Texture> colorTex = Texture::Create(colorDesc);
+		Ref<TextureView> colorView = TextureView::Create(colorTex, MakeFullViewDesc(colorDesc));
+
+		RenderTargetDesc rtDesc{};
+		rtDesc.Width = w;
+		rtDesc.Height = h;
+		rtDesc.IsSwapchainTarget = false;
+
+		RenderTargetAttachment colorAtt{};
+		colorAtt.View = colorView;
+		colorAtt.AttachmentIndex = 0;
+		colorAtt.ClearColor = {0.0f, 0.0f, 0.0f, 1.0f};
+		colorAtt.LoadOp = RenderTargetLoadOp::Clear;
+		colorAtt.StoreOp = RenderTargetStoreOp::Store;
+		rtDesc.ColorAttachments.push_back(colorAtt);
+		// No depth attachment.
+
+		return RenderTarget::Create(rtDesc);
+	}
+
 	Ref<TextureView> CreatePresentSampleView(const Ref<RenderTarget>& presentTarget)
 	{
 		if (!presentTarget)

@@ -197,6 +197,43 @@ namespace Snowstorm
 			spvReflectDestroyShaderModule(&mod);
 		}
 
+		// Reflect push-constant ranges from one stage's SPIR-V and merge into `out` (keyed by byte offset),
+		// OR-ing stage visibility so a block used in both VS and FS becomes AllGraphics — symmetric with how
+		// ReflectStageInto handles descriptor bindings. This removes the need to hand-declare
+		// PipelineDesc.PushConstants for every push-constant shader (a shader that uses push constants but
+		// whose layout omits the range fails pipeline creation — the exact trap that motivated this).
+		void ReflectPushConstantsInto(const std::vector<char>& code,
+		                              const ShaderStage stage,
+		                              std::map<uint32_t, VkPushConstantRange>& out)
+		{
+			SpvReflectShaderModule mod;
+			SS_CORE_VERIFY(spvReflectCreateShaderModule(code.size(), code.data(), &mod) == SPV_REFLECT_RESULT_SUCCESS,
+			               "Failed to reflect graphics SPIR-V for push constants");
+
+			uint32_t blockCount = 0;
+			spvReflectEnumeratePushConstantBlocks(&mod, &blockCount, nullptr);
+			std::vector<SpvReflectBlockVariable*> blocks(blockCount);
+			spvReflectEnumeratePushConstantBlocks(&mod, &blockCount, blocks.data());
+
+			const VkShaderStageFlags stageFlag = ToVkShaderStages(stage);
+			for (const SpvReflectBlockVariable* b : blocks)
+			{
+				if (const auto it = out.find(b->offset); it != out.end())
+				{
+					it->second.stageFlags |= stageFlag; // same block in another stage -> widen visibility
+					it->second.size = std::max(it->second.size, b->size);
+					continue;
+				}
+				VkPushConstantRange range{};
+				range.offset = b->offset;
+				range.size = b->size;
+				range.stageFlags = stageFlag;
+				out.emplace(b->offset, range);
+			}
+
+			spvReflectDestroyShaderModule(&mod);
+		}
+
 		// Resource shape of one set: (binding -> (type, count)). Stage VISIBILITY is intentionally excluded --
 		// a depth-only shadow shader legitimately uses set 0 in the vertex stage only, while the lit shader
 		// uses it in both; that's compatible for descriptor-set reuse. Only the resource layout must match.
@@ -484,22 +521,38 @@ namespace Snowstorm
 		// --- Pipeline layout / descriptors ---
 		CreateDescriptorSetLayouts(vertCode, fragCode);
 
-		// Validate push constant ranges early (better error message than Vulkan validation spam)
-		ValidatePushConstantRangesOrAssert(m_Desc.PushConstants);
-
-		// Build VkPushConstantRange list from PipelineDesc
 		m_VkPushConstantRanges.clear();
-		m_VkPushConstantRanges.reserve(m_Desc.PushConstants.size());
 
-		for (const PushConstantRangeDesc& r : m_Desc.PushConstants)
+		if (!m_Desc.PushConstants.empty())
 		{
-			VkPushConstantRange vkRange{};
-			vkRange.offset = r.Offset;
-			vkRange.size = r.Size;
-			vkRange.stageFlags = ToVkShaderStages(r.Stages);
-
-			SS_CORE_ASSERT(vkRange.stageFlags != 0, "PushConstantRangeDesc.Stages must not be None");
-			m_VkPushConstantRanges.push_back(vkRange);
+			// Explicit override: a pipeline may still hand-declare ranges (validated early for a clearer error
+			// than Vulkan's). Kept as an escape hatch, but shaders normally rely on reflection below.
+			ValidatePushConstantRangesOrAssert(m_Desc.PushConstants);
+			m_VkPushConstantRanges.reserve(m_Desc.PushConstants.size());
+			for (const PushConstantRangeDesc& r : m_Desc.PushConstants)
+			{
+				VkPushConstantRange vkRange{};
+				vkRange.offset = r.Offset;
+				vkRange.size = r.Size;
+				vkRange.stageFlags = ToVkShaderStages(r.Stages);
+				SS_CORE_ASSERT(vkRange.stageFlags != 0, "PushConstantRangeDesc.Stages must not be None");
+				m_VkPushConstantRanges.push_back(vkRange);
+			}
+		}
+		else
+		{
+			// Default: reflect push-constant ranges from the shaders (symmetric with descriptor-set reflection
+			// in CreateDescriptorSetLayouts). A shader declaring [[vk::push_constant]] gets its layout range
+			// automatically — no PipelineDesc.PushConstants needed, and no "shader uses push constants but the
+			// layout has none" pipeline-creation failure.
+			std::map<uint32_t, VkPushConstantRange> reflected;
+			ReflectPushConstantsInto(vertCode, ShaderStage::Vertex, reflected);
+			ReflectPushConstantsInto(fragCode, ShaderStage::Fragment, reflected);
+			m_VkPushConstantRanges.reserve(reflected.size());
+			for (const auto& [offset, range] : reflected)
+			{
+				m_VkPushConstantRanges.push_back(range);
+			}
 		}
 
 		// Pipeline layout: use all set layouts

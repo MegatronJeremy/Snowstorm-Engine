@@ -454,7 +454,10 @@ namespace Snowstorm
 		rtc.PresentSampleView = CreatePresentSampleView(rtc.PresentTarget);
 		rtc.AAIntermediateTarget = CreatePresentTarget(windowWidth, windowHeight, "Main Viewport AA");
 		rtc.AAIntermediateSampleView = CreatePresentSampleView(rtc.AAIntermediateTarget);
-		rtc.SceneUpscaleTarget = CreateDefaultSceneRenderTarget(windowWidth, windowHeight, "Main Viewport Upscale");
+		rtc.SceneUpscaleTarget = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport Upscale");
+		rtc.GroundTruthTarget = CreateDefaultSceneRenderTarget(windowWidth, windowHeight, "Main Viewport GT");
+		rtc.GroundTruthPresentTarget = CreatePresentTarget(windowWidth, windowHeight, "Main Viewport GT");
+		rtc.GroundTruthPresentSampleView = CreatePresentSampleView(rtc.GroundTruthPresentTarget);
 	}
 
 	void EditorLayer::CreateDemoEntities() const

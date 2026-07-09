@@ -58,12 +58,12 @@ namespace Snowstorm
 			float _IBLPad1 = 0.0f;
 			float _IBLPad2 = 0.0f;
 
-			// Post-process: bindless index of the HDR scene-color texture the tonemap pass samples. Only the
-			// post pass reads it. Trailing row (16-byte aligned). MUST match Engine.hlsli FrameCB.
-			uint32_t SceneColorIndex = 0;
-			float _PostPad0 = 0.0f;
-			float _PostPad1 = 0.0f;
-			float _PostPad2 = 0.0f;
+			// Reserved trailing row (was post-process SceneColorIndex, now a per-draw push constant on the
+			// tonemap pass). Kept as padding so the FrameCB layout is unchanged. MUST match Engine.hlsli FrameCB.
+			float _ReservedPad0 = 0.0f;
+			float _ReservedPad1 = 0.0f;
+			float _ReservedPad2 = 0.0f;
+			float _ReservedPad3 = 0.0f;
 		};
 	}
 
@@ -217,8 +217,6 @@ namespace Snowstorm
 			frame.IBLIntensity = CVars::IBLIntensity.Get();
 		}
 
-		frame.SceneColorIndex = fd.SceneColorIndex; // post-process scene-color sampler index
-
 		const Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
 		SS_CORE_ASSERT(frameUBO, "Frame UBO missing for frame descriptor set");
 		frameUBO->SetData(&frame, sizeof(FrameCB), 0);
@@ -259,16 +257,17 @@ namespace Snowstorm
 			return;
 		}
 
-		// Runs as its own graph pass (outside BeginScene/EndScene), so set the command context + frame
-		// index locally for AcquireFrameSet. SceneColorIndex rides FrameCB so the shader can sample the HDR
-		// scene color from the bindless table.
+		// Runs as its own graph pass (outside BeginScene/EndScene), so set the command context + frame index
+		// locally for AcquireFrameSet (FrameCB carries exposure etc.). The scene-color index is a PER-DRAW
+		// PUSH CONSTANT, not a FrameCB field: compare mode records this pass twice per frame (upscaled +
+		// ground truth), and a shared FrameCB UBO would leave both draws sampling the last-written index.
 		m_CommandContext = commandContext;
 		m_FrameIndex = frameIndex;
-		m_FrameData.SceneColorIndex = sceneColorBindlessIndex;
 
 		commandContext->BindPipeline(pipeline);
 		commandContext->BindDescriptorSet(AcquireFrameSet(pipeline, frameIndex), 0);
 		commandContext->BindGlobalResources(); // set=3 bindless table (scene color lives here)
+		commandContext->PushConstants(&sceneColorBindlessIndex, sizeof(uint32_t), 0);
 		commandContext->Draw(3, 1, 0);
 
 		m_CommandContext.reset();

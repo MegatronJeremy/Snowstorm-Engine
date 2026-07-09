@@ -9,6 +9,7 @@
 #include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Components/ViewportInteractionComponent.hpp"
 #include "Snowstorm/Components/IDComponent.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/KeyCodes.hpp"
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/Lighting/LightingComponents.hpp"
@@ -433,7 +434,65 @@ namespace Snowstorm
 			const uint64_t textureID = rt.PresentSampleView->GetUIID();
 			const auto& vp = reg.Read<ViewportComponent>(e);
 
-			ImGui::Image(textureID, ImVec2{vp.Size.x, vp.Size.y}, ImVec2{0, 1}, ImVec2{1, 0});
+			// Compare mode (#43 part 2): draw the upscaled result on the left of a draggable divider and the
+			// full-res ground truth on the right. Pure ImGui — two half-image blits via the window draw list,
+			// a divider line, and an invisible drag handle. The present images use the {0,1}->{1,0} V-flip
+			// (texture V is top-down, clip-space Y is bottom-up); the horizontal split only touches U.
+			const bool comparing = CVars::Compare.Get() && rt.GroundTruthPresentSampleView;
+			if (comparing)
+			{
+				const float split = CVars::ClampedCompareSplit();
+				const ImVec2 imgMin = imageStart;
+				const ImVec2 imgMax = {imageStart.x + vp.Size.x, imageStart.y + vp.Size.y};
+				const float splitX = imgMin.x + vp.Size.x * split;
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+
+				const ImU32 white = IM_COL32_WHITE;
+				// ImTextureID is an integer handle in this ImGui config (GetUIID returns the same uint64_t the
+				// single-image ImGui::Image path passes) — so a plain static_cast, not reinterpret_cast.
+				const auto asTexID = [](const uint64_t id)
+				{ return static_cast<ImTextureID>(id); };
+				// Left = upscaled: pixels [minX, splitX], U in [0, split]. V flipped: top=1, bottom=0.
+				if (split > 0.0f)
+				{
+					dl->AddImage(asTexID(textureID),
+					             imgMin, {splitX, imgMax.y},
+					             ImVec2{0.0f, 1.0f}, ImVec2{split, 0.0f}, white);
+				}
+				// Right = ground truth: pixels [splitX, maxX], U in [split, 1].
+				if (split < 1.0f)
+				{
+					dl->AddImage(asTexID(rt.GroundTruthPresentSampleView->GetUIID()),
+					             {splitX, imgMin.y}, imgMax,
+					             ImVec2{split, 1.0f}, ImVec2{1.0f, 0.0f}, white);
+				}
+
+				// Divider line + labels.
+				dl->AddLine({splitX, imgMin.y}, {splitX, imgMax.y}, IM_COL32(255, 220, 60, 220), 2.0f);
+				dl->AddText({imgMin.x + 8.0f, imgMin.y + 6.0f}, IM_COL32(255, 255, 255, 200), "Upscaled");
+				const ImVec2 gtLabel = ImGui::CalcTextSize("Ground Truth");
+				dl->AddText({imgMax.x - gtLabel.x - 8.0f, imgMin.y + 6.0f}, IM_COL32(255, 255, 255, 200), "Ground Truth");
+
+				// Draggable handle: an invisible button straddling the divider updates compare.split. Placed
+				// before the image cursor advance so it wins the hit-test over the gizmo overlay below.
+				const float handleHalf = 6.0f;
+				ImGui::SetCursorScreenPos({splitX - handleHalf, imgMin.y});
+				ImGui::InvisibleButton("##compareSplit", {handleHalf * 2.0f, vp.Size.y});
+				if (ImGui::IsItemActive() && vp.Size.x > 0.0f)
+				{
+					const float newSplit = (ImGui::GetIO().MousePos.x - imgMin.x) / vp.Size.x;
+					CVars::CompareSplit.Set(newSplit < 0.0f ? 0.0f : (newSplit > 1.0f ? 1.0f : newSplit));
+				}
+
+				// Advance the ImGui cursor over the whole image region so the gizmo/picking overlay that
+				// follows lays out against the same rect it always did (the manual draws above don't move it).
+				ImGui::SetCursorScreenPos(imageStart);
+				ImGui::Dummy(ImVec2{vp.Size.x, vp.Size.y});
+			}
+			else
+			{
+				ImGui::Image(textureID, ImVec2{vp.Size.x, vp.Size.y}, ImVec2{0, 1}, ImVec2{1, 0});
+			}
 
 			// ---- Gizmo + picking need this viewport's camera matrices.
 			const entt::entity camEntity = FindViewportCamera(reg, e);

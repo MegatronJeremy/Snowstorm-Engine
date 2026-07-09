@@ -5,7 +5,16 @@
 // (#79): the present target is an sRGB-format image, so this shader outputs LINEAR and the GPU encodes
 // it — no shader gamma curve. This is the single home of the output transform; the mesh (DefaultLit)
 // and sky shaders emit raw linear radiance into the HDR scene target, which this pass finishes. Paired
-// with Fullscreen.vert.hlsl; the scene color is read from the bindless table via FrameCB.SceneColorIndex.
+// with Fullscreen.vert.hlsl.
+//
+// The scene-color bindless index is a PUSH CONSTANT, not a FrameCB field: compare mode (#43 part 2)
+// runs this pass twice in one frame (upscaled + ground truth), and a shared per-frame FrameCB UBO would
+// hold only the last-written index by GPU-execution time — both draws would sample the same image. A
+// push constant is recorded per-draw, so each tonemap gets its own source.
+[[vk::push_constant]] struct TonemapPush
+{
+	uint SceneColorIndex;
+} gTonemap;
 
 // ACES filmic tonemap (Narkowicz fit): compress unbounded linear HDR into [0,1] with a filmic
 // shoulder/toe, so bright spots roll off instead of clipping flat white. Cheap, no LUT.
@@ -37,7 +46,7 @@ float4 main(FullscreenVSOut input) : SV_Target
 	// scene target — so the integer texel coord is a straight copy (no Y flip). The editor's existing
 	// ImGui::Image flip ({0,1},{1,0}) then displays it right-side up, exactly as before this pass existed.
 	const int2 texel = int2(input.PositionCS.xy);
-	const float3 hdr = Textures[NonUniformResourceIndex(SceneColorIndex)].Load(int3(texel, 0)).rgb;
+	const float3 hdr = Textures[NonUniformResourceIndex(gTonemap.SceneColorIndex)].Load(int3(texel, 0)).rgb;
 
 	// Output LINEAR; the sRGB-format present target hardware-encodes on write (#79).
 	const float3 color = TonemapACES(hdr * Exposure);

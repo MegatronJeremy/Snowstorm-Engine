@@ -31,5 +31,14 @@ namespace Snowstorm
 		// (tonemap reads Target directly). The neural upscaler later replaces UpscalePass's shader, writing
 		// the same target. Full-res, same format as Target's color so tonemap's bindless Load matches.
 		Ref<RenderTarget> SceneUpscaleTarget;
+
+		// Ground-truth comparison targets (#43 part 2), only used when render.compare is on. The scene is
+		// rendered a SECOND time at full native resolution into GroundTruthTarget (HDR), tonemapped into
+		// GroundTruthPresentTarget (LDR sRGB), and the editor draws it on one side of the split slider
+		// against the upscaled PresentTarget. GroundTruthPresentSampleView is the UNORM view ImGui samples
+		// (same sRGB-store + UNORM-sample pattern as PresentTarget).
+		Ref<RenderTarget> GroundTruthTarget;
+		Ref<RenderTarget> GroundTruthPresentTarget;
+		Ref<TextureView> GroundTruthPresentSampleView;
 	};
 }

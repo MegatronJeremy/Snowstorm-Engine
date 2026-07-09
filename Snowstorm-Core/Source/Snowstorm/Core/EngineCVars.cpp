@@ -39,6 +39,10 @@ namespace Snowstorm::CVars
 
 	CVar<float> RenderScale{"render.scale", 1.0f, "Internal render scale: scene renders at this fraction of viewport res then upscales (1.0 = native, 0.5 = half). Clamped to [0.25, 1.0]", CVarFlags::Persist};
 
+	CVar<bool> Compare{"render.compare", false, "Split-screen A/B: left = upscaled (render.scale), right = full-res ground truth. Renders the scene twice; FXAA off both sides so the only variable is the upscaler (#43)", CVarFlags::Persist};
+
+	CVar<float> CompareSplit{"compare.split", 0.5f, "Compare-mode divider position (0 = all ground truth, 1 = all upscaled). Draggable in the viewport. Clamped to [0, 1]", CVarFlags::Persist};
+
 	CVar<int> AAMode{"render.aa", 0, "Anti-aliasing: 0 = None, 1 = FXAA (spatial post-process AA)", CVarFlags::Persist};
 
 	CVar<bool> Shadows{"render.shadows", true, "Global directional shadow toggle (off = skip the shadow pass)", CVarFlags::Persist};
@@ -59,6 +63,20 @@ namespace Snowstorm::CVars
 		if (s < 0.25f)
 		{
 			return 0.25f;
+		}
+		if (s > 1.0f)
+		{
+			return 1.0f;
+		}
+		return s;
+	}
+
+	float ClampedCompareSplit()
+	{
+		const float s = CompareSplit.Get();
+		if (s < 0.0f)
+		{
+			return 0.0f;
 		}
 		if (s > 1.0f)
 		{

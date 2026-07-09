@@ -102,6 +102,15 @@ namespace Snowstorm::CVars
 	// so a hand-edited config / CLI can't request a degenerate (<=0) or >native scale.
 	[[nodiscard]] float ClampedRenderScale();
 
+	// Split-screen upscaler-vs-ground-truth comparison (#43). When on, the scene is rendered twice (low-res
+	// upscaled + full-res native) and shown split at compare.split; FXAA is forced off both sides so the
+	// only variable is the upscaler. Read per-frame; both persist.
+	extern CVar<bool> Compare;
+	extern CVar<float> CompareSplit;
+
+	// compare.split clamped to [0, 1] (viewport fraction of the divider).
+	[[nodiscard]] float ClampedCompareSplit();
+
 	// --- Shadows (quality settings; runtime-tweakable from the editor's Settings panel) ---
 	// Global shadow kill-switch (scalability layer, like Unity Quality Settings / UE sg.ShadowQuality).
 	// Off = skip the shadow pass entirely; the per-light CastShadows flag is the authored on/off above it.

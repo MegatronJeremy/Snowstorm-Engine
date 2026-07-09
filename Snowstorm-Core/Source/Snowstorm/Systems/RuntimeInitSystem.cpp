@@ -104,7 +104,8 @@ namespace Snowstorm
 
 			bool needsCreate = false;
 
-			if (!rtc.Target || !rtc.PresentTarget || !rtc.AAIntermediateTarget || !rtc.SceneUpscaleTarget)
+			if (!rtc.Target || !rtc.PresentTarget || !rtc.AAIntermediateTarget || !rtc.SceneUpscaleTarget ||
+			    !rtc.GroundTruthTarget || !rtc.GroundTruthPresentTarget)
 			{
 				needsCreate = true;
 			}
@@ -127,7 +128,10 @@ namespace Snowstorm
 				wRtc.PresentSampleView = CreatePresentSampleView(wRtc.PresentTarget);
 				wRtc.AAIntermediateTarget = CreatePresentTarget(w, h, "ViewportAA");
 				wRtc.AAIntermediateSampleView = CreatePresentSampleView(wRtc.AAIntermediateTarget);
-				wRtc.SceneUpscaleTarget = CreateDefaultSceneRenderTarget(w, h, "ViewportUpscale");
+				wRtc.SceneUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportUpscale");
+				wRtc.GroundTruthTarget = CreateDefaultSceneRenderTarget(w, h, "ViewportGT");
+				wRtc.GroundTruthPresentTarget = CreatePresentTarget(w, h, "ViewportGT");
+				wRtc.GroundTruthPresentSampleView = CreatePresentSampleView(wRtc.GroundTruthPresentTarget);
 			}
 		}
 

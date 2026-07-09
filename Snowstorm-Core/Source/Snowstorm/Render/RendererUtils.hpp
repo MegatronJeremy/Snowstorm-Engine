@@ -39,6 +39,11 @@ namespace Snowstorm
 	// sampled by the post-process pass. Sampled usage auto-registers the color view for bindless.
 	Ref<RenderTarget> CreateDefaultSceneRenderTarget(uint32_t w, uint32_t h, const char* debugPrefix);
 
+	// Color-only HDR target (kSceneColorFormat, NO depth), Sampled. For fullscreen HDR post passes that
+	// write color only — e.g. the internal-res UpscalePass destination (#43). Its pipeline declares no
+	// depth format, so the target must not carry a depth attachment or dynamic-rendering validation fails.
+	Ref<RenderTarget> CreateColorOnlyHDRTarget(uint32_t w, uint32_t h, const char* debugPrefix);
+
 	// LDR present target: a single sRGB color attachment (kPresentColorFormat), no depth, MutableFormat so
 	// a UNORM sample view can alias it. The post-process pass renders the tonemapped (still linear) result
 	// here and the hardware encodes sRGB on write.

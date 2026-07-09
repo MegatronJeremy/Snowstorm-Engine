@@ -334,182 +334,169 @@ namespace Snowstorm
 				continue;
 			}
 
-			// "Forward" = this engine shades in the geometry pass (DefaultLit fragment shader does PBR +
-			// shadows + IBL); there is no separate deferred lighting pass to time.
-			std::string passName = "Forward";
-			if (multipleViewports)
-			{
-				passName += "[" + std::to_string(forwardPassIndex) + "]";
-			}
+			const std::string passSuffix = multipleViewports ? "[" + std::to_string(forwardPassIndex) + "]" : std::string();
 			++forwardPassIndex;
 
-			// Declare the IBL maps this pass samples (when baked): the graph transitions them from the
-			// Storage layout the bake left them in to shader-read, before shading. Real work only on the
-			// bake frame — idempotent (no-op) once they're already sampled. Replaces the bake's old
-			// hand-called TransitionToSampled on its output maps.
-			std::vector<RenderGraph::ResourceAccess> meshReads;
-			if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
+			// Compare mode (#43 part 2) renders the scene a SECOND time at full native res (ground truth) and
+			// shows it split against the upscaled result. To keep the A/B clean (only the upscaler differs),
+			// FXAA is disabled on BOTH sides while comparing.
+			const bool comparing = CVars::Compare.Get() && vpRT.GroundTruthTarget && vpRT.GroundTruthPresentTarget;
+
+			// Forward + sky into an arbitrary HDR target. Target-pure (reads camera + the shared per-camera
+			// visibility cache), so it's invoked once normally and twice in compare mode (the instance-buffer
+			// cursor appends across BeginScene calls, like the shadow passes). IBL maps are declared as reads
+			// so the graph transitions them to shader-read before shading.
+			const auto addForward = [&](const Ref<RenderTarget>& hdrTarget, const std::string& name)
 			{
-				meshReads = {{m_IBLBakePass.IrradianceCube(), RenderGraph::AccessState::Sampled},
-				             {m_IBLBakePass.PrefilteredCube(), RenderGraph::AccessState::Sampled},
-				             {m_IBLBakePass.BRDFLut(), RenderGraph::AccessState::Sampled}};
-			}
+				std::vector<RenderGraph::ResourceAccess> meshReads;
+				if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
+				{
+					meshReads = {{m_IBLBakePass.IrradianceCube(), RenderGraph::AccessState::Sampled},
+					             {m_IBLBakePass.PrefilteredCube(), RenderGraph::AccessState::Sampled},
+					             {m_IBLBakePass.BRDFLut(), RenderGraph::AccessState::Sampled}};
+				}
 
-			graph.AddPass({.Name = passName,
-			               .Target = vpRT.Target,
-			               .Reads = std::move(meshReads),
-			               .Execute = [&, cam](CommandContext& c)
-			               {
-				               // Camera world position is TransformComponent.Position (more reliable than mat[3] with your TRS)
-				               const glm::vec3 camPos = cam.Transform->Position;
-
-				               renderer.BeginScene(*cam.Rt, camPos, ctx, frameIndex);
-
-				               auto& assets = SingletonView<AssetManagerSingleton>();
-
-				               for (const auto& cache = reg.Read<VisibilityCacheComponent>(cam.Entity);
-				                    const entt::entity e : cache.VisibleMeshes)
+				graph.AddPass({.Name = name,
+				               .Target = hdrTarget,
+				               .Reads = std::move(meshReads),
+				               .Execute = [&, cam, hdrTarget](CommandContext& c)
 				               {
-					               const auto& tr = reg.Read<TransformComponent>(e);
-					               const auto& mesh = reg.Read<MeshComponent>(e);
-					               const auto& mat = reg.Read<MaterialComponent>(e);
+					               const glm::vec3 camPos = cam.Transform->Position;
+					               renderer.BeginScene(*cam.Rt, camPos, ctx, frameIndex);
 
-					               // Runtime instances may be unresolved for a frame (e.g. a freshly duplicated
-					               // or restored entity whose resolve runs the same frame). The visibility cache
-					               // can include it before resolution, so guard here too — dereferencing a null
-					               // MaterialInstance below was an access violation.
-					               if (!mesh.MeshInstance || !mat.MaterialInstance)
-					               {
-						               continue;
-					               }
+					               auto& assets = SingletonView<AssetManagerSingleton>();
 
-					               // Per-instance albedo override travels in the instance buffer (not a unique
-					               // material), so objects sharing a material still batch. Resolve the override
-					               // texture's bindless index here; 0 = use the material's own albedo.
-					               uint32_t albedoIndex = 0;
-					               if (const auto* ov = reg.try_get_const<MaterialOverridesComponent>(e))
+					               for (const auto& cache = reg.Read<VisibilityCacheComponent>(cam.Entity);
+					                    const entt::entity e : cache.VisibleMeshes)
 					               {
-						               for (const MaterialOverride& o : ov->Overrides)
+						               const auto& tr = reg.Read<TransformComponent>(e);
+						               const auto& mesh = reg.Read<MeshComponent>(e);
+						               const auto& mat = reg.Read<MaterialComponent>(e);
+
+						               // Cache can include an entity whose mesh/material resolve runs the same
+						               // frame; guard against the null instance (was an access violation).
+						               if (!mesh.MeshInstance || !mat.MaterialInstance)
 						               {
-							               if (o.Type == MaterialOverrideType::Texture && o.Name == "AlbedoTexture" && o.Texture != 0)
+							               continue;
+						               }
+
+						               // Per-instance albedo override rides the instance buffer (objects sharing a
+						               // material still batch). 0 = use the material's own albedo.
+						               uint32_t albedoIndex = 0;
+						               if (const auto* ov = reg.try_get_const<MaterialOverridesComponent>(e))
+						               {
+							               for (const MaterialOverride& o : ov->Overrides)
 							               {
-								               if (const Ref<TextureView> view = assets.GetTextureView(o.Texture))
+								               if (o.Type == MaterialOverrideType::Texture && o.Name == "AlbedoTexture" && o.Texture != 0)
 								               {
-									               albedoIndex = view->GetGlobalBindlessIndex();
+									               if (const Ref<TextureView> view = assets.GetTextureView(o.Texture))
+									               {
+										               albedoIndex = view->GetGlobalBindlessIndex();
+									               }
 								               }
 							               }
 						               }
+
+						               const glm::vec4 extras0 = mat.MaterialInstance->GetObjectExtras0();
+						               renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, albedoIndex, extras0);
 					               }
 
-					               // Extras0 (e.g. Mandelbrot params) currently lives on the material instance.
-					               const glm::vec4 extras0 = mat.MaterialInstance->GetObjectExtras0();
+					               renderer.Flush();
 
-					               renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, albedoIndex, extras0);
-				               }
+					               // Procedural sky after opaque meshes (far-plane, only fills uncovered pixels).
+					               // Formats come from the target so the sky pipeline stays render-pass-compatible.
+					               const auto& rtDesc = hdrTarget->GetDesc();
+					               if (!rtDesc.ColorAttachments.empty() && rtDesc.DepthAttachment)
+					               {
+						               const PixelFormat colorFmt = rtDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+						               const PixelFormat depthFmt = rtDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
+						               c.BeginGpuScope("Sky");
+						               m_SkyPass.Draw(renderer, colorFmt, depthFmt);
+						               c.EndGpuScope();
+					               }
 
-				               renderer.Flush();
+					               renderer.EndScene();
+				               }});
+			};
 
-				               // Procedural sky after opaque meshes: depth is populated, so the far-plane
-				               // sky only fills uncovered pixels. Formats come from the target's own
-				               // attachments so the sky pipeline is render-pass-compatible with this pass.
-				               // Bracketed in a nested GPU scope (depth 1 under Forward) so the sky's cost
-				               // breaks out as its own line in the profiler while still summing into Forward.
-				               const auto& rtDesc = vpRT.Target->GetDesc();
-				               if (!rtDesc.ColorAttachments.empty() && rtDesc.DepthAttachment)
+			// Tonemap an HDR scene-color view into an LDR target (exposure/ACES; hardware sRGB-encodes on
+			// write). Declares the HDR color as a Sampled read so the graph transitions it first.
+			const auto addTonemap = [&](const Ref<TextureView>& hdrColorView, const Ref<RenderTarget>& dstTarget, const std::string& name)
+			{
+				const uint32_t sceneColorIndex = hdrColorView->GetGlobalBindlessIndex();
+				const PixelFormat dstFmt = dstTarget->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+				graph.AddPass({.Name = name,
+				               .Target = dstTarget,
+				               .Reads = {{hdrColorView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				               .Execute = [&, sceneColorIndex, dstFmt](CommandContext& c)
 				               {
-					               const PixelFormat colorFmt =
-					                   rtDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-					               const PixelFormat depthFmt =
-					                   rtDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
-					               c.BeginGpuScope("Sky");
-					               m_SkyPass.Draw(renderer, colorFmt, depthFmt);
-					               c.EndGpuScope();
-				               }
+					               m_PostProcessPass.Draw(renderer, ctx, frameIndex, sceneColorIndex, dstFmt);
+				               }});
+			};
 
-				               renderer.EndScene();
-			               }});
+			// ---- Primary (upscaled) path ----
+			addForward(vpRT.Target, "Forward" + passSuffix);
 
-			// Post-process (tonemap): read the HDR scene color, write exposure/ACES into an sRGB LDR target
-			// (hardware sRGB-encodes on write). Declared as a Sampled read of the HDR color so the graph
-			// transitions it from color-attachment to shader-read first. Skipped if targets/index aren't ready.
-			//
-			// AA routing: with FXAA on, tonemap renders the AA intermediate and a following FXAA pass resolves
-			// it into the present target; with AA off, tonemap writes the present target directly (no FXAA
-			// pass). read.aa is read per-frame so the Settings toggle flips live.
-			const bool fxaaOn = CVars::AAMode.Get() == 1 && vpRT.AAIntermediateTarget && vpRT.AAIntermediateSampleView;
+			// FXAA only outside compare mode (compare forces it off for a clean upscaler-only A/B).
+			const bool fxaaOn = !comparing && CVars::AAMode.Get() == 1 && vpRT.AAIntermediateTarget && vpRT.AAIntermediateSampleView;
 			const Ref<RenderTarget> tonemapTarget = fxaaOn ? vpRT.AAIntermediateTarget : vpRT.PresentTarget;
 
-			if (tonemapTarget)
+			if (tonemapTarget && !vpRT.Target->GetDesc().ColorAttachments.empty() && vpRT.Target->GetDesc().ColorAttachments[0].View)
 			{
 				const auto& hdrDesc = vpRT.Target->GetDesc();
 				const auto& tmDesc = tonemapTarget->GetDesc();
-				if (!hdrDesc.ColorAttachments.empty() && hdrDesc.ColorAttachments[0].View &&
-				    !tmDesc.ColorAttachments.empty() && tmDesc.ColorAttachments[0].View)
+
+				// Internal-res upscale (#43 part 1): when the scene Target is smaller than the viewport,
+				// bilinear-resample it into SceneUpscaleTarget and tonemap THAT. At scale 1.0 the upscale is
+				// skipped and tonemap reads Target directly (byte-identical to the no-scale path).
+				Ref<TextureView> sceneColorView = hdrDesc.ColorAttachments[0].View;
+				const bool upscaling = vpRT.SceneUpscaleTarget && (hdrDesc.Width != tmDesc.Width || hdrDesc.Height != tmDesc.Height);
+				if (upscaling)
 				{
-					// Internal-resolution upscale (#43): when the scene Target is smaller than the viewport
-					// (render.scale < 1), bilinear-resample it into the full-res SceneUpscaleTarget, and have
-					// tonemap read THAT. At scale 1.0 the upscale pass is skipped and tonemap reads Target
-					// directly (today's path, byte-identical). Both compare Target vs the full present size.
-					const bool upscaling = vpRT.SceneUpscaleTarget &&
-					                       (hdrDesc.Width != tmDesc.Width || hdrDesc.Height != tmDesc.Height);
-
-					// The HDR color view tonemap samples: the upscaled full-res image when upscaling, else the
-					// scene Target directly.
-					Ref<TextureView> sceneColorView = hdrDesc.ColorAttachments[0].View;
-
-					if (upscaling)
+					const auto& upDesc = vpRT.SceneUpscaleTarget->GetDesc();
+					if (!upDesc.ColorAttachments.empty() && upDesc.ColorAttachments[0].View)
 					{
-						const auto& upDesc = vpRT.SceneUpscaleTarget->GetDesc();
-						if (!upDesc.ColorAttachments.empty() && upDesc.ColorAttachments[0].View)
-						{
-							const Ref<TextureView> lowResView = hdrDesc.ColorAttachments[0].View; // low-res scene
-							const Ref<TextureView> upView = upDesc.ColorAttachments[0].View;      // full-res dest
-							const PixelFormat upFmt = upView->GetTexture()->GetDesc().Format;
-
-							graph.AddPass({.Name = "Upscale",
-							               .Target = vpRT.SceneUpscaleTarget,
-							               .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
-							               .Execute = [&, lowResView, upFmt](CommandContext& c)
-							               {
-								               m_UpscalePass.Draw(ctx, frameIndex, lowResView, upFmt);
-							               }});
-
-							sceneColorView = upView; // tonemap now reads the upscaled full-res image
-						}
-					}
-
-					const uint32_t sceneColorIndex = sceneColorView->GetGlobalBindlessIndex();
-					const PixelFormat tmFmt = tmDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-
-					graph.AddPass({.Name = "PostProcess",
-					               .Target = tonemapTarget,
-					               .Reads = {{sceneColorView->GetTexture(), RenderGraph::AccessState::Sampled}},
-					               .Execute = [&, sceneColorIndex, tmFmt](CommandContext& c)
-					               {
-						               m_PostProcessPass.Draw(renderer, ctx, frameIndex, sceneColorIndex, tmFmt);
-					               }});
-
-					// FXAA resolve: intermediate (tonemapped LDR) -> present target. Gated on render.aa.
-					if (fxaaOn && vpRT.PresentTarget)
-					{
-						const auto& presentDesc = vpRT.PresentTarget->GetDesc();
-						if (!presentDesc.ColorAttachments.empty() && presentDesc.ColorAttachments[0].View)
-						{
-							const Ref<Texture> aaImage = vpRT.AAIntermediateTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-							const Ref<TextureView> aaSampleView = vpRT.AAIntermediateSampleView;
-							const PixelFormat presentFmt = presentDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-							const glm::vec2 rcpFrame = {1.0f / static_cast<float>(tmDesc.Width), 1.0f / static_cast<float>(tmDesc.Height)};
-
-							graph.AddPass({.Name = "FXAA",
-							               .Target = vpRT.PresentTarget,
-							               .Reads = {{aaImage, RenderGraph::AccessState::Sampled}},
-							               .Execute = [&, aaSampleView, rcpFrame, presentFmt](CommandContext& c)
-							               {
-								               m_FxaaPass.Draw(ctx, frameIndex, aaSampleView, rcpFrame, presentFmt);
-							               }});
-						}
+						const Ref<TextureView> lowResView = hdrDesc.ColorAttachments[0].View;
+						const Ref<TextureView> upView = upDesc.ColorAttachments[0].View;
+						const PixelFormat upFmt = upView->GetTexture()->GetDesc().Format;
+						graph.AddPass({.Name = "Upscale",
+						               .Target = vpRT.SceneUpscaleTarget,
+						               .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
+						               .Execute = [&, lowResView, upFmt](CommandContext& c)
+						               {
+							               m_UpscalePass.Draw(ctx, frameIndex, lowResView, upFmt);
+						               }});
+						sceneColorView = upView;
 					}
 				}
+
+				addTonemap(sceneColorView, tonemapTarget, "PostProcess");
+
+				// FXAA resolve: AA intermediate (tonemapped LDR) -> present target. Gated on render.aa.
+				if (fxaaOn && vpRT.PresentTarget && !vpRT.PresentTarget->GetDesc().ColorAttachments.empty() &&
+				    vpRT.PresentTarget->GetDesc().ColorAttachments[0].View)
+				{
+					const auto& presentDesc = vpRT.PresentTarget->GetDesc();
+					const Ref<Texture> aaImage = vpRT.AAIntermediateTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+					const Ref<TextureView> aaSampleView = vpRT.AAIntermediateSampleView;
+					const PixelFormat presentFmt = presentDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+					const glm::vec2 rcpFrame = {1.0f / static_cast<float>(tmDesc.Width), 1.0f / static_cast<float>(tmDesc.Height)};
+					graph.AddPass({.Name = "FXAA",
+					               .Target = vpRT.PresentTarget,
+					               .Reads = {{aaImage, RenderGraph::AccessState::Sampled}},
+					               .Execute = [&, aaSampleView, rcpFrame, presentFmt](CommandContext& c)
+					               {
+						               m_FxaaPass.Draw(ctx, frameIndex, aaSampleView, rcpFrame, presentFmt);
+					               }});
+				}
+			}
+
+			// ---- Ground-truth path (compare mode only): 2nd full-res render -> its own present target ----
+			if (comparing && !vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty() &&
+			    vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View)
+			{
+				addForward(vpRT.GroundTruthTarget, "ForwardGT" + passSuffix);
+				addTonemap(vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View, vpRT.GroundTruthPresentTarget, "PostProcessGT");
 			}
 		}
 

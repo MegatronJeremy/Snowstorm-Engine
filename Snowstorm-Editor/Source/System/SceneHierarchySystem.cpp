@@ -73,17 +73,24 @@ namespace Snowstorm
 		ImGui::Text("GPU frame:  %.2f ms", Renderer::GetLastGpuFrameMs());
 
 		// VSync toggle: off uncaps the frame rate (the GPU wait above is mostly the vsync present
-		// stall). Switching recreates the swapchain.
+		// stall). Switching recreates the swapchain. Mirror into the display.vsync CVar so the choice
+		// persists across restarts (SaveConfig only sees CVars; startup re-applies CVars::VSync).
 		if (bool vsync = Renderer::IsVSync(); ImGui::Checkbox("VSync", &vsync))
 		{
 			Renderer::SetVSync(vsync);
+			CVars::VSync.Set(vsync);
 		}
 
 		// Exposure: linear multiplier applied before the filmic tonemap in DefaultLit. Read once per
 		// frame at flush, so dragging this updates the image live. Backs the render.exposure CVar.
-		if (float exposure = CVars::Exposure.Get(); ImGui::SliderFloat("Exposure", &exposure, 0.1f, 8.0f, "%.2f"))
+		// AlwaysClamp keeps a typed (Ctrl+Click) value within range.
+		if (float exposure = CVars::Exposure.Get(); ImGui::SliderFloat("Exposure", &exposure, 0.1f, 8.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
 		{
 			CVars::Exposure.Set(exposure);
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Drag to adjust, or Ctrl+Click to type a value.");
 		}
 
 		ImGui::Spacing();
@@ -126,6 +133,13 @@ namespace Snowstorm
 			}
 		}
 
+		// Compare (#43 part 2): split-screen upscaled-vs-ground-truth. Renders the scene twice; most useful
+		// at Render Scale < 100% (at Native both sides are identical). Drag the divider in the viewport.
+		if (bool compare = CVars::Compare.Get(); ImGui::Checkbox("Compare (upscaled | ground truth)", &compare))
+		{
+			CVars::Compare.Set(compare);
+		}
+
 		ImGui::Spacing();
 		EditorTheme::SectionHeader("Shadows");
 
@@ -162,7 +176,7 @@ namespace Snowstorm
 		}
 
 		// Strength: how dark shadows get (1 = full occlusion, 0 = none). Read into FrameCB each frame.
-		if (float strength = CVars::ShadowStrength.Get(); ImGui::SliderFloat("Strength", &strength, 0.0f, 1.0f, "%.2f"))
+		if (float strength = CVars::ShadowStrength.Get(); ImGui::SliderFloat("Strength", &strength, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
 		{
 			CVars::ShadowStrength.Set(strength);
 		}
@@ -180,7 +194,7 @@ namespace Snowstorm
 		ImGui::TextDisabled("(bakes the sky into IBL maps on first enable)");
 
 		// Intensity: separate from the analytic SkyIntensity (irradiance is already convolved).
-		if (float iblIntensity = CVars::IBLIntensity.Get(); ImGui::SliderFloat("Intensity##IBL", &iblIntensity, 0.0f, 4.0f, "%.2f"))
+		if (float iblIntensity = CVars::IBLIntensity.Get(); ImGui::SliderFloat("Intensity##IBL", &iblIntensity, 0.0f, 4.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
 		{
 			CVars::IBLIntensity.Set(iblIntensity);
 		}

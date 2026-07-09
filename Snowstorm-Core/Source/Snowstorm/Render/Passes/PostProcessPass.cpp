@@ -38,6 +38,8 @@ namespace Snowstorm
 		p.Raster.Cull = CullMode::None;
 		p.DepthStencil.EnableDepthTest = false;
 		p.DepthStencil.EnableDepthWrite = false;
+		// Tonemap.frag.hlsl's per-draw scene-color index push constant is picked up automatically by the
+		// pipeline's SPIR-V push-constant reflection — no manual PipelineDesc.PushConstants needed.
 		p.DebugName = "PostProcessPipeline";
 
 		m_Pipeline = Pipeline::Create(p);
