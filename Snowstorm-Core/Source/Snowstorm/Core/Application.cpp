@@ -8,6 +8,7 @@
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Debug/Instrumentor.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
+#include "Snowstorm/Render/RendererService.hpp"
 
 namespace Snowstorm
 {
@@ -99,6 +100,11 @@ namespace Snowstorm
 		double statAccumMs = 0.0, statWaitMs = 0.0, statGpuMs = 0.0;
 		int statFrames = 0;
 
+		// Headless PSNR/SSIM windowed logging (render.metrics.log); see the log block below.
+		const bool metricsLog = CVars::MetricsLog.Get();
+		double metricsPsnrAccum = 0.0, metricsSsimAccum = 0.0;
+		int metricsFrames = 0;
+
 		// VSync-toggle stress (debug.vsync_stress > 0): flip VSync every N frames to force repeated
 		// swapchain recreation. A test hook — surfaces present/acquire-semaphore reuse bugs that only
 		// appear across a swapchain rebuild (the steady-state smoke never toggles). Off by default.
@@ -173,6 +179,26 @@ namespace Snowstorm
 					             frame, frame - wait, wait, gpu);
 					statAccumMs = statWaitMs = statGpuMs = 0.0;
 					statFrames = 0;
+				}
+			}
+
+			// Metrics log (render.metrics.log): average PSNR/SSIM over a ~1s window and log it, so a headless
+			// scripted-camera benchmark (camera.path + render.compare + render.metrics) prints a comparable
+			// quality trace without the editor panel. Mirrors FrameStats. Only accumulates valid frames.
+			if (metricsLog && frameNo > 3)
+			{
+				if (const auto& m = m_ServiceManager->GetService<RendererService>().GetMetrics(); m.Valid)
+				{
+					metricsPsnrAccum += m.Psnr;
+					metricsSsimAccum += m.Ssim;
+					if (++metricsFrames >= 60)
+					{
+						const double mn = static_cast<double>(metricsFrames);
+						SS_CORE_INFO("Metrics: PSNR={0:.2f}dB  SSIM={1:.4f}  (avg over {2} frames)",
+						             metricsPsnrAccum / mn, metricsSsimAccum / mn, metricsFrames);
+						metricsPsnrAccum = metricsSsimAccum = 0.0;
+						metricsFrames = 0;
+					}
 				}
 			}
 

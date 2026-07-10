@@ -9,6 +9,7 @@
 #include "Snowstorm/Systems/AssetLoadSystem.hpp"
 #include "Snowstorm/Systems/CameraControllerSystem.hpp"
 #include "Snowstorm/Systems/CameraJitterSystem.hpp"
+#include "Snowstorm/Systems/CameraPathSystem.hpp"
 #include "Snowstorm/Systems/CameraRuntimeUpdateSystem.hpp"
 #include "Snowstorm/Systems/MaterialResolveSystem.hpp"
 #include "Snowstorm/Systems/MeshResolveSystem.hpp"
@@ -30,6 +31,8 @@ namespace Snowstorm
 
 		sm.RegisterSystem<ScriptSystem>(SystemPhase::Logic);
 		sm.RegisterSystem<CameraControllerSystem>(SystemPhase::Logic);
+		// After the controller so the scripted benchmark path overrides free-fly input when camera.path is on.
+		sm.RegisterSystem<CameraPathSystem>(SystemPhase::Logic);
 		sm.RegisterSystem<RotatorSystem>(SystemPhase::Logic);
 
 		sm.RegisterSystem<ShaderReloadSystem>(SystemPhase::AssetSync);

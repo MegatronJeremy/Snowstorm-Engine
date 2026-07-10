@@ -78,6 +78,11 @@ namespace Snowstorm
 		// Move a texture to the shader-sampled read layout (e.g. after a compute pass wrote it, before a
 		// later pass samples it). Auto-redirects to the depth-read layout for depth textures.
 		virtual void TransitionToSampled(const Ref<Texture>& texture) = 0;
+		// Execution+memory barrier for a graphics-color-write -> compute-sampled-read on a texture ALREADY in
+		// the sampled layout (no layout change). Needed because a plain Sampled re-declaration emits no
+		// barrier when the layout is unchanged, so a compute pass could read a just-written color target
+		// before its writes are visible. Use before a compute pass samples a color target the same frame.
+		virtual void BarrierColorWriteToComputeRead(const Ref<Texture>& texture) = 0;
 
 		// Reset the internal state between passes if the backend needs it
 		virtual void ResetState() = 0;

@@ -4,6 +4,7 @@
 #include "Snowstorm/Lighting/LightingUniforms.hpp"
 #include "Snowstorm/Render/Passes/FxaaPass.hpp"
 #include "Snowstorm/Render/Passes/IBLBakePass.hpp"
+#include "Snowstorm/Render/Passes/MetricsPass.hpp"
 #include "Snowstorm/Render/Passes/PostProcessPass.hpp"
 #include "Snowstorm/Render/Passes/ShadowPass.hpp"
 #include "Snowstorm/Render/Passes/SharpenPass.hpp"
@@ -41,6 +42,7 @@ namespace Snowstorm
 		UpscalePass m_UpscalePass;
 		VelocityPass m_VelocityPass;
 		TemporalResolvePass m_TemporalResolvePass;
+		MetricsPass m_MetricsPass;
 
 		// Viewports whose TAA history slot holds a valid previous frame (#44). A viewport is inserted after
 		// its first temporal-resolve pass; erased when TAA turns off or the targets are rebuilt (resize), so

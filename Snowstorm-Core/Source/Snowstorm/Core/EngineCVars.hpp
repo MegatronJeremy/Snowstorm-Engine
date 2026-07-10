@@ -132,6 +132,16 @@ namespace Snowstorm::CVars
 	// compare.split clamped to [0, 1] (viewport fraction of the divider).
 	[[nodiscard]] float ClampedCompareSplit();
 
+	// Scripted benchmark camera orbit (#45): drive the camera along a deterministic path so metric runs are
+	// repeatable. Read per-frame by CameraPathSystem. Persist.
+	extern CVar<bool> CameraPath;
+
+	// PSNR/SSIM metrics of upscaled vs ground-truth (#45), computed on the GPU. Metrics needs render.compare
+	// (both images must exist); MetricsLog windows + logs them for headless benchmark runs (not persisted —
+	// a run-time diagnostic like debug.frame_stats).
+	extern CVar<bool> Metrics;
+	extern CVar<bool> MetricsLog;
+
 	// Temporal sub-pixel camera jitter (#44): Halton(2,3) offset applied to the color projection each
 	// frame — the substrate a temporal upscaler/TAA accumulates. Motion vectors + frustum culling keep the
 	// unjittered matrices. Read per-frame by CameraJitterSystem; forced off in compare mode. Persist.

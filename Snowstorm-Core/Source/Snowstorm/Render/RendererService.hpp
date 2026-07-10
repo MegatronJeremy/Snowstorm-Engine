@@ -168,6 +168,17 @@ namespace Snowstorm
 		void SetGpuPassTimes(std::vector<GpuScope> scopes) { m_GpuPassTimes = std::move(scopes); }
 		[[nodiscard]] const std::vector<GpuScope>& GetGpuPassTimes() const { return m_GpuPassTimes; }
 
+		// Upscaled-vs-ground-truth image-quality metrics (#45). Set by RenderSystem from the MetricsPass each
+		// frame while render.metrics is on; read by the editor Performance panel + the headless metrics log.
+		struct MetricsResult
+		{
+			bool Valid = false; // false until the first metric frame completes
+			float Psnr = 0.0f;  // dB (higher = closer; capped at 100 for identical)
+			float Ssim = 0.0f;  // [0,1] (1 = identical)
+		};
+		void SetMetrics(const MetricsResult& m) { m_Metrics = m; }
+		[[nodiscard]] const MetricsResult& GetMetrics() const { return m_Metrics; }
+
 	private:
 		void FlushBatch(BatchData& batch,
 		                const Ref<CommandContext>& commandContext,
@@ -242,5 +253,8 @@ namespace Snowstorm
 
 		// Per-pass GPU scopes from the most recent frame's timestamp scopes; see SetGpuPassTimes.
 		std::vector<GpuScope> m_GpuPassTimes;
+
+		// Latest upscaled-vs-ground-truth image metrics (#45), set by RenderSystem when render.metrics is on.
+		MetricsResult m_Metrics;
 	};
 }

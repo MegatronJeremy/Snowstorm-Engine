@@ -388,6 +388,32 @@ namespace Snowstorm
 		TransitionLayout(texture, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 	}
 
+	void VulkanCommandContext::BarrierColorWriteToComputeRead(const Ref<Texture>& texture)
+	{
+		// Execution+memory barrier for the graphics-color-write -> compute-sampled-read hazard, WITHOUT a
+		// layout change. TransitionLayout early-outs when old==new layout, so a color target already left in
+		// SHADER_READ_ONLY by its render pass's EndRenderPass gets NO barrier from a Sampled re-declaration —
+		// a compute pass could then sample it before the color writes are visible (reads stale/black; the
+		// metrics pass hit exactly this). Here old==new==SHADER_READ_ONLY, so nothing transitions, but the
+		// src/dst scopes form the real write-before-read dependency the layout no-op skipped.
+		auto vkTex = std::static_pointer_cast<VulkanTexture>(texture);
+
+		VkImageMemoryBarrier2 barrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+		barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+		barrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+		barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+		barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		barrier.image = vkTex->GetImage();
+		barrier.subresourceRange = {vkTex->GetAspectMask(), 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
+
+		VkDependencyInfo dep{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+		dep.imageMemoryBarrierCount = 1;
+		dep.pImageMemoryBarriers = &barrier;
+		vkCmdPipelineBarrier2(m_CommandBuffer, &dep);
+	}
+
 	void VulkanCommandContext::ResetState()
 	{
 		m_IsRendering = false;

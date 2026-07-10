@@ -667,6 +667,37 @@ namespace Snowstorm
 			{
 				addForward(vpRT.GroundTruthTarget, "ForwardGT" + passSuffix, false); // ground truth: never jittered
 				addTonemap(vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View, vpRT.GroundTruthPresentTarget, "PostProcessGT", RendererService::TonemapParams{});
+
+				// ---- Metrics (#45): PSNR/SSIM of the upscaled present vs the ground-truth present. Runs after
+				// both were written (a compute reduction reading both, sampled). Gated on render.metrics; both
+				// present images are full-res, so they compare 1:1. Reads the UNORM sample views (gamma bytes).
+				if (CVars::Metrics.Get() && vpRT.PresentSampleView && vpRT.GroundTruthPresentSampleView)
+				{
+					const Ref<Texture> upImg = vpRT.PresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+					const Ref<Texture> gtImg = vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+					const Ref<TextureView> upView = vpRT.PresentSampleView;
+					const Ref<TextureView> gtView = vpRT.GroundTruthPresentSampleView;
+					const uint32_t mw = vpRT.PresentTarget->GetWidth();
+					const uint32_t mh = vpRT.PresentTarget->GetHeight();
+					graph.AddPass({.Name = "Metrics" + passSuffix,
+					               .IsCompute = true,
+					               .Reads = {{upImg, RenderGraph::AccessState::Sampled},
+					                         {gtImg, RenderGraph::AccessState::Sampled}},
+					               .Execute = [&, upView, gtView, mw, mh, upImg, gtImg](CommandContext& c)
+					               {
+						               // The graph left both present images in SHADER_READ (from their tonemap
+						               // EndRenderPass), so its Sampled re-declaration is a no-op barrier — the
+						               // compute would sample them before the color writes are visible (GT read
+						               // black). Force the write-before-read dependency explicitly.
+						               c.BarrierColorWriteToComputeRead(upImg);
+						               c.BarrierColorWriteToComputeRead(gtImg);
+						               m_MetricsPass.Compute(ctx, frameIndex, upView, gtView, mw, mh);
+						               renderer.SetMetrics([this]
+						                                   {
+							                                   const auto& r = m_MetricsPass.GetResult();
+							                                   return RendererService::MetricsResult{r.Valid, r.Psnr, r.Ssim}; }());
+					               }});
+				}
 			}
 		}
 

@@ -155,6 +155,22 @@ namespace Snowstorm
 			CVars::Compare.Set(compare);
 		}
 
+		// Benchmark camera path (#45): deterministic orbit for repeatable metric runs (overrides free-fly).
+		if (bool path = CVars::CameraPath.Get(); ImGui::Checkbox("Benchmark Camera Path", &path))
+		{
+			CVars::CameraPath.Set(path);
+		}
+
+		// PSNR/SSIM metrics (#45): needs Compare on (both images must exist). Shown in the stats below.
+		if (bool metrics = CVars::Metrics.Get(); ImGui::Checkbox("PSNR / SSIM metrics", &metrics))
+		{
+			CVars::Metrics.Set(metrics);
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Requires Compare. Measures upscaled vs full-res ground truth.");
+		}
+
 		// Temporal jitter (#44): sub-pixel Halton(2,3) offset on the color projection — the substrate a
 		// temporal upscaler accumulates. Without a temporal resolve yet it shows as sub-pixel shimmer;
 		// forced off in compare mode (clean A/B). Motion vectors + culling stay unjittered.
@@ -272,6 +288,15 @@ namespace Snowstorm
 		ImGui::Text("Batches:    %u", stats.Batches);
 		ImGui::Text("Instances:  %u", stats.Instances);
 		ImGui::Text("Triangles:  %u", stats.Triangles);
+
+		// Upscaled-vs-ground-truth image quality (#45): shown when render.metrics + render.compare are on.
+		// PSNR in dB (higher = closer to ground truth), SSIM in [0,1] (1 = identical). Measures how well the
+		// upscaler reconstructs the full-res image — the headline thesis number.
+		if (const auto& m = ServiceView<RendererService>().GetMetrics(); m.Valid)
+		{
+			ImGui::Text("PSNR: %.2f dB", m.Psnr);
+			ImGui::Text("SSIM: %.4f", m.Ssim);
+		}
 
 		// Frustum-culling effectiveness, summed over every camera's visibility cache this frame.
 		// "considered" = resolved + layer-matched renderables; "culled" = those the frustum rejected.
