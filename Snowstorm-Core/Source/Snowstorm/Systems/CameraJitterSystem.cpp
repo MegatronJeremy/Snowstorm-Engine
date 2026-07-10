@@ -17,10 +17,11 @@ namespace Snowstorm
 	{
 		auto& reg = m_World->GetRegistry();
 
-		// Jitter is forced off in compare mode: the A/B measures ONLY the upscaler, and a jittered color
-		// projection would make both sides shimmer and desync from the ground truth. Mirrors how FXAA is
-		// gated off while comparing (RenderSystem).
-		const bool jitterOn = CVars::Jitter.Get() && !CVars::Compare.Get();
+		// Jitter is on when explicitly enabled (render.jitter) OR when TAA is selected (render.aa == 2):
+		// TAA without jitter accumulates identical frames — pure lag, no anti-aliasing — so selecting TAA
+		// implies jitter, the way Unreal couples TemporalAA to its view jitter. Forced off in compare mode
+		// (the A/B measures only the upscaler; a jittered projection would shimmer/desync both sides).
+		const bool jitterOn = (CVars::Jitter.Get() || CVars::AAMode.Get() == 2) && !CVars::Compare.Get();
 
 		// Same monotonic counter the whole frame uses (incremented in RendererService::NewFrame before any
 		// system runs). Deterministic per frame, so all cameras this frame share one Halton index.

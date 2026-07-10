@@ -236,6 +236,7 @@ namespace Snowstorm
 		uint32_t m_InstanceWriteCursor = 0;         // elements written this frame
 
 		uint64_t m_FrameCounter = 0; // monotonic; ++ per NewFrame() (temporal jitter index, #44)
+		float m_MipBias = 0.0f;      // texture mip-LOD bias for the current scene pass (TAA, #44)
 
 		RenderStats m_Stats{};
 

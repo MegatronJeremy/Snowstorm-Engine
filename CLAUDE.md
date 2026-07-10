@@ -343,6 +343,22 @@ being proven, wasting three rounds. What actually found it: the user's observati
   otherwise; it "works" pre-instancing only because each object was its own draw.
 - **A wrong fix that's independently useful can stay.** Misdiagnoses (mipmaps, near plane) were real
   improvements on their own — keep them; don't revert good changes just because they missed this bug.
+- **Color/hue/gamma bug → suspect the color space and pipeline STAGE before the formula.** On a color
+  bug, if two fixes fail in the *same category*, stop tweaking the math and ask: wrong color space
+  (linear vs display/sRGB, HDR vs tonemap-compressed, RGB vs signed-chroma like YCoCg) or wrong pipeline
+  stage (before vs after tonemap)? Several correct-looking diagnoses that all trace to one structural
+  fact = that fact is the bug. Worked example (#44): an in-resolve TAA sharpen corrupted edge colors
+  through five formula rewrites (signed-chroma clamp → dark-biased low-pass → pre-tonemap hue shift) —
+  all one root cause: **sharpening in linear HDR before the per-channel ACES tonemap**, which curves
+  R/G/B differently and turns any overshoot into a hue shift. This is the "change altitude after ~2
+  failed attempts" rule applied to color: interrogate placement, not parameters.
+
+**Pipeline-stage invariant (learned from #44).** The **temporal resolve runs in linear HDR —
+accumulation only**. Perceptual / display-space operations — **sharpening, CAS, contrast, any
+per-channel curve** — belong **after** tonemap (a post-tonemap pass, like FXAA on the LDR present
+target), NEVER inside the resolve or any pre-tonemap linear-HDR stage: an overshoot that's a neutral
+brightness change in linear becomes a **hue shift** once ACES curves each channel. One pass = one
+responsibility: don't bolt a display-space effect onto a linear-HDR pass.
 
 ### Build the engine to be debuggable
 

@@ -70,6 +70,12 @@ namespace Snowstorm
 		virtual std::string GetTypeName() const = 0;
 		virtual void SetFromString(const std::string& value) = 0;
 
+		// Default-value support (for "reset to defaults" + persisting only genuine deviations). A CVar knows
+		// the value it was constructed with; IsAtDefault lets SaveConfig skip unchanged settings (so the
+		// config only holds real overrides and a changed code default reaches everyone who hadn't overridden).
+		[[nodiscard]] virtual bool IsAtDefault() const = 0;
+		virtual void ResetToDefault() = 0;
+
 		// Typed introspection for a live-editing UI. Kind selects the widget; the typed getters/setters
 		// read/write the value directly. Calling a getter/setter that doesn't match Kind() is a misuse and
 		// returns a zero/default (the UI always dispatches on Kind() first).
@@ -93,7 +99,7 @@ namespace Snowstorm
 	{
 	public:
 		CVar(std::string name, T defaultValue, std::string description, CVarFlags flags = CVarFlags::None)
-		    : ICVar(std::move(name), std::move(description), flags), m_Value(std::move(defaultValue))
+		    : ICVar(std::move(name), std::move(description), flags), m_Value(defaultValue), m_Default(std::move(defaultValue))
 		{
 		}
 
@@ -101,9 +107,14 @@ namespace Snowstorm
 		operator const T&() const { return m_Value; }
 		void Set(T value) { m_Value = std::move(value); }
 
+		const T& GetDefault() const { return m_Default; }
+
 		std::string GetValueString() const override;
 		std::string GetTypeName() const override;
 		void SetFromString(const std::string& value) override;
+
+		[[nodiscard]] bool IsAtDefault() const override { return m_Value == m_Default; }
+		void ResetToDefault() override { m_Value = m_Default; }
 
 		// Typed introspection for the live-editing UI. Fully specialized in CVar.cpp per T (bool/int/float/
 		// string): GetKind plus the matching typed getter/setter; non-matching accessors keep ICVar defaults.
@@ -117,6 +128,7 @@ namespace Snowstorm
 
 	private:
 		T m_Value;
+		T m_Default;
 	};
 
 	class CVarRegistry
@@ -141,10 +153,16 @@ namespace Snowstorm
 		void PrintAll() const;
 
 		// Config-file source (lowest priority, below env/CLI). LoadConfig reads `key=value` lines and applies
-		// them to persistent CVars only; a missing file is a silent no-op. SaveConfig writes every persistent
-		// CVar's current value. Called by Initialize (load) and the editor on shutdown (save).
+		// them to persistent CVars only; a missing file is a silent no-op. SaveConfig writes only persistent
+		// CVars that DIFFER from their default, so the file holds real overrides (not a full snapshot) and a
+		// changed code default reaches anyone who hadn't explicitly overridden it. Called by Initialize (load)
+		// and the editor on shutdown (save).
 		void LoadConfig(const std::string& path);
 		void SaveConfig(const std::string& path) const;
+
+		// Reset every persistent CVar to its constructed default (the "Reset to Defaults" action). Dev/one-shot
+		// CVars (validation, smoke, ...) are left untouched — they aren't user settings. Returns the count reset.
+		int ResetPersistentToDefaults();
 
 	private:
 		std::vector<ICVar*> m_Ordered;

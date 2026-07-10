@@ -11,7 +11,9 @@ static const float PI = 3.14159265359;
 // garbage (the #46 flicker lesson) — centralize it here so no call site forgets.
 float4 SampleBindless(uint index, float2 uv)
 {
-	return Textures[NonUniformResourceIndex(index)].Sample(LinearSampler, uv);
+	// MipBias (FrameCB) is negative under TAA so jitter fetches a sharper mip each frame — the temporal
+	// resolve then reconstructs the detail instead of thin/distant texels flickering between mips. 0 = off.
+	return Textures[NonUniformResourceIndex(index)].SampleBias(LinearSampler, uv, MipBias);
 }
 
 // Shared shadow factor: 1 = fully lit, 0 = fully shadowed. Reprojects the world position through a light

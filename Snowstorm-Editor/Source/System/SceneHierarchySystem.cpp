@@ -100,15 +100,30 @@ namespace Snowstorm
 		// pass that runs after tonemap; a baseline for the upscaler comparison. Read per-frame, so it flips
 		// live.
 		{
-			const char* aaLabels[] = {"None", "FXAA"};
+			const char* aaLabels[] = {"None", "FXAA", "TAA"};
 			int aa = CVars::AAMode.Get();
-			if (aa < 0 || aa > 1)
+			if (aa < 0 || aa > 2)
 			{
 				aa = 0;
 			}
-			if (ImGui::Combo("Anti-Aliasing", &aa, aaLabels, 2))
+			if (ImGui::Combo("Anti-Aliasing", &aa, aaLabels, 3))
 			{
 				CVars::AAMode.Set(aa);
+			}
+		}
+
+		// Post-tonemap contrast-adaptive sharpen (#44). Display-space + hue-safe (runs after tonemap like
+		// FXAA); counters the softening TAA/upscale add. 0 = off. Read per-frame, so it applies live.
+		{
+			float sharpen = CVars::Sharpen.Get();
+			if (ImGui::SliderFloat("Sharpen", &sharpen, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::Sharpen.Set(sharpen);
+			}
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("Contrast-adaptive sharpen (post-tonemap). ~0.3 native+TAA, ~0.5 upscaled; "
+				                  ">0.7 over-sharpens. Drag, or Ctrl+Click to type.");
 			}
 		}
 
@@ -224,6 +239,30 @@ namespace Snowstorm
 		}
 
 		ImGui::Spacing();
+
+		// Reset all persistent settings to their code defaults (only the ones actually changed). Useful when
+		// live tuning has drifted the config from the shipped defaults and you want a clean baseline. Confirmed
+		// via a popup so a stray click can't wipe a carefully-tuned setup.
+		if (ImGui::Button("Reset Settings to Defaults"))
+		{
+			ImGui::OpenPopup("ResetSettingsConfirm");
+		}
+		if (ImGui::BeginPopup("ResetSettingsConfirm"))
+		{
+			ImGui::TextUnformatted("Reset all settings to their defaults?");
+			if (ImGui::Button("Reset"))
+			{
+				const int n = CVarRegistry::Get().ResetPersistentToDefaults();
+				SS_INFO("Settings reset to defaults ({0} changed).", n);
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Cancel"))
+			{
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
 
 		// Last scene-pass GPU submission stats (RendererService::RenderStats). With instancing,
 		// DrawCalls == Batches (one instanced draw per mesh+material) while Instances counts every

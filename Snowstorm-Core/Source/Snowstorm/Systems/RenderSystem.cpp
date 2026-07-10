@@ -447,12 +447,16 @@ namespace Snowstorm
 			};
 
 			// ---- Motion-vector pass (#44) ----
-			// Only when the debug view asks for it (later: also when temporal upscaling is active). Re-renders
-			// the visible meshes into the velocity target, projecting each vertex by this frame's and last
-			// frame's matrices (per-object PrevModel from PrevTransformComponent, camera PrevViewProj from the
-			// runtime component). Self-contained target (own depth), so no ordering constraint vs forward.
+			// Rendered when the motion-vector debug view is on OR TAA is active (both consume velocity).
+			// Re-renders the visible meshes into the velocity target, projecting each vertex by this frame's
+			// and last frame's matrices (per-object PrevModel from PrevTransformComponent, camera PrevViewProj
+			// from the runtime component). Self-contained target (own depth), so no ordering constraint.
 			const int debugView = CVars::DebugView.Get();
-			const bool velocityNeeded = debugView == 1 && vpRT.VelocityTarget &&
+			// TAA (render.aa == 2) needs velocity + history; forced off in compare mode (clean A/B, like FXAA).
+			const bool taaOn = !comparing && CVars::AAMode.Get() == 2 &&
+			                   vpRT.HistoryTarget[0] && vpRT.HistoryTarget[1] &&
+			                   !vpRT.HistoryTarget[0]->GetDesc().ColorAttachments.empty();
+			const bool velocityNeeded = (debugView == 1 || taaOn) && vpRT.VelocityTarget &&
 			                            !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
 			                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 			if (velocityNeeded)
@@ -494,11 +498,12 @@ namespace Snowstorm
 				               }});
 			}
 
-			// Tonemap debug params (#44): when the motion-vector view is on, the tonemap step visualizes the
-			// velocity target instead of the scene. Amplify the tiny per-frame UV deltas so slow motion is
-			// visible. Applied to the primary path only (compare mode keeps its GT side normal).
+			// Tonemap debug params (#44): visualize the velocity target ONLY when the motion-vector debug
+			// view is explicitly selected — NOT merely when velocity is being rendered (TAA also renders
+			// velocity but must show the real tonemapped scene). Keyed off debugView, not velocityNeeded.
+			// Applied to the primary path only (compare mode keeps its GT side normal).
 			RendererService::TonemapParams primaryTonemap{};
-			if (velocityNeeded)
+			if (debugView == 1 && velocityNeeded)
 			{
 				primaryTonemap.DebugMode = 1;
 				primaryTonemap.DebugTexIndex = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
@@ -509,9 +514,29 @@ namespace Snowstorm
 			// Jittered: the color pass gets the temporal sub-pixel offset (#44). Velocity + GT stay unjittered.
 			addForward(vpRT.Target, "Forward" + passSuffix, true);
 
-			// FXAA only outside compare mode (compare forces it off for a clean upscaler-only A/B).
+			// Post-tonemap LDR filter chain (#44): tonemap -> [FXAA] -> [CAS sharpen] -> present. Both FXAA
+			// and sharpen read an LDR UNORM sample view and write an sRGB target; they PING-PONG between
+			// PresentTarget and AAIntermediateTarget so the LAST enabled stage always lands on PresentTarget
+			// (what ImGui samples). With neither enabled this is tonemap -> Present (unchanged); with FXAA
+			// only it's the exact prior tonemap -> AAIntermediate -> Present path. Both forced off in compare.
 			const bool fxaaOn = !comparing && CVars::AAMode.Get() == 1 && vpRT.AAIntermediateTarget && vpRT.AAIntermediateSampleView;
-			const Ref<RenderTarget> tonemapTarget = fxaaOn ? vpRT.AAIntermediateTarget : vpRT.PresentTarget;
+			const bool sharpenOn = !comparing && CVars::Sharpen.Get() > 0.0f && vpRT.AAIntermediateTarget &&
+			                       vpRT.AAIntermediateSampleView && vpRT.PresentSampleView;
+			const int ldrFilters = (fxaaOn ? 1 : 0) + (sharpenOn ? 1 : 0); // stages after tonemap
+			const int totalStages = 1 + ldrFilters;                        // tonemap is stage 0
+
+			// Stage k writes Present when (totalStages-1-k) is even, else AAIntermediate — so the final stage
+			// (k = totalStages-1) always writes Present, alternating backward. Each stage reads the previous
+			// stage's target via that target's UNORM sample view.
+			auto stageTarget = [&](const int stageIndex) -> Ref<RenderTarget>
+			{
+				return ((totalStages - 1 - stageIndex) % 2 == 0) ? vpRT.PresentTarget : vpRT.AAIntermediateTarget;
+			};
+			auto stageSampleView = [&](const Ref<RenderTarget>& t) -> Ref<TextureView>
+			{
+				return (t == vpRT.PresentTarget) ? vpRT.PresentSampleView : vpRT.AAIntermediateSampleView;
+			};
+			const Ref<RenderTarget> tonemapTarget = stageTarget(0);
 
 			if (tonemapTarget && !vpRT.Target->GetDesc().ColorAttachments.empty() && vpRT.Target->GetDesc().ColorAttachments[0].View)
 			{
@@ -542,25 +567,97 @@ namespace Snowstorm
 					}
 				}
 
+				// ---- Temporal resolve / TAA (#44) ----
+				// After upscale, before tonemap: reproject last frame's resolved HDR (history) by velocity,
+				// neighborhood-clamp + blend with the current frame, write into this frame's history slot —
+				// which then feeds tonemap AND becomes next frame's history. Ping-pong by frame parity.
+				if (taaOn && vpRT.VelocityTarget && !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty())
+				{
+					const uint32_t curIdx = static_cast<uint32_t>(renderer.GetFrameCounter() & 1ull);
+					const Ref<RenderTarget>& curHistory = vpRT.HistoryTarget[curIdx];
+					const Ref<RenderTarget>& prevHistory = vpRT.HistoryTarget[curIdx ^ 1u];
+
+					if (curHistory && prevHistory && !curHistory->GetDesc().ColorAttachments.empty() &&
+					    !prevHistory->GetDesc().ColorAttachments.empty())
+					{
+						const Ref<TextureView> currentView = sceneColorView;
+						const Ref<TextureView> prevHistView = prevHistory->GetDesc().ColorAttachments[0].View;
+						const Ref<TextureView> velView = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
+						const Ref<TextureView> curHistView = curHistory->GetDesc().ColorAttachments[0].View;
+						const PixelFormat histFmt = curHistView->GetTexture()->GetDesc().Format;
+						const glm::vec2 rcpFrame = {1.0f / static_cast<float>(curHistory->GetWidth()),
+						                            1.0f / static_cast<float>(curHistory->GetHeight())};
+						// History invalid on the very first TAA frame (prev slot never written) or after a
+						// resize rebuilt the targets. Simplest robust signal: our own "has this pair been
+						// resolved before" flag, tracked per viewport. Kept minimal — a bool per entity.
+						const bool historyValid = m_TaaHistoryValid.contains(vpEntity);
+						m_TaaHistoryValid.insert(vpEntity);
+
+						graph.AddPass({.Name = "TemporalResolve" + passSuffix,
+						               .Target = curHistory,
+						               .Reads = {{currentView->GetTexture(), RenderGraph::AccessState::Sampled},
+						                         {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled},
+						                         {velView->GetTexture(), RenderGraph::AccessState::Sampled}},
+						               .Execute = [&, currentView, prevHistView, velView, rcpFrame, historyValid, histFmt](CommandContext& c)
+						               {
+							               m_TemporalResolvePass.Draw(ctx, frameIndex, currentView, prevHistView, velView,
+							                                          rcpFrame, historyValid, CVars::TaaBlend.Get(),
+							                                          CVars::TaaMaxBlend.Get(), histFmt);
+						               }});
+
+						// Tonemap now reads the resolved history slot instead of the raw scene color.
+						sceneColorView = curHistView;
+					}
+				}
+				else
+				{
+					// TAA off: drop the "history valid" flag so re-enabling starts clean (no stale reproject).
+					m_TaaHistoryValid.erase(vpEntity);
+				}
+
 				const Ref<Texture> velocityRead = velocityNeeded ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture() : nullptr;
 				addTonemap(sceneColorView, tonemapTarget, "PostProcess", primaryTonemap, velocityRead);
 
-				// FXAA resolve: AA intermediate (tonemapped LDR) -> present target. Gated on render.aa.
-				if (fxaaOn && vpRT.PresentTarget && !vpRT.PresentTarget->GetDesc().ColorAttachments.empty() &&
-				    vpRT.PresentTarget->GetDesc().ColorAttachments[0].View)
+				// LDR filter stages after tonemap, in fixed order: FXAA then CAS sharpen. Each reads the
+				// previous stage's target (via its UNORM sample view) and writes its ping-pong target; the
+				// helpers guarantee the last one lands on PresentTarget. rcpFrame is the full present size.
+				const glm::vec2 rcpFrame = {1.0f / static_cast<float>(tmDesc.Width), 1.0f / static_cast<float>(tmDesc.Height)};
+				int stageIndex = 0; // 0 = tonemap (already emitted into tonemapTarget)
+				Ref<RenderTarget> prevTarget = tonemapTarget;
+
+				if (fxaaOn)
 				{
-					const auto& presentDesc = vpRT.PresentTarget->GetDesc();
-					const Ref<Texture> aaImage = vpRT.AAIntermediateTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-					const Ref<TextureView> aaSampleView = vpRT.AAIntermediateSampleView;
-					const PixelFormat presentFmt = presentDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-					const glm::vec2 rcpFrame = {1.0f / static_cast<float>(tmDesc.Width), 1.0f / static_cast<float>(tmDesc.Height)};
-					graph.AddPass({.Name = "FXAA",
-					               .Target = vpRT.PresentTarget,
-					               .Reads = {{aaImage, RenderGraph::AccessState::Sampled}},
-					               .Execute = [&, aaSampleView, rcpFrame, presentFmt](CommandContext& c)
+					++stageIndex;
+					const Ref<RenderTarget> dst = stageTarget(stageIndex);
+					const Ref<TextureView> srcView = stageSampleView(prevTarget);
+					const Ref<Texture> srcImg = prevTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+					const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+					graph.AddPass({.Name = "FXAA" + passSuffix,
+					               .Target = dst,
+					               .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
+					               .Execute = [&, srcView, rcpFrame, dstFmt](CommandContext& c)
 					               {
-						               m_FxaaPass.Draw(ctx, frameIndex, aaSampleView, rcpFrame, presentFmt);
+						               m_FxaaPass.Draw(ctx, frameIndex, srcView, rcpFrame, dstFmt);
 					               }});
+					prevTarget = dst;
+				}
+
+				if (sharpenOn)
+				{
+					++stageIndex;
+					const Ref<RenderTarget> dst = stageTarget(stageIndex);
+					const Ref<TextureView> srcView = stageSampleView(prevTarget);
+					const Ref<Texture> srcImg = prevTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+					const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+					const float sharpness = CVars::Sharpen.Get();
+					graph.AddPass({.Name = "Sharpen" + passSuffix,
+					               .Target = dst,
+					               .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
+					               .Execute = [&, srcView, rcpFrame, sharpness, dstFmt](CommandContext& c)
+					               {
+						               m_SharpenPass.Draw(ctx, frameIndex, srcView, rcpFrame, sharpness, dstFmt);
+					               }});
+					prevTarget = dst;
 				}
 			}
 

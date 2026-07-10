@@ -119,10 +119,11 @@ cbuffer FrameCB : register(b0, space0)
 	float _IBLPad1;
 	float _IBLPad2;
 
-	// Reserved trailing row (was post-process SceneColorIndex, now a per-draw push constant on the tonemap
-	// pass — see Tonemap.frag.hlsl). Kept as padding so the FrameCB layout is unchanged. MUST match the
-	// FrameCB in RendererService.cpp field-for-field.
-	float _ReservedPad0;
+	// Texture mip-LOD bias (#44 TAA): negative under TAA (~-1) so jittered sampling fetches a sharper mip
+	// each frame and the temporal accumulation reconstructs detail instead of flickering between mips on
+	// thin/distant surfaces; 0 when TAA is off. Consumed by SampleBindless in DefaultLit. Reuses a former
+	// reserved pad slot, so the FrameCB layout is unchanged. MUST match the FrameCB in RendererService.cpp.
+	float MipBias;
 	float _ReservedPad1;
 	float _ReservedPad2;
 	float _ReservedPad3;

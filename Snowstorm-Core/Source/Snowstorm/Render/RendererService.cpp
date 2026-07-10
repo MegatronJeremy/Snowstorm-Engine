@@ -59,9 +59,10 @@ namespace Snowstorm
 			float _IBLPad1 = 0.0f;
 			float _IBLPad2 = 0.0f;
 
-			// Reserved trailing row (was post-process SceneColorIndex, now a per-draw push constant on the
-			// tonemap pass). Kept as padding so the FrameCB layout is unchanged. MUST match Engine.hlsli FrameCB.
-			float _ReservedPad0 = 0.0f;
+			// Texture mip-LOD bias (#44 TAA): negative when the color pass is jittered so sampling fetches a
+			// sharper mip for the temporal resolve to accumulate; 0 otherwise. Reuses a former reserved pad
+			// slot (layout unchanged). MUST match Engine.hlsli FrameCB field-for-field.
+			float MipBias = 0.0f;
 			float _ReservedPad1 = 0.0f;
 			float _ReservedPad2 = 0.0f;
 			float _ReservedPad3 = 0.0f;
@@ -99,6 +100,12 @@ namespace Snowstorm
 		m_FrameData.ViewProjection = useJitteredProjection ? cameraRt.JitteredViewProjection : cameraRt.ViewProjection;
 		m_FrameData.PrevViewProjection = cameraRt.PrevViewProjection; // motion vectors (#44)
 		m_FrameData.CameraPosition = cameraWorldPosition;
+
+		// A jittered color pass means TAA/jitter is active -> bias texture sampling to a sharper mip so the
+		// temporal resolve reconstructs detail instead of thin surfaces flickering between mips. -0.5 is the
+		// safer end of the standard TAA mip bias (DLSS/FSR guidance: log2(renderRes/displayRes) - 0.5, ~-0.5
+		// at native) — less motion noise than -1.0. Non-jittered passes (shadow/velocity/GT) sample normally.
+		m_MipBias = useJitteredProjection ? -0.5f : 0.0f;
 
 		m_Batches.clear();
 		m_BatchIndex.clear();
@@ -206,6 +213,7 @@ namespace Snowstorm
 		frame.ViewProj = fd.ViewProjection;
 		frame.InvViewProj = glm::inverse(fd.ViewProjection);
 		frame.PrevViewProj = fd.PrevViewProjection; // motion vectors (#44)
+		frame.MipBias = m_MipBias;                  // TAA mip-LOD bias (#44); 0 unless the pass is jittered
 		frame.CameraPosition = fd.CameraPosition;
 		frame.Exposure = CVars::Exposure.Get();
 		frame.Lights = fd.Lights;

@@ -52,3 +52,26 @@ TEST_CASE("CVar string command path still sets any type", "[cvar]")
 	static_cast<ICVar&>(b).SetFromString("true");
 	REQUIRE(b.Get() == true);
 }
+
+// Default tracking backs two features: SaveConfig persists only changed CVars (so a code-default change
+// propagates instead of being shadowed by a stale persisted copy), and the editor's "Reset to Defaults".
+TEST_CASE("CVar tracks its default: IsAtDefault + ResetToDefault", "[cvar]")
+{
+	CVar<float> f{"test.default.float", 0.9f, ""};
+	ICVar& fi = f;
+	REQUIRE(fi.IsAtDefault()); // constructed value == default
+	REQUIRE(f.GetDefault() == 0.9f);
+
+	f.Set(0.75f);
+	REQUIRE_FALSE(fi.IsAtDefault()); // changed -> not at default (this is the SaveConfig skip predicate)
+
+	fi.ResetToDefault();
+	REQUIRE(fi.IsAtDefault());
+	REQUIRE(f.Get() == 0.9f); // back to the code default
+
+	// A value re-set to exactly the default reads as at-default again (bit-identical), so it won't persist.
+	f.Set(0.5f);
+	REQUIRE_FALSE(fi.IsAtDefault());
+	f.Set(0.9f);
+	REQUIRE(fi.IsAtDefault());
+}

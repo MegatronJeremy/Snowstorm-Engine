@@ -48,5 +48,12 @@ namespace Snowstorm
 		// to the SCALED scene Target, not the full viewport. Sampled so the tonemap debug branch + the
 		// future temporal resolve can read it via bindless. Null until first allocated.
 		Ref<RenderTarget> VelocityTarget;
+
+		// Temporal-resolve history ping-pong (#44 TAA). Two full-res HDR (color-only) targets: each frame
+		// the resolve reads the PREVIOUS one as history, reprojects it by the velocity buffer, blends with
+		// the current frame, and writes the result into the CURRENT one — which both feeds tonemap and
+		// becomes next frame's history. Indexed by frame-counter parity (frame&1). Only rendered when
+		// render.aa == TAA. Full viewport res (resolve runs after upscale). Null until first allocated.
+		Ref<RenderTarget> HistoryTarget[2];
 	};
 }

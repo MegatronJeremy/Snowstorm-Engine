@@ -404,14 +404,34 @@ namespace Snowstorm
 			return;
 		}
 
-		file << "# Snowstorm settings (persistent CVars). Auto-written on editor shutdown.\n";
-		file << "# Overridden by SS_* environment vars and --cvar CLI args.\n";
+		file << "# Snowstorm settings (persistent CVars that differ from their default). Auto-written on\n";
+		file << "# editor shutdown. Overridden by SS_* environment vars and --cvar CLI args. Anything not\n";
+		file << "# listed here is at its code default, so default changes propagate automatically.\n";
 		for (const ICVar* cvar : m_Ordered)
 		{
-			if (cvar->IsPersistent())
+			// Only write persistent CVars the user actually changed. Skipping defaults keeps the file a
+			// list of real overrides (not a full snapshot), so a changed code default reaches everyone who
+			// hadn't explicitly overridden it — instead of being silently shadowed by a stale persisted copy.
+			if (cvar->IsPersistent() && !cvar->IsAtDefault())
 			{
 				file << cvar->GetName() << " = " << cvar->GetValueString() << "\n";
 			}
 		}
+	}
+
+	int CVarRegistry::ResetPersistentToDefaults()
+	{
+		int reset = 0;
+		for (ICVar* cvar : m_Ordered)
+		{
+			// Only user-facing (persistent) settings; dev/one-shot CVars aren't "settings" to reset.
+			if (cvar->IsPersistent() && !cvar->IsAtDefault())
+			{
+				cvar->ResetToDefault();
+				++reset;
+			}
+		}
+		SS_CORE_INFO("CVars: reset {0} setting(s) to defaults", reset);
+		return reset;
 	}
 }

@@ -12,6 +12,10 @@ namespace Snowstorm::CVars
 	// test to drive the app headlessly.
 	extern CVar<int> SmokeFrames;
 
+	// Toggle VSync every N frames (0 = off). A test hook: recreating the swapchain repeatedly under
+	// validation surfaces present/acquire-semaphore reuse bugs that steady-state running never triggers.
+	extern CVar<int> VSyncStress;
+
 	// Profiler capture (headless-driveable). When > 0, capture this many frames of the chrome-tracing
 	// timeline starting a few frames in (past one-time warmup), write it to profile.capture.path, then
 	// keep running. Lets the profiler be exercised without the editor button — e.g. the smoke harness can
@@ -97,6 +101,18 @@ namespace Snowstorm::CVars
 	// per-pixel screen-space motion into the velocity target and the tonemap step visualizes it as color
 	// instead of the tonemapped scene. Gates the (otherwise skipped) velocity pass; read per-frame.
 	extern CVar<int> DebugView;
+
+	// TAA history-blend weights (#44), live-tunable. TaaBlend = base weight used while the pixel is moving;
+	// TaaMaxBlend = weight when it's ~static (velocity-ramped in the resolve shader). Higher static weight
+	// accumulates more frames to average out specular shimmer that jitter causes on shiny surfaces.
+	extern CVar<float> TaaBlend;
+	extern CVar<float> TaaMaxBlend;
+
+	// Post-tonemap contrast-adaptive sharpen (AMD CAS) strength, 0..1 (#44). Display-space (runs after
+	// tonemap, like FXAA), so it's hue-safe — a sharpen in linear HDR before ACES turns overshoot into a hue
+	// shift. 0 = off (default; sharpen is a taste/compensation knob, not silently-on). Guidance: ~0.3 native
+	// + TAA, ~0.5 when upscaling; >0.7 over-sharpens and re-introduces aliasing. Read per-frame by SharpenPass.
+	extern CVar<float> Sharpen;
 
 	// Internal render scale (#43): the scene renders into a target sized at this fraction of the viewport,
 	// then an upscale pass brings it back to full res. 1.0 = native (upscale skipped); 0.5 = quarter the
