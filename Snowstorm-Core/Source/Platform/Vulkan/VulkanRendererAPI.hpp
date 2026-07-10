@@ -48,6 +48,11 @@ namespace Snowstorm
 		// could not be created (minimized window) so the caller skips the frame.
 		bool RecreateSwapchain();
 
+		// (Re)create the per-swapchain-image render-finished / present-signal semaphores, sized to the live
+		// image count. Called at init and after each swapchain recreate (image count can change with the
+		// present mode). Destroys any existing ones first; the GPU is drained by the caller at both sites.
+		void CreateRenderFinishedSemaphores();
+
 		uint32_t m_CurrentFrameIndex = 0;
 		uint32_t m_ImageIndex = 0; // The actual index of the swapchain image acquired
 

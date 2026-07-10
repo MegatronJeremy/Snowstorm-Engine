@@ -36,7 +36,6 @@ namespace Snowstorm
 
 		m_GraphicsContexts.resize(s_MaxFramesInFlight);
 		m_ImageAvailableSemaphores.resize(s_MaxFramesInFlight);
-		m_RenderFinishedSemaphores.resize(s_MaxFramesInFlight);
 		m_InFlightFences.resize(s_MaxFramesInFlight);
 
 		VkSemaphoreCreateInfo semaphoreInfo{};
@@ -46,14 +45,23 @@ namespace Snowstorm
 		fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 		fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // Start signaled so we don't wait forever on frame 0
 
+		// The image-acquire semaphore is per-frame-in-flight (you need a free one BEFORE the acquire tells
+		// you which image you got). The fence is per-frame-in-flight too (throttles CPU to N frames ahead).
 		for (uint32_t i = 0; i < s_MaxFramesInFlight; ++i)
 		{
 			m_GraphicsContexts[i] = CreateRef<VulkanCommandContext>();
 
 			vkCreateSemaphore(device, &semaphoreInfo, nullptr, &m_ImageAvailableSemaphores[i]);
-			vkCreateSemaphore(device, &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]);
 			vkCreateFence(device, &fenceInfo, nullptr, &m_InFlightFences[i]);
 		}
+
+		// The render-finished / present-signal semaphore is PER-SWAPCHAIN-IMAGE (indexed by image index),
+		// NOT per-frame-in-flight: a present-wait semaphore can only be reused once its image is re-acquired
+		// (Vulkan spec), which is keyed to the image, not the frame slot. With 3 swapchain images but 2
+		// frames-in-flight, a per-frame array reuses a semaphore while a prior present on another image is
+		// still pending -> "semaphore signaled but may still be in use by VkSwapchainKHR". Sized to the
+		// actual image count + rebuilt on swapchain recreate (image count can change with present mode).
+		CreateRenderFinishedSemaphores();
 
 		// GPU frame timing: a 2-query timestamp pool per frame-in-flight (start + end). Requires the
 		// device to support timestamps on the graphics queue (timestampPeriod != 0 and the queue family
@@ -109,6 +117,30 @@ namespace Snowstorm
 		}
 	}
 
+	void VulkanRendererAPI::CreateRenderFinishedSemaphores()
+	{
+		const VkDevice device = VulkanContext::Get().GetDevice();
+
+		// Destroy any existing (recreate path) — the GPU is drained by the caller (init: nothing pending;
+		// RecreateSwapchain: VulkanContext drains before this), so none are in use.
+		for (const VkSemaphore s : m_RenderFinishedSemaphores)
+		{
+			if (s != VK_NULL_HANDLE)
+			{
+				vkDestroySemaphore(device, s, nullptr);
+			}
+		}
+
+		const uint32_t imageCount = static_cast<uint32_t>(VulkanContext::Get().GetSwapchainImages().size());
+		m_RenderFinishedSemaphores.assign(imageCount, VK_NULL_HANDLE);
+
+		VkSemaphoreCreateInfo semaphoreInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+		for (uint32_t i = 0; i < imageCount; ++i)
+		{
+			vkCreateSemaphore(device, &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]);
+		}
+	}
+
 	bool VulkanRendererAPI::RecreateSwapchain()
 	{
 		// VulkanContext::RecreateSwapchain drains the GPU before tearing down the old images, so the
@@ -118,6 +150,9 @@ namespace Snowstorm
 			return false; // zero-extent surface (minimized) — skip the frame
 		}
 		WrapSwapchainTextures();
+		// Image count can change with the present mode (e.g. mailbox vs FIFO), so rebuild the per-image
+		// render-finished semaphores to match. Safe: the context drained the GPU during recreate.
+		CreateRenderFinishedSemaphores();
 		return true;
 	}
 
@@ -159,13 +194,23 @@ namespace Snowstorm
 		for (uint32_t i = 0; i < s_MaxFramesInFlight; ++i)
 		{
 			vkDestroySemaphore(device, m_ImageAvailableSemaphores[i], nullptr);
-			vkDestroySemaphore(device, m_RenderFinishedSemaphores[i], nullptr);
 			vkDestroyFence(device, m_InFlightFences[i], nullptr);
 			if (m_TimestampPools[i] != VK_NULL_HANDLE)
 			{
 				vkDestroyQueryPool(device, m_TimestampPools[i], nullptr);
 			}
 		}
+
+		// Render-finished semaphores are per-swapchain-image (not per-frame-in-flight), so destroy them
+		// over their own (image-count-sized) array.
+		for (const VkSemaphore s : m_RenderFinishedSemaphores)
+		{
+			if (s != VK_NULL_HANDLE)
+			{
+				vkDestroySemaphore(device, s, nullptr);
+			}
+		}
+		m_RenderFinishedSemaphores.clear();
 
 		m_GraphicsContexts.clear();
 
@@ -278,8 +323,10 @@ namespace Snowstorm
 		waitInfo.semaphore = m_ImageAvailableSemaphores[m_CurrentFrameIndex];
 		waitInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
+		// Present-signal semaphore indexed by IMAGE index (per-swapchain-image), not frame-in-flight — see
+		// CreateRenderFinishedSemaphores. This is the one the present below waits on.
 		VkSemaphoreSubmitInfo signalInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
-		signalInfo.semaphore = m_RenderFinishedSemaphores[m_CurrentFrameIndex];
+		signalInfo.semaphore = m_RenderFinishedSemaphores[m_ImageIndex];
 		signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
 		VkCommandBufferSubmitInfo cmdInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
@@ -295,7 +342,7 @@ namespace Snowstorm
 
 		vkQueueSubmit2(context.GetGraphicsQueue(), 1, &submitInfo, m_InFlightFences[m_CurrentFrameIndex]);
 
-		VkSemaphore signalSemaphores[] = {m_RenderFinishedSemaphores[m_CurrentFrameIndex]};
+		VkSemaphore signalSemaphores[] = {m_RenderFinishedSemaphores[m_ImageIndex]};
 
 		// 4. Present
 		VkPresentInfoKHR presentInfo{};

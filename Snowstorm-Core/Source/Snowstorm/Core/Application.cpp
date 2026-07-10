@@ -99,8 +99,18 @@ namespace Snowstorm
 		double statAccumMs = 0.0, statWaitMs = 0.0, statGpuMs = 0.0;
 		int statFrames = 0;
 
+		// VSync-toggle stress (debug.vsync_stress > 0): flip VSync every N frames to force repeated
+		// swapchain recreation. A test hook — surfaces present/acquire-semaphore reuse bugs that only
+		// appear across a swapchain rebuild (the steady-state smoke never toggles). Off by default.
+		const int vsyncStress = CVars::VSyncStress.Get();
+
 		while (m_Running)
 		{
+			if (vsyncStress > 0 && frameNo > 0 && frameNo % static_cast<uint64_t>(vsyncStress) == 0)
+			{
+				Renderer::SetVSync(!Renderer::IsVSync());
+			}
+
 			if (profileCaptureFrames > 0 && !profileRequested && frameNo == 3)
 			{
 				Instrumentor::Get().RequestCapture(profileCaptureFrames, CVars::ProfileCapturePath.Get());
