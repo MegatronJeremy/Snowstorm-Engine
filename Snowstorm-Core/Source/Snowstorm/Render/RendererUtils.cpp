@@ -7,7 +7,9 @@ namespace Snowstorm
 		TextureDesc colorDesc{};
 		colorDesc.Dimension = TextureDimension::Texture2D;
 		colorDesc.Format = kSceneColorFormat;
-		colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled;
+		// TransferSrc: this HDR scene color can be read back to the CPU for dataset export (#46). Cheap usage
+		// flag; no cost unless a readback copy is actually issued.
+		colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled | TextureUsage::TransferSrc;
 		colorDesc.Width = w;
 		colorDesc.Height = h;
 		colorDesc.DebugName = std::string(debugPrefix) + "_Color";
@@ -57,7 +59,8 @@ namespace Snowstorm
 		TextureDesc colorDesc{};
 		colorDesc.Dimension = TextureDimension::Texture2D;
 		colorDesc.Format = kVelocityFormat;
-		colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled;
+		// TransferSrc: motion vectors are read back to the CPU for dataset export (#46).
+		colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled | TextureUsage::TransferSrc;
 		colorDesc.Width = w;
 		colorDesc.Height = h;
 		colorDesc.DebugName = std::string(debugPrefix) + "_Velocity";

@@ -7,25 +7,35 @@
 namespace Snowstorm
 {
 	VulkanBuffer::VulkanBuffer(const size_t size, const BufferUsage usage, const void* initialData, const bool hostVisible, const std::string& debugName)
-		: m_Usage(usage), m_Size(size), m_HostVisible(hostVisible)
+	    : m_Usage(usage), m_Size(size), m_HostVisible(hostVisible || usage == BufferUsage::Readback)
 	{
 		VkBufferUsageFlags usageFlags = 0;
 		switch (usage)
 		{
-		case BufferUsage::Vertex: usageFlags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+		case BufferUsage::Vertex:
+			usageFlags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 			break;
-		case BufferUsage::Index: usageFlags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+		case BufferUsage::Index:
+			usageFlags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
 			break;
-		case BufferUsage::Uniform: usageFlags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+		case BufferUsage::Uniform:
+			usageFlags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 			break;
-		case BufferUsage::Storage: usageFlags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+		case BufferUsage::Storage:
+			usageFlags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 			break;
-		case BufferUsage::None: break;
+		case BufferUsage::Readback:
+			break; // no shader binding; just a TRANSFER_DST copy target (added below)
+		case BufferUsage::None:
+			break;
 		}
 
-		// For device-local buffers - TRANSFER_DST for staging uploads
-		// HostVisible - we map directly
-		if (!hostVisible)
+		const bool isReadback = (usage == BufferUsage::Readback);
+
+		// For device-local buffers - TRANSFER_DST for staging uploads.
+		// A Readback buffer is host-visible but is the DESTINATION of vkCmdCopyImageToBuffer, so it needs
+		// TRANSFER_DST too (a plain host-visible buffer does not get it).
+		if (!hostVisible || isReadback)
 		{
 			usageFlags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 		}
@@ -39,12 +49,20 @@ namespace Snowstorm
 		m_UsageFlags = usageFlags;
 
 		VmaAllocationCreateInfo allocInfo{};
-		if (hostVisible)
+		if (isReadback)
+		{
+			// GPU->CPU readback: RANDOM host access so the mapped memory is cached/readable (SEQUENTIAL_WRITE
+			// may land in write-combined memory, which is very slow to read back). Stay mapped for zero-copy Map().
+			allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+			allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
+			                  VMA_ALLOCATION_CREATE_MAPPED_BIT;
+		}
+		else if (hostVisible)
 		{
 			// Frequently updated buffers (e.g., uniform) can safely stay mapped
 			allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
 			allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-			VMA_ALLOCATION_CREATE_MAPPED_BIT;
+			                  VMA_ALLOCATION_CREATE_MAPPED_BIT;
 		}
 		else
 		{
@@ -63,21 +81,19 @@ namespace Snowstorm
 		bufferInfo.usage = usageFlags;
 
 		VkResult result = vmaCreateBuffer(
-			GetAllocator(),
-			&bufferInfo,
-			&allocInfo,
-			&m_Buffer,
-			&m_Allocation,
-			&m_AllocInfo
-		);
+		    GetAllocator(),
+		    &bufferInfo,
+		    &allocInfo,
+		    &m_Buffer,
+		    &m_Allocation,
+		    &m_AllocInfo);
 		SS_CORE_ASSERT(result == VK_SUCCESS, "Failed to create Vulkan buffer");
 
 		// Query memory properties so we can decide whether flushing is needed
 		vmaGetAllocationMemoryProperties(
-			GetAllocator(),
-			m_Allocation,
-			&m_MemoryProperties
-		);
+		    GetAllocator(),
+		    m_Allocation,
+		    &m_MemoryProperties);
 
 		if (initialData)
 		{
@@ -87,7 +103,7 @@ namespace Snowstorm
 
 	VulkanBuffer::~VulkanBuffer()
 	{
-		vkDeviceWaitIdle(GetVulkanDevice()); // TODO this is probably really bad practice, having it here and in other places 
+		vkDeviceWaitIdle(GetVulkanDevice()); // TODO this is probably really bad practice, having it here and in other places
 		vmaDestroyBuffer(GetAllocator(), m_Buffer, m_Allocation);
 	}
 
@@ -173,8 +189,8 @@ namespace Snowstorm
 			VmaAllocationCreateInfo stagingAllocInfo{};
 			stagingAllocInfo.usage = VMA_MEMORY_USAGE_AUTO;
 			stagingAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-			VMA_ALLOCATION_CREATE_MAPPED_BIT |
-			VMA_ALLOCATION_CREATE_USER_DATA_COPY_STRING_BIT;
+			                         VMA_ALLOCATION_CREATE_MAPPED_BIT |
+			                         VMA_ALLOCATION_CREATE_USER_DATA_COPY_STRING_BIT;
 
 			VkBuffer stagingBuffer = VK_NULL_HANDLE;
 			VmaAllocation stagingAllocation = nullptr;
@@ -185,13 +201,12 @@ namespace Snowstorm
 			stagingAllocInfo.pUserData = (void*)name.c_str();
 
 			VkResult result = vmaCreateBuffer(
-				GetAllocator(),
-				&stagingInfo,
-				&stagingAllocInfo,
-				&stagingBuffer,
-				&stagingAllocation,
-				&stagingAllocInfoResult
-			);
+			    GetAllocator(),
+			    &stagingInfo,
+			    &stagingAllocInfo,
+			    &stagingBuffer,
+			    &stagingAllocation,
+			    &stagingAllocInfoResult);
 			SS_CORE_ASSERT(result == VK_SUCCESS, "Failed to create staging buffer");
 
 			// Copy data to staging
@@ -200,19 +215,18 @@ namespace Snowstorm
 			// Flush staging if needed
 			VkMemoryPropertyFlags stagingProperties = 0;
 			vmaGetAllocationMemoryProperties(
-				GetAllocator(),
-				stagingAllocation,
-				&stagingProperties
-			);
+			    GetAllocator(),
+			    stagingAllocation,
+			    &stagingProperties);
 
 			if ((stagingProperties & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
 			{
 				vmaFlushAllocation(GetAllocator(), stagingAllocation, 0, size);
 			}
 
-			// Record and submit copy 
+			// Record and submit copy
 			ImmediateSubmit([&](const VkCommandBuffer cmd)
-			{
+			                {
 				VkBufferCopy copyRegion{};
 				copyRegion.srcOffset = 0;
 				copyRegion.dstOffset = offset;
@@ -231,8 +245,7 @@ namespace Snowstorm
 				dep.memoryBarrierCount = 1;
 				dep.pMemoryBarriers = &barrier;
 
-				vkCmdPipelineBarrier2(cmd, &dep);
-			});
+				vkCmdPipelineBarrier2(cmd, &dep); });
 
 			vmaDestroyBuffer(GetAllocator(), stagingBuffer, stagingAllocation);
 		}

@@ -13,7 +13,11 @@ namespace Snowstorm
 		Vertex,
 		Index,
 		Uniform,
-		Storage
+		Storage,
+		// GPU->CPU readback destination: host-visible, TRANSFER_DST (a vkCmdCopyImageToBuffer target), and
+		// allocated for RANDOM host access so reading it back is not on write-combined memory. Implies
+		// hostVisible; pass hostVisible=true at Create too (the flag is what the copy destination needs).
+		Readback
 	};
 
 	class Buffer

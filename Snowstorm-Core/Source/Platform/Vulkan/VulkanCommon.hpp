@@ -117,6 +117,28 @@ namespace Snowstorm
 		return VK_FORMAT_UNDEFINED;
 	}
 
+	// Bytes per texel for the (uncompressed) color formats the engine uses. Used to size a tightly-packed
+	// image->buffer readback. Depth formats are not readback targets here, so they map to their raw size too.
+	inline uint32_t BytesPerPixel(const PixelFormat fmt)
+	{
+		switch (fmt)
+		{
+		case PixelFormat::RGBA8_UNorm:
+		case PixelFormat::RGBA8_sRGB:
+		case PixelFormat::BGRA8_UNorm:
+		case PixelFormat::BGRA8_sRGB:
+		case PixelFormat::R11G11B10_UFloat:
+		case PixelFormat::D32_Float:
+		case PixelFormat::D24_UNorm_S8_UInt:
+			return 4;
+		case PixelFormat::RGBA16_SFloat:
+			return 8;
+		case PixelFormat::Unknown:
+			break;
+		}
+		return 0;
+	}
+
 	inline VkImageUsageFlags ToVkUsage(const TextureUsage usage, const PixelFormat fmt)
 	{
 		VkImageUsageFlags flags = 0;

@@ -414,6 +414,58 @@ namespace Snowstorm
 		vkCmdPipelineBarrier2(m_CommandBuffer, &dep);
 	}
 
+	void VulkanCommandContext::CopyTextureToBuffer(const Ref<Texture>& texture, const Ref<Buffer>& dst)
+	{
+		SS_CORE_ASSERT(texture && dst, "CopyTextureToBuffer: null texture or buffer");
+		auto vkTex = std::static_pointer_cast<VulkanTexture>(texture);
+		const auto vkBuf = std::static_pointer_cast<VulkanBuffer>(dst);
+
+		const TextureDesc& d = texture->GetDesc();
+		const uint32_t bpp = BytesPerPixel(d.Format);
+		SS_CORE_ASSERT(bpp > 0, "CopyTextureToBuffer: unsupported format for readback");
+		const VkDeviceSize needed = static_cast<VkDeviceSize>(d.Width) * d.Height * bpp;
+		SS_CORE_ASSERT(dst->GetSize() >= needed, "CopyTextureToBuffer: destination buffer too small");
+
+		// The source targets are left in SHADER_READ_ONLY by their render pass. Move to TRANSFER_SRC for the
+		// copy, then back so later sampling (editor viewport, tonemap, next frame) still works. TransitionLayout
+		// tracks m_CurrentLayout, so both transitions get correct src/dst scopes.
+		const VkImageLayout prev = vkTex->GetCurrentLayout();
+		TransitionLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+
+		VkBufferImageCopy region{};
+		region.bufferOffset = 0;
+		region.bufferRowLength = 0;   // tightly packed, no row padding
+		region.bufferImageHeight = 0; // tightly packed
+		region.imageSubresource.aspectMask = vkTex->GetAspectMask();
+		region.imageSubresource.mipLevel = 0;
+		region.imageSubresource.baseArrayLayer = 0;
+		region.imageSubresource.layerCount = 1;
+		region.imageOffset = {0, 0, 0};
+		region.imageExtent = {d.Width, d.Height, 1};
+
+		vkCmdCopyImageToBuffer(m_CommandBuffer, vkTex->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		                       vkBuf->GetHandle(), 1, &region);
+
+		// Make the transfer write visible to a host read (the CPU Map()s this buffer a frame later). The
+		// per-frame fence provides the execution wait; this barrier provides the memory-visibility half.
+		VkBufferMemoryBarrier2 bufBarrier{.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+		bufBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+		bufBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+		bufBarrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+		bufBarrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+		bufBarrier.buffer = vkBuf->GetHandle();
+		bufBarrier.offset = 0;
+		bufBarrier.size = VK_WHOLE_SIZE;
+
+		VkDependencyInfo dep{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+		dep.bufferMemoryBarrierCount = 1;
+		dep.pBufferMemoryBarriers = &bufBarrier;
+		vkCmdPipelineBarrier2(m_CommandBuffer, &dep);
+
+		// Restore the image to where the render pass left it (SHADER_READ_ONLY), so downstream sampling is valid.
+		TransitionLayout(texture, prev);
+	}
+
 	void VulkanCommandContext::ResetState()
 	{
 		m_IsRendering = false;
