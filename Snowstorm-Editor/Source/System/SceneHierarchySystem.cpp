@@ -148,6 +148,22 @@ namespace Snowstorm
 			}
 		}
 
+		// Upscaler (#47): how the low-res scene is brought to full res when Render Scale < 100%. Bilinear is the
+		// baseline; Neural runs the compute CNN (with default identity weights it matches bilinear — the
+		// correctness baseline — and a trained .ssnn improves on it). No effect at Native (nothing to upscale).
+		{
+			int up = CVars::Upscaler.Get();
+			const char* upLabels[] = {"Bilinear", "Neural (CNN)"};
+			if (ImGui::Combo("Upscaler", &up, upLabels, 2))
+			{
+				CVars::Upscaler.Set(up);
+			}
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("Only active when Render Scale < 100%. Neural = compute CNN residual refiner (#47).");
+			}
+		}
+
 		// Compare (#43 part 2): split-screen upscaled-vs-ground-truth. Renders the scene twice; most useful
 		// at Render Scale < 100% (at Native both sides are identical). Drag the divider in the viewport.
 		if (bool compare = CVars::Compare.Get(); ImGui::Checkbox("Compare (upscaled | ground truth)", &compare))

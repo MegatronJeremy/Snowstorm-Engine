@@ -559,14 +559,40 @@ namespace Snowstorm
 						const Ref<TextureView> lowResView = hdrDesc.ColorAttachments[0].View;
 						const Ref<TextureView> upView = upDesc.ColorAttachments[0].View;
 						const PixelFormat upFmt = upView->GetTexture()->GetDesc().Format;
-						graph.AddPass({.Name = "Upscale",
-						               .Target = vpRT.SceneUpscaleTarget,
-						               .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
-						               .Execute = [&, lowResView, upFmt](CommandContext& c)
-						               {
-							               m_UpscalePass.Draw(ctx, frameIndex, lowResView, upFmt);
-						               }});
-						sceneColorView = upView;
+						const uint32_t upW = tmDesc.Width;
+						const uint32_t upH = tmDesc.Height;
+
+						// Neural upscaler (#47): a compute CNN residual refiner, alternative to the bilinear pass.
+						// It owns its full-res storage output; on success tonemap reads that. Falls back to bilinear
+						// until its shaders finish compiling (HasOutput() false). The bilinear pass renders into
+						// SceneUpscaleTarget; the neural pass writes its own texture.
+						// PrepareResources runs HERE (graph-build time), not in the Execute lambda: a resize may
+						// drain the GPU + recreate the bindless output view, both illegal mid-command-recording. It
+						// returns false while shaders are still compiling — then we fall back to bilinear this frame.
+						const bool neural = CVars::Upscaler.Get() == 1 && m_NeuralUpscalePass.PrepareResources(upW, upH);
+						if (neural)
+						{
+							graph.AddPass({.Name = "NeuralUpscale",
+							               .IsCompute = true,
+							               .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
+							               .Execute = [&, lowResView, upW, upH](CommandContext& c)
+							               {
+								               const Ref<CommandContext> cref(&c, [](CommandContext*) {});
+								               m_NeuralUpscalePass.Infer(cref, frameIndex, lowResView, upW, upH);
+							               }});
+							sceneColorView = m_NeuralUpscalePass.OutputView();
+						}
+						else
+						{
+							graph.AddPass({.Name = "Upscale",
+							               .Target = vpRT.SceneUpscaleTarget,
+							               .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
+							               .Execute = [&, lowResView, upFmt](CommandContext& c)
+							               {
+								               m_UpscalePass.Draw(ctx, frameIndex, lowResView, upFmt);
+							               }});
+							sceneColorView = upView;
+						}
 					}
 				}
 

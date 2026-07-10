@@ -59,6 +59,8 @@ namespace Snowstorm::CVars
 
 	CVar<int> DatasetExportFrames{"dataset.export.frames", 0, "Stop the app after this many dataset tuples have been written to disk (0 = run until the window closes). Lets a headless capture run produce a fixed-size dataset then exit."};
 
+	CVar<int> Upscaler{"render.upscaler", 0, "Upscale method when render.scale < 1: 0 = Bilinear (baseline), 1 = Neural (compute CNN residual refiner, #47). The neural path runs the loaded .ssnn model; with the default identity weights it reproduces bilinear (the correctness baseline). Read per-frame; only active when upscaling (scale < 1).", CVarFlags::Persist};
+
 	CVar<int> AAMode{"render.aa", 0, "Anti-aliasing: 0 = None, 1 = FXAA (spatial post-process), 2 = TAA (temporal accumulation via jitter + motion vectors, #44)", CVarFlags::Persist};
 
 	CVar<int> DebugView{"render.debugview", 0, "Viewport debug overlay: 0 = Normal (tonemapped scene), 1 = Motion Vectors (per-pixel screen-space velocity as color). Drives the velocity pass + tonemap debug branch (#44)", CVarFlags::Persist};

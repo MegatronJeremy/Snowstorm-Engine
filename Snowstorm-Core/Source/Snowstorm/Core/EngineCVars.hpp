@@ -97,6 +97,10 @@ namespace Snowstorm::CVars
 	// read per-frame by RenderSystem, so toggling it takes effect live.
 	extern CVar<int> AAMode;
 
+	// Upscale method when render.scale < 1 (#47): 0 = bilinear (the baseline), 1 = neural (compute CNN). The
+	// neural path runs the loaded .ssnn; default identity weights reproduce bilinear. Read per-frame.
+	extern CVar<int> Upscaler;
+
 	// Viewport debug overlay (#44): 0 = Normal, 1 = Motion Vectors. When 1, a dedicated velocity pass emits
 	// per-pixel screen-space motion into the velocity target and the tonemap step visualizes it as color
 	// instead of the tonemapped scene. Gates the (otherwise skipped) velocity pass; read per-frame.

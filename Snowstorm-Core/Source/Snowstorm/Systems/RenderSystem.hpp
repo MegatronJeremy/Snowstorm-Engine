@@ -6,6 +6,7 @@
 #include "Snowstorm/Render/Passes/FxaaPass.hpp"
 #include "Snowstorm/Render/Passes/IBLBakePass.hpp"
 #include "Snowstorm/Render/Passes/MetricsPass.hpp"
+#include "Snowstorm/Render/Passes/NeuralUpscalePass.hpp"
 #include "Snowstorm/Render/Passes/PostProcessPass.hpp"
 #include "Snowstorm/Render/Passes/ShadowPass.hpp"
 #include "Snowstorm/Render/Passes/SharpenPass.hpp"
@@ -41,6 +42,7 @@ namespace Snowstorm
 		FxaaPass m_FxaaPass;
 		SharpenPass m_SharpenPass;
 		UpscalePass m_UpscalePass;
+		NeuralUpscalePass m_NeuralUpscalePass;
 		VelocityPass m_VelocityPass;
 		TemporalResolvePass m_TemporalResolvePass;
 		MetricsPass m_MetricsPass;
