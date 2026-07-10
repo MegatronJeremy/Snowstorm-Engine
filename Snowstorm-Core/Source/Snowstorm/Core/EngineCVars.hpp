@@ -142,6 +142,14 @@ namespace Snowstorm::CVars
 	extern CVar<bool> Metrics;
 	extern CVar<bool> MetricsLog;
 
+	// Dataset export (#46): dump per-frame (low-res color, motion vectors, full-res ground truth) tuples to
+	// disk as .npy + manifest.json — training data for the neural upscaler. Requires render.compare; forces
+	// the velocity pass on and the camera path onto a fixed timestep (regenerable dataset). DatasetExportPath
+	// is the output dir; DatasetExportFrames > 0 stops the app after that many tuples are written.
+	extern CVar<bool> DatasetExport;
+	extern CVar<std::string> DatasetExportPath;
+	extern CVar<int> DatasetExportFrames;
+
 	// Temporal sub-pixel camera jitter (#44): Halton(2,3) offset applied to the color projection each
 	// frame — the substrate a temporal upscaler/TAA accumulates. Motion vectors + frustum culling keep the
 	// unjittered matrices. Read per-frame by CameraJitterSystem; forced off in compare mode. Persist.

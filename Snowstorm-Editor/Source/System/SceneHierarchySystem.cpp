@@ -170,6 +170,23 @@ namespace Snowstorm
 		{
 			ImGui::SetTooltip("Requires Compare. Measures upscaled vs full-res ground truth.");
 		}
+		// Dataset export (#46): dump (LR color, motion vectors, GT) tuples to disk as training data for the
+		// neural upscaler. Needs Compare on (ground truth); best paired with the Benchmark Camera Path so the
+		// dataset is a deterministic sweep. Shows a running count of tuples written.
+		if (bool dataset = CVars::DatasetExport.Get(); ImGui::Checkbox("Export Dataset (LR/MV/GT)", &dataset))
+		{
+			CVars::DatasetExport.Set(dataset);
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Requires Compare. Dumps .npy tuples + manifest to dataset.export.path.\nPair with Benchmark Camera Path for a reproducible dataset.");
+		}
+		if (CVars::DatasetExport.Get())
+		{
+			const uint64_t written = ServiceView<RendererService>().GetDatasetFramesWritten();
+			ImGui::SameLine();
+			ImGui::TextDisabled("(%llu written)", static_cast<unsigned long long>(written));
+		}
 
 		// Temporal jitter (#44): sub-pixel Halton(2,3) offset on the color projection — the substrate a
 		// temporal upscaler accumulates. Without a temporal resolve yet it shows as sub-pixel shimmer;

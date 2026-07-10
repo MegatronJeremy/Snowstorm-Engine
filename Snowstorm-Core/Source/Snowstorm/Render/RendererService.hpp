@@ -179,6 +179,12 @@ namespace Snowstorm
 		void SetMetrics(const MetricsResult& m) { m_Metrics = m; }
 		[[nodiscard]] const MetricsResult& GetMetrics() const { return m_Metrics; }
 
+		// Number of dataset-export tuples written to disk so far (#46). Set by RenderSystem from the
+		// DatasetExportPass while dataset.export is on; read by the app loop to stop after N frames and by the
+		// editor panel for a progress readout.
+		void SetDatasetFramesWritten(const uint64_t n) { m_DatasetFramesWritten = n; }
+		[[nodiscard]] uint64_t GetDatasetFramesWritten() const { return m_DatasetFramesWritten; }
+
 	private:
 		void FlushBatch(BatchData& batch,
 		                const Ref<CommandContext>& commandContext,
@@ -256,5 +262,8 @@ namespace Snowstorm
 
 		// Latest upscaled-vs-ground-truth image metrics (#45), set by RenderSystem when render.metrics is on.
 		MetricsResult m_Metrics;
+
+		// Running count of dataset-export tuples written to disk (#46), set by RenderSystem when exporting.
+		uint64_t m_DatasetFramesWritten = 0;
 	};
 }

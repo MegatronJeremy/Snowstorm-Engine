@@ -208,6 +208,19 @@ namespace Snowstorm
 				m_Running = false;
 			}
 
+			// Dataset export (#46): stop once the requested number of tuples has been written to disk, so a
+			// headless capture run produces a fixed-size dataset then exits cleanly.
+			if (const int datasetFrames = CVars::DatasetExportFrames.Get();
+			    datasetFrames > 0 && CVars::DatasetExport.Get())
+			{
+				const uint64_t written = m_ServiceManager->GetService<RendererService>().GetDatasetFramesWritten();
+				if (written >= static_cast<uint64_t>(datasetFrames))
+				{
+					SS_CORE_INFO("Dataset export: {} tuples written, requesting shutdown.", written);
+					m_Running = false;
+				}
+			}
+
 			// End-of-frame marker: Tracy uses this to segment its timeline into frames (enables the
 			// per-frame view / frame-time graph). No-op for the JSON tracer.
 			SS_PROFILE_FRAME_MARK();

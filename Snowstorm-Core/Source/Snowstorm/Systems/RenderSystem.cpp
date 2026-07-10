@@ -456,7 +456,10 @@ namespace Snowstorm
 			const bool taaOn = !comparing && CVars::AAMode.Get() == 2 &&
 			                   vpRT.HistoryTarget[0] && vpRT.HistoryTarget[1] &&
 			                   !vpRT.HistoryTarget[0]->GetDesc().ColorAttachments.empty();
-			const bool velocityNeeded = (debugView == 1 || taaOn) && vpRT.VelocityTarget &&
+			// Dataset export (#46) also needs the velocity buffer (an exported channel), so force the velocity
+			// pass on while exporting even without debug-view/TAA. Requires compare (ground truth exists).
+			const bool exporting = CVars::DatasetExport.Get() && comparing;
+			const bool velocityNeeded = (debugView == 1 || taaOn || exporting) && vpRT.VelocityTarget &&
 			                            !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
 			                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 			if (velocityNeeded)
@@ -696,6 +699,42 @@ namespace Snowstorm
 						                                   {
 							                                   const auto& r = m_MetricsPass.GetResult();
 							                                   return RendererService::MetricsResult{r.Valid, r.Psnr, r.Ssim}; }());
+					               }});
+				}
+
+				// ---- Dataset export (#46): copy (low-res color, motion vectors, full-res ground truth) to the CPU
+				// and serialize as .npy + manifest. Needs all three written this frame: LR (forward), MV (velocity
+				// pass, forced on above), GT (the compare 2nd render). Gated on dataset.export && compare && the
+				// velocity buffer being produced. One graph pass (IsCompute: no render target) after everything
+				// above; it declares the three targets as Sampled reads so the graph normalizes their layout, then
+				// CopyTextureToBuffer pulls each to a host-visible buffer.
+				if (exporting && velocityNeeded && vpRT.GroundTruthTarget &&
+				    !vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty())
+				{
+					const Ref<Texture> lrImg = vpRT.Target->GetDesc().ColorAttachments[0].View->GetTexture();
+					const Ref<Texture> mvImg = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+					const Ref<Texture> gtImg = vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+					const glm::vec2 jitter = cam.Rt->JitterNdc;
+					const float scale = CVars::ClampedRenderScale();
+					const std::string outDir = CVars::DatasetExportPath.Get();
+					graph.AddPass({.Name = "DatasetExport" + passSuffix,
+					               .IsCompute = true, // no render target; records readback copies
+					               .Reads = {{lrImg, RenderGraph::AccessState::Sampled},
+					                         {mvImg, RenderGraph::AccessState::Sampled},
+					                         {gtImg, RenderGraph::AccessState::Sampled}},
+					               .Execute = [&, lrImg, mvImg, gtImg, jitter, scale, outDir](CommandContext& c)
+					               {
+						               DatasetExportPass::Inputs dsin;
+						               dsin.Lr = lrImg;
+						               dsin.Mv = mvImg;
+						               dsin.Gt = gtImg;
+						               dsin.JitterNdc = jitter;
+						               dsin.Scale = scale;
+						               dsin.FrameIndex = frameIndex;
+						               // Non-owning Ref to the graph's context (the pass API takes a Ref; the graph owns it).
+						               const Ref<CommandContext> cref(&c, [](CommandContext*) {});
+						               const uint64_t written = m_DatasetExportPass.CaptureAndSerialize(cref, dsin, outDir);
+						               renderer.SetDatasetFramesWritten(written);
 					               }});
 				}
 			}

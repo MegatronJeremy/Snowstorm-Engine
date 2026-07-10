@@ -20,7 +20,11 @@ namespace Snowstorm
 		// Target the free-fly cameras (they have a controller). When the path is off we do nothing and leave
 		// the controller in charge; we also reset accumulated time so re-enabling always starts at the same
 		// pose (deterministic benchmark start).
-		const float dt = ts.GetSeconds();
+		//
+		// While exporting a dataset (#46) the path must be BIT-reproducible: frame N always maps to the same
+		// pose regardless of real frame timing, or two capture runs would sample different poses. So step by a
+		// fixed dt (60 Hz) instead of the wall-clock ts. Off-export keeps real-time motion for interactive use.
+		const float dt = CVars::DatasetExport.Get() ? (1.0f / 60.0f) : ts.GetSeconds();
 		for (const auto view = reg.view<CameraControllerComponent, TransformComponent>(); const auto e : view)
 		{
 			if (!pathOn)
