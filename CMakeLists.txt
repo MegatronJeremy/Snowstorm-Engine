@@ -38,6 +38,15 @@ set(VK_ENV "VK_ADD_LAYER_PATH=${VCPKG_LAYER_PATH}")
 set_target_properties(Snowstorm-Editor PROPERTIES VS_DEBUGGER_ENVIRONMENT "${VK_ENV}")
 set_target_properties(Snowstorm-Runtime PROPERTIES VS_DEBUGGER_ENVIRONMENT "${VK_ENV}")
 
+# The VS_DEBUGGER_ENVIRONMENT above is Visual-Studio-only: Rider / a bare exe / the terminal don't get it,
+# so validation silently fails to load there ("layers requested but not available"). Also bake the absolute
+# layer path in as a Debug-only compile definition so EntryPoint can set VK_ADD_LAYER_PATH itself before
+# Vulkan init — making validation work regardless of how the app is launched. Debug only (validation is a
+# dev tool). Backslashes in the Windows path would break the C string literal, so normalize to forward
+# slashes (the Vulkan loader accepts them).
+string(REPLACE "\\" "/" VCPKG_LAYER_PATH_FWD "${VCPKG_LAYER_PATH}")
+target_compile_definitions(Snowstorm-Core PUBLIC $<$<CONFIG:Debug>:SS_VULKAN_LAYER_PATH="${VCPKG_LAYER_PATH_FWD}">)
+
 # 4. Browsable Shaders target: surfaces Assets/Shaders/*.hlsl(i) in the IDE so they can be viewed and
 # edited alongside the C++, instead of only reachable by opening the files externally. IDE-only
 # container (add_custom_target ... SOURCES) -- nothing is compiled or linked here; shaders are still

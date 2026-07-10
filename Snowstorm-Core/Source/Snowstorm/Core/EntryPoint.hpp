@@ -4,6 +4,7 @@
 #include "Snowstorm/Debug/Instrumentor.hpp"
 #include "Snowstorm/Utility/CVar.hpp"
 
+#include <cstdlib>
 #include <string_view>
 
 #ifdef SS_PLATFORM_WINDOWS
@@ -11,6 +12,19 @@
 inline int main(int argc, char** argv)
 {
 	Snowstorm::Log::Init();
+
+	// Make Vulkan validation layers discoverable regardless of how the app was launched. The vcpkg layer
+	// path is baked in as a Debug-only compile definition (SS_VULKAN_LAYER_PATH, see root CMakeLists). VS
+	// injects VK_ADD_LAYER_PATH via its debugger env, but Rider / a bare exe / the terminal don't — so
+	// validation silently failed to load there. Set it here, before CreateApplication() creates the Vulkan
+	// instance (the loader reads the var at vkCreateInstance). Only if unset, so the smoke harness / a power
+	// user can still override it. Debug only (validation is a dev tool; the define is absent in Release).
+#if defined(SS_DEBUG) && defined(SS_VULKAN_LAYER_PATH)
+	if (std::getenv("VK_ADD_LAYER_PATH") == nullptr)
+	{
+		_putenv_s("VK_ADD_LAYER_PATH", SS_VULKAN_LAYER_PATH);
+	}
+#endif
 
 	// Resolve console variables (env + CLI) before creating the application: startup-critical CVars
 	// (e.g. Vulkan validation) are read during instance creation inside CreateApplication().
