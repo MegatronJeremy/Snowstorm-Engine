@@ -1,6 +1,7 @@
 #include "ContentBrowserSystem.hpp"
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
+#include "Snowstorm/Project/Project.hpp"
 #include "Snowstorm/World/EditorCommandsSingleton.hpp"
 #include "Service/EditorTheme.hpp"
 #include "Singletons/EditorNotificationsSingleton.hpp"
@@ -138,7 +139,7 @@ namespace Snowstorm
 		}
 		if (importedAny)
 		{
-			assets.SaveRegistry("assets/AssetRegistry.json");
+			assets.SaveRegistry(Project::GetActive()->GetAssetRegistryPath());
 		}
 
 		m_Scanned = true;

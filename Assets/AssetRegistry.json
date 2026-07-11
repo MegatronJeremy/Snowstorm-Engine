@@ -729,6 +729,51 @@
       "Handle": "16906848014895715354",
       "Path": "assets/Shaders/Sky.frag.hlsl",
       "Type": "Shader"
+    },
+    {
+      "Handle": "9090365665064678027",
+      "Path": "assets/Shaders/Fxaa.frag.hlsl",
+      "Type": "Shader"
+    },
+    {
+      "Handle": "17449574729398890521",
+      "Path": "assets/Shaders/Metrics.comp.hlsl",
+      "Type": "Shader"
+    },
+    {
+      "Handle": "7309198489704476927",
+      "Path": "assets/Shaders/NeuralConv.comp.hlsl",
+      "Type": "Shader"
+    },
+    {
+      "Handle": "12120362242161939648",
+      "Path": "assets/Shaders/Sharpen.frag.hlsl",
+      "Type": "Shader"
+    },
+    {
+      "Handle": "7955471942220908108",
+      "Path": "assets/Shaders/TemporalResolve.frag.hlsl",
+      "Type": "Shader"
+    },
+    {
+      "Handle": "4636473372008371769",
+      "Path": "assets/Shaders/Tonemap.frag.hlsl",
+      "Type": "Shader"
+    },
+    {
+      "Handle": "2754134971167309841",
+      "Path": "assets/Shaders/Upscale.frag.hlsl",
+      "Type": "Shader"
+    },
+    {
+      "Handle": "10025899789756620834",
+      "Path": "assets/Shaders/Velocity.frag.hlsl",
+      "Type": "Shader"
+    },
+    {
+      "Handle": "3817608278670245211",
+      "Path": "assets/Shaders/Velocity.vert.hlsl",
+      "Type": "Shader"
     }
   ]
 }

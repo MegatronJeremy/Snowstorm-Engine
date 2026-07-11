@@ -45,6 +45,7 @@
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/World/EditorStateSingleton.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
+#include "Snowstorm/Project/Project.hpp"
 
 #include "StressScene.hpp"
 
@@ -75,10 +76,21 @@ namespace Snowstorm
 
 		m_ActiveWorld = CreateRef<World>();
 
+		// No New/Open Project flow exists yet, so bootstrap an implicit project rooted at the
+		// working directory (== repo root, see VS_DEBUGGER_WORKING_DIRECTORY) if none is active.
+		// This keeps asset paths flowing through Project::GetActive() instead of hardcoded
+		// literals, with no behavior change today (ProjectDirectory == today's implicit root).
+		if (!Project::GetActive())
+		{
+			Ref<Project> project = CreateRef<Project>();
+			project->SetProjectDirectory(std::filesystem::current_path());
+			Project::SetActive(project);
+		}
+
 		// Load asset registry DB early
 		{
 			auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
-			assets.LoadRegistry("assets/AssetRegistry.json");
+			assets.LoadRegistry(Project::GetActive()->GetAssetRegistryPath());
 
 			// Let the inspector show asset handles as filenames instead of raw UUIDs.
 			World* world = m_ActiveWorld.get();
@@ -372,7 +384,7 @@ namespace Snowstorm
 		// Save asset registry (so new imports persist)
 		{
 			auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
-			assets.SaveRegistry("assets/AssetRegistry.json");
+			assets.SaveRegistry(Project::GetActive()->GetAssetRegistryPath());
 		}
 
 		// Persist the editor camera viewpoint for THIS scene as editor-only metadata (a "<scene>.editor"
