@@ -27,7 +27,10 @@ namespace Snowstorm::FileDialog
 		    nullptr,
 		    COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 
-		if (FAILED(initResult))
+		// RPC_E_CHANGED_MODE = COM is already initialized on this thread with a different apartment
+		// model; the dialog still works, we just must not CoUninitialize what we didn't init (same
+		// handling as SaveFile/OpenFolder).
+		if (FAILED(initResult) && initResult != RPC_E_CHANGED_MODE)
 			return {};
 
 		IFileOpenDialog* fileDialog = nullptr;
@@ -107,7 +110,10 @@ namespace Snowstorm::FileDialog
 			fileDialog->Release();
 		}
 
-		CoUninitialize();
+		if (initResult == S_OK || initResult == S_FALSE)
+		{
+			CoUninitialize();
+		}
 
 		return selectedPath;
 	}
@@ -122,7 +128,8 @@ namespace Snowstorm::FileDialog
 		    nullptr,
 		    COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 
-		if (FAILED(initializeResult))
+		// RPC_E_CHANGED_MODE tolerated, same as OpenFile/OpenFolder (see OpenFile).
+		if (FAILED(initializeResult) && initializeResult != RPC_E_CHANGED_MODE)
 			return {};
 
 		IFileSaveDialog* dialog = nullptr;
@@ -282,9 +289,8 @@ namespace Snowstorm::FileDialog
 			dialog->Release();
 		}
 
-		// initializeResult can only be S_OK or S_FALSE here (the early FAILED(...) return above
-		// already handled every failure code), so this always runs — kept explicit to mirror
-		// OpenFolder's guard, which does have a real FAILED-but-still-own-no-uninit case.
+		// Only uninitialize what we initialized: on RPC_E_CHANGED_MODE the COM apartment belongs to
+		// someone else on this thread.
 		if (initializeResult == S_OK ||
 		    initializeResult == S_FALSE)
 		{
@@ -303,7 +309,7 @@ namespace Snowstorm::FileDialog
 		    nullptr,
 		    COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 
-		
+		// RPC_E_CHANGED_MODE tolerated, same as OpenFile/SaveFile (see OpenFile).
 		if (FAILED(initializeResult) &&
 		    initializeResult != RPC_E_CHANGED_MODE)
 		{
@@ -333,7 +339,6 @@ namespace Snowstorm::FileDialog
 				    FOS_PATHMUSTEXIST);
 			}
 
-			
 			if (SUCCEEDED(hr) && !defaultPath.empty())
 			{
 				IShellItem* defaultFolder = nullptr;
@@ -345,16 +350,12 @@ namespace Snowstorm::FileDialog
 
 				if (SUCCEEDED(hr))
 				{
-					
 					dialog->SetFolder(defaultFolder);
-
-					
 
 					defaultFolder->Release();
 				}
 			}
 
-			
 			dialog->SetTitle(L"Select Folder");
 
 			hr = dialog->Show(nullptr);
@@ -386,7 +387,6 @@ namespace Snowstorm::FileDialog
 			dialog->Release();
 		}
 
-		
 		if (initializeResult == S_OK ||
 		    initializeResult == S_FALSE)
 		{

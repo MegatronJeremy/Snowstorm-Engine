@@ -215,18 +215,20 @@ namespace Snowstorm
 			return false;
 		}
 
-		// Scaffold: Assets/{Meshes,Materials,Scenes,Shaders,Textures} — mirrors Hazel's CreateProject
-		// template folders, minus Audio/Scripts (no audio or scripting system exists yet).
-		const std::filesystem::path assetsDir = directory / "Assets";
-		for (const char* sub : {"Meshes", "Materials", "Scenes", "Shaders", "Textures"})
-		{
-			std::filesystem::create_directories(assetsDir / sub);
-		}
-
 		const Ref<Project> project = CreateRef<Project>();
 		project->SetProjectDirectory(directory);
 		project->SetProjectFileName(name + ".ssproj");
 		project->GetConfig().Name = name;
+
+		// Scaffold the asset folder tree — mirrors Hazel's CreateProject template folders, minus
+		// Audio/Scripts (no audio or scripting system exists yet). Folder names come from (and match
+		// the casing of) the config's relative paths, so ProjectConfig stays the single source of
+		// truth — a casing mismatch would break the day a case-sensitive platform lands.
+		const std::filesystem::path assetsDir = directory / project->GetConfig().AssetDirectory;
+		for (const char* sub : {"meshes", "materials", "scenes", "shaders", "textures"})
+		{
+			std::filesystem::create_directories(assetsDir / sub);
+		}
 
 		if (!ProjectSerializer::Serialize(*project, directory / project->GetProjectFileName()))
 		{
@@ -263,9 +265,15 @@ namespace Snowstorm
 		InitializeActiveWorld();
 
 		// Deferred, same as a normal "Open Scene" — if the project has no start scene yet (e.g. a
-		// brand-new project from CreateProject), TryLoadWorldFromFile just logs and leaves the World
-		// empty (camera/viewport only), it doesn't crash.
+		// brand-new project from CreateProject), TryLoadWorldFromFile warns and leaves the World
+		// empty (camera/viewport only).
 		RequestSceneLoad(Project::GetActive()->GetStartScenePath().string());
+
+		// Point the active-scene path at the NEW project's start scene immediately, not only after a
+		// successful load (TryLoadWorldFromFile sets it on success). Without this, a project whose
+		// start scene doesn't exist yet would leave the path on the PREVIOUS project's scene — and the
+		// next Ctrl+S would overwrite that old file with this project's empty world.
+		m_ActiveScenePath = Project::GetActive()->GetStartScenePath().string();
 
 		return true;
 	}
@@ -288,7 +296,9 @@ namespace Snowstorm
 			return;
 		}
 
-		SaveActiveScene();
+		// Save the project file only — deliberately NOT the scene. Whether unsaved scene edits
+		// should survive a project switch is the user's call (Ctrl+S before switching); silently
+		// writing the scene here would overwrite the file with edits they may have wanted to discard.
 		SaveProject();
 
 		// Drain the GPU before dropping the old World's resources — same safe point
@@ -309,6 +319,9 @@ namespace Snowstorm
 	{
 		if (!std::filesystem::exists(scenePath))
 		{
+			// Fail loud: a silent false here hides "the scene never existed" (e.g. a brand-new
+			// project's not-yet-created start scene) behind an unexplained empty viewport.
+			SS_CORE_WARN("Scene '{}' does not exist; nothing loaded.", scenePath);
 			return false;
 		}
 

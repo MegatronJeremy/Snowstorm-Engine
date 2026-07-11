@@ -30,9 +30,9 @@ namespace Snowstorm
 		// scene (call SaveActiveScene separately, or see CloseProject which does both).
 		bool SaveProject() const;
 
-		// Save the active scene + project, then release the active World/Project. Only needed once
-		// there's a way to switch projects at runtime (CreateProject/OpenProject calling into an
-		// already-open project) — a no-op today's single-project-per-session flow won't hit until then.
+		// Save the project file (NOT the scene — unsaved scene edits are the user's call to keep or
+		// discard via Ctrl+S), then release the active World/Project. Called by OpenProject to tear
+		// down the previous project before switching.
 		void CloseProject();
 
 		// Queue a project open for the next frame boundary (see OnUpdate). OpenProject destroys the
