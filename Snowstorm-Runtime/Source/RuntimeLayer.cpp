@@ -3,6 +3,7 @@
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Project/Project.hpp"
 #include "Snowstorm/Systems/CoreSystems.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
 
@@ -27,8 +28,17 @@ namespace Snowstorm
 	{
 		m_World = CreateRef<World>();
 
+		// No New/Open Project flow exists yet, so bootstrap an implicit project rooted at the
+		// working directory if none is active (mirrors EditorLayer::OnAttach's bootstrap).
+		if (!Project::GetActive())
+		{
+			Ref<Project> project = CreateRef<Project>();
+			project->SetProjectDirectory(std::filesystem::current_path());
+			Project::SetActive(project);
+		}
+
 		// Resolve the asset handles referenced by the scene.
-		m_World->GetSingleton<AssetManagerSingleton>().LoadRegistry("assets/AssetRegistry.json");
+		m_World->GetSingleton<AssetManagerSingleton>().LoadRegistry(Project::GetActive()->GetAssetRegistryPath());
 
 		// The SAME engine systems the editor runs — without the editor/UI systems on top.
 		RegisterCoreSystems(*m_World);
@@ -41,7 +51,7 @@ namespace Snowstorm
 
 		// A runtime has no authoring tools, so it loads a pre-authored scene. The editor
 		// writes this file on first run (EditorLayer::LoadOrCreateStartupWorld).
-		m_ScenePath = "assets/scenes/Startup.world";
+		m_ScenePath = Project::GetActive()->GetStartScenePath().string();
 		if (!SceneSerializer::Deserialize(*m_World, m_ScenePath))
 		{
 			SS_CORE_ERROR("Runtime: failed to load startup scene '{}'. "

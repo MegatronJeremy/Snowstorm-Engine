@@ -275,7 +275,7 @@ namespace Snowstorm
 
 		if (request == "stress")
 		{
-			bake("assets/scenes/Stress.world", [this]
+			bake((Project::GetActive()->GetAssetDirectory() / "scenes/Stress.world").string(), [this]
 			     {
 				StressSceneParams params;
 				params.RotatorCount = CVars::StressRotators.Get();      // heavy data-parallel workload for #85 (0 = none)
@@ -287,7 +287,7 @@ namespace Snowstorm
 		{
 			// Treat the value as a model path. Output name derives from the model's file stem, so any
 			// model bakes to Assets/Scenes/<ModelStem>.world (not just the previously-hardcoded Sponza).
-			const std::string outPath = "assets/scenes/" + std::filesystem::path(request).stem().string() + ".world";
+			const std::string outPath = (Project::GetActive()->GetAssetDirectory() / ("scenes/" + std::filesystem::path(request).stem().string() + ".world")).string();
 			bake(outPath, [this, &request]
 			     {
 				auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
@@ -350,17 +350,17 @@ namespace Snowstorm
 			return;
 		}
 
-		static constexpr const char* kStartupScenePath = "assets/scenes/Startup.world";
-		if (std::filesystem::exists(kStartupScenePath))
+		const std::string startupScenePath = Project::GetActive()->GetStartScenePath().string();
+		if (std::filesystem::exists(startupScenePath))
 		{
-			RequestSceneLoad(kStartupScenePath);
+			RequestSceneLoad(startupScenePath);
 			return;
 		}
 
 		// First-run: no saved scene exists. Create a default in-place (cheap — no heavy assets) and save
 		// it; this is a one-time path so a brief synchronous build is fine. The camera + viewport already
 		// exist (created persistently in OnAttach), so only scene content is added here.
-		m_ActiveScenePath = kStartupScenePath;
+		m_ActiveScenePath = startupScenePath;
 		CreateDemoEntities();
 		PrewarmSceneTextures();
 		SaveActiveScene();
@@ -484,15 +484,20 @@ namespace Snowstorm
 		// ---------------------------------------------------------------------
 		// Import assets (registry entries)
 		// ---------------------------------------------------------------------
-		const AssetHandle girlMeshH = assets.Import("assets/meshes/girl.obj", AssetType::Mesh);
-		const AssetHandle cubeMeshH = assets.Import("assets/meshes/cube.obj", AssetType::Mesh);
-		const AssetHandle quadMeshH = assets.Import("assets/meshes/quad.obj", AssetType::Mesh);
+		// Import paths are stored verbatim in AssetRegistry.json, so they stay relative (the
+		// project's config AssetDirectory field, not the composed absolute GetAssetDirectory())
+		// to keep the registry portable — matching the relative paths already committed there.
+		const std::filesystem::path& assetDir = Project::GetActive()->GetConfig().AssetDirectory;
 
-		const AssetHandle whiteMatH = assets.Import("assets/materials/White.ssmat", AssetType::Material);
-		const AssetHandle blueMatH = assets.Import("assets/materials/Blue.ssmat", AssetType::Material);
-		const AssetHandle mandelbrotMatH = assets.Import("assets/materials/Mandelbrot.ssmat", AssetType::Material);
+		const AssetHandle girlMeshH = assets.Import((assetDir / "meshes/girl.obj").generic_string(), AssetType::Mesh);
+		const AssetHandle cubeMeshH = assets.Import((assetDir / "meshes/cube.obj").generic_string(), AssetType::Mesh);
+		const AssetHandle quadMeshH = assets.Import((assetDir / "meshes/quad.obj").generic_string(), AssetType::Mesh);
 
-		const AssetHandle checkerTexH = assets.Import("assets/textures/Checkerboard.png", AssetType::Texture);
+		const AssetHandle whiteMatH = assets.Import((assetDir / "materials/White.ssmat").generic_string(), AssetType::Material);
+		const AssetHandle blueMatH = assets.Import((assetDir / "materials/Blue.ssmat").generic_string(), AssetType::Material);
+		const AssetHandle mandelbrotMatH = assets.Import((assetDir / "materials/Mandelbrot.ssmat").generic_string(), AssetType::Material);
+
+		const AssetHandle checkerTexH = assets.Import((assetDir / "textures/Checkerboard.png").generic_string(), AssetType::Texture);
 
 		// Helper for common renderable setup
 		auto SetupRenderable = [&](Entity e, const AssetHandle meshH, const AssetHandle matH, const VisibilityMask visMask)
