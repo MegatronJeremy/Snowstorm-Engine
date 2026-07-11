@@ -157,7 +157,15 @@ namespace Snowstorm
 
 			cmds.OpenProject = [this](const std::filesystem::path& ssprojPath) -> bool
 			{
-				return OpenProject(ssprojPath);
+				// Deferred to the frame boundary (see m_PendingProjectPath): OpenProject destroys the
+				// active World, and this lambda runs from a system OF that World — opening inline
+				// would free the caller mid-execution.
+				if (!std::filesystem::exists(ssprojPath))
+				{
+					return false;
+				}
+				RequestProjectOpen(ssprojPath);
+				return true;
 			};
 
 			cmds.SaveProject = [this]() -> bool
@@ -194,6 +202,12 @@ namespace Snowstorm
 		m_HasPendingScene = true;
 	}
 
+	void EditorLayer::RequestProjectOpen(const std::filesystem::path& ssprojPath)
+	{
+		m_PendingProjectPath = ssprojPath;
+		m_HasPendingProject = true;
+	}
+
 	bool EditorLayer::CreateProject(const std::filesystem::path& directory, const std::string& name)
 	{
 		if (directory.empty() || name.empty())
@@ -219,7 +233,12 @@ namespace Snowstorm
 			return false;
 		}
 
-		return OpenProject(directory / project->GetProjectFileName());
+		// Deferred, not a direct OpenProject call: CreateProject is reached from the File menu (a
+		// system of the CURRENT World), and OpenProject destroys that World. The scaffold above is
+		// pure file I/O, so it is safe to do inline; only the world swap must wait for the frame
+		// boundary.
+		RequestProjectOpen(directory / project->GetProjectFileName());
+		return true;
 	}
 
 	bool EditorLayer::OpenProject(const std::filesystem::path& ssprojPath)
@@ -972,6 +991,21 @@ namespace Snowstorm
 		// frame 2; otherwise the load stalls with frame 0's panel-less image frozen on screen — which
 		// read as "the editor starts blank and only fills in when the scene loads". (Mid-session opens
 		// from the Content Browser already have visible panels on screen, so this wait is invisible there.)
+		// Apply a deferred project open at the frame boundary, BEFORE the pending-scene check:
+		// OpenProject replaces the whole World (and queues the new project's start scene as a pending
+		// scene), so it must run first — and never from inside a UI system, which is a system of the
+		// very World it would destroy (see RequestProjectOpen).
+		if (m_HasPendingProject && m_FramesPresented > 1)
+		{
+			m_HasPendingProject = false;
+			const std::filesystem::path path = std::move(m_PendingProjectPath);
+			m_PendingProjectPath.clear();
+			if (!OpenProject(path))
+			{
+				SS_CORE_ERROR("Failed to open project '{}'.", path.string());
+			}
+		}
+
 		if (m_HasPendingScene && m_FramesPresented > 1)
 		{
 			m_HasPendingScene = false;

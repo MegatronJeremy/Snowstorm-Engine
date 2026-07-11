@@ -65,7 +65,11 @@ namespace Snowstorm
 	{
 		m_Entries.clear();
 
-		const std::filesystem::path root = "assets";
+		// Scan the ACTIVE project's asset directory, not a CWD-relative literal — after a project
+		// switch the fresh World's ContentBrowserSystem rescans automatically (m_Scanned starts
+		// false), and it must list the new project's content.
+		const std::filesystem::path projectDir = Project::GetActive()->GetProjectDirectory();
+		const std::filesystem::path root = Project::GetActive()->GetAssetDirectory();
 		std::error_code ec;
 		if (!std::filesystem::exists(root, ec))
 		{
@@ -105,7 +109,11 @@ namespace Snowstorm
 			}
 
 			Entry entry;
-			entry.Path = it->path().generic_string();
+			// Project-relative, matching the relative paths stored in AssetRegistry.json — an absolute
+			// path here would be imported verbatim into the registry (non-portable, and a duplicate of
+			// any existing relative entry for the same file). Identical to the old CWD-relative value
+			// while the project root == the working directory (today's bootstrap project).
+			entry.Path = it->path().lexically_relative(projectDir).generic_string();
 			entry.DisplayName = it->path().filename().string();
 			entry.Type = type;
 			m_Entries.push_back(std::move(entry));

@@ -35,6 +35,12 @@ namespace Snowstorm
 		// already-open project) — a no-op today's single-project-per-session flow won't hit until then.
 		void CloseProject();
 
+		// Queue a project open for the next frame boundary (see OnUpdate). OpenProject destroys the
+		// active World — running it synchronously from a UI system (the File menu) would free the very
+		// World whose system is still executing (use-after-free on singletons/systems mid-frame). Same
+		// deferral pattern as RequestSceneLoad.
+		void RequestProjectOpen(const std::filesystem::path& ssprojPath);
+
 		// Bind everything a freshly-created m_ActiveWorld needs against the CURRENTLY active Project:
 		// asset registry, inspector resolver hooks (SetAssetNameResolver/SetAssetListProvider — these
 		// capture the World by raw pointer, so they must be re-bound whenever m_ActiveWorld changes),
@@ -105,6 +111,12 @@ namespace Snowstorm
 		// resources (descriptor sets, meshes) that the in-progress frame's render pass still binds.
 		std::string m_PendingScenePath;
 		bool m_HasPendingScene = false;
+
+		// Project open requested from a UI system (File menu). Deferred like the pending scene above,
+		// but stronger: OpenProject replaces the whole World, so running it inline would free the
+		// system that requested it while it is still on the call stack.
+		std::filesystem::path m_PendingProjectPath;
+		bool m_HasPendingProject = false;
 
 		// Frames that have gone through OnUpdate (≈ presented). Used to hold the startup scene load until at
 		// least one empty frame has presented, so the window shows editor chrome + a loading overlay instead
