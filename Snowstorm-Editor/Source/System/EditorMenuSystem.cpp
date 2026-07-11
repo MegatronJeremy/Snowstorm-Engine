@@ -368,10 +368,23 @@ namespace Snowstorm
 
 		if (ImGui::BeginPopupModal("Import Model", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
 		{
-			ImGui::TextUnformatted("Path to model file (relative to repo root):");
+			ImGui::TextUnformatted("Model file to import into the project:");
 			ImGui::SetNextItemWidth(420.0f);
 			ImGui::InputText("##importpath", m_ImportPathBuffer, sizeof(m_ImportPathBuffer));
-			ImGui::TextDisabled("e.g. assets/meshes/sponza.obj  (.obj/.fbx/.gltf)");
+
+			ImGui::SameLine();
+			if (ImGui::Button("..."))
+			{
+				if (const std::filesystem::path picked = FileDialog::OpenFile(
+				        {{"Wavefront OBJ", "obj"}, {"FBX", "fbx"}, {"glTF", "gltf"}, {"glTF Binary", "glb"}});
+				    !picked.empty())
+				{
+					const std::string pickedStr = picked.string();
+					strncpy_s(m_ImportPathBuffer, pickedStr.c_str(), sizeof(m_ImportPathBuffer) - 1);
+				}
+			}
+
+			ImGui::TextDisabled("The model and its textures are copied into the project's assets/meshes/ folder.");
 
 			ImGui::Separator();
 

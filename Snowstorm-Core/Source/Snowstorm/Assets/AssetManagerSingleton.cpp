@@ -15,6 +15,7 @@
 #include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Assets/MaterialAssetIO.hpp"
+#include "Snowstorm/Project/Project.hpp"
 
 #include "Platform/Vulkan/VulkanBindlessManager.hpp"
 #include "Platform/Vulkan/VulkanTexture.hpp"
@@ -55,6 +56,19 @@ namespace Snowstorm
 			ref.SubmeshIndex = std::stoi(path.substr(pos + marker.size()));
 			return ref;
 		}
+
+		// Registry paths are stored project-relative (portable across machines; matches the committed
+		// AssetRegistry.json). Resolve them against the active project's directory for actual file I/O.
+		// Absolute entries pass through untouched, and with no active project (headless tools before
+		// bootstrap) the path is returned as-given — which resolves against the CWD, today's behavior.
+		std::filesystem::path ResolveAssetPath(const std::filesystem::path& p)
+		{
+			if (p.is_absolute() || !Project::GetActive())
+			{
+				return p;
+			}
+			return Project::GetActive()->GetProjectDirectory() / p;
+		}
 	}
 
 	bool AssetManagerSingleton::LoadRegistry(const std::filesystem::path& filePath)
@@ -88,9 +102,56 @@ namespace Snowstorm
 			return created;
 		}
 
-		const std::filesystem::path modelDir = path.parent_path();
+		const std::filesystem::path srcModelDir = path.parent_path();
 		const std::string modelStem = path.stem().string();
-		const std::string modelPathStr = path.generic_string();
+
+		// Import means bringing the asset INTO the project (Unity copies into Assets/, Unreal into
+		// Content/) — not referencing an external file that breaks on another machine. Decide where
+		// the imported files live and what prefix the registry entries carry:
+		//  - no active project (headless tools):     reference in place, paths as-given (old behavior)
+		//  - source already under the project dir:   reference in place, paths made project-relative
+		//  - source outside the project:             copy model (+ same-stem sidecars like .mtl/.bin,
+		//                                            + referenced textures) into <assets>/meshes/<stem>/
+		std::filesystem::path destDirAbs = srcModelDir; // where .ssmat + copied files are written
+		std::filesystem::path destDirRel = srcModelDir; // registry prefix for all imported entries
+		bool copyIntoProject = false;
+
+		if (const Ref<Project> project = Project::GetActive())
+		{
+			std::error_code ec;
+			const std::filesystem::path projectDir = std::filesystem::weakly_canonical(project->GetProjectDirectory(), ec);
+			const std::filesystem::path srcDirCanon = std::filesystem::weakly_canonical(std::filesystem::absolute(srcModelDir, ec), ec);
+
+			const std::filesystem::path rel = srcDirCanon.lexically_relative(projectDir);
+			const bool insideProject = !rel.empty() && rel.begin()->string() != "..";
+
+			if (insideProject)
+			{
+				destDirAbs = srcDirCanon;
+				destDirRel = rel;
+			}
+			else
+			{
+				copyIntoProject = true;
+				destDirRel = project->GetConfig().AssetDirectory / "meshes" / modelStem;
+				destDirAbs = project->GetProjectDirectory() / destDirRel;
+				std::filesystem::create_directories(destDirAbs, ec);
+
+				// The model file plus its same-stem siblings: .mtl (OBJ materials) and .bin (glTF
+				// geometry buffers) must travel with it or the copy can't be re-parsed later.
+				for (const auto& entry : std::filesystem::directory_iterator(srcModelDir, ec))
+				{
+					if (entry.is_regular_file(ec) && entry.path().stem() == path.stem())
+					{
+						std::filesystem::copy_file(entry.path(), destDirAbs / entry.path().filename(),
+						                           std::filesystem::copy_options::overwrite_existing, ec);
+					}
+				}
+				SS_CORE_INFO("ImportModel: copied '{}' into project at '{}'.", path.string(), destDirRel.generic_string());
+			}
+		}
+
+		const std::string modelPathStr = (destDirRel / path.filename()).generic_string();
 
 		// One .ssmat per aiMaterial, generated once and reused across submeshes that share it.
 		std::vector<AssetHandle> materialHandles(scene->mNumMaterials, AssetHandle{0});
@@ -158,12 +219,37 @@ namespace Snowstorm
 					             texPath.C_Str(), path.string());
 					return AssetHandle{0};
 				}
-				const std::filesystem::path resolved = modelDir / texPath.C_Str();
+				const std::filesystem::path resolved = srcModelDir / texPath.C_Str();
 				if (!std::filesystem::exists(resolved))
 				{
 					return AssetHandle{0};
 				}
-				return Import(resolved, AssetType::Texture);
+
+				// Texture references are model-dir-relative in the source file; keep that shape under
+				// destDir. A reference that escapes the model's folder ("../shared/x.png") is flattened
+				// to its filename — the .ssmat references textures by HANDLE, so only the registry path
+				// (below) must point at the copied file, not the model's internal reference.
+				std::filesystem::path relTex = std::filesystem::path(texPath.C_Str()).lexically_normal();
+				if (relTex.is_absolute() || (!relTex.empty() && relTex.begin()->string() == ".."))
+				{
+					relTex = relTex.filename();
+				}
+
+				if (copyIntoProject)
+				{
+					std::error_code ec;
+					const std::filesystem::path target = destDirAbs / relTex;
+					std::filesystem::create_directories(target.parent_path(), ec);
+					std::filesystem::copy_file(resolved, target, std::filesystem::copy_options::overwrite_existing, ec);
+					if (ec)
+					{
+						SS_CORE_WARN("ImportModel: failed to copy texture '{}' into project ({}).",
+						             resolved.string(), ec.message());
+						return AssetHandle{0};
+					}
+				}
+
+				return Import((destDirRel / relTex).generic_string(), AssetType::Texture);
 			};
 
 			matAsset.AlbedoTexture = importTex(aiTextureType_DIFFUSE, aiTextureType_BASE_COLOR);
@@ -180,10 +266,11 @@ namespace Snowstorm
 			std::ranges::replace(matName, '/', '_');
 			std::ranges::replace(matName, '\\', '_');
 
-			const std::filesystem::path matFile = modelDir / (modelStem + "_" + matName + ".ssmat");
-			if (MaterialAssetIO::Save(matFile, matAsset))
+			// Write the generated .ssmat into the project (destDirAbs), register it project-relative.
+			const std::string matFileName = modelStem + "_" + matName + ".ssmat";
+			if (MaterialAssetIO::Save(destDirAbs / matFileName, matAsset))
 			{
-				materialHandles[m] = Import(matFile, AssetType::Material);
+				materialHandles[m] = Import((destDirRel / matFileName).generic_string(), AssetType::Material);
 			}
 		}
 
@@ -267,7 +354,7 @@ namespace Snowstorm
 		// The registry path may encode a submesh ("file.obj?submesh=N"); split it so bounds + load
 		// operate on the right file and part. A plain mesh has SubmeshIndex == -1 (whole file).
 		const SubmeshRef sub = ParseSubmeshPath(meta->Path.string());
-		const std::filesystem::path filePath = sub.FilePath;
+		const std::filesystem::path filePath = ResolveAssetPath(sub.FilePath);
 		const uint64_t sourceTime = GetFileWriteTimeU64(filePath);
 
 		MeshBounds bounds{};
@@ -364,7 +451,7 @@ namespace Snowstorm
 		auto& jobs = Application::Get().GetServiceManager().GetService<JobSystem>();
 		auto& meshLib = Application::Get().GetServiceManager().GetService<MeshLibrary>();
 
-		const std::string filePath = sub.FilePath;
+		const std::string filePath = ResolveAssetPath(sub.FilePath).string();
 		const int submeshIndex = sub.SubmeshIndex;
 
 		(void)jobs.Submit([this, &meshLib, handle, filePath, submeshIndex]()
@@ -552,7 +639,7 @@ namespace Snowstorm
 			return nullptr;
 
 		auto& shaderLib = Application::Get().GetServiceManager().GetService<ShaderLibrary>();
-		Ref<Shader> shader = shaderLib.Load(meta->Path.string());
+		Ref<Shader> shader = shaderLib.Load(ResolveAssetPath(meta->Path).string());
 
 		// Only cache successes — see GetMesh: caching a null on a failed dxc compile permanently poisons
 		// the handle, so a fixed/recompiled shader would never be picked up.
@@ -584,7 +671,7 @@ namespace Snowstorm
 			return nullptr;
 		}
 
-		Ref<Texture> tex = Texture::Create(meta->Path, srgb);
+		Ref<Texture> tex = Texture::Create(ResolveAssetPath(meta->Path), srgb);
 		Ref<TextureView> view = TextureView::Create(tex, MakeFullViewDesc(tex->GetDesc()));
 
 		cache[handle] = view;
@@ -645,7 +732,7 @@ namespace Snowstorm
 		++m_PendingTotal;
 
 		auto& jobs = Application::Get().GetServiceManager().GetService<JobSystem>();
-		const std::string path = meta->Path.string();
+		const std::string path = ResolveAssetPath(meta->Path).string();
 		const std::string debugName = meta->Path.filename().string();
 		const uint64_t sourceTime = GetFileWriteTimeU64(path);
 		const uint32_t slot = placeholder->GetGlobalBindlessIndex();
@@ -747,7 +834,7 @@ namespace Snowstorm
 		}
 
 		MaterialAsset matAsset{};
-		if (!MaterialAssetIO::Load(meta->Path, matAsset))
+		if (!MaterialAssetIO::Load(ResolveAssetPath(meta->Path), matAsset))
 		{
 			return nullptr;
 		}
@@ -781,7 +868,7 @@ namespace Snowstorm
 		}
 
 		MaterialAsset matAsset{};
-		if (!MaterialAssetIO::Load(meta->Path, matAsset))
+		if (!MaterialAssetIO::Load(ResolveAssetPath(meta->Path), matAsset))
 		{
 			return nullptr;
 		}
