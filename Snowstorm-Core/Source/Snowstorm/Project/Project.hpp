@@ -35,11 +35,8 @@ namespace Snowstorm
 		ProjectConfig& GetConfig() { return m_Config; }
 		[[nodiscard]] const ProjectConfig& GetConfig() const { return m_Config; }
 
-
-
 		[[nodiscard]] const std::string& GetName() const { return m_Config.Name; }
 		void SetName(std::string name) { m_Config.Name = std::move(name); }
-
 
 		[[nodiscard]] const std::filesystem::path& GetProjectDirectory() const { return m_ProjectDirectory; }
 		void SetProjectDirectory(std::filesystem::path directory) { m_ProjectDirectory = std::move(directory); }

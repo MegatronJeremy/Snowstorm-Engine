@@ -453,8 +453,8 @@ namespace Snowstorm
 			const bool hasName = m_NewProjectNameBuffer[0] != '\0';
 			const bool hasLocation = m_NewProjectLocationBuffer[0] != '\0';
 			const std::filesystem::path fullProjectPath = hasLocation && hasName
-			                                                   ? std::filesystem::path(m_NewProjectLocationBuffer) / m_NewProjectNameBuffer
-			                                                   : std::filesystem::path{};
+			                                                  ? std::filesystem::path(m_NewProjectLocationBuffer) / m_NewProjectNameBuffer
+			                                                  : std::filesystem::path{};
 			ImGui::TextDisabled("Full Project Path: %s", fullProjectPath.string().c_str());
 
 			ImGui::Separator();

@@ -13,7 +13,7 @@ namespace Snowstorm
 	class ProjectSerializer
 	{
 	public:
-		//TODO:Add runtime variants
+		// TODO:Add runtime variants
 
 		static bool Serialize(const Project& project, const std::filesystem::path& filePath);
 
