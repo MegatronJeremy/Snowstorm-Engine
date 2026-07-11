@@ -295,7 +295,7 @@ namespace Snowstorm::FileDialog
 	}
 
 	std::filesystem::path OpenFolder(
-	    const std::filesystem::path& defaultPath = {})
+	    const std::filesystem::path& defaultPath)
 	{
 		std::filesystem::path selectedPath;
 

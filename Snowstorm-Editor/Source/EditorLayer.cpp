@@ -46,6 +46,7 @@
 #include "Snowstorm/World/EditorStateSingleton.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
 #include "Snowstorm/Project/Project.hpp"
+#include "Snowstorm/Project/ProjectSerializer.hpp"
 
 #include "StressScene.hpp"
 
@@ -87,13 +88,24 @@ namespace Snowstorm
 			Project::SetActive(project);
 		}
 
+		// Apply the startup VSync preference (backend defaults to FIFO/on).
+		Renderer::SetVSync(CVars::VSync.Get());
+
+		InitializeActiveWorld();
+
+		LoadOrCreateStartupWorld();
+	}
+
+	void EditorLayer::InitializeActiveWorld()
+	{
+		World* world = m_ActiveWorld.get();
+
 		// Load asset registry DB early
 		{
 			auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
 			assets.LoadRegistry(Project::GetActive()->GetAssetRegistryPath());
 
 			// Let the inspector show asset handles as filenames instead of raw UUIDs.
-			World* world = m_ActiveWorld.get();
 			SetAssetNameResolver([world](const uint64_t handle) -> std::string
 			                     {
 				if (const AssetMetadata* meta = world->GetSingleton<AssetManagerSingleton>().GetMetadata(AssetHandle{handle}))
@@ -138,7 +150,21 @@ namespace Snowstorm
 				return true;
 			};
 
-			World* world = m_ActiveWorld.get();
+			cmds.NewProject = [this](const std::filesystem::path& directory, const std::string& name) -> bool
+			{
+				return CreateProject(directory, name);
+			};
+
+			cmds.OpenProject = [this](const std::filesystem::path& ssprojPath) -> bool
+			{
+				return OpenProject(ssprojPath);
+			};
+
+			cmds.SaveProject = [this]() -> bool
+			{
+				return SaveProject();
+			};
+
 			cmds.CreateEntity = [world]() -> Entity
 			{
 				return world->CreateEntity("Entity");
@@ -148,9 +174,6 @@ namespace Snowstorm
 				world->DestroyEntity(e);
 			};
 		}
-
-		// Apply the startup VSync preference (backend defaults to FIFO/on).
-		Renderer::SetVSync(CVars::VSync.Get());
 
 		RegisterCoreSystems(*m_ActiveWorld); // engine systems (shared with a future runtime)
 		RegisterEditorSystems();             // editor-only systems on top
@@ -163,14 +186,104 @@ namespace Snowstorm
 		// while the deferred startup scene streams in.
 		CreateMainViewportEntity();
 		CreateCameraEntities();
-
-		LoadOrCreateStartupWorld();
 	}
 
 	void EditorLayer::RequestSceneLoad(const std::string& scenePath)
 	{
 		m_PendingScenePath = scenePath;
 		m_HasPendingScene = true;
+	}
+
+	bool EditorLayer::CreateProject(const std::filesystem::path& directory, const std::string& name)
+	{
+		if (directory.empty() || name.empty())
+		{
+			return false;
+		}
+
+		// Scaffold: Assets/{Meshes,Materials,Scenes,Shaders,Textures} — mirrors Hazel's CreateProject
+		// template folders, minus Audio/Scripts (no audio or scripting system exists yet).
+		const std::filesystem::path assetsDir = directory / "Assets";
+		for (const char* sub : {"Meshes", "Materials", "Scenes", "Shaders", "Textures"})
+		{
+			std::filesystem::create_directories(assetsDir / sub);
+		}
+
+		const Ref<Project> project = CreateRef<Project>();
+		project->SetProjectDirectory(directory);
+		project->SetProjectFileName(name + ".ssproj");
+		project->GetConfig().Name = name;
+
+		if (!ProjectSerializer::Serialize(*project, directory / project->GetProjectFileName()))
+		{
+			return false;
+		}
+
+		return OpenProject(directory / project->GetProjectFileName());
+	}
+
+	bool EditorLayer::OpenProject(const std::filesystem::path& ssprojPath)
+	{
+		if (!std::filesystem::exists(ssprojPath))
+		{
+			return false;
+		}
+
+		CloseProject();
+
+		const Ref<Project> project = CreateRef<Project>();
+		if (!ProjectSerializer::Deserialize(*project, ssprojPath))
+		{
+			return false;
+		}
+		Project::SetActive(project);
+
+		// CloseProject already drained the GPU and dropped the old World (if there was one) — build
+		// the new project's World fresh and wire it up the same way OnAttach does.
+		m_ActiveWorld = CreateRef<World>();
+		InitializeActiveWorld();
+
+		// Deferred, same as a normal "Open Scene" — if the project has no start scene yet (e.g. a
+		// brand-new project from CreateProject), TryLoadWorldFromFile just logs and leaves the World
+		// empty (camera/viewport only), it doesn't crash.
+		RequestSceneLoad(Project::GetActive()->GetStartScenePath().string());
+
+		return true;
+	}
+
+	bool EditorLayer::SaveProject() const
+	{
+		const Ref<Project> project = Project::GetActive();
+		if (!project)
+		{
+			return false;
+		}
+
+		return ProjectSerializer::Serialize(*project, project->GetProjectDirectory() / project->GetProjectFileName());
+	}
+
+	void EditorLayer::CloseProject()
+	{
+		if (!Project::GetActive())
+		{
+			return;
+		}
+
+		SaveActiveScene();
+		SaveProject();
+
+		// Drain the GPU before dropping the old World's resources — same safe point
+		// TryLoadWorldFromFile uses for a scene switch, just for the whole World this time.
+		Renderer::WaitIdle();
+
+		// Every external Ref<World> must be dropped before this, or the World (and its GPU resources)
+		// outlives the project switch — mirrors Hazel's CloseProject assert ("Scene will not be
+		// destroyed... something is still holding scene refs!").
+		SS_CORE_ASSERT(m_ActiveWorld.use_count() == 1,
+		               "CloseProject: something besides m_ActiveWorld still holds a Ref<World>");
+
+		m_ActiveWorld = nullptr;
+		Project::SetActive(nullptr);
 	}
 
 	bool EditorLayer::TryLoadWorldFromFile(const std::string& scenePath)

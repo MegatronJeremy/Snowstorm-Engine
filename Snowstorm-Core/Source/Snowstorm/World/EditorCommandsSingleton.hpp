@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <filesystem>
 #include <functional>
 #include <string>
 
@@ -15,6 +16,13 @@ namespace Snowstorm
 		// Open (load) a scene from a .world file path, replacing the current scene. Returns success.
 		// Bound by the editor layer.
 		std::function<bool(const std::string&)> OpenScene;
+
+		// Project lifecycle, bound by the editor layer (see EditorLayer::CreateProject/OpenProject/
+		// SaveProject). All three own switching the active World + Project — the menu system just
+		// asks "where" (via FileDialog) and calls these.
+		std::function<bool(const std::filesystem::path& /*directory*/, const std::string& /*name*/)> NewProject;
+		std::function<bool(const std::filesystem::path& /*ssprojPath*/)> OpenProject;
+		std::function<bool()> SaveProject;
 
 		// Create a fresh, empty entity (Tag + ID only) and return it. Bound by the editor layer.
 		std::function<Entity()> CreateEntity;

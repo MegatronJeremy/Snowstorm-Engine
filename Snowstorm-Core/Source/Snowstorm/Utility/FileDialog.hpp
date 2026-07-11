@@ -19,7 +19,7 @@ namespace Snowstorm
 	namespace FileDialog
 	{
 		std::filesystem::path OpenFile(const std::vector<FileDialogFilter>& filters = {}, const std::filesystem::path& defaultPath = {});
-		std::filesystem::path SaveFile(const std::vector<FileDialogFilter>& filters = {});
-		std::filesystem::path OpenFolder();
+		std::filesystem::path SaveFile(const std::vector<FileDialogFilter>& filters = {}, const std::filesystem::path& defaultPath = {});
+		std::filesystem::path OpenFolder(const std::filesystem::path& defaultPath = {});
 	}
 }

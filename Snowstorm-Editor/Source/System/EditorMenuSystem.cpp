@@ -11,12 +11,15 @@
 #include "Snowstorm/World/Entity.hpp"
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
+#include "Snowstorm/Project/Project.hpp"
+#include "Snowstorm/Utility/FileDialog.hpp"
 #include "Singletons/EditorNotificationsSingleton.hpp"
 #include "Singletons/EditorStatusBarSingleton.hpp"
 
 #include <imgui.h>
 
 #include <cstring>
+#include <filesystem>
 #include <string>
 
 namespace Snowstorm
@@ -112,6 +115,35 @@ namespace Snowstorm
 		{
 			if (ImGui::BeginMenu("File"))
 			{
+				// New/Open hand off to EditorLayer via EditorCommandsSingleton — the menu only asks
+				// "where" (+ "what name" for New), never touches Project/World state directly.
+				if (ImGui::MenuItem("New Project..."))
+				{
+					// Opening must happen outside the menu (the menu closes on click) — see
+					// DrawNewProjectPopup, same flag-then-open pattern as the Import Model popup.
+					m_ShowNewProjectPopup = true;
+				}
+
+				if (ImGui::MenuItem("Open Project..."))
+				{
+					if (const std::filesystem::path ssprojPath = FileDialog::OpenFile({{"Snowstorm Project", "ssproj"}}); !ssprojPath.empty() && cmds.OpenProject)
+					{
+						const bool ok = cmds.OpenProject(ssprojPath);
+						notify.Push(ok ? "Project opened" : "Failed to open project", ok ? EditorToastType::Success : EditorToastType::Error);
+					}
+				}
+
+				if (ImGui::MenuItem("Save Project", nullptr, false, static_cast<bool>(cmds.SaveProject)))
+				{
+					if (cmds.SaveProject)
+					{
+						const bool ok = cmds.SaveProject();
+						notify.Push(ok ? "Project saved" : "Save failed", ok ? EditorToastType::Success : EditorToastType::Error);
+					}
+				}
+
+				ImGui::Separator();
+
 				const bool canSave = static_cast<bool>(cmds.SaveScene);
 
 				// Show shortcut text, but action is handled by ECS input above too
@@ -205,6 +237,7 @@ namespace Snowstorm
 		}
 
 		DrawImportModelPopup(notify);
+		DrawNewProjectPopup(notify);
 		DrawShortcutsWindow();
 
 		ImGui::End();
@@ -361,6 +394,73 @@ namespace Snowstorm
 				}
 			}
 			if (!hasPath)
+				ImGui::EndDisabled();
+
+			ImGui::SameLine();
+			if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+			{
+				ImGui::CloseCurrentPopup();
+			}
+
+			ImGui::EndPopup();
+		}
+	}
+
+	void EditorMenuSystem::DrawNewProjectPopup(EditorNotificationsSingleton& notify)
+	{
+		if (m_ShowNewProjectPopup)
+		{
+			ImGui::OpenPopup("New Project");
+			m_ShowNewProjectPopup = false;
+		}
+
+		const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+		ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+		if (ImGui::BeginPopupModal("New Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+		{
+			ImGui::SetNextItemWidth(420.0f);
+			ImGui::InputTextWithHint("##new_project_name", "Project Name", m_NewProjectNameBuffer, sizeof(m_NewProjectNameBuffer));
+
+			ImGui::SetNextItemWidth(420.0f);
+			ImGui::InputTextWithHint("##new_project_location", "Project Location", m_NewProjectLocationBuffer, sizeof(m_NewProjectLocationBuffer));
+
+			ImGui::SameLine();
+			if (ImGui::Button("..."))
+			{
+				if (const std::filesystem::path picked = FileDialog::OpenFolder(); !picked.empty())
+				{
+					const std::string pickedStr = picked.string();
+					strncpy_s(m_NewProjectLocationBuffer, pickedStr.c_str(), sizeof(m_NewProjectLocationBuffer) - 1);
+				}
+			}
+
+			// Full path preview, same as Hazel's — the project directory Create actually scaffolds is
+			// Location/Name (a fresh subfolder), never the browsed folder itself.
+			const bool hasName = m_NewProjectNameBuffer[0] != '\0';
+			const bool hasLocation = m_NewProjectLocationBuffer[0] != '\0';
+			const std::filesystem::path fullProjectPath = hasLocation && hasName
+			                                                   ? std::filesystem::path(m_NewProjectLocationBuffer) / m_NewProjectNameBuffer
+			                                                   : std::filesystem::path{};
+			ImGui::TextDisabled("Full Project Path: %s", fullProjectPath.string().c_str());
+
+			ImGui::Separator();
+
+			if (!(hasName && hasLocation))
+				ImGui::BeginDisabled();
+			if (ImGui::Button("Create", ImVec2(120.0f, 0.0f)))
+			{
+				auto& cmds = SingletonView<EditorCommandsSingleton>();
+				const bool ok = cmds.NewProject && cmds.NewProject(fullProjectPath, m_NewProjectNameBuffer);
+				notify.Push(ok ? "Project created" : "Failed to create project", ok ? EditorToastType::Success : EditorToastType::Error);
+				if (ok)
+				{
+					m_NewProjectNameBuffer[0] = '\0';
+					m_NewProjectLocationBuffer[0] = '\0';
+					ImGui::CloseCurrentPopup();
+				}
+			}
+			if (!(hasName && hasLocation))
 				ImGui::EndDisabled();
 
 			ImGui::SameLine();

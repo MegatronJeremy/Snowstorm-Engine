@@ -16,6 +16,33 @@ namespace Snowstorm
 		void OnUpdate(Timestep ts) override;
 
 	private:
+		// --- Project lifecycle (see Snowstorm/Project/Project.hpp + ProjectSerializer) ---
+		// Scaffold a new project on disk (Assets/{Meshes,Materials,Scenes,Shaders,Textures} + a fresh
+		// .ssproj), then open it. Returns false if the directory/name is invalid or scaffolding fails.
+		bool CreateProject(const std::filesystem::path& directory, const std::string& name);
+
+		// Load a .ssproj, make it the active Project, and replace the active World/scene/asset registry
+		// with the newly-opened project's. Mirrors OnAttach's bootstrap, just for an explicit project
+		// instead of the implicit working-directory one. Returns false on a bad/missing .ssproj.
+		bool OpenProject(const std::filesystem::path& ssprojPath);
+
+		// Serialize the active Project's ProjectConfig back to its .ssproj. Does NOT save the active
+		// scene (call SaveActiveScene separately, or see CloseProject which does both).
+		bool SaveProject() const;
+
+		// Save the active scene + project, then release the active World/Project. Only needed once
+		// there's a way to switch projects at runtime (CreateProject/OpenProject calling into an
+		// already-open project) — a no-op today's single-project-per-session flow won't hit until then.
+		void CloseProject();
+
+		// Bind everything a freshly-created m_ActiveWorld needs against the CURRENTLY active Project:
+		// asset registry, inspector resolver hooks (SetAssetNameResolver/SetAssetListProvider — these
+		// capture the World by raw pointer, so they must be re-bound whenever m_ActiveWorld changes),
+		// editor commands, engine+editor systems, persistent camera/viewport. Called from OnAttach
+		// (implicit bootstrap project) — OpenProject should call it too after swapping m_ActiveWorld,
+		// so there is exactly one place that knows how to wire up a World.
+		void InitializeActiveWorld();
+
 		bool TryLoadWorldFromFile(const std::string& scenePath);
 		void LoadOrCreateStartupWorld();
 

@@ -2,25 +2,58 @@
   "Entities": [
     {
       "Components": {
-        "Snowstorm::DirectionalLightComponent": {
+        "Snowstorm::SpotLightComponent": {
           "CastShadows": true,
           "Color": [
-            1.0,
-            0.8999999761581421,
-            0.800000011920929
+            0.0,
+            0.4285719394683838,
+            1.0
           ],
-          "Direction": [
-            0.6666666865348816,
-            -0.6666666865348816,
-            0.3333333432674408
-          ],
-          "Intensity": 1.0
+          "InnerAngleDeg": 10.293000221252441,
+          "Intensity": 100.0,
+          "OuterAngleDeg": 21.492000579833984,
+          "Range": 18.299999237060547
         },
         "Snowstorm::TransformComponent": {
           "Position": [
-            0.0,
-            5.0,
-            0.0
+            -1.9471442699432373,
+            3.185215473175049,
+            8.0
+          ],
+          "Rotation": [
+            -1.2301304340362549,
+            0.04763960465788841,
+            7.38687813282013e-05
+          ],
+          "Scale": [
+            0.999997615814209,
+            0.9999991059303284,
+            0.9999982118606567
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Spot Light",
+      "UUID": "8412553097614238002"
+    },
+    {
+      "Components": {
+        "Snowstorm::PointLightComponent": {
+          "Color": [
+            1.0,
+            0.19999998807907104,
+            0.8886078000068665
+          ],
+          "Intensity": 100.0,
+          "Range": 6.400000095367432
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            2.0,
+            2.0,
+            9.0
           ],
           "Rotation": [
             0.0,
@@ -37,84 +70,23 @@
           "Mask": 3
         }
       },
-      "Name": "Directional Light A",
-      "UUID": "13084783285429280438"
+      "Name": "Point Light",
+      "UUID": "8412553097614238001"
     },
     {
       "Components": {
-        "Snowstorm::EnvironmentComponent": {
-          "Background": "ProceduralSky",
-          "GroundColor": [
-            0.11999999731779099,
-            0.10999999940395355,
-            0.10000000149011612
+        "MandelbrotControllerComponent": {
+          "Center": [
+            -1.2506599426269531,
+            0.02012000046670437
           ],
-          "SkyHorizonColor": [
-            0.5199999809265137,
-            0.6200000047683716,
-            0.75
-          ],
-          "SkyIntensity": 0.30000001192092896,
-          "SkyZenithColor": [
-            0.10000000149011612,
-            0.2199999988079071,
-            0.44999998807907104
-          ]
+          "Material": "13869174114393927166",
+          "MaxIterations": 150,
+          "Zoom": 3.9855329990386963
         }
       },
-      "Name": "Environment",
-      "UUID": "2115362846432076038"
-    },
-    {
-      "Components": {
-        "Snowstorm::MaterialComponent": {
-          "$asset": "14863079243352112687"
-        },
-        "Snowstorm::MaterialOverridesComponent": {
-          "Overrides": [
-            {
-              "Name": "AlbedoTexture",
-              "Type": "Texture",
-              "Value": "12465655103903380530"
-            },
-            {
-              "Name": "BaseColor",
-              "Type": "Color",
-              "Value": [
-                0.1141020655632019,
-                0.32128915190696716,
-                0.9324894547462463,
-                1.0
-              ]
-            }
-          ]
-        },
-        "Snowstorm::MeshComponent": {
-          "$asset": "14167707854468761414"
-        },
-        "Snowstorm::TransformComponent": {
-          "Position": [
-            2.0,
-            2.0,
-            6.0
-          ],
-          "Rotation": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "Scale": [
-            1.0,
-            1.0,
-            1.0
-          ]
-        },
-        "Snowstorm::VisibilityComponent": {
-          "Mask": 3
-        }
-      },
-      "Name": "Blue Girl",
-      "UUID": "4004838569448236733"
+      "Name": "Mandelbrot Controller Entity",
+      "UUID": "3924645658962084767"
     },
     {
       "Components": {
@@ -122,13 +94,13 @@
           "$asset": "13869174114393927166"
         },
         "Snowstorm::MeshComponent": {
-          "$asset": "14167707854468761414"
+          "$asset": "12112538743247314239"
         },
         "Snowstorm::TransformComponent": {
           "Position": [
-            3.0,
-            3.0,
-            3.0
+            0.0,
+            0.0,
+            0.0
           ],
           "Rotation": [
             0.0,
@@ -136,17 +108,17 @@
             0.0
           ],
           "Scale": [
-            1.0,
-            1.0,
-            1.0
+            10.0,
+            10.0,
+            10.0
           ]
         },
         "Snowstorm::VisibilityComponent": {
           "Mask": 3
         }
       },
-      "Name": "Mandelbrot Girl",
-      "UUID": "403131259036889213"
+      "Name": "Mandelbrot Quad",
+      "UUID": "12379510728273235196"
     },
     {
       "Components": {
@@ -203,63 +175,13 @@
           "$asset": "13869174114393927166"
         },
         "Snowstorm::MeshComponent": {
-          "$asset": "12112538743247314239"
+          "$asset": "14167707854468761414"
         },
         "Snowstorm::TransformComponent": {
           "Position": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "Rotation": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "Scale": [
-            10.0,
-            10.0,
-            10.0
-          ]
-        },
-        "Snowstorm::VisibilityComponent": {
-          "Mask": 3
-        }
-      },
-      "Name": "Mandelbrot Quad",
-      "UUID": "12379510728273235196"
-    },
-    {
-      "Components": {
-        "MandelbrotControllerComponent": {
-          "Center": [
-            -1.2506599426269531,
-            0.02012000046670437
-          ],
-          "Material": "13869174114393927166",
-          "MaxIterations": 150,
-          "Zoom": 3.9855329990386963
-        }
-      },
-      "Name": "Mandelbrot Controller Entity",
-      "UUID": "3924645658962084767"
-    },
-    {
-      "Components": {
-        "Snowstorm::PointLightComponent": {
-          "Color": [
-            1.0,
-            0.19999998807907104,
-            0.8886078000068665
-          ],
-          "Intensity": 100.0,
-          "Range": 6.400000095367432
-        },
-        "Snowstorm::TransformComponent": {
-          "Position": [
-            2.0,
-            2.0,
-            9.0
+            3.0,
+            3.0,
+            3.0
           ],
           "Rotation": [
             0.0,
@@ -276,46 +198,124 @@
           "Mask": 3
         }
       },
-      "Name": "Point Light",
-      "UUID": "8412553097614238001"
+      "Name": "Mandelbrot Girl",
+      "UUID": "403131259036889213"
     },
     {
       "Components": {
-        "Snowstorm::SpotLightComponent": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "AlbedoTexture",
+              "Type": "Texture",
+              "Value": "12465655103903380530"
+            },
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.1141020655632019,
+                0.32128915190696716,
+                0.9324894547462463,
+                1.0
+              ]
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "14167707854468761414"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            2.0,
+            2.0,
+            6.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Blue Girl",
+      "UUID": "4004838569448236733"
+    },
+    {
+      "Components": {
+        "Snowstorm::EnvironmentComponent": {
+          "Background": "ProceduralSky",
+          "GroundColor": [
+            0.11999999731779099,
+            0.10999999940395355,
+            0.10000000149011612
+          ],
+          "SkyHorizonColor": [
+            0.5199999809265137,
+            0.6200000047683716,
+            0.75
+          ],
+          "SkyIntensity": 0.30000001192092896,
+          "SkyZenithColor": [
+            0.10000000149011612,
+            0.2199999988079071,
+            0.44999998807907104
+          ]
+        }
+      },
+      "Name": "Environment",
+      "UUID": "2115362846432076038"
+    },
+    {
+      "Components": {
+        "Snowstorm::DirectionalLightComponent": {
           "CastShadows": true,
           "Color": [
-            0.0,
-            0.4285719394683838,
-            1.0
+            1.0,
+            0.8999999761581421,
+            0.800000011920929
           ],
-          "InnerAngleDeg": 10.293000221252441,
-          "Intensity": 100.0,
-          "OuterAngleDeg": 21.492000579833984,
-          "Range": 18.299999237060547
+          "Direction": [
+            0.6666666865348816,
+            -0.6666666865348816,
+            0.3333333432674408
+          ],
+          "Intensity": 1.0
         },
         "Snowstorm::TransformComponent": {
           "Position": [
-            -1.9471442699432373,
-            3.185215473175049,
-            8.0
+            0.0,
+            5.0,
+            0.0
           ],
           "Rotation": [
-            -1.2301304340362549,
-            0.04763960465788841,
-            7.38687813282013e-05
+            0.0,
+            0.0,
+            0.0
           ],
           "Scale": [
-            0.999997615814209,
-            0.9999991059303284,
-            0.9999982118606567
+            1.0,
+            1.0,
+            1.0
           ]
         },
         "Snowstorm::VisibilityComponent": {
           "Mask": 3
         }
       },
-      "Name": "Spot Light",
-      "UUID": "8412553097614238002"
+      "Name": "Directional Light A",
+      "UUID": "13084783285429280438"
     }
   ],
   "Scene": {
