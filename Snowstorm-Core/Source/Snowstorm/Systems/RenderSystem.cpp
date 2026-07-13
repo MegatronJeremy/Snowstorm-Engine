@@ -743,11 +743,15 @@ namespace Snowstorm
 				// above; it declares the three targets as Sampled reads so the graph normalizes their layout, then
 				// CopyTextureToBuffer pulls each to a host-visible buffer.
 				if (exporting && velocityNeeded && vpRT.GroundTruthTarget &&
-				    !vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty())
+				    !vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty() && vpRT.GroundTruthPresentTarget &&
+				    !vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments.empty())
 				{
 					const Ref<Texture> lrImg = vpRT.Target->GetDesc().ColorAttachments[0].View->GetTexture();
 					const Ref<Texture> mvImg = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture();
 					const Ref<Texture> gtImg = vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+					// The tonemapped LDR GT present — the engine's ACTUAL output the metric compares, i.e. the
+					// exact target to train against (#102). Written by the GT tonemap pass (addTonemap above).
+					const Ref<Texture> gtLdrImg = vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
 					const glm::vec2 jitter = cam.Rt->JitterNdc;
 					const float scale = CVars::ClampedRenderScale();
 					const std::string outDir = CVars::DatasetExportPath.Get();
@@ -755,13 +759,22 @@ namespace Snowstorm
 					               .IsCompute = true, // no render target; records readback copies
 					               .Reads = {{lrImg, RenderGraph::AccessState::Sampled},
 					                         {mvImg, RenderGraph::AccessState::Sampled},
-					                         {gtImg, RenderGraph::AccessState::Sampled}},
-					               .Execute = [&, lrImg, mvImg, gtImg, jitter, scale, outDir](CommandContext& c)
+					                         {gtImg, RenderGraph::AccessState::Sampled},
+					                         {gtLdrImg, RenderGraph::AccessState::Sampled}},
+					               .Execute = [&, lrImg, mvImg, gtImg, gtLdrImg, jitter, scale, outDir](CommandContext& c)
 					               {
+						               // The GT tonemap pass just wrote gtLdrImg and left it in SHADER_READ, so the
+						               // graph's Sampled re-declaration emits no barrier — the copy would read it
+						               // before the color write is visible (reads black, #102). Force the write-
+						               // before-read dependency explicitly, like the metrics/neural passes (#45/#47).
+						               // The HDR three (LR/MV/GT) are produced by earlier passes with their own
+						               // barriers before this point, so only the freshly-tonemapped LDR needs it.
+						               c.BarrierColorWriteToComputeRead(gtLdrImg);
 						               DatasetExportPass::Inputs dsin;
 						               dsin.Lr = lrImg;
 						               dsin.Mv = mvImg;
 						               dsin.Gt = gtImg;
+						               dsin.GtLdr = gtLdrImg;
 						               dsin.JitterNdc = jitter;
 						               dsin.Scale = scale;
 						               dsin.FrameIndex = frameIndex;

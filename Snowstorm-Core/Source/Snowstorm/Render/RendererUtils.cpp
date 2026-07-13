@@ -110,7 +110,9 @@ namespace Snowstorm
 		TextureDesc colorDesc{};
 		colorDesc.Dimension = TextureDimension::Texture2D;
 		colorDesc.Format = kPresentColorFormat; // RGBA8_sRGB
-		colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled;
+		// TransferSrc: the tonemapped LDR present is read back to the CPU for dataset export (#102) — the exact
+		// target the neural upscaler trains against. Cheap flag; no cost unless a readback copy is issued.
+		colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled | TextureUsage::TransferSrc;
 		colorDesc.MutableFormat = true;
 		colorDesc.Width = w;
 		colorDesc.Height = h;
