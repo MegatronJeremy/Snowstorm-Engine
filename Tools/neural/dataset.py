@@ -48,7 +48,7 @@ class SRCropDataset(Dataset):
     warmup frame(s) the engine emits before the first present is written (#102).
     """
 
-    def __init__(self, root: str, crop: int = 64, samples_per_frame: int = 8):
+    def __init__(self, root: str, crop: int = 64, samples_per_frame: int = 8, val_frac: float = 0.0):
         with open(os.path.join(root, "manifest.json")) as f:
             manifest = json.load(f)
         self.root = root
@@ -64,24 +64,48 @@ class SRCropDataset(Dataset):
         # every __getitem__ made data-loading the bottleneck (GPU near-idle); a few hundred frames fit easily.
         # Drop frames whose gt_ldr is all-black (the pre-first-present warmup the engine emits, #102) — they'd
         # teach the net to map real geometry to black. A gt_ldr crop mean < eps means nothing was presented yet.
-        self._lr, self._gt, self.frames = [], [], []
+        all_lr, all_gt, all_meta = [], [], []
         dropped = 0
         for f in frames:
             gt_ldr = _load_rgb_ldr(os.path.join(root, f["gt_ldr"]["file"]))
             if float(gt_ldr.max()) < 1e-4:
                 dropped += 1
                 continue
-            self._lr.append(_load_rgb(os.path.join(root, f["lr"]["file"])))
-            self._gt.append(gt_ldr)
-            self.frames.append(f)
-        if not self._lr:
+            all_lr.append(_load_rgb(os.path.join(root, f["lr"]["file"])))
+            all_gt.append(gt_ldr)
+            all_meta.append(f)
+        if not all_lr:
             raise ValueError(f"{root}: every frame's gt_ldr was black — capture is broken")
         if dropped:
             print(f"dataset: dropped {dropped} black warmup frame(s)")
+
+        # Held-out validation split: partition WHOLE frames (not crops) into train/val. Every `stride`-th
+        # frame is validation, so val is spread across the whole camera path rather than one contiguous end
+        # (a contiguous tail would all look alike and misrepresent generalization). Training crops are drawn
+        # ONLY from train frames; model selection uses val full-frame PSNR (the fix for the #102 overfit).
+        self._val_lr, self._val_gt = [], []
+        self._lr, self._gt, self.frames = [], [], []
+        stride = int(round(1.0 / val_frac)) if val_frac > 0.0 else 0
+        for i, (lr, gt, meta) in enumerate(zip(all_lr, all_gt, all_meta)):
+            if stride and i % stride == 0:
+                self._val_lr.append(lr)
+                self._val_gt.append(gt)
+            else:
+                self._lr.append(lr)
+                self._gt.append(gt)
+                self.frames.append(meta)
+        if stride:
+            print(f"dataset: {len(self._lr)} train / {len(self._val_lr)} val frames (stride {stride})")
+
         # scale is constant across a capture run; derive the LR->GT integer ratio (e.g. 0.5 -> 2).
         self.scale = float(frames[0]["scale"])
         self.ratio = int(round(1.0 / self.scale))
         assert self.ratio >= 1, f"bad scale {self.scale}"
+
+    def val_frames(self):
+        """The held-out (lr, gt_ldr) whole frames as HWC float32 arrays, for full-frame val PSNR. Empty
+        if val_frac was 0."""
+        return self._val_lr, self._val_gt
 
     def __len__(self) -> int:
         return len(self.frames) * self.samples_per_frame
