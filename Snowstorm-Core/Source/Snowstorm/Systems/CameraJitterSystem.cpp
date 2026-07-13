@@ -22,14 +22,15 @@ namespace Snowstorm
 		// implies jitter, the way Unreal couples TemporalAA to its view jitter. Forced off in compare mode
 		// (the A/B measures only the upscaler; a jittered projection would shimmer/desync both sides).
 		//
-		// EXCEPTION — dataset export (#46): a temporal super-resolution network trains on JITTERED low-res
-		// input (the sub-pixel offset is the only source of new detail the network reconstructs from). Export
-		// runs inside compare mode (it needs the ground-truth render), so without this the exported LR would be
-		// unjittered and useless for a temporal upscaler. When exporting we force jitter on: it lands on the LR
-		// color pass (addForward jittered=true); the ground-truth + velocity passes use the unjittered VP, so
-		// GT stays a clean reference and motion vectors stay correct. JitterNdc is recorded per frame so the
-		// training pipeline knows each frame's offset.
-		const bool jitterOn = CVars::DatasetExport.Get() ||
+		// EXCEPTION — dataset export (#46/#102): a TEMPORAL super-resolution network trains on JITTERED low-res
+		// input (the sub-pixel offset is the only source of new detail it reconstructs). Export runs inside
+		// compare mode (it needs the ground-truth render), which otherwise forces jitter off. So export can
+		// force it back on — but ONLY when dataset.jitter is set. A purely SPATIAL upscaler (#99) trains and
+		// infers on UNJITTERED LR, so jitter is just a per-frame sub-pixel shift it can't win against (that
+		// train/inference mismatch is what made the trained spatial net lose to bilinear in-engine, #102).
+		// Default: unjittered capture. When jitter IS on it lands on the LR color pass (addForward
+		// jittered=true); GT + velocity keep the unjittered VP, and JitterNdc is recorded per frame.
+		const bool jitterOn = (CVars::DatasetExport.Get() && CVars::DatasetJitter.Get()) ||
 		                      ((CVars::Jitter.Get() || CVars::AAMode.Get() == 2) && !CVars::Compare.Get());
 
 		// Same monotonic counter the whole frame uses (incremented in RendererService::NewFrame before any

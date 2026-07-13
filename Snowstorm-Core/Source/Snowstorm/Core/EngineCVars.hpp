@@ -162,6 +162,10 @@ namespace Snowstorm::CVars
 	extern CVar<std::string> DatasetExportPath;
 	extern CVar<int> DatasetExportFrames;
 
+	// Apply camera jitter during dataset.export (#102). Off (default) = unjittered LR for the spatial
+	// upscaler; on = jittered LR for the temporal upscaler (#98).
+	extern CVar<bool> DatasetJitter;
+
 	// Temporal sub-pixel camera jitter (#44): Halton(2,3) offset applied to the color projection each
 	// frame — the substrate a temporal upscaler/TAA accumulates. Motion vectors + frustum culling keep the
 	// unjittered matrices. Read per-frame by CameraJitterSystem; forced off in compare mode. Persist.
