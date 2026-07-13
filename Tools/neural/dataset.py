@@ -45,6 +45,11 @@ class SRCropDataset(Dataset):
         self.samples_per_frame = samples_per_frame
         if not self.frames:
             raise ValueError(f"{root}: manifest has no frames")
+
+        # Decode every LR/GT frame ONCE into RAM (dropping alpha). Re-loading + decoding the .npy on every
+        # __getitem__ made data-loading the bottleneck (GPU near-idle); a few hundred HDR frames fit easily.
+        self._lr = [_load_rgb(os.path.join(root, f["lr"]["file"])) for f in self.frames]
+        self._gt = [_load_rgb(os.path.join(root, f["gt"]["file"])) for f in self.frames]
         # scale is constant across a capture run; derive the LR->GT integer ratio (e.g. 0.5 -> 2).
         self.scale = float(self.frames[0]["scale"])
         self.ratio = int(round(1.0 / self.scale))
@@ -54,9 +59,9 @@ class SRCropDataset(Dataset):
         return len(self.frames) * self.samples_per_frame
 
     def __getitem__(self, idx: int):
-        frame = self.frames[idx // self.samples_per_frame]
-        lr = _load_rgb(os.path.join(self.root, frame["lr"]["file"]))  # (sh, sw, 3)
-        gt = _load_rgb(os.path.join(self.root, frame["gt"]["file"]))  # (h, w, 3)
+        fi = idx // self.samples_per_frame
+        lr = self._lr[fi]  # (sh, sw, 3), cached
+        gt = self._gt[fi]  # (h, w, 3), cached
 
         sh, sw, _ = lr.shape
         gh, gw, _ = gt.shape

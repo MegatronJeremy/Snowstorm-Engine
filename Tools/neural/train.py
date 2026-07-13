@@ -25,6 +25,7 @@ from torch.utils.data import DataLoader
 from dataset import SRCropDataset
 from model import ResidualRefiner
 from ssnn import save_ssnn
+from tonemap import to_display
 
 
 def psnr(mse: float) -> float:
@@ -48,11 +49,14 @@ def main() -> None:
     args = ap.parse_args()
 
     torch.manual_seed(0)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ds = SRCropDataset(args.dataset, crop=args.crop, samples_per_frame=args.samples_per_frame)
     dl = DataLoader(ds, batch_size=args.batch, shuffle=True, num_workers=0)
+    print(f"device: {device}"
+          f"{' (' + torch.cuda.get_device_name(0) + ')' if device.type == 'cuda' else ''}")
     print(f"dataset: {len(ds.frames)} frames, scale {ds.scale} (x{ds.ratio}), {len(ds)} crops/epoch")
 
-    model = ResidualRefiner()
+    model = ResidualRefiner().to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     best_psnr = -1.0
@@ -60,17 +64,24 @@ def main() -> None:
         model.train()
         loss_sum = mse_sum = base_mse_sum = n = 0.0
         for lr_t, gt_t in dl:
+            lr_t, gt_t = lr_t.to(device), gt_t.to(device)
             up = upsample_to(lr_t, gt_t)
-            out = model(up)
-            loss = F.l1_loss(out, gt_t)
+            out = model(up)  # linear-HDR network output (what the engine writes, pre-tonemap)
+
+            # Loss + PSNR are computed in the engine's DISPLAY space (ACES tonemap -> sRGB): the network
+            # stays linear-HDR (the engine tonemaps AFTER it), but we optimize so its TONEMAPPED result
+            # matches GT's tonemapped result — the same space the in-engine PSNR/SSIM metric measures. A
+            # linear-HDR L1 gain otherwise becomes a post-ACES loss (they disagree).
+            out_d, gt_d, up_d = to_display(out), to_display(gt_t), to_display(up)
+            loss = F.l1_loss(out_d, gt_d)
 
             opt.zero_grad()
             loss.backward()
             opt.step()
 
             with torch.no_grad():
-                mse_sum += F.mse_loss(out, gt_t).item() * lr_t.size(0)
-                base_mse_sum += F.mse_loss(up, gt_t).item() * lr_t.size(0)  # bilinear baseline
+                mse_sum += F.mse_loss(out_d, gt_d).item() * lr_t.size(0)
+                base_mse_sum += F.mse_loss(up_d, gt_d).item() * lr_t.size(0)  # bilinear baseline (display space)
                 loss_sum += loss.item() * lr_t.size(0)
                 n += lr_t.size(0)
 
