@@ -1,0 +1,4 @@
+# Neural upscaler training harness (#99). CPU torch is fine for the small refiner.
+torch>=2.0
+numpy>=1.24
+pytest>=7.0
