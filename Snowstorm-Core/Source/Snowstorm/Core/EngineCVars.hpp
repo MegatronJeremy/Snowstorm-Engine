@@ -101,6 +101,14 @@ namespace Snowstorm::CVars
 	// neural path runs the loaded .ssnn; default identity weights reproduce bilinear. Read per-frame.
 	extern CVar<int> Upscaler;
 
+	// Path to a trained .ssnn for the neural upscaler (#99). Empty = built-in identity refiner. Read per-frame
+	// and pushed to the pass (SetWeightsPath); the pass reloads lazily on change.
+	extern CVar<std::string> NeuralWeightsPath;
+
+	// One-shot: write the built-in identity refiner .ssnn to this path then exit (#99). The reference the
+	// Python writer's byte-parity test checks against. Empty = off.
+	extern CVar<std::string> NeuralDumpIdentity;
+
 	// Viewport debug overlay (#44): 0 = Normal, 1 = Motion Vectors. When 1, a dedicated velocity pass emits
 	// per-pixel screen-space motion into the velocity target and the tonemap step visualizes it as color
 	// instead of the tonemapped scene. Gates the (otherwise skipped) velocity pass; read per-frame.

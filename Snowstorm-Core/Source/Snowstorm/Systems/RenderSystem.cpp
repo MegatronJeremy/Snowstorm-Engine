@@ -569,6 +569,8 @@ namespace Snowstorm
 						// PrepareResources runs HERE (graph-build time), not in the Execute lambda: a resize may
 						// drain the GPU + recreate the bindless output view, both illegal mid-command-recording. It
 						// returns false while shaders are still compiling — then we fall back to bilinear this frame.
+						// Push the weights path (#99): empty = identity refiner; the pass reloads lazily on change.
+						m_NeuralUpscalePass.SetWeightsPath(CVars::NeuralWeightsPath.Get());
 						const bool neural = CVars::Upscaler.Get() == 1 && m_NeuralUpscalePass.PrepareResources(upW, upH);
 						if (neural)
 						{
@@ -577,10 +579,16 @@ namespace Snowstorm
 							               .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
 							               .Execute = [&, lowResView, upW, upH](CommandContext& c)
 							               {
+								               // The forward pass left the low-res Target in SHADER_READ_ONLY (its
+								               // EndRenderPass), so the graph's Sampled re-declaration emits NO barrier —
+								               // this compute pass would sample the color target before its writes are
+								               // visible (reads black). Force the write-before-read dependency, exactly
+								               // like the metrics pass (#45). This was the neural-reads-black bug.
+								               c.BarrierColorWriteToComputeRead(lowResView->GetTexture());
 								               const Ref<CommandContext> cref(&c, [](CommandContext*) {});
 								               m_NeuralUpscalePass.Infer(cref, frameIndex, lowResView, upW, upH);
 							               }});
-							sceneColorView = m_NeuralUpscalePass.OutputView();
+							sceneColorView = m_NeuralUpscalePass.OutputView(frameIndex);
 						}
 						else
 						{

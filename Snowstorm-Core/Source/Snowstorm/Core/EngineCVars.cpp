@@ -61,6 +61,10 @@ namespace Snowstorm::CVars
 
 	CVar<int> Upscaler{"render.upscaler", 0, "Upscale method when render.scale < 1: 0 = Bilinear (baseline), 1 = Neural (compute CNN residual refiner, #47). The neural path runs the loaded .ssnn model; with the default identity weights it reproduces bilinear (the correctness baseline). Read per-frame; only active when upscaling (scale < 1).", CVarFlags::Persist};
 
+	CVar<std::string> NeuralWeightsPath{"neural.weights", "", "Path to a trained .ssnn weights file for the neural upscaler (#99). Empty = the built-in identity refiner (reproduces bilinear). Loaded lazily when it changes. Only used when render.upscaler = 1.", CVarFlags::Persist};
+
+	CVar<std::string> NeuralDumpIdentity{"neural.dump_identity", "", "One-shot: write the built-in identity refiner to this .ssnn path, then exit (#99). The canonical reference the Python .ssnn writer's byte-parity test compares against. Empty = off."};
+
 	CVar<int> AAMode{"render.aa", 0, "Anti-aliasing: 0 = None, 1 = FXAA (spatial post-process), 2 = TAA (temporal accumulation via jitter + motion vectors, #44)", CVarFlags::Persist};
 
 	CVar<int> DebugView{"render.debugview", 0, "Viewport debug overlay: 0 = Normal (tonemapped scene), 1 = Motion Vectors (per-pixel screen-space velocity as color). Drives the velocity pass + tonemap debug branch (#44)", CVarFlags::Persist};

@@ -45,10 +45,17 @@ namespace Snowstorm
 		void Infer(const Ref<CommandContext>& ctx, uint32_t frameIndex, const Ref<TextureView>& lowResColor,
 		           uint32_t outWidth, uint32_t outHeight);
 
-		// The full-res storage texture holding the last Infer() result (null before the first successful run).
-		// The caller repoints the tonemap's scene-color view at this. Sampled+Storage, RGBA16F.
-		[[nodiscard]] const Ref<TextureView>& OutputView() const { return m_OutputView; }
-		[[nodiscard]] bool HasOutput() const { return m_OutputView != nullptr; }
+		// The full-res storage texture Infer() writes for the given frame-in-flight slot — the one the neural
+		// pass will write THIS frame. Pass the SAME frameIndex you'll pass to Infer, at graph-build time, so
+		// tonemap is repointed at the exact texture this frame's Infer fills (each frame owns its own slot, so a
+		// build-time OutputView() that returned "the last Infer's slot" would point at the OTHER in-flight
+		// frame's output — a stale/garbage read). Sampled+Storage, RGBA16F. Null before resources are sized.
+		[[nodiscard]] const Ref<TextureView>& OutputView(const uint32_t frameIndex) const
+		{
+			static const Ref<TextureView> kNull;
+			return (frameIndex < m_OutputView.size()) ? m_OutputView[frameIndex] : kNull;
+		}
+		[[nodiscard]] bool HasOutput() const { return !m_OutputView.empty(); }
 
 		// Point at a trained .ssnn (loaded lazily on the next Infer). Empty resets to the identity refiner.
 		void SetWeightsPath(const std::string& path);
@@ -73,14 +80,16 @@ namespace Snowstorm
 
 		// Feature maps as flat CHW float storage buffers (maxChannels*W*H each). Buffers (not texture arrays)
 		// because that's the CPU reference's layout and the engine has no 2D-array texture views; chained conv
-		// dispatches use a global compute-storage barrier between. Three buffers: Base holds the bilinear
-		// upsample (the residual skip connection, kept live to the end), and A/B ping-pong the conv stack. Plus
-		// the full-res storage output texture.
-		Ref<Buffer> m_FeatureBase;
-		Ref<Buffer> m_FeatureA;
-		Ref<Buffer> m_FeatureB;
-		Ref<Texture> m_Output;
-		Ref<TextureView> m_OutputView;
+		// dispatches use a global compute-storage barrier between. Base holds the bilinear upsample (the
+		// residual skip, kept live to the end), and A/B ping-pong the conv stack, plus the full-res storage
+		// output texture. ALL per-frame-in-flight: two frames overlap on the GPU (BarrierComputeStorage only
+		// orders within one command buffer), so a single shared set would let frame N+1's upsample clobber
+		// frame N's data mid-flight — a nondeterministic race. One slot per in-flight frame, like MetricsPass.
+		std::vector<Ref<Buffer>> m_FeatureBase;
+		std::vector<Ref<Buffer>> m_FeatureA;
+		std::vector<Ref<Buffer>> m_FeatureB;
+		std::vector<Ref<Texture>> m_Output;
+		std::vector<Ref<TextureView>> m_OutputView;
 		uint32_t m_Width = 0;
 		uint32_t m_Height = 0;
 		uint32_t m_MaxChannels = 0; // widest layer's channel count (sizes the feature buffers)
