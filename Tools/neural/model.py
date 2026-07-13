@@ -46,6 +46,22 @@ class ResidualRefiner(nn.Module):
             layers.append(Layer(conv.in_channels, conv.out_channels, KERNEL, act, w, b))
         return layers
 
+    @classmethod
+    def from_layers(cls, layers: list[Layer]) -> "ResidualRefiner":
+        """Rebuild the model from a loaded .ssnn Layer list (inverse of to_layers). The .ssnn stores each
+        conv's weights row-major in [outC][inC][kH][kW] — exactly PyTorch's conv-weight layout — so the
+        flat arrays reshape back 1:1. Used by the offline full-frame eval to run the trained net in Python."""
+        m = cls()
+        convs = [m.conv0, m.conv1, m.conv2]
+        assert len(layers) == len(convs), f"expected {len(convs)} layers, got {len(layers)}"
+        with torch.no_grad():
+            for conv, layer in zip(convs, layers):
+                w = torch.tensor(layer.weights, dtype=torch.float32).view(
+                    layer.out_channels, layer.in_channels, layer.kernel_size, layer.kernel_size)
+                conv.weight.copy_(w)
+                conv.bias.copy_(torch.tensor(layer.bias, dtype=torch.float32))
+        return m
+
 
 def make_identity() -> ResidualRefiner:
     """The identity refiner: final conv (weights + bias) is all-zero, so the residual is 0 and the
