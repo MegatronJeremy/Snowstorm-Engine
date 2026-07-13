@@ -1,10 +1,13 @@
 """Train the spatial residual refiner on an exported dataset and write a .ssnn (#99).
 
 Pipeline (mirrors the engine's inference exactly so trained weights mean the same in-engine):
-    1. bilinear-upsample the LR crop to the GT crop's resolution (align_corners=False = pixel-center,
-       matching NeuralUpsampleIn.comp.hlsl's SampleLevel).
-    2. ResidualRefiner: output = upsampled + convStack(upsampled).
-    3. L1 loss vs the GT crop; Adam.
+    1. bilinear-upsample the LR crop (linear HDR) to the GT crop's resolution (align_corners=False =
+       pixel-center, matching NeuralUpsampleIn.comp.hlsl's SampleLevel).
+    2. ResidualRefiner: output = upsampled + convStack(upsampled), still linear HDR.
+    3. Tonemap the linear-HDR net output through the engine's transform (ACES -> sRGB), then L1 it
+       against the REAL tonemapped LDR ground truth (gt_ldr, the engine's actual present bytes, #102).
+       Only the forward tonemap is Python now; the TARGET is the engine's true output, so 'beats
+       bilinear' means the same thing in and out of engine (closes the #102 tonemap-drift gap).
     4. Log train PSNR each epoch alongside the BILINEAR baseline PSNR (residual=0) so you can see the
        net clear the bar. Save the best model to .ssnn.
 
@@ -63,16 +66,17 @@ def main() -> None:
     for epoch in range(args.epochs):
         model.train()
         loss_sum = mse_sum = base_mse_sum = n = 0.0
-        for lr_t, gt_t in dl:
-            lr_t, gt_t = lr_t.to(device), gt_t.to(device)
-            up = upsample_to(lr_t, gt_t)
+        for lr_t, gt_d in dl:
+            lr_t, gt_d = lr_t.to(device), gt_d.to(device)
+            up = upsample_to(lr_t, gt_d)  # size only; gt_d is the full-res LDR reference
             out = model(up)  # linear-HDR network output (what the engine writes, pre-tonemap)
 
-            # Loss + PSNR are computed in the engine's DISPLAY space (ACES tonemap -> sRGB): the network
-            # stays linear-HDR (the engine tonemaps AFTER it), but we optimize so its TONEMAPPED result
-            # matches GT's tonemapped result — the same space the in-engine PSNR/SSIM metric measures. A
-            # linear-HDR L1 gain otherwise becomes a post-ACES loss (they disagree).
-            out_d, gt_d, up_d = to_display(out), to_display(gt_t), to_display(up)
+            # Loss + PSNR are computed in the engine's DISPLAY space (ACES tonemap -> sRGB). The network
+            # stays linear-HDR (the engine tonemaps AFTER it), so we tonemap its output HERE and compare
+            # to gt_d — the REAL engine LDR present (gt_ldr), the exact bytes the in-engine PSNR/SSIM
+            # metric scores. Unlike #99 (which tonemapped a linear GT in Python), the target is now the
+            # engine's actual output, so there is no train/inference tonemap drift on the target side.
+            out_d, up_d = to_display(out), to_display(up)
             loss = F.l1_loss(out_d, gt_d)
 
             opt.zero_grad()
