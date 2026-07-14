@@ -39,11 +39,27 @@ namespace Snowstorm
 		// Returns true once everything is ready (shaders compiled + resources sized); Infer no-ops until then.
 		bool PrepareResources(uint32_t outWidth, uint32_t outHeight);
 
-		// Record the inference into `ctx`: upsample `lowResColor` -> conv stack -> residual add, leaving the
-		// result in the pass's storage output (OutputView()). Call inside a graph pass that declares lowResColor
-		// as a Sampled read, AFTER a PrepareResources(...) that returned true this frame.
+		// Record the inference into `ctx`: upsample `lowResColor` -> [temporal: warp prevHistory by velocity] ->
+		// conv stack -> residual add, leaving the result in the pass's storage output (OutputView()). Call inside
+		// a graph pass that declares lowResColor (and, when temporal, prevHistory + velocity) as Sampled reads,
+		// AFTER a PrepareResources(...) that returned true this frame.
+		//
+		// Temporal path (#98): pass non-null `prevHistory` (the previous frame's full-res output) + `velocity`
+		// (full-res motion vectors). The warp stage reprojects prevHistory into feature channels 3..5 and writes
+		// the motion vector into 6..7, so the net sees an 8-channel input. `historyValid` = false on the first
+		// temporal frame / after a resize (no usable history yet -> warp feeds zeros). Pass both null for the
+		// SPATIAL path (#47) — unchanged 3-channel behavior. The two paths need models of matching input width
+		// (SetTemporal selects which identity model is built); mixing a temporal model with a null-history call
+		// (or vice versa) reads/leaves feature channels undefined.
 		void Infer(const Ref<CommandContext>& ctx, uint32_t frameIndex, const Ref<TextureView>& lowResColor,
-		           uint32_t outWidth, uint32_t outHeight);
+		           uint32_t outWidth, uint32_t outHeight, const Ref<TextureView>& prevHistory = nullptr,
+		           const Ref<TextureView>& velocity = nullptr, bool historyValid = false);
+
+		// Select the inference path BEFORE PrepareResources: true = temporal (8-ch input, warp stage, 8-ch
+		// identity model); false = spatial (3-ch, #47). Switching rebuilds the model + feature buffers. The
+		// trained-weights path (SetWeightsPath) overrides the identity model but the input width must still match
+		// what the pass populates, so keep this in sync with how RenderSystem calls Infer.
+		void SetTemporal(bool temporal);
 
 		// The full-res storage texture Infer() writes for the given frame-in-flight slot — the one the neural
 		// pass will write THIS frame. Pass the SAME frameIndex you'll pass to Infer, at graph-build time, so
@@ -65,11 +81,17 @@ namespace Snowstorm
 		void EnsureModel();
 		void EnsureSizedResources(uint32_t w, uint32_t h);
 
-		// Compute pipelines: input bilinear-upsample, the generic per-layer conv, the residual-add output.
+		// Compute pipelines: input bilinear-upsample, the optional temporal history-warp, the generic per-layer
+		// conv, the residual-add output.
 		Ref<Pipeline> m_UpsamplePipeline;
+		Ref<Pipeline> m_WarpPipeline;
 		Ref<Pipeline> m_ConvPipeline;
 		Ref<Pipeline> m_AddPipeline;
 		Ref<Sampler> m_LinearClamp;
+
+		// Temporal (#98) vs spatial (#47) inference. Selects the identity model's input width and whether Infer
+		// runs the history-warp stage. Changing it rebuilds the model + feature buffers (via m_ModelDirty).
+		bool m_Temporal = false;
 
 		// The network + its GPU weight buffer (weights..bias per layer, contiguous) + per-layer float offsets.
 		Neural::NeuralModel m_Model;

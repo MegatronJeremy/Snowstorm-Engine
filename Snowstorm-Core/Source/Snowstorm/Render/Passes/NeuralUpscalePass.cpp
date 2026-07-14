@@ -35,8 +35,20 @@ namespace Snowstorm
 			glm::uvec2 OutSize{0, 0};
 			glm::uvec2 _Pad{0, 0};
 		};
+		struct WarpCB
+		{
+			glm::uvec2 OutSize{0, 0};
+			uint32_t HistoryValid = 0;
+			uint32_t _Pad = 0;
+		};
 
 		constexpr uint32_t kGroup = 8;
+
+		// Feature-channel counts the pass populates before the conv stack. Spatial writes only the bilinear
+		// base (0..2); temporal adds the MV-warped history (3..5) + motion vector (6..7). The identity model's
+		// first-layer input width MUST equal the active one (a wider model reads uninitialized feature memory).
+		constexpr uint32_t kSpatialInChannels = 3;
+		constexpr uint32_t kTemporalInChannels = 8;
 	}
 
 	void NeuralUpscalePass::SetWeightsPath(const std::string& path)
@@ -45,6 +57,15 @@ namespace Snowstorm
 		{
 			m_WeightsPath = path;
 			m_ModelDirty = true;
+		}
+	}
+
+	void NeuralUpscalePass::SetTemporal(const bool temporal)
+	{
+		if (temporal != m_Temporal)
+		{
+			m_Temporal = temporal;
+			m_ModelDirty = true; // rebuild the identity model at the new input width + resize feature buffers
 		}
 	}
 
@@ -57,14 +78,15 @@ namespace Snowstorm
 
 		auto& shaderLib = Application::Get().GetServiceManager().GetService<ShaderLibrary>();
 		const Ref<Shader> upCs = shaderLib.Load("assets/shaders/NeuralUpsampleIn.comp.hlsl");
+		const Ref<Shader> warpCs = shaderLib.Load("assets/shaders/NeuralWarpHistory.comp.hlsl");
 		const Ref<Shader> convCs = shaderLib.Load("assets/shaders/NeuralConv.comp.hlsl");
 		const Ref<Shader> addCs = shaderLib.Load("assets/shaders/NeuralResidualAdd.comp.hlsl");
-		if (!upCs || !convCs || !addCs)
+		if (!upCs || !warpCs || !convCs || !addCs)
 		{
 			SS_CORE_ERROR("[Neural] failed to load upscaler compute shaders");
 			return;
 		}
-		if (!upCs->IsReady() || !convCs->IsReady() || !addCs->IsReady())
+		if (!upCs->IsReady() || !warpCs->IsReady() || !convCs->IsReady() || !addCs->IsReady())
 		{
 			return; // async compile; retry next frame
 		}
@@ -78,6 +100,7 @@ namespace Snowstorm
 			return Pipeline::Create(p);
 		};
 		m_UpsamplePipeline = makePipe(upCs, "NeuralUpsamplePipeline");
+		m_WarpPipeline = makePipe(warpCs, "NeuralWarpHistoryPipeline");
 		m_ConvPipeline = makePipe(convCs, "NeuralConvPipeline");
 		m_AddPipeline = makePipe(addCs, "NeuralResidualAddPipeline");
 
@@ -100,13 +123,26 @@ namespace Snowstorm
 		}
 		m_ModelDirty = false;
 
+		// The active feature-input width: temporal (8) runs the warp stage and feeds an 8-ch first layer; spatial
+		// (3) is the #47 path. The identity fallback is built at this width; a trained model must match it.
+		const uint32_t inChannels = m_Temporal ? kTemporalInChannels : kSpatialInChannels;
+
 		if (m_WeightsPath.empty() || !Neural::LoadModel(m_WeightsPath, m_Model))
 		{
 			if (!m_WeightsPath.empty())
 			{
 				SS_CORE_WARN("[Neural] could not load '{}'; using identity refiner", m_WeightsPath);
 			}
-			m_Model = Neural::MakeIdentityRefiner();
+			m_Model = Neural::MakeIdentityRefiner(inChannels);
+		}
+		else if (!m_Model.Layers.empty() && m_Model.Layers.front().InChannels != inChannels)
+		{
+			// A trained model whose first-layer width disagrees with the active path would read uninitialized
+			// feature channels (temporal model on the spatial path, or vice versa). Fail loud and fall back to
+			// the matching identity so the frame is still valid (== bilinear) instead of silently garbage.
+			SS_CORE_ERROR("[Neural] model '{}' expects {}-ch input but the {} path feeds {} ch; using identity",
+			              m_WeightsPath, m_Model.Layers.front().InChannels, m_Temporal ? "temporal" : "spatial", inChannels);
+			m_Model = Neural::MakeIdentityRefiner(inChannels);
 		}
 
 		const std::vector<float> packed = m_Model.PackWeights();
@@ -114,8 +150,8 @@ namespace Snowstorm
 		m_Weights = Buffer::Create(packed.size() * sizeof(float), BufferUsage::Storage, packed.data(), false, "NeuralWeights");
 
 		// Widest layer's channel count sizes the feature buffers (both ping-pong halves must hold any layer's
-		// output). Include the 3-channel input/residual too.
-		m_MaxChannels = 3;
+		// output). Include the input feature width (3 or 8) too.
+		m_MaxChannels = inChannels;
 		for (const Neural::ConvLayer& l : m_Model.Layers)
 		{
 			m_MaxChannels = std::max(m_MaxChannels, std::max(l.InChannels, l.OutChannels));
@@ -192,11 +228,23 @@ namespace Snowstorm
 	}
 
 	void NeuralUpscalePass::Infer(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const Ref<TextureView>& lowResColor,
-	                              const uint32_t outWidth, const uint32_t outHeight)
+	                              const uint32_t outWidth, const uint32_t outHeight, const Ref<TextureView>& prevHistory,
+	                              const Ref<TextureView>& velocity, const bool historyValid)
 	{
 		if (!ctx || !lowResColor || outWidth == 0 || outHeight == 0 || frameIndex >= m_Output.size())
 		{
 			return; // PrepareResources not yet successful; caller falls back to bilinear
+		}
+
+		// Temporal path: the warp stage is the ONLY writer of feature channels 3..7, so on m_Temporal it MUST run
+		// or the conv reads uninitialized memory. RenderSystem always supplies both views (the history + velocity
+		// targets are allocated up front); historyValid=false on the first frame makes the warp write zeros
+		// instead of sampling garbage. If a view is somehow missing on the temporal path, fail loud — better than
+		// silent NaN from 0*uninitialized in the identity model.
+		const bool runWarp = m_Temporal && m_WarpPipeline && prevHistory && velocity;
+		if (m_Temporal && !runWarp)
+		{
+			SS_CORE_ERROR("[Neural] temporal Infer missing warp inputs (prevHistory/velocity); output undefined");
 		}
 
 		// This frame's own resource slot (feature buffers + output) — never shared with the other in-flight
@@ -249,6 +297,33 @@ namespace Snowstorm
 			set->Commit();
 
 			ctx->BindPipeline(m_UpsamplePipeline);
+			ctx->BindDescriptorSet(set, 0);
+			ctx->Dispatch(gx, gy, 1);
+
+			keepSets.push_back(set);
+			keepBufs.push_back(ubo);
+		}
+
+		// ---- Stage 1b (temporal only): warp previous output by motion vectors into feature channels 3..5, and
+		// write the motion vector into 6..7. Same OutMap buffer as the upsample stage (writes disjoint channels),
+		// so no barrier is needed between them — both are pure writes to different regions, read together by the
+		// first conv (the barrier before conv layer 0 orders both against it).
+		if (runWarp)
+		{
+			WarpCB cb{};
+			cb.OutSize = outSize;
+			cb.HistoryValid = historyValid ? 1u : 0u;
+			const Ref<Buffer> ubo = Buffer::Create(sizeof(WarpCB), BufferUsage::Uniform, &cb, true, "NeuralWarpCB");
+
+			const Ref<DescriptorSet> set = DescriptorSet::Create(layoutFor(m_WarpPipeline), {});
+			set->SetTexture(0, prevHistory);
+			set->SetTexture(1, velocity);
+			set->SetSampler(2, m_LinearClamp);
+			set->SetBuffer(3, {.Buffer = featBase, .Offset = 0, .Range = featureBytes});
+			set->SetBuffer(4, {.Buffer = ubo, .Offset = 0, .Range = sizeof(WarpCB)});
+			set->Commit();
+
+			ctx->BindPipeline(m_WarpPipeline);
 			ctx->BindDescriptorSet(set, 0);
 			ctx->Dispatch(gx, gy, 1);
 

@@ -36,11 +36,13 @@ namespace Snowstorm::Neural
 		[[nodiscard]] std::vector<size_t> LayerFloatOffsets() const;
 	};
 
-	// Build the default residual refiner architecture: bilinear input (3ch) -> conv 3->16 (ReLU) -> conv
-	// 16->16 (ReLU) -> conv 16->3 (none), all 3x3. The FINAL layer's weights AND bias are all zero, so the
-	// residual is exactly 0 and the network output == the bilinear input — a provable no-op used to validate
-	// the whole GPU conv chain before any training exists. Real training overwrites these weights.
-	NeuralModel MakeIdentityRefiner();
+	// Build the default residual refiner architecture: inChannels -> conv ->16 (ReLU) -> conv 16->16 (ReLU) ->
+	// conv 16->3 (none), all 3x3. The FINAL layer's weights AND bias are all zero, so the residual is exactly 0
+	// and the network output == the bilinear input — a provable no-op used to validate the whole GPU conv chain
+	// before any training exists. Real training overwrites these weights. `inChannels` selects the inference
+	// path: 3 = spatial (bilinear LR only, #47); 8 = temporal (LR + MV-warped history + motion vector, #98). It
+	// MUST match the feature-channel count the pass populates before the conv stack.
+	NeuralModel MakeIdentityRefiner(uint32_t inChannels = 3);
 
 	// Serialize / parse the .ssnn format. SaveModel returns false on I/O error; LoadModel returns false on a
 	// missing file, bad magic, or truncated/inconsistent data (and leaves `out` unspecified).

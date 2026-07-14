@@ -66,11 +66,17 @@ namespace Snowstorm::Neural
 		return packed;
 	}
 
-	NeuralModel MakeIdentityRefiner()
+	NeuralModel MakeIdentityRefiner(const uint32_t inChannels)
 	{
-		// 3 -> 16 -> 16 -> 3, all 3x3. Hidden layers ReLU, output layer linear. The output layer is all-zero
-		// so the residual is 0 (output == bilinear input). Hidden-layer weights are irrelevant to the identity
-		// property but are set to zero too for a clean, reproducible file.
+		// inChannels -> 16 -> 16 -> 3, all 3x3. Hidden layers ReLU, output layer linear. The output layer is
+		// all-zero so the residual is 0 (output == bilinear input, feature channels 0..2). Hidden-layer weights
+		// are irrelevant to the identity property but are set to zero too for a clean, reproducible file.
+		//
+		// inChannels selects the inference path's feature stack: 3 = spatial (bilinear LR only, #47); 8 = temporal
+		// (bilinear LR 0..2, MV-warped previous output 3..5, motion vector 6..7, #98). The count MUST match how
+		// many feature channels the pass populates before the conv stack (upsample writes 0..2; the warp stage
+		// writes 3..7 only on the temporal path) — a wider identity than the pass fills would read uninitialized
+		// feature memory. All first-layer weights are zero regardless, so identity output is exactly bilinear.
 		NeuralModel m;
 		const auto makeLayer = [](const uint32_t inC, const uint32_t outC, const Activation act)
 		{
@@ -83,7 +89,7 @@ namespace Snowstorm::Neural
 			l.Bias.assign(outC, 0.0f);
 			return l;
 		};
-		m.Layers.push_back(makeLayer(3, 16, Activation::ReLU));
+		m.Layers.push_back(makeLayer(inChannels, 16, Activation::ReLU));
 		m.Layers.push_back(makeLayer(16, 16, Activation::ReLU));
 		m.Layers.push_back(makeLayer(16, 3, Activation::None)); // zero -> residual 0 -> exact bilinear
 		return m;
