@@ -40,7 +40,9 @@ namespace Snowstorm
 		{
 			Ref<Texture> Lr;
 			Ref<Texture> Mv;
-			Ref<Texture> Gt;
+			Ref<Texture> Gt;    // full-res HDR ground truth (RGBA16F, linear)
+			Ref<Texture> GtLdr; // full-res tonemapped LDR ground truth (RGBA8 sRGB) — the engine's ACTUAL
+			                    // present output the metric compares, i.e. the exact target to train against (#102)
 			glm::vec2 JitterNdc{0.0f};
 			float Scale = 1.0f;
 			uint32_t FrameIndex = 0;
@@ -55,7 +57,7 @@ namespace Snowstorm
 		[[nodiscard]] uint64_t FramesWritten() const { return m_FramesWritten; }
 
 	private:
-		void EnsureCapacity(uint32_t slot, size_t lrBytes, size_t mvBytes, size_t gtBytes);
+		void EnsureCapacity(uint32_t slot, size_t lrBytes, size_t mvBytes, size_t gtBytes, size_t gtLdrBytes);
 		void SerializeSlot(uint32_t slot, const std::string& outputDir);
 
 		struct SlotMeta
@@ -64,6 +66,7 @@ namespace Snowstorm
 			uint32_t LrW = 0, LrH = 0;
 			uint32_t MvW = 0, MvH = 0;
 			uint32_t GtW = 0, GtH = 0;
+			uint32_t GtLdrW = 0, GtLdrH = 0;
 			glm::vec2 JitterNdc{0.0f};
 			float Scale = 1.0f;
 			uint64_t GlobalFrame = 0; // monotonic sequence number for the on-disk filename
@@ -74,6 +77,7 @@ namespace Snowstorm
 		std::vector<Ref<Buffer>> m_LrBuffers;
 		std::vector<Ref<Buffer>> m_MvBuffers;
 		std::vector<Ref<Buffer>> m_GtBuffers;
+		std::vector<Ref<Buffer>> m_GtLdrBuffers; // RGBA8 (uint8) tonemapped GT
 		std::vector<SlotMeta> m_Slots;
 
 		uint64_t m_GlobalFrame = 0;   // ++ each captured frame; used as the on-disk index

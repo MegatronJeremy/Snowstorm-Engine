@@ -21,10 +21,14 @@ namespace Snowstorm
 		// the controller in charge; we also reset accumulated time so re-enabling always starts at the same
 		// pose (deterministic benchmark start).
 		//
-		// While exporting a dataset (#46) the path must be BIT-reproducible: frame N always maps to the same
-		// pose regardless of real frame timing, or two capture runs would sample different poses. So step by a
-		// fixed dt (60 Hz) instead of the wall-clock ts. Off-export keeps real-time motion for interactive use.
-		const float dt = CVars::DatasetExport.Get() ? (1.0f / 60.0f) : ts.GetSeconds();
+		// The path must be BIT-reproducible when we capture or measure: frame N always maps to the same pose
+		// AND the same per-frame motion-vector magnitude, or (a) two capture runs sample different poses, and
+		// (b) a temporal upscaler trained on the capture's motion sees DIFFERENT motion at metric time — the
+		// #98 train/inference gap. So step by a fixed 60 Hz dt whenever camera.path.fixed is set (default) or a
+		// dataset export is running (always forced). Only when explicitly turned off do we use wall-clock ts,
+		// for free interactive playback where determinism doesn't matter.
+		const bool fixedStep = CVars::DatasetExport.Get() || CVars::CameraPathFixedStep.Get();
+		const float dt = fixedStep ? (1.0f / 60.0f) : ts.GetSeconds();
 		for (const auto view = reg.view<CameraControllerComponent, TransformComponent>(); const auto e : view)
 		{
 			if (!pathOn)

@@ -97,6 +97,18 @@ namespace Snowstorm::CVars
 	// read per-frame by RenderSystem, so toggling it takes effect live.
 	extern CVar<int> AAMode;
 
+	// Upscale method when render.scale < 1 (#47): 0 = bilinear (the baseline), 1 = neural (compute CNN). The
+	// neural path runs the loaded .ssnn; default identity weights reproduce bilinear. Read per-frame.
+	extern CVar<int> Upscaler;
+
+	// Path to a trained .ssnn for the neural upscaler (#99). Empty = built-in identity refiner. Read per-frame
+	// and pushed to the pass (SetWeightsPath); the pass reloads lazily on change.
+	extern CVar<std::string> NeuralWeightsPath;
+
+	// One-shot: write the built-in identity refiner .ssnn to this path then exit (#99). The reference the
+	// Python writer's byte-parity test checks against. Empty = off.
+	extern CVar<std::string> NeuralDumpIdentity;
+
 	// Viewport debug overlay (#44): 0 = Normal, 1 = Motion Vectors. When 1, a dedicated velocity pass emits
 	// per-pixel screen-space motion into the velocity target and the tonemap step visualizes it as color
 	// instead of the tonemapped scene. Gates the (otherwise skipped) velocity pass; read per-frame.
@@ -136,6 +148,11 @@ namespace Snowstorm::CVars
 	// repeatable. Read per-frame by CameraPathSystem. Persist.
 	extern CVar<bool> CameraPath;
 
+	// Step the path by a fixed 60 Hz dt (vs wall-clock) whenever it's on, so a dataset capture and a metric
+	// A/B produce identical per-frame poses AND motion-vector magnitudes — required for a temporal upscaler to
+	// train and infer on the same motion (#98). Dataset export always forces fixed step. Default on. Persist.
+	extern CVar<bool> CameraPathFixedStep;
+
 	// PSNR/SSIM metrics of upscaled vs ground-truth (#45), computed on the GPU. Metrics needs render.compare
 	// (both images must exist); MetricsLog windows + logs them for headless benchmark runs (not persisted —
 	// a run-time diagnostic like debug.frame_stats).
@@ -149,6 +166,10 @@ namespace Snowstorm::CVars
 	extern CVar<bool> DatasetExport;
 	extern CVar<std::string> DatasetExportPath;
 	extern CVar<int> DatasetExportFrames;
+
+	// Apply camera jitter during dataset.export (#102). Off (default) = unjittered LR for the spatial
+	// upscaler; on = jittered LR for the temporal upscaler (#98).
+	extern CVar<bool> DatasetJitter;
 
 	// Temporal sub-pixel camera jitter (#44): Halton(2,3) offset applied to the color projection each
 	// frame — the substrate a temporal upscaler/TAA accumulates. Motion vectors + frustum culling keep the

@@ -3,39 +3,36 @@
 // feature map. The network architecture is the SEQUENCE of these dispatches (chained by C++ in
 // NeuralUpscalePass) with per-layer weight tensors — the ONNX/TensorRT model, not one giant unrolled shader.
 //
-// Feature maps are Texture2DArray<float4>: channel c lives at slice c/4, component c%4. So a C-channel map
-// uses ceil(C/4) array slices. This packs channels into the GPU's native RGBA lanes (free storage-image
-// writes + sampling) and caps this first refiner at C<=16 (4 slices). The CPU reference (NeuralMath.hpp)
-// uses CHW-planar layout; the math is identical, only the channel addressing differs.
+// Feature maps are flat CHW float buffers (channel c, row y, col x at c*H*W + y*W + x) — exactly the layout
+// of the NeuralMath.hpp CPU reference, so the shader is validated 1:1 against it. This matches how ML
+// runtimes hold tensors (flat NCHW) and needs only memory barriers between layers (no image-layout dance).
 //
-// Weights are [outC][inC][kH][kW] row-major (PyTorch layout), bias is [outC], both in one StructuredBuffer
-// (bias appended after the weights). This matches Conv2DReference so exported weights map 1:1.
+// Weights are [outC][inC][kH][kW] row-major (PyTorch), bias [outC], both in one buffer with the bias block
+// appended after the weights (BiasOffset). One thread per (output pixel), looping all output channels.
 
-Texture2DArray<float4> InMap : register(t0, space0);
-StructuredBuffer<float> Weights : register(t1, space0); // [outC*inC*k*k] then [outC] bias appended
-[[vk::image_format("rgba16f")]] RWTexture2DArray<float4> OutMap : register(u2, space0);
+StructuredBuffer<float> InMap : register(t0, space0);   // CHW, InChannels*H*W floats
+StructuredBuffer<float> Weights : register(t1, space0); // [outC*inC*k*k] then [outC] bias at BiasOffset
+RWStructuredBuffer<float> OutMap : register(u2, space0); // CHW, OutChannels*H*W floats
 
 cbuffer ConvCB : register(b3, space0)
 {
-	uint2 Size;      // feature-map W,H (input == output for same padding)
-	uint InChannels; // C_in
-	uint OutChannels; // C_out
-	uint KernelSize; // K (1 or 3)
-	uint Activation; // 0 = none, 1 = ReLU
-	uint BiasOffset; // index into Weights where the [outC] bias block starts (== outC*inC*k*k)
-	uint _Pad;
+	uint2 Size;      // feature-map W,H (input == output, same padding)
+	uint InChannels;
+	uint OutChannels;
+	uint KernelSize;  // 1 or 3
+	uint Activation;  // 0 none, 1 ReLU
+	uint WeightOffset; // global float index where this layer's weights begin
+	uint BiasOffset;   // global float index where this layer's bias begins
 };
 
-// Read channel c of the input map at pixel (x,y). Zero outside the image (same-padding border).
+// Read input channel c at (x,y); zero outside the image (same-padding border).
 float ReadIn(int x, int y, uint c)
 {
 	if (x < 0 || y < 0 || x >= (int)Size.x || y >= (int)Size.y)
 	{
 		return 0.0f;
 	}
-	const uint slice = c >> 2;      // c / 4
-	const uint comp = c & 3;        // c % 4
-	return InMap.Load(int4(x, y, slice, 0))[comp];
+	return InMap[(c * Size.y + (uint)y) * Size.x + (uint)x];
 }
 
 [numthreads(8, 8, 1)]
@@ -48,42 +45,27 @@ void main(uint3 id : SV_DispatchThreadID)
 
 	const int x = (int)id.x;
 	const int y = (int)id.y;
-	const int kR = (int)(KernelSize / 2); // radius (K odd)
+	const int kR = (int)(KernelSize / 2);
 
-	// Accumulate all output channels for this pixel, writing one float4 per slice.
-	const uint outSlices = (OutChannels + 3) / 4;
-	for (uint s = 0; s < outSlices; ++s)
+	for (uint oc = 0; oc < OutChannels; ++oc)
 	{
-		float4 outv = float4(0, 0, 0, 0);
-		[unroll(4)]
-		for (uint comp = 0; comp < 4; ++comp)
+		float acc = Weights[BiasOffset + oc]; // bias
+		for (uint ic = 0; ic < InChannels; ++ic)
 		{
-			const uint oc = s * 4 + comp;
-			if (oc >= OutChannels)
+			for (uint ky = 0; ky < KernelSize; ++ky)
 			{
-				break;
-			}
-
-			float acc = Weights[BiasOffset + oc]; // bias
-			for (uint ic = 0; ic < InChannels; ++ic)
-			{
-				for (uint ky = 0; ky < KernelSize; ++ky)
+				for (uint kx = 0; kx < KernelSize; ++kx)
 				{
-					for (uint kx = 0; kx < KernelSize; ++kx)
-					{
-						const float iv = ReadIn(x + (int)kx - kR, y + (int)ky - kR, ic);
-						const uint wIdx = ((oc * InChannels + ic) * KernelSize + ky) * KernelSize + kx;
-						acc += iv * Weights[wIdx];
-					}
+					const float iv = ReadIn(x + (int)kx - kR, y + (int)ky - kR, ic);
+					const uint wIdx = WeightOffset + ((oc * InChannels + ic) * KernelSize + ky) * KernelSize + kx;
+					acc += iv * Weights[wIdx];
 				}
 			}
-
-			if (Activation == 1 && acc < 0.0f)
-			{
-				acc = 0.0f;
-			}
-			outv[comp] = acc;
 		}
-		OutMap[int3(x, y, (int)s)] = outv;
+		if (Activation == 1 && acc < 0.0f)
+		{
+			acc = 0.0f;
+		}
+		OutMap[(oc * Size.y + (uint)y) * Size.x + (uint)x] = acc;
 	}
 }

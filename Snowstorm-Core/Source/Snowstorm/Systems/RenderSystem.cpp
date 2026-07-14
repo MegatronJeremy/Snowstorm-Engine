@@ -452,14 +452,23 @@ namespace Snowstorm
 			// and last frame's matrices (per-object PrevModel from PrevTransformComponent, camera PrevViewProj
 			// from the runtime component). Self-contained target (own depth), so no ordering constraint.
 			const int debugView = CVars::DebugView.Get();
-			// TAA (render.aa == 2) needs velocity + history; forced off in compare mode (clean A/B, like FXAA).
-			const bool taaOn = !comparing && CVars::AAMode.Get() == 2 &&
+			// TAA (render.aa == 2) needs velocity + history. Unlike FXAA it is NOT forced off in compare:
+			// with render.scale < 1 it is a temporal UPSCALER (TAAU), and measuring whether it recovers the
+			// detail bilinear can't IS the point of the compare A/B (#98). It only touches the LEFT/upscaled
+			// side (writes the LR HistoryTarget that feeds the LR tonemap); the GT second render below is a
+			// plain unjittered forward, so it stays a clean full-res reference. CameraJitterSystem keeps jitter
+			// on for aa==2 even in compare, so the LR side actually accumulates sub-pixel samples.
+			const bool taaOn = CVars::AAMode.Get() == 2 &&
 			                   vpRT.HistoryTarget[0] && vpRT.HistoryTarget[1] &&
 			                   !vpRT.HistoryTarget[0]->GetDesc().ColorAttachments.empty();
+			// Neural TEMPORAL upscaler (#98, render.upscaler == 2): reprojects the previous neural output by
+			// motion vectors, so it needs the velocity buffer too. Only meaningful when actually upscaling
+			// (scale < 1); the upscale block below re-checks that.
+			const bool neuralTemporal = CVars::Upscaler.Get() == 2;
 			// Dataset export (#46) also needs the velocity buffer (an exported channel), so force the velocity
 			// pass on while exporting even without debug-view/TAA. Requires compare (ground truth exists).
 			const bool exporting = CVars::DatasetExport.Get() && comparing;
-			const bool velocityNeeded = (debugView == 1 || taaOn || exporting) && vpRT.VelocityTarget &&
+			const bool velocityNeeded = (debugView == 1 || taaOn || neuralTemporal || exporting) && vpRT.VelocityTarget &&
 			                            !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
 			                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 			if (velocityNeeded)
@@ -559,14 +568,88 @@ namespace Snowstorm
 						const Ref<TextureView> lowResView = hdrDesc.ColorAttachments[0].View;
 						const Ref<TextureView> upView = upDesc.ColorAttachments[0].View;
 						const PixelFormat upFmt = upView->GetTexture()->GetDesc().Format;
-						graph.AddPass({.Name = "Upscale",
-						               .Target = vpRT.SceneUpscaleTarget,
-						               .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
-						               .Execute = [&, lowResView, upFmt](CommandContext& c)
-						               {
-							               m_UpscalePass.Draw(ctx, frameIndex, lowResView, upFmt);
-						               }});
-						sceneColorView = upView;
+						const uint32_t upW = tmDesc.Width;
+						const uint32_t upH = tmDesc.Height;
+
+						// Neural upscaler (#47 spatial / #98 temporal): a compute CNN, alternative to the bilinear
+						// pass. It owns its full-res storage output; on success tonemap reads that. Falls back to
+						// bilinear until its shaders finish compiling (PrepareResources false). The bilinear pass
+						// renders into SceneUpscaleTarget; the neural pass writes its own texture.
+						// PrepareResources runs HERE (graph-build time), not in the Execute lambda: a resize may
+						// drain the GPU + recreate the bindless output view, both illegal mid-command-recording. It
+						// returns false while shaders are still compiling — then we fall back to bilinear this frame.
+						// Push the weights path (#99): empty = identity refiner; the pass reloads lazily on change.
+						// upscaler: 1 = neural spatial (LR only), 2 = neural temporal (LR + MV-warped previous
+						// neural output + motion vector). SetTemporal must precede PrepareResources (it rebuilds the
+						// model at the matching input width).
+						const int upscalerMode = CVars::Upscaler.Get();
+						const bool wantTemporal = upscalerMode == 2;
+						m_NeuralUpscalePass.SetTemporal(wantTemporal);
+						m_NeuralUpscalePass.SetWeightsPath(CVars::NeuralWeightsPath.Get());
+						const bool neural = (upscalerMode == 1 || upscalerMode == 2) && m_NeuralUpscalePass.PrepareResources(upW, upH);
+
+						// Temporal history = the pass's OWN previous-frame output. Its output ring is indexed by
+						// frame-in-flight (2 slots), and with 2 frames in flight the OTHER slot holds the prior
+						// frame's neural result — so OutputView(frameIndex ^ 1) is last frame's upscaled image, no
+						// separate history target or copy needed. Invalid on the first temporal frame per viewport
+						// (that slot never ran) or after a resize; a per-viewport flag signals it, like TAA's.
+						const bool temporal = neural && wantTemporal && velocityNeeded;
+						Ref<TextureView> prevNeural;
+						bool neuralHistValid = false;
+						if (temporal)
+						{
+							prevNeural = m_NeuralUpscalePass.OutputView(frameIndex ^ 1u);
+							neuralHistValid = m_NeuralTemporalValid.contains(vpEntity) && prevNeural != nullptr;
+							m_NeuralTemporalValid.insert(vpEntity);
+						}
+						else
+						{
+							// Not on the temporal path this frame — drop the flag so re-enabling starts clean.
+							m_NeuralTemporalValid.erase(vpEntity);
+						}
+
+						if (neural)
+						{
+							const Ref<TextureView> velViewNeural = temporal ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View : nullptr;
+							std::vector<RenderGraph::ResourceAccess> reads = {
+							    {lowResView->GetTexture(), RenderGraph::AccessState::Sampled}};
+							if (temporal)
+							{
+								reads.push_back({velViewNeural->GetTexture(), RenderGraph::AccessState::Sampled});
+								if (prevNeural)
+								{
+									reads.push_back({prevNeural->GetTexture(), RenderGraph::AccessState::Sampled});
+								}
+							}
+							graph.AddPass({.Name = "NeuralUpscale",
+							               .IsCompute = true,
+							               .Reads = std::move(reads),
+							               .Execute = [&, lowResView, upW, upH, prevNeural, velViewNeural, neuralHistValid, temporal](CommandContext& c)
+							               {
+								               // The forward pass left the low-res Target in SHADER_READ_ONLY (its
+								               // EndRenderPass), so the graph's Sampled re-declaration emits NO barrier —
+								               // this compute pass would sample the color target before its writes are
+								               // visible (reads black). Force the write-before-read dependency, exactly
+								               // like the metrics pass (#45). This was the neural-reads-black bug.
+								               c.BarrierColorWriteToComputeRead(lowResView->GetTexture());
+								               const Ref<CommandContext> cref(&c, [](CommandContext*) {});
+								               m_NeuralUpscalePass.Infer(cref, frameIndex, lowResView, upW, upH,
+								                                         temporal ? prevNeural : nullptr,
+								                                         velViewNeural, neuralHistValid);
+							               }});
+							sceneColorView = m_NeuralUpscalePass.OutputView(frameIndex);
+						}
+						else
+						{
+							graph.AddPass({.Name = "Upscale",
+							               .Target = vpRT.SceneUpscaleTarget,
+							               .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
+							               .Execute = [&, lowResView, upFmt](CommandContext& c)
+							               {
+								               m_UpscalePass.Draw(ctx, frameIndex, lowResView, upFmt);
+							               }});
+							sceneColorView = upView;
+						}
 					}
 				}
 
@@ -709,11 +792,15 @@ namespace Snowstorm
 				// above; it declares the three targets as Sampled reads so the graph normalizes their layout, then
 				// CopyTextureToBuffer pulls each to a host-visible buffer.
 				if (exporting && velocityNeeded && vpRT.GroundTruthTarget &&
-				    !vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty())
+				    !vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty() && vpRT.GroundTruthPresentTarget &&
+				    !vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments.empty())
 				{
 					const Ref<Texture> lrImg = vpRT.Target->GetDesc().ColorAttachments[0].View->GetTexture();
 					const Ref<Texture> mvImg = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture();
 					const Ref<Texture> gtImg = vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+					// The tonemapped LDR GT present — the engine's ACTUAL output the metric compares, i.e. the
+					// exact target to train against (#102). Written by the GT tonemap pass (addTonemap above).
+					const Ref<Texture> gtLdrImg = vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
 					const glm::vec2 jitter = cam.Rt->JitterNdc;
 					const float scale = CVars::ClampedRenderScale();
 					const std::string outDir = CVars::DatasetExportPath.Get();
@@ -721,13 +808,22 @@ namespace Snowstorm
 					               .IsCompute = true, // no render target; records readback copies
 					               .Reads = {{lrImg, RenderGraph::AccessState::Sampled},
 					                         {mvImg, RenderGraph::AccessState::Sampled},
-					                         {gtImg, RenderGraph::AccessState::Sampled}},
-					               .Execute = [&, lrImg, mvImg, gtImg, jitter, scale, outDir](CommandContext& c)
+					                         {gtImg, RenderGraph::AccessState::Sampled},
+					                         {gtLdrImg, RenderGraph::AccessState::Sampled}},
+					               .Execute = [&, lrImg, mvImg, gtImg, gtLdrImg, jitter, scale, outDir](CommandContext& c)
 					               {
+						               // The GT tonemap pass just wrote gtLdrImg and left it in SHADER_READ, so the
+						               // graph's Sampled re-declaration emits no barrier — the copy would read it
+						               // before the color write is visible (reads black, #102). Force the write-
+						               // before-read dependency explicitly, like the metrics/neural passes (#45/#47).
+						               // The HDR three (LR/MV/GT) are produced by earlier passes with their own
+						               // barriers before this point, so only the freshly-tonemapped LDR needs it.
+						               c.BarrierColorWriteToComputeRead(gtLdrImg);
 						               DatasetExportPass::Inputs dsin;
 						               dsin.Lr = lrImg;
 						               dsin.Mv = mvImg;
 						               dsin.Gt = gtImg;
+						               dsin.GtLdr = gtLdrImg;
 						               dsin.JitterNdc = jitter;
 						               dsin.Scale = scale;
 						               dsin.FrameIndex = frameIndex;

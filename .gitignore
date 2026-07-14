@@ -38,3 +38,11 @@ Makefile
 # Local user settings written by the editor on shutdown (persistent CVars). Machine-local
 # state, not project data — must not be committed.
 SnowstormConfig.cfg
+
+# Neural training harness (#99): generated artifacts. Scripts under Tools/neural/ are tracked; the
+# captured datasets, trained weights, and Python caches are large/generated and must not be committed.
+Dataset/
+*.ssnn
+*.npy
+__pycache__/
+.pytest_cache/

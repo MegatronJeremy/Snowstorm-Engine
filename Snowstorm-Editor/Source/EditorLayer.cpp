@@ -15,6 +15,7 @@
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Utility/CVar.hpp"
 #include "Snowstorm/Core/MeshDiagnostics.hpp"
+#include "Snowstorm/Render/Neural/NeuralWeights.hpp"
 #include "Snowstorm/Debug/Instrumentor.hpp"
 
 #include "Snowstorm/Components/ComponentRegistry.hpp"
@@ -469,6 +470,24 @@ namespace Snowstorm
 
 	void EditorLayer::LoadOrCreateStartupWorld()
 	{
+		// One-shot: write the built-in identity refiner .ssnn (#99), then exit. This is the reference the
+		// Python .ssnn writer's byte-parity test compares against — dumping it from the same SaveModel the
+		// engine loads with guarantees the contract. Headless; runs before any scene loads.
+		if (const std::string& ssnnPath = CVars::NeuralDumpIdentity.Get(); !ssnnPath.empty())
+		{
+			const Neural::NeuralModel identity = Neural::MakeIdentityRefiner();
+			if (Neural::SaveModel(ssnnPath, identity))
+			{
+				SS_CORE_INFO("Wrote identity refiner to '{}'.", ssnnPath);
+			}
+			else
+			{
+				SS_CORE_ERROR("Failed to write identity refiner to '{}'.", ssnnPath);
+			}
+			Application::Get().Close();
+			return;
+		}
+
 		// One-shot mesh diagnostic (CVar debug.dump_mesh_tangents, #74): analyze a model's UV/tangent
 		// structure to the log, then exit. Headless-friendly; runs before anything loads a scene.
 		if (const std::string& dumpPath = CVars::DumpMeshTangents.Get(); !dumpPath.empty())

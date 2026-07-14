@@ -148,6 +148,25 @@ namespace Snowstorm
 			}
 		}
 
+		// Upscaler (#47/#98): how the low-res scene is brought to full res when Render Scale < 100%. Bilinear is
+		// the baseline; Neural Spatial runs the single-frame compute CNN; Neural Temporal adds MV-warped
+		// previous-output + motion vector inputs (DLSS/XeSS-style). With default identity weights all match
+		// bilinear (the correctness baseline); a trained .ssnn improves on it. No effect at Native.
+		{
+			int up = CVars::Upscaler.Get();
+			const char* upLabels[] = {"Bilinear", "Neural Spatial", "Neural Temporal"};
+			if (ImGui::Combo("Upscaler", &up, upLabels, 3))
+			{
+				CVars::Upscaler.Set(up);
+			}
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("Only active when Render Scale < 100%. Neural Spatial = single-frame CNN (#47); "
+				                  "Neural Temporal = motion-vector history reprojection (#98). Temporal needs a "
+				                  "matching 8-ch .ssnn (or falls back to bilinear-equivalent identity).");
+			}
+		}
+
 		// Compare (#43 part 2): split-screen upscaled-vs-ground-truth. Renders the scene twice; most useful
 		// at Render Scale < 100% (at Native both sides are identical). Drag the divider in the viewport.
 		if (bool compare = CVars::Compare.Get(); ImGui::Checkbox("Compare (upscaled | ground truth)", &compare))

@@ -18,12 +18,17 @@ namespace Snowstorm
 	namespace
 	{
 		constexpr uint32_t kChannels = 4;        // RGBA
-		constexpr uint32_t kBytesPerChannel = 2; // RGBA16F half floats
+		constexpr uint32_t kBytesPerChannel = 2; // RGBA16F half floats (LR/MV/GT are HDR)
 		constexpr uint32_t kBytesPerPixel = kChannels * kBytesPerChannel;
+		constexpr uint32_t kLdrBytesPerPixel = kChannels * 1; // RGBA8 (uint8) for the tonemapped GT
 
 		size_t ImageBytes(const Ref<Texture>& t)
 		{
 			return static_cast<size_t>(t->GetWidth()) * t->GetHeight() * kBytesPerPixel;
+		}
+		size_t LdrImageBytes(const Ref<Texture>& t)
+		{
+			return static_cast<size_t>(t->GetWidth()) * t->GetHeight() * kLdrBytesPerPixel;
 		}
 
 		std::string FramePath(const std::string& dir, const uint64_t frame, const char* suffix)
@@ -33,21 +38,24 @@ namespace Snowstorm
 			return (std::filesystem::path(dir) / name).string();
 		}
 
-		// Write one readback buffer to a .npy with shape (h, w, 4) float16. Returns the bare filename for the
-		// manifest (paths in the manifest are relative to the export dir, so the dataset folder is relocatable).
+		// Write one readback buffer to a .npy with shape (h, w, 4). `dtype` selects Float16 (HDR sources) or
+		// UInt8 (the tonemapped LDR GT). Returns the bare filename for the manifest (paths are relative to the
+		// export dir, so the dataset folder is relocatable).
 		std::string DumpBuffer(const std::string& dir, const uint64_t frame, const char* suffix,
-		                       const Ref<Buffer>& buf, const uint32_t w, const uint32_t h)
+		                       const Ref<Buffer>& buf, const uint32_t w, const uint32_t h, const NpyDType dtype)
 		{
-			const size_t bytes = static_cast<size_t>(w) * h * kBytesPerPixel;
+			const uint32_t bpp = (dtype == NpyDType::UInt8) ? kLdrBytesPerPixel : kBytesPerPixel;
+			const size_t bytes = static_cast<size_t>(w) * h * bpp;
 			const void* mapped = buf->Map();
 			const std::string full = FramePath(dir, frame, suffix);
-			WriteNpy(full, mapped, bytes, {h, w, kChannels}, NpyDType::Float16);
+			WriteNpy(full, mapped, bytes, {h, w, kChannels}, dtype);
 			buf->Unmap();
 			return std::filesystem::path(full).filename().string();
 		}
 	}
 
-	void DatasetExportPass::EnsureCapacity(const uint32_t slot, const size_t lrBytes, const size_t mvBytes, const size_t gtBytes)
+	void DatasetExportPass::EnsureCapacity(const uint32_t slot, const size_t lrBytes, const size_t mvBytes,
+	                                       const size_t gtBytes, const size_t gtLdrBytes)
 	{
 		const uint32_t frames = Renderer::GetFramesInFlight();
 		if (m_LrBuffers.size() != frames)
@@ -55,6 +63,7 @@ namespace Snowstorm
 			m_LrBuffers.assign(frames, nullptr);
 			m_MvBuffers.assign(frames, nullptr);
 			m_GtBuffers.assign(frames, nullptr);
+			m_GtLdrBuffers.assign(frames, nullptr);
 			m_Slots.assign(frames, SlotMeta{});
 		}
 
@@ -70,6 +79,7 @@ namespace Snowstorm
 		ensure(m_LrBuffers[slot], lrBytes, "DatasetExportLR");
 		ensure(m_MvBuffers[slot], mvBytes, "DatasetExportMV");
 		ensure(m_GtBuffers[slot], gtBytes, "DatasetExportGT");
+		ensure(m_GtLdrBuffers[slot], gtLdrBytes, "DatasetExportGTLdr");
 	}
 
 	void DatasetExportPass::SerializeSlot(const uint32_t slot, const std::string& outputDir)
@@ -80,9 +90,10 @@ namespace Snowstorm
 			return;
 		}
 
-		const std::string lrFile = DumpBuffer(outputDir, m.GlobalFrame, "lr", m_LrBuffers[slot], m.LrW, m.LrH);
-		const std::string mvFile = DumpBuffer(outputDir, m.GlobalFrame, "mv", m_MvBuffers[slot], m.MvW, m.MvH);
-		const std::string gtFile = DumpBuffer(outputDir, m.GlobalFrame, "gt", m_GtBuffers[slot], m.GtW, m.GtH);
+		const std::string lrFile = DumpBuffer(outputDir, m.GlobalFrame, "lr", m_LrBuffers[slot], m.LrW, m.LrH, NpyDType::Float16);
+		const std::string mvFile = DumpBuffer(outputDir, m.GlobalFrame, "mv", m_MvBuffers[slot], m.MvW, m.MvH, NpyDType::Float16);
+		const std::string gtFile = DumpBuffer(outputDir, m.GlobalFrame, "gt", m_GtBuffers[slot], m.GtW, m.GtH, NpyDType::Float16);
+		const std::string gtLdrFile = DumpBuffer(outputDir, m.GlobalFrame, "gt_ldr", m_GtLdrBuffers[slot], m.GtLdrW, m.GtLdrH, NpyDType::UInt8);
 
 		// Append this frame to the manifest. The manifest is rewritten whole each frame (cheap for hundreds of
 		// frames) so an interrupted run still leaves a valid, loadable JSON for everything captured so far.
@@ -93,6 +104,8 @@ namespace Snowstorm
 		entry["lr"] = {{"file", lrFile}, {"w", m.LrW}, {"h", m.LrH}, {"c", kChannels}, {"dtype", "float16"}};
 		entry["mv"] = {{"file", mvFile}, {"w", m.MvW}, {"h", m.MvH}, {"c", kChannels}, {"dtype", "float16"}};
 		entry["gt"] = {{"file", gtFile}, {"w", m.GtW}, {"h", m.GtH}, {"c", kChannels}, {"dtype", "float16"}};
+		// The engine's ACTUAL tonemapped LDR present (sRGB bytes) — the exact target to train against (#102).
+		entry["gt_ldr"] = {{"file", gtLdrFile}, {"w", m.GtLdrW}, {"h", m.GtLdrH}, {"c", kChannels}, {"dtype", "uint8"}};
 
 		nlohmann::json manifest;
 		{
@@ -125,7 +138,7 @@ namespace Snowstorm
 
 	uint64_t DatasetExportPass::CaptureAndSerialize(const Ref<CommandContext>& ctx, const Inputs& in, const std::string& outputDir)
 	{
-		if (!ctx || !in.Lr || !in.Mv || !in.Gt)
+		if (!ctx || !in.Lr || !in.Mv || !in.Gt || !in.GtLdr)
 		{
 			return m_FramesWritten;
 		}
@@ -144,16 +157,17 @@ namespace Snowstorm
 		}
 
 		const uint32_t slot = in.FrameIndex;
-		EnsureCapacity(slot, ImageBytes(in.Lr), ImageBytes(in.Mv), ImageBytes(in.Gt));
+		EnsureCapacity(slot, ImageBytes(in.Lr), ImageBytes(in.Mv), ImageBytes(in.Gt), LdrImageBytes(in.GtLdr));
 
 		// 1-frame-lag: this slot's previous tuple (written `frames` frames ago) is now GPU-retired and readable.
 		// Serialize it BEFORE overwriting the slot's buffers with this frame's copies.
 		SerializeSlot(slot, outputDir);
 
-		// Record this frame's three readback copies into the command stream.
+		// Record this frame's four readback copies into the command stream.
 		ctx->CopyTextureToBuffer(in.Lr, m_LrBuffers[slot]);
 		ctx->CopyTextureToBuffer(in.Mv, m_MvBuffers[slot]);
 		ctx->CopyTextureToBuffer(in.Gt, m_GtBuffers[slot]);
+		ctx->CopyTextureToBuffer(in.GtLdr, m_GtLdrBuffers[slot]);
 
 		SlotMeta& m = m_Slots[slot];
 		m.Pending = true;
@@ -163,6 +177,8 @@ namespace Snowstorm
 		m.MvH = in.Mv->GetHeight();
 		m.GtW = in.Gt->GetWidth();
 		m.GtH = in.Gt->GetHeight();
+		m.GtLdrW = in.GtLdr->GetWidth();
+		m.GtLdrH = in.GtLdr->GetHeight();
 		m.JitterNdc = in.JitterNdc;
 		m.Scale = in.Scale;
 		m.GlobalFrame = m_GlobalFrame++;
