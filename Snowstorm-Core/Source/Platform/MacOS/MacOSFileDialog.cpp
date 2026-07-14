@@ -9,19 +9,23 @@
 
 namespace Snowstorm::FileDialog
 {
-	std::filesystem::path OpenFile(const std::vector<FileDialogFilter>& filters)
+	std::filesystem::path OpenFile(
+	    const std::vector<FileDialogFilter>& filters,
+	    const std::filesystem::path& defaultPath)
 	{
 		// TODO: implement (e.g. NSOpenPanel).
 		return {};
 	}
 
-	std::filesystem::path SaveFile(const std::vector<FileDialogFilter>& filters)
+	std::filesystem::path SaveFile(
+	    const std::vector<FileDialogFilter>& filters,
+	    const std::filesystem::path& defaultPath)
 	{
 		// TODO: implement (e.g. NSSavePanel).
 		return {};
 	}
 
-	std::filesystem::path OpenFolder()
+	std::filesystem::path OpenFolder(const std::filesystem::path& defaultPath)
 	{
 		// TODO: implement (e.g. NSOpenPanel with canChooseDirectories).
 		return {};
