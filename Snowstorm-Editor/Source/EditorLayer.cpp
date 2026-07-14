@@ -250,13 +250,15 @@ namespace Snowstorm
 			return false;
 		}
 
-		CloseProject();
-
 		const Ref<Project> project = CreateRef<Project>();
 		if (!ProjectSerializer::Deserialize(*project, ssprojPath))
 		{
 			return false;
 		}
+
+		// Validate and deserialize the candidate before tearing down the current project. A malformed
+		// user-selected .ssproj must leave the working project and its World intact.
+		CloseProject();
 		Project::SetActive(project);
 
 		// CloseProject already drained the GPU and dropped the old World (if there was one) — build
