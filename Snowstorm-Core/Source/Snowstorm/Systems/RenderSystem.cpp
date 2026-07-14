@@ -461,10 +461,14 @@ namespace Snowstorm
 			const bool taaOn = CVars::AAMode.Get() == 2 &&
 			                   vpRT.HistoryTarget[0] && vpRT.HistoryTarget[1] &&
 			                   !vpRT.HistoryTarget[0]->GetDesc().ColorAttachments.empty();
+			// Neural TEMPORAL upscaler (#98, render.upscaler == 2): reprojects the previous neural output by
+			// motion vectors, so it needs the velocity buffer too. Only meaningful when actually upscaling
+			// (scale < 1); the upscale block below re-checks that.
+			const bool neuralTemporal = CVars::Upscaler.Get() == 2;
 			// Dataset export (#46) also needs the velocity buffer (an exported channel), so force the velocity
 			// pass on while exporting even without debug-view/TAA. Requires compare (ground truth exists).
 			const bool exporting = CVars::DatasetExport.Get() && comparing;
-			const bool velocityNeeded = (debugView == 1 || taaOn || exporting) && vpRT.VelocityTarget &&
+			const bool velocityNeeded = (debugView == 1 || taaOn || neuralTemporal || exporting) && vpRT.VelocityTarget &&
 			                            !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
 			                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 			if (velocityNeeded)
@@ -567,22 +571,60 @@ namespace Snowstorm
 						const uint32_t upW = tmDesc.Width;
 						const uint32_t upH = tmDesc.Height;
 
-						// Neural upscaler (#47): a compute CNN residual refiner, alternative to the bilinear pass.
-						// It owns its full-res storage output; on success tonemap reads that. Falls back to bilinear
-						// until its shaders finish compiling (HasOutput() false). The bilinear pass renders into
-						// SceneUpscaleTarget; the neural pass writes its own texture.
+						// Neural upscaler (#47 spatial / #98 temporal): a compute CNN, alternative to the bilinear
+						// pass. It owns its full-res storage output; on success tonemap reads that. Falls back to
+						// bilinear until its shaders finish compiling (PrepareResources false). The bilinear pass
+						// renders into SceneUpscaleTarget; the neural pass writes its own texture.
 						// PrepareResources runs HERE (graph-build time), not in the Execute lambda: a resize may
 						// drain the GPU + recreate the bindless output view, both illegal mid-command-recording. It
 						// returns false while shaders are still compiling — then we fall back to bilinear this frame.
 						// Push the weights path (#99): empty = identity refiner; the pass reloads lazily on change.
+						// upscaler: 1 = neural spatial (LR only), 2 = neural temporal (LR + MV-warped previous
+						// neural output + motion vector). SetTemporal must precede PrepareResources (it rebuilds the
+						// model at the matching input width).
+						const int upscalerMode = CVars::Upscaler.Get();
+						const bool wantTemporal = upscalerMode == 2;
+						m_NeuralUpscalePass.SetTemporal(wantTemporal);
 						m_NeuralUpscalePass.SetWeightsPath(CVars::NeuralWeightsPath.Get());
-						const bool neural = CVars::Upscaler.Get() == 1 && m_NeuralUpscalePass.PrepareResources(upW, upH);
+						const bool neural = (upscalerMode == 1 || upscalerMode == 2) && m_NeuralUpscalePass.PrepareResources(upW, upH);
+
+						// Temporal history = the pass's OWN previous-frame output. Its output ring is indexed by
+						// frame-in-flight (2 slots), and with 2 frames in flight the OTHER slot holds the prior
+						// frame's neural result — so OutputView(frameIndex ^ 1) is last frame's upscaled image, no
+						// separate history target or copy needed. Invalid on the first temporal frame per viewport
+						// (that slot never ran) or after a resize; a per-viewport flag signals it, like TAA's.
+						const bool temporal = neural && wantTemporal && velocityNeeded;
+						Ref<TextureView> prevNeural;
+						bool neuralHistValid = false;
+						if (temporal)
+						{
+							prevNeural = m_NeuralUpscalePass.OutputView(frameIndex ^ 1u);
+							neuralHistValid = m_NeuralTemporalValid.contains(vpEntity) && prevNeural != nullptr;
+							m_NeuralTemporalValid.insert(vpEntity);
+						}
+						else
+						{
+							// Not on the temporal path this frame — drop the flag so re-enabling starts clean.
+							m_NeuralTemporalValid.erase(vpEntity);
+						}
+
 						if (neural)
 						{
+							const Ref<TextureView> velViewNeural = temporal ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View : nullptr;
+							std::vector<RenderGraph::ResourceAccess> reads = {
+							    {lowResView->GetTexture(), RenderGraph::AccessState::Sampled}};
+							if (temporal)
+							{
+								reads.push_back({velViewNeural->GetTexture(), RenderGraph::AccessState::Sampled});
+								if (prevNeural)
+								{
+									reads.push_back({prevNeural->GetTexture(), RenderGraph::AccessState::Sampled});
+								}
+							}
 							graph.AddPass({.Name = "NeuralUpscale",
 							               .IsCompute = true,
-							               .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
-							               .Execute = [&, lowResView, upW, upH](CommandContext& c)
+							               .Reads = std::move(reads),
+							               .Execute = [&, lowResView, upW, upH, prevNeural, velViewNeural, neuralHistValid, temporal](CommandContext& c)
 							               {
 								               // The forward pass left the low-res Target in SHADER_READ_ONLY (its
 								               // EndRenderPass), so the graph's Sampled re-declaration emits NO barrier —
@@ -591,7 +633,9 @@ namespace Snowstorm
 								               // like the metrics pass (#45). This was the neural-reads-black bug.
 								               c.BarrierColorWriteToComputeRead(lowResView->GetTexture());
 								               const Ref<CommandContext> cref(&c, [](CommandContext*) {});
-								               m_NeuralUpscalePass.Infer(cref, frameIndex, lowResView, upW, upH);
+								               m_NeuralUpscalePass.Infer(cref, frameIndex, lowResView, upW, upH,
+								                                         temporal ? prevNeural : nullptr,
+								                                         velViewNeural, neuralHistValid);
 							               }});
 							sceneColorView = m_NeuralUpscalePass.OutputView(frameIndex);
 						}

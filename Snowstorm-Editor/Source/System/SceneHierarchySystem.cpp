@@ -148,19 +148,22 @@ namespace Snowstorm
 			}
 		}
 
-		// Upscaler (#47): how the low-res scene is brought to full res when Render Scale < 100%. Bilinear is the
-		// baseline; Neural runs the compute CNN (with default identity weights it matches bilinear — the
-		// correctness baseline — and a trained .ssnn improves on it). No effect at Native (nothing to upscale).
+		// Upscaler (#47/#98): how the low-res scene is brought to full res when Render Scale < 100%. Bilinear is
+		// the baseline; Neural Spatial runs the single-frame compute CNN; Neural Temporal adds MV-warped
+		// previous-output + motion vector inputs (DLSS/XeSS-style). With default identity weights all match
+		// bilinear (the correctness baseline); a trained .ssnn improves on it. No effect at Native.
 		{
 			int up = CVars::Upscaler.Get();
-			const char* upLabels[] = {"Bilinear", "Neural (CNN)"};
-			if (ImGui::Combo("Upscaler", &up, upLabels, 2))
+			const char* upLabels[] = {"Bilinear", "Neural Spatial", "Neural Temporal"};
+			if (ImGui::Combo("Upscaler", &up, upLabels, 3))
 			{
 				CVars::Upscaler.Set(up);
 			}
 			if (ImGui::IsItemHovered())
 			{
-				ImGui::SetTooltip("Only active when Render Scale < 100%. Neural = compute CNN residual refiner (#47).");
+				ImGui::SetTooltip("Only active when Render Scale < 100%. Neural Spatial = single-frame CNN (#47); "
+				                  "Neural Temporal = motion-vector history reprojection (#98). Temporal needs a "
+				                  "matching 8-ch .ssnn (or falls back to bilinear-equivalent identity).");
 			}
 		}
 

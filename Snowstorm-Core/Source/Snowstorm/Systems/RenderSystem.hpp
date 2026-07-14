@@ -53,6 +53,11 @@ namespace Snowstorm
 		// re-enabling TAA starts clean instead of reprojecting a stale/garbage history on frame one.
 		std::unordered_set<entt::entity> m_TaaHistoryValid;
 
+		// Same idea for the neural TEMPORAL upscaler (#98): a viewport is valid once the neural pass has
+		// produced at least one prior-frame output for its OTHER in-flight slot; erased when the temporal path
+		// turns off / resizes, so the first temporal frame warps against zeros (disocclusion), not garbage.
+		std::unordered_set<entt::entity> m_NeuralTemporalValid;
+
 		// The environment the IBL maps were last baked from. When the live environment differs (e.g. a scene
 		// finished loading after the deferred startup load, so the first bake saw an empty/default world), we
 		// invalidate the bake so it re-runs against the real sky. nullopt = never baked. (#64)
