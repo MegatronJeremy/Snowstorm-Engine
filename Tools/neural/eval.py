@@ -25,10 +25,80 @@ import torch.nn.functional as F
 from model import ResidualRefiner
 from ssnn import load_ssnn
 from tonemap import to_display
+from warp import build_features, warp_history
 
 
 def psnr(mse: float) -> float:
     return 100.0 if mse <= 1e-12 else 10.0 * math.log10(1.0 / mse)
+
+
+def _load_lr(dataset, fr):
+    return np.load(os.path.join(dataset, fr["lr"]["file"])).astype(np.float32)[..., :3]
+
+
+def _load_gt(dataset, fr):
+    return np.load(os.path.join(dataset, fr["gt_ldr"]["file"])).astype(np.float32)[..., :3] / 255.0
+
+
+def _load_mv(dataset, fr):
+    return np.load(os.path.join(dataset, fr["mv"]["file"])).astype(np.float32)[..., :2]
+
+
+def eval_spatial(model, dataset, frames, device, margin):
+    """Single-frame full-frame PSNR (#47/#102 path). Each frame independent."""
+    base_mse = net_mse = 0.0
+    n = 0
+    for fr in frames:
+        gt = _load_gt(dataset, fr)
+        if gt.max() < 1e-4:  # black warmup frame
+            continue
+        lr_t = torch.from_numpy(_load_lr(dataset, fr).transpose(2, 0, 1)).unsqueeze(0).to(device)
+        gt_d = torch.from_numpy(gt.transpose(2, 0, 1)).unsqueeze(0).to(device)
+        up = F.interpolate(lr_t, size=gt_d.shape[-2:], mode="bilinear", align_corners=False)
+        with torch.no_grad():
+            up_d, out_d = to_display(up), to_display(model(up))
+            if margin > 0:
+                gt_d, up_d, out_d = gt_d[..., margin:-margin, margin:-margin], up_d[..., margin:-margin, margin:-margin], out_d[..., margin:-margin, margin:-margin]
+            base_mse += F.mse_loss(up_d, gt_d).item()
+            net_mse += F.mse_loss(out_d, gt_d).item()
+        n += 1
+    return net_mse, base_mse, n
+
+
+def eval_temporal(model, dataset, frames, device, margin):
+    """Recurrent full-frame PSNR (#98 path): roll the net across the ORDERED frames, feeding each output
+    back as the next frame's MV-warped history — exactly like the engine's render.upscaler=2. Frame 0
+    warm-starts with zero history (pure spatial), matching the first temporal frame per viewport."""
+    base_mse = net_mse = 0.0
+    n = 0
+    prev = None
+    for fr in frames:
+        gt = _load_gt(dataset, fr)
+        if gt.max() < 1e-4:  # black warmup frame -> reset the temporal chain
+            prev = None
+            continue
+        lr_t = torch.from_numpy(_load_lr(dataset, fr).transpose(2, 0, 1)).unsqueeze(0).to(device)
+        mv_t = torch.from_numpy(_load_mv(dataset, fr).transpose(2, 0, 1)).unsqueeze(0).to(device)
+        gt_d = torch.from_numpy(gt.transpose(2, 0, 1)).unsqueeze(0).to(device)
+        hw = gt_d.shape[-2:]
+        up = F.interpolate(lr_t, size=hw, mode="bilinear", align_corners=False)
+        with torch.no_grad():
+            # A per-frame render.scale rounding change (or the first frame) makes prev's size != this frame:
+            # treat it as disocclusion (zero history), matching the engine's resize-invalidates-history guard.
+            if prev is not None and prev.shape[-2:] == hw:
+                warped = warp_history(prev, mv_t, history_valid=True)
+            else:
+                warped = warp_history(up, mv_t, history_valid=False)
+            feat = build_features(up, warped, mv_t)
+            out = model(feat)
+            prev = out
+            up_d, out_d = to_display(up), to_display(out)
+            if margin > 0:
+                gt_d, up_d, out_d = gt_d[..., margin:-margin, margin:-margin], up_d[..., margin:-margin, margin:-margin], out_d[..., margin:-margin, margin:-margin]
+            base_mse += F.mse_loss(up_d, gt_d).item()
+            net_mse += F.mse_loss(out_d, gt_d).item()
+        n += 1
+    return net_mse, base_mse, n
 
 
 def main() -> None:
@@ -44,28 +114,13 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = ResidualRefiner.from_layers(load_ssnn(args.weights)).to(device).eval()
+    temporal = model.in_channels == 8  # auto-detect from the loaded model's first-layer width
+    print(f"model: {model.in_channels}-ch ({'TEMPORAL recurrent' if temporal else 'spatial single-frame'})")
 
-    base_mse = net_mse = 0.0
-    n = 0
-    for fr in frames:
-        lr = np.load(os.path.join(args.dataset, fr["lr"]["file"])).astype(np.float32)[..., :3]
-        gt = np.load(os.path.join(args.dataset, fr["gt_ldr"]["file"])).astype(np.float32)[..., :3] / 255.0
-        if gt.max() < 1e-4:  # black warmup frame
-            continue
-        lr_t = torch.from_numpy(lr.transpose(2, 0, 1)).unsqueeze(0).to(device)
-        gt_d = torch.from_numpy(gt.transpose(2, 0, 1)).unsqueeze(0).to(device)
-        up = F.interpolate(lr_t, size=gt_d.shape[-2:], mode="bilinear", align_corners=False)
-        with torch.no_grad():
-            out = model(up)
-            up_d, out_d = to_display(up), to_display(out)
-            m = args.margin
-            if m > 0:
-                gt_d = gt_d[..., m:-m, m:-m]
-                up_d = up_d[..., m:-m, m:-m]
-                out_d = out_d[..., m:-m, m:-m]
-            base_mse += F.mse_loss(up_d, gt_d).item()
-            net_mse += F.mse_loss(out_d, gt_d).item()
-        n += 1
+    if temporal:
+        net_mse, base_mse, n = eval_temporal(model, args.dataset, frames, device, args.margin)
+    else:
+        net_mse, base_mse, n = eval_spatial(model, args.dataset, frames, device, args.margin)
 
     print(f"frames evaluated: {n}")
     print(f"bilinear full-frame PSNR: {psnr(base_mse / n):6.2f} dB")

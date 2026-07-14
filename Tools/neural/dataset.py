@@ -219,10 +219,15 @@ class SRSequenceDataset(Dataset):
         gc = self.crop * self.ratio  # full-res crop size
 
         # Shared crop across the window. Full-res origin snapped to the LR grid (multiple of ratio) so lr and
-        # full-res mv/gt align. Clamp so both the LR patch and the gc x gc full-res patch stay in bounds.
-        sh, sw, _ = self._lr[start].shape
-        gh, gw, _ = self._gt[start].shape
+        # full-res mv/gt align. Frame dims can differ slightly across the window (the engine rounds
+        # render.scale per frame, so gt/lr sizes vary by a pixel or two), and the SAME crop origin is applied
+        # to every frame — so clamp against the MINIMUM dims across the whole window, or a later, smaller
+        # frame yields an out-of-bounds (empty) crop.
         c = self.crop
+        sh = min(self._lr[start + k].shape[0] for k in range(self.seq))
+        sw = min(self._lr[start + k].shape[1] for k in range(self.seq))
+        gh = min(self._gt[start + k].shape[0] for k in range(self.seq))
+        gw = min(self._gt[start + k].shape[1] for k in range(self.seq))
         max_lx = max(0, min(sw - c, (gw - gc) // self.ratio))
         max_ly = max(0, min(sh - c, (gh - gc) // self.ratio))
         lx, ly = random.randint(0, max_lx), random.randint(0, max_ly)
