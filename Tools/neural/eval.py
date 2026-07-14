@@ -27,6 +27,12 @@ from ssnn import load_ssnn
 from tonemap import to_display
 from warp import build_features, warp_history
 
+try:
+    from metrics import lpips_distance
+    _HAVE_LPIPS = True
+except Exception:  # lpips not installed — PSNR-only fallback
+    _HAVE_LPIPS = False
+
 
 def psnr(mse: float) -> float:
     return 100.0 if mse <= 1e-12 else 10.0 * math.log10(1.0 / mse)
@@ -45,8 +51,8 @@ def _load_mv(dataset, fr):
 
 
 def eval_spatial(model, dataset, frames, device, margin):
-    """Single-frame full-frame PSNR (#47/#102 path). Each frame independent."""
-    base_mse = net_mse = 0.0
+    """Single-frame full-frame PSNR + LPIPS (#47/#102 path). Each frame independent."""
+    base_mse = net_mse = base_lp = net_lp = 0.0
     n = 0
     for fr in frames:
         gt = _load_gt(dataset, fr)
@@ -56,20 +62,23 @@ def eval_spatial(model, dataset, frames, device, margin):
         gt_d = torch.from_numpy(gt.transpose(2, 0, 1)).unsqueeze(0).to(device)
         up = F.interpolate(lr_t, size=gt_d.shape[-2:], mode="bilinear", align_corners=False)
         with torch.no_grad():
-            up_d, out_d = to_display(up), to_display(model(up))
+            up_d, out_d = to_display(up).clamp(0, 1), to_display(model(up)).clamp(0, 1)
             if margin > 0:
                 gt_d, up_d, out_d = gt_d[..., margin:-margin, margin:-margin], up_d[..., margin:-margin, margin:-margin], out_d[..., margin:-margin, margin:-margin]
             base_mse += F.mse_loss(up_d, gt_d).item()
             net_mse += F.mse_loss(out_d, gt_d).item()
+            if _HAVE_LPIPS:
+                base_lp += lpips_distance(up_d, gt_d).item()
+                net_lp += lpips_distance(out_d, gt_d).item()
         n += 1
-    return net_mse, base_mse, n
+    return net_mse, base_mse, net_lp, base_lp, n
 
 
 def eval_temporal(model, dataset, frames, device, margin):
     """Recurrent full-frame PSNR (#98 path): roll the net across the ORDERED frames, feeding each output
     back as the next frame's MV-warped history — exactly like the engine's render.upscaler=2. Frame 0
     warm-starts with zero history (pure spatial), matching the first temporal frame per viewport."""
-    base_mse = net_mse = 0.0
+    base_mse = net_mse = base_lp = net_lp = 0.0
     n = 0
     prev = None
     for fr in frames:
@@ -92,13 +101,16 @@ def eval_temporal(model, dataset, frames, device, margin):
             feat = build_features(up, warped, mv_t)
             out = model(feat)
             prev = out
-            up_d, out_d = to_display(up), to_display(out)
+            up_d, out_d = to_display(up).clamp(0, 1), to_display(out).clamp(0, 1)
             if margin > 0:
                 gt_d, up_d, out_d = gt_d[..., margin:-margin, margin:-margin], up_d[..., margin:-margin, margin:-margin], out_d[..., margin:-margin, margin:-margin]
             base_mse += F.mse_loss(up_d, gt_d).item()
             net_mse += F.mse_loss(out_d, gt_d).item()
+            if _HAVE_LPIPS:
+                base_lp += lpips_distance(up_d, gt_d).item()
+                net_lp += lpips_distance(out_d, gt_d).item()
         n += 1
-    return net_mse, base_mse, n
+    return net_mse, base_mse, net_lp, base_lp, n
 
 
 def main() -> None:
@@ -118,14 +130,22 @@ def main() -> None:
     print(f"model: {model.in_channels}-ch ({'TEMPORAL recurrent' if temporal else 'spatial single-frame'})")
 
     if temporal:
-        net_mse, base_mse, n = eval_temporal(model, args.dataset, frames, device, args.margin)
+        net_mse, base_mse, net_lp, base_lp, n = eval_temporal(model, args.dataset, frames, device, args.margin)
     else:
-        net_mse, base_mse, n = eval_spatial(model, args.dataset, frames, device, args.margin)
+        net_mse, base_mse, net_lp, base_lp, n = eval_spatial(model, args.dataset, frames, device, args.margin)
 
     print(f"frames evaluated: {n}")
     print(f"bilinear full-frame PSNR: {psnr(base_mse / n):6.2f} dB")
     print(f"neural   full-frame PSNR: {psnr(net_mse / n):6.2f} dB")
-    print(f"gain: {psnr(net_mse / n) - psnr(base_mse / n):+.2f} dB")
+    print(f"PSNR gain: {psnr(net_mse / n) - psnr(base_mse / n):+.2f} dB")
+    if _HAVE_LPIPS:
+        bl, nl = base_lp / n, net_lp / n
+        # LPIPS: lower = better. A positive gain (bilinear - neural) means the net is perceptually CLOSER
+        # to GT than bilinear — the win that matches the goal, even when PSNR says otherwise (#98).
+        print(f"bilinear full-frame LPIPS: {bl:.4f}")
+        print(f"neural   full-frame LPIPS: {nl:.4f}")
+        verdict = "neural BEATS bilinear (perceptual)" if (bl - nl) > 0 else "neural does NOT beat bilinear"
+        print(f"LPIPS gain: {bl - nl:+.4f}  ->  {verdict}")
 
 
 if __name__ == "__main__":

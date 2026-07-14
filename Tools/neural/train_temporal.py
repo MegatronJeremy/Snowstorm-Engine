@@ -31,6 +31,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from dataset import SRSequenceDataset
+from metrics import lpips_distance
 from model import ResidualRefiner
 from ssnn import save_ssnn
 from tonemap import to_display
@@ -71,13 +72,15 @@ def recurrent_forward(model, lr_seq, mv_seq, device, detach_history=True):
     return outs, bils
 
 
-def val_psnr_recurrent(model, val_lr, val_mv, val_gt, device) -> tuple[float, float]:
-    """Full-frame recurrent val PSNR: roll the net across the contiguous held-out frames and compare each
-    output to gt_ldr in display space. Returns (neural_psnr, bilinear_psnr). This is the honest metric —
-    whole frames, temporally rolled, on data the net never trained on. Iterated per-frame (not stacked):
+def val_recurrent(model, val_lr, val_mv, val_gt, device):
+    """Full-frame recurrent validation: roll the net across the contiguous held-out frames, comparing each
+    output to gt_ldr in display space. Returns (neural_lpips, bilinear_lpips, neural_psnr, bilinear_psnr).
+    LPIPS is the SELECTION metric (lower=better, and unlike PSNR it rewards perceptual sharpness over the
+    blurry bilinear baseline, #98); PSNR is kept as a secondary readout. Iterated per-frame (not stacked):
     the engine rounds render.scale per frame, so full-frame sizes differ by a pixel or two across the run."""
     model.eval()
     net_mse = base_mse = 0.0
+    net_lp = base_lp = 0.0
     prev = None
     with torch.no_grad():
         for lr, mv, gt in zip(val_lr, val_mv, val_gt):
@@ -92,10 +95,13 @@ def val_psnr_recurrent(model, val_lr, val_mv, val_gt, device) -> tuple[float, fl
                 warped = warp_history(prev, mv_t, history_valid=True)
             out = model(build_features(bil, warped, mv_t))
             prev = out
-            net_mse += F.mse_loss(to_display(out), gt_d).item()
-            base_mse += F.mse_loss(to_display(bil), gt_d).item()
+            out_d, bil_d = to_display(out).clamp(0, 1), to_display(bil).clamp(0, 1)
+            net_mse += F.mse_loss(out_d, gt_d).item()
+            base_mse += F.mse_loss(bil_d, gt_d).item()
+            net_lp += lpips_distance(out_d, gt_d).item()
+            base_lp += lpips_distance(bil_d, gt_d).item()
     n = max(1, len(val_gt))
-    return psnr(net_mse / n), psnr(base_mse / n)
+    return net_lp / n, base_lp / n, psnr(net_mse / n), psnr(base_mse / n)
 
 
 def main() -> None:
@@ -110,6 +116,10 @@ def main() -> None:
     ap.add_argument("--samples-per-window", type=int, default=4)
     ap.add_argument("--val-frac", type=float, default=0.2)
     ap.add_argument("--weight-decay", type=float, default=1e-4)
+    ap.add_argument("--hidden", type=int, default=32, help="hidden conv width (capacity)")
+    ap.add_argument("--depth", type=int, default=4, help="total conv layers (capacity)")
+    ap.add_argument("--lpips-weight", type=float, default=1.0,
+                    help="weight of the LPIPS perceptual loss term (added to L1). 0 = pure L1 (PSNR-biased)")
     args = ap.parse_args()
 
     torch.manual_seed(0)
@@ -123,11 +133,17 @@ def main() -> None:
     if not val_lr:
         raise SystemExit("need --val-frac > 0 for honest model selection")
 
-    model = ResidualRefiner(in_channels=8).to(device)
+    model = ResidualRefiner(in_channels=8, hidden=args.hidden, depth=args.depth).to(device)
+    n_params = sum(p.numel() for p in model.parameters())
+    print(f"model: 8-ch temporal, hidden={args.hidden}, depth={args.depth} ({n_params} params)")
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
-    best_val_gain = -1e9
+    # Selection metric is held-out LPIPS (lower = better); we track the LOWEST neural LPIPS. The loss is
+    # L1 + lpips_weight * LPIPS so the net optimizes perceptual sharpness, not the blur-favoring L1 alone
+    # (pure L1/PSNR selection converged toward bilinear — the #98 finding). PSNR is a secondary readout.
+    best_val_lpips = 1e9
     best_epoch = -1
+    best_gain_at_best = 0.0
     for epoch in range(args.epochs):
         model.train()
         loss_sum = n = 0.0
@@ -141,7 +157,10 @@ def main() -> None:
                 seq_loss = 0.0
                 for k, out_d in enumerate(outs):
                     gt_d = gt_b[b, k:k + 1].to(device)
-                    seq_loss = seq_loss + F.l1_loss(out_d, gt_d)
+                    frame_loss = F.l1_loss(out_d, gt_d)
+                    if args.lpips_weight > 0.0:
+                        frame_loss = frame_loss + args.lpips_weight * lpips_distance(out_d.clamp(0, 1), gt_d)
+                    seq_loss = seq_loss + frame_loss
                 batch_loss = batch_loss + seq_loss / len(outs)
             batch_loss = batch_loss / B
             batch_loss.backward()
@@ -149,20 +168,23 @@ def main() -> None:
             loss_sum += batch_loss.item() * B
             n += B
 
-        val_psnr, val_base = val_psnr_recurrent(model, val_lr, val_mv, val_gt, device)
-        val_gain = val_psnr - val_base
+        net_lp, base_lp, val_psnr, val_base = val_recurrent(model, val_lr, val_mv, val_gt, device)
+        lpips_gain = base_lp - net_lp  # positive = neural is perceptually CLOSER to GT than bilinear (a win)
         if (epoch + 1) % 10 == 0 or epoch == 0:
-            print(f"epoch {epoch+1:4d}  L1 {loss_sum/max(n,1):.5f}  "
-                  f"val PSNR {val_psnr:6.2f} dB  (bilinear {val_base:6.2f} dB, gain {val_gain:+.2f})")
+            print(f"epoch {epoch+1:4d}  loss {loss_sum/max(n,1):.4f}  "
+                  f"val LPIPS {net_lp:.4f} (bilinear {base_lp:.4f}, gain {lpips_gain:+.4f})  "
+                  f"[PSNR {val_psnr:.2f} vs {val_base:.2f}]")
 
-        if val_gain > best_val_gain:
-            best_val_gain = val_gain
+        if net_lp < best_val_lpips:
+            best_val_lpips = net_lp
+            best_gain_at_best = lpips_gain
             best_epoch = epoch + 1
             os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
             save_ssnn(args.out, model.to_layers())
 
-    verdict = "BEATS bilinear" if best_val_gain > 0 else "does NOT beat bilinear"
-    print(f"\nbest val gain {best_val_gain:+.2f} dB @ epoch {best_epoch} ({verdict}) -> {args.out}")
+    verdict = "BEATS bilinear (perceptual)" if best_gain_at_best > 0 else "does NOT beat bilinear"
+    print(f"\nbest val LPIPS {best_val_lpips:.4f} @ epoch {best_epoch} "
+          f"(gain {best_gain_at_best:+.4f}, {verdict}) -> {args.out}")
 
 
 if __name__ == "__main__":

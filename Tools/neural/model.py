@@ -21,39 +21,48 @@ import torch.nn as nn
 
 from ssnn import ACT_NONE, ACT_RELU, Layer
 
-# Hidden width + output channels are fixed; the input width selects spatial (3) vs temporal (8).
-HIDDEN = 16
+# Output channels + kernel are fixed. Hidden width + depth are CONFIGURABLE (the .ssnn format and the
+# engine's NeuralConv loop already run any layer list, so a bigger net is a pure training-side change —
+# only MakeIdentityRefiner's fixed 3-layer shape is a C++ constant, and identity weights aren't trained).
 OUT_CH = 3
 KERNEL = 3
+DEFAULT_HIDDEN = 32
+DEFAULT_DEPTH = 4  # total conv layers: (depth-1) hidden ReLU layers + 1 linear output layer
 
 
 class ResidualRefiner(nn.Module):
     """Post-upsample residual CNN. forward(features) = features[:, 0:3] + conv_stack(features).
 
     `features` is (N, in_ch, H, W); channels 0..2 are the bilinear base (the residual skip). in_ch=3 is
-    the spatial path (#47); in_ch=8 is the temporal path (#98: +warped history +motion vector)."""
+    the spatial path (#47); in_ch=8 is the temporal path (#98: +warped history +motion vector). `hidden`
+    and `depth` scale capacity: depth = total conv layers (depth-1 ReLU hidden + 1 linear output)."""
 
-    def __init__(self, in_channels: int = 3) -> None:
+    def __init__(self, in_channels: int = 3, hidden: int = DEFAULT_HIDDEN, depth: int = DEFAULT_DEPTH) -> None:
         super().__init__()
+        assert depth >= 2, "need at least one hidden + one output layer"
         self.in_channels = in_channels
+        self.hidden = hidden
+        self.depth = depth
         pad = KERNEL // 2
-        self.conv0 = nn.Conv2d(in_channels, HIDDEN, KERNEL, padding=pad)
-        self.conv1 = nn.Conv2d(HIDDEN, HIDDEN, KERNEL, padding=pad)
-        self.conv2 = nn.Conv2d(HIDDEN, OUT_CH, KERNEL, padding=pad)
+        chans = [in_channels] + [hidden] * (depth - 1) + [OUT_CH]
+        self.convs = nn.ModuleList(nn.Conv2d(chans[i], chans[i + 1], KERNEL, padding=pad) for i in range(depth))
         self.relu = nn.ReLU(inplace=True)
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
         base = features[:, 0:OUT_CH]  # bilinear RGB — the residual skip (matches NeuralResidualAdd)
-        x = self.relu(self.conv0(features))
-        x = self.relu(self.conv1(x))
-        residual = self.conv2(x)  # linear output layer
-        return base + residual
+        x = features
+        for i, conv in enumerate(self.convs):
+            x = conv(x)
+            if i < len(self.convs) - 1:  # ReLU on every layer except the linear output
+                x = self.relu(x)
+        return base + x  # x is the residual
 
     def to_layers(self) -> list[Layer]:
-        """Export the three conv layers to the .ssnn Layer list (weights already in [outC][inC][kH][kW])."""
-        specs = [(self.conv0, ACT_RELU), (self.conv1, ACT_RELU), (self.conv2, ACT_NONE)]
+        """Export every conv layer to the .ssnn Layer list (weights already in [outC][inC][kH][kW]). All but
+        the last are ReLU; the output layer is linear."""
         layers: list[Layer] = []
-        for conv, act in specs:
+        for i, conv in enumerate(self.convs):
+            act = ACT_NONE if i == len(self.convs) - 1 else ACT_RELU
             w = conv.weight.detach().cpu().contiguous().view(-1).tolist()  # [outC,inC,kH,kW] row-major
             b = conv.bias.detach().cpu().contiguous().view(-1).tolist()
             layers.append(Layer(conv.in_channels, conv.out_channels, KERNEL, act, w, b))
@@ -63,12 +72,12 @@ class ResidualRefiner(nn.Module):
     def from_layers(cls, layers: list[Layer]) -> "ResidualRefiner":
         """Rebuild the model from a loaded .ssnn Layer list (inverse of to_layers). The .ssnn stores each
         conv's weights row-major in [outC][inC][kH][kW] — exactly PyTorch's conv-weight layout — so the
-        flat arrays reshape back 1:1. The first layer's in_channels selects spatial (3) vs temporal (8)."""
-        assert len(layers) == 3, f"expected 3 layers, got {len(layers)}"
-        m = cls(in_channels=layers[0].in_channels)
-        convs = [m.conv0, m.conv1, m.conv2]
+        flat arrays reshape back 1:1. Infers in_channels/hidden/depth from the layer list, so a wider/deeper
+        trained model loads without the caller knowing its shape."""
+        assert len(layers) >= 2, f"expected >= 2 layers, got {len(layers)}"
+        m = cls(in_channels=layers[0].in_channels, hidden=layers[0].out_channels, depth=len(layers))
         with torch.no_grad():
-            for conv, layer in zip(convs, layers):
+            for conv, layer in zip(m.convs, layers):
                 w = torch.tensor(layer.weights, dtype=torch.float32).view(
                     layer.out_channels, layer.in_channels, layer.kernel_size, layer.kernel_size)
                 conv.weight.copy_(w)
@@ -77,12 +86,13 @@ class ResidualRefiner(nn.Module):
 
 
 def make_identity(in_channels: int = 3) -> ResidualRefiner:
-    """The identity refiner: final conv (weights + bias) is all-zero, so the residual is 0 and the
-    output == the bilinear base (features 0..2). Matches MakeIdentityRefiner(inChannels) so the exported
-    .ssnn is byte-identical to the engine's dump — the parity oracle."""
-    m = ResidualRefiner(in_channels=in_channels)
+    """The identity refiner: ALL conv weights + biases zero, so the residual is 0 and the output == the
+    bilinear base (features 0..2). Fixed to the engine's 3-layer, 16-hidden shape (MakeIdentityRefiner in
+    NeuralWeights.cpp) so the exported .ssnn is byte-identical to the engine's dump — the parity oracle.
+    Trained models use the larger DEFAULT_HIDDEN/DEFAULT_DEPTH; identity stays small since it's not trained."""
+    m = ResidualRefiner(in_channels=in_channels, hidden=16, depth=3)
     with torch.no_grad():
-        for conv in (m.conv0, m.conv1, m.conv2):
+        for conv in m.convs:
             conv.weight.zero_()
             conv.bias.zero_()
     return m
