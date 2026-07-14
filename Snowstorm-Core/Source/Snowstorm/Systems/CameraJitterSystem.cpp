@@ -19,18 +19,28 @@ namespace Snowstorm
 
 		// Jitter is on when explicitly enabled (render.jitter) OR when TAA is selected (render.aa == 2):
 		// TAA without jitter accumulates identical frames — pure lag, no anti-aliasing — so selecting TAA
-		// implies jitter, the way Unreal couples TemporalAA to its view jitter. Forced off in compare mode
-		// (the A/B measures only the upscaler; a jittered projection would shimmer/desync both sides).
+		// implies jitter, the way Unreal couples TemporalAA to its view jitter.
 		//
-		// EXCEPTION — dataset export (#46): a temporal super-resolution network trains on JITTERED low-res
-		// input (the sub-pixel offset is the only source of new detail the network reconstructs from). Export
-		// runs inside compare mode (it needs the ground-truth render), so without this the exported LR would be
-		// unjittered and useless for a temporal upscaler. When exporting we force jitter on: it lands on the LR
-		// color pass (addForward jittered=true); the ground-truth + velocity passes use the unjittered VP, so
-		// GT stays a clean reference and motion vectors stay correct. JitterNdc is recorded per frame so the
-		// training pipeline knows each frame's offset.
-		const bool jitterOn = CVars::DatasetExport.Get() ||
-		                      ((CVars::Jitter.Get() || CVars::AAMode.Get() == 2) && !CVars::Compare.Get());
+		// TAA-in-compare (#98): with render.scale < 1, TAA is a temporal UPSCALER (accumulates jittered
+		// sub-pixel samples at output res — the DLSS/XeSS substrate). Measuring whether that recovers the
+		// detail bilinear can't needs the in-engine A/B (compare mode) WITH jitter — but compare normally
+		// forces jitter OFF. That's correct for a purely SPATIAL upscaler (#99/#102: it can't win against a
+		// per-frame shift, so a jittered A/B would just shimmer both sides), but wrong for TAAU. So when TAA
+		// is the active AA mode, jitter stays on even in compare: only the LR forward consumes the jittered
+		// VP (addForward jittered=true), while the GT forward always renders UNJITTERED (a clean full-res
+		// reference) and velocity keeps the unjittered VP — so the metric stays valid, GT vs a TAA-resolved
+		// LR that should converge toward it. Spatial-upscaler A/Bs (TAA off, render.aa != 2) are unchanged:
+		// jitter still forced off in compare.
+		//
+		// EXCEPTION — dataset export (#46/#102): a TEMPORAL super-resolution network trains on JITTERED low-res
+		// input (the sub-pixel offset is the only source of new detail it reconstructs). Export runs inside
+		// compare mode (it needs the ground-truth render). So export forces jitter back on — but ONLY when
+		// dataset.jitter is set (a spatial net trains/infers unjittered; that mismatch is what made the
+		// trained spatial net lose to bilinear in-engine, #102). JitterNdc is recorded per frame.
+		const bool taaActive = CVars::AAMode.Get() == 2;
+		const bool jitterOn = (CVars::DatasetExport.Get() && CVars::DatasetJitter.Get()) ||
+		                      taaActive ||
+		                      (CVars::Jitter.Get() && !CVars::Compare.Get());
 
 		// Same monotonic counter the whole frame uses (incremented in RendererService::NewFrame before any
 		// system runs). Deterministic per frame, so all cameras this frame share one Halton index.

@@ -84,6 +84,13 @@ namespace Snowstorm
 		// before its writes are visible. Use before a compute pass samples a color target the same frame.
 		virtual void BarrierColorWriteToComputeRead(const Ref<Texture>& texture) = 0;
 
+		// Global compute-write -> compute-read memory barrier (a VkMemoryBarrier2 over the compute stage).
+		// Chained compute dispatches that ping-pong storage buffers (e.g. the neural upscaler's conv stack:
+		// layer N writes a feature buffer layer N+1 reads) have a read-after-write hazard the graph's per-pass
+		// transitions don't cover, since it's all one pass. Emit this between the writing and reading Dispatch
+		// so the read sees the completed write. Covers all storage buffers/images touched by compute.
+		virtual void BarrierComputeStorage() = 0;
+
 		// GPU->CPU readback: copy a texture's mip 0 / layer 0 into a host-visible buffer (created with
 		// BufferUsage::Readback). Transitions the image SHADER_READ_ONLY -> TRANSFER_SRC, does a tightly-packed
 		// vkCmdCopyImageToBuffer (bytes = width*height*bytesPerPixel, no row padding), then restores it to
