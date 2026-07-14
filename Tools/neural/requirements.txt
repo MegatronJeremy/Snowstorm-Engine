@@ -1,4 +1,7 @@
-# Neural upscaler training harness (#99). CPU torch is fine for the small refiner.
+# Neural upscaler training harness (#99/#98). A CUDA torch build is recommended for the recurrent
+# temporal training (#98); CPU torch works for the small spatial refiner but is slow for BPTT.
 torch>=2.0
+torchvision>=0.15   # lpips backbone (AlexNet) weights
 numpy>=1.24
+lpips>=0.1.4        # perceptual metric — the selection metric for the temporal upscaler (#98)
 pytest>=7.0
