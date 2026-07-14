@@ -452,8 +452,13 @@ namespace Snowstorm
 			// and last frame's matrices (per-object PrevModel from PrevTransformComponent, camera PrevViewProj
 			// from the runtime component). Self-contained target (own depth), so no ordering constraint.
 			const int debugView = CVars::DebugView.Get();
-			// TAA (render.aa == 2) needs velocity + history; forced off in compare mode (clean A/B, like FXAA).
-			const bool taaOn = !comparing && CVars::AAMode.Get() == 2 &&
+			// TAA (render.aa == 2) needs velocity + history. Unlike FXAA it is NOT forced off in compare:
+			// with render.scale < 1 it is a temporal UPSCALER (TAAU), and measuring whether it recovers the
+			// detail bilinear can't IS the point of the compare A/B (#98). It only touches the LEFT/upscaled
+			// side (writes the LR HistoryTarget that feeds the LR tonemap); the GT second render below is a
+			// plain unjittered forward, so it stays a clean full-res reference. CameraJitterSystem keeps jitter
+			// on for aa==2 even in compare, so the LR side actually accumulates sub-pixel samples.
+			const bool taaOn = CVars::AAMode.Get() == 2 &&
 			                   vpRT.HistoryTarget[0] && vpRT.HistoryTarget[1] &&
 			                   !vpRT.HistoryTarget[0]->GetDesc().ColorAttachments.empty();
 			// Dataset export (#46) also needs the velocity buffer (an exported channel), so force the velocity
