@@ -9,6 +9,7 @@
 #include "Snowstorm/Components/VisibilityComponents.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Lighting/LightingComponents.hpp"
+#include "Snowstorm/Project/Project.hpp"
 #include "Snowstorm/World/Entity.hpp"
 #include "Snowstorm/World/World.hpp"
 
@@ -74,13 +75,18 @@ namespace Snowstorm
 	{
 		auto& assets = world.GetSingleton<AssetManagerSingleton>();
 
-		// Assets (idempotent imports).
-		const AssetHandle cubeMesh = assets.Import("assets/meshes/cube.obj", AssetType::Mesh);
-		const AssetHandle quadMesh = assets.Import("assets/meshes/quad.obj", AssetType::Mesh);
-		const AssetHandle whiteMat = assets.Import("assets/materials/White.ssmat", AssetType::Material);
+		// Import paths are stored verbatim in AssetRegistry.json, so they stay relative (the
+		// project's config AssetDirectory field, not the composed absolute GetAssetDirectory())
+		// to keep the registry portable — matching the relative paths already committed there.
+		const std::filesystem::path& assetDir = Project::GetActive()->GetConfig().AssetDirectory;
 
-		const AssetHandle checkerTex = assets.Import("assets/textures/Checkerboard.png", AssetType::Texture);
-		const AssetHandle sheetTex = assets.Import("assets/textures/RPGpack_sheet_2X.png", AssetType::Texture);
+		// Assets (idempotent imports).
+		const AssetHandle cubeMesh = assets.Import((assetDir / "meshes/cube.obj").generic_string(), AssetType::Mesh);
+		const AssetHandle quadMesh = assets.Import((assetDir / "meshes/quad.obj").generic_string(), AssetType::Mesh);
+		const AssetHandle whiteMat = assets.Import((assetDir / "materials/White.ssmat").generic_string(), AssetType::Material);
+
+		const AssetHandle checkerTex = assets.Import((assetDir / "textures/Checkerboard.png").generic_string(), AssetType::Texture);
+		const AssetHandle sheetTex = assets.Import((assetDir / "textures/RPGpack_sheet_2X.png").generic_string(), AssetType::Texture);
 
 		// Deterministic PRNG so the scene is reproducible run-to-run (before/after benchmarks).
 		std::mt19937 rng(params.Seed);

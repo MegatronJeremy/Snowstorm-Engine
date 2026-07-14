@@ -46,6 +46,8 @@
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/World/EditorStateSingleton.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
+#include "Snowstorm/Project/Project.hpp"
+#include "Snowstorm/Project/ProjectSerializer.hpp"
 
 #include "StressScene.hpp"
 
@@ -76,13 +78,35 @@ namespace Snowstorm
 
 		m_ActiveWorld = CreateRef<World>();
 
+		// No New/Open Project flow exists yet, so bootstrap an implicit project rooted at the
+		// working directory (== repo root, see VS_DEBUGGER_WORKING_DIRECTORY) if none is active.
+		// This keeps asset paths flowing through Project::GetActive() instead of hardcoded
+		// literals, with no behavior change today (ProjectDirectory == today's implicit root).
+		if (!Project::GetActive())
+		{
+			Ref<Project> project = CreateRef<Project>();
+			project->SetProjectDirectory(std::filesystem::current_path());
+			Project::SetActive(project);
+		}
+
+		// Apply the startup VSync preference (backend defaults to FIFO/on).
+		Renderer::SetVSync(CVars::VSync.Get());
+
+		InitializeActiveWorld();
+
+		LoadOrCreateStartupWorld();
+	}
+
+	void EditorLayer::InitializeActiveWorld()
+	{
+		World* world = m_ActiveWorld.get();
+
 		// Load asset registry DB early
 		{
 			auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
-			assets.LoadRegistry("assets/AssetRegistry.json");
+			assets.LoadRegistry(Project::GetActive()->GetAssetRegistryPath());
 
 			// Let the inspector show asset handles as filenames instead of raw UUIDs.
-			World* world = m_ActiveWorld.get();
 			SetAssetNameResolver([world](const uint64_t handle) -> std::string
 			                     {
 				if (const AssetMetadata* meta = world->GetSingleton<AssetManagerSingleton>().GetMetadata(AssetHandle{handle}))
@@ -127,7 +151,29 @@ namespace Snowstorm
 				return true;
 			};
 
-			World* world = m_ActiveWorld.get();
+			cmds.NewProject = [this](const std::filesystem::path& directory, const std::string& name) -> bool
+			{
+				return CreateProject(directory, name);
+			};
+
+			cmds.OpenProject = [this](const std::filesystem::path& ssprojPath) -> bool
+			{
+				// Deferred to the frame boundary (see m_PendingProjectPath): OpenProject destroys the
+				// active World, and this lambda runs from a system OF that World — opening inline
+				// would free the caller mid-execution.
+				if (!std::filesystem::exists(ssprojPath))
+				{
+					return false;
+				}
+				RequestProjectOpen(ssprojPath);
+				return true;
+			};
+
+			cmds.SaveProject = [this]() -> bool
+			{
+				return SaveProject();
+			};
+
 			cmds.CreateEntity = [world]() -> Entity
 			{
 				return world->CreateEntity("Entity");
@@ -137,9 +183,6 @@ namespace Snowstorm
 				world->DestroyEntity(e);
 			};
 		}
-
-		// Apply the startup VSync preference (backend defaults to FIFO/on).
-		Renderer::SetVSync(CVars::VSync.Get());
 
 		RegisterCoreSystems(*m_ActiveWorld); // engine systems (shared with a future runtime)
 		RegisterEditorSystems();             // editor-only systems on top
@@ -152,8 +195,6 @@ namespace Snowstorm
 		// while the deferred startup scene streams in.
 		CreateMainViewportEntity();
 		CreateCameraEntities();
-
-		LoadOrCreateStartupWorld();
 	}
 
 	void EditorLayer::RequestSceneLoad(const std::string& scenePath)
@@ -162,10 +203,126 @@ namespace Snowstorm
 		m_HasPendingScene = true;
 	}
 
+	void EditorLayer::RequestProjectOpen(const std::filesystem::path& ssprojPath)
+	{
+		m_PendingProjectPath = ssprojPath;
+		m_HasPendingProject = true;
+	}
+
+	bool EditorLayer::CreateProject(const std::filesystem::path& directory, const std::string& name)
+	{
+		if (directory.empty() || name.empty())
+		{
+			return false;
+		}
+
+		const Ref<Project> project = CreateRef<Project>();
+		project->SetProjectDirectory(directory);
+		project->SetProjectFileName(name + ".ssproj");
+		project->GetConfig().Name = name;
+
+		// Scaffold the asset folder tree — mirrors Hazel's CreateProject template folders, minus
+		// Audio/Scripts (no audio or scripting system exists yet). Folder names come from (and match
+		// the casing of) the config's relative paths, so ProjectConfig stays the single source of
+		// truth — a casing mismatch would break the day a case-sensitive platform lands.
+		const std::filesystem::path assetsDir = directory / project->GetConfig().AssetDirectory;
+		for (const char* sub : {"meshes", "materials", "scenes", "shaders", "textures"})
+		{
+			std::filesystem::create_directories(assetsDir / sub);
+		}
+
+		if (!ProjectSerializer::Serialize(*project, directory / project->GetProjectFileName()))
+		{
+			return false;
+		}
+
+		// Deferred, not a direct OpenProject call: CreateProject is reached from the File menu (a
+		// system of the CURRENT World), and OpenProject destroys that World. The scaffold above is
+		// pure file I/O, so it is safe to do inline; only the world swap must wait for the frame
+		// boundary.
+		RequestProjectOpen(directory / project->GetProjectFileName());
+		return true;
+	}
+
+	bool EditorLayer::OpenProject(const std::filesystem::path& ssprojPath)
+	{
+		if (!std::filesystem::exists(ssprojPath))
+		{
+			return false;
+		}
+
+		CloseProject();
+
+		const Ref<Project> project = CreateRef<Project>();
+		if (!ProjectSerializer::Deserialize(*project, ssprojPath))
+		{
+			return false;
+		}
+		Project::SetActive(project);
+
+		// CloseProject already drained the GPU and dropped the old World (if there was one) — build
+		// the new project's World fresh and wire it up the same way OnAttach does.
+		m_ActiveWorld = CreateRef<World>();
+		InitializeActiveWorld();
+
+		// Deferred, same as a normal "Open Scene" — if the project has no start scene yet (e.g. a
+		// brand-new project from CreateProject), TryLoadWorldFromFile warns and leaves the World
+		// empty (camera/viewport only).
+		RequestSceneLoad(Project::GetActive()->GetStartScenePath().string());
+
+		// Point the active-scene path at the NEW project's start scene immediately, not only after a
+		// successful load (TryLoadWorldFromFile sets it on success). Without this, a project whose
+		// start scene doesn't exist yet would leave the path on the PREVIOUS project's scene — and the
+		// next Ctrl+S would overwrite that old file with this project's empty world.
+		m_ActiveScenePath = Project::GetActive()->GetStartScenePath().string();
+
+		return true;
+	}
+
+	bool EditorLayer::SaveProject() const
+	{
+		const Ref<Project> project = Project::GetActive();
+		if (!project)
+		{
+			return false;
+		}
+
+		return ProjectSerializer::Serialize(*project, project->GetProjectDirectory() / project->GetProjectFileName());
+	}
+
+	void EditorLayer::CloseProject()
+	{
+		if (!Project::GetActive())
+		{
+			return;
+		}
+
+		// Save the project file only — deliberately NOT the scene. Whether unsaved scene edits
+		// should survive a project switch is the user's call (Ctrl+S before switching); silently
+		// writing the scene here would overwrite the file with edits they may have wanted to discard.
+		SaveProject();
+
+		// Drain the GPU before dropping the old World's resources — same safe point
+		// TryLoadWorldFromFile uses for a scene switch, just for the whole World this time.
+		Renderer::WaitIdle();
+
+		// Every external Ref<World> must be dropped before this, or the World (and its GPU resources)
+		// outlives the project switch — mirrors Hazel's CloseProject assert ("Scene will not be
+		// destroyed... something is still holding scene refs!").
+		SS_CORE_ASSERT(m_ActiveWorld.use_count() == 1,
+		               "CloseProject: something besides m_ActiveWorld still holds a Ref<World>");
+
+		m_ActiveWorld = nullptr;
+		Project::SetActive(nullptr);
+	}
+
 	bool EditorLayer::TryLoadWorldFromFile(const std::string& scenePath)
 	{
 		if (!std::filesystem::exists(scenePath))
 		{
+			// Fail loud: a silent false here hides "the scene never existed" (e.g. a brand-new
+			// project's not-yet-created start scene) behind an unexplained empty viewport.
+			SS_CORE_WARN("Scene '{}' does not exist; nothing loaded.", scenePath);
 			return false;
 		}
 
@@ -264,7 +421,7 @@ namespace Snowstorm
 
 		if (request == "stress")
 		{
-			bake("assets/scenes/Stress.world", [this]
+			bake((Project::GetActive()->GetAssetDirectory() / "scenes/Stress.world").string(), [this]
 			     {
 				StressSceneParams params;
 				params.RotatorCount = CVars::StressRotators.Get();      // heavy data-parallel workload for #85 (0 = none)
@@ -276,7 +433,7 @@ namespace Snowstorm
 		{
 			// Treat the value as a model path. Output name derives from the model's file stem, so any
 			// model bakes to Assets/Scenes/<ModelStem>.world (not just the previously-hardcoded Sponza).
-			const std::string outPath = "assets/scenes/" + std::filesystem::path(request).stem().string() + ".world";
+			const std::string outPath = (Project::GetActive()->GetAssetDirectory() / ("scenes/" + std::filesystem::path(request).stem().string() + ".world")).string();
 			bake(outPath, [this, &request]
 			     {
 				auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
@@ -357,17 +514,17 @@ namespace Snowstorm
 			return;
 		}
 
-		static constexpr const char* kStartupScenePath = "assets/scenes/Startup.world";
-		if (std::filesystem::exists(kStartupScenePath))
+		const std::string startupScenePath = Project::GetActive()->GetStartScenePath().string();
+		if (std::filesystem::exists(startupScenePath))
 		{
-			RequestSceneLoad(kStartupScenePath);
+			RequestSceneLoad(startupScenePath);
 			return;
 		}
 
 		// First-run: no saved scene exists. Create a default in-place (cheap — no heavy assets) and save
 		// it; this is a one-time path so a brief synchronous build is fine. The camera + viewport already
 		// exist (created persistently in OnAttach), so only scene content is added here.
-		m_ActiveScenePath = kStartupScenePath;
+		m_ActiveScenePath = startupScenePath;
 		CreateDemoEntities();
 		PrewarmSceneTextures();
 		SaveActiveScene();
@@ -391,7 +548,7 @@ namespace Snowstorm
 		// Save asset registry (so new imports persist)
 		{
 			auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
-			assets.SaveRegistry("assets/AssetRegistry.json");
+			assets.SaveRegistry(Project::GetActive()->GetAssetRegistryPath());
 		}
 
 		// Persist the editor camera viewpoint for THIS scene as editor-only metadata (a "<scene>.editor"
@@ -491,15 +648,20 @@ namespace Snowstorm
 		// ---------------------------------------------------------------------
 		// Import assets (registry entries)
 		// ---------------------------------------------------------------------
-		const AssetHandle girlMeshH = assets.Import("assets/meshes/girl.obj", AssetType::Mesh);
-		const AssetHandle cubeMeshH = assets.Import("assets/meshes/cube.obj", AssetType::Mesh);
-		const AssetHandle quadMeshH = assets.Import("assets/meshes/quad.obj", AssetType::Mesh);
+		// Import paths are stored verbatim in AssetRegistry.json, so they stay relative (the
+		// project's config AssetDirectory field, not the composed absolute GetAssetDirectory())
+		// to keep the registry portable — matching the relative paths already committed there.
+		const std::filesystem::path& assetDir = Project::GetActive()->GetConfig().AssetDirectory;
 
-		const AssetHandle whiteMatH = assets.Import("assets/materials/White.ssmat", AssetType::Material);
-		const AssetHandle blueMatH = assets.Import("assets/materials/Blue.ssmat", AssetType::Material);
-		const AssetHandle mandelbrotMatH = assets.Import("assets/materials/Mandelbrot.ssmat", AssetType::Material);
+		const AssetHandle girlMeshH = assets.Import((assetDir / "meshes/girl.obj").generic_string(), AssetType::Mesh);
+		const AssetHandle cubeMeshH = assets.Import((assetDir / "meshes/cube.obj").generic_string(), AssetType::Mesh);
+		const AssetHandle quadMeshH = assets.Import((assetDir / "meshes/quad.obj").generic_string(), AssetType::Mesh);
 
-		const AssetHandle checkerTexH = assets.Import("assets/textures/Checkerboard.png", AssetType::Texture);
+		const AssetHandle whiteMatH = assets.Import((assetDir / "materials/White.ssmat").generic_string(), AssetType::Material);
+		const AssetHandle blueMatH = assets.Import((assetDir / "materials/Blue.ssmat").generic_string(), AssetType::Material);
+		const AssetHandle mandelbrotMatH = assets.Import((assetDir / "materials/Mandelbrot.ssmat").generic_string(), AssetType::Material);
+
+		const AssetHandle checkerTexH = assets.Import((assetDir / "textures/Checkerboard.png").generic_string(), AssetType::Texture);
 
 		// Helper for common renderable setup
 		auto SetupRenderable = [&](Entity e, const AssetHandle meshH, const AssetHandle matH, const VisibilityMask visMask)
@@ -861,6 +1023,21 @@ namespace Snowstorm
 		// frame 2; otherwise the load stalls with frame 0's panel-less image frozen on screen — which
 		// read as "the editor starts blank and only fills in when the scene loads". (Mid-session opens
 		// from the Content Browser already have visible panels on screen, so this wait is invisible there.)
+		// Apply a deferred project open at the frame boundary, BEFORE the pending-scene check:
+		// OpenProject replaces the whole World (and queues the new project's start scene as a pending
+		// scene), so it must run first — and never from inside a UI system, which is a system of the
+		// very World it would destroy (see RequestProjectOpen).
+		if (m_HasPendingProject && m_FramesPresented > 1)
+		{
+			m_HasPendingProject = false;
+			const std::filesystem::path path = std::move(m_PendingProjectPath);
+			m_PendingProjectPath.clear();
+			if (!OpenProject(path))
+			{
+				SS_CORE_ERROR("Failed to open project '{}'.", path.string());
+			}
+		}
+
 		if (m_HasPendingScene && m_FramesPresented > 1)
 		{
 			m_HasPendingScene = false;

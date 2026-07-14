@@ -16,6 +16,39 @@ namespace Snowstorm
 		void OnUpdate(Timestep ts) override;
 
 	private:
+		// --- Project lifecycle (see Snowstorm/Project/Project.hpp + ProjectSerializer) ---
+		// Scaffold a new project on disk (Assets/{Meshes,Materials,Scenes,Shaders,Textures} + a fresh
+		// .ssproj), then open it. Returns false if the directory/name is invalid or scaffolding fails.
+		bool CreateProject(const std::filesystem::path& directory, const std::string& name);
+
+		// Load a .ssproj, make it the active Project, and replace the active World/scene/asset registry
+		// with the newly-opened project's. Mirrors OnAttach's bootstrap, just for an explicit project
+		// instead of the implicit working-directory one. Returns false on a bad/missing .ssproj.
+		bool OpenProject(const std::filesystem::path& ssprojPath);
+
+		// Serialize the active Project's ProjectConfig back to its .ssproj. Does NOT save the active
+		// scene (call SaveActiveScene separately, or see CloseProject which does both).
+		bool SaveProject() const;
+
+		// Save the project file (NOT the scene — unsaved scene edits are the user's call to keep or
+		// discard via Ctrl+S), then release the active World/Project. Called by OpenProject to tear
+		// down the previous project before switching.
+		void CloseProject();
+
+		// Queue a project open for the next frame boundary (see OnUpdate). OpenProject destroys the
+		// active World — running it synchronously from a UI system (the File menu) would free the very
+		// World whose system is still executing (use-after-free on singletons/systems mid-frame). Same
+		// deferral pattern as RequestSceneLoad.
+		void RequestProjectOpen(const std::filesystem::path& ssprojPath);
+
+		// Bind everything a freshly-created m_ActiveWorld needs against the CURRENTLY active Project:
+		// asset registry, inspector resolver hooks (SetAssetNameResolver/SetAssetListProvider — these
+		// capture the World by raw pointer, so they must be re-bound whenever m_ActiveWorld changes),
+		// editor commands, engine+editor systems, persistent camera/viewport. Called from OnAttach
+		// (implicit bootstrap project) — OpenProject should call it too after swapping m_ActiveWorld,
+		// so there is exactly one place that knows how to wire up a World.
+		void InitializeActiveWorld();
+
 		bool TryLoadWorldFromFile(const std::string& scenePath);
 		void LoadOrCreateStartupWorld();
 
@@ -78,6 +111,12 @@ namespace Snowstorm
 		// resources (descriptor sets, meshes) that the in-progress frame's render pass still binds.
 		std::string m_PendingScenePath;
 		bool m_HasPendingScene = false;
+
+		// Project open requested from a UI system (File menu). Deferred like the pending scene above,
+		// but stronger: OpenProject replaces the whole World, so running it inline would free the
+		// system that requested it while it is still on the call stack.
+		std::filesystem::path m_PendingProjectPath;
+		bool m_HasPendingProject = false;
 
 		// Frames that have gone through OnUpdate (≈ presented). Used to hold the startup scene load until at
 		// least one empty frame has presented, so the window shows editor chrome + a loading overlay instead
