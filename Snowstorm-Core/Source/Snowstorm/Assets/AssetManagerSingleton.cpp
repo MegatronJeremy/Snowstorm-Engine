@@ -59,15 +59,24 @@ namespace Snowstorm
 
 		// Registry paths are stored project-relative (portable across machines; matches the committed
 		// AssetRegistry.json). Resolve them against the active project's directory for actual file I/O.
-		// Absolute entries pass through untouched, and with no active project (headless tools before
-		// bootstrap) the path is returned as-given — which resolves against the CWD, today's behavior.
+		// Absolute entries are self-contained and pass through without a project. A relative entry,
+		// however, is meaningless without its project root: fail loud instead of silently resolving it
+		// against the process CWD and potentially loading the wrong file.
 		std::filesystem::path ResolveAssetPath(const std::filesystem::path& p)
 		{
-			if (p.is_absolute() || !Project::GetActive())
+			if (p.is_absolute())
 			{
 				return p;
 			}
-			return Project::GetActive()->GetProjectDirectory() / p;
+
+			const Ref<Project> project = Project::GetActive();
+			SS_CORE_VERIFY(project, "Cannot resolve relative asset path '{}' without an active project", p.string());
+			if (!project)
+			{
+				return {};
+			}
+
+			return project->GetProjectDirectory() / p;
 		}
 	}
 
@@ -89,6 +98,12 @@ namespace Snowstorm
 	std::vector<Entity> AssetManagerSingleton::ImportModel(const std::filesystem::path& path)
 	{
 		std::vector<Entity> created;
+		const Ref<Project> project = Project::GetActive();
+		if (!project && path.is_relative())
+		{
+			SS_CORE_ERROR("Cannot import relative model path '{}' without an active project", path.string());
+			return created;
+		}
 
 		Assimp::Importer importer;
 		// PreTransformVertices flattens the node hierarchy into scene->mMeshes (each already in model
@@ -108,7 +123,7 @@ namespace Snowstorm
 		// Import means bringing the asset INTO the project (Unity copies into Assets/, Unreal into
 		// Content/) — not referencing an external file that breaks on another machine. Decide where
 		// the imported files live and what prefix the registry entries carry:
-		//  - no active project (headless tools):     reference in place, paths as-given (old behavior)
+		//  - no active project (headless tools):     absolute source paths are referenced in place
 		//  - source already under the project dir:   reference in place, paths made project-relative
 		//  - source outside the project:             copy model (+ same-stem sidecars like .mtl/.bin,
 		//                                            + referenced textures) into <assets>/meshes/<stem>/
@@ -116,7 +131,7 @@ namespace Snowstorm
 		std::filesystem::path destDirRel = srcModelDir; // registry prefix for all imported entries
 		bool copyIntoProject = false;
 
-		if (const Ref<Project> project = Project::GetActive())
+		if (project)
 		{
 			std::error_code ec;
 			const std::filesystem::path projectDir = std::filesystem::weakly_canonical(project->GetProjectDirectory(), ec);

@@ -88,6 +88,16 @@ namespace Snowstorm
 			Project::SetActive(project);
 		}
 
+		// From this boundary onward every editor World/system may rely on an active project. Keep the
+		// lifecycle failure explicit in Release too instead of allowing a later null dereference.
+		const Ref<Project> activeProject = Project::GetActive();
+		SS_CORE_VERIFY(activeProject, "Editor bootstrap completed without an active project");
+		if (!activeProject)
+		{
+			Application::Get().Close();
+			return;
+		}
+
 		// Apply the startup VSync preference (backend defaults to FIFO/on).
 		Renderer::SetVSync(CVars::VSync.Get());
 
