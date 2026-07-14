@@ -49,6 +49,8 @@ namespace Snowstorm::CVars
 
 	CVar<bool> CameraPath{"camera.path", false, "Drive the camera along a deterministic benchmark orbit instead of free-fly. Repeatable motion so upscaler-vs-ground-truth metric runs are frame-for-frame comparable (#45)", CVarFlags::Persist};
 
+	CVar<bool> CameraPathFixedStep{"camera.path.fixed", true, "Step the benchmark camera path by a fixed 60 Hz dt instead of wall-clock, whenever the path is on. Makes frame N always map to the same pose AND the same per-frame motion-vector magnitude — so a dataset capture and a later metric A/B traverse the orbit identically (a temporal upscaler trains and infers on the SAME motion, #98). Off = wall-clock motion for free interactive playback. Dataset export always forces fixed step regardless.", CVarFlags::Persist};
+
 	CVar<bool> Metrics{"render.metrics", false, "Compute PSNR + SSIM of the upscaled image vs full-res ground truth each frame (requires render.compare). GPU compute reduction; results shown in the Performance panel (#45)", CVarFlags::Persist};
 
 	CVar<bool> MetricsLog{"render.metrics.log", false, "Log PSNR/SSIM over a ~1s window (like debug.frame_stats) so a headless benchmark run prints the trace. Requires render.metrics (#45)"};

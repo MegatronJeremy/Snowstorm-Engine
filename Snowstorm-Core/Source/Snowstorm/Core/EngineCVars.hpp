@@ -148,6 +148,11 @@ namespace Snowstorm::CVars
 	// repeatable. Read per-frame by CameraPathSystem. Persist.
 	extern CVar<bool> CameraPath;
 
+	// Step the path by a fixed 60 Hz dt (vs wall-clock) whenever it's on, so a dataset capture and a metric
+	// A/B produce identical per-frame poses AND motion-vector magnitudes — required for a temporal upscaler to
+	// train and infer on the same motion (#98). Dataset export always forces fixed step. Default on. Persist.
+	extern CVar<bool> CameraPathFixedStep;
+
 	// PSNR/SSIM metrics of upscaled vs ground-truth (#45), computed on the GPU. Metrics needs render.compare
 	// (both images must exist); MetricsLog windows + logs them for headless benchmark runs (not persisted —
 	// a run-time diagnostic like debug.frame_stats).
