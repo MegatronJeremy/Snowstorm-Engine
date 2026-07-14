@@ -17,6 +17,12 @@ namespace Snowstorm
 		void Execute(Timestep ts) override;
 
 	private:
+		// Open/SaveAs scene via native file dialogs, then hand off to EditorCommandsSingleton.
+		// Shared by the File menu items and the Ctrl+O / Ctrl+Shift+S shortcuts so both paths
+		// behave (and toast) identically.
+		void OpenSceneAction(EditorNotificationsSingleton& notify);
+		void SaveSceneAsAction(EditorNotificationsSingleton& notify);
+
 		void DrawImportModelPopup(EditorNotificationsSingleton& notify);
 
 		// New Project modal: separate Name + Location fields (Location has a "..." browse-folder
