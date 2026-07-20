@@ -1075,7 +1075,7 @@ namespace Snowstorm
 		{
 			m_HasPendingNewScene = false;
 			Renderer::WaitIdle();
-			m_ActiveWorld->ClearSceneEntities();
+			m_ActiveWorld->ClearSceneEntities(); // also resets the editor selection (see World::ClearSceneEntities)
 			m_ActiveWorld->GetSingleton<EditorHistorySingleton>().Clear();
 			m_ActiveScenePath.clear();
 			SS_CORE_INFO("New scene created.");

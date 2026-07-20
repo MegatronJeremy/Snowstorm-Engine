@@ -11,6 +11,7 @@
 #include "Snowstorm/Events/Event.hpp"
 #include "Snowstorm/Systems/CameraControllerSystem.hpp"
 #include "Snowstorm/World/EditorCommandsSingleton.hpp"
+#include "Snowstorm/World/EditorSelectionSingleton.hpp"
 
 namespace Snowstorm
 {
@@ -104,6 +105,18 @@ namespace Snowstorm
 	void World::ClearSceneEntities() const
 	{
 		m_SystemManager->GetRegistry().ClearExcept<DoNotSerializeComponent>();
+
+		// Clearing entities leaves the editor's selected-entity handle dangling. Its consumers all
+		// guard with IsValid(), so this isn't the crash it looks like — but a selection pointing at a
+		// destroyed entity is still wrong state (a stale inspector target), so reset it on every wipe.
+		// Guarded: runtime worlds never register the singleton. (The New-Scene crash itself was a stale
+		// VisibilityCache handle in the render pass, fixed there.)
+		if (HasSingleton<EditorSelectionSingleton>())
+		{
+			auto& selection = GetSingleton<EditorSelectionSingleton>();
+			selection.Selected = {};
+			selection.GizmoActive = false;
+		}
 	}
 
 	SystemManager& World::GetSystemManager()

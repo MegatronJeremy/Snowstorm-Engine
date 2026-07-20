@@ -370,6 +370,14 @@ namespace Snowstorm
 					               for (const auto& cache = reg.Read<VisibilityCacheComponent>(cam.Entity);
 					                    const entt::entity e : cache.VisibleMeshes)
 					               {
+						               // VisibleMeshes is a cross-frame cache of handles; an entity in it can be gone
+						               // or stripped of its components (e.g. New Scene wiped the scene THIS frame, before
+						               // the cache was rebuilt). Skip stale handles rather than Read a destroyed entity
+						               // (EnTT asserts "Set does not contain entity").
+						               if (!reg.valid(e) || !reg.all_of<TransformComponent, MeshComponent, MaterialComponent>(e))
+						               {
+							               continue;
+						               }
 						               const auto& tr = reg.Read<TransformComponent>(e);
 						               const auto& mesh = reg.Read<MeshComponent>(e);
 						               const auto& mat = reg.Read<MaterialComponent>(e);
@@ -488,6 +496,13 @@ namespace Snowstorm
 					               for (const auto& cache = reg.Read<VisibilityCacheComponent>(cam.Entity);
 					                    const entt::entity e : cache.VisibleMeshes)
 					               {
+						               // VisibleMeshes is a cross-frame cache of handles; an entity in it can be gone
+						               // this frame (New Scene wiped the scene before the cache rebuilt). Skip stale
+						               // handles rather than Read a destroyed entity (EnTT asserts).
+						               if (!reg.valid(e) || !reg.all_of<TransformComponent, MeshComponent, MaterialComponent>(e))
+						               {
+							               continue;
+						               }
 						               const auto& tr = reg.Read<TransformComponent>(e);
 						               const auto& mesh = reg.Read<MeshComponent>(e);
 						               const auto& mat = reg.Read<MaterialComponent>(e);
