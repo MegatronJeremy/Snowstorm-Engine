@@ -34,20 +34,27 @@ namespace Snowstorm
 		if (!in.is_open())
 			return false;
 
-		json root;
-		in >> root;
+		ProjectConfig config = project.GetConfig();
+		try
+		{
+			json root;
+			in >> root;
 
-		if (!root.contains("Project"))
+			if (!root.contains("Project") || !root["Project"].is_object())
+				return false;
+
+			const json& projectNode = root["Project"];
+			config.Name = projectNode.value("Name", config.Name);
+			config.AssetDirectory = projectNode.value("AssetDirectory", config.AssetDirectory.generic_string());
+			config.AssetRegistryPath = projectNode.value("AssetRegistryPath", config.AssetRegistryPath.generic_string());
+			config.StartScene = projectNode.value("StartScene", config.StartScene.generic_string());
+		}
+		catch (const json::exception&)
+		{
 			return false;
+		}
 
-		const json& projectNode = root["Project"];
-
-		ProjectConfig& config = project.GetConfig();
-		config.Name = projectNode.value("Name", config.Name);
-		config.AssetDirectory = projectNode.value("AssetDirectory", config.AssetDirectory.generic_string());
-		config.AssetRegistryPath = projectNode.value("AssetRegistryPath", config.AssetRegistryPath.generic_string());
-		config.StartScene = projectNode.value("StartScene", config.StartScene.generic_string());
-
+		project.GetConfig() = std::move(config);
 		project.SetProjectDirectory(filePath.parent_path());
 		project.SetProjectFileName(filePath.filename().string());
 

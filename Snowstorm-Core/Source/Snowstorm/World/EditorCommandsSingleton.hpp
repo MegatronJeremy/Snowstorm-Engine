@@ -17,6 +17,15 @@ namespace Snowstorm
 		// Bound by the editor layer.
 		std::function<bool(const std::string&)> OpenScene;
 
+		// Clear the current scene to an empty one (persistent editor camera/viewport survive) and
+		// detach it from any file — the next save must go through SaveSceneAs. Deferred to the frame
+		// boundary like OpenScene. Bound by the editor layer.
+		std::function<void()> NewScene;
+
+		// Save the current scene to a NEW file path and make it the active scene path. The menu asks
+		// "where" (native save dialog); this does the writing. Bound by the editor layer.
+		std::function<bool(const std::string&)> SaveSceneAs;
+
 		// Project lifecycle, bound by the editor layer (see EditorLayer::CreateProject/OpenProject/
 		// SaveProject). All three own switching the active World + Project — the menu system just
 		// asks "where" (via FileDialog) and calls these.

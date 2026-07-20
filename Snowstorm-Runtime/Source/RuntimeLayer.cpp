@@ -37,8 +37,18 @@ namespace Snowstorm
 			Project::SetActive(project);
 		}
 
+		// Runtime systems resolve project-relative scenes/assets, so an active project is a host
+		// invariant after bootstrap. Stop cleanly in Release rather than dereferencing null later.
+		const Ref<Project> activeProject = Project::GetActive();
+		SS_CORE_VERIFY(activeProject, "Runtime bootstrap completed without an active project");
+		if (!activeProject)
+		{
+			Application::Get().Close();
+			return;
+		}
+
 		// Resolve the asset handles referenced by the scene.
-		m_World->GetSingleton<AssetManagerSingleton>().LoadRegistry(Project::GetActive()->GetAssetRegistryPath());
+		m_World->GetSingleton<AssetManagerSingleton>().LoadRegistry(activeProject->GetAssetRegistryPath());
 
 		// The SAME engine systems the editor runs — without the editor/UI systems on top.
 		RegisterCoreSystems(*m_World);
@@ -51,7 +61,7 @@ namespace Snowstorm
 
 		// A runtime has no authoring tools, so it loads a pre-authored scene. The editor
 		// writes this file on first run (EditorLayer::LoadOrCreateStartupWorld).
-		m_ScenePath = Project::GetActive()->GetStartScenePath().string();
+		m_ScenePath = activeProject->GetStartScenePath().string();
 		if (!SceneSerializer::Deserialize(*m_World, m_ScenePath))
 		{
 			SS_CORE_ERROR("Runtime: failed to load startup scene '{}'. "

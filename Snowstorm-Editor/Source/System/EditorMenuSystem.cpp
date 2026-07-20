@@ -63,24 +63,40 @@ namespace Snowstorm
 		auto& input = SingletonView<InputStateSingleton>();
 		auto& notify = SingletonView<EditorNotificationsSingleton>();
 
-		// Ctrl+S (edge-triggered)
 		const bool ctrlDown =
 		    input.Down.test(Key::LeftControl) || input.Down.test(Key::RightControl);
+		const bool shiftDown =
+		    input.Down.test(Key::LeftShift) || input.Down.test(Key::RightShift);
 
-		const bool savePressed =
-		    ctrlDown && input.PressedThisFrame.test(Key::S);
-
-		// Optional: don't fire while typing in an input field
-		if (savePressed && !input.WantTextInput)
+		// Scene file shortcuts (edge-triggered, suppressed while typing). Hazel's bindings:
+		// Ctrl+N new scene, Ctrl+O open scene, Ctrl+S save, Ctrl+Shift+S save as. Shared with the
+		// File menu below so behavior + toasts match. Keep DrawShortcutsWindow in sync (CLAUDE.md).
+		if (ctrlDown && !input.WantTextInput)
 		{
-			if (cmds.SaveScene)
+			if (input.PressedThisFrame.test(Key::S) && !shiftDown)
 			{
-				const bool ok = cmds.SaveScene(); // make it return bool (recommended)
-				notify.Push(ok ? "Scene saved" : "Save failed", ok ? EditorToastType::Success : EditorToastType::Error);
+				if (cmds.SaveScene)
+				{
+					const bool ok = cmds.SaveScene();
+					notify.Push(ok ? "Scene saved" : "Save failed (unsaved scene? use Save Scene As)",
+					            ok ? EditorToastType::Success : EditorToastType::Error);
+				}
 			}
-			else
+			else if (input.PressedThisFrame.test(Key::S) && shiftDown)
 			{
-				notify.Push("SaveScene not bound", EditorToastType::Warning);
+				SaveSceneAsAction(notify);
+			}
+			else if (input.PressedThisFrame.test(Key::N))
+			{
+				if (cmds.NewScene)
+				{
+					cmds.NewScene();
+					notify.Push("New scene", EditorToastType::Info);
+				}
+			}
+			else if (input.PressedThisFrame.test(Key::O))
+			{
+				OpenSceneAction(notify);
 			}
 		}
 
@@ -144,17 +160,36 @@ namespace Snowstorm
 
 				ImGui::Separator();
 
+				if (ImGui::MenuItem("New Scene", "Ctrl+N", false, static_cast<bool>(cmds.NewScene)))
+				{
+					cmds.NewScene();
+					notify.Push("New scene", EditorToastType::Info);
+				}
+
+				if (ImGui::MenuItem("Open Scene...", "Ctrl+O", false, static_cast<bool>(cmds.OpenScene)))
+				{
+					OpenSceneAction(notify);
+				}
+
 				const bool canSave = static_cast<bool>(cmds.SaveScene);
 
 				// Show shortcut text, but action is handled by ECS input above too
-				if (ImGui::MenuItem("Save", "Ctrl+S", false, canSave))
+				if (ImGui::MenuItem("Save Scene", "Ctrl+S", false, canSave))
 				{
 					if (cmds.SaveScene)
 					{
 						const bool ok = cmds.SaveScene();
-						notify.Push(ok ? "Scene saved" : "Save failed", ok ? EditorToastType::Success : EditorToastType::Error);
+						notify.Push(ok ? "Scene saved" : "Save failed (unsaved scene? use Save Scene As)",
+						            ok ? EditorToastType::Success : EditorToastType::Error);
 					}
 				}
+
+				if (ImGui::MenuItem("Save Scene As...", "Ctrl+Shift+S", false, static_cast<bool>(cmds.SaveSceneAs)))
+				{
+					SaveSceneAsAction(notify);
+				}
+
+				ImGui::Separator();
 
 				if (ImGui::MenuItem("Import Model..."))
 				{
@@ -327,7 +362,10 @@ namespace Snowstorm
 		section("Scene");
 		if (ImGui::BeginTable("scene", 2, tableFlags))
 		{
+			row("Ctrl + N", "New (empty) scene");
+			row("Ctrl + O", "Open scene...");
 			row("Ctrl + S", "Save current scene");
+			row("Ctrl + Shift + S", "Save scene as...");
 			ImGui::EndTable();
 		}
 
@@ -351,6 +389,32 @@ namespace Snowstorm
 		}
 
 		ImGui::End();
+	}
+
+	void EditorMenuSystem::OpenSceneAction(EditorNotificationsSingleton& notify)
+	{
+		auto& cmds = SingletonView<EditorCommandsSingleton>();
+		const std::filesystem::path scenesDir = Project::GetActive() ? Project::GetActive()->GetAssetDirectory() / "scenes" : std::filesystem::path{};
+		if (const std::filesystem::path path = FileDialog::OpenFile({{"Snowstorm Scene", "world"}}, scenesDir);
+		    !path.empty() && cmds.OpenScene)
+		{
+			const bool ok = cmds.OpenScene(path.string());
+			notify.Push(ok ? "Opened " + path.filename().string() : "Failed to open scene",
+			            ok ? EditorToastType::Success : EditorToastType::Error);
+		}
+	}
+
+	void EditorMenuSystem::SaveSceneAsAction(EditorNotificationsSingleton& notify)
+	{
+		auto& cmds = SingletonView<EditorCommandsSingleton>();
+		const std::filesystem::path scenesDir = Project::GetActive() ? Project::GetActive()->GetAssetDirectory() / "scenes" : std::filesystem::path{};
+		if (const std::filesystem::path path = FileDialog::SaveFile({{"Snowstorm Scene", "world"}}, scenesDir);
+		    !path.empty() && cmds.SaveSceneAs)
+		{
+			const bool ok = cmds.SaveSceneAs(path.string());
+			notify.Push(ok ? "Saved " + path.filename().string() : "Save failed",
+			            ok ? EditorToastType::Success : EditorToastType::Error);
+		}
 	}
 
 	void EditorMenuSystem::DrawImportModelPopup(EditorNotificationsSingleton& notify)

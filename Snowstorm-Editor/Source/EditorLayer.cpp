@@ -89,6 +89,16 @@ namespace Snowstorm
 			Project::SetActive(project);
 		}
 
+		// From this boundary onward every editor World/system may rely on an active project. Keep the
+		// lifecycle failure explicit in Release too instead of allowing a later null dereference.
+		const Ref<Project> activeProject = Project::GetActive();
+		SS_CORE_VERIFY(activeProject, "Editor bootstrap completed without an active project");
+		if (!activeProject)
+		{
+			Application::Get().Close();
+			return;
+		}
+
 		// Apply the startup VSync preference (backend defaults to FIFO/on).
 		Renderer::SetVSync(CVars::VSync.Get());
 
@@ -148,6 +158,23 @@ namespace Snowstorm
 				}
 				m_PendingScenePath = path;
 				m_HasPendingScene = true;
+				return true;
+			};
+
+			cmds.NewScene = [this]()
+			{
+				// Deferred to the frame boundary (see m_HasPendingNewScene): clearing the scene
+				// mid-frame destroys GPU resources the in-flight frame still binds.
+				m_HasPendingNewScene = true;
+			};
+
+			cmds.SaveSceneAs = [this](const std::string& path) -> bool
+			{
+				if (!SaveWorldToFile(path))
+				{
+					return false;
+				}
+				m_ActiveScenePath = path;
 				return true;
 			};
 
@@ -251,13 +278,15 @@ namespace Snowstorm
 			return false;
 		}
 
-		CloseProject();
-
 		const Ref<Project> project = CreateRef<Project>();
 		if (!ProjectSerializer::Deserialize(*project, ssprojPath))
 		{
 			return false;
 		}
+
+		// Validate and deserialize the candidate before tearing down the current project. A malformed
+		// user-selected .ssproj must leave the working project and its World intact.
+		CloseProject();
 		Project::SetActive(project);
 
 		// CloseProject already drained the GPU and dropped the old World (if there was one) — build
@@ -1036,6 +1065,20 @@ namespace Snowstorm
 			{
 				SS_CORE_ERROR("Failed to open project '{}'.", path.string());
 			}
+		}
+
+		// Apply a deferred "New Scene" at the frame boundary — same GPU-safe recipe as a scene open
+		// (WaitIdle, then wipe scene entities; the persistent editor camera/viewport survive), just
+		// with nothing loaded afterwards. The empty active-scene path routes the next save through
+		// Save Scene As.
+		if (m_HasPendingNewScene && m_FramesPresented > 1)
+		{
+			m_HasPendingNewScene = false;
+			Renderer::WaitIdle();
+			m_ActiveWorld->ClearSceneEntities();
+			m_ActiveWorld->GetSingleton<EditorHistorySingleton>().Clear();
+			m_ActiveScenePath.clear();
+			SS_CORE_INFO("New scene created.");
 		}
 
 		if (m_HasPendingScene && m_FramesPresented > 1)

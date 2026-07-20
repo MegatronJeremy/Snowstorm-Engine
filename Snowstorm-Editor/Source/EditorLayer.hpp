@@ -118,6 +118,10 @@ namespace Snowstorm
 		std::filesystem::path m_PendingProjectPath;
 		bool m_HasPendingProject = false;
 
+		// "New Scene" requested from a UI system. Deferred like a scene open: clearing the scene
+		// destroys GPU resources the in-progress frame's render pass still binds.
+		bool m_HasPendingNewScene = false;
+
 		// Frames that have gone through OnUpdate (≈ presented). Used to hold the startup scene load until at
 		// least one empty frame has presented, so the window shows editor chrome + a loading overlay instead
 		// of a white/frozen framebuffer while the first (heavy) scene loads.
