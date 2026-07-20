@@ -17,8 +17,8 @@ Usage (from repo root or anywhere):
     py Scripts/smoke-test.py --config Release # test the Release build instead of Debug
     py Scripts/smoke-test.py --only Editor    # run a single target
     py Scripts/smoke-test.py --warnings-fail  # treat [warning] lines as failures too
-    py Scripts/smoke-test.py --scene assets/scenes/Sponza.world   # boot a specific scene
-    py Scripts/smoke-test.py --cold --scene assets/scenes/Sponza.world  # wipe cook caches first
+    py Scripts/smoke-test.py --scene Projects/Sandbox/assets/scenes/Sponza.world   # boot a specific scene
+    py Scripts/smoke-test.py --cold --scene Projects/Sandbox/assets/scenes/Sponza.world  # wipe cook caches first
 
 Exit code: 0 if every target passed, 1 otherwise.
 
@@ -180,7 +180,7 @@ def main() -> int:
     ap.add_argument("--only", default=None, help="Run only this target by name (e.g. Editor)")
     ap.add_argument("--warnings-fail", action="store_true", help="Treat [warning] lines as failures")
     ap.add_argument("--strict", action="store_true", help="Enable extra Vulkan validation (synchronization + best-practices)")
-    ap.add_argument("--scene", default=None, help="Boot directly into this scene (sets SS_STARTUP_SCENE), e.g. assets/scenes/Sponza.world")
+    ap.add_argument("--scene", default=None, help="Boot directly into this scene (sets SS_STARTUP_SCENE), e.g. Projects/Sandbox/assets/scenes/Sponza.world")
     ap.add_argument("--cold", action="store_true", help="Delete cooked-asset caches first, to exercise the cold first-import path")
     ap.add_argument("--max-frame-ms", type=int, default=0, help="Fail if any single frame exceeds this many ms (0 = off). Catches per-frame stalls/freezes.")
     ap.add_argument("--vsync-stress", type=int, default=0, help="Toggle VSync every N frames (0 = off) to exercise swapchain recreation. Best with --strict; catches present-semaphore reuse bugs.")

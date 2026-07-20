@@ -75,12 +75,7 @@ namespace Snowstorm
 		{
 			if (input.PressedThisFrame.test(Key::S) && !shiftDown)
 			{
-				if (cmds.SaveScene)
-				{
-					const bool ok = cmds.SaveScene();
-					notify.Push(ok ? "Scene saved" : "Save failed (unsaved scene? use Save Scene As)",
-					            ok ? EditorToastType::Success : EditorToastType::Error);
-				}
+				SaveSceneAction(notify);
 			}
 			else if (input.PressedThisFrame.test(Key::S) && shiftDown)
 			{
@@ -176,12 +171,7 @@ namespace Snowstorm
 				// Show shortcut text, but action is handled by ECS input above too
 				if (ImGui::MenuItem("Save Scene", "Ctrl+S", false, canSave))
 				{
-					if (cmds.SaveScene)
-					{
-						const bool ok = cmds.SaveScene();
-						notify.Push(ok ? "Scene saved" : "Save failed (unsaved scene? use Save Scene As)",
-						            ok ? EditorToastType::Success : EditorToastType::Error);
-					}
+					SaveSceneAction(notify);
 				}
 
 				if (ImGui::MenuItem("Save Scene As...", "Ctrl+Shift+S", false, static_cast<bool>(cmds.SaveSceneAs)))
@@ -401,6 +391,23 @@ namespace Snowstorm
 			const bool ok = cmds.OpenScene(path.string());
 			notify.Push(ok ? "Opened " + path.filename().string() : "Failed to open scene",
 			            ok ? EditorToastType::Success : EditorToastType::Error);
+		}
+	}
+
+	void EditorMenuSystem::SaveSceneAction(EditorNotificationsSingleton& notify)
+	{
+		auto& cmds = SingletonView<EditorCommandsSingleton>();
+		// An untitled scene (fresh New Scene) has no file yet, so Save falls through to Save As — the native
+		// "where to save" dialog — instead of failing with "no active scene path" (standard editor behavior).
+		if (cmds.HasScenePath && !cmds.HasScenePath())
+		{
+			SaveSceneAsAction(notify);
+			return;
+		}
+		if (cmds.SaveScene)
+		{
+			const bool ok = cmds.SaveScene();
+			notify.Push(ok ? "Scene saved" : "Save failed", ok ? EditorToastType::Success : EditorToastType::Error);
 		}
 	}
 

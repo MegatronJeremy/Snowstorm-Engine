@@ -21,6 +21,7 @@ namespace Snowstorm
 		// Shared by the File menu items and the Ctrl+O / Ctrl+Shift+S shortcuts so both paths
 		// behave (and toast) identically.
 		void OpenSceneAction(EditorNotificationsSingleton& notify);
+		void SaveSceneAction(EditorNotificationsSingleton& notify);
 		void SaveSceneAsAction(EditorNotificationsSingleton& notify);
 
 		void DrawImportModelPopup(EditorNotificationsSingleton& notify);

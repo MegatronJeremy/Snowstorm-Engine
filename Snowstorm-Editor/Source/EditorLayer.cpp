@@ -78,14 +78,25 @@ namespace Snowstorm
 
 		m_ActiveWorld = CreateRef<World>();
 
-		// No New/Open Project flow exists yet, so bootstrap an implicit project rooted at the
-		// working directory (== repo root, see VS_DEBUGGER_WORKING_DIRECTORY) if none is active.
-		// This keeps asset paths flowing through Project::GetActive() instead of hardcoded
-		// literals, with no behavior change today (ProjectDirectory == today's implicit root).
+		// Boot the real startup project (a .ssproj, default Projects/Sandbox/Sandbox.ssproj) instead of
+		// synthesizing an implicit one. Its ProjectDirectory becomes the .ssproj's folder, so all content
+		// (registry, scenes, meshes, ...) resolves under Projects/Sandbox/ — while engine assets (shaders,
+		// fonts, caches) stay CWD-relative at the repo root. If the .ssproj is missing/unreadable, fall
+		// back to a CWD-rooted implicit project so a stripped checkout still runs (fail-soft).
 		if (!Project::GetActive())
 		{
+			const std::filesystem::path ssproj = CVars::StartupProject.Get();
 			Ref<Project> project = CreateRef<Project>();
-			project->SetProjectDirectory(std::filesystem::current_path());
+			if (!ssproj.empty() && std::filesystem::exists(ssproj) && ProjectSerializer::Deserialize(*project, ssproj))
+			{
+				SS_CORE_INFO("Loaded startup project '{}' (dir '{}')", ssproj.string(), project->GetProjectDirectory().string());
+			}
+			else
+			{
+				SS_CORE_WARN("Startup project '{}' not found; using an implicit project at the working directory", ssproj.string());
+				project = CreateRef<Project>();
+				project->SetProjectDirectory(std::filesystem::current_path());
+			}
 			Project::SetActive(project);
 		}
 
@@ -148,15 +159,34 @@ namespace Snowstorm
 				return SaveActiveScene();
 			};
 
+			cmds.HasScenePath = [this]() -> bool
+			{
+				return !m_ActiveScenePath.empty();
+			};
+
 			cmds.OpenScene = [this](const std::string& path) -> bool
 			{
+				// Callers pass either an ABSOLUTE path (the native Open dialog) or a PROJECT-RELATIVE one
+				// (the Content Browser stores project-relative paths like "assets/scenes/Foo.world", matching
+				// the registry). A relative path is meaningless against the CWD (= repo root, where the demo
+				// content no longer lives), so resolve it against the active project's directory first —
+				// the same rule AssetManager::ResolveAssetPath uses for registry entries.
+				std::filesystem::path resolved = path;
+				if (resolved.is_relative())
+				{
+					if (const Ref<Project> project = Project::GetActive())
+					{
+						resolved = project->GetProjectDirectory() / resolved;
+					}
+				}
+
 				// Defer to the next frame boundary (see m_PendingScenePath): UI systems run mid-frame,
 				// and loading inline would destroy GPU resources the in-progress frame still uses.
-				if (!std::filesystem::exists(path))
+				if (!std::filesystem::exists(resolved))
 				{
 					return false;
 				}
-				m_PendingScenePath = path;
+				m_PendingScenePath = resolved.string();
 				m_HasPendingScene = true;
 				return true;
 			};

@@ -13,6 +13,10 @@ namespace Snowstorm
 	public:
 		std::function<bool()> SaveScene;
 
+		// True when the active scene has a file path (was opened/saved-as before). False for an untitled
+		// scene (fresh New Scene), so the menu/shortcut can route Save -> Save As instead of failing.
+		std::function<bool()> HasScenePath;
+
 		// Open (load) a scene from a .world file path, replacing the current scene. Returns success.
 		// Bound by the editor layer.
 		std::function<bool(const std::string&)> OpenScene;

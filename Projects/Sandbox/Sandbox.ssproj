@@ -1,0 +1,8 @@
+{
+  "Project": {
+    "Name": "Sandbox",
+    "AssetDirectory": "assets",
+    "AssetRegistryPath": "assets/AssetRegistry.json",
+    "StartScene": "assets/scenes/Startup.world"
+  }
+}

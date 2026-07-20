@@ -2,6 +2,8 @@
 
 #include <shobjidl.h>
 
+#include <system_error>
+
 namespace Snowstorm::FileDialog
 {
 	namespace
@@ -16,6 +18,21 @@ namespace Snowstorm::FileDialog
 			std::wstring result(size, L'\0');
 			MultiByteToWideChar(CP_UTF8, 0, s.c_str(), static_cast<int>(s.size()), result.data(), size);
 			return result;
+		}
+
+		// SHCreateItemFromParsingName requires an ABSOLUTE, native (backslash) path; a relative one (e.g. the
+		// active project's "Projects/Sandbox/assets/scenes") silently fails to parse, so the dialog ignores the
+		// default folder. Make it absolute against the CWD and native-separator'd. Returns empty on error so the
+		// caller skips SetDefaultFolder rather than passing garbage.
+		std::filesystem::path AbsoluteNative(const std::filesystem::path& p)
+		{
+			if (p.empty())
+				return {};
+			std::error_code ec;
+			std::filesystem::path abs = std::filesystem::absolute(p, ec);
+			if (ec)
+				return {};
+			return abs.make_preferred();
 		}
 	}
 
@@ -63,12 +80,12 @@ namespace Snowstorm::FileDialog
 			if (!specs.empty())
 				fileDialog->SetFileTypes(static_cast<UINT>(specs.size()), specs.data());
 
-			if (!defaultPath.empty())
+			if (const std::filesystem::path defaultDir = AbsoluteNative(defaultPath); !defaultDir.empty())
 			{
 				IShellItem* defaultFolder = nullptr;
 
 				hr = SHCreateItemFromParsingName(
-				    defaultPath.c_str(),
+				    defaultDir.c_str(),
 				    nullptr,
 				    IID_PPV_ARGS(&defaultFolder));
 
@@ -203,19 +220,20 @@ namespace Snowstorm::FileDialog
 			}
 
 			// defaultPath can be either a folder to start in, or a full suggested save path
-			// (folder + filename) — detect which and set the dialog up accordingly.
-			if (!defaultPath.empty())
+			// (folder + filename) — detect which and set the dialog up accordingly. SHCreateItemFromParsingName
+			// needs an ABSOLUTE native path, so normalize first (a relative project path would silently fail).
+			if (const std::filesystem::path absDefault = AbsoluteNative(defaultPath); !absDefault.empty())
 			{
 				std::error_code errorCode;
 
 				if (std::filesystem::is_directory(
-				        defaultPath,
+				        absDefault,
 				        errorCode))
 				{
 					IShellItem* defaultFolder = nullptr;
 
 					hr = SHCreateItemFromParsingName(
-					    defaultPath.c_str(),
+					    absDefault.c_str(),
 					    nullptr,
 					    IID_PPV_ARGS(&defaultFolder));
 
@@ -227,10 +245,10 @@ namespace Snowstorm::FileDialog
 				}
 				else
 				{
-					// Not a directory: treat defaultPath as folder + suggested filename, and set
+					// Not a directory: treat absDefault as folder + suggested filename, and set
 					// each half separately (SetFolder only accepts an existing folder item).
 					const std::filesystem::path parentPath =
-					    defaultPath.parent_path();
+					    absDefault.parent_path();
 
 					if (!parentPath.empty())
 					{
@@ -248,10 +266,10 @@ namespace Snowstorm::FileDialog
 						}
 					}
 
-					if (!defaultPath.filename().empty())
+					if (!absDefault.filename().empty())
 					{
 						dialog->SetFileName(
-						    defaultPath.filename().c_str());
+						    absDefault.filename().c_str());
 					}
 				}
 			}
@@ -339,12 +357,12 @@ namespace Snowstorm::FileDialog
 				    FOS_PATHMUSTEXIST);
 			}
 
-			if (SUCCEEDED(hr) && !defaultPath.empty())
+			if (const std::filesystem::path defaultDir = AbsoluteNative(defaultPath); SUCCEEDED(hr) && !defaultDir.empty())
 			{
 				IShellItem* defaultFolder = nullptr;
 
 				hr = SHCreateItemFromParsingName(
-				    defaultPath.c_str(),
+				    defaultDir.c_str(),
 				    nullptr,
 				    IID_PPV_ARGS(&defaultFolder));
 

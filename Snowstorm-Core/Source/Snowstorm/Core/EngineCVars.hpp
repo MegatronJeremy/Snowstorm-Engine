@@ -83,8 +83,13 @@ namespace Snowstorm::CVars
 	// (MAILBOX/IMMEDIATE). Runtime-toggleable from the editor's Settings panel.
 	extern CVar<bool> VSync;
 
-	// Override the scene loaded at startup (path to a .world). Empty (default) uses the built-in
-	// Startup.world. Lets the smoke harness boot any scene headlessly — e.g. load Sponza to exercise
+	// The .ssproj loaded at startup (default Projects/Sandbox/Sandbox.ssproj) — the engine boots this real
+	// project instead of synthesizing an implicit one at the CWD. Falls back to a CWD-rooted implicit
+	// project if the file is missing, so the engine still runs. Editor + Runtime both honor it.
+	extern CVar<std::string> StartupProject;
+
+	// Override the scene loaded at startup (path to a .world). Empty (default) uses the active project's
+	// StartScene. Lets the smoke harness boot any scene headlessly — e.g. load Sponza to exercise
 	// the PBR sampling path that Startup.world doesn't, without a manual Content Browser open.
 	extern CVar<std::string> StartupScene;
 
