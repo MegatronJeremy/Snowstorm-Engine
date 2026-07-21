@@ -9,9 +9,8 @@ namespace Snowstorm
 	struct WindowResizeEvent final : Event
 	{
 		WindowResizeEvent(const uint32_t width, const uint32_t height)
-			: Width(width), Height(height)
+		    : Width(width), Height(height)
 		{
-			// SS_CORE_INFO("Window resize event");
 		}
 
 		[[nodiscard]] std::string ToString() const override
@@ -30,8 +29,7 @@ namespace Snowstorm
 
 	struct WindowCloseEvent final : Event
 	{
-		WindowCloseEvent()
-		= default;
+		WindowCloseEvent() = default;
 
 		EVENT_CLASS_TYPE(WindowClose)
 		EVENT_CLASS_CATEGORY(EventCategoryApplication)
@@ -39,8 +37,7 @@ namespace Snowstorm
 
 	struct AppTickEvent final : Event
 	{
-		AppTickEvent()
-		= default;
+		AppTickEvent() = default;
 
 		EVENT_CLASS_TYPE(AppTick)
 		EVENT_CLASS_CATEGORY(EventCategoryApplication)
@@ -48,8 +45,7 @@ namespace Snowstorm
 
 	struct AppUpdateEvent final : Event
 	{
-		AppUpdateEvent()
-		= default;
+		AppUpdateEvent() = default;
 
 		EVENT_CLASS_TYPE(AppUpdate)
 		EVENT_CLASS_CATEGORY(EventCategoryApplication)
@@ -57,8 +53,7 @@ namespace Snowstorm
 
 	struct AppRenderEvent final : Event
 	{
-		AppRenderEvent()
-		= default;
+		AppRenderEvent() = default;
 
 		EVENT_CLASS_TYPE(AppRender)
 		EVENT_CLASS_CATEGORY(EventCategoryApplication)

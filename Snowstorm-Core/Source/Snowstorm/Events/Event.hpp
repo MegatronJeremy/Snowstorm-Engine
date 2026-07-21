@@ -40,11 +40,25 @@ namespace Snowstorm
 		EventCategoryMouseButton = BIT(4)
 	}; // bit field because one event can be in multiple categories
 
-#define EVENT_CLASS_TYPE(type) static EventType GetStaticType() {return EventType::##type;  }\
-								virtual EventType GetEventType() const override { return GetStaticType(); }\
-								virtual const char* GetName() const override { return #type; }
+#define EVENT_CLASS_TYPE(type)                      \
+	static EventType GetStaticType()                \
+	{                                               \
+		return EventType::##type;                   \
+	}                                               \
+	virtual EventType GetEventType() const override \
+	{                                               \
+		return GetStaticType();                     \
+	}                                               \
+	virtual const char* GetName() const override    \
+	{                                               \
+		return #type;                               \
+	}
 
-#define EVENT_CLASS_CATEGORY(category) virtual int GetCategoryFlags() const override { return category; }
+#define EVENT_CLASS_CATEGORY(category)            \
+	virtual int GetCategoryFlags() const override \
+	{                                             \
+		return category;                          \
+	}
 
 	struct Event
 	{
@@ -54,7 +68,6 @@ namespace Snowstorm
 		Event() = default;
 		virtual ~Event() = default;
 
-		// TODO this has to be deleted... because of event handling?
 		Event(const Event& e) = default;
 		Event(Event&& e) = default;
 
@@ -63,7 +76,7 @@ namespace Snowstorm
 
 		[[nodiscard]] virtual EventType GetEventType() const = 0;
 		[[nodiscard]] virtual int GetCategoryFlags() const = 0;
-		[[nodiscard]] virtual const char* GetName() const = 0; // basically only for debugging
+		[[nodiscard]] virtual const char* GetName() const = 0;                   // basically only for debugging
 		[[nodiscard]] virtual std::string ToString() const { return GetName(); } // if you want more details override
 
 		[[nodiscard]] bool IsInCategory(const EventCategory category) const
