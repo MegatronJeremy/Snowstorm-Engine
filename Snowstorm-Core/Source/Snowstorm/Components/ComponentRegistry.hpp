@@ -118,7 +118,8 @@ namespace Snowstorm
 	// around its property edits so a continuous drag becomes ONE undo step:
 	//  - OnComponentEditBegin: first changed frame — snapshot the pre-edit component as the undo "before".
 	//  - PollComponentEditEnd: once no inspector widget is active, finalize the pending edit (push command).
-	// Both no-op when the world has no EditorHistorySingleton (e.g. headless), so Core stays editor-agnostic.
+	// Both no-op when the editor undo hooks are unset (e.g. headless/runtime), so Core stays editor-agnostic
+	// (they route through EditorHooksSingleton, not the editor's history type — see #162).
 	void OnComponentEditBegin(Entity entity, const rttr::type& type);
 	void PollComponentEditEnd(Entity entity, const rttr::type& type);
 

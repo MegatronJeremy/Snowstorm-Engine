@@ -2,7 +2,7 @@
 
 #include "Singletons/EditorStatusBarSingleton.hpp"
 #include "Snowstorm/Components/TagComponent.hpp"
-#include "Snowstorm/World/EditorSelectionSingleton.hpp"
+#include "Singletons/EditorSelectionSingleton.hpp"
 
 #include <imgui.h>
 #include <imgui_internal.h> // BeginViewportSideBar

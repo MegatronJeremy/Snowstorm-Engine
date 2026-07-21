@@ -2,7 +2,7 @@
 
 #include "MandelbrotControllerComponent.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
-#include "Snowstorm/World/EditorStateSingleton.hpp"
+#include "Snowstorm/World/SimulationStateSingleton.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -18,8 +18,8 @@ namespace Snowstorm
 		// scene is being authored. Params are still uploaded to the material every frame (below) so it
 		// renders correctly in Edit too. Guarded via HasSingleton so a packaged runtime (no editor state)
 		// always animates.
-		const bool playing = !m_World->HasSingleton<EditorStateSingleton>() ||
-		                     m_World->GetSingleton<EditorStateSingleton>().IsPlaying();
+		const bool playing = !m_World->HasSingleton<SimulationStateSingleton>() ||
+		                     m_World->GetSingleton<SimulationStateSingleton>().IsPlaying();
 
 		for (const auto mandelbrotView = View<MandelbrotControllerComponent>(); const auto entity : mandelbrotView)
 		{

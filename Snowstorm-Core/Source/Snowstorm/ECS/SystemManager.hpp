@@ -13,7 +13,7 @@
 
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Debug/Instrumentor.hpp"
-#include "Snowstorm/World/EditorStateSingleton.hpp"
+#include "Snowstorm/World/SimulationStateSingleton.hpp"
 
 namespace Snowstorm
 {
@@ -44,14 +44,14 @@ namespace Snowstorm
 		{
 			using clock = std::chrono::steady_clock;
 
-			// Editor Edit mode gate: while stopped, skip simulation systems (those that opt out via
+			// Edit mode gate: while stopped, skip simulation systems (those that opt out via
 			// RunsInEditMode() == false). Resolved once per frame. A packaged runtime has no
-			// EditorStateSingleton, so `editMode` stays false and everything runs — the gate is
-			// editor-only. (See EditorStateSingleton / System::RunsInEditMode.)
+			// SimulationStateSingleton, so `editMode` stays false and everything runs — the gate is
+			// editor-only. (See SimulationStateSingleton / System::RunsInEditMode.)
 			bool editMode = false;
-			if (m_World && m_World->HasSingleton<EditorStateSingleton>())
+			if (m_World && m_World->HasSingleton<SimulationStateSingleton>())
 			{
-				editMode = m_World->GetSingleton<EditorStateSingleton>().Current == EditorStateSingleton::Mode::Edit;
+				editMode = m_World->GetSingleton<SimulationStateSingleton>().Current == SimulationStateSingleton::Mode::Edit;
 			}
 
 			// Phases run in enum order; systems within a phase run in registration order. Time each

@@ -3,7 +3,7 @@
 #include "Snowstorm/Components/RotatorComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Systems/RotatorMath.hpp"
-#include "Snowstorm/World/EditorSelectionSingleton.hpp"
+#include "Snowstorm/World/EditorHooksSingleton.hpp"
 
 #include <entt/entt.hpp>
 
@@ -15,15 +15,13 @@ namespace Snowstorm
 
 		// The entity currently being dragged by the editor gizmo (if any). While it's manipulated we skip
 		// its rotation so the animation doesn't fight the manual edit (jitter through the Euler round-trip).
-		// Editor-only singleton: guarded so the runtime (no editor) is unaffected. Editor-authoring-wins.
-		// Read ONCE up front (not per-entity) so the parallel workers only compare a captured handle.
+		// Asked through the editor-integration hook so Core doesn't name the editor's selection type (#162);
+		// unset callback (runtime) -> entt::null -> nothing skipped. Editor-authoring-wins. Read ONCE up
+		// front (not per-entity) so the parallel workers only compare a captured handle.
 		entt::entity gizmoHeld = entt::null;
-		if (m_World->HasSingleton<EditorSelectionSingleton>())
+		if (const auto& hooks = m_World->GetSingleton<EditorHooksSingleton>(); hooks.ManipulatedEntity)
 		{
-			if (const auto& sel = m_World->GetSingleton<EditorSelectionSingleton>(); sel.GizmoActive && sel.Selected)
-			{
-				gizmoHeld = sel.Selected.Handle();
-			}
+			gizmoHeld = hooks.ManipulatedEntity();
 		}
 
 		// Data-parallel: each rotator's update is pure per-entity math (no shared state), so it splits

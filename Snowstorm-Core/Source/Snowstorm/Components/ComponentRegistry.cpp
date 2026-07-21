@@ -4,7 +4,7 @@
 #include "Snowstorm/Math/Math.hpp"
 #include "Snowstorm/Utility/JsonUtils.hpp"
 #include "Snowstorm/Utility/UUID.hpp"
-#include "Snowstorm/World/EditorHistorySingleton.hpp"
+#include "Snowstorm/World/EditorHooksSingleton.hpp"
 #include "Snowstorm/World/Entity.hpp"
 #include "Snowstorm/World/World.hpp"
 #include <glm/gtc/type_ptr.hpp>
@@ -104,40 +104,44 @@ namespace Snowstorm
 			return {};
 		}
 
-		// The editor history singleton for this entity's world, or null in a headless world.
-		EditorHistorySingleton* HistoryFor(Entity entity)
+		// The editor-integration hooks for this entity's world, or null in a headless/runtime world.
+		// Core reaches undo/history only through these callbacks — it never names EditorHistorySingleton
+		// (#162). A world always registers EditorHooksSingleton; the individual callbacks are null unless
+		// the editor installed them.
+		const EditorHooksSingleton* HooksFor(Entity entity)
 		{
 			World* world = entity.GetWorld();
-			if (!world || !world->HasSingleton<EditorHistorySingleton>())
-			{
-				return nullptr;
-			}
-			return &world->GetSingleton<EditorHistorySingleton>();
+			return world ? &world->GetSingleton<EditorHooksSingleton>() : nullptr;
 		}
 	}
 
 	void OnComponentEditBegin(Entity entity, const rttr::type& type)
 	{
-		EditorHistorySingleton* history = HistoryFor(entity);
-		if (!history || history->HasPendingEdit())
+		const EditorHooksSingleton* hooks = HooksFor(entity);
+		if (!hooks || !hooks->BeginComponentEdit || !hooks->HasPendingComponentEdit)
+		{
+			return; // no editor undo installed (headless / runtime)
+		}
+		if (hooks->HasPendingComponentEdit())
 		{
 			return; // already capturing this interaction
 		}
-		history->BeginEdit(entity.GetComponent<IDComponent>().Id, type.get_name().to_string(),
-		                   ComponentToJson(entity, type));
+		hooks->BeginComponentEdit(entity.GetComponent<IDComponent>().Id, type.get_name().to_string(),
+		                          ComponentToJson(entity, type));
 	}
 
 	void PollComponentEditEnd(Entity entity, const rttr::type& type)
 	{
-		EditorHistorySingleton* history = HistoryFor(entity);
-		if (!history || !history->HasPendingEdit())
+		const EditorHooksSingleton* hooks = HooksFor(entity);
+		if (!hooks || !hooks->FinalizeComponentEdit || !hooks->HasPendingComponentEdit ||
+		    !hooks->HasPendingComponentEdit())
 		{
 			return;
 		}
 		// Finalize once no inspector widget is being interacted with (drag released / field committed).
 		if (!ImGui::IsAnyItemActive())
 		{
-			history->FinalizeEdit(ComponentToJson(entity, type));
+			hooks->FinalizeComponentEdit(ComponentToJson(entity, type));
 		}
 	}
 

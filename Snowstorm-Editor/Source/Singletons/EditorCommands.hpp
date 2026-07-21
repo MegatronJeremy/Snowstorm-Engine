@@ -2,7 +2,7 @@
 
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Utility/UUID.hpp"
-#include "Snowstorm/World/EditorCommand.hpp"
+#include "Singletons/EditorCommand.hpp"
 
 #include <nlohmann/json.hpp>
 #include <string>

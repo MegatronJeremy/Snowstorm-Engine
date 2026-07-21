@@ -3,7 +3,7 @@
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/ECS/Singleton.hpp"
 #include "Snowstorm/Utility/UUID.hpp"
-#include "Snowstorm/World/EditorCommand.hpp"
+#include "Singletons/EditorCommand.hpp"
 
 #include <nlohmann/json.hpp>
 #include <string>

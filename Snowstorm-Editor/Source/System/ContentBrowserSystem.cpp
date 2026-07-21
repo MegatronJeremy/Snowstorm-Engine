@@ -2,7 +2,7 @@
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Project/Project.hpp"
-#include "Snowstorm/World/EditorCommandsSingleton.hpp"
+#include "Singletons/EditorCommandsSingleton.hpp"
 #include "Service/EditorTheme.hpp"
 #include "Singletons/EditorNotificationsSingleton.hpp"
 

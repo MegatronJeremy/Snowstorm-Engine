@@ -42,11 +42,12 @@
 #include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
 #include "Snowstorm/Systems/CoreSystems.hpp"
-#include "Snowstorm/World/EditorCommandsSingleton.hpp"
-#include "Snowstorm/World/EditorHistorySingleton.hpp"
-#include "Snowstorm/World/EditorSelectionSingleton.hpp"
+#include "Singletons/EditorCommandsSingleton.hpp"
+#include "Singletons/EditorHistorySingleton.hpp"
+#include "Singletons/EditorSelectionSingleton.hpp"
+#include "Snowstorm/World/EditorHooksSingleton.hpp"
 #include "Snowstorm/Input/InputStateSingleton.hpp"
-#include "Snowstorm/World/EditorStateSingleton.hpp"
+#include "Snowstorm/World/SimulationStateSingleton.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
 #include "Snowstorm/Project/Project.hpp"
 #include "Snowstorm/Project/ProjectSerializer.hpp"
@@ -123,6 +124,13 @@ namespace Snowstorm
 	void EditorLayer::InitializeActiveWorld()
 	{
 		World* world = m_ActiveWorld.get();
+
+		// EditorCommandsSingleton is an editor concept (menu/shortcut callbacks); it used to be registered by
+		// Core's World ctor, but Core no longer names it (#162). Register it here — before the command-hook
+		// block below uses it — so every fresh editor World (boot, project switch) has it. The other editor
+		// singletons register later in RegisterEditorSystems; this one is earlier because InitializeActiveWorld
+		// wires its callbacks immediately.
+		m_ActiveWorld->GetSingletonManager().RegisterSingleton<EditorCommandsSingleton>();
 
 		// Load asset registry DB early
 		{
@@ -406,12 +414,10 @@ namespace Snowstorm
 
 		// "Open Scene" semantics: wipe scene entities first, but KEEP the editor's persistent Scene-view
 		// camera + viewport (tagged DoNotSerialize) alive across the load — so the viewport keeps rendering
-		// the sky through the transition instead of going black.
+		// the sky through the transition instead of going black. ClearSceneEntities fires the OnSceneCleared
+		// hook, which resets editor selection AND drops undo history (its commands reference UUIDs in the
+		// world we're about to replace) — see EditorLayer::RegisterEditorSystems.
 		m_ActiveWorld->ClearSceneEntities();
-
-		// Undo history references the old scene's entities by UUID; drop it so undo can't touch a world
-		// that no longer exists.
-		m_ActiveWorld->GetSingleton<EditorHistorySingleton>().Clear();
 
 		if (!SceneSerializer::Deserialize(*m_ActiveWorld, scenePath))
 		{
@@ -653,7 +659,48 @@ namespace Snowstorm
 		singletonManager.RegisterSingleton<EditorSelectionSingleton>();
 		singletonManager.RegisterSingleton<EditorHistorySingleton>();
 		singletonManager.RegisterSingleton<EditorStatusBarSingleton>();
-		singletonManager.RegisterSingleton<EditorStateSingleton>();
+		singletonManager.RegisterSingleton<SimulationStateSingleton>();
+
+		// Install the editor-integration hooks (#162): Core-run systems (RotatorSystem, ComponentRegistry,
+		// World::ClearSceneEntities) call these, but Core no longer names the editor's selection/history
+		// types. Wire them to the real singletons here. Captured `world` outlives these callbacks (same
+		// World owns both the hooks and the target singletons); the hooks singleton is registered by Core
+		// in the World ctor, so it already exists — we only fill its callbacks.
+		{
+			World* world = m_ActiveWorld.get();
+			auto& hooks = singletonManager.GetSingleton<EditorHooksSingleton>();
+
+			hooks.ManipulatedEntity = [world]() -> entt::entity
+			{
+				const auto& sel = world->GetSingleton<EditorSelectionSingleton>();
+				return (sel.GizmoActive && sel.Selected) ? sel.Selected.Handle() : entt::null;
+			};
+
+			hooks.HasPendingComponentEdit = [world]() -> bool
+			{
+				return world->GetSingleton<EditorHistorySingleton>().HasPendingEdit();
+			};
+			hooks.BeginComponentEdit = [world](const UUID target, const std::string& typeName, nlohmann::json before)
+			{
+				world->GetSingleton<EditorHistorySingleton>().BeginEdit(target, typeName, std::move(before));
+			};
+			hooks.FinalizeComponentEdit = [world](nlohmann::json after)
+			{
+				world->GetSingleton<EditorHistorySingleton>().FinalizeEdit(std::move(after));
+			};
+
+			hooks.OnSceneCleared = [world]()
+			{
+				// A scene wipe leaves selection/undo pointing at destroyed entities. Reset selection and
+				// drop history (its commands reference a world that no longer exists). Consolidates what
+				// World::ClearSceneEntities used to do inline for selection, plus the history Clear that
+				// TryLoadWorldFromFile did separately.
+				auto& sel = world->GetSingleton<EditorSelectionSingleton>();
+				sel.Selected = {};
+				sel.GizmoActive = false;
+				world->GetSingleton<EditorHistorySingleton>().Clear();
+			};
+		}
 
 		// Editor UI systems. The UI phase is empty in a packaged runtime, so the engine
 		// systems (registered by RegisterCoreSystems) run identically with or without these.
@@ -1115,8 +1162,7 @@ namespace Snowstorm
 		{
 			m_HasPendingNewScene = false;
 			Renderer::WaitIdle();
-			m_ActiveWorld->ClearSceneEntities(); // also resets the editor selection (see World::ClearSceneEntities)
-			m_ActiveWorld->GetSingleton<EditorHistorySingleton>().Clear();
+			m_ActiveWorld->ClearSceneEntities(); // OnSceneCleared hook resets selection + drops undo history
 			m_ActiveScenePath.clear();
 			SS_CORE_INFO("New scene created.");
 		}
@@ -1136,7 +1182,7 @@ namespace Snowstorm
 		// (the UE model). Restore reuses the scene-transition recipe: drain the GPU, Clear(), deserialize,
 		// prewarm.
 		{
-			const bool playing = m_ActiveWorld->GetSingleton<EditorStateSingleton>().IsPlaying();
+			const bool playing = m_ActiveWorld->GetSingleton<SimulationStateSingleton>().IsPlaying();
 			if (playing && !m_WasPlaying)
 			{
 				m_PlaySnapshot = SceneSerializer::SerializeToString(*m_ActiveWorld);
@@ -1145,9 +1191,9 @@ namespace Snowstorm
 			{
 				Renderer::WaitIdle();
 				// Keep the persistent editor camera/viewport (the play snapshot excludes them, since they
-				// are DoNotSerialize); only scene content is restored from the snapshot.
+				// are DoNotSerialize); only scene content is restored from the snapshot. ClearSceneEntities
+				// fires OnSceneCleared, which resets selection + drops undo history.
 				m_ActiveWorld->ClearSceneEntities();
-				m_ActiveWorld->GetSingleton<EditorHistorySingleton>().Clear();
 				SceneSerializer::DeserializeFromString(*m_ActiveWorld, m_PlaySnapshot);
 				PrewarmSceneTextures();
 				m_PlaySnapshot.clear();

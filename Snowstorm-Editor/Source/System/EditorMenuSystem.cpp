@@ -5,8 +5,8 @@
 
 #include "System/ConsoleSystem.hpp"
 #include "System/CVarPanelSystem.hpp"
-#include "Snowstorm/World/EditorCommandsSingleton.hpp"
-#include "Snowstorm/World/EditorHistorySingleton.hpp"
+#include "Singletons/EditorCommandsSingleton.hpp"
+#include "Singletons/EditorHistorySingleton.hpp"
 #include "Snowstorm/World/World.hpp"
 #include "Snowstorm/World/Entity.hpp"
 #include "Snowstorm/Input/InputStateSingleton.hpp"

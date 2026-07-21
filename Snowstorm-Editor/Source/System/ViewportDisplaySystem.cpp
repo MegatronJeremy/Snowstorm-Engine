@@ -16,10 +16,10 @@
 #include "Snowstorm/Math/Bounds.hpp"
 #include "Snowstorm/Math/Picking.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
-#include "Snowstorm/World/EditorCommands.hpp"
-#include "Snowstorm/World/EditorHistorySingleton.hpp"
-#include "Snowstorm/World/EditorSelectionSingleton.hpp"
-#include "Snowstorm/World/EditorStateSingleton.hpp"
+#include "Singletons/EditorCommands.hpp"
+#include "Singletons/EditorHistorySingleton.hpp"
+#include "Singletons/EditorSelectionSingleton.hpp"
+#include "Snowstorm/World/SimulationStateSingleton.hpp"
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -388,7 +388,7 @@ namespace Snowstorm
 		auto& reg = m_World->GetRegistry();
 		auto& selection = m_World->GetSingleton<EditorSelectionSingleton>();
 		auto& input = m_World->GetSingleton<InputStateSingleton>();
-		auto& editorState = m_World->GetSingleton<EditorStateSingleton>();
+		auto& editorState = m_World->GetSingleton<SimulationStateSingleton>();
 
 		// Default to inactive each frame; the gizmo block below sets it true while dragging. Resetting here
 		// (not only in that block) means a `continue` that skips the block can't leave it stuck true.
@@ -642,7 +642,7 @@ namespace Snowstorm
 			ImGui::SetCursorScreenPos(ImVec2(contentMin.x + (contentWidth - kBtn) * 0.5f, contentMin.y + kTopMargin));
 			if (ImGui::InvisibleButton("##playstop", ImVec2(kBtn, kBtn)))
 			{
-				editorState.Current = playing ? EditorStateSingleton::Mode::Edit : EditorStateSingleton::Mode::Play;
+				editorState.Current = playing ? SimulationStateSingleton::Mode::Edit : SimulationStateSingleton::Mode::Play;
 			}
 			const bool hovered = ImGui::IsItemHovered();
 

@@ -10,8 +10,7 @@
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Events/Event.hpp"
 #include "Snowstorm/Systems/CameraControllerSystem.hpp"
-#include "Snowstorm/World/EditorCommandsSingleton.hpp"
-#include "Snowstorm/World/EditorSelectionSingleton.hpp"
+#include "Snowstorm/World/EditorHooksSingleton.hpp"
 
 namespace Snowstorm
 {
@@ -23,7 +22,12 @@ namespace Snowstorm
 		// World-scoped, per-scene state only. The renderer + shader/mesh libraries are device-lifetime and
 		// now live in the application's ServiceManager (see RegisterCoreServices), shared across all Worlds.
 		m_SingletonManager->RegisterSingleton<InputStateSingleton>();
-		m_SingletonManager->RegisterSingleton<EditorCommandsSingleton>();
+
+		// Editor-integration seam (#162): Core-run systems invoke these callbacks; the editor installs them.
+		// Always registered (callbacks default to null = no-op), so Core needs no #ifdef and the runtime is
+		// unaffected. This replaces Core's former dependency on the editor's command/selection/history types,
+		// which now live in Snowstorm-Editor. See EditorHooksSingleton.
+		m_SingletonManager->RegisterSingleton<EditorHooksSingleton>();
 
 		m_SingletonManager->RegisterSingleton<AssetManagerSingleton>(this);
 
@@ -112,16 +116,13 @@ namespace Snowstorm
 		// frame. See World::SceneGeneration().
 		++m_SceneGeneration;
 
-		// Clearing entities leaves the editor's selected-entity handle dangling. Its consumers all
-		// guard with IsValid(), so this isn't the crash it looks like — but a selection pointing at a
-		// destroyed entity is still wrong state (a stale inspector target), so reset it on every wipe.
-		// Guarded: runtime worlds never register the singleton. (The New-Scene crash itself was a stale
-		// VisibilityCache handle in the render pass, fixed there.)
-		if (HasSingleton<EditorSelectionSingleton>())
+		// Clearing entities leaves editor state (selection, undo history) pointing at destroyed entities.
+		// Notify the editor via the hook so it can reset that state — Core no longer names the editor's
+		// selection/history types directly (#162). No-op in a runtime (callback unset). (The New-Scene
+		// crash itself was a stale VisibilityCache handle in the render pass, fixed there.)
+		if (const auto& hooks = GetSingleton<EditorHooksSingleton>(); hooks.OnSceneCleared)
 		{
-			auto& selection = GetSingleton<EditorSelectionSingleton>();
-			selection.Selected = {};
-			selection.GizmoActive = false;
+			hooks.OnSceneCleared();
 		}
 	}
 

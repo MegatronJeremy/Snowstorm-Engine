@@ -23,10 +23,10 @@
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
-#include "Snowstorm/World/EditorCommands.hpp"
-#include "Snowstorm/World/EditorCommandsSingleton.hpp"
-#include "Snowstorm/World/EditorHistorySingleton.hpp"
-#include "Snowstorm/World/EditorSelectionSingleton.hpp"
+#include "Singletons/EditorCommands.hpp"
+#include "Singletons/EditorCommandsSingleton.hpp"
+#include "Singletons/EditorHistorySingleton.hpp"
+#include "Singletons/EditorSelectionSingleton.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
 
 #include <nlohmann/json.hpp>

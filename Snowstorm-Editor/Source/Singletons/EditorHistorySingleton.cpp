@@ -1,6 +1,6 @@
 #include "EditorHistorySingleton.hpp"
 
-#include "Snowstorm/World/EditorCommands.hpp"
+#include "Singletons/EditorCommands.hpp"
 
 namespace Snowstorm
 {

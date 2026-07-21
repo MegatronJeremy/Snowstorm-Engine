@@ -71,7 +71,7 @@ namespace Snowstorm
 		/// were running — override this to false so they only tick in Play mode. Mirrors Unity's
 		/// [ExecuteAlways] / Unreal's bTickInEditor / Godot's @tool (a per-system opt-out here, since our
 		/// system set is mostly infra rather than gameplay). Consulted by SystemManager against
-		/// EditorStateSingleton; in a packaged runtime (no editor state) everything runs regardless.
+		/// SimulationStateSingleton; in a packaged runtime (no sim state) everything runs regardless.
 		[[nodiscard]] virtual bool RunsInEditMode() const { return true; }
 
 	protected:

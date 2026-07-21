@@ -4,7 +4,7 @@
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/Math/Bounds.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
-#include "Snowstorm/World/EditorSelectionSingleton.hpp"
+#include "Singletons/EditorSelectionSingleton.hpp"
 
 namespace Snowstorm
 {
