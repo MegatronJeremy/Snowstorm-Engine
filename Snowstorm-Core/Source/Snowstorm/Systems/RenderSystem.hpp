@@ -58,6 +58,11 @@ namespace Snowstorm
 		// turns off / resizes, so the first temporal frame warps against zeros (disocclusion), not garbage.
 		std::unordered_set<entt::entity> m_NeuralTemporalValid;
 
+		// Last scene generation (World::SceneGeneration) this system observed. When it changes, the scene was
+		// wiped (Open/New Scene) — the persistent viewport survives but its temporal history now holds the
+		// old scene, so both valid-sets above are cleared to force a clean first frame. See #161.
+		uint64_t m_LastSceneGeneration = 0;
+
 		// The environment the IBL maps were last baked from. When the live environment differs (e.g. a scene
 		// finished loading after the deferred startup load, so the first bake saw an empty/default world), we
 		// invalidate the bake so it re-runs against the real sky. nullopt = never baked. (#64)

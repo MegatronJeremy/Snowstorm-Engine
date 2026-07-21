@@ -44,6 +44,14 @@ namespace Snowstorm
 		// load. Use this for scene transitions; Clear() is full teardown.
 		void ClearSceneEntities() const;
 
+		// Monotonic counter bumped on every ClearSceneEntities (scene wipe / Open Scene / New Scene). It is
+		// the engine's "camera cut" signal (cf. Unreal bCameraCut, Unity's history reset on scene load):
+		// the persistent editor viewport survives a wipe (it's DoNotSerialize), so any per-viewport temporal
+		// history — TAA, the neural temporal upscaler — is now pointing at the PREVIOUS scene's frame while
+		// its "history valid" flag still reads true, bleeding a one-frame ghost of the old scene into the
+		// new one. A consumer records the generation it last saw and resets its history when it changes.
+		[[nodiscard]] uint64_t SceneGeneration() const { return m_SceneGeneration; }
+
 		[[nodiscard]] SystemManager& GetSystemManager();
 		[[nodiscard]] const SystemManager& GetSystemManager() const;
 
@@ -74,6 +82,9 @@ namespace Snowstorm
 		Scope<InputEventBridge> m_InputEventBridge;
 
 		std::vector<entt::entity> m_PendingDestroy; // flushed at end of frame by FlushDestroyQueue
+
+		// Bumped by ClearSceneEntities (which is const, so this is mutable). See SceneGeneration().
+		mutable uint64_t m_SceneGeneration = 0;
 
 		friend class Entity;
 		friend class SceneHierarchyPanel;

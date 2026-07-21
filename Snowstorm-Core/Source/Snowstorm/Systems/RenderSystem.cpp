@@ -97,6 +97,17 @@ namespace Snowstorm
 		auto& reg = m_World->GetRegistry();
 		auto& renderer = ServiceView<RendererService>();
 
+		// Scene-cut detection (#161): a scene wipe (Open/New Scene) bumps World::SceneGeneration but keeps
+		// the persistent editor viewport alive, so its per-viewport temporal history (TAA + neural) now holds
+		// the PREVIOUS scene. Drop both valid-sets on the cut so the first frame of the new scene reprojects
+		// against nothing (clean) instead of ghosting the old scene for one frame.
+		if (const uint64_t gen = m_World->SceneGeneration(); gen != m_LastSceneGeneration)
+		{
+			m_LastSceneGeneration = gen;
+			m_TaaHistoryValid.clear();
+			m_NeuralTemporalValid.clear();
+		}
+
 		const auto viewportView = View<const ViewportComponent, const RenderTargetComponent>();
 
 		// Cameras must have runtime updated before RenderSystem

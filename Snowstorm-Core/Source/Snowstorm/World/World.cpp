@@ -106,6 +106,12 @@ namespace Snowstorm
 	{
 		m_SystemManager->GetRegistry().ClearExcept<DoNotSerializeComponent>();
 
+		// Advance the scene generation so temporal-history consumers (RenderSystem's TAA / neural upscaler)
+		// can detect the wipe and drop their stale per-viewport history — the persistent viewport survives
+		// this clear, so without the signal its TAA/neural history would reproject the OLD scene for one
+		// frame. See World::SceneGeneration().
+		++m_SceneGeneration;
+
 		// Clearing entities leaves the editor's selected-entity handle dangling. Its consumers all
 		// guard with IsValid(), so this isn't the crash it looks like — but a selection pointing at a
 		// destroyed entity is still wrong state (a stale inspector target), so reset it on every wipe.
