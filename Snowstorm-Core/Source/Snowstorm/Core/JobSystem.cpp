@@ -41,6 +41,17 @@ namespace Snowstorm
 		}
 	}
 
+	void JobSystem::WaitAll()
+	{
+		// Block until the queue is empty AND no worker is still executing a task. m_ActiveCount is
+		// incremented at pop-time (under the lock, before the lock is released to run the task) and
+		// decremented after the task returns, so "queue empty && active == 0" is a true quiescent point
+		// with no in-flight completion still pending. Workers signal m_IdleCondition on each decrement.
+		std::unique_lock lock(m_Mutex);
+		m_IdleCondition.wait(lock, [this]
+		                     { return m_Tasks.empty() && m_ActiveCount == 0; });
+	}
+
 	void JobSystem::WorkerLoop()
 	{
 		for (;;)
@@ -60,13 +71,26 @@ namespace Snowstorm
 
 				task = std::move(m_Tasks.front());
 				m_Tasks.pop();
+				++m_ActiveCount; // counted busy from pop until the task returns (see WaitAll)
 			}
 
 			// Timeline event per worker task — this is what makes the cross-thread capture show worker
 			// overlap vs. the main thread. (Generic label for now; threading a per-submit name through
 			// Submit() is a follow-up.)
-			SS_PROFILE_SCOPE("JobTask");
-			task(); // packaged_task captures exceptions into its future; never throws out here.
+			{
+				SS_PROFILE_SCOPE("JobTask");
+				task(); // packaged_task captures exceptions into its future; never throws out here.
+			}
+
+			// Task done: drop the busy count and, if the pool just went idle, wake any WaitAll waiter.
+			{
+				std::lock_guard lock(m_Mutex);
+				--m_ActiveCount;
+				if (m_Tasks.empty() && m_ActiveCount == 0)
+				{
+					m_IdleCondition.notify_all();
+				}
+			}
 		}
 	}
 }

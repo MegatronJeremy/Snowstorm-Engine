@@ -12,6 +12,8 @@
 #include "Examples/MandelbrotSet/MandelbrotControllerSystem.hpp"
 #include "Singletons/EditorNotificationsSingleton.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
+#include "Snowstorm/Core/Application.hpp"
+#include "Snowstorm/Core/JobSystem.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Utility/CVar.hpp"
 #include "Snowstorm/Core/MeshDiagnostics.hpp"
@@ -360,6 +362,14 @@ namespace Snowstorm
 		// should survive a project switch is the user's call (Ctrl+S before switching); silently
 		// writing the scene here would overwrite the file with edits they may have wanted to discard.
 		SaveProject();
+
+		// Drain in-flight CPU asset jobs BEFORE destroying the World. AssetManagerSingleton is
+		// World-scoped, but its async mesh/texture loads run on the app-scoped JobSystem and capture
+		// `this`, writing member state (m_CompletedMeshes/Textures) on completion. WaitIdle() below only
+		// drains the GPU — a worker mid-load would still write to the singleton after we free the World,
+		// corrupting the heap. WaitAll() blocks until every worker is idle, closing that window. (Any
+		// completed-but-not-finalized CPU blobs are dropped with the singleton; they hold no GPU state.)
+		Application::Get().GetServiceManager().GetService<JobSystem>().WaitAll();
 
 		// Drain the GPU before dropping the old World's resources — same safe point
 		// TryLoadWorldFromFile uses for a scene switch, just for the whole World this time.

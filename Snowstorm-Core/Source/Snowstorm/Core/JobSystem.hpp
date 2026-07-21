@@ -60,6 +60,18 @@ namespace Snowstorm
 		// Number of worker threads in the pool (>= 1).
 		[[nodiscard]] size_t WorkerCount() const { return m_Workers.size(); }
 
+		// Block the calling thread until every submitted task has finished (queue drained AND no worker
+		// still executing). This is the CPU analogue of Renderer::WaitIdle: a "safe point" to reach before
+		// destroying state that in-flight tasks capture. The concrete motivating case is a project/scene
+		// switch — AssetManagerSingleton's async loads capture `this` and write member state on completion,
+		// so the World that owns the singleton must NOT be destroyed while a worker is mid-load, or the
+		// completion writes land on freed memory (heap corruption). Drain here before dropping the World.
+		//
+		// Caveat: this waits for the queue to reach zero in-flight; it assumes tasks don't recursively
+		// Submit MORE work (the engine's tasks — asset cook/read and ParallelFor chunks — don't). If a
+		// self-resubmitting task pattern is ever added, this needs a generation/epoch guard instead.
+		void WaitAll();
+
 		// Data-parallel loop over [0, count): splits the range into chunks of ~grainSize and runs them
 		// across the worker pool, blocking until all are done (the Unity DOTS / Unreal ParallelFor model).
 		// `body(begin, end)` is invoked once per chunk with a half-open sub-range; it must be safe to run
@@ -196,7 +208,9 @@ namespace Snowstorm
 		std::queue<std::function<void()>> m_Tasks;
 
 		std::mutex m_Mutex;
-		std::condition_variable m_Condition;
+		std::condition_variable m_Condition;     // workers wait here for queue work / shutdown
+		std::condition_variable m_IdleCondition; // WaitAll waits here for the pool to go fully idle
+		size_t m_ActiveCount = 0;                // tasks currently executing on a worker (queue-pop..done)
 		bool m_Stopping = false;
 	};
 }

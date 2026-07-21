@@ -3,7 +3,9 @@
 #include "Snowstorm/Core/JobSystem.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <numeric>
+#include <thread>
 #include <vector>
 
 using namespace Snowstorm;
@@ -141,6 +143,40 @@ TEST_CASE("ParallelGather is deterministic across repeated runs", "[jobsystem]")
 	const std::vector<size_t> a = run();
 	const std::vector<size_t> b = run();
 	REQUIRE(a == b); // scheduling must not change the result (order or contents)
+}
+
+// WaitAll is the drain primitive that closes the project-switch use-after-free: async asset loads
+// capture the (World-scoped) AssetManagerSingleton and write member state on completion, so the World
+// must not be destroyed while any worker is still running. The contract that matters: after WaitAll
+// returns, EVERY submitted task has fully finished — including tasks still executing on a worker when
+// WaitAll was called (queue-empty alone is not enough; a popped-but-running task must be waited on too).
+TEST_CASE("WaitAll blocks until every submitted task has completed", "[jobsystem]")
+{
+	JobSystem jobs;
+	constexpr int taskCount = 64;
+
+	std::atomic<int> completed{0};
+	for (int i = 0; i < taskCount; ++i)
+	{
+		(void)jobs.Submit([&completed]
+		                  {
+			// Sleep so tasks are still mid-execution when WaitAll is called — this is what exercises the
+			// "popped from queue but not yet done" window that queue-empty checking would miss.
+			std::this_thread::sleep_for(std::chrono::milliseconds(2));
+			completed.fetch_add(1, std::memory_order_relaxed); });
+	}
+
+	jobs.WaitAll();
+
+	// If WaitAll returned while any task was still running, this would flake below taskCount.
+	REQUIRE(completed.load(std::memory_order_relaxed) == taskCount);
+}
+
+TEST_CASE("WaitAll on an idle pool returns immediately", "[jobsystem]")
+{
+	JobSystem jobs;
+	jobs.WaitAll(); // nothing submitted -> must not hang
+	SUCCEED();
 }
 
 TEST_CASE("ParallelGather can emit multiple values per index", "[jobsystem]")
