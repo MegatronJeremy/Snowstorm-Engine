@@ -27,7 +27,10 @@ namespace Snowstorm
 		glm::mat4 PrevModel{1.0f};       // last frame's world matrix — for motion vectors (#44)
 		uint32_t AlbedoTextureIndex = 0; // per-instance albedo override (0 = material default)
 		glm::vec3 _Pad0{0.0f};
-		glm::vec4 Extras0{0.0f};
+		// Generic per-instance custom data (cf. Unreal PerInstanceCustomData): four free floats the shader
+		// interprets however it likes. Engine-neutral — a client shader gives them meaning (the Mandelbrot
+		// demo packs center.xy / zoom / iteration count). Zero for objects that don't use it.
+		glm::vec4 PerInstanceCustomData{0.0f};
 	};
 	static_assert(sizeof(InstanceData) == 2 * sizeof(glm::mat4) + sizeof(glm::vec4) + sizeof(glm::vec4),
 	              "InstanceData layout must match HLSL (mat4 Model + mat4 PrevModel + uint+pad3 + vec4)");
@@ -81,7 +84,7 @@ namespace Snowstorm
 		              const Ref<Mesh>& mesh,
 		              const Ref<MaterialInstance>& materialInstance,
 		              uint32_t albedoTextureIndex = 0,
-		              const glm::vec4& extras0 = glm::vec4(0.0f),
+		              const glm::vec4& perInstanceCustomData = glm::vec4(0.0f),
 		              const glm::mat4& prevTransform = glm::mat4(1.0f));
 
 		void UploadLights(const LightDataBlock& lightData);

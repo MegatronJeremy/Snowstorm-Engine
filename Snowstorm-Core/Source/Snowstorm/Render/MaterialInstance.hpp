@@ -32,19 +32,18 @@ namespace Snowstorm
 		void SetAOTexture(const Ref<TextureView>& view);
 		void SetEmissiveTexture(const Ref<TextureView>& view);
 
-		// You can keep an internal generic one for the UI/Editor later
-		// void SetTexture(const std::string& name, const Ref<TextureView>& view);
-
 		// Per-instance overrides
 		void SetBaseColor(const glm::vec4& color);
 		[[nodiscard]] const glm::vec4& GetBaseColor() const { return m_Constants.BaseColor; }
 
-		void SetObjectExtras0(const glm::vec4& v)
+		// Generic per-instance custom data (see InstanceData::PerInstanceCustomData). Four free floats the
+		// bound shader interprets as it wishes; the renderer copies this straight into the instance record.
+		void SetPerInstanceCustomData(const glm::vec4& v)
 		{
-			m_ObjectExtras0 = v;
+			m_PerInstanceCustomData = v;
 			MarkDirty();
 		}
-		[[nodiscard]] const glm::vec4& GetObjectExtras0() const { return m_ObjectExtras0; }
+		[[nodiscard]] const glm::vec4& GetPerInstanceCustomData() const { return m_PerInstanceCustomData; }
 
 		void SetSampler(const Ref<Sampler>& sampler);
 
@@ -68,9 +67,8 @@ namespace Snowstorm
 		// CPU-side constants for set=1 UBO
 		Material::Constants m_Constants{};
 
-		// Temporary bridge until reflection-based ObjectCB member sets:
-		// renderer will copy this into ObjectCB.Extras0 (set=2)
-		glm::vec4 m_ObjectExtras0 = glm::vec4(0.0f);
+		// Per-instance custom data the renderer copies into InstanceData::PerInstanceCustomData (set=2).
+		glm::vec4 m_PerInstanceCustomData = glm::vec4(0.0f);
 
 		// Per-frame resources for the Material Data (Constants + Sampler)
 		std::vector<Ref<Buffer>> m_UniformBuffers;

@@ -19,15 +19,15 @@ struct VSInput
 
 // --- SPACE 2: Per-instance Object Data ---
 // One entry per instance, indexed by SV_InstanceID. Lets a single instanced DrawIndexed draw N
-// objects that share a mesh+material, with per-object transform / albedo / extras. Layout must match
-// the C++ InstanceData struct in RendererSingleton exactly.
+// objects that share a mesh+material, with per-object transform / albedo / custom data. Layout must
+// match the C++ InstanceData struct in RendererService exactly.
 struct InstanceData
 {
 	float4x4 Model;
 	float4x4 PrevModel;      // last frame's world matrix -- for motion vectors (#44)
 	uint AlbedoTextureIndex; // per-instance albedo override (0 = use material default)
 	float3 _Pad0;
-	float4 Extras0;
+	float4 PerInstanceCustomData; // generic per-instance floats; shader-defined meaning (cf. Unreal)
 };
 StructuredBuffer<InstanceData> Instances : register(t0, space2);
 

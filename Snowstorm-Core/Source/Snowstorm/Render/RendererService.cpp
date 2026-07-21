@@ -124,7 +124,7 @@ namespace Snowstorm
 	                               const Ref<Mesh>& mesh,
 	                               const Ref<MaterialInstance>& materialInstance,
 	                               const uint32_t albedoTextureIndex,
-	                               const glm::vec4& extras0,
+	                               const glm::vec4& perInstanceCustomData,
 	                               const glm::mat4& prevTransform)
 	{
 		SS_CORE_ASSERT(m_CommandContext, "DrawMesh called outside of BeginScene/EndScene");
@@ -148,7 +148,7 @@ namespace Snowstorm
 		instance.Model = transform;
 		instance.PrevModel = prevTransform;
 		instance.AlbedoTextureIndex = albedoTextureIndex;
-		instance.Extras0 = extras0;
+		instance.PerInstanceCustomData = perInstanceCustomData;
 		batch->Instances.push_back(instance);
 	}
 

@@ -1,6 +1,6 @@
 #include "Include/Engine.hlsli"
 
-// Mandelbrot fragment stage: renders the fractal into a mesh quad using per-instance Extras0
+// Mandelbrot fragment stage: renders the fractal into a mesh quad using per-instance custom data
 // (xy=center, z=zoom span, w=maxIter). Pairs with the shared Mesh.vert.hlsl.
 //
 // Quality vs the naive version:
@@ -43,7 +43,7 @@ float3 hsv_to_rgb(float h, float s, float v)
 
 float4 main(PSInput i) : SV_Target0
 {
-	const float4 extras = Instances[i.InstanceID].Extras0;
+	const float4 extras = Instances[i.InstanceID].PerInstanceCustomData;
 	const float2 center = extras.xy;
 	const float zoom = extras.z;
 	const int maxIter = max(1, (int)extras.w);

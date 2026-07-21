@@ -8,35 +8,19 @@
 
 namespace Snowstorm
 {
-	enum class PipelinePreset
-	{
-		DefaultLit = 0,
-		Mandelbrot = 1 // TODO THIS SHOULD NOT BE HERE
-	};
-
-	inline std::string PipelinePresetToString(const PipelinePreset p)
-	{
-		switch (p)
-		{
-		case PipelinePreset::DefaultLit:
-			return "DefaultLit";
-		case PipelinePreset::Mandelbrot:
-			return "Mandelbrot";
-		default:
-			return "DefaultLit";
-		}
-	}
-
-	inline PipelinePreset PipelinePresetFromString(const std::string& s)
-	{
-		if (s == "Mandelbrot")
-			return PipelinePreset::Mandelbrot;
-		return PipelinePreset::DefaultLit;
-	}
+	// The engine's default surface shader. A material with no explicit shader (the overwhelming common
+	// case — every imported mesh material, every hand-authored PBR material) uses this. Kept as a named
+	// constant, not a hardcoded literal at the pipeline site, so there is exactly one place that decides
+	// "what does an unspecified material render with".
+	inline constexpr const char* kDefaultFragmentShader = "assets/shaders/DefaultLit.frag.hlsl";
 
 	struct MaterialAsset
 	{
-		PipelinePreset Preset = PipelinePreset::DefaultLit;
+		// Fragment-shader path this material renders with (the vertex stage is always the shared mesh
+		// vertex shader). Data-driven — Core does NOT enumerate known shaders. A custom material (e.g. the
+		// Mandelbrot demo) just names its own .frag.hlsl here, so client shaders need no engine change.
+		// Empty in a freshly loaded struct; MaterialAssetIO fills it (or defaults to kDefaultFragmentShader).
+		std::string FragmentShader = kDefaultFragmentShader;
 
 		glm::vec4 BaseColor = glm::vec4(1.0f);
 

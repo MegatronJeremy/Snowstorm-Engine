@@ -60,8 +60,8 @@ namespace Snowstorm
 	{
 		json root;
 		root["Type"] = "SnowstormMaterial";
-		root["Version"] = 2;
-		root["PipelinePreset"] = PipelinePresetToString(asset.Preset);
+		root["Version"] = 3;
+		root["Shader"] = asset.FragmentShader; // v3: data-driven frag-shader path (replaced the PipelinePreset enum)
 		root["BaseColor"] = Vec4ToJson(asset.BaseColor);
 
 		WriteHandle(root, "AlbedoTexture", asset.AlbedoTexture);
@@ -99,7 +99,20 @@ namespace Snowstorm
 			return false;
 
 		outAsset = MaterialAsset{};
-		outAsset.Preset = PipelinePresetFromString(root.value("PipelinePreset", "DefaultLit"));
+
+		// Fragment shader (v3+). Back-compat: v1/v2 files stored a "PipelinePreset" enum string instead of a
+		// path. That enum's names were always the shader's file stem ("DefaultLit" -> DefaultLit.frag.hlsl),
+		// so map any legacy preset generically as "assets/shaders/<preset>.frag.hlsl" — no shader named here,
+		// so the serializer stays engine-neutral and old .ssmat still load.
+		if (root.contains("Shader") && root["Shader"].is_string())
+		{
+			outAsset.FragmentShader = root["Shader"].get<std::string>();
+		}
+		else if (root.contains("PipelinePreset") && root["PipelinePreset"].is_string())
+		{
+			outAsset.FragmentShader = "assets/shaders/" + root["PipelinePreset"].get<std::string>() + ".frag.hlsl";
+		}
+		// else: leave the struct default (kDefaultFragmentShader).
 
 		if (root.contains("BaseColor"))
 			(void)JsonToVec4(root["BaseColor"], outAsset.BaseColor);

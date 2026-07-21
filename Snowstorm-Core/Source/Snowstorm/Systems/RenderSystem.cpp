@@ -417,8 +417,8 @@ namespace Snowstorm
 							               }
 						               }
 
-						               const glm::vec4 extras0 = mat.MaterialInstance->GetObjectExtras0();
-						               renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, albedoIndex, extras0);
+						               const glm::vec4 customData = mat.MaterialInstance->GetPerInstanceCustomData();
+						               renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, albedoIndex, customData);
 					               }
 
 					               renderer.Flush();

@@ -175,7 +175,7 @@ namespace Snowstorm
 			const aiMaterial* aiMat = scene->mMaterials[m];
 
 			MaterialAsset matAsset{};
-			matAsset.Preset = PipelinePreset::DefaultLit;
+			// FragmentShader defaults to kDefaultFragmentShader (DefaultLit) — imported meshes are lit PBR.
 
 			// Base color: prefer the glTF PBR base-color factor, fall back to legacy diffuse (OBJ/FBX).
 			aiColor4D baseColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -774,27 +774,21 @@ namespace Snowstorm
 		return placeholder;
 	}
 
-	Ref<Pipeline> AssetManagerSingleton::GetOrCreatePipeline(const PipelinePreset preset)
+	Ref<Pipeline> AssetManagerSingleton::GetOrCreatePipeline(const std::string& fragmentShaderPath)
 	{
-		const int key = static_cast<int>(preset);
-		if (auto it = m_PipelineCache.find(key); it != m_PipelineCache.end())
+		// Data-driven: the cache is keyed by the fragment-shader path the material named, so any custom
+		// shader gets its own pipeline with no engine change (the old fixed PipelinePreset enum is gone).
+		// All mesh materials share the standard mesh vertex stage; only the fragment differs.
+		const std::string fragPath = fragmentShaderPath.empty() ? kDefaultFragmentShader : fragmentShaderPath;
+		if (auto it = m_PipelineCache.find(fragPath); it != m_PipelineCache.end())
 			return it->second;
-
-		// Minimal preset-based pipeline creation.
-		// You can expand this to a PipelineLibrary later.
-
-		// Both presets share the standard mesh vertex stage; only the fragment differs.
-		const std::string fragPath =
-		    (preset == PipelinePreset::Mandelbrot)
-		        ? "assets/shaders/Mandelbrot.frag.hlsl"
-		        : "assets/shaders/DefaultLit.frag.hlsl";
 
 		auto& shaderLib = Application::Get().GetServiceManager().GetService<ShaderLibrary>();
 		Ref<Shader> shader = shaderLib.Load("assets/shaders/Mesh.vert.hlsl", fragPath);
 
 		// Shaders compile asynchronously (ShaderLibrary::Load submits to a worker). Until the SPIR-V is
 		// ready we can't build the pipeline — return null WITHOUT caching, so a later frame retries once the
-		// compile finishes. Caching null here would poison the preset permanently (same hazard the mesh/
+		// compile finishes. Caching null here would poison this shader permanently (same hazard the mesh/
 		// material caches guard against). The material stays unresolved and the object simply isn't drawn
 		// yet; it pops in over the sky when its pipeline is created.
 		if (!shader || !shader->IsReady())
@@ -830,10 +824,12 @@ namespace Snowstorm
 		p.DepthStencil.DepthCompare = CompareOp::Less;
 
 		p.HasStencil = false;
-		p.DebugName = (preset == PipelinePreset::Mandelbrot) ? "MandelbrotPipeline(Asset)" : "DefaultLitPipeline(Asset)";
+		// Debug name from the shader's stem (e.g. "DefaultLit" / "Mandelbrot") so RenderDoc/validation stay
+		// legible without the engine hardcoding any shader name.
+		p.DebugName = std::filesystem::path(fragPath).stem().string() + "Pipeline(Asset)";
 
 		Ref<Pipeline> pipeline = Pipeline::Create(p);
-		m_PipelineCache[key] = pipeline;
+		m_PipelineCache[fragPath] = pipeline;
 		return pipeline;
 	}
 
@@ -854,7 +850,7 @@ namespace Snowstorm
 			return nullptr;
 		}
 
-		Ref<Pipeline> pipeline = GetOrCreatePipeline(matAsset.Preset);
+		Ref<Pipeline> pipeline = GetOrCreatePipeline(matAsset.FragmentShader);
 		if (!pipeline)
 		{
 			return nullptr;
@@ -888,7 +884,7 @@ namespace Snowstorm
 			return nullptr;
 		}
 
-		Ref<Pipeline> pipeline = GetOrCreatePipeline(matAsset.Preset);
+		Ref<Pipeline> pipeline = GetOrCreatePipeline(matAsset.FragmentShader);
 		if (!pipeline)
 		{
 			return nullptr;

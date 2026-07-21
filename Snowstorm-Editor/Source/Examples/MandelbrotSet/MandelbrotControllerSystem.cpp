@@ -47,7 +47,10 @@ namespace Snowstorm
 				mandelbrotComponent.MaxIterations = std::clamp(static_cast<int>(150.0f + 120.0f * depth), 150, 2000);
 			}
 
-			mandelbrotMaterial->SetObjectExtras0(
+			// Pack the fractal params into the generic per-instance custom data channel; Mandelbrot.frag.hlsl
+			// unpacks them (xy=center, z=zoom, w=iterations). This is the ONLY thing that gives the four
+			// floats meaning — the engine core stays ignorant of what they represent.
+			mandelbrotMaterial->SetPerInstanceCustomData(
 			    glm::vec4{
 			        mandelbrotComponent.Center.x,
 			        mandelbrotComponent.Center.y,
