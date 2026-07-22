@@ -35,7 +35,7 @@ namespace Snowstorm
 		// Optional: return original source path
 		[[nodiscard]] virtual std::string GetShaderPath() = 0;
 
-		// Compiled artifact path in cache folder (e.g. assets/cache/shaders/X_<hash>.vert.spv)
+		// Compiled artifact path in cache folder (e.g. Engine/cache/shaders/X_<hash>.vert.spv)
 		[[nodiscard]] virtual std::string GetCompiledPath(ShaderStageKind stage) const = 0;
 
 		// True once compilation has finished and the SPIR-V artifact paths are available. Compilation runs

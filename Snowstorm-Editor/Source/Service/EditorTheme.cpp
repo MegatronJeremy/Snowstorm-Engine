@@ -137,12 +137,12 @@ namespace Snowstorm::EditorTheme
 
 	void LoadMonospaceFont()
 	{
-		// Try a few common names so dropping any one of them into Assets/Fonts just works.
+		// Try a few common names so dropping any one of them into Engine/Fonts just works.
 		static constexpr std::array candidates = {
-		    "Assets/Fonts/ShareTechMono-Regular.ttf",
-		    "Assets/Fonts/JetBrainsMono-Regular.ttf",
-		    "Assets/Fonts/IBMPlexMono-Regular.ttf",
-		    "Assets/Fonts/Hack-Regular.ttf",
+		    "Engine/Fonts/ShareTechMono-Regular.ttf",
+		    "Engine/Fonts/JetBrainsMono-Regular.ttf",
+		    "Engine/Fonts/IBMPlexMono-Regular.ttf",
+		    "Engine/Fonts/Hack-Regular.ttf",
 		};
 
 		for (const char* path : candidates)
@@ -159,7 +159,7 @@ namespace Snowstorm::EditorTheme
 			}
 		}
 
-		SS_CORE_INFO("Editor theme: no monospace font in Assets/Fonts; using built-in font.");
+		SS_CORE_INFO("Editor theme: no monospace font in Engine/Fonts; using built-in font.");
 	}
 
 	void SectionHeader(const char* label)

@@ -22,7 +22,7 @@ Usage (from repo root or anywhere):
 
 Exit code: 0 if every target passed, 1 otherwise.
 
-The --cold flag deletes the cooked-asset caches (assets/cache/mesh, assets/cache/texture)
+The --cold flag deletes the cooked-asset caches (Engine/cache/mesh, Engine/cache/texture)
 before running, so the run exercises the expensive first-import path (Assimp parse + stb
 decode + async cook) instead of the fast warm path. This catches cold-only regressions
 (e.g. a cook step that re-parses per-submesh and thrashes the worker pool) that a warm run
@@ -78,7 +78,7 @@ def scan_output(text: str, markers: list[str]) -> list[str]:
 def clear_cook_caches(repo_root: Path) -> None:
     """Delete the cooked-asset caches so the next run exercises the cold first-import path."""
     import shutil
-    for rel in ("Assets/cache/mesh", "Assets/cache/texture"):
+    for rel in ("Engine/cache/mesh", "Engine/cache/texture"):
         d = repo_root / rel
         if d.is_dir():
             shutil.rmtree(d, ignore_errors=True)

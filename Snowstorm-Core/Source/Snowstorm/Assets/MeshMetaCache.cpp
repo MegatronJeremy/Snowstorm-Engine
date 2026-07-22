@@ -9,8 +9,8 @@ namespace Snowstorm
 {
 	std::filesystem::path MeshMetaCacheIO::GetCachePath(const AssetHandle handle)
 	{
-		// assets/cache/mesh/<handle>.json
-		std::filesystem::path p = "assets/cache/mesh";
+		// Engine/cache/mesh/<handle>.json
+		std::filesystem::path p = "Engine/cache/mesh";
 		p /= handle.ToString();
 		p += ".json";
 		return p;
@@ -52,7 +52,8 @@ namespace Snowstorm
 		ok &= b.contains("Max") && JsonToVec(b["Max"], meta.Bounds.Box.Max);
 		ok &= b.contains("SphereCenter") && JsonToVec(b["SphereCenter"], meta.Bounds.Sphere.Center);
 		ok &= b.contains("SphereRadius");
-		if (ok) meta.Bounds.Sphere.Radius = b["SphereRadius"].get<float>();
+		if (ok)
+			meta.Bounds.Sphere.Radius = b["SphereRadius"].get<float>();
 
 		if (!ok)
 			return std::nullopt;

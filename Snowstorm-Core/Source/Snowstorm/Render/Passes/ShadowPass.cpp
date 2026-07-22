@@ -72,7 +72,7 @@ namespace Snowstorm
 		// Load via the app-scoped ShaderLibrary (not Shader::Create) so the shader is registered for
 		// hot-reload — the reload sweep then rebuilds this pipeline when the source changes.
 		Ref<Shader> shader = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load(
-		    "assets/shaders/Shadow.vert.hlsl", "assets/shaders/Shadow.frag.hlsl");
+		    "Engine/Shaders/Shadow.vert.hlsl", "Engine/Shaders/Shadow.frag.hlsl");
 		SS_CORE_ASSERT(shader, "Failed to load Shadow shader");
 
 		// Shader compiles async; bail until ready so we don't build the pipeline from empty SPIR-V.

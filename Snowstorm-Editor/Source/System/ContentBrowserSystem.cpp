@@ -86,7 +86,7 @@ namespace Snowstorm
 				continue;
 			}
 
-			// Skip assets/cache/: those are generated cooked artifacts (gitignored), not source
+			// Skip Engine/cache/: those are generated cooked artifacts (gitignored), not source
 			// assets — don't list or import them.
 			if (it->is_directory(ec) && it->path().filename() == "cache")
 			{

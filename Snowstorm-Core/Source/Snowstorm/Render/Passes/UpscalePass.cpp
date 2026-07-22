@@ -47,7 +47,7 @@ namespace Snowstorm
 		}
 
 		Ref<Shader> shader = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load(
-		    "assets/shaders/Fullscreen.vert.hlsl", "assets/shaders/Upscale.frag.hlsl");
+		    "Engine/Shaders/Fullscreen.vert.hlsl", "Engine/Shaders/Upscale.frag.hlsl");
 		SS_CORE_ASSERT(shader, "Failed to load Upscale shader");
 
 		if (!shader->IsReady())

@@ -784,7 +784,7 @@ namespace Snowstorm
 			return it->second;
 
 		auto& shaderLib = Application::Get().GetServiceManager().GetService<ShaderLibrary>();
-		Ref<Shader> shader = shaderLib.Load("assets/shaders/Mesh.vert.hlsl", fragPath);
+		Ref<Shader> shader = shaderLib.Load("Engine/Shaders/Mesh.vert.hlsl", fragPath);
 
 		// Shaders compile asynchronously (ShaderLibrary::Load submits to a worker). Until the SPIR-V is
 		// ready we can't build the pipeline — return null WITHOUT caching, so a later frame retries once the

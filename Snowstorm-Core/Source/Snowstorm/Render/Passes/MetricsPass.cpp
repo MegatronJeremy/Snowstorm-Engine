@@ -36,7 +36,7 @@ namespace Snowstorm
 		}
 
 		Ref<Shader> cs = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load(
-		    "assets/shaders/Metrics.comp.hlsl");
+		    "Engine/Shaders/Metrics.comp.hlsl");
 		SS_CORE_ASSERT(cs, "Failed to load Metrics compute shader");
 		if (!cs->IsReady())
 		{

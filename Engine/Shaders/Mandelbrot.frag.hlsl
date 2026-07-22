@@ -43,10 +43,17 @@ float3 hsv_to_rgb(float h, float s, float v)
 
 float4 main(PSInput i) : SV_Target0
 {
+	// Per-instance custom data (xy=center, z=zoom span, w=maxIter) is fed by MandelbrotControllerSystem.
+	// An object that uses this material WITHOUT that controller (e.g. a plain mesh assigned the shader in
+	// the material inspector) gets all-zeros — which would map every pixel to c=(0,0), land inside the main
+	// cardioid, and render SOLID BLACK. Fall back to a sensible default view (the classic full set) when
+	// the data is unset, so the shader is self-contained and never silently black. zoom<=0 or maxIter<=0
+	// is the "unset" tell (the controller always writes zoom>0 and maxIter>=150).
 	const float4 extras = Instances[i.InstanceID].PerInstanceCustomData;
-	const float2 center = extras.xy;
-	const float zoom = extras.z;
-	const int maxIter = max(1, (int)extras.w);
+	const bool hasParams = extras.z > 0.0 && extras.w >= 1.0;
+	const float2 center = hasParams ? extras.xy : float2(-0.5, 0.0);
+	const float zoom = hasParams ? extras.z : 3.0;
+	const int maxIter = hasParams ? (int)extras.w : 200;
 
 	// Map texcoord to the complex plane.
 	const float2 c = center + (i.TexCoord - 0.5) * zoom;

@@ -86,10 +86,10 @@ namespace Snowstorm
 		// Load via the app-scoped ShaderLibrary (not Shader::Create) so these compute shaders register for
 		// hot-reload; the reload sweep then rebuilds the bake pipelines when a source changes.
 		auto& shaderLib = Application::Get().GetServiceManager().GetService<ShaderLibrary>();
-		Ref<Shader> captureCs = shaderLib.Load("assets/shaders/IBLCapture.hlsl");
-		Ref<Shader> irradianceCs = shaderLib.Load("assets/shaders/IBLIrradiance.hlsl");
-		Ref<Shader> prefilterCs = shaderLib.Load("assets/shaders/IBLPrefilter.hlsl");
-		Ref<Shader> brdfCs = shaderLib.Load("assets/shaders/IBLBRDFLut.hlsl");
+		Ref<Shader> captureCs = shaderLib.Load("Engine/Shaders/IBLCapture.hlsl");
+		Ref<Shader> irradianceCs = shaderLib.Load("Engine/Shaders/IBLIrradiance.hlsl");
+		Ref<Shader> prefilterCs = shaderLib.Load("Engine/Shaders/IBLPrefilter.hlsl");
+		Ref<Shader> brdfCs = shaderLib.Load("Engine/Shaders/IBLBRDFLut.hlsl");
 		if (!captureCs || !irradianceCs || !prefilterCs || !brdfCs)
 		{
 			SS_CORE_ERROR("[IBL] failed to load bake compute shaders");

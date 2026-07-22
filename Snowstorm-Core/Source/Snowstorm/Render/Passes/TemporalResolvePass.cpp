@@ -61,7 +61,7 @@ namespace Snowstorm
 		}
 
 		Ref<Shader> shader = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load(
-		    "assets/shaders/Fullscreen.vert.hlsl", "assets/shaders/TemporalResolve.frag.hlsl");
+		    "Engine/Shaders/Fullscreen.vert.hlsl", "Engine/Shaders/TemporalResolve.frag.hlsl");
 		SS_CORE_ASSERT(shader, "Failed to load TemporalResolve shader");
 
 		if (!shader->IsReady())

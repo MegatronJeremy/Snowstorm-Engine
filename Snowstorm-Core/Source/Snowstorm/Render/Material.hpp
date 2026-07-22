@@ -15,7 +15,7 @@ namespace Snowstorm
 	class Material : public NonCopyable
 	{
 	public:
-		// MUST match cbuffer MaterialCB in Assets/Shaders/Engine.hlsli field-for-field (std140-ish: the
+		// MUST match cbuffer MaterialCB in Engine/Shaders/Include/Engine.hlsli field-for-field (std140-ish: the
 		// trailing uints + EmissiveColor fill out 16-byte rows). A mismatch silently corrupts material
 		// data on the GPU, so edit both sides together.
 		struct Constants

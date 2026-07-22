@@ -23,7 +23,7 @@ namespace Snowstorm::EditorTheme
 	// sharp corners, hard borders, dense spacing. Call after ImGui::CreateContext().
 	void ApplyEvangelion();
 
-	// Load a monospace font from Assets/Fonts if one is present, making it the default.
+	// Load a monospace font from Engine/Fonts if one is present, making it the default.
 	// No-ops (keeping the built-in font) when no font file is found, so the repo builds and
 	// runs without shipping a TTF. Call after the context exists and before the first frame.
 	void LoadMonospaceFont();

@@ -1,6 +1,6 @@
 {
   "Type": "SnowstormMaterial",
   "Version": 3,
-  "Shader": "assets/shaders/DefaultLit.frag.hlsl",
+  "Shader": "Engine/Shaders/DefaultLit.frag.hlsl",
   "BaseColor": [1.0, 1.0, 1.0, 1.0]
 }

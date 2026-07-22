@@ -77,10 +77,10 @@ namespace Snowstorm
 		}
 
 		auto& shaderLib = Application::Get().GetServiceManager().GetService<ShaderLibrary>();
-		const Ref<Shader> upCs = shaderLib.Load("assets/shaders/NeuralUpsampleIn.comp.hlsl");
-		const Ref<Shader> warpCs = shaderLib.Load("assets/shaders/NeuralWarpHistory.comp.hlsl");
-		const Ref<Shader> convCs = shaderLib.Load("assets/shaders/NeuralConv.comp.hlsl");
-		const Ref<Shader> addCs = shaderLib.Load("assets/shaders/NeuralResidualAdd.comp.hlsl");
+		const Ref<Shader> upCs = shaderLib.Load("Engine/Shaders/NeuralUpsampleIn.comp.hlsl");
+		const Ref<Shader> warpCs = shaderLib.Load("Engine/Shaders/NeuralWarpHistory.comp.hlsl");
+		const Ref<Shader> convCs = shaderLib.Load("Engine/Shaders/NeuralConv.comp.hlsl");
+		const Ref<Shader> addCs = shaderLib.Load("Engine/Shaders/NeuralResidualAdd.comp.hlsl");
 		if (!upCs || !warpCs || !convCs || !addCs)
 		{
 			SS_CORE_ERROR("[Neural] failed to load upscaler compute shaders");

@@ -26,7 +26,7 @@ namespace Snowstorm
 
 	std::filesystem::path TextureCacheIO::GetCachePath(const AssetHandle handle)
 	{
-		std::filesystem::path p = "assets/cache/texture";
+		std::filesystem::path p = "Engine/cache/texture";
 		p /= handle.ToString();
 		p += ".sstex";
 		return p;

@@ -102,7 +102,7 @@ namespace Snowstorm
 
 		// Fragment shader (v3+). Back-compat: v1/v2 files stored a "PipelinePreset" enum string instead of a
 		// path. That enum's names were always the shader's file stem ("DefaultLit" -> DefaultLit.frag.hlsl),
-		// so map any legacy preset generically as "assets/shaders/<preset>.frag.hlsl" — no shader named here,
+		// so map any legacy preset generically as "Engine/Shaders/<preset>.frag.hlsl" — no shader named here,
 		// so the serializer stays engine-neutral and old .ssmat still load.
 		if (root.contains("Shader") && root["Shader"].is_string())
 		{
@@ -110,7 +110,7 @@ namespace Snowstorm
 		}
 		else if (root.contains("PipelinePreset") && root["PipelinePreset"].is_string())
 		{
-			outAsset.FragmentShader = "assets/shaders/" + root["PipelinePreset"].get<std::string>() + ".frag.hlsl";
+			outAsset.FragmentShader = "Engine/Shaders/" + root["PipelinePreset"].get<std::string>() + ".frag.hlsl";
 		}
 		// else: leave the struct default (kDefaultFragmentShader).
 

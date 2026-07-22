@@ -12,7 +12,7 @@ namespace Snowstorm
 	// case — every imported mesh material, every hand-authored PBR material) uses this. Kept as a named
 	// constant, not a hardcoded literal at the pipeline site, so there is exactly one place that decides
 	// "what does an unspecified material render with".
-	inline constexpr const char* kDefaultFragmentShader = "assets/shaders/DefaultLit.frag.hlsl";
+	inline constexpr const char* kDefaultFragmentShader = "Engine/Shaders/DefaultLit.frag.hlsl";
 
 	struct MaterialAsset
 	{

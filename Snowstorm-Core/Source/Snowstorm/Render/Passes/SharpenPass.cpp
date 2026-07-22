@@ -56,7 +56,7 @@ namespace Snowstorm
 		}
 
 		Ref<Shader> shader = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load(
-		    "assets/shaders/Fullscreen.vert.hlsl", "assets/shaders/Sharpen.frag.hlsl");
+		    "Engine/Shaders/Fullscreen.vert.hlsl", "Engine/Shaders/Sharpen.frag.hlsl");
 		SS_CORE_ASSERT(shader, "Failed to load Sharpen shader");
 
 		if (!shader->IsReady())

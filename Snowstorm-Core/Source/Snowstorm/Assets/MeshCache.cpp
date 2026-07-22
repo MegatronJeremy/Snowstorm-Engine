@@ -26,7 +26,7 @@ namespace Snowstorm
 
 	std::filesystem::path MeshCacheIO::GetCachePath(const AssetHandle handle)
 	{
-		std::filesystem::path p = "assets/cache/mesh";
+		std::filesystem::path p = "Engine/cache/mesh";
 		p /= handle.ToString();
 		p += ".ssmesh";
 		return p;

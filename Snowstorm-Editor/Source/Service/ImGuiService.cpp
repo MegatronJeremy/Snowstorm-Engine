@@ -27,7 +27,7 @@ namespace Snowstorm
 		// io.ConfigViewportsNoTaskBarIcon = true;
 
 		// NERV/Evangelion editor theme (amber on near-black, sharp corners, hard borders).
-		// Optionally swap in a monospace font if one is present under Assets/Fonts (load before
+		// Optionally swap in a monospace font if one is present under Engine/Fonts (load before
 		// the backend builds the font atlas in InitImGuiBackend).
 		EditorTheme::LoadMonospaceFont();
 		EditorTheme::ApplyEvangelion();

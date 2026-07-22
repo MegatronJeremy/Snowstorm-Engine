@@ -47,15 +47,15 @@ set_target_properties(Snowstorm-Runtime PROPERTIES VS_DEBUGGER_ENVIRONMENT "${VK
 string(REPLACE "\\" "/" VCPKG_LAYER_PATH_FWD "${VCPKG_LAYER_PATH}")
 target_compile_definitions(Snowstorm-Core PUBLIC $<$<CONFIG:Debug>:SS_VULKAN_LAYER_PATH="${VCPKG_LAYER_PATH_FWD}">)
 
-# 4. Browsable Shaders target: surfaces Assets/Shaders/*.hlsl(i) in the IDE so they can be viewed and
+# 4. Browsable Shaders target: surfaces Engine/Shaders/*.hlsl(i) in the IDE so they can be viewed and
 # edited alongside the C++, instead of only reachable by opening the files externally. IDE-only
 # container (add_custom_target ... SOURCES) -- nothing is compiled or linked here; shaders are still
 # compiled at runtime by DXC (hash-cached). Attached to no binary because they're shared engine assets.
 file(GLOB SHADER_FILES
-    "${CMAKE_SOURCE_DIR}/Assets/Shaders/*.hlsl"
-    "${CMAKE_SOURCE_DIR}/Assets/Shaders/Include/*.hlsli"
+    "${CMAKE_SOURCE_DIR}/Engine/Shaders/*.hlsl"
+    "${CMAKE_SOURCE_DIR}/Engine/Shaders/Include/*.hlsli"
 )
 add_custom_target(Shaders SOURCES ${SHADER_FILES})
 # Mirror the on-disk layout in the IDE tree (Shaders/ + Shaders/Include/).
-source_group(TREE "${CMAKE_SOURCE_DIR}/Assets/Shaders" PREFIX "Shaders" FILES ${SHADER_FILES})
+source_group(TREE "${CMAKE_SOURCE_DIR}/Engine/Shaders" PREFIX "Shaders" FILES ${SHADER_FILES})
 

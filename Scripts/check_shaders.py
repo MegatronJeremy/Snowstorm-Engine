@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validate that the engine's HLSL shaders compile to SPIR-V with dxc.
 
-Mirrors the runtime split in VulkanShader.cpp: each .hlsl under Assets/Shaders is
+Mirrors the runtime split in VulkanShader.cpp: each .hlsl under Engine/Shaders is
 split on '#type vertex' / '#type fragment' markers (lines before the first marker are
 shared and prepended to every stage), entry point 'main', compiled vs_6_0 / ps_6_0.
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DXC = ROOT / "Tools" / "dxc" / "dxc.exe"
-SHADER_DIR = ROOT / "Assets" / "Shaders"
+SHADER_DIR = ROOT / "Engine" / "Shaders"
 
 STAGE_PROFILE = {"vertex": "vs_6_0", "fragment": "ps_6_0"}
 

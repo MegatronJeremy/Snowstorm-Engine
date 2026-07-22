@@ -21,7 +21,7 @@ namespace Snowstorm
 
 		// Load via the app-scoped ShaderLibrary (not Shader::Create) so the shader is registered for hot-reload.
 		Ref<Shader> shader = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load(
-		    "assets/shaders/Fullscreen.vert.hlsl", "assets/shaders/Sky.frag.hlsl");
+		    "Engine/Shaders/Fullscreen.vert.hlsl", "Engine/Shaders/Sky.frag.hlsl");
 		SS_CORE_ASSERT(shader, "Failed to load Sky shader");
 
 		// Shader compiles async; bail until ready. m_Pipeline stays null and Draw's DrawFullscreenTriangle

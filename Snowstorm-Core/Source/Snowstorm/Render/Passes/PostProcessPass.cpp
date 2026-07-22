@@ -20,7 +20,7 @@ namespace Snowstorm
 
 		// Load via the app-scoped ShaderLibrary so it's registered for hot-reload (mirrors SkyPass).
 		Ref<Shader> shader = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load(
-		    "assets/shaders/Fullscreen.vert.hlsl", "assets/shaders/Tonemap.frag.hlsl");
+		    "Engine/Shaders/Fullscreen.vert.hlsl", "Engine/Shaders/Tonemap.frag.hlsl");
 		SS_CORE_ASSERT(shader, "Failed to load Tonemap shader");
 
 		// Compiles async; bail until ready (Draw null-guards, so the present target simply isn't written

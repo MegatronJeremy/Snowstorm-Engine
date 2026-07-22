@@ -4,7 +4,7 @@
 build/
 Vendor/Binaries
 vcpkg/
-Assets/cache
+Engine/cache
 
 # Files
 *.vcxproj
@@ -34,8 +34,8 @@ Makefile
 !Projects/Sandbox/assets/AssetRegistry.json
 
 # Editor fonts are shipped assets (the NERV theme loads a monospace TTF from here).
-!Assets/Fonts/
-!Assets/Fonts/**
+!Engine/Fonts/
+!Engine/Fonts/**
 # Local user settings written by the editor on shutdown (persistent CVars). Machine-local
 # state, not project data — must not be committed.
 SnowstormConfig.cfg

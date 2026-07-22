@@ -33,7 +33,7 @@ namespace Snowstorm
 	class TextureCacheIO
 	{
 	public:
-		// assets/cache/texture/<handle>.sstex
+		// Engine/cache/texture/<handle>.sstex
 		static std::filesystem::path GetCachePath(AssetHandle handle);
 
 		// Load the cooked pixels if present AND matching sourceWriteTime (else nullopt -> caller re-decodes).

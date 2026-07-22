@@ -24,7 +24,7 @@ namespace Snowstorm
 	class MeshCacheIO
 	{
 	public:
-		// assets/cache/mesh/<handle>.ssmesh (next to the <handle>.json bounds sidecar).
+		// Engine/cache/mesh/<handle>.ssmesh (next to the <handle>.json bounds sidecar).
 		static std::filesystem::path GetCachePath(AssetHandle handle);
 
 		// Load the cooked blob if it exists AND matches sourceWriteTime (stale/missing -> nullopt, so the

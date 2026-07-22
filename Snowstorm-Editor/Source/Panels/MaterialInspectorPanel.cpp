@@ -53,19 +53,19 @@ namespace Snowstorm
 			return p;
 		}
 
-		// Scan Assets/Shaders/*.frag.hlsl for shaders usable as a MATERIAL surface shader, returned as the
-		// "assets/shaders/<name>.frag.hlsl" paths a material stores. Only fragment shaders whose entry point
+		// Scan Engine/Shaders/*.frag.hlsl for shaders usable as a MATERIAL surface shader, returned as the
+		// "Engine/Shaders/<name>.frag.hlsl" paths a material stores. Only fragment shaders whose entry point
 		// takes `PSInput` are mesh-surface shaders (paired with the shared Mesh.vert.hlsl); the rest are
 		// post-process / fullscreen passes (Tonemap, FXAA, Sky, ...) that would render garbage on a mesh, so
 		// they must NOT be offered. This is a cheap disk scan cached once per editor session — new shaders
 		// need a restart to appear (acceptable; authoring a new surface shader is a deliberate, rare act).
-		// Engine shaders live at the repo root (CWD-relative), not in the project — see the #159 asset split.
+		// Engine assets resolve under the engine root, not the project — see the Assets/->Engine/ split.
 		const std::vector<std::string>& MaterialShaders()
 		{
 			static std::vector<std::string> shaders = []
 			{
 				std::vector<std::string> out;
-				const std::filesystem::path dir = "Assets/Shaders";
+				const std::filesystem::path dir = "Engine/Shaders";
 				std::error_code ec;
 				if (std::filesystem::exists(dir, ec))
 				{
@@ -81,7 +81,7 @@ namespace Snowstorm
 						// Mesh-surface signature: the fragment entry takes PSInput (mesh vertex output).
 						if (text.find("main(PSInput") != std::string::npos)
 						{
-							out.push_back("assets/shaders/" + p.filename().string());
+							out.push_back("Engine/Shaders/" + p.filename().string());
 						}
 					}
 				}

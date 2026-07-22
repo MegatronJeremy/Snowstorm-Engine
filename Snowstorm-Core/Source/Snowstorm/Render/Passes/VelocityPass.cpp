@@ -23,7 +23,7 @@ namespace Snowstorm
 		// Load via the app ShaderLibrary (not Shader::Create) so it registers for hot-reload; the reload
 		// sweep then rebuilds this pipeline when the source changes.
 		Ref<Shader> shader = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load(
-		    "assets/shaders/Velocity.vert.hlsl", "assets/shaders/Velocity.frag.hlsl");
+		    "Engine/Shaders/Velocity.vert.hlsl", "Engine/Shaders/Velocity.frag.hlsl");
 		SS_CORE_ASSERT(shader, "Failed to load Velocity shader");
 
 		// Async compile; bail until ready so we don't build a pipeline from empty SPIR-V. Called every
