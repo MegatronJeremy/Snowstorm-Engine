@@ -159,532 +159,15 @@ namespace Snowstorm
 
 		for (const auto vpEntity : viewportView)
 		{
-			const auto& vpRT = reg.Read<RenderTargetComponent>(vpEntity);
-			if (!vpRT.Target)
+			// Skip a viewport with no target here (cheap) so the pass-name index only advances for viewports
+			// that actually render — keeps "Forward[0]/[1]" stable. RenderViewport re-checks and bails too.
+			if (!reg.Read<RenderTargetComponent>(vpEntity).Target)
 			{
 				continue;
 			}
-
-			const CameraPick cam = FindCameraForViewport(reg, vpEntity, cameraView);
-			if (cam.Entity == entt::null || !cam.Rt || !cam.Transform || !cam.Visibility)
-			{
-				continue;
-			}
-
 			const std::string passSuffix = multipleViewports ? "[" + std::to_string(forwardPassIndex) + "]" : std::string();
 			++forwardPassIndex;
-
-			// Compare mode (#43 part 2) renders the scene a SECOND time at full native res (ground truth) and
-			// shows it split against the upscaled result. To keep the A/B clean (only the upscaler differs),
-			// FXAA is disabled on BOTH sides while comparing.
-			const bool comparing = CVars::Compare.Get() && vpRT.GroundTruthTarget && vpRT.GroundTruthPresentTarget;
-
-			// Forward + sky into an arbitrary HDR target. Target-pure (reads camera + the shared per-camera
-			// visibility cache), so it's invoked once normally and twice in compare mode (the instance-buffer
-			// cursor appends across BeginScene calls, like the shadow passes). IBL maps are declared as reads
-			// so the graph transitions them to shader-read before shading.
-			const auto addForward = [&](const Ref<RenderTarget>& hdrTarget, const std::string& name, const bool jittered)
-			{
-				std::vector<RenderGraph::ResourceAccess> meshReads;
-				if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
-				{
-					meshReads = {{m_IBLBakePass.IrradianceCube(), RenderGraph::AccessState::Sampled},
-					             {m_IBLBakePass.PrefilteredCube(), RenderGraph::AccessState::Sampled},
-					             {m_IBLBakePass.BRDFLut(), RenderGraph::AccessState::Sampled}};
-				}
-
-				graph.AddPass({.Name = name,
-				               .Target = hdrTarget,
-				               .Reads = std::move(meshReads),
-				               .Execute = [&, cam, hdrTarget, jittered](CommandContext& c)
-				               {
-					               const glm::vec3 camPos = cam.Transform->Position;
-					               renderer.BeginScene(*cam.Rt, camPos, ctx, frameIndex, jittered);
-
-					               auto& assets = SingletonView<AssetManagerSingleton>();
-
-					               for (const auto& cache = reg.Read<VisibilityCacheComponent>(cam.Entity);
-					                    const entt::entity e : cache.VisibleMeshes)
-					               {
-						               // VisibleMeshes is a cross-frame cache of handles; an entity in it can be gone
-						               // or stripped of its components (e.g. New Scene wiped the scene THIS frame, before
-						               // the cache was rebuilt). Skip stale handles rather than Read a destroyed entity
-						               // (EnTT asserts "Set does not contain entity").
-						               if (!reg.valid(e) || !reg.all_of<TransformComponent, MeshComponent, MaterialComponent>(e))
-						               {
-							               continue;
-						               }
-						               const auto& tr = reg.Read<TransformComponent>(e);
-						               const auto& mesh = reg.Read<MeshComponent>(e);
-						               const auto& mat = reg.Read<MaterialComponent>(e);
-
-						               // Cache can include an entity whose mesh/material resolve runs the same
-						               // frame; guard against the null instance (was an access violation).
-						               if (!mesh.MeshInstance || !mat.MaterialInstance)
-						               {
-							               continue;
-						               }
-
-						               // Per-instance albedo override rides the instance buffer (objects sharing a
-						               // material still batch). 0 = use the material's own albedo.
-						               uint32_t albedoIndex = 0;
-						               if (const auto* ov = reg.try_get_const<MaterialOverridesComponent>(e))
-						               {
-							               for (const MaterialOverride& o : ov->Overrides)
-							               {
-								               if (o.Type == MaterialOverrideType::Texture && o.Name == "AlbedoTexture" && o.Texture != 0)
-								               {
-									               if (const Ref<TextureView> view = assets.GetTextureView(o.Texture))
-									               {
-										               albedoIndex = view->GetGlobalBindlessIndex();
-									               }
-								               }
-							               }
-						               }
-
-						               const glm::vec4 customData = mat.MaterialInstance->GetPerInstanceCustomData();
-						               renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, albedoIndex, customData);
-					               }
-
-					               renderer.Flush();
-
-					               // Procedural sky after opaque meshes (far-plane, only fills uncovered pixels).
-					               // Formats come from the target so the sky pipeline stays render-pass-compatible.
-					               const auto& rtDesc = hdrTarget->GetDesc();
-					               if (!rtDesc.ColorAttachments.empty() && rtDesc.DepthAttachment)
-					               {
-						               const PixelFormat colorFmt = rtDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-						               const PixelFormat depthFmt = rtDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
-						               c.BeginGpuScope("Sky");
-						               m_SkyPass.Draw(renderer, colorFmt, depthFmt);
-						               c.EndGpuScope();
-					               }
-
-					               renderer.EndScene();
-				               }});
-			};
-
-			// Tonemap an HDR scene-color view into an LDR target (exposure/ACES; hardware sRGB-encodes on
-			// write). Declares the HDR color as a Sampled read so the graph transitions it first. `params`
-			// carries the scene-color bindless index (filled here) plus any motion-vector debug fields set by
-			// the caller (#44) — the debug branch samples the velocity target instead of the scene.
-			const auto addTonemap = [&](const Ref<TextureView>& hdrColorView, const Ref<RenderTarget>& dstTarget,
-			                            const std::string& name, RendererService::TonemapParams params,
-			                            const Ref<Texture>& extraRead = nullptr)
-			{
-				params.SceneColorIndex = hdrColorView->GetGlobalBindlessIndex();
-				const PixelFormat dstFmt = dstTarget->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-				// The debug branch samples the velocity target (extraRead) via bindless, so declare it Sampled
-				// too — the graph then transitions it to shader-read before this pass, like the HDR scene color.
-				std::vector<RenderGraph::ResourceAccess> reads{{hdrColorView->GetTexture(), RenderGraph::AccessState::Sampled}};
-				if (extraRead)
-				{
-					reads.push_back({extraRead, RenderGraph::AccessState::Sampled});
-				}
-				graph.AddPass({.Name = name,
-				               .Target = dstTarget,
-				               .Reads = std::move(reads),
-				               .Execute = [&, params, dstFmt](CommandContext& c)
-				               {
-					               m_PostProcessPass.Draw(renderer, ctx, frameIndex, params, dstFmt);
-				               }});
-			};
-
-			// ---- Motion-vector pass (#44) ----
-			// Rendered when the motion-vector debug view is on OR TAA is active (both consume velocity).
-			// Re-renders the visible meshes into the velocity target, projecting each vertex by this frame's
-			// and last frame's matrices (per-object PrevModel from PrevTransformComponent, camera PrevViewProj
-			// from the runtime component). Self-contained target (own depth), so no ordering constraint.
-			const int debugView = CVars::DebugView.Get();
-			// TAA (render.aa == 2) needs velocity + history. Unlike FXAA it is NOT forced off in compare:
-			// with render.scale < 1 it is a temporal UPSCALER (TAAU), and measuring whether it recovers the
-			// detail bilinear can't IS the point of the compare A/B (#98). It only touches the LEFT/upscaled
-			// side (writes the LR HistoryTarget that feeds the LR tonemap); the GT second render below is a
-			// plain unjittered forward, so it stays a clean full-res reference. CameraJitterSystem keeps jitter
-			// on for aa==2 even in compare, so the LR side actually accumulates sub-pixel samples.
-			const bool taaOn = CVars::AAMode.Get() == 2 &&
-			                   vpRT.HistoryTarget[0] && vpRT.HistoryTarget[1] &&
-			                   !vpRT.HistoryTarget[0]->GetDesc().ColorAttachments.empty();
-			// Neural TEMPORAL upscaler (#98, render.upscaler == 2): reprojects the previous neural output by
-			// motion vectors, so it needs the velocity buffer too. Only meaningful when actually upscaling
-			// (scale < 1); the upscale block below re-checks that.
-			const bool neuralTemporal = CVars::Upscaler.Get() == 2;
-			// Dataset export (#46) also needs the velocity buffer (an exported channel), so force the velocity
-			// pass on while exporting even without debug-view/TAA. Requires compare (ground truth exists).
-			const bool exporting = CVars::DatasetExport.Get() && comparing;
-			const bool velocityNeeded = (debugView == 1 || taaOn || neuralTemporal || exporting) && vpRT.VelocityTarget &&
-			                            !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
-			                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
-			if (velocityNeeded)
-			{
-				const auto& velDesc = vpRT.VelocityTarget->GetDesc();
-				const PixelFormat velColorFmt = velDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-				const PixelFormat velDepthFmt = velDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
-				const glm::mat4 viewProj = cam.Rt->ViewProjection;
-				const glm::mat4 prevViewProj = cam.Rt->PrevViewProjection;
-
-				graph.AddPass({.Name = "Velocity" + passSuffix,
-				               .Target = vpRT.VelocityTarget,
-				               .Execute = [&, cam, velColorFmt, velDepthFmt, viewProj, prevViewProj](CommandContext& c)
-				               {
-					               renderer.BeginScene(*cam.Rt, cam.Transform->Position, ctx, frameIndex);
-
-					               for (const auto& cache = reg.Read<VisibilityCacheComponent>(cam.Entity);
-					                    const entt::entity e : cache.VisibleMeshes)
-					               {
-						               // VisibleMeshes is a cross-frame cache of handles; an entity in it can be gone
-						               // this frame (New Scene wiped the scene before the cache rebuilt). Skip stale
-						               // handles rather than Read a destroyed entity (EnTT asserts).
-						               if (!reg.valid(e) || !reg.all_of<TransformComponent, MeshComponent, MaterialComponent>(e))
-						               {
-							               continue;
-						               }
-						               const auto& tr = reg.Read<TransformComponent>(e);
-						               const auto& mesh = reg.Read<MeshComponent>(e);
-						               const auto& mat = reg.Read<MaterialComponent>(e);
-						               if (!mesh.MeshInstance || !mat.MaterialInstance)
-						               {
-							               continue;
-						               }
-						               // Last frame's world matrix; PrevTransformSnapshotSystem writes it end-of-frame.
-						               // Missing (object created this frame) -> use current => zero velocity (correct).
-						               glm::mat4 prevModel = tr.GetTransformMatrix();
-						               if (const auto* pt = reg.try_get_const<PrevTransformComponent>(e))
-						               {
-							               prevModel = pt->PrevModel;
-						               }
-						               renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, 0,
-						                                 glm::vec4(0.0f), prevModel);
-					               }
-
-					               m_VelocityPass.RecordVelocity(renderer, velColorFmt, velDepthFmt, viewProj, prevViewProj);
-				               }});
-			}
-
-			// Tonemap debug params (#44): visualize the velocity target ONLY when the motion-vector debug
-			// view is explicitly selected — NOT merely when velocity is being rendered (TAA also renders
-			// velocity but must show the real tonemapped scene). Keyed off debugView, not velocityNeeded.
-			// Applied to the primary path only (compare mode keeps its GT side normal).
-			RendererService::TonemapParams primaryTonemap{};
-			if (debugView == 1 && velocityNeeded)
-			{
-				primaryTonemap.DebugMode = 1;
-				primaryTonemap.DebugTexIndex = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
-				primaryTonemap.DebugScale = 40.0f; // per-frame UV velocity is small; scale to a visible range
-			}
-
-			// ---- Primary (upscaled) path ----
-			// Jittered: the color pass gets the temporal sub-pixel offset (#44). Velocity + GT stay unjittered.
-			addForward(vpRT.Target, "Forward" + passSuffix, true);
-
-			// Post-tonemap LDR filter chain (#44): tonemap -> [FXAA] -> [CAS sharpen] -> present. Both FXAA
-			// and sharpen read an LDR UNORM sample view and write an sRGB target; they PING-PONG between
-			// PresentTarget and AAIntermediateTarget so the LAST enabled stage always lands on PresentTarget
-			// (what ImGui samples). With neither enabled this is tonemap -> Present (unchanged); with FXAA
-			// only it's the exact prior tonemap -> AAIntermediate -> Present path. Both forced off in compare.
-			const bool fxaaOn = !comparing && CVars::AAMode.Get() == 1 && vpRT.AAIntermediateTarget && vpRT.AAIntermediateSampleView;
-			const bool sharpenOn = !comparing && CVars::Sharpen.Get() > 0.0f && vpRT.AAIntermediateTarget &&
-			                       vpRT.AAIntermediateSampleView && vpRT.PresentSampleView;
-			const int ldrFilters = (fxaaOn ? 1 : 0) + (sharpenOn ? 1 : 0); // stages after tonemap
-			const int totalStages = 1 + ldrFilters;                        // tonemap is stage 0
-
-			// Stage k writes Present when (totalStages-1-k) is even, else AAIntermediate — so the final stage
-			// (k = totalStages-1) always writes Present, alternating backward. Each stage reads the previous
-			// stage's target via that target's UNORM sample view.
-			auto stageTarget = [&](const int stageIndex) -> Ref<RenderTarget>
-			{
-				return ((totalStages - 1 - stageIndex) % 2 == 0) ? vpRT.PresentTarget : vpRT.AAIntermediateTarget;
-			};
-			auto stageSampleView = [&](const Ref<RenderTarget>& t) -> Ref<TextureView>
-			{
-				return (t == vpRT.PresentTarget) ? vpRT.PresentSampleView : vpRT.AAIntermediateSampleView;
-			};
-			const Ref<RenderTarget> tonemapTarget = stageTarget(0);
-
-			if (tonemapTarget && !vpRT.Target->GetDesc().ColorAttachments.empty() && vpRT.Target->GetDesc().ColorAttachments[0].View)
-			{
-				const auto& hdrDesc = vpRT.Target->GetDesc();
-				const auto& tmDesc = tonemapTarget->GetDesc();
-
-				// Internal-res upscale (#43 part 1): when the scene Target is smaller than the viewport,
-				// bilinear-resample it into SceneUpscaleTarget and tonemap THAT. At scale 1.0 the upscale is
-				// skipped and tonemap reads Target directly (byte-identical to the no-scale path).
-				Ref<TextureView> sceneColorView = hdrDesc.ColorAttachments[0].View;
-				const bool upscaling = vpRT.SceneUpscaleTarget && (hdrDesc.Width != tmDesc.Width || hdrDesc.Height != tmDesc.Height);
-				if (upscaling)
-				{
-					const auto& upDesc = vpRT.SceneUpscaleTarget->GetDesc();
-					if (!upDesc.ColorAttachments.empty() && upDesc.ColorAttachments[0].View)
-					{
-						const Ref<TextureView> lowResView = hdrDesc.ColorAttachments[0].View;
-						const Ref<TextureView> upView = upDesc.ColorAttachments[0].View;
-						const PixelFormat upFmt = upView->GetTexture()->GetDesc().Format;
-						const uint32_t upW = tmDesc.Width;
-						const uint32_t upH = tmDesc.Height;
-
-						// Neural upscaler (#47 spatial / #98 temporal): a compute CNN, alternative to the bilinear
-						// pass. It owns its full-res storage output; on success tonemap reads that. Falls back to
-						// bilinear until its shaders finish compiling (PrepareResources false). The bilinear pass
-						// renders into SceneUpscaleTarget; the neural pass writes its own texture.
-						// PrepareResources runs HERE (graph-build time), not in the Execute lambda: a resize may
-						// drain the GPU + recreate the bindless output view, both illegal mid-command-recording. It
-						// returns false while shaders are still compiling — then we fall back to bilinear this frame.
-						// Push the weights path (#99): empty = identity refiner; the pass reloads lazily on change.
-						// upscaler: 1 = neural spatial (LR only), 2 = neural temporal (LR + MV-warped previous
-						// neural output + motion vector). SetTemporal must precede PrepareResources (it rebuilds the
-						// model at the matching input width).
-						const int upscalerMode = CVars::Upscaler.Get();
-						const bool wantTemporal = upscalerMode == 2;
-						m_NeuralUpscalePass.SetTemporal(wantTemporal);
-						m_NeuralUpscalePass.SetWeightsPath(CVars::NeuralWeightsPath.Get());
-						const bool neural = (upscalerMode == 1 || upscalerMode == 2) && m_NeuralUpscalePass.PrepareResources(upW, upH);
-
-						// Temporal history = the pass's OWN previous-frame output. Its output ring is indexed by
-						// frame-in-flight (2 slots), and with 2 frames in flight the OTHER slot holds the prior
-						// frame's neural result — so OutputView(frameIndex ^ 1) is last frame's upscaled image, no
-						// separate history target or copy needed. Invalid on the first temporal frame per viewport
-						// (that slot never ran) or after a resize; a per-viewport flag signals it, like TAA's.
-						const bool temporal = neural && wantTemporal && velocityNeeded;
-						Ref<TextureView> prevNeural;
-						bool neuralHistValid = false;
-						if (temporal)
-						{
-							prevNeural = m_NeuralUpscalePass.OutputView(frameIndex ^ 1u);
-							neuralHistValid = m_NeuralTemporalValid.contains(vpEntity) && prevNeural != nullptr;
-							m_NeuralTemporalValid.insert(vpEntity);
-						}
-						else
-						{
-							// Not on the temporal path this frame — drop the flag so re-enabling starts clean.
-							m_NeuralTemporalValid.erase(vpEntity);
-						}
-
-						if (neural)
-						{
-							const Ref<TextureView> velViewNeural = temporal ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View : nullptr;
-							std::vector<RenderGraph::ResourceAccess> reads = {
-							    {lowResView->GetTexture(), RenderGraph::AccessState::Sampled}};
-							if (temporal)
-							{
-								reads.push_back({velViewNeural->GetTexture(), RenderGraph::AccessState::Sampled});
-								if (prevNeural)
-								{
-									reads.push_back({prevNeural->GetTexture(), RenderGraph::AccessState::Sampled});
-								}
-							}
-							graph.AddPass({.Name = "NeuralUpscale",
-							               .IsCompute = true,
-							               .Reads = std::move(reads),
-							               .Execute = [&, lowResView, upW, upH, prevNeural, velViewNeural, neuralHistValid, temporal](CommandContext& c)
-							               {
-								               // The forward pass left the low-res Target in SHADER_READ_ONLY (its
-								               // EndRenderPass), so the graph's Sampled re-declaration emits NO barrier —
-								               // this compute pass would sample the color target before its writes are
-								               // visible (reads black). Force the write-before-read dependency, exactly
-								               // like the metrics pass (#45). This was the neural-reads-black bug.
-								               c.BarrierColorWriteToComputeRead(lowResView->GetTexture());
-								               const Ref<CommandContext> cref(&c, [](CommandContext*) {});
-								               m_NeuralUpscalePass.Infer(cref, frameIndex, lowResView, upW, upH,
-								                                         temporal ? prevNeural : nullptr,
-								                                         velViewNeural, neuralHistValid);
-							               }});
-							sceneColorView = m_NeuralUpscalePass.OutputView(frameIndex);
-						}
-						else
-						{
-							graph.AddPass({.Name = "Upscale",
-							               .Target = vpRT.SceneUpscaleTarget,
-							               .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
-							               .Execute = [&, lowResView, upFmt](CommandContext& c)
-							               {
-								               m_UpscalePass.Draw(ctx, frameIndex, lowResView, upFmt);
-							               }});
-							sceneColorView = upView;
-						}
-					}
-				}
-
-				// ---- Temporal resolve / TAA (#44) ----
-				// After upscale, before tonemap: reproject last frame's resolved HDR (history) by velocity,
-				// neighborhood-clamp + blend with the current frame, write into this frame's history slot —
-				// which then feeds tonemap AND becomes next frame's history. Ping-pong by frame parity.
-				if (taaOn && vpRT.VelocityTarget && !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty())
-				{
-					const uint32_t curIdx = static_cast<uint32_t>(renderer.GetFrameCounter() & 1ull);
-					const Ref<RenderTarget>& curHistory = vpRT.HistoryTarget[curIdx];
-					const Ref<RenderTarget>& prevHistory = vpRT.HistoryTarget[curIdx ^ 1u];
-
-					if (curHistory && prevHistory && !curHistory->GetDesc().ColorAttachments.empty() &&
-					    !prevHistory->GetDesc().ColorAttachments.empty())
-					{
-						const Ref<TextureView> currentView = sceneColorView;
-						const Ref<TextureView> prevHistView = prevHistory->GetDesc().ColorAttachments[0].View;
-						const Ref<TextureView> velView = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
-						const Ref<TextureView> curHistView = curHistory->GetDesc().ColorAttachments[0].View;
-						const PixelFormat histFmt = curHistView->GetTexture()->GetDesc().Format;
-						const glm::vec2 rcpFrame = {1.0f / static_cast<float>(curHistory->GetWidth()),
-						                            1.0f / static_cast<float>(curHistory->GetHeight())};
-						// History invalid on the very first TAA frame (prev slot never written) or after a
-						// resize rebuilt the targets. Simplest robust signal: our own "has this pair been
-						// resolved before" flag, tracked per viewport. Kept minimal — a bool per entity.
-						const bool historyValid = m_TaaHistoryValid.contains(vpEntity);
-						m_TaaHistoryValid.insert(vpEntity);
-
-						graph.AddPass({.Name = "TemporalResolve" + passSuffix,
-						               .Target = curHistory,
-						               .Reads = {{currentView->GetTexture(), RenderGraph::AccessState::Sampled},
-						                         {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled},
-						                         {velView->GetTexture(), RenderGraph::AccessState::Sampled}},
-						               .Execute = [&, currentView, prevHistView, velView, rcpFrame, historyValid, histFmt](CommandContext& c)
-						               {
-							               m_TemporalResolvePass.Draw(ctx, frameIndex, currentView, prevHistView, velView,
-							                                          rcpFrame, historyValid, CVars::TaaBlend.Get(),
-							                                          CVars::TaaMaxBlend.Get(), histFmt);
-						               }});
-
-						// Tonemap now reads the resolved history slot instead of the raw scene color.
-						sceneColorView = curHistView;
-					}
-				}
-				else
-				{
-					// TAA off: drop the "history valid" flag so re-enabling starts clean (no stale reproject).
-					m_TaaHistoryValid.erase(vpEntity);
-				}
-
-				const Ref<Texture> velocityRead = velocityNeeded ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture() : nullptr;
-				addTonemap(sceneColorView, tonemapTarget, "PostProcess", primaryTonemap, velocityRead);
-
-				// LDR filter stages after tonemap, in fixed order: FXAA then CAS sharpen. Each reads the
-				// previous stage's target (via its UNORM sample view) and writes its ping-pong target; the
-				// helpers guarantee the last one lands on PresentTarget. rcpFrame is the full present size.
-				const glm::vec2 rcpFrame = {1.0f / static_cast<float>(tmDesc.Width), 1.0f / static_cast<float>(tmDesc.Height)};
-				int stageIndex = 0; // 0 = tonemap (already emitted into tonemapTarget)
-				Ref<RenderTarget> prevTarget = tonemapTarget;
-
-				if (fxaaOn)
-				{
-					++stageIndex;
-					const Ref<RenderTarget> dst = stageTarget(stageIndex);
-					const Ref<TextureView> srcView = stageSampleView(prevTarget);
-					const Ref<Texture> srcImg = prevTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-					const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-					graph.AddPass({.Name = "FXAA" + passSuffix,
-					               .Target = dst,
-					               .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
-					               .Execute = [&, srcView, rcpFrame, dstFmt](CommandContext& c)
-					               {
-						               m_FxaaPass.Draw(ctx, frameIndex, srcView, rcpFrame, dstFmt);
-					               }});
-					prevTarget = dst;
-				}
-
-				if (sharpenOn)
-				{
-					++stageIndex;
-					const Ref<RenderTarget> dst = stageTarget(stageIndex);
-					const Ref<TextureView> srcView = stageSampleView(prevTarget);
-					const Ref<Texture> srcImg = prevTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-					const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-					const float sharpness = CVars::Sharpen.Get();
-					graph.AddPass({.Name = "Sharpen" + passSuffix,
-					               .Target = dst,
-					               .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
-					               .Execute = [&, srcView, rcpFrame, sharpness, dstFmt](CommandContext& c)
-					               {
-						               m_SharpenPass.Draw(ctx, frameIndex, srcView, rcpFrame, sharpness, dstFmt);
-					               }});
-					prevTarget = dst;
-				}
-			}
-
-			// ---- Ground-truth path (compare mode only): 2nd full-res render -> its own present target ----
-			if (comparing && !vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty() &&
-			    vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View)
-			{
-				addForward(vpRT.GroundTruthTarget, "ForwardGT" + passSuffix, false); // ground truth: never jittered
-				addTonemap(vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View, vpRT.GroundTruthPresentTarget, "PostProcessGT", RendererService::TonemapParams{});
-
-				// ---- Metrics (#45): PSNR/SSIM of the upscaled present vs the ground-truth present. Runs after
-				// both were written (a compute reduction reading both, sampled). Gated on render.metrics; both
-				// present images are full-res, so they compare 1:1. Reads the UNORM sample views (gamma bytes).
-				if (CVars::Metrics.Get() && vpRT.PresentSampleView && vpRT.GroundTruthPresentSampleView)
-				{
-					const Ref<Texture> upImg = vpRT.PresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-					const Ref<Texture> gtImg = vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-					const Ref<TextureView> upView = vpRT.PresentSampleView;
-					const Ref<TextureView> gtView = vpRT.GroundTruthPresentSampleView;
-					const uint32_t mw = vpRT.PresentTarget->GetWidth();
-					const uint32_t mh = vpRT.PresentTarget->GetHeight();
-					graph.AddPass({.Name = "Metrics" + passSuffix,
-					               .IsCompute = true,
-					               .Reads = {{upImg, RenderGraph::AccessState::Sampled},
-					                         {gtImg, RenderGraph::AccessState::Sampled}},
-					               .Execute = [&, upView, gtView, mw, mh, upImg, gtImg](CommandContext& c)
-					               {
-						               // The graph left both present images in SHADER_READ (from their tonemap
-						               // EndRenderPass), so its Sampled re-declaration is a no-op barrier — the
-						               // compute would sample them before the color writes are visible (GT read
-						               // black). Force the write-before-read dependency explicitly.
-						               c.BarrierColorWriteToComputeRead(upImg);
-						               c.BarrierColorWriteToComputeRead(gtImg);
-						               m_MetricsPass.Compute(ctx, frameIndex, upView, gtView, mw, mh);
-						               renderer.SetMetrics([this]
-						                                   {
-							                                   const auto& r = m_MetricsPass.GetResult();
-							                                   return RendererService::MetricsResult{r.Valid, r.Psnr, r.Ssim}; }());
-					               }});
-				}
-
-				// ---- Dataset export (#46): copy (low-res color, motion vectors, full-res ground truth) to the CPU
-				// and serialize as .npy + manifest. Needs all three written this frame: LR (forward), MV (velocity
-				// pass, forced on above), GT (the compare 2nd render). Gated on dataset.export && compare && the
-				// velocity buffer being produced. One graph pass (IsCompute: no render target) after everything
-				// above; it declares the three targets as Sampled reads so the graph normalizes their layout, then
-				// CopyTextureToBuffer pulls each to a host-visible buffer.
-				if (exporting && velocityNeeded && vpRT.GroundTruthTarget &&
-				    !vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty() && vpRT.GroundTruthPresentTarget &&
-				    !vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments.empty())
-				{
-					const Ref<Texture> lrImg = vpRT.Target->GetDesc().ColorAttachments[0].View->GetTexture();
-					const Ref<Texture> mvImg = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-					const Ref<Texture> gtImg = vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-					// The tonemapped LDR GT present — the engine's ACTUAL output the metric compares, i.e. the
-					// exact target to train against (#102). Written by the GT tonemap pass (addTonemap above).
-					const Ref<Texture> gtLdrImg = vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-					const glm::vec2 jitter = cam.Rt->JitterNdc;
-					const float scale = CVars::ClampedRenderScale();
-					const std::string outDir = CVars::DatasetExportPath.Get();
-					graph.AddPass({.Name = "DatasetExport" + passSuffix,
-					               .IsCompute = true, // no render target; records readback copies
-					               .Reads = {{lrImg, RenderGraph::AccessState::Sampled},
-					                         {mvImg, RenderGraph::AccessState::Sampled},
-					                         {gtImg, RenderGraph::AccessState::Sampled},
-					                         {gtLdrImg, RenderGraph::AccessState::Sampled}},
-					               .Execute = [&, lrImg, mvImg, gtImg, gtLdrImg, jitter, scale, outDir](CommandContext& c)
-					               {
-						               // The GT tonemap pass just wrote gtLdrImg and left it in SHADER_READ, so the
-						               // graph's Sampled re-declaration emits no barrier — the copy would read it
-						               // before the color write is visible (reads black, #102). Force the write-
-						               // before-read dependency explicitly, like the metrics/neural passes (#45/#47).
-						               // The HDR three (LR/MV/GT) are produced by earlier passes with their own
-						               // barriers before this point, so only the freshly-tonemapped LDR needs it.
-						               c.BarrierColorWriteToComputeRead(gtLdrImg);
-						               DatasetExportPass::Inputs dsin;
-						               dsin.Lr = lrImg;
-						               dsin.Mv = mvImg;
-						               dsin.Gt = gtImg;
-						               dsin.GtLdr = gtLdrImg;
-						               dsin.JitterNdc = jitter;
-						               dsin.Scale = scale;
-						               dsin.FrameIndex = frameIndex;
-						               // Non-owning Ref to the graph's context (the pass API takes a Ref; the graph owns it).
-						               const Ref<CommandContext> cref(&c, [](CommandContext*) {});
-						               const uint64_t written = m_DatasetExportPass.CaptureAndSerialize(cref, dsin, outDir);
-						               renderer.SetDatasetFramesWritten(written);
-					               }});
-				}
-			}
+			RenderViewport(fc, vpEntity, passSuffix);
 		}
 
 		// ImGui pass to swapchain. This is the ONLY pass that composes the swapchain today,
@@ -911,6 +394,534 @@ namespace Snowstorm
 					                  m_ShadowPass.RecordDepth(r, atlasFmt, spot.ShadowViewProj);
 				                  }
 			                  }});
+		}
+	}
+
+	void RenderSystem::RenderViewport(FrameContext& fc, const entt::entity vpEntity, const std::string& passSuffix)
+	{
+		const auto& vpRT = fc.Reg.Read<RenderTargetComponent>(vpEntity);
+		if (!vpRT.Target)
+		{
+			return;
+		}
+
+		const auto cameraView = View<const TransformComponent, const CameraComponent, const CameraTargetComponent, const CameraRuntimeComponent, const CameraVisibilityComponent>();
+		const CameraPick cam = FindCameraForViewport(fc.Reg, vpEntity, cameraView);
+		if (cam.Entity == entt::null || !cam.Rt || !cam.Transform || !cam.Visibility)
+		{
+			return;
+		}
+
+		// Compare mode (#43 part 2) renders the scene a SECOND time at full native res (ground truth) and
+		// shows it split against the upscaled result. To keep the A/B clean (only the upscaler differs),
+		// FXAA is disabled on BOTH sides while comparing.
+		const bool comparing = CVars::Compare.Get() && vpRT.GroundTruthTarget && vpRT.GroundTruthPresentTarget;
+
+		// Forward + sky into an arbitrary HDR target. Target-pure (reads camera + the shared per-camera
+		// visibility cache), so it's invoked once normally and twice in compare mode (the instance-buffer
+		// cursor appends across BeginScene calls, like the shadow passes). IBL maps are declared as reads
+		// so the graph transitions them to shader-read before shading.
+		const auto addForward = [&](const Ref<RenderTarget>& hdrTarget, const std::string& name, const bool jittered)
+		{
+			std::vector<RenderGraph::ResourceAccess> meshReads;
+			if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
+			{
+				meshReads = {{m_IBLBakePass.IrradianceCube(), RenderGraph::AccessState::Sampled},
+				             {m_IBLBakePass.PrefilteredCube(), RenderGraph::AccessState::Sampled},
+				             {m_IBLBakePass.BRDFLut(), RenderGraph::AccessState::Sampled}};
+			}
+
+			fc.Graph.AddPass({.Name = name,
+			                  .Target = hdrTarget,
+			                  .Reads = std::move(meshReads),
+			                  .Execute = [this, &fc, cam, hdrTarget, jittered](CommandContext& c)
+			                  {
+				                  const glm::vec3 camPos = cam.Transform->Position;
+				                  fc.Renderer.BeginScene(*cam.Rt, camPos, fc.Ctx, fc.FrameIndex, jittered);
+
+				                  auto& assets = SingletonView<AssetManagerSingleton>();
+
+				                  for (const auto& cache = fc.Reg.Read<VisibilityCacheComponent>(cam.Entity);
+				                       const entt::entity e : cache.VisibleMeshes)
+				                  {
+					                  // VisibleMeshes is a cross-frame cache of handles; an entity in it can be gone
+					                  // or stripped of its components (e.g. New Scene wiped the scene THIS frame, before
+					                  // the cache was rebuilt). Skip stale handles rather than Read a destroyed entity
+					                  // (EnTT asserts "Set does not contain entity").
+					                  if (!fc.Reg.valid(e) || !fc.Reg.all_of<TransformComponent, MeshComponent, MaterialComponent>(e))
+					                  {
+						                  continue;
+					                  }
+					                  const auto& tr = fc.Reg.Read<TransformComponent>(e);
+					                  const auto& mesh = fc.Reg.Read<MeshComponent>(e);
+					                  const auto& mat = fc.Reg.Read<MaterialComponent>(e);
+
+					                  // Cache can include an entity whose mesh/material resolve runs the same
+					                  // frame; guard against the null instance (was an access violation).
+					                  if (!mesh.MeshInstance || !mat.MaterialInstance)
+					                  {
+						                  continue;
+					                  }
+
+					                  // Per-instance albedo override rides the instance buffer (objects sharing a
+					                  // material still batch). 0 = use the material's own albedo.
+					                  uint32_t albedoIndex = 0;
+					                  if (const auto* ov = fc.Reg.try_get_const<MaterialOverridesComponent>(e))
+					                  {
+						                  for (const MaterialOverride& o : ov->Overrides)
+						                  {
+							                  if (o.Type == MaterialOverrideType::Texture && o.Name == "AlbedoTexture" && o.Texture != 0)
+							                  {
+								                  if (const Ref<TextureView> view = assets.GetTextureView(o.Texture))
+								                  {
+									                  albedoIndex = view->GetGlobalBindlessIndex();
+								                  }
+							                  }
+						                  }
+					                  }
+
+					                  const glm::vec4 customData = mat.MaterialInstance->GetPerInstanceCustomData();
+					                  fc.Renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, albedoIndex, customData);
+				                  }
+
+				                  fc.Renderer.Flush();
+
+				                  // Procedural sky after opaque meshes (far-plane, only fills uncovered pixels).
+				                  // Formats come from the target so the sky pipeline stays render-pass-compatible.
+				                  const auto& rtDesc = hdrTarget->GetDesc();
+				                  if (!rtDesc.ColorAttachments.empty() && rtDesc.DepthAttachment)
+				                  {
+					                  const PixelFormat colorFmt = rtDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+					                  const PixelFormat depthFmt = rtDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
+					                  c.BeginGpuScope("Sky");
+					                  m_SkyPass.Draw(fc.Renderer, colorFmt, depthFmt);
+					                  c.EndGpuScope();
+				                  }
+
+				                  fc.Renderer.EndScene();
+			                  }});
+		};
+
+		// Tonemap an HDR scene-color view into an LDR target (exposure/ACES; hardware sRGB-encodes on
+		// write). Declares the HDR color as a Sampled read so the graph transitions it first. `params`
+		// carries the scene-color bindless index (filled here) plus any motion-vector debug fields set by
+		// the caller (#44) — the debug branch samples the velocity target instead of the scene.
+		const auto addTonemap = [&](const Ref<TextureView>& hdrColorView, const Ref<RenderTarget>& dstTarget,
+		                            const std::string& name, RendererService::TonemapParams params,
+		                            const Ref<Texture>& extraRead = nullptr)
+		{
+			params.SceneColorIndex = hdrColorView->GetGlobalBindlessIndex();
+			const PixelFormat dstFmt = dstTarget->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+			// The debug branch samples the velocity target (extraRead) via bindless, so declare it Sampled
+			// too — the graph then transitions it to shader-read before this pass, like the HDR scene color.
+			std::vector<RenderGraph::ResourceAccess> reads{{hdrColorView->GetTexture(), RenderGraph::AccessState::Sampled}};
+			if (extraRead)
+			{
+				reads.push_back({extraRead, RenderGraph::AccessState::Sampled});
+			}
+			fc.Graph.AddPass({.Name = name,
+			                  .Target = dstTarget,
+			                  .Reads = std::move(reads),
+			                  .Execute = [this, &fc, params, dstFmt](CommandContext& c)
+			                  {
+				                  m_PostProcessPass.Draw(fc.Renderer, fc.Ctx, fc.FrameIndex, params, dstFmt);
+			                  }});
+		};
+
+		// ---- Motion-vector pass (#44) ----
+		// Rendered when the motion-vector debug view is on OR TAA is active (both consume velocity).
+		// Re-renders the visible meshes into the velocity target, projecting each vertex by this frame's
+		// and last frame's matrices (per-object PrevModel from PrevTransformComponent, camera PrevViewProj
+		// from the runtime component). Self-contained target (own depth), so no ordering constraint.
+		const int debugView = CVars::DebugView.Get();
+		// TAA (render.aa == 2) needs velocity + history. Unlike FXAA it is NOT forced off in compare:
+		// with render.scale < 1 it is a temporal UPSCALER (TAAU), and measuring whether it recovers the
+		// detail bilinear can't IS the point of the compare A/B (#98). It only touches the LEFT/upscaled
+		// side (writes the LR HistoryTarget that feeds the LR tonemap); the GT second render below is a
+		// plain unjittered forward, so it stays a clean full-res reference. CameraJitterSystem keeps jitter
+		// on for aa==2 even in compare, so the LR side actually accumulates sub-pixel samples.
+		const bool taaOn = CVars::AAMode.Get() == 2 &&
+		                   vpRT.HistoryTarget[0] && vpRT.HistoryTarget[1] &&
+		                   !vpRT.HistoryTarget[0]->GetDesc().ColorAttachments.empty();
+		// Neural TEMPORAL upscaler (#98, render.upscaler == 2): reprojects the previous neural output by
+		// motion vectors, so it needs the velocity buffer too. Only meaningful when actually upscaling
+		// (scale < 1); the upscale block below re-checks that.
+		const bool neuralTemporal = CVars::Upscaler.Get() == 2;
+		// Dataset export (#46) also needs the velocity buffer (an exported channel), so force the velocity
+		// pass on while exporting even without debug-view/TAA. Requires compare (ground truth exists).
+		const bool exporting = CVars::DatasetExport.Get() && comparing;
+		const bool velocityNeeded = (debugView == 1 || taaOn || neuralTemporal || exporting) && vpRT.VelocityTarget &&
+		                            !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
+		                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
+		if (velocityNeeded)
+		{
+			const auto& velDesc = vpRT.VelocityTarget->GetDesc();
+			const PixelFormat velColorFmt = velDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+			const PixelFormat velDepthFmt = velDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
+			const glm::mat4 viewProj = cam.Rt->ViewProjection;
+			const glm::mat4 prevViewProj = cam.Rt->PrevViewProjection;
+
+			fc.Graph.AddPass({.Name = "Velocity" + passSuffix,
+			                  .Target = vpRT.VelocityTarget,
+			                  .Execute = [this, &fc, cam, velColorFmt, velDepthFmt, viewProj, prevViewProj](CommandContext& c)
+			                  {
+				                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, fc.Ctx, fc.FrameIndex);
+
+				                  for (const auto& cache = fc.Reg.Read<VisibilityCacheComponent>(cam.Entity);
+				                       const entt::entity e : cache.VisibleMeshes)
+				                  {
+					                  // VisibleMeshes is a cross-frame cache of handles; an entity in it can be gone
+					                  // this frame (New Scene wiped the scene before the cache rebuilt). Skip stale
+					                  // handles rather than Read a destroyed entity (EnTT asserts).
+					                  if (!fc.Reg.valid(e) || !fc.Reg.all_of<TransformComponent, MeshComponent, MaterialComponent>(e))
+					                  {
+						                  continue;
+					                  }
+					                  const auto& tr = fc.Reg.Read<TransformComponent>(e);
+					                  const auto& mesh = fc.Reg.Read<MeshComponent>(e);
+					                  const auto& mat = fc.Reg.Read<MaterialComponent>(e);
+					                  if (!mesh.MeshInstance || !mat.MaterialInstance)
+					                  {
+						                  continue;
+					                  }
+					                  // Last frame's world matrix; PrevTransformSnapshotSystem writes it end-of-frame.
+					                  // Missing (object created this frame) -> use current => zero velocity (correct).
+					                  glm::mat4 prevModel = tr.GetTransformMatrix();
+					                  if (const auto* pt = fc.Reg.try_get_const<PrevTransformComponent>(e))
+					                  {
+						                  prevModel = pt->PrevModel;
+					                  }
+					                  fc.Renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, 0,
+					                                       glm::vec4(0.0f), prevModel);
+				                  }
+
+				                  m_VelocityPass.RecordVelocity(fc.Renderer, velColorFmt, velDepthFmt, viewProj, prevViewProj);
+			                  }});
+		}
+
+		// Tonemap debug params (#44): visualize the velocity target ONLY when the motion-vector debug
+		// view is explicitly selected — NOT merely when velocity is being rendered (TAA also renders
+		// velocity but must show the real tonemapped scene). Keyed off debugView, not velocityNeeded.
+		// Applied to the primary path only (compare mode keeps its GT side normal).
+		RendererService::TonemapParams primaryTonemap{};
+		if (debugView == 1 && velocityNeeded)
+		{
+			primaryTonemap.DebugMode = 1;
+			primaryTonemap.DebugTexIndex = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
+			primaryTonemap.DebugScale = 40.0f; // per-frame UV velocity is small; scale to a visible range
+		}
+
+		// ---- Primary (upscaled) path ----
+		// Jittered: the color pass gets the temporal sub-pixel offset (#44). Velocity + GT stay unjittered.
+		addForward(vpRT.Target, "Forward" + passSuffix, true);
+
+		// Post-tonemap LDR filter chain (#44): tonemap -> [FXAA] -> [CAS sharpen] -> present. Both FXAA
+		// and sharpen read an LDR UNORM sample view and write an sRGB target; they PING-PONG between
+		// PresentTarget and AAIntermediateTarget so the LAST enabled stage always lands on PresentTarget
+		// (what ImGui samples). With neither enabled this is tonemap -> Present (unchanged); with FXAA
+		// only it's the exact prior tonemap -> AAIntermediate -> Present path. Both forced off in compare.
+		const bool fxaaOn = !comparing && CVars::AAMode.Get() == 1 && vpRT.AAIntermediateTarget && vpRT.AAIntermediateSampleView;
+		const bool sharpenOn = !comparing && CVars::Sharpen.Get() > 0.0f && vpRT.AAIntermediateTarget &&
+		                       vpRT.AAIntermediateSampleView && vpRT.PresentSampleView;
+		const int ldrFilters = (fxaaOn ? 1 : 0) + (sharpenOn ? 1 : 0); // stages after tonemap
+		const int totalStages = 1 + ldrFilters;                        // tonemap is stage 0
+
+		// Stage k writes Present when (totalStages-1-k) is even, else AAIntermediate — so the final stage
+		// (k = totalStages-1) always writes Present, alternating backward. Each stage reads the previous
+		// stage's target via that target's UNORM sample view.
+		auto stageTarget = [&](const int stageIndex) -> Ref<RenderTarget>
+		{
+			return ((totalStages - 1 - stageIndex) % 2 == 0) ? vpRT.PresentTarget : vpRT.AAIntermediateTarget;
+		};
+		auto stageSampleView = [&](const Ref<RenderTarget>& t) -> Ref<TextureView>
+		{
+			return (t == vpRT.PresentTarget) ? vpRT.PresentSampleView : vpRT.AAIntermediateSampleView;
+		};
+		const Ref<RenderTarget> tonemapTarget = stageTarget(0);
+
+		if (tonemapTarget && !vpRT.Target->GetDesc().ColorAttachments.empty() && vpRT.Target->GetDesc().ColorAttachments[0].View)
+		{
+			const auto& hdrDesc = vpRT.Target->GetDesc();
+			const auto& tmDesc = tonemapTarget->GetDesc();
+
+			// Internal-res upscale (#43 part 1): when the scene Target is smaller than the viewport,
+			// bilinear-resample it into SceneUpscaleTarget and tonemap THAT. At scale 1.0 the upscale is
+			// skipped and tonemap reads Target directly (byte-identical to the no-scale path).
+			Ref<TextureView> sceneColorView = hdrDesc.ColorAttachments[0].View;
+			const bool upscaling = vpRT.SceneUpscaleTarget && (hdrDesc.Width != tmDesc.Width || hdrDesc.Height != tmDesc.Height);
+			if (upscaling)
+			{
+				const auto& upDesc = vpRT.SceneUpscaleTarget->GetDesc();
+				if (!upDesc.ColorAttachments.empty() && upDesc.ColorAttachments[0].View)
+				{
+					const Ref<TextureView> lowResView = hdrDesc.ColorAttachments[0].View;
+					const Ref<TextureView> upView = upDesc.ColorAttachments[0].View;
+					const PixelFormat upFmt = upView->GetTexture()->GetDesc().Format;
+					const uint32_t upW = tmDesc.Width;
+					const uint32_t upH = tmDesc.Height;
+
+					// Neural upscaler (#47 spatial / #98 temporal): a compute CNN, alternative to the bilinear
+					// pass. It owns its full-res storage output; on success tonemap reads that. Falls back to
+					// bilinear until its shaders finish compiling (PrepareResources false). The bilinear pass
+					// renders into SceneUpscaleTarget; the neural pass writes its own texture.
+					// PrepareResources runs HERE (graph-build time), not in the Execute lambda: a resize may
+					// drain the GPU + recreate the bindless output view, both illegal mid-command-recording. It
+					// returns false while shaders are still compiling — then we fall back to bilinear this frame.
+					// Push the weights path (#99): empty = identity refiner; the pass reloads lazily on change.
+					// upscaler: 1 = neural spatial (LR only), 2 = neural temporal (LR + MV-warped previous
+					// neural output + motion vector). SetTemporal must precede PrepareResources (it rebuilds the
+					// model at the matching input width).
+					const int upscalerMode = CVars::Upscaler.Get();
+					const bool wantTemporal = upscalerMode == 2;
+					m_NeuralUpscalePass.SetTemporal(wantTemporal);
+					m_NeuralUpscalePass.SetWeightsPath(CVars::NeuralWeightsPath.Get());
+					const bool neural = (upscalerMode == 1 || upscalerMode == 2) && m_NeuralUpscalePass.PrepareResources(upW, upH);
+
+					// Temporal history = the pass's OWN previous-frame output. Its output ring is indexed by
+					// frame-in-flight (2 slots), and with 2 frames in flight the OTHER slot holds the prior
+					// frame's neural result — so OutputView(fc.FrameIndex ^ 1) is last frame's upscaled image, no
+					// separate history target or copy needed. Invalid on the first temporal frame per viewport
+					// (that slot never ran) or after a resize; a per-viewport flag signals it, like TAA's.
+					const bool temporal = neural && wantTemporal && velocityNeeded;
+					Ref<TextureView> prevNeural;
+					bool neuralHistValid = false;
+					if (temporal)
+					{
+						prevNeural = m_NeuralUpscalePass.OutputView(fc.FrameIndex ^ 1u);
+						neuralHistValid = m_NeuralTemporalValid.contains(vpEntity) && prevNeural != nullptr;
+						m_NeuralTemporalValid.insert(vpEntity);
+					}
+					else
+					{
+						// Not on the temporal path this frame — drop the flag so re-enabling starts clean.
+						m_NeuralTemporalValid.erase(vpEntity);
+					}
+
+					if (neural)
+					{
+						const Ref<TextureView> velViewNeural = temporal ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View : nullptr;
+						std::vector<RenderGraph::ResourceAccess> reads = {
+						    {lowResView->GetTexture(), RenderGraph::AccessState::Sampled}};
+						if (temporal)
+						{
+							reads.push_back({velViewNeural->GetTexture(), RenderGraph::AccessState::Sampled});
+							if (prevNeural)
+							{
+								reads.push_back({prevNeural->GetTexture(), RenderGraph::AccessState::Sampled});
+							}
+						}
+						fc.Graph.AddPass({.Name = "NeuralUpscale",
+						                  .IsCompute = true,
+						                  .Reads = std::move(reads),
+						                  .Execute = [this, &fc, lowResView, upW, upH, prevNeural, velViewNeural, neuralHistValid, temporal](CommandContext& c)
+						                  {
+							                  // The forward pass left the low-res Target in SHADER_READ_ONLY (its
+							                  // EndRenderPass), so the graph's Sampled re-declaration emits NO barrier —
+							                  // this compute pass would sample the color target before its writes are
+							                  // visible (reads black). Force the write-before-read dependency, exactly
+							                  // like the metrics pass (#45). This was the neural-reads-black bug.
+							                  c.BarrierColorWriteToComputeRead(lowResView->GetTexture());
+							                  const Ref<CommandContext> cref(&c, [](CommandContext*) {});
+							                  m_NeuralUpscalePass.Infer(cref, fc.FrameIndex, lowResView, upW, upH,
+							                                            temporal ? prevNeural : nullptr,
+							                                            velViewNeural, neuralHistValid);
+						                  }});
+						sceneColorView = m_NeuralUpscalePass.OutputView(fc.FrameIndex);
+					}
+					else
+					{
+						fc.Graph.AddPass({.Name = "Upscale",
+						                  .Target = vpRT.SceneUpscaleTarget,
+						                  .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
+						                  .Execute = [this, &fc, lowResView, upFmt](CommandContext& c)
+						                  {
+							                  m_UpscalePass.Draw(fc.Ctx, fc.FrameIndex, lowResView, upFmt);
+						                  }});
+						sceneColorView = upView;
+					}
+				}
+			}
+
+			// ---- Temporal resolve / TAA (#44) ----
+			// After upscale, before tonemap: reproject last frame's resolved HDR (history) by velocity,
+			// neighborhood-clamp + blend with the current frame, write into this frame's history slot —
+			// which then feeds tonemap AND becomes next frame's history. Ping-pong by frame parity.
+			if (taaOn && vpRT.VelocityTarget && !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty())
+			{
+				const uint32_t curIdx = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
+				const Ref<RenderTarget>& curHistory = vpRT.HistoryTarget[curIdx];
+				const Ref<RenderTarget>& prevHistory = vpRT.HistoryTarget[curIdx ^ 1u];
+
+				if (curHistory && prevHistory && !curHistory->GetDesc().ColorAttachments.empty() &&
+				    !prevHistory->GetDesc().ColorAttachments.empty())
+				{
+					const Ref<TextureView> currentView = sceneColorView;
+					const Ref<TextureView> prevHistView = prevHistory->GetDesc().ColorAttachments[0].View;
+					const Ref<TextureView> velView = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
+					const Ref<TextureView> curHistView = curHistory->GetDesc().ColorAttachments[0].View;
+					const PixelFormat histFmt = curHistView->GetTexture()->GetDesc().Format;
+					const glm::vec2 rcpFrame = {1.0f / static_cast<float>(curHistory->GetWidth()),
+					                            1.0f / static_cast<float>(curHistory->GetHeight())};
+					// History invalid on the very first TAA frame (prev slot never written) or after a
+					// resize rebuilt the targets. Simplest robust signal: our own "has this pair been
+					// resolved before" flag, tracked per viewport. Kept minimal — a bool per entity.
+					const bool historyValid = m_TaaHistoryValid.contains(vpEntity);
+					m_TaaHistoryValid.insert(vpEntity);
+
+					fc.Graph.AddPass({.Name = "TemporalResolve" + passSuffix,
+					                  .Target = curHistory,
+					                  .Reads = {{currentView->GetTexture(), RenderGraph::AccessState::Sampled},
+					                            {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled},
+					                            {velView->GetTexture(), RenderGraph::AccessState::Sampled}},
+					                  .Execute = [this, &fc, currentView, prevHistView, velView, rcpFrame, historyValid, histFmt](CommandContext& c)
+					                  {
+						                  m_TemporalResolvePass.Draw(fc.Ctx, fc.FrameIndex, currentView, prevHistView, velView,
+						                                             rcpFrame, historyValid, CVars::TaaBlend.Get(),
+						                                             CVars::TaaMaxBlend.Get(), histFmt);
+					                  }});
+
+					// Tonemap now reads the resolved history slot instead of the raw scene color.
+					sceneColorView = curHistView;
+				}
+			}
+			else
+			{
+				// TAA off: drop the "history valid" flag so re-enabling starts clean (no stale reproject).
+				m_TaaHistoryValid.erase(vpEntity);
+			}
+
+			const Ref<Texture> velocityRead = velocityNeeded ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture() : nullptr;
+			addTonemap(sceneColorView, tonemapTarget, "PostProcess", primaryTonemap, velocityRead);
+
+			// LDR filter stages after tonemap, in fixed order: FXAA then CAS sharpen. Each reads the
+			// previous stage's target (via its UNORM sample view) and writes its ping-pong target; the
+			// helpers guarantee the last one lands on PresentTarget. rcpFrame is the full present size.
+			const glm::vec2 rcpFrame = {1.0f / static_cast<float>(tmDesc.Width), 1.0f / static_cast<float>(tmDesc.Height)};
+			int stageIndex = 0; // 0 = tonemap (already emitted into tonemapTarget)
+			Ref<RenderTarget> prevTarget = tonemapTarget;
+
+			if (fxaaOn)
+			{
+				++stageIndex;
+				const Ref<RenderTarget> dst = stageTarget(stageIndex);
+				const Ref<TextureView> srcView = stageSampleView(prevTarget);
+				const Ref<Texture> srcImg = prevTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+				fc.Graph.AddPass({.Name = "FXAA" + passSuffix,
+				                  .Target = dst,
+				                  .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, srcView, rcpFrame, dstFmt](CommandContext& c)
+				                  {
+					                  m_FxaaPass.Draw(fc.Ctx, fc.FrameIndex, srcView, rcpFrame, dstFmt);
+				                  }});
+				prevTarget = dst;
+			}
+
+			if (sharpenOn)
+			{
+				++stageIndex;
+				const Ref<RenderTarget> dst = stageTarget(stageIndex);
+				const Ref<TextureView> srcView = stageSampleView(prevTarget);
+				const Ref<Texture> srcImg = prevTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+				const float sharpness = CVars::Sharpen.Get();
+				fc.Graph.AddPass({.Name = "Sharpen" + passSuffix,
+				                  .Target = dst,
+				                  .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, srcView, rcpFrame, sharpness, dstFmt](CommandContext& c)
+				                  {
+					                  m_SharpenPass.Draw(fc.Ctx, fc.FrameIndex, srcView, rcpFrame, sharpness, dstFmt);
+				                  }});
+				prevTarget = dst;
+			}
+		}
+
+		// ---- Ground-truth path (compare mode only): 2nd full-res render -> its own present target ----
+		if (comparing && !vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty() &&
+		    vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View)
+		{
+			addForward(vpRT.GroundTruthTarget, "ForwardGT" + passSuffix, false); // ground truth: never jittered
+			addTonemap(vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View, vpRT.GroundTruthPresentTarget, "PostProcessGT", RendererService::TonemapParams{});
+
+			// ---- Metrics (#45): PSNR/SSIM of the upscaled present vs the ground-truth present. Runs after
+			// both were written (a compute reduction reading both, sampled). Gated on render.metrics; both
+			// present images are full-res, so they compare 1:1. Reads the UNORM sample views (gamma bytes).
+			if (CVars::Metrics.Get() && vpRT.PresentSampleView && vpRT.GroundTruthPresentSampleView)
+			{
+				const Ref<Texture> upImg = vpRT.PresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+				const Ref<Texture> gtImg = vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+				const Ref<TextureView> upView = vpRT.PresentSampleView;
+				const Ref<TextureView> gtView = vpRT.GroundTruthPresentSampleView;
+				const uint32_t mw = vpRT.PresentTarget->GetWidth();
+				const uint32_t mh = vpRT.PresentTarget->GetHeight();
+				fc.Graph.AddPass({.Name = "Metrics" + passSuffix,
+				                  .IsCompute = true,
+				                  .Reads = {{upImg, RenderGraph::AccessState::Sampled},
+				                            {gtImg, RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, upView, gtView, mw, mh, upImg, gtImg](CommandContext& c)
+				                  {
+					                  // The graph left both present images in SHADER_READ (from their tonemap
+					                  // EndRenderPass), so its Sampled re-declaration is a no-op barrier — the
+					                  // compute would sample them before the color writes are visible (GT read
+					                  // black). Force the write-before-read dependency explicitly.
+					                  c.BarrierColorWriteToComputeRead(upImg);
+					                  c.BarrierColorWriteToComputeRead(gtImg);
+					                  m_MetricsPass.Compute(fc.Ctx, fc.FrameIndex, upView, gtView, mw, mh);
+					                  fc.Renderer.SetMetrics([this]
+					                                         {
+							                                   const auto& r = m_MetricsPass.GetResult();
+							                                   return RendererService::MetricsResult{r.Valid, r.Psnr, r.Ssim}; }());
+				                  }});
+			}
+
+			// ---- Dataset export (#46): copy (low-res color, motion vectors, full-res ground truth) to the CPU
+			// and serialize as .npy + manifest. Needs all three written this frame: LR (forward), MV (velocity
+			// pass, forced on above), GT (the compare 2nd render). Gated on dataset.export && compare && the
+			// velocity buffer being produced. One graph pass (IsCompute: no render target) after everything
+			// above; it declares the three targets as Sampled reads so the graph normalizes their layout, then
+			// CopyTextureToBuffer pulls each to a host-visible buffer.
+			if (exporting && velocityNeeded && vpRT.GroundTruthTarget &&
+			    !vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty() && vpRT.GroundTruthPresentTarget &&
+			    !vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments.empty())
+			{
+				const Ref<Texture> lrImg = vpRT.Target->GetDesc().ColorAttachments[0].View->GetTexture();
+				const Ref<Texture> mvImg = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+				const Ref<Texture> gtImg = vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+				// The tonemapped LDR GT present — the engine's ACTUAL output the metric compares, i.e. the
+				// exact target to train against (#102). Written by the GT tonemap pass (addTonemap above).
+				const Ref<Texture> gtLdrImg = vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+				const glm::vec2 jitter = cam.Rt->JitterNdc;
+				const float scale = CVars::ClampedRenderScale();
+				const std::string outDir = CVars::DatasetExportPath.Get();
+				fc.Graph.AddPass({.Name = "DatasetExport" + passSuffix,
+				                  .IsCompute = true, // no render target; records readback copies
+				                  .Reads = {{lrImg, RenderGraph::AccessState::Sampled},
+				                            {mvImg, RenderGraph::AccessState::Sampled},
+				                            {gtImg, RenderGraph::AccessState::Sampled},
+				                            {gtLdrImg, RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, lrImg, mvImg, gtImg, gtLdrImg, jitter, scale, outDir](CommandContext& c)
+				                  {
+					                  // The GT tonemap pass just wrote gtLdrImg and left it in SHADER_READ, so the
+					                  // graph's Sampled re-declaration emits no barrier — the copy would read it
+					                  // before the color write is visible (reads black, #102). Force the write-
+					                  // before-read dependency explicitly, like the metrics/neural passes (#45/#47).
+					                  // The HDR three (LR/MV/GT) are produced by earlier passes with their own
+					                  // barriers before this point, so only the freshly-tonemapped LDR needs it.
+					                  c.BarrierColorWriteToComputeRead(gtLdrImg);
+					                  DatasetExportPass::Inputs dsin;
+					                  dsin.Lr = lrImg;
+					                  dsin.Mv = mvImg;
+					                  dsin.Gt = gtImg;
+					                  dsin.GtLdr = gtLdrImg;
+					                  dsin.JitterNdc = jitter;
+					                  dsin.Scale = scale;
+					                  dsin.FrameIndex = fc.FrameIndex;
+					                  // Non-owning Ref to the graph's context (the pass API takes a Ref; the graph owns it).
+					                  const Ref<CommandContext> cref(&c, [](CommandContext*) {});
+					                  const uint64_t written = m_DatasetExportPass.CaptureAndSerialize(cref, dsin, outDir);
+					                  fc.Renderer.SetDatasetFramesWritten(written);
+				                  }});
+			}
 		}
 	}
 }

@@ -18,6 +18,7 @@
 #include <entt/entt.hpp>
 
 #include <optional>
+#include <string>
 #include <unordered_set>
 
 namespace Snowstorm
@@ -57,6 +58,14 @@ namespace Snowstorm
 		void SetupIBL(FrameContext& fc, const EnvironmentDataBlock& env);
 		void SetupDirectionalShadow(FrameContext& fc);
 		void SetupSpotShadows(FrameContext& fc);
+
+		// Render one viewport: the forward+sky pass, the optional motion-vector / upscale (bilinear or
+		// neural) / temporal-resolve chain, tonemap + LDR filters, and (in compare mode) the ground-truth
+		// re-render + metrics + dataset export. Called once per viewport entity from Execute's loop.
+		// passSuffix disambiguates pass names when there's more than one viewport (empty for the common
+		// single-viewport case). Pure structural extraction of the former inline loop body — no behavior
+		// change; the same dangling-capture rule as the Setup* phases applies (see SetupDirectionalShadow).
+		void RenderViewport(FrameContext& fc, entt::entity vpEntity, const std::string& passSuffix);
 
 		// First-class render passes owned by the orchestrator (persist across frames; tear down before the
 		// device dies via Application's WaitIdle). The renderer is now a shared context they operate against.
