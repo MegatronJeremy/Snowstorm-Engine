@@ -72,9 +72,14 @@ namespace Snowstorm
 			// reserved strip into the viewport work-area only "for next frame", so the DockSpace host
 			// window's work-area settles by ~one status-bar height between frame 0 and frame 1 — a single
 			// sub-frame settle, invisible in practice, and the price of showing everything immediately.
-			if (ImGui::DockBuilderGetNode(dockspaceID) == nullptr)
+			// Rebuild the default layout on first run (empty node) OR when the user asked to reset it
+			// (View > Reset Window Layout). The reset re-runs the exact same builder the first frame uses,
+			// so "reset" and "fresh install" produce an identical layout. Consuming the flag here — right
+			// before DockSpace() — guarantees the rebuild happens in the frame the panels dock into.
+			if (ImGui::DockBuilderGetNode(dockspaceID) == nullptr || s_ResetRequested)
 			{
 				BuildDefaultLayout(dockspaceID);
+				s_ResetRequested = false;
 			}
 
 			ImGui::DockSpace(dockspaceID, ImVec2(0.0f, 0.0f), dockspaceFlags);

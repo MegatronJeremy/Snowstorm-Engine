@@ -5,6 +5,7 @@
 
 #include "System/ConsoleSystem.hpp"
 #include "System/CVarPanelSystem.hpp"
+#include "System/DockspaceSetupSystem.hpp"
 #include "Singletons/EditorCommandsSingleton.hpp"
 #include "Singletons/EditorHistorySingleton.hpp"
 #include "Snowstorm/World/World.hpp"
@@ -210,6 +211,19 @@ namespace Snowstorm
 				if (ImGui::MenuItem(redoLabel.c_str(), "Ctrl+Y", false, history.CanRedo()))
 				{
 					RedoAction(history, *m_World, status);
+				}
+
+				ImGui::EndMenu();
+			}
+
+			if (ImGui::BeginMenu("View"))
+			{
+				// Rebuild the default dock layout (panels back to their starting positions). Handy after
+				// dragging a panel somewhere unrecoverable, or when a stale imgui.ini has a broken layout.
+				if (ImGui::MenuItem("Reset Window Layout"))
+				{
+					DockspaceSetupSystem::RequestResetLayout();
+					notify.Push("Window layout reset", EditorToastType::Info);
 				}
 
 				ImGui::EndMenu();
