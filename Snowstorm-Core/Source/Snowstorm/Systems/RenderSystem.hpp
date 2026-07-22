@@ -22,6 +22,10 @@
 
 namespace Snowstorm
 {
+	class RenderGraph;
+	class RendererService;
+	class CommandContext;
+
 	class RenderSystem final : public System
 	{
 	public:
@@ -33,6 +37,27 @@ namespace Snowstorm
 		void Execute(Timestep ts) override;
 
 	private:
+		// Shared per-frame handles threaded through the phase-setup methods below, so each takes one param
+		// instead of five. Bundles only what the graph-building phases need in common (the graph they append
+		// to, the renderer/context they record against, the registry they read, the frame-in-flight index).
+		// Lives on the stack for one Execute; holds references, owns nothing.
+		struct FrameContext
+		{
+			RenderGraph& Graph;
+			RendererService& Renderer;
+			const Ref<CommandContext>& Ctx;
+			TrackedRegistry& Reg;
+			uint32_t FrameIndex;
+		};
+
+		// Frame-global graph phases (append passes shared by all viewports; run once per frame, before the
+		// per-viewport loop). Split out of Execute so the top-level frame assembly reads as a sequence of
+		// named phases (cf. Unreal's FSceneRenderer::Render delegating to RenderShadows/RenderBasePass/...).
+		// Pure structural extraction — no behavior change.
+		void SetupIBL(FrameContext& fc, const EnvironmentDataBlock& env);
+		void SetupDirectionalShadow(FrameContext& fc);
+		void SetupSpotShadows(FrameContext& fc);
+
 		// First-class render passes owned by the orchestrator (persist across frames; tear down before the
 		// device dies via Application's WaitIdle). The renderer is now a shared context they operate against.
 		IBLBakePass m_IBLBakePass;

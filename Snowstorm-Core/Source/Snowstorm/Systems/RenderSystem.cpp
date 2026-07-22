@@ -145,187 +145,12 @@ namespace Snowstorm
 
 		RenderGraph graph;
 
-		// Bake IBL maps from the sky (compute) when enabled. Lights/environment are already uploaded by the
-		// PreRender systems, so the bake reads the current sky (via the renderer's stored blocks). The bake
-		// is appended as the graph's first passes (compute), so its dispatches run before the mesh pass that
-		// samples the maps; the graph inserts the Storage/Sampled transitions from the passes' declarations.
-		//
-		// One-time resource creation registers descriptors (RegisterCube / SetTexture) — updating the
-		// bindless set. When IBL is toggled on at runtime, prior frames are still in flight reading that set;
-		// updating it under them corrupts state and crashes. Drain the GPU first so the one-time creation
-		// happens with nothing in flight. Only a stall on the single frame the bake runs (no-ops after).
-		// Re-bake IBL when the environment changes. The maps are convolved from the sky, so a bake done
-		// against a stale environment (notably the empty/default world that renders on the first frame,
-		// before the deferred startup scene loads) leaves ambient frozen at that state — black ambient for
-		// a scene that streamed in afterwards. Detecting the change and invalidating fixes that and covers
-		// runtime environment edits generally (#64).
+		FrameContext fc{graph, renderer, ctx, reg, frameIndex};
+
 		const EnvironmentDataBlock& env = renderer.GetEnvironment();
-
-		// Only bake IBL from an active sky. EnvironmentSystem now supplies a default sky (SkyIntensity=1)
-		// when no scene authors one, so the empty/loading world bakes a valid default environment (not the
-		// old black-sky-into-black-ambient case). The gate still skips a scene that explicitly disables the
-		// sky (SkyIntensity=0, e.g. a SolidColor background), where a bake would convolve black. The
-		// env-change re-bake below re-runs when a scene's authored sky differs from what was baked.
-		const bool haveRealEnvironment = env.SkyIntensity > 0.0f;
-
-		if (m_IBLBakePass.IsBaked() && (!m_BakedEnvironment || *m_BakedEnvironment != env))
-		{
-			m_IBLBakePass.Invalidate();
-		}
-
-		if (CVars::IBL.Get() && haveRealEnvironment && !m_IBLBakePass.IsBaked())
-		{
-			Renderer::WaitIdle();
-			m_IBLBakePass.AddBakePasses(graph, renderer.GetLights(), env);
-			m_BakedEnvironment = env;
-		}
-
-		// Push the baked IBL indices into the renderer's FrameCB assembly — but only while IBL is enabled.
-		// Toggling off writes zeros, so DefaultLit falls back to the analytic ambient (the maps stay baked,
-		// ready to re-enable without another bake). Mirrors the SetShadowData hand-off.
-		if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
-		{
-			renderer.SetIBLData(m_IBLBakePass.IrradianceIndex(),
-			                    m_IBLBakePass.PrefilteredIndex(),
-			                    m_IBLBakePass.BRDFLutIndex(),
-			                    m_IBLBakePass.PrefilteredMipCount());
-		}
-		else
-		{
-			renderer.SetIBLData(0, 0, 0, 0);
-		}
-
-		// ---- Directional shadow pass (primary sun) ----
-		// Render scene depth from the sun's POV into the shared shadow map, before any camera pass. Uses
-		// ALL renderable meshes (not a camera's visibility cache) — an off-screen caster still shadows
-		// on-screen geometry. If there is no directional light or no scene bounds, shadows are disabled
-		// (ShadowMapIndex = 0) and the lit shader falls back to fully lit.
-		renderer.SetShadowData(glm::mat4(1.0f), 0, 0); // default: no shadows unless set up below
-
-		// Primary sun = first directional light (matches DirectionalLights[0] in the shader). Shadows are
-		// gated by the global render.shadows CVar (scalability kill-switch) AND the light's authored
-		// CastShadows flag — either off => no shadow pass, ShadowMapIndex stays 0 (fully lit).
-		glm::vec3 sunDir{0.0f};
-		bool sunCasts = false;
-		for (const auto sunView = View<const DirectionalLightComponent>(); const auto e : sunView)
-		{
-			const auto& dl = sunView.get<const DirectionalLightComponent>(e);
-			sunDir = dl.Direction;
-			sunCasts = dl.CastShadows;
-			break;
-		}
-
-		glm::mat4 lightViewProj{1.0f};
-		if (CVars::Shadows.Get() && sunCasts && ShadowPass::ComputeSunViewProj(*m_World, sunDir, lightViewProj))
-		{
-			const Ref<RenderTarget>& shadowRT = m_ShadowPass.GetOrCreateShadowTarget();
-			const uint32_t shadowIndex =
-			    shadowRT->GetDesc().DepthAttachment->View->GetGlobalBindlessIndex();
-
-			const PixelFormat shadowDepthFmt =
-			    shadowRT->GetDesc().DepthAttachment->View->GetTexture()->GetDesc().Format;
-
-			renderer.SetShadowData(lightViewProj, shadowIndex, shadowRT->GetWidth());
-
-			graph.AddPass({.Name = "Shadow",
-			               .Target = shadowRT,
-			               .Execute = [&, lightViewProj, shadowDepthFmt](CommandContext& /*c*/)
-			               {
-				               // Light "camera": only ViewProjection is read by BeginScene/FrameCB.
-				               CameraRuntimeComponent lightCam{};
-				               lightCam.ViewProjection = lightViewProj;
-
-				               renderer.BeginScene(lightCam, glm::vec3(0.0f), ctx, frameIndex);
-
-				               // Accumulate ALL renderable meshes as shadow casters (resolved instances).
-				               for (const auto casters = View<const TransformComponent, const MeshComponent, const MaterialComponent, const VisibilityComponent>();
-				                    const auto e : casters)
-				               {
-					               const auto& mesh = reg.Read<MeshComponent>(e);
-					               const auto& mat = reg.Read<MaterialComponent>(e);
-					               if (!mesh.MeshInstance || !mat.MaterialInstance)
-					               {
-						               continue;
-					               }
-					               renderer.DrawMesh(reg.Read<TransformComponent>(e).GetTransformMatrix(),
-					                                 mesh.MeshInstance, mat.MaterialInstance);
-				               }
-
-				               m_ShadowPass.RecordDepth(renderer, shadowDepthFmt, lightViewProj);
-				               // The depth target is transitioned to shader-read by EndRenderPass (it's a
-				               // sampleable depth attachment) — can't barrier inside the rendering instance.
-			               }});
-		}
-
-		// ---- Spot shadow atlas pass ----
-		// LightingSystem already assigned each shadow-casting spot a tile (ShadowIndex >= 0), its perspective
-		// matrix, and its atlas UV rect. Render ALL casters' depth once per tile into the shared atlas (each
-		// tile a viewport/scissor rect + its own push-constant matrix). One pass, N tiles. Skipped entirely
-		// when no spot casts (SpotShadowAtlasIndex stays 0 -> shader treats spots as unshadowed).
-		renderer.SetSpotShadowAtlasIndex(0);
-		{
-			const LightDataBlock& lights = renderer.GetLights();
-			int shadowSpotCount = 0;
-			for (int s = 0; s < lights.SpotCount; ++s)
-			{
-				if (lights.SpotLights[s].ShadowIndex >= 0)
-				{
-					++shadowSpotCount;
-				}
-			}
-
-			if (CVars::Shadows.Get() && shadowSpotCount > 0)
-			{
-				const Ref<RenderTarget>& atlasRT = m_ShadowPass.GetOrCreateSpotAtlas();
-				const uint32_t atlasIndex = atlasRT->GetDesc().DepthAttachment->View->GetGlobalBindlessIndex();
-				const PixelFormat atlasFmt = atlasRT->GetDesc().DepthAttachment->View->GetTexture()->GetDesc().Format;
-				const uint32_t tilePx = atlasRT->GetWidth() / ShadowPass::kSpotAtlasCols;
-
-				renderer.SetSpotShadowAtlasIndex(atlasIndex);
-
-				graph.AddPass({.Name = "SpotShadows",
-				               .Target = atlasRT,
-				               .Execute = [&, atlasFmt, tilePx](CommandContext& c)
-				               {
-					               // One caster accumulation shared by every tile (BeginScene sets nothing the
-					               // depth draw needs beyond the batches — the matrix travels per-draw as a PC).
-					               CameraRuntimeComponent lightCam{};
-					               lightCam.ViewProjection = glm::mat4(1.0f);
-					               renderer.BeginScene(lightCam, glm::vec3(0.0f), ctx, frameIndex);
-
-					               for (const auto casters = View<const TransformComponent, const MeshComponent, const MaterialComponent, const VisibilityComponent>();
-					                    const auto e : casters)
-					               {
-						               const auto& mesh = reg.Read<MeshComponent>(e);
-						               const auto& mat = reg.Read<MaterialComponent>(e);
-						               if (!mesh.MeshInstance || !mat.MaterialInstance)
-						               {
-							               continue;
-						               }
-						               renderer.DrawMesh(reg.Read<TransformComponent>(e).GetTransformMatrix(),
-						                                 mesh.MeshInstance, mat.MaterialInstance);
-					               }
-
-					               // Render each shadow-casting spot into its tile: scissor+viewport to the tile
-					               // rect, then a depth draw with that spot's matrix (push constant).
-					               const LightDataBlock& ld = renderer.GetLights();
-					               for (int s = 0; s < ld.SpotCount; ++s)
-					               {
-						               const GPUSpotLight& spot = ld.SpotLights[s];
-						               if (spot.ShadowIndex < 0)
-						               {
-							               continue;
-						               }
-						               const auto col = static_cast<uint32_t>(spot.ShadowIndex) % ShadowPass::kSpotAtlasCols;
-						               const auto row = static_cast<uint32_t>(spot.ShadowIndex) / ShadowPass::kSpotAtlasCols;
-						               c.SetViewport(static_cast<float>(col * tilePx), static_cast<float>(row * tilePx),
-						                             static_cast<float>(tilePx), static_cast<float>(tilePx), 0.0f, 1.0f);
-						               c.SetScissor(col * tilePx, row * tilePx, tilePx, tilePx);
-						               m_ShadowPass.RecordDepth(renderer, atlasFmt, spot.ShadowViewProj);
-					               }
-				               }});
-			}
-		}
+		SetupIBL(fc, env);
+		SetupDirectionalShadow(fc);
+		SetupSpotShadows(fc);
 
 		// Suffix the forward pass with an index only when there's more than one viewport, so the common
 		// single-viewport case reads as just "Forward" in the profiler (not a meaningless entity id).
@@ -881,5 +706,211 @@ namespace Snowstorm
 
 		graph.Execute(*ctx);
 		Renderer::EndFrame();
+	}
+
+	void RenderSystem::SetupIBL(FrameContext& fc, const EnvironmentDataBlock& env)
+	{
+		RendererService& renderer = fc.Renderer;
+
+		// Bake IBL maps from the sky (compute) when enabled. Lights/environment are already uploaded by the
+		// PreRender systems, so the bake reads the current sky (via the renderer's stored blocks). The bake
+		// is appended as the graph's first passes (compute), so its dispatches run before the mesh pass that
+		// samples the maps; the graph inserts the Storage/Sampled transitions from the passes' declarations.
+		//
+		// One-time resource creation registers descriptors (RegisterCube / SetTexture) — updating the
+		// bindless set. When IBL is toggled on at runtime, prior frames are still in flight reading that set;
+		// updating it under them corrupts state and crashes. Drain the GPU first so the one-time creation
+		// happens with nothing in flight. Only a stall on the single frame the bake runs (no-ops after).
+		// Re-bake IBL when the environment changes. The maps are convolved from the sky, so a bake done
+		// against a stale environment (notably the empty/default world that renders on the first frame,
+		// before the deferred startup scene loads) leaves ambient frozen at that state — black ambient for
+		// a scene that streamed in afterwards. Detecting the change and invalidating fixes that and covers
+		// runtime environment edits generally (#64).
+
+		// Only bake IBL from an active sky. EnvironmentSystem now supplies a default sky (SkyIntensity=1)
+		// when no scene authors one, so the empty/loading world bakes a valid default environment (not the
+		// old black-sky-into-black-ambient case). The gate still skips a scene that explicitly disables the
+		// sky (SkyIntensity=0, e.g. a SolidColor background), where a bake would convolve black. The
+		// env-change re-bake below re-runs when a scene's authored sky differs from what was baked.
+		const bool haveRealEnvironment = env.SkyIntensity > 0.0f;
+
+		if (m_IBLBakePass.IsBaked() && (!m_BakedEnvironment || *m_BakedEnvironment != env))
+		{
+			m_IBLBakePass.Invalidate();
+		}
+
+		if (CVars::IBL.Get() && haveRealEnvironment && !m_IBLBakePass.IsBaked())
+		{
+			Renderer::WaitIdle();
+			m_IBLBakePass.AddBakePasses(fc.Graph, renderer.GetLights(), env);
+			m_BakedEnvironment = env;
+		}
+
+		// Push the baked IBL indices into the renderer's FrameCB assembly — but only while IBL is enabled.
+		// Toggling off writes zeros, so DefaultLit falls back to the analytic ambient (the maps stay baked,
+		// ready to re-enable without another bake). Mirrors the SetShadowData hand-off.
+		if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
+		{
+			renderer.SetIBLData(m_IBLBakePass.IrradianceIndex(),
+			                    m_IBLBakePass.PrefilteredIndex(),
+			                    m_IBLBakePass.BRDFLutIndex(),
+			                    m_IBLBakePass.PrefilteredMipCount());
+		}
+		else
+		{
+			renderer.SetIBLData(0, 0, 0, 0);
+		}
+	}
+
+	void RenderSystem::SetupDirectionalShadow(FrameContext& fc)
+	{
+		// NOTE: pass Execute lambdas run LATER, in Execute()'s graph.Execute() — after THIS method returns.
+		// So they must NOT capture this method's locals by reference (they'd dangle). They capture fc by
+		// reference instead (it lives in Execute) and read renderer/reg/ctx/frameIndex through it. The alias
+		// below is only for the immediate (non-deferred) setup code before AddPass.
+		RendererService& renderer = fc.Renderer;
+
+		// Render scene depth from the sun's POV into the shared shadow map, before any camera pass. Uses
+		// ALL renderable meshes (not a camera's visibility cache) — an off-screen caster still shadows
+		// on-screen geometry. If there is no directional light or no scene bounds, shadows are disabled
+		// (ShadowMapIndex = 0) and the lit shader falls back to fully lit.
+		renderer.SetShadowData(glm::mat4(1.0f), 0, 0); // default: no shadows unless set up below
+
+		// Primary sun = first directional light (matches DirectionalLights[0] in the shader). Shadows are
+		// gated by the global render.shadows CVar (scalability kill-switch) AND the light's authored
+		// CastShadows flag — either off => no shadow pass, ShadowMapIndex stays 0 (fully lit).
+		glm::vec3 sunDir{0.0f};
+		bool sunCasts = false;
+		for (const auto sunView = View<const DirectionalLightComponent>(); const auto e : sunView)
+		{
+			const auto& dl = sunView.get<const DirectionalLightComponent>(e);
+			sunDir = dl.Direction;
+			sunCasts = dl.CastShadows;
+			break;
+		}
+
+		glm::mat4 lightViewProj{1.0f};
+		if (CVars::Shadows.Get() && sunCasts && ShadowPass::ComputeSunViewProj(*m_World, sunDir, lightViewProj))
+		{
+			const Ref<RenderTarget>& shadowRT = m_ShadowPass.GetOrCreateShadowTarget();
+			const uint32_t shadowIndex =
+			    shadowRT->GetDesc().DepthAttachment->View->GetGlobalBindlessIndex();
+
+			const PixelFormat shadowDepthFmt =
+			    shadowRT->GetDesc().DepthAttachment->View->GetTexture()->GetDesc().Format;
+
+			renderer.SetShadowData(lightViewProj, shadowIndex, shadowRT->GetWidth());
+
+			fc.Graph.AddPass({.Name = "Shadow",
+			                  .Target = shadowRT,
+			                  .Execute = [this, &fc, lightViewProj, shadowDepthFmt](CommandContext& /*c*/)
+			                  {
+				                  RendererService& r = fc.Renderer;
+				                  TrackedRegistry& reg = fc.Reg;
+
+				                  // Light "camera": only ViewProjection is read by BeginScene/FrameCB.
+				                  CameraRuntimeComponent lightCam{};
+				                  lightCam.ViewProjection = lightViewProj;
+
+				                  r.BeginScene(lightCam, glm::vec3(0.0f), fc.Ctx, fc.FrameIndex);
+
+				                  // Accumulate ALL renderable meshes as shadow casters (resolved instances).
+				                  for (const auto casters = View<const TransformComponent, const MeshComponent, const MaterialComponent, const VisibilityComponent>();
+				                       const auto e : casters)
+				                  {
+					                  const auto& mesh = reg.Read<MeshComponent>(e);
+					                  const auto& mat = reg.Read<MaterialComponent>(e);
+					                  if (!mesh.MeshInstance || !mat.MaterialInstance)
+					                  {
+						                  continue;
+					                  }
+					                  r.DrawMesh(reg.Read<TransformComponent>(e).GetTransformMatrix(),
+					                             mesh.MeshInstance, mat.MaterialInstance);
+				                  }
+
+				                  m_ShadowPass.RecordDepth(r, shadowDepthFmt, lightViewProj);
+				                  // The depth target is transitioned to shader-read by EndRenderPass (it's a
+				                  // sampleable depth attachment) — can't barrier inside the rendering instance.
+			                  }});
+		}
+	}
+
+	void RenderSystem::SetupSpotShadows(FrameContext& fc)
+	{
+		// See SetupDirectionalShadow: the pass lambda runs later (Execute's graph.Execute), so it captures
+		// fc by reference (lives in Execute) and reads renderer/reg/ctx/frameIndex through it. The alias
+		// below is only for the immediate setup before AddPass.
+		RendererService& renderer = fc.Renderer;
+
+		// LightingSystem already assigned each shadow-casting spot a tile (ShadowIndex >= 0), its perspective
+		// matrix, and its atlas UV rect. Render ALL casters' depth once per tile into the shared atlas (each
+		// tile a viewport/scissor rect + its own push-constant matrix). One pass, N tiles. Skipped entirely
+		// when no spot casts (SpotShadowAtlasIndex stays 0 -> shader treats spots as unshadowed).
+		renderer.SetSpotShadowAtlasIndex(0);
+
+		const LightDataBlock& lights = renderer.GetLights();
+		int shadowSpotCount = 0;
+		for (int s = 0; s < lights.SpotCount; ++s)
+		{
+			if (lights.SpotLights[s].ShadowIndex >= 0)
+			{
+				++shadowSpotCount;
+			}
+		}
+
+		if (CVars::Shadows.Get() && shadowSpotCount > 0)
+		{
+			const Ref<RenderTarget>& atlasRT = m_ShadowPass.GetOrCreateSpotAtlas();
+			const uint32_t atlasIndex = atlasRT->GetDesc().DepthAttachment->View->GetGlobalBindlessIndex();
+			const PixelFormat atlasFmt = atlasRT->GetDesc().DepthAttachment->View->GetTexture()->GetDesc().Format;
+			const uint32_t tilePx = atlasRT->GetWidth() / ShadowPass::kSpotAtlasCols;
+
+			renderer.SetSpotShadowAtlasIndex(atlasIndex);
+
+			fc.Graph.AddPass({.Name = "SpotShadows",
+			                  .Target = atlasRT,
+			                  .Execute = [this, &fc, atlasFmt, tilePx](CommandContext& c)
+			                  {
+				                  RendererService& r = fc.Renderer;
+				                  TrackedRegistry& reg = fc.Reg;
+
+				                  // One caster accumulation shared by every tile (BeginScene sets nothing the
+				                  // depth draw needs beyond the batches — the matrix travels per-draw as a PC).
+				                  CameraRuntimeComponent lightCam{};
+				                  lightCam.ViewProjection = glm::mat4(1.0f);
+				                  r.BeginScene(lightCam, glm::vec3(0.0f), fc.Ctx, fc.FrameIndex);
+
+				                  for (const auto casters = View<const TransformComponent, const MeshComponent, const MaterialComponent, const VisibilityComponent>();
+				                       const auto e : casters)
+				                  {
+					                  const auto& mesh = reg.Read<MeshComponent>(e);
+					                  const auto& mat = reg.Read<MaterialComponent>(e);
+					                  if (!mesh.MeshInstance || !mat.MaterialInstance)
+					                  {
+						                  continue;
+					                  }
+					                  r.DrawMesh(reg.Read<TransformComponent>(e).GetTransformMatrix(),
+					                             mesh.MeshInstance, mat.MaterialInstance);
+				                  }
+
+				                  // Render each shadow-casting spot into its tile: scissor+viewport to the tile
+				                  // rect, then a depth draw with that spot's matrix (push constant).
+				                  const LightDataBlock& ld = r.GetLights();
+				                  for (int s = 0; s < ld.SpotCount; ++s)
+				                  {
+					                  const GPUSpotLight& spot = ld.SpotLights[s];
+					                  if (spot.ShadowIndex < 0)
+					                  {
+						                  continue;
+					                  }
+					                  const auto col = static_cast<uint32_t>(spot.ShadowIndex) % ShadowPass::kSpotAtlasCols;
+					                  const auto row = static_cast<uint32_t>(spot.ShadowIndex) / ShadowPass::kSpotAtlasCols;
+					                  c.SetViewport(static_cast<float>(col * tilePx), static_cast<float>(row * tilePx),
+					                                static_cast<float>(tilePx), static_cast<float>(tilePx), 0.0f, 1.0f);
+					                  c.SetScissor(col * tilePx, row * tilePx, tilePx, tilePx);
+					                  m_ShadowPass.RecordDepth(r, atlasFmt, spot.ShadowViewProj);
+				                  }
+			                  }});
+		}
 	}
 }
