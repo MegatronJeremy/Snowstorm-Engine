@@ -27,6 +27,8 @@
 #include "Singletons/EditorCommandsSingleton.hpp"
 #include "Singletons/EditorHistorySingleton.hpp"
 #include "Singletons/EditorSelectionSingleton.hpp"
+#include "Snowstorm/Assets/AssetManagerSingleton.hpp"
+#include "MaterialInspectorPanel.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
 
 #include <nlohmann/json.hpp>
@@ -173,7 +175,9 @@ namespace Snowstorm
 
 	void SceneHierarchyPanel::SetSelected(const Entity entity) const
 	{
-		m_World->GetSingleton<EditorSelectionSingleton>().Selected = entity;
+		// Route through SelectEntity so picking an entity clears any Content-Browser asset selection
+		// (the Properties panel shows one xor the other).
+		m_World->GetSingleton<EditorSelectionSingleton>().SelectEntity(entity);
 	}
 
 	Entity SceneHierarchyPanel::DuplicateEntity(const Entity src) const
@@ -414,9 +418,16 @@ namespace Snowstorm
 		{
 			DrawComponents(selected);
 		}
+		else if (const auto& sel = m_World->GetSingleton<EditorSelectionSingleton>();
+		         sel.SelectedAssetType == AssetType::Material && sel.SelectedAsset != 0)
+		{
+			// A material asset is selected in the Content Browser — show the material inspector instead of
+			// the entity component inspector (the two are mutually exclusive; see EditorSelectionSingleton).
+			DrawMaterialInspector(*m_World, m_World->GetSingleton<AssetManagerSingleton>(), sel.SelectedAsset);
+		}
 		else
 		{
-			EditorTheme::WarningBanner("NO ENTITY SELECTED");
+			EditorTheme::WarningBanner("NOTHING SELECTED");
 		}
 		ImGui::End();
 

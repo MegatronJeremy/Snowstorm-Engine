@@ -899,6 +899,19 @@ namespace Snowstorm
 		return mi;
 	}
 
+	void AssetManagerSingleton::ReloadMaterial(const AssetHandle handle)
+	{
+		if (handle == 0)
+		{
+			return;
+		}
+		// Evicting the cache is enough: the next GetMaterialInstance rebuilds the base Material (re-reading
+		// the .ssmat, re-fetching the pipeline by its FragmentShader path via GetOrCreatePipeline's own cache)
+		// and a fresh MaterialInstance. Entities that already hold a Ref to the OLD instance keep rendering it
+		// until MaterialResolveSystem re-resolves them (the editor marks them Changed after calling this).
+		m_MaterialInstanceCache.erase(handle);
+	}
+
 	void AssetManagerSingleton::ApplyMaterialAsset(Material& base, const MaterialAsset& matAsset)
 	{
 		base.SetBaseColor(matAsset.BaseColor);

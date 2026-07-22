@@ -3,6 +3,7 @@
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Project/Project.hpp"
 #include "Singletons/EditorCommandsSingleton.hpp"
+#include "Singletons/EditorSelectionSingleton.hpp"
 #include "Service/EditorTheme.hpp"
 #include "Singletons/EditorNotificationsSingleton.hpp"
 
@@ -225,6 +226,9 @@ namespace Snowstorm
 
 		if (ImGui::BeginChild("##content_list"))
 		{
+			auto& assets = m_World->GetSingleton<AssetManagerSingleton>();
+			auto& selection = SingletonView<EditorSelectionSingleton>();
+
 			// m_Entries is sorted by (Type, Name), so walking it groups naturally. In the "All" view
 			// emit a colored section header each time the type changes.
 			AssetType currentSection = AssetType::None;
@@ -248,7 +252,25 @@ namespace Snowstorm
 				ImGui::PushID(i);
 				ImGui::Indent(8.0f);
 
-				ImGui::Selectable(entry.DisplayName.c_str());
+				const bool isSelectedAsset = selection.SelectedAssetType == entry.Type &&
+				                             selection.SelectedAsset != 0 &&
+				                             assets.FindHandle(entry.Path, entry.Type) == selection.SelectedAsset;
+
+				if (ImGui::Selectable(entry.DisplayName.c_str(), isSelectedAsset))
+				{
+					// Single-click selects the asset for the Properties inspector. Only handle-referenced
+					// asset types (materials, textures, ...) — scenes are opened by path, not selected.
+					// The handle already exists (auto-import ran on scan). Materials are the only type with
+					// an inspector today; others just record the selection harmlessly.
+					if (entry.Type != AssetType::Scene)
+					{
+						if (const AssetHandle h = assets.FindHandle(entry.Path, entry.Type); h != 0)
+						{
+							selection.SelectAsset(h, entry.Type);
+						}
+					}
+				}
+
 				if (entry.Type == AssetType::Scene && ImGui::IsItemHovered() &&
 				    ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
 				{

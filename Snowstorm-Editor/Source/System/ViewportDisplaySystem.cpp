@@ -611,7 +611,7 @@ namespace Snowstorm
 				if (localX >= 0.0f && localY >= 0.0f && localX <= vp.Size.x && localY <= vp.Size.y)
 				{
 					const Entity picked{PickEntity(reg, camRt.ViewProjection, localX, localY, vp.Size.x, vp.Size.y), m_World};
-					selection.Selected = picked;
+					selection.SelectEntity(picked); // clears any Content-Browser asset selection
 
 					// Double-click focuses the camera on the picked entity (same as F / hierarchy double-click).
 					if (picked.IsValid() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))

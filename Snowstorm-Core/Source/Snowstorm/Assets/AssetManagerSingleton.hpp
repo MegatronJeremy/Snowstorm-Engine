@@ -85,6 +85,12 @@ namespace Snowstorm
 		/// Cached shared instance (per asset)
 		Ref<MaterialInstance> GetMaterialInstance(AssetHandle handle);
 
+		// Drop the cached MaterialInstance for a material handle so the next GetMaterialInstance rebuilds it
+		// from the (possibly just-edited) .ssmat on disk. The engine's material hot-reload seam: the editor's
+		// material inspector calls this after saving, then marks using-entities Changed so MaterialResolveSystem
+		// re-pulls the fresh instance. No-op if the handle was never resolved/cached.
+		void ReloadMaterial(AssetHandle handle);
+
 		const AssetMetadata* GetMetadata(AssetHandle handle) const { return m_Registry.GetMetadata(handle); }
 
 		// Visit every registered asset (editor UI: asset picker, content browser).
