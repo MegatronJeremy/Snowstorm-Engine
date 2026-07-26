@@ -68,8 +68,11 @@ namespace Snowstorm
 		}
 		renderer3DSingleton.SetSunShadowFit(sunFit);
 
+		const bool shadowsEnabled = CVars::Shadows.Get(); // global scalability kill-switch (points + spots)
+
 		// Point lights: position from the entity transform (Unity/Unreal model -- the light carries no
 		// position of its own). Joined with TransformComponent so an untransformed light is simply skipped.
+		int nextPointShadowSlot = 0; // next free point-shadow payload slot (6 atlas tiles each)
 		bool droppedPoint = false;
 		for (auto pointView = View<PointLightComponent, TransformComponent>(); auto entity : pointView)
 		{
@@ -80,12 +83,37 @@ namespace Snowstorm
 			}
 			const auto& light = pointView.get<PointLightComponent>(entity);
 			const auto& transform = pointView.get<TransformComponent>(entity);
+
+			// Assign a shadow payload slot if this omni casts, shadows are globally enabled, and a slot is
+			// free (cap = MAX_SHADOW_POINTS -- each costs 6 depth passes). ShadowSlot < 0 => unshadowed. Fill
+			// the slot's 6 cube-face view-projs + atlas rects (the cube unrolled: 6 consecutive tiles in the
+			// kPointAtlasCols grid, tile index = slot*6 + face). The matrices/rects are pure math here;
+			// RenderSystem renders each tile and binds the atlas texture (mirrors the spot path exactly).
+			int shadowSlot = -1;
+			if (shadowsEnabled && light.CastShadows && nextPointShadowSlot < MAX_SHADOW_POINTS)
+			{
+				shadowSlot = nextPointShadowSlot++;
+				GPUPointShadow& payload = lightData.PointShadows[shadowSlot];
+				constexpr float inv = 1.0f / static_cast<float>(ShadowPass::kPointAtlasCols);
+				for (int face = 0; face < 6; ++face)
+				{
+					const int tile = shadowSlot * 6 + face;
+					const int col = tile % static_cast<int>(ShadowPass::kPointAtlasCols);
+					const int row = tile / static_cast<int>(ShadowPass::kPointAtlasCols);
+					payload.Face[face] = ShadowPass::ComputePointFaceViewProj(transform.Position, face, light.Range);
+					payload.Rect[face] = {static_cast<float>(col) * inv, static_cast<float>(row) * inv, inv, inv};
+				}
+			}
+
 			lightData.PointLights[lightData.PointCount++] = {
 			    .Position = transform.Position,
 			    .Range = light.Range,
 			    .Color = light.Color,
-			    .Intensity = light.Intensity};
+			    .Intensity = light.Intensity,
+			    .ShadowSlot = shadowSlot,
+			    .ShadowPad = {0, 0, 0}};
 		}
+		lightData.PointShadowCount = nextPointShadowSlot;
 		if (droppedPoint)
 		{
 			SS_CORE_WARN("More than {} point lights in scene; extra lights ignored.", MAX_POINT_LIGHTS);
@@ -94,8 +122,7 @@ namespace Snowstorm
 		// Spot lights: position + forward (-Z) from the transform; cone half-angles stored as cosines so
 		// the shader compares against dot() with no per-fragment trig. OuterAngle is clamped >= InnerAngle
 		// so cos(inner) >= cos(outer) and the falloff denominator stays positive.
-		const bool shadowsEnabled = CVars::Shadows.Get(); // global scalability kill-switch
-		int nextShadowTile = 0;                           // next free atlas tile for a shadow-casting spot
+		int nextShadowTile = 0; // next free atlas tile for a shadow-casting spot
 		bool droppedSpot = false;
 		for (auto spotView = View<SpotLightComponent, TransformComponent>(); auto entity : spotView)
 		{

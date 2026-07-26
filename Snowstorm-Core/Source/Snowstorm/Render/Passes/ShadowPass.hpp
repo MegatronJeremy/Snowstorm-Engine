@@ -50,6 +50,20 @@ namespace Snowstorm
 		static constexpr uint32_t kSpotAtlasCols = 2;
 		static constexpr int kMaxShadowSpots = static_cast<int>(kSpotAtlasCols * kSpotAtlasCols);
 
+		// Build one of a point light's 6 cube-face perspective view-projections (world -> that face's light
+		// clip). `face` is 0..5 in the order +X,-X,+Y,-Y,+Z,-Z. Each face is a 90-degree FOV, square-aspect
+		// frustum (near..range) looking down its axis — the cube unrolled into 6 planar depth renders. Pure +
+		// static so LightingSystem can compute all six before the graph pass runs (mirrors ComputeSpotViewProj).
+		static glm::mat4 ComputePointFaceViewProj(const glm::vec3& position, int face, float range);
+
+		// Lazily create/return the point shadow ATLAS target: kPointAtlasCols x kPointAtlasCols tiles, each
+		// `render.shadow.resolution` px. Sized to hold kMaxShadowPoints * 6 faces (4x4 = 16 >= 2*6). Rebuilt
+		// when the resolution CVar changes. Separate from the spot atlas so the two tile layouts don't mix.
+		[[nodiscard]] const Ref<RenderTarget>& GetOrCreatePointAtlas();
+
+		// Point atlas is a kPointAtlasCols^2 grid; 4x4 = 16 tiles holds MAX_SHADOW_POINTS(=2) x 6 faces = 12.
+		static constexpr uint32_t kPointAtlasCols = 4;
+
 	private:
 		void EnsurePipeline(PixelFormat depthFormat);
 
@@ -61,5 +75,8 @@ namespace Snowstorm
 
 		// Spot shadow atlas (depth-only, sampleable): kSpotAtlasCols^2 tiles packed into one texture.
 		Ref<RenderTarget> m_SpotAtlas;
+
+		// Point shadow atlas (depth-only, sampleable): kPointAtlasCols^2 tiles; 6 consecutive tiles per point.
+		Ref<RenderTarget> m_PointAtlas;
 	};
 }

@@ -156,4 +156,35 @@ namespace Snowstorm
 		}
 		return m_SpotAtlas;
 	}
+
+	glm::mat4 ShadowPass::ComputePointFaceViewProj(const glm::vec3& position, const int face, const float range)
+	{
+		// Cube-face look directions + up vectors, in the order +X,-X,+Y,-Y,+Z,-Z. The up choices are the
+		// standard cubemap convention; because we SAMPLE with the same matrix we render with (see the shader's
+		// dominant-axis face select), any consistent set works — the engine's un-flipped clip space stays
+		// self-consistent. The ±Y faces use a Z-based up (their look axis is vertical, so Y-up is degenerate).
+		static const glm::vec3 kFaceDir[6] = {
+		    {1.0f, 0.0f, 0.0f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, -1.0f}};
+		static const glm::vec3 kFaceUp[6] = {
+		    {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}};
+
+		const glm::mat4 view = glm::lookAtRH(position, position + kFaceDir[face], kFaceUp[face]);
+		// 90-degree FOV, square aspect -> the 6 faces exactly tile the sphere of directions. near small, far
+		// = Range (past which the light's attenuation is ~0 anyway, so out-of-range depth reads as "lit").
+		const glm::mat4 proj = glm::perspectiveRH_ZO(glm::radians(90.0f), 1.0f, 0.05f, std::max(range, 0.1f));
+		return proj * view;
+	}
+
+	const Ref<RenderTarget>& ShadowPass::GetOrCreatePointAtlas()
+	{
+		const int requested = std::clamp(CVars::ShadowResolution.Get(), 256, 8192);
+		const auto atlasSize = static_cast<uint32_t>(requested) * kPointAtlasCols; // kPointAtlasCols^2 grid of tiles
+
+		if (!m_PointAtlas || m_PointAtlas->GetWidth() != atlasSize)
+		{
+			m_PointAtlas = CreateShadowDepthTarget(atlasSize, "PointAtlas");
+			SS_CORE_ASSERT(m_PointAtlas, "Failed to create point shadow atlas");
+		}
+		return m_PointAtlas;
+	}
 }

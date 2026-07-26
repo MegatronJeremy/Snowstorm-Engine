@@ -151,6 +151,7 @@ namespace Snowstorm
 		SetupIBL(fc, env);
 		SetupDirectionalShadow(fc);
 		SetupSpotShadows(fc);
+		SetupPointShadows(fc);
 
 		// Suffix the forward pass with an index only when there's more than one viewport, so the common
 		// single-viewport case reads as just "Forward" in the profiler (not a meaningless entity id).
@@ -395,6 +396,75 @@ namespace Snowstorm
 				                  }
 			                  }});
 		}
+	}
+
+	void RenderSystem::SetupPointShadows(FrameContext& fc)
+	{
+		// Same shape as SetupSpotShadows (and same dangling-capture rule): LightingSystem already assigned each
+		// casting point a shadow slot and filled its 6 cube-face view-projs + atlas rects. Here we render ALL
+		// casters' depth into 6 tiles per point (tile = slot*6 + face) of the shared point atlas — one pass,
+		// PointShadowCount*6 tiles. Skipped when no point casts (PointShadowAtlasIndex stays 0 -> unshadowed).
+		RendererService& renderer = fc.Renderer;
+
+		renderer.SetPointShadowAtlasIndex(0);
+
+		const LightDataBlock& lights = renderer.GetLights();
+		if (!CVars::Shadows.Get() || lights.PointShadowCount <= 0)
+		{
+			return;
+		}
+
+		const Ref<RenderTarget>& atlasRT = m_ShadowPass.GetOrCreatePointAtlas();
+		const uint32_t atlasIndex = atlasRT->GetDesc().DepthAttachment->View->GetGlobalBindlessIndex();
+		const PixelFormat atlasFmt = atlasRT->GetDesc().DepthAttachment->View->GetTexture()->GetDesc().Format;
+		const uint32_t tilePx = atlasRT->GetWidth() / ShadowPass::kPointAtlasCols;
+
+		renderer.SetPointShadowAtlasIndex(atlasIndex);
+
+		fc.Graph.AddPass({.Name = "PointShadows",
+		                  .Target = atlasRT,
+		                  .Execute = [this, &fc, atlasFmt, tilePx](CommandContext& c)
+		                  {
+			                  RendererService& r = fc.Renderer;
+			                  TrackedRegistry& reg = fc.Reg;
+
+			                  // One caster accumulation shared by every tile (the face matrix travels per-draw
+			                  // as a push constant, exactly like the spot atlas).
+			                  CameraRuntimeComponent lightCam{};
+			                  lightCam.ViewProjection = glm::mat4(1.0f);
+			                  r.BeginScene(lightCam, glm::vec3(0.0f), fc.Ctx, fc.FrameIndex);
+
+			                  for (const auto casters = View<const TransformComponent, const MeshComponent, const MaterialComponent, const VisibilityComponent>();
+			                       const auto e : casters)
+			                  {
+				                  const auto& mesh = reg.Read<MeshComponent>(e);
+				                  const auto& mat = reg.Read<MaterialComponent>(e);
+				                  if (!mesh.MeshInstance || !mat.MaterialInstance)
+				                  {
+					                  continue;
+				                  }
+				                  r.DrawMesh(reg.Read<TransformComponent>(e).GetTransformMatrix(),
+				                             mesh.MeshInstance, mat.MaterialInstance);
+			                  }
+
+			                  // Render each casting point's 6 cube faces, each into tile (slot*6 + face): scissor
+			                  // + viewport to the tile rect, then a depth draw with that face's matrix.
+			                  const LightDataBlock& ld = r.GetLights();
+			                  for (int slot = 0; slot < ld.PointShadowCount; ++slot)
+			                  {
+				                  const GPUPointShadow& payload = ld.PointShadows[slot];
+				                  for (int face = 0; face < 6; ++face)
+				                  {
+					                  const auto tile = static_cast<uint32_t>(slot * 6 + face);
+					                  const uint32_t col = tile % ShadowPass::kPointAtlasCols;
+					                  const uint32_t row = tile / ShadowPass::kPointAtlasCols;
+					                  c.SetViewport(static_cast<float>(col * tilePx), static_cast<float>(row * tilePx),
+					                                static_cast<float>(tilePx), static_cast<float>(tilePx), 0.0f, 1.0f);
+					                  c.SetScissor(col * tilePx, row * tilePx, tilePx, tilePx);
+					                  m_ShadowPass.RecordDepth(r, atlasFmt, payload.Face[face]);
+				                  }
+			                  }
+		                  }});
 	}
 
 	void RenderSystem::RenderViewport(FrameContext& fc, const entt::entity vpEntity, const std::string& passSuffix)

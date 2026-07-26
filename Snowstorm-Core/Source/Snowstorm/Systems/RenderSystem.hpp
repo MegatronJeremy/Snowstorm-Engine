@@ -58,6 +58,7 @@ namespace Snowstorm
 		void SetupIBL(FrameContext& fc, const EnvironmentDataBlock& env);
 		void SetupDirectionalShadow(FrameContext& fc);
 		void SetupSpotShadows(FrameContext& fc);
+		void SetupPointShadows(FrameContext& fc);
 
 		// Render one viewport: the forward+sky pass, the optional motion-vector / upscale (bilinear or
 		// neural) / temporal-resolve chain, tonemap + LDR filters, and (in compare mode) the ground-truth
