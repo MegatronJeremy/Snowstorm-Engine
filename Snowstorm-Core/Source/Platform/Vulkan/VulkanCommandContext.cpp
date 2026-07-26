@@ -482,7 +482,8 @@ namespace Snowstorm
 		vkCmdPipelineBarrier2(m_CommandBuffer, &dep);
 	}
 
-	void VulkanCommandContext::CopyTextureToBuffer(const Ref<Texture>& texture, const Ref<Buffer>& dst)
+	void VulkanCommandContext::CopyTextureToBuffer(const Ref<Texture>& texture, const Ref<Buffer>& dst,
+	                                               const uint32_t mipLevel, const uint32_t arrayLayer)
 	{
 		SS_CORE_ASSERT(texture && dst, "CopyTextureToBuffer: null texture or buffer");
 		auto vkTex = std::static_pointer_cast<VulkanTexture>(texture);
@@ -491,7 +492,13 @@ namespace Snowstorm
 		const TextureDesc& d = texture->GetDesc();
 		const uint32_t bpp = BytesPerPixel(d.Format);
 		SS_CORE_ASSERT(bpp > 0, "CopyTextureToBuffer: unsupported format for readback");
-		const VkDeviceSize needed = static_cast<VkDeviceSize>(d.Width) * d.Height * bpp;
+		SS_CORE_ASSERT(mipLevel < d.MipLevels, "CopyTextureToBuffer: mipLevel out of range");
+		SS_CORE_ASSERT(arrayLayer < d.ArrayLayers, "CopyTextureToBuffer: arrayLayer out of range");
+
+		// Dimensions of the requested mip (halved per level, min 1). The copy is tightly packed at this mip.
+		const uint32_t mipW = std::max(1u, d.Width >> mipLevel);
+		const uint32_t mipH = std::max(1u, d.Height >> mipLevel);
+		const VkDeviceSize needed = static_cast<VkDeviceSize>(mipW) * mipH * bpp;
 		SS_CORE_ASSERT(dst->GetSize() >= needed, "CopyTextureToBuffer: destination buffer too small");
 
 		// The source targets are left in SHADER_READ_ONLY by their render pass. Move to TRANSFER_SRC for the
@@ -505,11 +512,11 @@ namespace Snowstorm
 		region.bufferRowLength = 0;   // tightly packed, no row padding
 		region.bufferImageHeight = 0; // tightly packed
 		region.imageSubresource.aspectMask = vkTex->GetAspectMask();
-		region.imageSubresource.mipLevel = 0;
-		region.imageSubresource.baseArrayLayer = 0;
+		region.imageSubresource.mipLevel = mipLevel;
+		region.imageSubresource.baseArrayLayer = arrayLayer;
 		region.imageSubresource.layerCount = 1;
 		region.imageOffset = {0, 0, 0};
-		region.imageExtent = {d.Width, d.Height, 1};
+		region.imageExtent = {mipW, mipH, 1};
 
 		vkCmdCopyImageToBuffer(m_CommandBuffer, vkTex->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		                       vkBuf->GetHandle(), 1, &region);

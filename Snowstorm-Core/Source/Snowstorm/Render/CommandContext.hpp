@@ -91,13 +91,17 @@ namespace Snowstorm
 		// so the read sees the completed write. Covers all storage buffers/images touched by compute.
 		virtual void BarrierComputeStorage() = 0;
 
-		// GPU->CPU readback: copy a texture's mip 0 / layer 0 into a host-visible buffer (created with
-		// BufferUsage::Readback). Transitions the image SHADER_READ_ONLY -> TRANSFER_SRC, does a tightly-packed
-		// vkCmdCopyImageToBuffer (bytes = width*height*bytesPerPixel, no row padding), then restores it to
+		// GPU->CPU readback: copy ONE subresource (mipLevel, arrayLayer) of a texture into a host-visible buffer
+		// (created with BufferUsage::Readback). Defaults (0, 0) = the base mip of layer 0, the common 2D case.
+		// Transitions the image SHADER_READ_ONLY -> TRANSFER_SRC, does a tightly-packed vkCmdCopyImageToBuffer
+		// (bytes = mipWidth*mipHeight*bytesPerPixel at that mip, no row padding), then restores it to
 		// SHADER_READ_ONLY so later sampling still works. The buffer must be >= that byte size. The copied bytes
 		// are the image's raw texel format (e.g. RGBA16F = 8 B/texel). Map() the buffer a frame later (after the
-		// submit's fence) to read — reading same-frame races the GPU. Color textures only (mip 0, layer 0).
-		virtual void CopyTextureToBuffer(const Ref<Texture>& texture, const Ref<Buffer>& dst) = 0;
+		// submit's fence) to read — reading same-frame races the GPU. Color textures only. A cubemap face is
+		// arrayLayer 0..5; pass mipLevel to reach a specific roughness mip (the IBL cache reads back every
+		// (face, mip) subresource of the prefiltered cube this way).
+		virtual void CopyTextureToBuffer(const Ref<Texture>& texture, const Ref<Buffer>& dst,
+		                                 uint32_t mipLevel = 0, uint32_t arrayLayer = 0) = 0;
 
 		// Reset the internal state between passes if the backend needs it
 		virtual void ResetState() = 0;

@@ -65,7 +65,8 @@ namespace Snowstorm
 		void TransitionToSampled(const Ref<Texture>& texture) override;
 		void BarrierColorWriteToComputeRead(const Ref<Texture>& texture) override;
 		void BarrierComputeStorage() override;
-		void CopyTextureToBuffer(const Ref<Texture>& texture, const Ref<Buffer>& dst) override;
+		void CopyTextureToBuffer(const Ref<Texture>& texture, const Ref<Buffer>& dst,
+		                         uint32_t mipLevel = 0, uint32_t arrayLayer = 0) override;
 
 		void ResetState() override;
 
