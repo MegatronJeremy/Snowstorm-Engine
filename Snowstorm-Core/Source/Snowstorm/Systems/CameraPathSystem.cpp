@@ -4,7 +4,7 @@
 #include "Snowstorm/Components/CameraPathComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
-#include "Snowstorm/Systems/CameraPathMath.hpp"
+#include "Snowstorm/Math/CameraPathMath.hpp"
 #include "Snowstorm/World/World.hpp"
 
 #include <entt/entt.hpp>
