@@ -8,7 +8,6 @@
 #include "Snowstorm/Render/Passes/MetricsPass.hpp"
 #include "Snowstorm/Render/Passes/NeuralUpscalePass.hpp"
 #include "Snowstorm/Render/Passes/PostProcessPass.hpp"
-#include "Snowstorm/Render/Passes/ShadowPass.hpp"
 #include "Snowstorm/Render/Passes/SharpenPass.hpp"
 #include "Snowstorm/Render/Passes/SkyPass.hpp"
 #include "Snowstorm/Render/Passes/TemporalResolvePass.hpp"
@@ -16,6 +15,7 @@
 #include "Snowstorm/Render/Passes/VelocityPass.hpp"
 #include "Snowstorm/Render/RendererService.hpp" // TonemapParams (used in the effect-chain helper signatures)
 #include "Snowstorm/Systems/RenderPhaseContext.hpp"
+#include "Snowstorm/Systems/ShadowRenderer.hpp"
 
 #include <entt/entt.hpp>
 
@@ -111,14 +111,11 @@ namespace Snowstorm
 		                                                const MeshComponent&, const MaterialComponent&)>& draw);
 
 	private:
-		// Frame-global graph phases (append passes shared by all viewports; run once per frame, before the
-		// per-viewport loop). Split out of Execute so the top-level frame assembly reads as a sequence of
-		// named phases (cf. Unreal's FSceneRenderer::Render delegating to RenderShadows/RenderBasePass/...).
-		// Pure structural extraction — no behavior change.
+		// Frame-global IBL bake phase (appended once per frame before the per-viewport loop; the baked maps
+		// are read by every forward pass). Split out of Execute so the top-level frame assembly reads as a
+		// sequence of named phases (cf. Unreal's FSceneRenderer delegating to RenderBasePass/...). Shadows are
+		// the sibling phase, delegated to m_ShadowRenderer. Pure structural extraction — no behavior change.
 		void SetupIBL(FrameContext& fc, const EnvironmentDataBlock& env);
-		void SetupDirectionalShadow(FrameContext& fc);
-		void SetupSpotShadows(FrameContext& fc);
-		void SetupPointShadows(FrameContext& fc);
 
 		// Render one viewport: the forward+sky pass, the optional motion-vector / upscale (bilinear or
 		// neural) / temporal-resolve chain, tonemap + LDR filters, and (in compare mode) the ground-truth
@@ -132,10 +129,12 @@ namespace Snowstorm
 		// as they're extracted from the RenderViewport monolith (#120).
 		void BuildViewportEffects();
 
+		// Frame-global shadow phase (owns the shared ShadowPass + its atlas targets). Delegated to from Execute.
+		ShadowRenderer m_ShadowRenderer;
+
 		// First-class render passes owned by the orchestrator (persist across frames; tear down before the
 		// device dies via Application's WaitIdle). The renderer is now a shared context they operate against.
 		IBLBakePass m_IBLBakePass;
-		ShadowPass m_ShadowPass;
 		SkyPass m_SkyPass;
 		PostProcessPass m_PostProcessPass;
 		FxaaPass m_FxaaPass;
