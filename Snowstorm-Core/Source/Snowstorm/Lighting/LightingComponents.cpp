@@ -21,7 +21,8 @@ namespace Snowstorm
 		registration::class_<PointLightComponent>("Snowstorm::PointLightComponent")
 		    .property("Color", &PointLightComponent::Color)(metadata("Color", true))
 		    .property("Intensity", &PointLightComponent::Intensity)(metadata("Min", 0.0f), metadata("Speed", 0.01f))
-		    .property("Range", &PointLightComponent::Range)(metadata("Min", 0.0f), metadata("Speed", 0.1f));
+		    .property("Range", &PointLightComponent::Range)(metadata("Min", 0.0f), metadata("Speed", 0.1f))
+		    .property("CastShadows", &PointLightComponent::CastShadows); // inspector: checkbox
 
 		registration::class_<SpotLightComponent>("Snowstorm::SpotLightComponent")
 		    .property("Color", &SpotLightComponent::Color)(metadata("Color", true))

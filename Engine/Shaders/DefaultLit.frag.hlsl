@@ -99,6 +99,38 @@ float SampleSpotShadow(SpotLight spot, float3 positionWS, float NdotL)
 	return SampleShadowFactor(SpotShadowAtlasIndex, spot.ShadowViewProj, spot.ShadowAtlasRect, positionWS, NdotL);
 }
 
+// Pick which of a point light's 6 cube faces a world-space direction belongs to. Faces are indexed
+// +X,-X,+Y,-Y,+Z,-Z (matching ShadowPass::ComputePointFaceViewProj): the dominant (largest magnitude)
+// component chooses the axis, its sign chooses the face. Because we sample with the same matrix we
+// rendered the face with, this stays self-consistent (no cube sampler / orientation convention needed).
+int PointShadowFace(float3 dir)
+{
+	const float3 a = abs(dir);
+	if (a.x >= a.y && a.x >= a.z)
+	{
+		return dir.x >= 0.0 ? 0 : 1; // +X : -X
+	}
+	if (a.y >= a.z)
+	{
+		return dir.y >= 0.0 ? 2 : 3; // +Y : -Y
+	}
+	return dir.z >= 0.0 ? 4 : 5; // +Z : -Z
+}
+
+// Point (omni) shadow: pick the cube face the surface lies on (by the light->surface direction), then
+// PCF-sample that face's tile of the point atlas via the shared planar projective test. Gated by the
+// atlas being bound AND this light having been assigned a shadow slot (ShadowSlot >= 0).
+float SamplePointShadow(PointLight light, float3 positionWS, float NdotL)
+{
+	if (PointShadowAtlasIndex == 0 || light.ShadowSlot < 0)
+	{
+		return 1.0;
+	}
+	const int face = PointShadowFace(positionWS - light.Position);
+	const PointShadow payload = PointShadows[light.ShadowSlot];
+	return SampleShadowFactor(PointShadowAtlasIndex, payload.Face[face], payload.Rect[face], positionWS, NdotL);
+}
+
 // Tonemap + sRGB encode moved to the post-process pass (Tonemap.frag.hlsl, #53). This shader outputs
 // raw linear HDR into the scene target that the post pass then tonemaps.
 
@@ -260,8 +292,8 @@ float4 main(PSInput i) : SV_Target0
 	}
 
 	// --- Point lights: inverse-square falloff with a smooth windowed cutoff at Range (UE4/Frostbite).
-	// Unshadowed. The window ((1-(d/R)^4)^2) drives the contribution to exactly zero at d==Range instead
-	// of an abrupt clip, so there's no hard lit/unlit edge.
+	// The window ((1-(d/R)^4)^2) drives the contribution to exactly zero at d==Range instead of an abrupt
+	// clip, so there's no hard lit/unlit edge. Shadow (omni cube atlas) multiplies the whole contribution.
 	const int pointCount = clamp(PointCount, 0, MAX_POINT_LIGHTS);
 	[loop] for (int p = 0; p < pointCount; ++p)
 	{
@@ -273,8 +305,11 @@ float4 main(PSInput i) : SV_Target0
 		const float window = pow(saturate(1.0 - pow(dist / range, 4.0)), 2.0);
 		const float atten = window / max(dist * dist, 1e-4);
 
+		// Shadow: 1 when unshadowed / this light casts no shadow. NdotL uses the surface normal vs L.
+		const float pointShadow = SamplePointShadow(PointLights[p], i.PositionWS, max(dot(N, L), 0.0));
+
 		const float3 radiance = PointLights[p].Color * PointLights[p].Intensity * atten;
-		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance);
+		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * pointShadow;
 	}
 
 	// --- Spot lights: point attenuation multiplied by a smooth cone falloff between the inner/outer
