@@ -2,17 +2,12 @@
 
 #include "Snowstorm/ECS/System.hpp"
 #include "Snowstorm/Lighting/LightingUniforms.hpp"
-#include "Snowstorm/Render/Passes/DatasetExportPass.hpp"
-#include "Snowstorm/Render/Passes/FxaaPass.hpp"
+// Only the passes RenderSystem itself owns as members are included here (IBL bake + the shared Sky /
+// PostProcess builders back the AddForwardPass/AddTonemapPass helpers). Each per-effect-exclusive pass is
+// included by ViewportEffects.cpp, where its effect lives — not pulled through this header.
 #include "Snowstorm/Render/Passes/IBLBakePass.hpp"
-#include "Snowstorm/Render/Passes/MetricsPass.hpp"
-#include "Snowstorm/Render/Passes/NeuralUpscalePass.hpp"
 #include "Snowstorm/Render/Passes/PostProcessPass.hpp"
-#include "Snowstorm/Render/Passes/SharpenPass.hpp"
 #include "Snowstorm/Render/Passes/SkyPass.hpp"
-#include "Snowstorm/Render/Passes/TemporalResolvePass.hpp"
-#include "Snowstorm/Render/Passes/UpscalePass.hpp"
-#include "Snowstorm/Render/Passes/VelocityPass.hpp"
 #include "Snowstorm/Render/RendererService.hpp" // TonemapParams (used in the effect-chain helper signatures)
 #include "Snowstorm/Systems/RenderPhaseContext.hpp"
 #include "Snowstorm/Systems/ShadowRenderer.hpp"
