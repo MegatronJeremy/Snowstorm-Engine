@@ -169,9 +169,13 @@ namespace Snowstorm
 		    {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}};
 
 		const glm::mat4 view = glm::lookAtRH(position, position + kFaceDir[face], kFaceUp[face]);
-		// 90-degree FOV, square aspect -> the 6 faces exactly tile the sphere of directions. near small, far
-		// = Range (past which the light's attenuation is ~0 anyway, so out-of-range depth reads as "lit").
-		const glm::mat4 proj = glm::perspectiveRH_ZO(glm::radians(90.0f), 1.0f, 0.05f, std::max(range, 0.1f));
+		// A cube face is a 90-degree frustum, but render each a few degrees WIDER so adjacent faces overlap
+		// slightly. The shader's 3x3 PCF clamps taps inside a tile (can't bleed into the neighbour), so at a
+		// face seam a tap would otherwise fall off the rendered wedge and read "lit" -> a bright seam line.
+		// The guard band renders past the seam so those taps still hit real depth. 4 degrees is enough for the
+		// 1-texel PCF radius at any sane tile resolution while wasting negligible depth range. Face SELECTION
+		// stays a hard 90-degree split (dominant axis), so the overlap is only ever sampled near a boundary.
+		const glm::mat4 proj = glm::perspectiveRH_ZO(glm::radians(94.0f), 1.0f, 0.05f, std::max(range, 0.1f));
 		return proj * view;
 	}
 

@@ -74,6 +74,7 @@ namespace Snowstorm
 		// position of its own). Joined with TransformComponent so an untransformed light is simply skipped.
 		int nextPointShadowSlot = 0; // next free point-shadow payload slot (6 atlas tiles each)
 		bool droppedPoint = false;
+		bool droppedPointShadow = false; // a casting point exceeded the shadow budget (renders unshadowed)
 		for (auto pointView = View<PointLightComponent, TransformComponent>(); auto entity : pointView)
 		{
 			if (lightData.PointCount >= MAX_POINT_LIGHTS)
@@ -90,18 +91,27 @@ namespace Snowstorm
 			// kPointAtlasCols grid, tile index = slot*6 + face). The matrices/rects are pure math here;
 			// RenderSystem renders each tile and binds the atlas texture (mirrors the spot path exactly).
 			int shadowSlot = -1;
-			if (shadowsEnabled && light.CastShadows && nextPointShadowSlot < MAX_SHADOW_POINTS)
+			if (shadowsEnabled && light.CastShadows)
 			{
-				shadowSlot = nextPointShadowSlot++;
-				GPUPointShadow& payload = lightData.PointShadows[shadowSlot];
-				constexpr float inv = 1.0f / static_cast<float>(ShadowPass::kPointAtlasCols);
-				for (int face = 0; face < 6; ++face)
+				if (nextPointShadowSlot < MAX_SHADOW_POINTS)
 				{
-					const int tile = shadowSlot * 6 + face;
-					const int col = tile % static_cast<int>(ShadowPass::kPointAtlasCols);
-					const int row = tile / static_cast<int>(ShadowPass::kPointAtlasCols);
-					payload.Face[face] = ShadowPass::ComputePointFaceViewProj(transform.Position, face, light.Range);
-					payload.Rect[face] = {static_cast<float>(col) * inv, static_cast<float>(row) * inv, inv, inv};
+					shadowSlot = nextPointShadowSlot++;
+					GPUPointShadow& payload = lightData.PointShadows[shadowSlot];
+					constexpr float inv = 1.0f / static_cast<float>(ShadowPass::kPointAtlasCols);
+					for (int face = 0; face < 6; ++face)
+					{
+						const int tile = shadowSlot * 6 + face;
+						const int col = tile % static_cast<int>(ShadowPass::kPointAtlasCols);
+						const int row = tile / static_cast<int>(ShadowPass::kPointAtlasCols);
+						payload.Face[face] = ShadowPass::ComputePointFaceViewProj(transform.Position, face, light.Range);
+						payload.Rect[face] = {static_cast<float>(col) * inv, static_cast<float>(row) * inv, inv, inv};
+					}
+				}
+				else
+				{
+					// More shadow-casting points than the atlas budget (each needs 6 tiles). The extra ones
+					// render unshadowed rather than fighting over tiles -- fail loud so it's not a silent gap.
+					droppedPointShadow = true;
 				}
 			}
 
@@ -117,6 +127,12 @@ namespace Snowstorm
 		if (droppedPoint)
 		{
 			SS_CORE_WARN("More than {} point lights in scene; extra lights ignored.", MAX_POINT_LIGHTS);
+		}
+		if (droppedPointShadow)
+		{
+			SS_CORE_WARN("More than {} shadow-casting point lights; extra ones render unshadowed (each omni "
+			             "shadow costs 6 depth passes).",
+			             MAX_SHADOW_POINTS);
 		}
 
 		// Spot lights: position + forward (-Z) from the transform; cone half-angles stored as cosines so
