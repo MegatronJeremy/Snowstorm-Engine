@@ -132,6 +132,14 @@ namespace Snowstorm
 			bool FxaaOn = false;
 			bool SharpenOn = false;
 			int TotalStages = 1;
+
+			// Tonemap params for the primary path — carries the motion-vector debug fields when the debug view
+			// is selected (else default = the normal ACES tonemap). Filled in the preamble, read by LdrChain.
+			RendererService::TonemapParams PrimaryTonemap;
+
+			// The velocity target's backing texture, declared as an extra Sampled read by the tonemap pass when
+			// the motion-vector debug view samples it (null otherwise). Derived in the preamble.
+			Ref<Texture> VelocityRead;
 		};
 
 		// A composable per-viewport render effect (forward, velocity, upscale, TAA, LDR filters, compare).
@@ -182,6 +190,13 @@ namespace Snowstorm
 		// history-valid flag (insert when it runs, erase when TAA is off so re-enabling starts clean). Called by
 		// TemporalEffect every frame; internally resolves when v.TaaOn, else just clears the flag.
 		void AddTemporalResolve(ViewportRenderContext& v);
+
+		// Tonemap + LDR post filters (#44): tonemap v.SceneColor into the LDR present chain, then optional FXAA
+		// and CAS sharpen. The stages PING-PONG between PresentTarget and AAIntermediateTarget so the LAST
+		// enabled stage always lands on PresentTarget (what ImGui samples). Reads the derived sizing / gates
+		// (TonemapTarget, TotalStages, FxaaOn, SharpenOn) + PrimaryTonemap + VelocityRead from the context.
+		// Called by LdrChainEffect (only when the primary post-chain is active).
+		void AddLdrChain(ViewportRenderContext& v);
 
 		// Iterate the camera's visibility cache and invoke `draw` for each renderable mesh, skipping stale
 		// (New-Scene-wiped) handles and null instances. Shared by the forward and velocity passes — they

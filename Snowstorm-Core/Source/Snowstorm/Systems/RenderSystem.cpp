@@ -543,9 +543,9 @@ namespace Snowstorm
 			primaryTonemap.DebugScale = 40.0f; // per-frame UV velocity is small; scale to a visible range
 		}
 
-		// Post-tonemap LDR filter sizing (#44), derived up front so the effect chain (UpscaleEffect) and the
-		// still-inline TAA/tonemap/LDR share it. tonemap -> [FXAA] -> [CAS sharpen] -> present PING-PONG
-		// between PresentTarget and AAIntermediateTarget so the LAST enabled stage always lands on Present
+		// Post-tonemap LDR filter sizing (#44), derived up front so the effect chain (UpscaleEffect /
+		// LdrChainEffect) shares it. tonemap -> [FXAA] -> [CAS sharpen] -> present PING-PONG between
+		// PresentTarget and AAIntermediateTarget so the LAST enabled stage always lands on Present
 		// (what ImGui samples). Both filters forced off in compare.
 		const bool fxaaOn = !comparing && CVars::AAMode.Get() == 1 && vpRT.AAIntermediateTarget && vpRT.AAIntermediateSampleView;
 		const bool sharpenOn = !comparing && CVars::Sharpen.Get() > 0.0f && vpRT.AAIntermediateTarget &&
@@ -553,22 +553,15 @@ namespace Snowstorm
 		const int ldrFilters = (fxaaOn ? 1 : 0) + (sharpenOn ? 1 : 0); // stages after tonemap
 		const int totalStages = 1 + ldrFilters;                        // tonemap is stage 0
 
-		// Stage k writes Present when (totalStages-1-k) is even, else AAIntermediate — so the final stage
-		// (k = totalStages-1) always writes Present, alternating backward. Each stage reads the previous
-		// stage's target via that target's UNORM sample view.
-		auto stageTarget = [&](const int stageIndex) -> Ref<RenderTarget>
-		{
-			return ((totalStages - 1 - stageIndex) % 2 == 0) ? vpRT.PresentTarget : vpRT.AAIntermediateTarget;
-		};
-		auto stageSampleView = [&](const Ref<RenderTarget>& t) -> Ref<TextureView>
-		{
-			return (t == vpRT.PresentTarget) ? vpRT.PresentSampleView : vpRT.AAIntermediateSampleView;
-		};
-		const Ref<RenderTarget> tonemapTarget = stageTarget(0);
+		// The tonemap (stage 0) writes Present when (totalStages-1) is even, else AAIntermediate — so the
+		// final LDR stage always lands on Present, alternating backward. LdrChainEffect recomputes the same
+		// ping-pong for the FXAA/sharpen stages from v.TotalStages; here we only need stage 0's target.
+		const Ref<RenderTarget> tonemapTarget =
+		    ((totalStages - 1) % 2 == 0) ? vpRT.PresentTarget : vpRT.AAIntermediateTarget;
 
 		// The primary post-chain runs only when there's a valid tonemap target + scene HDR color. Cache the
-		// derived sizing on the context so UpscaleEffect (in the list) and the inline TAA/tonemap below read
-		// the same values without recomputing.
+		// derived sizing on the context so the effects (UpscaleEffect / TemporalEffect / LdrChainEffect) read
+		// the same values without recomputing. LdrChainEffect gates on v.TonemapTarget being non-null.
 		const bool primaryChain = tonemapTarget && !vpRT.Target->GetDesc().ColorAttachments.empty() &&
 		                          vpRT.Target->GetDesc().ColorAttachments[0].View;
 		if (primaryChain)
@@ -582,69 +575,21 @@ namespace Snowstorm
 			v.FxaaOn = fxaaOn;
 			v.SharpenOn = sharpenOn;
 			v.TotalStages = totalStages;
+			v.PrimaryTonemap = primaryTonemap;
+			// Velocity backing texture, declared as an extra Sampled read by the tonemap pass only when the
+			// motion-vector debug view samples it (else null). VelocityEffect renders it earlier in the list.
+			v.VelocityRead = velocityNeeded ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture() : nullptr;
 		}
 
 		// ---- Primary (upscaled) path ----
-		// Velocity -> forward -> [upscale] via the effect list; the upscale (bilinear or neural, incl.
-		// temporal) republishes v.SceneColor. The remaining stages (TAA/tonemap/LDR filters) are still inline
-		// below and read/update v.SceneColor until they migrate to their own effects (#120 E..G).
+		// Velocity -> forward -> [upscale] -> [TAA resolve] -> tonemap -> [FXAA] -> [sharpen] via the effect
+		// list; each effect reads/republishes v.SceneColor and the LdrChainEffect writes the final present
+		// image. The compare tail below (GT render + metrics + dataset) is still inline until #120-G.
 		for (const Scope<IViewportEffect>& effect : m_ViewportEffects)
 		{
 			if (effect->ShouldRun(v))
 			{
 				effect->Contribute(v);
-			}
-		}
-
-		if (primaryChain)
-		{
-			// SceneColor now reflects the post-upscale, post-TAA image (TemporalEffect ran in the list above
-			// and republished it when TAA is active).
-			Ref<TextureView>& sceneColorView = v.SceneColor.View;
-
-			const Ref<Texture> velocityRead = velocityNeeded ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture() : nullptr;
-			AddTonemapPass(fc, sceneColorView, tonemapTarget, "PostProcess", primaryTonemap, velocityRead);
-
-			// LDR filter stages after tonemap, in fixed order: FXAA then CAS sharpen. Each reads the
-			// previous stage's target (via its UNORM sample view) and writes its ping-pong target; the
-			// helpers guarantee the last one lands on PresentTarget. rcpFrame is the full present size.
-			const glm::vec2 rcpFrame = {1.0f / static_cast<float>(v.UpWidth), 1.0f / static_cast<float>(v.UpHeight)};
-			int stageIndex = 0; // 0 = tonemap (already emitted into tonemapTarget)
-			Ref<RenderTarget> prevTarget = tonemapTarget;
-
-			if (fxaaOn)
-			{
-				++stageIndex;
-				const Ref<RenderTarget> dst = stageTarget(stageIndex);
-				const Ref<TextureView> srcView = stageSampleView(prevTarget);
-				const Ref<Texture> srcImg = prevTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-				fc.Graph.AddPass({.Name = "FXAA" + passSuffix,
-				                  .Target = dst,
-				                  .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
-				                  .Execute = [this, &fc, srcView, rcpFrame, dstFmt](CommandContext& c)
-				                  {
-					                  m_FxaaPass.Draw(fc.Ctx, fc.FrameIndex, srcView, rcpFrame, dstFmt);
-				                  }});
-				prevTarget = dst;
-			}
-
-			if (sharpenOn)
-			{
-				++stageIndex;
-				const Ref<RenderTarget> dst = stageTarget(stageIndex);
-				const Ref<TextureView> srcView = stageSampleView(prevTarget);
-				const Ref<Texture> srcImg = prevTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-				const float sharpness = CVars::Sharpen.Get();
-				fc.Graph.AddPass({.Name = "Sharpen" + passSuffix,
-				                  .Target = dst,
-				                  .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
-				                  .Execute = [this, &fc, srcView, rcpFrame, sharpness, dstFmt](CommandContext& c)
-				                  {
-					                  m_SharpenPass.Draw(fc.Ctx, fc.FrameIndex, srcView, rcpFrame, sharpness, dstFmt);
-				                  }});
-				prevTarget = dst;
 			}
 		}
 
@@ -1018,6 +963,67 @@ namespace Snowstorm
 		v.SceneColor.View = curHistView;
 	}
 
+	void RenderSystem::AddLdrChain(ViewportRenderContext& v)
+	{
+		FrameContext& fc = v.Frame;
+		const RenderTargetComponent& vpRT = v.RT;
+
+		// tonemap -> [FXAA] -> [CAS sharpen] -> present. The stages PING-PONG between PresentTarget and
+		// AAIntermediateTarget so the LAST enabled stage lands on Present (what ImGui samples). Stage k writes
+		// Present when (TotalStages-1-k) is even, else AAIntermediate; each reads the previous stage's UNORM
+		// sample view. Recomputed here from v.RT / v.TotalStages (the preamble cached the gates on the context).
+		auto stageTarget = [&](const int stageIndex) -> Ref<RenderTarget>
+		{
+			return ((v.TotalStages - 1 - stageIndex) % 2 == 0) ? vpRT.PresentTarget : vpRT.AAIntermediateTarget;
+		};
+		auto stageSampleView = [&](const Ref<RenderTarget>& t) -> Ref<TextureView>
+		{
+			return (t == vpRT.PresentTarget) ? vpRT.PresentSampleView : vpRT.AAIntermediateSampleView;
+		};
+
+		// SceneColor now reflects the post-upscale, post-TAA image (TemporalEffect republished it when TAA is on).
+		AddTonemapPass(fc, v.SceneColor.View, v.TonemapTarget, "PostProcess" + v.Suffix, v.PrimaryTonemap, v.VelocityRead);
+
+		const glm::vec2 rcpFrame = {1.0f / static_cast<float>(v.UpWidth), 1.0f / static_cast<float>(v.UpHeight)};
+		int stageIndex = 0; // 0 = tonemap (already emitted into v.TonemapTarget)
+		Ref<RenderTarget> prevTarget = v.TonemapTarget;
+
+		if (v.FxaaOn)
+		{
+			++stageIndex;
+			const Ref<RenderTarget> dst = stageTarget(stageIndex);
+			const Ref<TextureView> srcView = stageSampleView(prevTarget);
+			const Ref<Texture> srcImg = prevTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+			const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+			fc.Graph.AddPass({.Name = "FXAA" + v.Suffix,
+			                  .Target = dst,
+			                  .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
+			                  .Execute = [this, &fc, srcView, rcpFrame, dstFmt](CommandContext& c)
+			                  {
+				                  m_FxaaPass.Draw(fc.Ctx, fc.FrameIndex, srcView, rcpFrame, dstFmt);
+			                  }});
+			prevTarget = dst;
+		}
+
+		if (v.SharpenOn)
+		{
+			++stageIndex;
+			const Ref<RenderTarget> dst = stageTarget(stageIndex);
+			const Ref<TextureView> srcView = stageSampleView(prevTarget);
+			const Ref<Texture> srcImg = prevTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+			const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+			const float sharpness = CVars::Sharpen.Get();
+			fc.Graph.AddPass({.Name = "Sharpen" + v.Suffix,
+			                  .Target = dst,
+			                  .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
+			                  .Execute = [this, &fc, srcView, rcpFrame, sharpness, dstFmt](CommandContext& c)
+			                  {
+				                  m_SharpenPass.Draw(fc.Ctx, fc.FrameIndex, srcView, rcpFrame, sharpness, dstFmt);
+			                  }});
+			prevTarget = dst;
+		}
+	}
+
 	// ---- Per-viewport effect chain (#120) ------------------------------------------------------------------
 	// Concrete effects live in the .cpp (file-local): they call back into RenderSystem's public helpers and
 	// pass objects, so they need no header exposure. Each owns one stage's guard + logic; RenderViewport runs
@@ -1138,6 +1144,29 @@ namespace Snowstorm
 		private:
 			RenderSystem& m_Owner;
 		};
+
+		// Tonemap + LDR post filters (#44): the tail of the primary path. Tonemaps the resolved scene color into
+		// the LDR present chain, then optional FXAA + CAS sharpen, ping-ponging so the last stage lands on
+		// Present. Runs only when the primary post-chain is active (a valid tonemap target exists).
+		class LdrChainEffect final : public RenderSystem::IViewportEffect
+		{
+		public:
+			explicit LdrChainEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "LdrChain"; }
+			[[nodiscard]] bool ShouldRun(const RenderSystem::ViewportRenderContext& v) const override
+			{
+				return v.TonemapTarget != nullptr; // the primary post-chain is active
+			}
+
+			void Contribute(RenderSystem::ViewportRenderContext& v) override { m_Owner.AddLdrChain(v); }
+
+		private:
+			RenderSystem& m_Owner;
+		};
 	}
 
 	void RenderSystem::BuildViewportEffects()
@@ -1150,5 +1179,6 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<ForwardEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<UpscaleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<TemporalEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<LdrChainEffect>(*this));
 	}
 }
