@@ -14,9 +14,11 @@
 #include "Snowstorm/Render/Passes/TemporalResolvePass.hpp"
 #include "Snowstorm/Render/Passes/UpscalePass.hpp"
 #include "Snowstorm/Render/Passes/VelocityPass.hpp"
+#include "Snowstorm/Render/RendererService.hpp" // TonemapParams (used in the effect-chain helper signatures)
 
 #include <entt/entt.hpp>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -26,7 +28,6 @@
 namespace Snowstorm
 {
 	class RenderGraph;
-	class RendererService;
 	class CommandContext;
 	class Texture;
 	class TextureView;
@@ -37,6 +38,8 @@ namespace Snowstorm
 	struct TransformComponent;
 	struct CameraVisibilityComponent;
 	struct RenderTargetComponent;
+	struct MeshComponent;
+	struct MaterialComponent;
 
 	class RenderSystem final : public System
 	{
@@ -102,6 +105,11 @@ namespace Snowstorm
 			// The current scene color as it flows forward -> upscale -> TAA -> tonemap. Each effect reads this
 			// and (if it produces a new image) republishes it.
 			GraphResource SceneColor;
+
+			// The motion-vector target's color view, published by VelocityEffect when it runs (null otherwise).
+			// The temporal / neural-temporal / motion-vector-debug stages read it. Aux input, not the moving
+			// SceneColor, so it gets its own slot rather than overwriting the thread.
+			Ref<TextureView> Velocity;
 		};
 
 		// A composable per-viewport render effect (forward, velocity, upscale, TAA, LDR filters, compare).
@@ -116,6 +124,37 @@ namespace Snowstorm
 			[[nodiscard]] virtual bool ShouldRun(const ViewportRenderContext& ctx) const = 0;
 			virtual void Contribute(ViewportRenderContext& ctx) = 0;
 		};
+
+		// Shared building blocks the effects (and, until they migrate, the inline compare tail) call. Public so
+		// the file-local effect classes can invoke them.
+		//
+		// AddForwardPass: forward + procedural sky into an arbitrary HDR target. Target-pure (reads the camera
+		// + the shared per-camera visibility cache), so it runs once normally and twice in compare mode. IBL
+		// maps are declared as reads so the graph transitions them to shader-read before shading.
+		void AddForwardPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& hdrTarget,
+		                    const std::string& name, bool jittered);
+
+		// AddTonemapPass: tonemap an HDR scene-color view into an LDR target (exposure/ACES; hardware sRGB on
+		// write). Declares the HDR color (and, for the motion-vector debug view, the velocity target) as
+		// Sampled reads so the graph transitions them first. `params` carries the debug fields; this fills its
+		// scene-color bindless index.
+		void AddTonemapPass(FrameContext& fc, const Ref<TextureView>& hdrColorView, const Ref<RenderTarget>& dstTarget,
+		                    const std::string& name, RendererService::TonemapParams params,
+		                    const Ref<Texture>& extraRead = nullptr);
+
+		// Motion-vector pass: re-render the visible meshes into `velTarget`, projecting each vertex by this
+		// frame's and last frame's matrices (per-object PrevModel from PrevTransformComponent, camera
+		// PrevViewProj from the runtime component). Self-contained target (own depth). Called by VelocityEffect.
+		void AddVelocityPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& velTarget,
+		                     const std::string& name);
+
+		// Iterate the camera's visibility cache and invoke `draw` for each renderable mesh, skipping stale
+		// (New-Scene-wiped) handles and null instances. Shared by the forward and velocity passes — they
+		// differ only in the per-draw work, which they supply as `draw(entity, transform, mesh, material)`.
+		// Must be called inside an active BeginScene (both callers open one first).
+		void DrawVisibleMeshes(FrameContext& fc, const CameraPick& cam,
+		                       const std::function<void(entt::entity, const TransformComponent&,
+		                                                const MeshComponent&, const MaterialComponent&)>& draw);
 
 	private:
 		// Frame-global graph phases (append passes shared by all viewports; run once per frame, before the
@@ -134,6 +173,10 @@ namespace Snowstorm
 		// single-viewport case). Pure structural extraction of the former inline loop body — no behavior
 		// change; the same dangling-capture rule as the Setup* phases applies (see SetupDirectionalShadow).
 		void RenderViewport(FrameContext& fc, entt::entity vpEntity, const std::string& passSuffix);
+
+		// Build the ordered per-viewport effect list once (lazy, on first RenderViewport). Effects are added
+		// as they're extracted from the RenderViewport monolith (#120).
+		void BuildViewportEffects();
 
 		// First-class render passes owned by the orchestrator (persist across frames; tear down before the
 		// device dies via Application's WaitIdle). The renderer is now a shared context they operate against.

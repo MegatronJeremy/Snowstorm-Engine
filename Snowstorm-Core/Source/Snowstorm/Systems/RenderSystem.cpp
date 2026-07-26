@@ -489,116 +489,16 @@ namespace Snowstorm
 		// following increments.
 		ViewportRenderContext v{.Frame = fc, .RT = vpRT, .Cam = cam, .Suffix = passSuffix, .Comparing = comparing};
 
-		// Forward + sky into an arbitrary HDR target. Target-pure (reads camera + the shared per-camera
-		// visibility cache), so it's invoked once normally and twice in compare mode (the instance-buffer
-		// cursor appends across BeginScene calls, like the shadow passes). IBL maps are declared as reads
-		// so the graph transitions them to shader-read before shading.
-		const auto addForward = [&](const Ref<RenderTarget>& hdrTarget, const std::string& name, const bool jittered)
+		// Build the effect list once (lazy — the pass objects it references are constructed with this system).
+		if (m_ViewportEffects.empty())
 		{
-			std::vector<RenderGraph::ResourceAccess> meshReads;
-			if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
-			{
-				meshReads = {{m_IBLBakePass.IrradianceCube(), RenderGraph::AccessState::Sampled},
-				             {m_IBLBakePass.PrefilteredCube(), RenderGraph::AccessState::Sampled},
-				             {m_IBLBakePass.BRDFLut(), RenderGraph::AccessState::Sampled}};
-			}
+			BuildViewportEffects();
+		}
 
-			fc.Graph.AddPass({.Name = name,
-			                  .Target = hdrTarget,
-			                  .Reads = std::move(meshReads),
-			                  .Execute = [this, &fc, cam, hdrTarget, jittered](CommandContext& c)
-			                  {
-				                  const glm::vec3 camPos = cam.Transform->Position;
-				                  fc.Renderer.BeginScene(*cam.Rt, camPos, fc.Ctx, fc.FrameIndex, jittered);
-
-				                  auto& assets = SingletonView<AssetManagerSingleton>();
-
-				                  for (const auto& cache = fc.Reg.Read<VisibilityCacheComponent>(cam.Entity);
-				                       const entt::entity e : cache.VisibleMeshes)
-				                  {
-					                  // VisibleMeshes is a cross-frame cache of handles; an entity in it can be gone
-					                  // or stripped of its components (e.g. New Scene wiped the scene THIS frame, before
-					                  // the cache was rebuilt). Skip stale handles rather than Read a destroyed entity
-					                  // (EnTT asserts "Set does not contain entity").
-					                  if (!fc.Reg.valid(e) || !fc.Reg.all_of<TransformComponent, MeshComponent, MaterialComponent>(e))
-					                  {
-						                  continue;
-					                  }
-					                  const auto& tr = fc.Reg.Read<TransformComponent>(e);
-					                  const auto& mesh = fc.Reg.Read<MeshComponent>(e);
-					                  const auto& mat = fc.Reg.Read<MaterialComponent>(e);
-
-					                  // Cache can include an entity whose mesh/material resolve runs the same
-					                  // frame; guard against the null instance (was an access violation).
-					                  if (!mesh.MeshInstance || !mat.MaterialInstance)
-					                  {
-						                  continue;
-					                  }
-
-					                  // Per-instance albedo override rides the instance buffer (objects sharing a
-					                  // material still batch). 0 = use the material's own albedo.
-					                  uint32_t albedoIndex = 0;
-					                  if (const auto* ov = fc.Reg.try_get_const<MaterialOverridesComponent>(e))
-					                  {
-						                  for (const MaterialOverride& o : ov->Overrides)
-						                  {
-							                  if (o.Type == MaterialOverrideType::Texture && o.Name == "AlbedoTexture" && o.Texture != 0)
-							                  {
-								                  if (const Ref<TextureView> view = assets.GetTextureView(o.Texture))
-								                  {
-									                  albedoIndex = view->GetGlobalBindlessIndex();
-								                  }
-							                  }
-						                  }
-					                  }
-
-					                  const glm::vec4 customData = mat.MaterialInstance->GetPerInstanceCustomData();
-					                  fc.Renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, albedoIndex, customData);
-				                  }
-
-				                  fc.Renderer.Flush();
-
-				                  // Procedural sky after opaque meshes (far-plane, only fills uncovered pixels).
-				                  // Formats come from the target so the sky pipeline stays render-pass-compatible.
-				                  const auto& rtDesc = hdrTarget->GetDesc();
-				                  if (!rtDesc.ColorAttachments.empty() && rtDesc.DepthAttachment)
-				                  {
-					                  const PixelFormat colorFmt = rtDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-					                  const PixelFormat depthFmt = rtDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
-					                  c.BeginGpuScope("Sky");
-					                  m_SkyPass.Draw(fc.Renderer, colorFmt, depthFmt);
-					                  c.EndGpuScope();
-				                  }
-
-				                  fc.Renderer.EndScene();
-			                  }});
-		};
-
-		// Tonemap an HDR scene-color view into an LDR target (exposure/ACES; hardware sRGB-encodes on
-		// write). Declares the HDR color as a Sampled read so the graph transitions it first. `params`
-		// carries the scene-color bindless index (filled here) plus any motion-vector debug fields set by
-		// the caller (#44) — the debug branch samples the velocity target instead of the scene.
-		const auto addTonemap = [&](const Ref<TextureView>& hdrColorView, const Ref<RenderTarget>& dstTarget,
-		                            const std::string& name, RendererService::TonemapParams params,
-		                            const Ref<Texture>& extraRead = nullptr)
-		{
-			params.SceneColorIndex = hdrColorView->GetGlobalBindlessIndex();
-			const PixelFormat dstFmt = dstTarget->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-			// The debug branch samples the velocity target (extraRead) via bindless, so declare it Sampled
-			// too — the graph then transitions it to shader-read before this pass, like the HDR scene color.
-			std::vector<RenderGraph::ResourceAccess> reads{{hdrColorView->GetTexture(), RenderGraph::AccessState::Sampled}};
-			if (extraRead)
-			{
-				reads.push_back({extraRead, RenderGraph::AccessState::Sampled});
-			}
-			fc.Graph.AddPass({.Name = name,
-			                  .Target = dstTarget,
-			                  .Reads = std::move(reads),
-			                  .Execute = [this, &fc, params, dstFmt](CommandContext& c)
-			                  {
-				                  m_PostProcessPass.Draw(fc.Renderer, fc.Ctx, fc.FrameIndex, params, dstFmt);
-			                  }});
-		};
+		// Forward + tonemap are now shared member methods (AddForwardPass / AddTonemapPass) so both the primary
+		// path and the compare-mode ground-truth second render call the same code. The primary forward runs
+		// through the effect list (ForwardEffect); the compare tail still calls the methods inline until it
+		// migrates (#120-G).
 
 		// ---- Motion-vector pass (#44) ----
 		// Rendered when the motion-vector debug view is on OR TAA is active (both consume velocity).
@@ -622,54 +522,12 @@ namespace Snowstorm
 		// Dataset export (#46) also needs the velocity buffer (an exported channel), so force the velocity
 		// pass on while exporting even without debug-view/TAA. Requires compare (ground truth exists).
 		const bool exporting = CVars::DatasetExport.Get() && comparing;
+		// The velocity/motion-vector pass now runs as VelocityEffect (registered before ForwardEffect in the
+		// effect list). velocityNeeded is still computed here because the still-inline consumers below (the
+		// neural-temporal upscale, TAA, the motion-vector debug tonemap, dataset export) branch on it.
 		const bool velocityNeeded = (debugView == 1 || taaOn || neuralTemporal || exporting) && vpRT.VelocityTarget &&
 		                            !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
 		                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
-		if (velocityNeeded)
-		{
-			const auto& velDesc = vpRT.VelocityTarget->GetDesc();
-			const PixelFormat velColorFmt = velDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-			const PixelFormat velDepthFmt = velDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
-			const glm::mat4 viewProj = cam.Rt->ViewProjection;
-			const glm::mat4 prevViewProj = cam.Rt->PrevViewProjection;
-
-			fc.Graph.AddPass({.Name = "Velocity" + passSuffix,
-			                  .Target = vpRT.VelocityTarget,
-			                  .Execute = [this, &fc, cam, velColorFmt, velDepthFmt, viewProj, prevViewProj](CommandContext& c)
-			                  {
-				                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, fc.Ctx, fc.FrameIndex);
-
-				                  for (const auto& cache = fc.Reg.Read<VisibilityCacheComponent>(cam.Entity);
-				                       const entt::entity e : cache.VisibleMeshes)
-				                  {
-					                  // VisibleMeshes is a cross-frame cache of handles; an entity in it can be gone
-					                  // this frame (New Scene wiped the scene before the cache rebuilt). Skip stale
-					                  // handles rather than Read a destroyed entity (EnTT asserts).
-					                  if (!fc.Reg.valid(e) || !fc.Reg.all_of<TransformComponent, MeshComponent, MaterialComponent>(e))
-					                  {
-						                  continue;
-					                  }
-					                  const auto& tr = fc.Reg.Read<TransformComponent>(e);
-					                  const auto& mesh = fc.Reg.Read<MeshComponent>(e);
-					                  const auto& mat = fc.Reg.Read<MaterialComponent>(e);
-					                  if (!mesh.MeshInstance || !mat.MaterialInstance)
-					                  {
-						                  continue;
-					                  }
-					                  // Last frame's world matrix; PrevTransformSnapshotSystem writes it end-of-frame.
-					                  // Missing (object created this frame) -> use current => zero velocity (correct).
-					                  glm::mat4 prevModel = tr.GetTransformMatrix();
-					                  if (const auto* pt = fc.Reg.try_get_const<PrevTransformComponent>(e))
-					                  {
-						                  prevModel = pt->PrevModel;
-					                  }
-					                  fc.Renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, 0,
-					                                       glm::vec4(0.0f), prevModel);
-				                  }
-
-				                  m_VelocityPass.RecordVelocity(fc.Renderer, velColorFmt, velDepthFmt, viewProj, prevViewProj);
-			                  }});
-		}
 
 		// Tonemap debug params (#44): visualize the velocity target ONLY when the motion-vector debug
 		// view is explicitly selected — NOT merely when velocity is being rendered (TAA also renders
@@ -684,8 +542,16 @@ namespace Snowstorm
 		}
 
 		// ---- Primary (upscaled) path ----
-		// Jittered: the color pass gets the temporal sub-pixel offset (#44). Velocity + GT stay unjittered.
-		addForward(vpRT.Target, "Forward" + passSuffix, true);
+		// Forward + sky now runs through the effect list (currently just ForwardEffect); it publishes
+		// v.SceneColor for the downstream chain. The remaining stages (upscale/TAA/tonemap/LDR filters) are
+		// still inline below and read/update v.SceneColor until they migrate to their own effects (#120 C..G).
+		for (const Scope<IViewportEffect>& effect : m_ViewportEffects)
+		{
+			if (effect->ShouldRun(v))
+			{
+				effect->Contribute(v);
+			}
+		}
 
 		// Post-tonemap LDR filter chain (#44): tonemap -> [FXAA] -> [CAS sharpen] -> present. Both FXAA
 		// and sharpen read an LDR UNORM sample view and write an sRGB target; they PING-PONG between
@@ -719,10 +585,9 @@ namespace Snowstorm
 			// Internal-res upscale (#43 part 1): when the scene Target is smaller than the viewport,
 			// bilinear-resample it into SceneUpscaleTarget and tonemap THAT. At scale 1.0 the upscale is
 			// skipped and tonemap reads Target directly (byte-identical to the no-scale path).
-			// The scene-color thread now lives in the per-viewport context (v.SceneColor). Bound by reference
-			// here so the existing chain (upscale/TAA reassign it, tonemap reads it) is unchanged, while the
-			// named resource is what actually flows — the effect classes read v.SceneColor directly later.
-			v.SceneColor.View = hdrDesc.ColorAttachments[0].View;
+			// ForwardEffect already published the HDR scene color into v.SceneColor; the still-inline chain
+			// (upscale/TAA reassign it, tonemap reads it) works on it through this reference until those
+			// stages migrate to their own effects.
 			Ref<TextureView>& sceneColorView = v.SceneColor.View;
 			const bool upscaling = vpRT.SceneUpscaleTarget && (hdrDesc.Width != tmDesc.Width || hdrDesc.Height != tmDesc.Height);
 			if (upscaling)
@@ -864,7 +729,7 @@ namespace Snowstorm
 			}
 
 			const Ref<Texture> velocityRead = velocityNeeded ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture() : nullptr;
-			addTonemap(sceneColorView, tonemapTarget, "PostProcess", primaryTonemap, velocityRead);
+			AddTonemapPass(fc, sceneColorView, tonemapTarget, "PostProcess", primaryTonemap, velocityRead);
 
 			// LDR filter stages after tonemap, in fixed order: FXAA then CAS sharpen. Each reads the
 			// previous stage's target (via its UNORM sample view) and writes its ping-pong target; the
@@ -913,8 +778,8 @@ namespace Snowstorm
 		if (comparing && !vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty() &&
 		    vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View)
 		{
-			addForward(vpRT.GroundTruthTarget, "ForwardGT" + passSuffix, false); // ground truth: never jittered
-			addTonemap(vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View, vpRT.GroundTruthPresentTarget, "PostProcessGT", RendererService::TonemapParams{});
+			AddForwardPass(fc, cam, vpRT.GroundTruthTarget, "ForwardGT" + passSuffix, false); // ground truth: never jittered
+			AddTonemapPass(fc, vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View, vpRT.GroundTruthPresentTarget, "PostProcessGT", RendererService::TonemapParams{});
 
 			// ---- Metrics (#45): PSNR/SSIM of the upscaled present vs the ground-truth present. Runs after
 			// both were written (a compute reduction reading both, sampled). Gated on render.metrics; both
@@ -990,5 +855,237 @@ namespace Snowstorm
 				                  }});
 			}
 		}
+	}
+
+	void RenderSystem::DrawVisibleMeshes(FrameContext& fc, const CameraPick& cam,
+	                                     const std::function<void(entt::entity, const TransformComponent&,
+	                                                              const MeshComponent&, const MaterialComponent&)>& draw)
+	{
+		for (const auto& cache = fc.Reg.Read<VisibilityCacheComponent>(cam.Entity);
+		     const entt::entity e : cache.VisibleMeshes)
+		{
+			// VisibleMeshes is a cross-frame cache of handles; an entity in it can be gone or stripped of its
+			// components (e.g. New Scene wiped the scene THIS frame, before the cache was rebuilt). Skip stale
+			// handles rather than Read a destroyed entity (EnTT asserts "Set does not contain entity").
+			if (!fc.Reg.valid(e) || !fc.Reg.all_of<TransformComponent, MeshComponent, MaterialComponent>(e))
+			{
+				continue;
+			}
+			const auto& tr = fc.Reg.Read<TransformComponent>(e);
+			const auto& mesh = fc.Reg.Read<MeshComponent>(e);
+			const auto& mat = fc.Reg.Read<MaterialComponent>(e);
+
+			// Cache can include an entity whose mesh/material resolve runs the same frame; guard against the
+			// null instance (was an access violation).
+			if (!mesh.MeshInstance || !mat.MaterialInstance)
+			{
+				continue;
+			}
+			draw(e, tr, mesh, mat);
+		}
+	}
+
+	void RenderSystem::AddForwardPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& hdrTarget,
+	                                  const std::string& name, const bool jittered)
+	{
+		std::vector<RenderGraph::ResourceAccess> meshReads;
+		if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
+		{
+			meshReads = {{m_IBLBakePass.IrradianceCube(), RenderGraph::AccessState::Sampled},
+			             {m_IBLBakePass.PrefilteredCube(), RenderGraph::AccessState::Sampled},
+			             {m_IBLBakePass.BRDFLut(), RenderGraph::AccessState::Sampled}};
+		}
+
+		fc.Graph.AddPass({.Name = name,
+		                  .Target = hdrTarget,
+		                  .Reads = std::move(meshReads),
+		                  .Execute = [this, &fc, cam, hdrTarget, jittered](CommandContext& c)
+		                  {
+			                  const glm::vec3 camPos = cam.Transform->Position;
+			                  fc.Renderer.BeginScene(*cam.Rt, camPos, fc.Ctx, fc.FrameIndex, jittered);
+
+			                  auto& assets = SingletonView<AssetManagerSingleton>();
+
+			                  DrawVisibleMeshes(fc, cam,
+			                                    [&](entt::entity e, const TransformComponent& tr, const MeshComponent& mesh, const MaterialComponent& mat)
+			                                    {
+				                                    // Per-instance albedo override rides the instance buffer (objects sharing
+				                                    // a material still batch). 0 = use the material's own albedo.
+				                                    uint32_t albedoIndex = 0;
+				                                    if (const auto* ov = fc.Reg.try_get_const<MaterialOverridesComponent>(e))
+				                                    {
+					                                    for (const MaterialOverride& o : ov->Overrides)
+					                                    {
+						                                    if (o.Type == MaterialOverrideType::Texture && o.Name == "AlbedoTexture" && o.Texture != 0)
+						                                    {
+							                                    if (const Ref<TextureView> view = assets.GetTextureView(o.Texture))
+							                                    {
+								                                    albedoIndex = view->GetGlobalBindlessIndex();
+							                                    }
+						                                    }
+					                                    }
+				                                    }
+
+				                                    const glm::vec4 customData = mat.MaterialInstance->GetPerInstanceCustomData();
+				                                    fc.Renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, albedoIndex, customData);
+			                                    });
+
+			                  fc.Renderer.Flush();
+
+			                  // Procedural sky after opaque meshes (far-plane, only fills uncovered pixels).
+			                  // Formats come from the target so the sky pipeline stays render-pass-compatible.
+			                  const auto& rtDesc = hdrTarget->GetDesc();
+			                  if (!rtDesc.ColorAttachments.empty() && rtDesc.DepthAttachment)
+			                  {
+				                  const PixelFormat colorFmt = rtDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+				                  const PixelFormat depthFmt = rtDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
+				                  c.BeginGpuScope("Sky");
+				                  m_SkyPass.Draw(fc.Renderer, colorFmt, depthFmt);
+				                  c.EndGpuScope();
+			                  }
+
+			                  fc.Renderer.EndScene();
+		                  }});
+	}
+
+	void RenderSystem::AddTonemapPass(FrameContext& fc, const Ref<TextureView>& hdrColorView, const Ref<RenderTarget>& dstTarget,
+	                                  const std::string& name, RendererService::TonemapParams params,
+	                                  const Ref<Texture>& extraRead)
+	{
+		params.SceneColorIndex = hdrColorView->GetGlobalBindlessIndex();
+		const PixelFormat dstFmt = dstTarget->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+		// The debug branch samples the velocity target (extraRead) via bindless, so declare it Sampled too —
+		// the graph then transitions it to shader-read before this pass, like the HDR scene color.
+		std::vector<RenderGraph::ResourceAccess> reads{{hdrColorView->GetTexture(), RenderGraph::AccessState::Sampled}};
+		if (extraRead)
+		{
+			reads.push_back({extraRead, RenderGraph::AccessState::Sampled});
+		}
+		fc.Graph.AddPass({.Name = name,
+		                  .Target = dstTarget,
+		                  .Reads = std::move(reads),
+		                  .Execute = [this, &fc, params, dstFmt](CommandContext& c)
+		                  {
+			                  m_PostProcessPass.Draw(fc.Renderer, fc.Ctx, fc.FrameIndex, params, dstFmt);
+		                  }});
+	}
+
+	void RenderSystem::AddVelocityPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& velTarget,
+	                                   const std::string& name)
+	{
+		const auto& velDesc = velTarget->GetDesc();
+		const PixelFormat velColorFmt = velDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+		const PixelFormat velDepthFmt = velDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
+		const glm::mat4 viewProj = cam.Rt->ViewProjection;
+		const glm::mat4 prevViewProj = cam.Rt->PrevViewProjection;
+
+		fc.Graph.AddPass({.Name = name,
+		                  .Target = velTarget,
+		                  .Execute = [this, &fc, cam, velColorFmt, velDepthFmt, viewProj, prevViewProj](CommandContext& c)
+		                  {
+			                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, fc.Ctx, fc.FrameIndex);
+
+			                  DrawVisibleMeshes(fc, cam,
+			                                    [&](entt::entity e, const TransformComponent& tr, const MeshComponent& mesh, const MaterialComponent& mat)
+			                                    {
+				                                    // Last frame's world matrix; PrevTransformSnapshotSystem writes it
+				                                    // end-of-frame. Missing (object created this frame) -> use current
+				                                    // => zero velocity (correct).
+				                                    glm::mat4 prevModel = tr.GetTransformMatrix();
+				                                    if (const auto* pt = fc.Reg.try_get_const<PrevTransformComponent>(e))
+				                                    {
+					                                    prevModel = pt->PrevModel;
+				                                    }
+				                                    fc.Renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, 0,
+				                                                         glm::vec4(0.0f), prevModel);
+			                                    });
+
+			                  m_VelocityPass.RecordVelocity(fc.Renderer, velColorFmt, velDepthFmt, viewProj, prevViewProj);
+		                  }});
+	}
+
+	// ---- Per-viewport effect chain (#120) ------------------------------------------------------------------
+	// Concrete effects live in the .cpp (file-local): they call back into RenderSystem's public helpers and
+	// pass objects, so they need no header exposure. Each owns one stage's guard + logic; RenderViewport runs
+	// the ordered list. Effects are migrated in one at a time — while the list is partial the inline monolith
+	// still runs the rest.
+
+	namespace
+	{
+		// Motion-vector pass (#44): re-renders visible meshes into the velocity target, projecting each vertex
+		// by this frame's and last frame's matrices. Runs BEFORE forward so the buffer is ready for the passes
+		// that consume it (TAA / neural-temporal / the motion-vector debug tonemap). Gated by velocityNeeded:
+		// the debug view, TAA, the neural temporal upscaler, or dataset export needs it. Publishes the velocity
+		// view onto the context so downstream stages read it from there.
+		class VelocityEffect final : public RenderSystem::IViewportEffect
+		{
+		public:
+			explicit VelocityEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "Velocity"; }
+
+			[[nodiscard]] bool ShouldRun(const RenderSystem::ViewportRenderContext& v) const override
+			{
+				const int debugView = CVars::DebugView.Get();
+				const bool taaOn = CVars::AAMode.Get() == 2 && v.RT.HistoryTarget[0] && v.RT.HistoryTarget[1] &&
+				                   !v.RT.HistoryTarget[0]->GetDesc().ColorAttachments.empty();
+				const bool neuralTemporal = CVars::Upscaler.Get() == 2;
+				const bool exporting = CVars::DatasetExport.Get() && v.Comparing;
+				return (debugView == 1 || taaOn || neuralTemporal || exporting) && v.RT.VelocityTarget &&
+				       !v.RT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
+				       v.RT.VelocityTarget->GetDesc().ColorAttachments[0].View;
+			}
+
+			void Contribute(RenderSystem::ViewportRenderContext& v) override
+			{
+				m_Owner.AddVelocityPass(v.Frame, v.Cam, v.RT.VelocityTarget, "Velocity" + v.Suffix);
+				v.Velocity = v.RT.VelocityTarget->GetDesc().ColorAttachments[0].View;
+			}
+
+		private:
+			RenderSystem& m_Owner;
+		};
+
+		// Forward + procedural sky into the viewport's HDR target, publishing it as the scene color the rest of
+		// the chain reads. Jittered (temporal sub-pixel offset for TAA/neural); always runs.
+		class ForwardEffect final : public RenderSystem::IViewportEffect
+		{
+		public:
+			explicit ForwardEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "Forward"; }
+			[[nodiscard]] bool ShouldRun(const RenderSystem::ViewportRenderContext&) const override { return true; }
+
+			void Contribute(RenderSystem::ViewportRenderContext& v) override
+			{
+				m_Owner.AddForwardPass(v.Frame, v.Cam, v.RT.Target, "Forward" + v.Suffix, /*jittered*/ true);
+				// Publish the HDR scene color for the downstream chain (upscale/TAA/tonemap).
+				v.SceneColor.Target = v.RT.Target;
+				if (const auto& desc = v.RT.Target->GetDesc(); !desc.ColorAttachments.empty())
+				{
+					v.SceneColor.View = desc.ColorAttachments[0].View;
+					v.SceneColor.Texture = desc.ColorAttachments[0].View->GetTexture();
+				}
+			}
+
+		private:
+			RenderSystem& m_Owner;
+		};
+	}
+
+	void RenderSystem::BuildViewportEffects()
+	{
+		// Built once, in fixed order. Effects are added as they're extracted from the monolith (#120 B..G).
+		// Velocity runs before forward so its buffer is ready for the consumers (TAA / neural-temporal / the
+		// motion-vector debug tonemap).
+		m_ViewportEffects.clear();
+		m_ViewportEffects.push_back(CreateScope<VelocityEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<ForwardEffect>(*this));
 	}
 }
