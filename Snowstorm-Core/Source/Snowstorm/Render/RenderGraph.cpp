@@ -9,7 +9,16 @@ namespace Snowstorm
 		// Move a declared resource into the layout the pass needs, via the backend's transition primitives.
 		// Both no-op when the texture is already in that layout (VulkanCommandContext tracks it per-image),
 		// so re-declaring the same access every frame is free.
-		void ApplyAccess(CommandContext& ctx, const RenderGraph::ResourceAccess& access)
+		//
+		// `isComputeRead` is set for a read (not write) by a COMPUTE pass. Such a read needs more than a
+		// layout transition: a color/depth target left in SHADER_READ_ONLY by a prior graphics pass's
+		// EndRenderPass has old==new layout, so the transition is a no-op and the graphics-write ->
+		// compute-read execution/memory dependency is skipped (the pass would sample stale/black; the
+		// neural/metrics/dataset passes hit exactly this and used to hand-call BarrierColorWriteToComputeRead).
+		// Emit that barrier here so the graph derives it automatically. It reads the image's recorded write
+		// scope (tracked in VulkanTexture) and no-ops when there's no pending write, so it's free for a
+		// resource with nothing to flush (e.g. a storage image already barriered by the producer).
+		void ApplyAccess(CommandContext& ctx, const RenderGraph::ResourceAccess& access, const bool isComputeRead)
 		{
 			if (!access.Texture)
 			{
@@ -19,6 +28,10 @@ namespace Snowstorm
 			{
 			case RenderGraph::AccessState::Sampled:
 				ctx.TransitionToSampled(access.Texture);
+				if (isComputeRead)
+				{
+					ctx.BarrierColorWriteToComputeRead(access.Texture);
+				}
 				break;
 			case RenderGraph::AccessState::Storage:
 				ctx.TransitionToStorage(access.Texture);
@@ -48,11 +61,13 @@ namespace Snowstorm
 			// the pass's own Target are still handled by Begin/EndRenderPass.
 			for (const ResourceAccess& w : pass.Writes)
 			{
-				ApplyAccess(ctx, w);
+				ApplyAccess(ctx, w, false); // writes never need the write-before-read barrier
 			}
 			for (const ResourceAccess& r : pass.Reads)
 			{
-				ApplyAccess(ctx, r);
+				// A compute pass's sampled read of a graphics-written target needs the color-write ->
+				// compute-read dependency the layout no-op skips; the graph derives it (see ApplyAccess).
+				ApplyAccess(ctx, r, pass.IsCompute);
 			}
 
 			ctx.ResetState();

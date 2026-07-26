@@ -785,12 +785,9 @@ namespace Snowstorm
 						                  .Reads = std::move(reads),
 						                  .Execute = [this, &fc, lowResView, upW, upH, prevNeural, velViewNeural, neuralHistValid, temporal](CommandContext& c)
 						                  {
-							                  // The forward pass left the low-res Target in SHADER_READ_ONLY (its
-							                  // EndRenderPass), so the graph's Sampled re-declaration emits NO barrier —
-							                  // this compute pass would sample the color target before its writes are
-							                  // visible (reads black). Force the write-before-read dependency, exactly
-							                  // like the metrics pass (#45). This was the neural-reads-black bug.
-							                  c.BarrierColorWriteToComputeRead(lowResView->GetTexture());
+							                  // The forward pass left the low-res Target in SHADER_READ_ONLY; the graph
+							                  // now emits the color-write -> compute-read barrier from the .Reads
+							                  // declaration (this is a compute pass), so no manual barrier is needed.
 							                  const Ref<CommandContext> cref(&c, [](CommandContext*) {});
 							                  m_NeuralUpscalePass.Infer(cref, fc.FrameIndex, lowResView, upW, upH,
 							                                            temporal ? prevNeural : nullptr,
@@ -930,12 +927,9 @@ namespace Snowstorm
 				                            {gtImg, RenderGraph::AccessState::Sampled}},
 				                  .Execute = [this, &fc, upView, gtView, mw, mh, upImg, gtImg](CommandContext& c)
 				                  {
-					                  // The graph left both present images in SHADER_READ (from their tonemap
-					                  // EndRenderPass), so its Sampled re-declaration is a no-op barrier — the
-					                  // compute would sample them before the color writes are visible (GT read
-					                  // black). Force the write-before-read dependency explicitly.
-					                  c.BarrierColorWriteToComputeRead(upImg);
-					                  c.BarrierColorWriteToComputeRead(gtImg);
+					                  // Both present images were left in SHADER_READ by their tonemap pass; the
+					                  // graph now emits the color-write -> compute-read barrier per .Reads entry
+					                  // (this is a compute pass), so no manual barrier is needed.
 					                  m_MetricsPass.Compute(fc.Ctx, fc.FrameIndex, upView, gtView, mw, mh);
 					                  fc.Renderer.SetMetrics([this]
 					                                         {
@@ -971,13 +965,10 @@ namespace Snowstorm
 				                            {gtLdrImg, RenderGraph::AccessState::Sampled}},
 				                  .Execute = [this, &fc, lrImg, mvImg, gtImg, gtLdrImg, jitter, scale, outDir](CommandContext& c)
 				                  {
-					                  // The GT tonemap pass just wrote gtLdrImg and left it in SHADER_READ, so the
-					                  // graph's Sampled re-declaration emits no barrier — the copy would read it
-					                  // before the color write is visible (reads black, #102). Force the write-
-					                  // before-read dependency explicitly, like the metrics/neural passes (#45/#47).
-					                  // The HDR three (LR/MV/GT) are produced by earlier passes with their own
-					                  // barriers before this point, so only the freshly-tonemapped LDR needs it.
-					                  c.BarrierColorWriteToComputeRead(gtLdrImg);
+					                  // The GT tonemap pass wrote gtLdrImg and left it in SHADER_READ; the graph now
+					                  // emits the color-write -> compute-read barrier for every .Reads entry of this
+					                  // compute pass, so the freshly-tonemapped LDR (and the HDR three) are all
+					                  // flushed automatically — no manual barrier needed.
 					                  DatasetExportPass::Inputs dsin;
 					                  dsin.Lr = lrImg;
 					                  dsin.Mv = mvImg;
