@@ -582,96 +582,14 @@ namespace Snowstorm
 		}
 
 		// ---- Primary (upscaled) path ----
-		// Velocity -> forward -> [upscale] -> [TAA resolve] -> tonemap -> [FXAA] -> [sharpen] via the effect
-		// list; each effect reads/republishes v.SceneColor and the LdrChainEffect writes the final present
-		// image. The compare tail below (GT render + metrics + dataset) is still inline until #120-G.
+		// Velocity -> forward -> [upscale] -> [TAA resolve] -> tonemap -> [FXAA] -> [sharpen] -> [compare]
+		// via the effect list; each effect reads/republishes v.SceneColor, LdrChainEffect writes the final
+		// present image, and CompareEffect (compare mode) appends the GT render + metrics + dataset export.
 		for (const Scope<IViewportEffect>& effect : m_ViewportEffects)
 		{
 			if (effect->ShouldRun(v))
 			{
 				effect->Contribute(v);
-			}
-		}
-
-		// ---- Ground-truth path (compare mode only): 2nd full-res render -> its own present target ----
-		if (comparing && !vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty() &&
-		    vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View)
-		{
-			AddForwardPass(fc, cam, vpRT.GroundTruthTarget, "ForwardGT" + passSuffix, false); // ground truth: never jittered
-			AddTonemapPass(fc, vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View, vpRT.GroundTruthPresentTarget, "PostProcessGT", RendererService::TonemapParams{});
-
-			// ---- Metrics (#45): PSNR/SSIM of the upscaled present vs the ground-truth present. Runs after
-			// both were written (a compute reduction reading both, sampled). Gated on render.metrics; both
-			// present images are full-res, so they compare 1:1. Reads the UNORM sample views (gamma bytes).
-			if (CVars::Metrics.Get() && vpRT.PresentSampleView && vpRT.GroundTruthPresentSampleView)
-			{
-				const Ref<Texture> upImg = vpRT.PresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-				const Ref<Texture> gtImg = vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-				const Ref<TextureView> upView = vpRT.PresentSampleView;
-				const Ref<TextureView> gtView = vpRT.GroundTruthPresentSampleView;
-				const uint32_t mw = vpRT.PresentTarget->GetWidth();
-				const uint32_t mh = vpRT.PresentTarget->GetHeight();
-				fc.Graph.AddPass({.Name = "Metrics" + passSuffix,
-				                  .IsCompute = true,
-				                  .Reads = {{upImg, RenderGraph::AccessState::Sampled},
-				                            {gtImg, RenderGraph::AccessState::Sampled}},
-				                  .Execute = [this, &fc, upView, gtView, mw, mh, upImg, gtImg](CommandContext& c)
-				                  {
-					                  // Both present images were left in SHADER_READ by their tonemap pass; the
-					                  // graph now emits the color-write -> compute-read barrier per .Reads entry
-					                  // (this is a compute pass), so no manual barrier is needed.
-					                  m_MetricsPass.Compute(fc.Ctx, fc.FrameIndex, upView, gtView, mw, mh);
-					                  fc.Renderer.SetMetrics([this]
-					                                         {
-							                                   const auto& r = m_MetricsPass.GetResult();
-							                                   return RendererService::MetricsResult{r.Valid, r.Psnr, r.Ssim}; }());
-				                  }});
-			}
-
-			// ---- Dataset export (#46): copy (low-res color, motion vectors, full-res ground truth) to the CPU
-			// and serialize as .npy + manifest. Needs all three written this frame: LR (forward), MV (velocity
-			// pass, forced on above), GT (the compare 2nd render). Gated on dataset.export && compare && the
-			// velocity buffer being produced. One graph pass (IsCompute: no render target) after everything
-			// above; it declares the three targets as Sampled reads so the graph normalizes their layout, then
-			// CopyTextureToBuffer pulls each to a host-visible buffer.
-			if (exporting && velocityNeeded && vpRT.GroundTruthTarget &&
-			    !vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty() && vpRT.GroundTruthPresentTarget &&
-			    !vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments.empty())
-			{
-				const Ref<Texture> lrImg = vpRT.Target->GetDesc().ColorAttachments[0].View->GetTexture();
-				const Ref<Texture> mvImg = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-				const Ref<Texture> gtImg = vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-				// The tonemapped LDR GT present — the engine's ACTUAL output the metric compares, i.e. the
-				// exact target to train against (#102). Written by the GT tonemap pass (addTonemap above).
-				const Ref<Texture> gtLdrImg = vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-				const glm::vec2 jitter = cam.Rt->JitterNdc;
-				const float scale = CVars::ClampedRenderScale();
-				const std::string outDir = CVars::DatasetExportPath.Get();
-				fc.Graph.AddPass({.Name = "DatasetExport" + passSuffix,
-				                  .IsCompute = true, // no render target; records readback copies
-				                  .Reads = {{lrImg, RenderGraph::AccessState::Sampled},
-				                            {mvImg, RenderGraph::AccessState::Sampled},
-				                            {gtImg, RenderGraph::AccessState::Sampled},
-				                            {gtLdrImg, RenderGraph::AccessState::Sampled}},
-				                  .Execute = [this, &fc, lrImg, mvImg, gtImg, gtLdrImg, jitter, scale, outDir](CommandContext& c)
-				                  {
-					                  // The GT tonemap pass wrote gtLdrImg and left it in SHADER_READ; the graph now
-					                  // emits the color-write -> compute-read barrier for every .Reads entry of this
-					                  // compute pass, so the freshly-tonemapped LDR (and the HDR three) are all
-					                  // flushed automatically — no manual barrier needed.
-					                  DatasetExportPass::Inputs dsin;
-					                  dsin.Lr = lrImg;
-					                  dsin.Mv = mvImg;
-					                  dsin.Gt = gtImg;
-					                  dsin.GtLdr = gtLdrImg;
-					                  dsin.JitterNdc = jitter;
-					                  dsin.Scale = scale;
-					                  dsin.FrameIndex = fc.FrameIndex;
-					                  // Non-owning Ref to the graph's context (the pass API takes a Ref; the graph owns it).
-					                  const Ref<CommandContext> cref(&c, [](CommandContext*) {});
-					                  const uint64_t written = m_DatasetExportPass.CaptureAndSerialize(cref, dsin, outDir);
-					                  fc.Renderer.SetDatasetFramesWritten(written);
-				                  }});
 			}
 		}
 	}
@@ -1024,6 +942,98 @@ namespace Snowstorm
 		}
 	}
 
+	void RenderSystem::AddComparePasses(ViewportRenderContext& v)
+	{
+		FrameContext& fc = v.Frame;
+		const RenderTargetComponent& vpRT = v.RT;
+		const CameraPick& cam = v.Cam;
+		const std::string& passSuffix = v.Suffix;
+
+		if (vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty() || !vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View)
+		{
+			return;
+		}
+
+		AddForwardPass(fc, cam, vpRT.GroundTruthTarget, "ForwardGT" + passSuffix, false); // ground truth: never jittered
+		AddTonemapPass(fc, vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View, vpRT.GroundTruthPresentTarget, "PostProcessGT" + passSuffix,
+		               RendererService::TonemapParams{});
+
+		// ---- Metrics (#45): PSNR/SSIM of the upscaled present vs the ground-truth present. Runs after
+		// both were written (a compute reduction reading both, sampled). Gated on render.metrics; both
+		// present images are full-res, so they compare 1:1. Reads the UNORM sample views (gamma bytes).
+		if (CVars::Metrics.Get() && vpRT.PresentSampleView && vpRT.GroundTruthPresentSampleView)
+		{
+			const Ref<Texture> upImg = vpRT.PresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+			const Ref<Texture> gtImg = vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+			const Ref<TextureView> upView = vpRT.PresentSampleView;
+			const Ref<TextureView> gtView = vpRT.GroundTruthPresentSampleView;
+			const uint32_t mw = vpRT.PresentTarget->GetWidth();
+			const uint32_t mh = vpRT.PresentTarget->GetHeight();
+			fc.Graph.AddPass({.Name = "Metrics" + passSuffix,
+			                  .IsCompute = true,
+			                  .Reads = {{upImg, RenderGraph::AccessState::Sampled},
+			                            {gtImg, RenderGraph::AccessState::Sampled}},
+			                  .Execute = [this, &fc, upView, gtView, mw, mh, upImg, gtImg](CommandContext& c)
+			                  {
+				                  // Both present images were left in SHADER_READ by their tonemap pass; the
+				                  // graph now emits the color-write -> compute-read barrier per .Reads entry
+				                  // (this is a compute pass), so no manual barrier is needed.
+				                  m_MetricsPass.Compute(fc.Ctx, fc.FrameIndex, upView, gtView, mw, mh);
+				                  fc.Renderer.SetMetrics([this]
+				                                         {
+							                                   const auto& r = m_MetricsPass.GetResult();
+							                                   return RendererService::MetricsResult{r.Valid, r.Psnr, r.Ssim}; }());
+			                  }});
+		}
+
+		// ---- Dataset export (#46): copy (low-res color, motion vectors, full-res ground truth) to the CPU
+		// and serialize as .npy + manifest. Needs all three written this frame: LR (forward), MV (velocity
+		// pass, forced on above), GT (the compare 2nd render). Gated on dataset.export && compare && the
+		// velocity buffer being produced. One graph pass (IsCompute: no render target) after everything
+		// above; it declares the three targets as Sampled reads so the graph normalizes their layout, then
+		// CopyTextureToBuffer pulls each to a host-visible buffer.
+		const bool exporting = CVars::DatasetExport.Get() && v.Comparing;
+		if (exporting && v.VelocityNeeded && vpRT.GroundTruthTarget &&
+		    !vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty() && vpRT.GroundTruthPresentTarget &&
+		    !vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments.empty())
+		{
+			const Ref<Texture> lrImg = vpRT.Target->GetDesc().ColorAttachments[0].View->GetTexture();
+			const Ref<Texture> mvImg = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+			const Ref<Texture> gtImg = vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+			// The tonemapped LDR GT present — the engine's ACTUAL output the metric compares, i.e. the
+			// exact target to train against (#102). Written by the GT tonemap pass (addTonemap above).
+			const Ref<Texture> gtLdrImg = vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+			const glm::vec2 jitter = cam.Rt->JitterNdc;
+			const float scale = CVars::ClampedRenderScale();
+			const std::string outDir = CVars::DatasetExportPath.Get();
+			fc.Graph.AddPass({.Name = "DatasetExport" + passSuffix,
+			                  .IsCompute = true, // no render target; records readback copies
+			                  .Reads = {{lrImg, RenderGraph::AccessState::Sampled},
+			                            {mvImg, RenderGraph::AccessState::Sampled},
+			                            {gtImg, RenderGraph::AccessState::Sampled},
+			                            {gtLdrImg, RenderGraph::AccessState::Sampled}},
+			                  .Execute = [this, &fc, lrImg, mvImg, gtImg, gtLdrImg, jitter, scale, outDir](CommandContext& c)
+			                  {
+				                  // The GT tonemap pass wrote gtLdrImg and left it in SHADER_READ; the graph now
+				                  // emits the color-write -> compute-read barrier for every .Reads entry of this
+				                  // compute pass, so the freshly-tonemapped LDR (and the HDR three) are all
+				                  // flushed automatically — no manual barrier needed.
+				                  DatasetExportPass::Inputs dsin;
+				                  dsin.Lr = lrImg;
+				                  dsin.Mv = mvImg;
+				                  dsin.Gt = gtImg;
+				                  dsin.GtLdr = gtLdrImg;
+				                  dsin.JitterNdc = jitter;
+				                  dsin.Scale = scale;
+				                  dsin.FrameIndex = fc.FrameIndex;
+				                  // Non-owning Ref to the graph's context (the pass API takes a Ref; the graph owns it).
+				                  const Ref<CommandContext> cref(&c, [](CommandContext*) {});
+				                  const uint64_t written = m_DatasetExportPass.CaptureAndSerialize(cref, dsin, outDir);
+				                  fc.Renderer.SetDatasetFramesWritten(written);
+			                  }});
+		}
+	}
+
 	// ---- Per-viewport effect chain (#120) ------------------------------------------------------------------
 	// Concrete effects live in the .cpp (file-local): they call back into RenderSystem's public helpers and
 	// pass objects, so they need no header exposure. Each owns one stage's guard + logic; RenderViewport runs
@@ -1167,6 +1177,30 @@ namespace Snowstorm
 		private:
 			RenderSystem& m_Owner;
 		};
+
+		// Compare / ground-truth path (#45/#46/#98): runs last, only in compare mode. Renders a 2nd full-res
+		// unjittered forward + tonemap into the GT present target, then the PSNR/SSIM metrics reduction and the
+		// dataset-export readback (each further gated on its own CVar). Runs after LdrChainEffect so the primary
+		// present is already written for the metrics comparison.
+		class CompareEffect final : public RenderSystem::IViewportEffect
+		{
+		public:
+			explicit CompareEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "Compare"; }
+			[[nodiscard]] bool ShouldRun(const RenderSystem::ViewportRenderContext& v) const override
+			{
+				return v.Comparing && v.RT.GroundTruthTarget;
+			}
+
+			void Contribute(RenderSystem::ViewportRenderContext& v) override { m_Owner.AddComparePasses(v); }
+
+		private:
+			RenderSystem& m_Owner;
+		};
 	}
 
 	void RenderSystem::BuildViewportEffects()
@@ -1180,5 +1214,6 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<UpscaleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<TemporalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<LdrChainEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<CompareEffect>(*this));
 	}
 }
