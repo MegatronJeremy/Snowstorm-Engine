@@ -145,7 +145,7 @@ namespace Snowstorm
 
 		RenderGraph graph;
 
-		FrameContext fc{graph, renderer, ctx, reg, frameIndex};
+		FrameContext fc{.Graph = graph, .Renderer = renderer, .Ctx = ctx, .Reg = reg, .FrameIndex = frameIndex};
 
 		const EnvironmentDataBlock& env = renderer.GetEnvironment();
 		SetupIBL(fc, env);

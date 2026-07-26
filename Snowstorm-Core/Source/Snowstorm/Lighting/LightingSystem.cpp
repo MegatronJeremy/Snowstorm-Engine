@@ -22,6 +22,11 @@ namespace Snowstorm
 
 		LightDataBlock lightData;
 		bool droppedLights = false;
+		// Primary sun = FIRST directional light (matches DirectionalLights[0] in the shader). Captured while
+		// iterating so the shadow fit below uses the same light the shader treats as the sun.
+		bool haveSun = false;
+		glm::vec3 sunDir{0.0f};
+		bool sunCasts = false;
 		for (auto entity : lightView)
 		{
 			// LightDataBlock::Lights is a fixed GPUDirectionalLight[MAX_DIRECTIONAL_LIGHTS] mirrored on the
@@ -33,6 +38,12 @@ namespace Snowstorm
 			}
 
 			auto& directionalLight = lightView.get<DirectionalLightComponent>(entity);
+			if (!haveSun)
+			{
+				haveSun = true;
+				sunDir = directionalLight.Direction;
+				sunCasts = directionalLight.CastShadows;
+			}
 			lightData.Lights[lightData.LightCount++] = {
 			    .Direction = glm::normalize(directionalLight.Direction),
 			    .Intensity = directionalLight.Intensity,
@@ -44,6 +55,18 @@ namespace Snowstorm
 		{
 			SS_CORE_WARN("More than {} directional lights in scene; extra lights ignored.", MAX_DIRECTIONAL_LIGHTS);
 		}
+
+		// Directional-sun shadow FIT (world -> light clip), the sun analogue of the per-spot fit computed
+		// below. Kept here so ALL shadow setup lives in the light system; RenderSystem only binds the depth
+		// resource + records the pass from this result. Gated by the global render.shadows kill-switch AND
+		// the sun's authored CastShadows flag; ComputeSunViewProj also fails (Valid stays false) when the
+		// scene has no renderable bounds, in which case RenderSystem leaves ShadowMapIndex 0 (fully lit).
+		RendererService::SunShadowFit sunFit{};
+		if (CVars::Shadows.Get() && haveSun && sunCasts)
+		{
+			sunFit.Valid = ShadowPass::ComputeSunViewProj(*m_World, sunDir, sunFit.LightViewProj);
+		}
+		renderer3DSingleton.SetSunShadowFit(sunFit);
 
 		// Point lights: position from the entity transform (Unity/Unreal model -- the light carries no
 		// position of its own). Joined with TransformComponent so an untransformed light is simply skipped.

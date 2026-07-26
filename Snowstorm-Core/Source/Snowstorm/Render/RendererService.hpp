@@ -148,6 +148,20 @@ namespace Snowstorm
 		// rects travel inside the GPUSpotLight entries; this is the one shared texture index the shader needs.
 		void SetSpotShadowAtlasIndex(const uint32_t index) { m_FrameData.Shadow.SpotShadowAtlasIndex = index; }
 
+		// CPU-side directional-sun shadow fit, computed by LightingSystem (PreRender) and consumed by
+		// RenderSystem's directional shadow pass. This is the sun analogue of the per-spot fit that
+		// LightingSystem already bakes into GPUSpotLight (ComputeSpotViewProj + atlas tile): ALL shadow
+		// *setup* (which light casts, the light-space view-proj) now lives in one place, and RenderSystem
+		// only binds the depth resource + records the pass. Not part of the GPU FrameData — it's a plain
+		// handoff (the matrix reaches the shader via SetShadowData once RenderSystem has the map's index).
+		struct SunShadowFit
+		{
+			bool Valid = false; // sun exists, casts, shadows enabled, and the scene has renderable bounds
+			glm::mat4 LightViewProj{1.0f};
+		};
+		void SetSunShadowFit(const SunShadowFit& fit) { m_SunShadowFit = fit; }
+		[[nodiscard]] const SunShadowFit& GetSunShadowFit() const { return m_SunShadowFit; }
+
 		// Set the baked IBL data the lit pass needs: bindless indices of the irradiance + prefiltered cubes
 		// and the BRDF LUT, plus the prefiltered mip count (drives the roughness->lod map). All zero = IBL
 		// off (DefaultLit falls back to the analytic hemisphere ambient). The bake pass owns the maps and
@@ -222,6 +236,10 @@ namespace Snowstorm
 		// the passes populate and AcquireFrameSet reads to build the GPU FrameCB (#72). Replaces the loose
 		// per-feature scalars that used to sit directly on the service.
 		FrameData m_FrameData{};
+
+		// CPU-side sun shadow fit produced by LightingSystem, consumed by RenderSystem's directional shadow
+		// pass (see SunShadowFit above). Not GPU FrameData — a plain per-frame handoff between the two systems.
+		SunShadowFit m_SunShadowFit{};
 
 		std::vector<BatchData> m_Batches;
 
