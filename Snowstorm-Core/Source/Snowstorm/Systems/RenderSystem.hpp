@@ -15,6 +15,7 @@
 #include "Snowstorm/Render/Passes/UpscalePass.hpp"
 #include "Snowstorm/Render/Passes/VelocityPass.hpp"
 #include "Snowstorm/Render/RendererService.hpp" // TonemapParams (used in the effect-chain helper signatures)
+#include "Snowstorm/Systems/RenderPhaseContext.hpp"
 
 #include <entt/entt.hpp>
 
@@ -27,11 +28,6 @@
 
 namespace Snowstorm
 {
-	class RenderGraph;
-	class CommandContext;
-	class Texture;
-	class TextureView;
-	class RenderTarget;
 	struct CameraComponent;
 	struct CameraRuntimeComponent;
 	struct CameraTargetComponent;
@@ -51,112 +47,13 @@ namespace Snowstorm
 
 		void Execute(Timestep ts) override;
 
-		// Framework types (FrameContext / CameraPick / GraphResource / ViewportRenderContext / IViewportEffect)
-		// are public so the per-viewport effect classes and file-local helpers can name them. They carry only
-		// references/handles — no invariants a caller could break — so exposing them costs nothing.
+		// The shared render-phase vocabulary (FrameContext / CameraPick / GraphResource /
+		// ViewportRenderContext / IViewportEffect) now lives in RenderPhaseContext.hpp so collaborators can
+		// name it without depending on RenderSystem.
 
-		// Shared per-frame handles threaded through the phase-setup methods below, so each takes one param
-		// instead of five. Bundles only what the graph-building phases need in common (the graph they append
-		// to, the renderer/context they record against, the registry they read, the frame-in-flight index).
-		// Lives on the stack for one Execute; holds references, owns nothing.
-		struct FrameContext
-		{
-			RenderGraph& Graph;
-			RendererService& Renderer;
-			const Ref<CommandContext>& Ctx;
-			TrackedRegistry& Reg;
-			uint32_t FrameIndex;
-		};
-
-		// The camera driving one viewport (resolved once per RenderViewport from the viewport's target link).
-		struct CameraPick
-		{
-			entt::entity Entity = entt::null;
-			const CameraComponent* Cam = nullptr;
-			const CameraRuntimeComponent* Rt = nullptr;
-			const TransformComponent* Transform = nullptr;
-			const CameraVisibilityComponent* Visibility = nullptr;
-		};
-
-		// One texture as it flows through the per-viewport effect chain, bundling the three handles every pass
-		// spells out from a target: the sample View, its backing Texture (for RenderGraph reads), and the
-		// Target it lives in (null for a compute output like the neural upscaler). Replaces the reassigned
-		// `sceneColorView` local — the SceneColor thread now has a name and a home (ViewportRenderContext).
-		struct GraphResource
-		{
-			Ref<TextureView> View;
-			Ref<Texture> Texture;
-			Ref<RenderTarget> Target;
-		};
-
-		// Per-viewport scratch threaded through the effect chain: what every effect reads (frame handles, the
-		// viewport's targets, the camera, the pass-name suffix, whether we're in compare mode) plus the one
-		// resource that MOVES down the chain (SceneColor, republished by upscale/TAA). Lives on the stack for
-		// one RenderViewport; holds references, owns nothing. Cross-frame temporal state (m_TaaHistoryValid /
-		// m_NeuralTemporalValid) stays on RenderSystem — it's persistent memory, not per-frame scratch.
-		struct ViewportRenderContext
-		{
-			FrameContext& Frame;
-			const RenderTargetComponent& RT;
-			entt::entity ViewportEntity = entt::null; // keys per-viewport temporal state (TAA / neural history)
-			CameraPick Cam;
-			std::string Suffix;
-			bool Comparing = false;
-
-			// The current scene color as it flows forward -> upscale -> TAA -> tonemap. Each effect reads this
-			// and (if it produces a new image) republishes it.
-			GraphResource SceneColor;
-
-			// The motion-vector target's color view, published by VelocityEffect when it runs (null otherwise).
-			// The temporal / neural-temporal / motion-vector-debug stages read it. Aux input, not the moving
-			// SceneColor, so it gets its own slot rather than overwriting the thread.
-			Ref<TextureView> Velocity;
-
-			// Whether the velocity pass runs this frame (debug view / TAA / neural-temporal / dataset export).
-			// The consumers (TAA, neural-temporal upscale, motion-vector debug tonemap, dataset) branch on it.
-			bool VelocityNeeded = false;
-
-			// Whether TAA (render.aa == 2) is active with valid history targets. TemporalEffect resolves when
-			// set, and clears the per-viewport history-valid flag when NOT set (so re-enabling starts clean).
-			bool TaaOn = false;
-
-			// LDR post-chain sizing, derived once in the RenderViewport preamble (they depend only on CVars +
-			// the viewport's targets): the tonemap destination (stage 0 of the ping-pong), the full present
-			// dimensions the upscale/tonemap target at, whether the scene Target is smaller than present (needs
-			// upscaling), and the FXAA/sharpen gates + total post stages. Shared by UpscaleEffect and the
-			// still-inline TAA/tonemap/LDR chain so nothing is recomputed.
-			Ref<RenderTarget> TonemapTarget;
-			uint32_t UpWidth = 0;
-			uint32_t UpHeight = 0;
-			bool Upscaling = false;
-			bool FxaaOn = false;
-			bool SharpenOn = false;
-			int TotalStages = 1;
-
-			// Tonemap params for the primary path — carries the motion-vector debug fields when the debug view
-			// is selected (else default = the normal ACES tonemap). Filled in the preamble, read by LdrChain.
-			RendererService::TonemapParams PrimaryTonemap;
-
-			// The velocity target's backing texture, declared as an extra Sampled read by the tonemap pass when
-			// the motion-vector debug view samples it (null otherwise). Derived in the preamble.
-			Ref<Texture> VelocityRead;
-		};
-
-		// A composable per-viewport render effect (forward, velocity, upscale, TAA, LDR filters, compare).
-		// RenderViewport runs the ordered m_ViewportEffects list: for each, if ShouldRun, Contribute appends
-		// its graph pass(es) and updates ctx.SceneColor. Each effect owns its block's guard + logic + the
-		// pass object(s) it drives, so a new post effect is one new class + one list entry (no monolith edit).
-		class IViewportEffect
-		{
-		public:
-			virtual ~IViewportEffect() = default;
-			[[nodiscard]] virtual const char* Name() const = 0;
-			[[nodiscard]] virtual bool ShouldRun(const ViewportRenderContext& ctx) const = 0;
-			virtual void Contribute(ViewportRenderContext& ctx) = 0;
-		};
-
-		// Shared building blocks the effects (and, until they migrate, the inline compare tail) call. Public so
-		// the file-local effect classes can invoke them.
+		// Shared building blocks the effects call via a RenderSystem& — genuinely shared services (each used
+		// by two effects), NOT per-effect logic delegated back to the owner. Public so the effect classes
+		// (in ViewportEffects) can invoke them.
 		//
 		// AddForwardPass: forward + procedural sky into an arbitrary HDR target. Target-pure (reads the camera
 		// + the shared per-camera visibility cache), so it runs once normally and twice in compare mode. IBL

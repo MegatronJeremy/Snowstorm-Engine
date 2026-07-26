@@ -27,8 +27,6 @@ namespace Snowstorm
 {
 	namespace
 	{
-		using CameraPick = RenderSystem::CameraPick;
-
 		// Resolve which camera drives a viewport: prefer a Primary camera targeting it, else any camera
 		// targeting it, else a null pick. File-local (the entt view type stays out of the header).
 		CameraPick FindCameraForViewport(
@@ -1040,7 +1038,7 @@ namespace Snowstorm
 		// that consume it (TAA / neural-temporal / the motion-vector debug tonemap). Gated by velocityNeeded:
 		// the debug view, TAA, the neural temporal upscaler, or dataset export needs it. Publishes the velocity
 		// view onto the context so downstream stages read it from there.
-		class VelocityEffect final : public RenderSystem::IViewportEffect
+		class VelocityEffect final : public IViewportEffect
 		{
 		public:
 			explicit VelocityEffect(RenderSystem& owner)
@@ -1050,7 +1048,7 @@ namespace Snowstorm
 
 			[[nodiscard]] const char* Name() const override { return "Velocity"; }
 
-			[[nodiscard]] bool ShouldRun(const RenderSystem::ViewportRenderContext& v) const override
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
 				const int debugView = CVars::DebugView.Get();
 				const bool taaOn = CVars::AAMode.Get() == 2 && v.RT.HistoryTarget[0] && v.RT.HistoryTarget[1] &&
@@ -1062,7 +1060,7 @@ namespace Snowstorm
 				       v.RT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 			}
 
-			void Contribute(RenderSystem::ViewportRenderContext& v) override
+			void Contribute(ViewportRenderContext& v) override
 			{
 				m_Owner.AddVelocityPass(v.Frame, v.Cam, v.RT.VelocityTarget, "Velocity" + v.Suffix);
 				v.Velocity = v.RT.VelocityTarget->GetDesc().ColorAttachments[0].View;
@@ -1074,7 +1072,7 @@ namespace Snowstorm
 
 		// Forward + procedural sky into the viewport's HDR target, publishing it as the scene color the rest of
 		// the chain reads. Jittered (temporal sub-pixel offset for TAA/neural); always runs.
-		class ForwardEffect final : public RenderSystem::IViewportEffect
+		class ForwardEffect final : public IViewportEffect
 		{
 		public:
 			explicit ForwardEffect(RenderSystem& owner)
@@ -1083,9 +1081,9 @@ namespace Snowstorm
 			}
 
 			[[nodiscard]] const char* Name() const override { return "Forward"; }
-			[[nodiscard]] bool ShouldRun(const RenderSystem::ViewportRenderContext&) const override { return true; }
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext&) const override { return true; }
 
-			void Contribute(RenderSystem::ViewportRenderContext& v) override
+			void Contribute(ViewportRenderContext& v) override
 			{
 				m_Owner.AddForwardPass(v.Frame, v.Cam, v.RT.Target, "Forward" + v.Suffix, /*jittered*/ true);
 				// Publish the HDR scene color for the downstream chain (upscale/TAA/tonemap).
@@ -1104,7 +1102,7 @@ namespace Snowstorm
 		// Internal-res upscale (#43/#47/#98): after forward, when the scene rendered smaller than present,
 		// resample it up (bilinear or the neural upscaler) and republish v.SceneColor. Runs only when the
 		// preamble flagged v.Upscaling (scene Target < present size AND a SceneUpscaleTarget exists).
-		class UpscaleEffect final : public RenderSystem::IViewportEffect
+		class UpscaleEffect final : public IViewportEffect
 		{
 		public:
 			explicit UpscaleEffect(RenderSystem& owner)
@@ -1113,12 +1111,12 @@ namespace Snowstorm
 			}
 
 			[[nodiscard]] const char* Name() const override { return "Upscale"; }
-			[[nodiscard]] bool ShouldRun(const RenderSystem::ViewportRenderContext& v) const override
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
 				return v.Upscaling && v.RT.SceneUpscaleTarget;
 			}
 
-			void Contribute(RenderSystem::ViewportRenderContext& v) override { m_Owner.AddUpscalePasses(v); }
+			void Contribute(ViewportRenderContext& v) override { m_Owner.AddUpscalePasses(v); }
 
 		private:
 			RenderSystem& m_Owner;
@@ -1128,7 +1126,7 @@ namespace Snowstorm
 		// as the resolved slot. Runs EVERY frame (ShouldRun true) because it also owns clearing the per-viewport
 		// history-valid flag when TAA is off — AddTemporalResolve branches on v.TaaOn internally. Only meaningful
 		// when the primary post-chain runs (there's a scene color to resolve).
-		class TemporalEffect final : public RenderSystem::IViewportEffect
+		class TemporalEffect final : public IViewportEffect
 		{
 		public:
 			explicit TemporalEffect(RenderSystem& owner)
@@ -1137,12 +1135,12 @@ namespace Snowstorm
 			}
 
 			[[nodiscard]] const char* Name() const override { return "TemporalResolve"; }
-			[[nodiscard]] bool ShouldRun(const RenderSystem::ViewportRenderContext& v) const override
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
 				return v.TonemapTarget != nullptr; // the primary post-chain is active
 			}
 
-			void Contribute(RenderSystem::ViewportRenderContext& v) override { m_Owner.AddTemporalResolve(v); }
+			void Contribute(ViewportRenderContext& v) override { m_Owner.AddTemporalResolve(v); }
 
 		private:
 			RenderSystem& m_Owner;
@@ -1151,7 +1149,7 @@ namespace Snowstorm
 		// Tonemap + LDR post filters (#44): the tail of the primary path. Tonemaps the resolved scene color into
 		// the LDR present chain, then optional FXAA + CAS sharpen, ping-ponging so the last stage lands on
 		// Present. Runs only when the primary post-chain is active (a valid tonemap target exists).
-		class LdrChainEffect final : public RenderSystem::IViewportEffect
+		class LdrChainEffect final : public IViewportEffect
 		{
 		public:
 			explicit LdrChainEffect(RenderSystem& owner)
@@ -1160,12 +1158,12 @@ namespace Snowstorm
 			}
 
 			[[nodiscard]] const char* Name() const override { return "LdrChain"; }
-			[[nodiscard]] bool ShouldRun(const RenderSystem::ViewportRenderContext& v) const override
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
 				return v.TonemapTarget != nullptr; // the primary post-chain is active
 			}
 
-			void Contribute(RenderSystem::ViewportRenderContext& v) override { m_Owner.AddLdrChain(v); }
+			void Contribute(ViewportRenderContext& v) override { m_Owner.AddLdrChain(v); }
 
 		private:
 			RenderSystem& m_Owner;
@@ -1175,7 +1173,7 @@ namespace Snowstorm
 		// unjittered forward + tonemap into the GT present target, then the PSNR/SSIM metrics reduction and the
 		// dataset-export readback (each further gated on its own CVar). Runs after LdrChainEffect so the primary
 		// present is already written for the metrics comparison.
-		class CompareEffect final : public RenderSystem::IViewportEffect
+		class CompareEffect final : public IViewportEffect
 		{
 		public:
 			explicit CompareEffect(RenderSystem& owner)
@@ -1184,12 +1182,12 @@ namespace Snowstorm
 			}
 
 			[[nodiscard]] const char* Name() const override { return "Compare"; }
-			[[nodiscard]] bool ShouldRun(const RenderSystem::ViewportRenderContext& v) const override
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
 				return v.Comparing && v.RT.GroundTruthTarget;
 			}
 
-			void Contribute(RenderSystem::ViewportRenderContext& v) override { m_Owner.AddComparePasses(v); }
+			void Contribute(ViewportRenderContext& v) override { m_Owner.AddComparePasses(v); }
 
 		private:
 			RenderSystem& m_Owner;
