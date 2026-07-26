@@ -18,6 +18,25 @@ namespace Snowstorm
 		// Max GPU scopes (passes) timed per frame. Covers shadow + mesh + sky + the 4 IBL bakes + editor
 		// with headroom; scopes past this are dropped with a warning rather than overflowing the pool.
 		constexpr uint32_t kMaxGpuScopes = 32;
+
+		// A layout in which the image is WRITTEN (its LayoutStageAccess carries a write access bit), so a
+		// transition INTO it leaves a pending write a later cross-stage read must barrier against. Pure read
+		// layouts (SHADER_READ_ONLY, TRANSFER_SRC, PRESENT) return false — they don't produce a new write.
+		bool IsWriteLayout(const VkImageLayout layout)
+		{
+			switch (layout)
+			{
+			case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+			case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+			case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+			case VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL:
+			case VK_IMAGE_LAYOUT_GENERAL:              // compute storage read/write (UAV)
+			case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL: // transfer write
+				return true;
+			default:
+				return false;
+			}
+		}
 	}
 
 	VulkanCommandContext::VulkanCommandContext()
@@ -140,6 +159,18 @@ namespace Snowstorm
 
 		vkCmdPipelineBarrier2(m_CommandBuffer, &dep);
 		vkTex->SetCurrentLayout(newLayout);
+
+		// Record the write scope so a later read in a DIFFERENT stage can barrier against it even if the layout
+		// looks unchanged. A write layout (color/depth attachment, GENERAL storage, transfer-dst) leaves a
+		// pending write; a pure read layout (SHADER_READ_ONLY / TRANSFER_SRC / PRESENT) does NOT — so moving a
+		// color target COLOR_ATTACHMENT -> SHADER_READ_ONLY at EndRenderPass keeps the recorded COLOR_WRITE
+		// scope (this barrier's src), NOT the read scope. That preserved scope is what the color-write ->
+		// compute-read barrier consumes. Barriers themselves make the pending write visible to `dst`, but only
+		// to dst's stage; a read in a stage outside dst still needs the recorded scope, so keep it.
+		if (IsWriteLayout(newLayout))
+		{
+			vkTex->SetWriteScope(dst.Stage, dst.Access);
+		}
 	}
 
 	void VulkanCommandContext::BeginRenderPass(const RenderTarget& target)
@@ -390,21 +421,37 @@ namespace Snowstorm
 
 	void VulkanCommandContext::BarrierColorWriteToComputeRead(const Ref<Texture>& texture)
 	{
-		// Execution+memory barrier for the graphics-color-write -> compute-sampled-read hazard, WITHOUT a
-		// layout change. TransitionLayout early-outs when old==new layout, so a color target already left in
+		// Execution+memory barrier for a graphics-write -> compute-sampled-read hazard, WITHOUT a layout
+		// change. TransitionLayout early-outs when old==new layout, so a color target already left in
 		// SHADER_READ_ONLY by its render pass's EndRenderPass gets NO barrier from a Sampled re-declaration —
-		// a compute pass could then sample it before the color writes are visible (reads stale/black; the
-		// metrics pass hit exactly this). Here old==new==SHADER_READ_ONLY, so nothing transitions, but the
-		// src/dst scopes form the real write-before-read dependency the layout no-op skipped.
+		// a compute pass could then sample it before the writes are visible (reads stale/black; the metrics
+		// pass hit exactly this). Here old==new==SHADER_READ_ONLY, so nothing transitions, but the src/dst
+		// scopes form the real write-before-read dependency the layout no-op skipped.
+		//
+		// The src scope comes from the image's RECORDED write scope (set by TransitionLayout when the image
+		// was last in a write layout), not a hardcoded COLOR_WRITE. For the current callers that's exactly
+		// COLOR_ATTACHMENT_OUTPUT/COLOR_ATTACHMENT_WRITE (a color target sampled by compute), so behavior is
+		// identical; but a depth- or storage-written source now also barriers correctly. Falls back to
+		// COLOR_WRITE if nothing was recorded (defensive; shouldn't happen for a written target).
 		auto vkTex = std::static_pointer_cast<VulkanTexture>(texture);
 
+		VkPipelineStageFlags2 srcStage = vkTex->GetWriteStage();
+		VkAccessFlags2 srcAccess = vkTex->GetWriteAccess();
+		if (srcStage == VK_PIPELINE_STAGE_2_NONE)
+		{
+			srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+			srcAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+		}
+
+		const VkImageLayout layout = vkTex->GetCurrentLayout();
+
 		VkImageMemoryBarrier2 barrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-		barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-		barrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+		barrier.srcStageMask = srcStage;
+		barrier.srcAccessMask = srcAccess;
 		barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
 		barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		barrier.oldLayout = layout;
+		barrier.newLayout = layout;
 		barrier.image = vkTex->GetImage();
 		barrier.subresourceRange = {vkTex->GetAspectMask(), 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
 
@@ -412,6 +459,10 @@ namespace Snowstorm
 		dep.imageMemoryBarrierCount = 1;
 		dep.pImageMemoryBarriers = &barrier;
 		vkCmdPipelineBarrier2(m_CommandBuffer, &dep);
+
+		// The pending write is now visible to compute-sampled-read; clear the recorded scope so a redundant
+		// second barrier isn't emitted if this image is re-declared before being written again.
+		vkTex->SetWriteScope(VK_PIPELINE_STAGE_2_NONE, 0);
 	}
 
 	void VulkanCommandContext::BarrierComputeStorage()

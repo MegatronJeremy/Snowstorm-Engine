@@ -34,6 +34,20 @@ namespace Snowstorm
 		VkImageLayout GetCurrentLayout() const { return m_CurrentLayout; }
 		void SetCurrentLayout(VkImageLayout layout) { m_CurrentLayout = layout; }
 
+		// Scope of the last WRITE to this image whose results may not yet be visible to a future read in a
+		// different pipeline stage. Tracked separately from the layout because a layout can be unchanged
+		// across a real write→read hazard: a color target is left in SHADER_READ_ONLY by EndRenderPass, then
+		// sampled by a COMPUTE pass — same layout, but the fragment-scoped color write is NOT visible to
+		// compute. A read barrier derives its src scope from THIS, not from the (stale) layout. NONE/0 = no
+		// pending write. See VulkanCommandContext::BarrierColorWriteToComputeRead / RenderGraph auto-barriers.
+		VkPipelineStageFlags2 GetWriteStage() const { return m_WriteStage; }
+		VkAccessFlags2 GetWriteAccess() const { return m_WriteAccess; }
+		void SetWriteScope(const VkPipelineStageFlags2 stage, const VkAccessFlags2 access)
+		{
+			m_WriteStage = stage;
+			m_WriteAccess = access;
+		}
+
 		// False for externally-owned images (e.g. swapchain images wrapped via the
 		// VulkanTexture(VkImage, desc) ctor), whose memory and layout lifecycle we don't own.
 		[[nodiscard]] bool OwnsImage() const { return m_Allocation != nullptr; }
@@ -53,6 +67,10 @@ namespace Snowstorm
 		// Very small bit of state tracking to make SetData work.
 		// (If you have a proper resource state system later, remove this.)
 		VkImageLayout m_CurrentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+		// Scope of the last unflushed WRITE (see GetWriteStage/SetWriteScope). NONE/0 = no pending write.
+		VkPipelineStageFlags2 m_WriteStage = VK_PIPELINE_STAGE_2_NONE;
+		VkAccessFlags2 m_WriteAccess = 0;
 
 		std::weak_ptr<TextureView> m_DefaultView; // Cache the view
 	};
