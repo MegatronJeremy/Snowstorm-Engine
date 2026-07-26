@@ -30,6 +30,13 @@ namespace Snowstorm
 		// "where" (native save dialog); this does the writing. Bound by the editor layer.
 		std::function<bool(const std::string&)> SaveSceneAs;
 
+		// Make a .world the project's startup scene (loaded on launch): writes the path into the active
+		// project's StartScene (stored project-relative) and re-saves the .ssproj. Pass an EMPTY string to
+		// use the CURRENTLY OPEN scene (the File-menu entry point); pass a path for the Content Browser
+		// right-click entry point. Returns false if there's no active project, the target scene has no file
+		// path yet (unsaved), or the serialize fails. Bound by the editor layer (owns Project + active path).
+		std::function<bool(const std::string& /*scenePath; empty = current scene*/)> SetStartupScene;
+
 		// Project lifecycle, bound by the editor layer (see EditorLayer::CreateProject/OpenProject/
 		// SaveProject). All three own switching the active World + Project — the menu system just
 		// asks "where" (via FileDialog) and calls these.

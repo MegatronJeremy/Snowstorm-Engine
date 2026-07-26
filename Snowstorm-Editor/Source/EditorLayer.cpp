@@ -218,6 +218,47 @@ namespace Snowstorm
 				return true;
 			};
 
+			cmds.SetStartupScene = [this](const std::string& scenePath) -> bool
+			{
+				const Ref<Project> project = Project::GetActive();
+				if (!project)
+				{
+					return false;
+				}
+
+				// Empty path = the currently open scene (File-menu entry point). It must already have a file
+				// path — an untitled scene can't be a startup target (there's nothing on disk to load).
+				const std::string target = scenePath.empty() ? m_ActiveScenePath : scenePath;
+				if (target.empty())
+				{
+					return false;
+				}
+
+				// StartScene is stored PROJECT-RELATIVE (composed with the project dir by GetStartScenePath),
+				// so relativize before writing. A path already relative is kept as-is; an absolute one (the
+				// current scene path, or a Content Browser abs path) is made relative to the project dir. If
+				// it lies outside the project, std::filesystem::relative yields a ".."-path, which we still
+				// store — a scene outside the project is unusual but not something to silently reject.
+				std::filesystem::path rel = target;
+				if (rel.is_absolute())
+				{
+					std::error_code ec;
+					std::filesystem::path r = std::filesystem::relative(rel, project->GetProjectDirectory(), ec);
+					if (!ec && !r.empty())
+					{
+						rel = r;
+					}
+				}
+
+				project->GetConfig().StartScene = rel;
+				if (!SaveProject())
+				{
+					SS_CORE_ERROR("SetStartupScene: failed to save project after setting StartScene='{}'", rel.generic_string());
+					return false;
+				}
+				return true;
+			};
+
 			cmds.NewProject = [this](const std::filesystem::path& directory, const std::string& name) -> bool
 			{
 				return CreateProject(directory, name);

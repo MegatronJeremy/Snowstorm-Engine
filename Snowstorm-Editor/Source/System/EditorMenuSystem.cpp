@@ -180,6 +180,16 @@ namespace Snowstorm
 					SaveSceneAsAction(notify);
 				}
 
+				// Only enabled when the current scene has been saved (has a file path) — an untitled scene
+				// can't be a startup target. Empty arg = "the current scene" (the layer resolves it).
+				const bool canSetStartup = static_cast<bool>(cmds.SetStartupScene) && cmds.HasScenePath && cmds.HasScenePath();
+				if (ImGui::MenuItem("Set Current Scene as Startup", nullptr, false, canSetStartup))
+				{
+					const bool ok = cmds.SetStartupScene("");
+					notify.Push(ok ? "Startup scene set to the current scene" : "Failed to set startup scene",
+					            ok ? EditorToastType::Success : EditorToastType::Error);
+				}
+
 				ImGui::Separator();
 
 				if (ImGui::MenuItem("Import Model..."))

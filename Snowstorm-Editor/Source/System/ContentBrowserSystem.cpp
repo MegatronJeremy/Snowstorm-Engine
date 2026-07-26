@@ -284,6 +284,28 @@ namespace Snowstorm
 					}
 				}
 
+				// Right-click a scene -> context menu. "Set as Startup Scene" writes the project's StartScene
+				// (Godot's "Set as Main Scene" model). entry.Path is project-relative; the layer stores it as
+				// the StartScene and re-saves the .ssproj.
+				if (entry.Type == AssetType::Scene && ImGui::BeginPopupContextItem("scene_ctx"))
+				{
+					auto& cmds = SingletonView<EditorCommandsSingleton>();
+					auto& notify = SingletonView<EditorNotificationsSingleton>();
+					if (ImGui::MenuItem("Open Scene") && cmds.OpenScene)
+					{
+						const bool ok = cmds.OpenScene(entry.Path);
+						notify.Push(ok ? "Opened " + entry.DisplayName : "Failed to open " + entry.DisplayName,
+						            ok ? EditorToastType::Success : EditorToastType::Error);
+					}
+					if (ImGui::MenuItem("Set as Startup Scene") && cmds.SetStartupScene)
+					{
+						const bool ok = cmds.SetStartupScene(entry.Path);
+						notify.Push(ok ? entry.DisplayName + " is now the startup scene" : "Failed to set startup scene",
+						            ok ? EditorToastType::Success : EditorToastType::Error);
+					}
+					ImGui::EndPopup();
+				}
+
 				ImGui::Unindent(8.0f);
 				ImGui::PopID();
 			}
