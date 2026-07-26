@@ -69,12 +69,6 @@ namespace Snowstorm
 		                    const std::string& name, RendererService::TonemapParams params,
 		                    const Ref<Texture>& extraRead = nullptr);
 
-		// Motion-vector pass: re-render the visible meshes into `velTarget`, projecting each vertex by this
-		// frame's and last frame's matrices (per-object PrevModel from PrevTransformComponent, camera
-		// PrevViewProj from the runtime component). Self-contained target (own depth). Called by VelocityEffect.
-		void AddVelocityPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& velTarget,
-		                     const std::string& name);
-
 		// Internal-res upscale (#43/#47/#98): resample the low-res scene color up to present size, choosing
 		// bilinear or the neural upscaler (spatial or temporal) per render.upscaler, and republish v.SceneColor
 		// as the upscaled image. Touches the per-viewport neural-temporal validity set. Called by UpscaleEffect
@@ -141,7 +135,6 @@ namespace Snowstorm
 		SharpenPass m_SharpenPass;
 		UpscalePass m_UpscalePass;
 		NeuralUpscalePass m_NeuralUpscalePass;
-		VelocityPass m_VelocityPass;
 		TemporalResolvePass m_TemporalResolvePass;
 		MetricsPass m_MetricsPass;
 		DatasetExportPass m_DatasetExportPass;

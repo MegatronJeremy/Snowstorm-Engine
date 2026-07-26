@@ -474,40 +474,6 @@ namespace Snowstorm
 		                  }});
 	}
 
-	void RenderSystem::AddVelocityPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& velTarget,
-	                                   const std::string& name)
-	{
-		const auto& velDesc = velTarget->GetDesc();
-		const PixelFormat velColorFmt = velDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-		const PixelFormat velDepthFmt = velDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
-		const glm::mat4 viewProj = cam.Rt->ViewProjection;
-		const glm::mat4 prevViewProj = cam.Rt->PrevViewProjection;
-
-		fc.Graph.AddPass({.Name = name,
-		                  .Target = velTarget,
-		                  .Execute = [this, &fc, cam, velColorFmt, velDepthFmt, viewProj, prevViewProj](CommandContext& c)
-		                  {
-			                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, fc.Ctx, fc.FrameIndex);
-
-			                  DrawVisibleMeshes(fc, cam,
-			                                    [&](entt::entity e, const TransformComponent& tr, const MeshComponent& mesh, const MaterialComponent& mat)
-			                                    {
-				                                    // Last frame's world matrix; PrevTransformSnapshotSystem writes it
-				                                    // end-of-frame. Missing (object created this frame) -> use current
-				                                    // => zero velocity (correct).
-				                                    glm::mat4 prevModel = tr.GetTransformMatrix();
-				                                    if (const auto* pt = fc.Reg.try_get_const<PrevTransformComponent>(e))
-				                                    {
-					                                    prevModel = pt->PrevModel;
-				                                    }
-				                                    fc.Renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, 0,
-				                                                         glm::vec4(0.0f), prevModel);
-			                                    });
-
-			                  m_VelocityPass.RecordVelocity(fc.Renderer, velColorFmt, velDepthFmt, viewProj, prevViewProj);
-		                  }});
-	}
-
 	void RenderSystem::AddUpscalePasses(ViewportRenderContext& v)
 	{
 		FrameContext& fc = v.Frame;
@@ -838,12 +804,46 @@ namespace Snowstorm
 
 			void Contribute(ViewportRenderContext& v) override
 			{
-				m_Owner.AddVelocityPass(v.Frame, v.Cam, v.RT.VelocityTarget, "Velocity" + v.Suffix);
-				v.Velocity = v.RT.VelocityTarget->GetDesc().ColorAttachments[0].View;
+				FrameContext& fc = v.Frame;
+				const CameraPick& cam = v.Cam;
+				const Ref<RenderTarget>& velTarget = v.RT.VelocityTarget;
+
+				const auto& velDesc = velTarget->GetDesc();
+				const PixelFormat velColorFmt = velDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+				const PixelFormat velDepthFmt = velDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
+				const glm::mat4 viewProj = cam.Rt->ViewProjection;
+				const glm::mat4 prevViewProj = cam.Rt->PrevViewProjection;
+
+				fc.Graph.AddPass({.Name = "Velocity" + v.Suffix,
+				                  .Target = velTarget,
+				                  .Execute = [this, &fc, cam, velColorFmt, velDepthFmt, viewProj, prevViewProj](CommandContext& c)
+				                  {
+					                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, fc.Ctx, fc.FrameIndex);
+
+					                  m_Owner.DrawVisibleMeshes(fc, cam,
+					                                            [&](entt::entity e, const TransformComponent& tr, const MeshComponent& mesh, const MaterialComponent& mat)
+					                                            {
+						                                            // Last frame's world matrix; PrevTransformSnapshotSystem writes it
+						                                            // end-of-frame. Missing (object created this frame) -> use current
+						                                            // => zero velocity (correct).
+						                                            glm::mat4 prevModel = tr.GetTransformMatrix();
+						                                            if (const auto* pt = fc.Reg.try_get_const<PrevTransformComponent>(e))
+						                                            {
+							                                            prevModel = pt->PrevModel;
+						                                            }
+						                                            fc.Renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, 0,
+						                                                                 glm::vec4(0.0f), prevModel);
+					                                            });
+
+					                  m_Pass.RecordVelocity(fc.Renderer, velColorFmt, velDepthFmt, viewProj, prevViewProj);
+				                  }});
+
+				v.Velocity = velTarget->GetDesc().ColorAttachments[0].View;
 			}
 
 		private:
 			RenderSystem& m_Owner;
+			VelocityPass m_Pass; // owned here: the motion-vector pass is exclusive to this effect
 		};
 
 		// Forward + procedural sky into the viewport's HDR target, publishing it as the scene color the rest of
