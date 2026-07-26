@@ -69,13 +69,6 @@ namespace Snowstorm
 		                    const std::string& name, RendererService::TonemapParams params,
 		                    const Ref<Texture>& extraRead = nullptr);
 
-		// Compare / ground-truth path (#45/#46/#98): a 2nd full-res unjittered forward + tonemap into the GT
-		// present target, then the PSNR/SSIM metrics compute reduction (upscaled present vs GT present) and the
-		// dataset-export readback (LR color + motion vectors + HDR/LDR GT). All gated on compare being on; the
-		// metrics/export sub-passes gate further on their own CVars. Runs AFTER LdrChainEffect so the primary
-		// present is written for the metrics comparison. Called by CompareEffect.
-		void AddComparePasses(ViewportRenderContext& v);
-
 		// Iterate the camera's visibility cache and invoke `draw` for each renderable mesh, skipping stale
 		// (New-Scene-wiped) handles and null instances. Shared by the forward and velocity passes — they
 		// differ only in the per-draw work, which they supply as `draw(entity, transform, mesh, material)`.
@@ -106,13 +99,14 @@ namespace Snowstorm
 		// Frame-global shadow phase (owns the shared ShadowPass + its atlas targets). Delegated to from Execute.
 		ShadowRenderer m_ShadowRenderer;
 
-		// First-class render passes owned by the orchestrator (persist across frames; tear down before the
-		// device dies via Application's WaitIdle). The renderer is now a shared context they operate against.
+		// Shared render passes owned by the orchestrator because ≥2 effects (or a frame phase) use them: the IBL
+		// bake feeds every forward pass; SkyPass + PostProcessPass back the shared AddForwardPass/AddTonemapPass
+		// builders (used by both the primary path and CompareEffect's ground-truth render). Each effect's
+		// EXCLUSIVE pass now lives on that effect. Persist across frames; torn down before the device dies via
+		// Application's WaitIdle. The renderer is a shared context they operate against.
 		IBLBakePass m_IBLBakePass;
 		SkyPass m_SkyPass;
 		PostProcessPass m_PostProcessPass;
-		MetricsPass m_MetricsPass;
-		DatasetExportPass m_DatasetExportPass;
 
 		// The ordered per-viewport effect chain (#120). Built once (BuildViewportEffects); RenderViewport runs
 		// it: for each effect, if ShouldRun, Contribute. Effects are migrated into this list one increment at a
