@@ -41,9 +41,9 @@ namespace Snowstorm
 			float ShadowBias = 0.0015f;
 			float ShadowTexelSize = 1.0f / 2048.0f;
 			float ShadowStrength = 1.0f;
-			uint32_t ShadowSoft = 1;           // 1 = 3x3 PCF, 0 = hard single tap
-			uint32_t SpotShadowAtlasIndex = 0; // bindless index of the spot shadow atlas (0 = spots unshadowed)
-			float _ShadowPad1 = 0.0f;
+			uint32_t ShadowSoft = 1;            // 1 = 3x3 PCF, 0 = hard single tap
+			uint32_t SpotShadowAtlasIndex = 0;  // bindless index of the spot shadow atlas (0 = spots unshadowed)
+			uint32_t PointShadowAtlasIndex = 0; // bindless index of the point shadow atlas (0 = points unshadowed)
 			float _ShadowPad2 = 0.0f;
 
 			// IBL (Phase 6). Bindless indices of the baked maps: irradiance + prefiltered into the cube
@@ -227,6 +227,7 @@ namespace Snowstorm
 		frame.ShadowSoft = CVars::ShadowSoft.Get() ? 1u : 0u;
 		frame.ShadowTexelSize = 1.0f / static_cast<float>(fd.Shadow.ShadowResolution != 0 ? fd.Shadow.ShadowResolution : 2048u);
 		frame.SpotShadowAtlasIndex = fd.Shadow.SpotShadowAtlasIndex;
+		frame.PointShadowAtlasIndex = fd.Shadow.PointShadowAtlasIndex;
 
 		// IBL indices: the bake pass pushes them via SetIBLData only while IBL is enabled (it writes zeros
 		// when off), so a non-zero irradiance index means "baked AND on" — turning IBL off leaves the maps

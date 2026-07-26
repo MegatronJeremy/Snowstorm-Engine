@@ -148,6 +148,11 @@ namespace Snowstorm
 		// rects travel inside the GPUSpotLight entries; this is the one shared texture index the shader needs.
 		void SetSpotShadowAtlasIndex(const uint32_t index) { m_FrameData.Shadow.SpotShadowAtlasIndex = index; }
 
+		// Bindless index of the point (omni) shadow atlas (0 = points unshadowed). Per-light 6-face matrices
+		// + tile rects travel inside the GPUPointShadow entries; this is the one shared texture index the
+		// shader needs. Mirrors SetSpotShadowAtlasIndex.
+		void SetPointShadowAtlasIndex(const uint32_t index) { m_FrameData.Shadow.PointShadowAtlasIndex = index; }
+
 		// CPU-side directional-sun shadow fit, computed by LightingSystem (PreRender) and consumed by
 		// RenderSystem's directional shadow pass. This is the sun analogue of the per-spot fit that
 		// LightingSystem already bakes into GPUSpotLight (ComputeSpotViewProj + atlas tile): ALL shadow

@@ -19,12 +19,18 @@ namespace Snowstorm
 	// Positional lights. Unlike the sun, both derive their world POSITION (and, for spot, DIRECTION)
 	// from the entity's TransformComponent -- the light data carries no position of its own (Unity/Unreal
 	// model: a Light is a transform + parameters). This keeps a single source of truth and lets the
-	// existing translate/rotate gizmo manipulate lights for free. Unshadowed for now (see #65).
+	// existing translate/rotate gizmo manipulate lights for free.
 	struct PointLightComponent
 	{
 		glm::vec3 Color{1.0f};
 		float Intensity = 1.0f;
 		float Range = 10.0f; // distance at which the light's contribution smoothly reaches zero
+
+		// Whether this omni light casts shadows (per-light toggle, like Spot/Directional CastShadows).
+		// A shadow-casting point is rendered as 6 perspective depth faces (cube unrolled into an atlas);
+		// casters are assigned a shadow slot up to a hard cap (ShadowPass::kMaxShadowPoints) because each
+		// costs 6 depth passes. The global render.shadows CVar is the scalability kill-switch above this.
+		bool CastShadows = true;
 	};
 
 	// Spot light: a point light restricted to a cone. Direction = the entity transform's forward (-Z).

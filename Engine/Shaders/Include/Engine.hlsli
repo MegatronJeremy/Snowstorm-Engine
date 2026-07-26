@@ -21,6 +21,17 @@ struct PointLight
 	float Range;
 	float3 Color;
 	float Intensity;
+	// Shadow slot: index into FrameCB.PointShadows (0..MAX_SHADOW_POINTS-1), or < 0 when unshadowed.
+	int ShadowSlot;
+	float3 ShadowPad;
+};
+
+// 6-face shadow payload for one shadow-casting point light (cube unrolled into the point atlas). Mirrors
+// GPUPointShadow in LightingUniforms.hpp field-for-field. Face order = +X,-X,+Y,-Y,+Z,-Z.
+struct PointShadow
+{
+	float4x4 Face[6];
+	float4 Rect[6];
 };
 
 struct SpotLight
@@ -63,6 +74,7 @@ struct PSInput
 static const int MAX_DIRECTIONAL_LIGHTS = 4;
 static const int MAX_POINT_LIGHTS = 16;
 static const int MAX_SPOT_LIGHTS = 16;
+static const int MAX_SHADOW_POINTS = 2; // hard cap on shadow-casting point lights (6 depth passes each)
 
 // --- SPACE 0: Global Frame Data ---
 cbuffer FrameCB : register(b0, space0)
@@ -86,6 +98,12 @@ cbuffer FrameCB : register(b0, space0)
 	int SpotCount;
 	float3 _SpotPad;
 
+	// Point (omni) shadow payloads, indexed by PointLight.ShadowSlot. Appended at the light block's tail
+	// so no existing offset moves; mirrors LightDataBlock's tail in LightingUniforms.hpp field-for-field.
+	PointShadow PointShadows[2]; // MAX_SHADOW_POINTS
+	int PointShadowCount;
+	float3 _PointShadowPad;
+
 	// Environment: shared by the sky pass and the DefaultLit ambient term. Mirrors the FrameCB tail in
 	// RendererSingleton.cpp field-for-field (each float3 register-packed with the trailing float).
 	float3 SkyZenithColor;
@@ -102,9 +120,9 @@ cbuffer FrameCB : register(b0, space0)
 	float ShadowBias;
 	float ShadowTexelSize;
 	float ShadowStrength;
-	uint ShadowSoft;           // 1 = 3x3 PCF, 0 = hard single tap
-	uint SpotShadowAtlasIndex; // bindless index of the spot shadow atlas (0 = spots unshadowed)
-	float _ShadowPad1;
+	uint ShadowSoft;            // 1 = 3x3 PCF, 0 = hard single tap
+	uint SpotShadowAtlasIndex;  // bindless index of the spot shadow atlas (0 = spots unshadowed)
+	uint PointShadowAtlasIndex; // bindless index of the point shadow atlas (0 = points unshadowed)
 	float _ShadowPad2;
 
 	// IBL: bindless indices of the baked maps (irradiance + prefiltered in Cubemaps[], BRDF LUT in
