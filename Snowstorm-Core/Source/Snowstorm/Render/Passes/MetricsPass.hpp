@@ -1,7 +1,5 @@
 #pragma once
 
-#include "IRenderPass.hpp"
-
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
@@ -19,11 +17,9 @@ namespace Snowstorm
 	// maps back to finalize PSNR (dB) and a global SSIM. Only added to the graph when render.metrics AND
 	// render.compare are on (both images must exist). Owns the compute pipeline, a host-visible storage buffer
 	// (written by the shader, mapped by the CPU — no separate readback copy), and a per-frame descriptor set.
-	class MetricsPass final : public IRenderPass
+	class MetricsPass final
 	{
 	public:
-		[[nodiscard]] const char* Name() const override { return "Metrics"; }
-
 		// The finalized result of the most recent Compute(). Valid == false until the first successful frame
 		// (shader compiling, or a frame skipped). PSNR in dB (inf-capped); SSIM in [0,1].
 		struct Result

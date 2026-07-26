@@ -1,7 +1,5 @@
 #pragma once
 
-#include "IRenderPass.hpp"
-
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
@@ -23,11 +21,9 @@ namespace Snowstorm
 	// — same self-contained set-1 resources, same gamma-in / linear-out (sRGB HW re-encode on write, #79).
 	// Only added to the graph when render.sharpen > 0 (RenderSystem gates it). Owns its pipeline + a
 	// clamp-linear sampler + per-frame descriptor set/UBO. Structurally a twin of FxaaPass.
-	class SharpenPass final : public IRenderPass
+	class SharpenPass final
 	{
 	public:
-		[[nodiscard]] const char* Name() const override { return "Sharpen"; }
-
 		// Sharpen `srcSampleView` (the tonemapped LDR intermediate, a UNORM view) into the current render
 		// target. `rcpFrame` = 1/viewport-size; `sharpness` in [0,1]. Records into `ctx`; no-op until the
 		// shader has compiled. Uses the given frame index to pick the per-frame descriptor set/UBO.

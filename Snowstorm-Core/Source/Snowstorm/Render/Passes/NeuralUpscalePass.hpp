@@ -1,7 +1,5 @@
 #pragma once
 
-#include "IRenderPass.hpp"
-
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/Neural/NeuralWeights.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
@@ -28,11 +26,9 @@ namespace Snowstorm
 	// Default weights are the code-defined identity refiner (zero output layer -> residual 0 -> output ==
 	// bilinear), so the untrained pass is a provable no-op that validates the whole chain. A trained .ssnn set
 	// via SetWeightsPath overrides it.
-	class NeuralUpscalePass final : public IRenderPass
+	class NeuralUpscalePass final
 	{
 	public:
-		[[nodiscard]] const char* Name() const override { return "NeuralUpscale"; }
-
 		// Build/resize the pipelines, model, and sized resources for a (outWidth,outHeight) inference. MUST be
 		// called at graph-BUILD time (before AddPass), NOT inside the Execute lambda: a resize recreates the
 		// bindless-registered output view and drains the GPU (WaitIdle), which is illegal mid-command-recording.

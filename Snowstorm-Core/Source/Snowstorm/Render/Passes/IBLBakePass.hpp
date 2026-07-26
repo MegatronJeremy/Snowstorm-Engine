@@ -1,7 +1,5 @@
 #pragma once
 
-#include "IRenderPass.hpp"
-
 #include "Snowstorm/Lighting/LightingUniforms.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Render/RenderGraph.hpp"
@@ -19,11 +17,9 @@ namespace Snowstorm
 	// the env cube it Reads, and the RenderGraph inserts every Storage/Sampled transition at the pass
 	// boundaries — there are no hand-called barriers here anymore. The consuming mesh pass declares it
 	// Reads{Sampled} the three output maps, so the graph transitions them to shader-read before shading.
-	class IBLBakePass final : public IRenderPass
+	class IBLBakePass final
 	{
 	public:
-		[[nodiscard]] const char* Name() const override { return "IBLBake"; }
-
 		// Create the bake resources (once) and append the four bake compute passes to this frame's graph.
 		// Call once, on the frame IBL is first enabled, with the GPU drained (resource creation updates the
 		// bindless set; RenderSystem does Renderer::WaitIdle() first). The dispatches then run inside

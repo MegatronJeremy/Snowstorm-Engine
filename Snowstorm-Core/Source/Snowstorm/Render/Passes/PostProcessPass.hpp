@@ -1,7 +1,5 @@
 #pragma once
 
-#include "IRenderPass.hpp"
-
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
@@ -18,11 +16,9 @@ namespace Snowstorm
 	// fullscreen triangle. This is the single place the output transform lives — the mesh/sky shaders now
 	// emit raw linear radiance. Owns its pipeline (rebuilt only when the present target's color format
 	// changes). The seam a future upscaler / AA plugs into.
-	class PostProcessPass final : public IRenderPass
+	class PostProcessPass final
 	{
 	public:
-		[[nodiscard]] const char* Name() const override { return "PostProcess"; }
-
 		// Tonemap the HDR scene color into the current (LDR) render target. `params` carries the HDR scene
 		// color bindless slot + the motion-vector debug fields (#44); `colorFormat` is the present target's
 		// format (drives the lazy pipeline build). Records into `ctx` (the graph's per-frame command

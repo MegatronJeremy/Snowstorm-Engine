@@ -1,7 +1,5 @@
 #pragma once
 
-#include "IRenderPass.hpp"
-
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
@@ -18,11 +16,9 @@ namespace Snowstorm
 	// visualizes it. Only added to the graph when render.debugview != 0 (RenderSystem gates it). Owns the
 	// graphics pipeline (mesh vertex layout, 128-byte vertex push constant for the two camera matrices);
 	// the caster iteration + DrawMesh accumulation stay in RenderSystem, like the shadow/forward passes.
-	class VelocityPass final : public IRenderPass
+	class VelocityPass final
 	{
 	public:
-		[[nodiscard]] const char* Name() const override { return "Velocity"; }
-
 		// Record the velocity draw of the renderer's accumulated batches into the bound velocity target.
 		// `viewProj`/`prevViewProj` are pushed as a 128-byte vertex push constant (see Velocity.vert.hlsl);
 		// per-object Model/PrevModel come from the instance buffer. Lazily builds the pipeline for the

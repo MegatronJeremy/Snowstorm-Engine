@@ -1,7 +1,5 @@
 #pragma once
 
-#include "IRenderPass.hpp"
-
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
@@ -26,11 +24,9 @@ namespace Snowstorm
 	// is recorded this frame, and the slot written `frames` frames ago is mapped + serialized now). Buffers are
 	// written as .npy (RGBA16F -> '<f2'); a manifest.json indexes every frame with its jitter, scale, and file
 	// paths. Serialization is synchronous on the main thread — offline data-gen tolerates the stall.
-	class DatasetExportPass final : public IRenderPass
+	class DatasetExportPass final
 	{
 	public:
-		[[nodiscard]] const char* Name() const override { return "DatasetExport"; }
-
 		// Per-frame source views + metadata for one tuple. All three are color targets already left in
 		// SHADER_READ_ONLY by their passes; the pass copies each to CPU. `lr` is the scaled internal-res scene
 		// color (jittered); `mv` and `gt` are full-res (unjittered). `jitterNdc` is this frame's sub-pixel offset

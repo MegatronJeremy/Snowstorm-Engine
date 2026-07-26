@@ -1,7 +1,5 @@
 #pragma once
 
-#include "IRenderPass.hpp"
-
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
@@ -22,11 +20,9 @@ namespace Snowstorm
 	// the present target. Unlike the tonemap pass it OWNS a descriptor set (set 0): a combined image +
 	// sampler for the source + a small UBO with the inverse resolution. Only added to the graph when
 	// render.aa != 0 (RenderSystem gates it). Owns its pipeline, rebuilt when the target format changes.
-	class FxaaPass final : public IRenderPass
+	class FxaaPass final
 	{
 	public:
-		[[nodiscard]] const char* Name() const override { return "FXAA"; }
-
 		// Blend `srcSampleView` (the tonemapped LDR intermediate, a UNORM view) into the current render
 		// target. `rcpFrame` = 1/viewport-size (texel step for the taps). Records into `ctx`; no-op until
 		// the shader has compiled. Uses the given frame index to pick the per-frame descriptor set/UBO.

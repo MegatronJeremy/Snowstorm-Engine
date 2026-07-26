@@ -1,7 +1,5 @@
 #pragma once
 
-#include "IRenderPass.hpp"
-
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Render/RenderTarget.hpp"
 #include "Snowstorm/Render/Texture.hpp"
@@ -17,11 +15,9 @@ namespace Snowstorm
 	// sampleable shadow map; the lit pass reprojects + PCF-compares against it. Owns the depth-only
 	// pipeline and the shadow-map target. The ECS caster iteration stays in RenderSystem (like the camera
 	// mesh loop) — this pass owns the feature GPU objects + the two pure helpers (sun matrix, target).
-	class ShadowPass final : public IRenderPass
+	class ShadowPass final
 	{
 	public:
-		[[nodiscard]] const char* Name() const override { return "Shadow"; }
-
 		// Fit an orthographic light frustum to the scene AABB and build the sun's view-projection (world ->
 		// light clip). Returns false if the scene has no renderable bounds yet (caller disables shadows).
 		// Static + pure: RenderSystem needs the matrix BEFORE the graph pass runs, to feed SetShadowData.

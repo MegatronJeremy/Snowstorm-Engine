@@ -1,7 +1,5 @@
 #pragma once
 
-#include "IRenderPass.hpp"
-
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
@@ -19,11 +17,9 @@ namespace Snowstorm
 	// this pass's shader (same source/dest), the bilinear version is the baseline. Only added to the graph
 	// when render.scale < 1 (RenderSystem gates it). Owns a clamp-linear sampler + a per-frame descriptor
 	// set (set 1, texture+sampler); no UBO — UVs come from the fullscreen VS. Models on FxaaPass.
-	class UpscalePass final : public IRenderPass
+	class UpscalePass final
 	{
 	public:
-		[[nodiscard]] const char* Name() const override { return "Upscale"; }
-
 		// Resample `srcSampleView` (the low-res HDR scene color) into the current (full-res HDR) target.
 		// Records into `ctx`; no-op until the shader has compiled. Uses `frameIndex` for the per-frame set.
 		void Draw(const Ref<CommandContext>& ctx, uint32_t frameIndex,
