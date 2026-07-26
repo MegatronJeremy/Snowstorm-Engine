@@ -119,6 +119,13 @@ namespace Snowstorm
 		// equal the texture's MipLevels.
 		virtual void SetMipData(const std::vector<std::vector<uint8_t>>& levels) = 0;
 
+		// Upload a PRECOMPUTED cubemap: faces[f][m] is the tightly-packed texel blob for face f (0..5), mip m,
+		// in the texture's raw format (e.g. RGBA16F = 8 B/texel). One staging->image copy per (face, mip), no
+		// blit — the face-aware sibling of SetMipData (which only reaches layer 0). Requires a cube texture
+		// (ArrayLayers == 6); faces.size() must be 6 and each faces[f].size() the texture's MipLevels. Used to
+		// restore the IBL irradiance/prefiltered cubes from the disk cache (#34).
+		virtual void SetCubeData(const std::vector<std::vector<std::vector<uint8_t>>>& faces) = 0;
+
 		// Resource identity comparison (same underlying GPU resource)
 		virtual bool operator==(const Texture& other) const = 0;
 

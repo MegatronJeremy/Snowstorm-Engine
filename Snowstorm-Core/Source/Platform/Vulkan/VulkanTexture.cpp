@@ -429,6 +429,117 @@ namespace Snowstorm
 		vmaDestroyBuffer(allocator, staging, stagingAlloc);
 	}
 
+	void VulkanTexture::SetCubeData(const std::vector<std::vector<std::vector<uint8_t>>>& faces)
+	{
+		SS_CORE_ASSERT(m_Image != VK_NULL_HANDLE, "SetCubeData on invalid texture");
+		SS_CORE_ASSERT(m_Desc.ArrayLayers == 6, "SetCubeData requires a cube texture (6 array layers)");
+		SS_CORE_ASSERT(faces.size() == 6, "SetCubeData: expected 6 faces");
+		SS_CORE_ASSERT(HasUsage(m_Desc.Usage, TextureUsage::TransferDst), "Texture needs TransferDst");
+		for (const auto& mips : faces)
+		{
+			SS_CORE_ASSERT(mips.size() == m_Desc.MipLevels, "SetCubeData: each face must have MipLevels levels");
+		}
+
+		const VmaAllocator allocator = GetAllocator();
+		VulkanContext& ctx = VulkanContext::Get();
+		const uint32_t xferFamily = ctx.GetTransferQueueFamilyIndex();
+		const uint32_t gfxFamily = ctx.GetGraphicsQueueFamilyIndex();
+		const bool ownershipTransfer = ctx.HasDedicatedTransferQueue();
+
+		const VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+		const VkImageLayout finalLayout = GetReadyLayout();
+
+		// Pack every (face, mip) blob into one staging buffer; record each copy's offset. Ordered face-major
+		// (face 0's whole mip chain, then face 1's, ...) — matches how the IBL cache serializes them.
+		VkDeviceSize total = 0;
+		std::vector<std::vector<VkDeviceSize>> offset(6, std::vector<VkDeviceSize>(m_Desc.MipLevels));
+		for (uint32_t f = 0; f < 6; ++f)
+		{
+			for (uint32_t m = 0; m < m_Desc.MipLevels; ++m)
+			{
+				offset[f][m] = total;
+				total += faces[f][m].size();
+			}
+		}
+
+		VkBuffer staging = VK_NULL_HANDLE;
+		VmaAllocation stagingAlloc = nullptr;
+		VkBufferCreateInfo bufCI{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+		bufCI.size = total;
+		bufCI.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		bufCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		VmaAllocationCreateInfo stagingAllocCI{};
+		stagingAllocCI.usage = VMA_MEMORY_USAGE_AUTO;
+		stagingAllocCI.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+		VmaAllocationInfo allocInfo{};
+		const VkResult res = vmaCreateBuffer(allocator, &bufCI, &stagingAllocCI, &staging, &stagingAlloc, &allocInfo);
+		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to create staging buffer for cube upload");
+
+		auto* dst = static_cast<uint8_t*>(allocInfo.pMappedData);
+		for (uint32_t f = 0; f < 6; ++f)
+		{
+			for (uint32_t m = 0; m < m_Desc.MipLevels; ++m)
+			{
+				std::memcpy(dst + offset[f][m], faces[f][m].data(), faces[f][m].size());
+			}
+		}
+		vmaFlushAllocation(allocator, stagingAlloc, 0, total);
+
+		// Transfer queue: copy every (face, mip), then RELEASE ownership to graphics. Pure copies, no blit —
+		// mirrors SetMipData but with all 6 array layers and baseArrayLayer = face per copy.
+		TransferSubmit([&](const VkCommandBuffer cmd)
+		               {
+			CmdTransitionImage(cmd, m_Image, aspect, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, m_Desc.MipLevels, 6);
+
+			for (uint32_t f = 0; f < 6; ++f)
+			{
+				uint32_t mw = m_Desc.Width, mh = m_Desc.Height;
+				for (uint32_t m = 0; m < m_Desc.MipLevels; ++m)
+				{
+					VkBufferImageCopy region{};
+					region.bufferOffset = offset[f][m];
+					region.imageSubresource = {aspect, m, f, 1}; // mip m, array layer (face) f
+					region.imageExtent = {mw, mh, 1};
+					vkCmdCopyBufferToImage(cmd, staging, m_Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+					mw = std::max(1u, mw / 2u);
+					mh = std::max(1u, mh / 2u);
+				}
+			}
+
+			VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+			b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+			b.newLayout = finalLayout;
+			b.srcQueueFamilyIndex = ownershipTransfer ? xferFamily : VK_QUEUE_FAMILY_IGNORED;
+			b.dstQueueFamilyIndex = ownershipTransfer ? gfxFamily : VK_QUEUE_FAMILY_IGNORED;
+			b.image = m_Image;
+			b.subresourceRange = {aspect, 0, m_Desc.MipLevels, 0, 6};
+			b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			b.dstAccessMask = 0; // release: dst scope defined by the acquire on the other queue
+			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+			                     0, 0, nullptr, 0, nullptr, 1, &b); });
+
+		// Graphics queue: ACQUIRE for sampling (only for a real cross-family transfer; see SetMipData).
+		if (ownershipTransfer)
+		{
+			ImmediateSubmit([&](const VkCommandBuffer cmd)
+			                {
+				VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+				b.oldLayout = finalLayout;
+				b.newLayout = finalLayout;
+				b.srcQueueFamilyIndex = xferFamily;
+				b.dstQueueFamilyIndex = gfxFamily;
+				b.image = m_Image;
+				b.subresourceRange = {aspect, 0, m_Desc.MipLevels, 0, 6};
+				b.srcAccessMask = 0;
+				b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+				vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+				                     0, 0, nullptr, 0, nullptr, 1, &b); });
+		}
+
+		m_CurrentLayout = finalLayout;
+		vmaDestroyBuffer(allocator, staging, stagingAlloc);
+	}
+
 	bool VulkanTexture::operator==(const Texture& other) const
 	{
 		const auto* rhs = dynamic_cast<const VulkanTexture*>(&other);
