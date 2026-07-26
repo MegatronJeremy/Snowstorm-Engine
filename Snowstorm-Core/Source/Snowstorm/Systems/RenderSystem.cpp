@@ -479,67 +479,6 @@ namespace Snowstorm
 		                  }});
 	}
 
-	void RenderSystem::AddLdrChain(ViewportRenderContext& v)
-	{
-		FrameContext& fc = v.Frame;
-		const RenderTargetComponent& vpRT = v.RT;
-
-		// tonemap -> [FXAA] -> [CAS sharpen] -> present. The stages PING-PONG between PresentTarget and
-		// AAIntermediateTarget so the LAST enabled stage lands on Present (what ImGui samples). Stage k writes
-		// Present when (TotalStages-1-k) is even, else AAIntermediate; each reads the previous stage's UNORM
-		// sample view. Recomputed here from v.RT / v.TotalStages (the preamble cached the gates on the context).
-		auto stageTarget = [&](const int stageIndex) -> Ref<RenderTarget>
-		{
-			return ((v.TotalStages - 1 - stageIndex) % 2 == 0) ? vpRT.PresentTarget : vpRT.AAIntermediateTarget;
-		};
-		auto stageSampleView = [&](const Ref<RenderTarget>& t) -> Ref<TextureView>
-		{
-			return (t == vpRT.PresentTarget) ? vpRT.PresentSampleView : vpRT.AAIntermediateSampleView;
-		};
-
-		// SceneColor now reflects the post-upscale, post-TAA image (TemporalEffect republished it when TAA is on).
-		AddTonemapPass(fc, v.SceneColor.View, v.TonemapTarget, "PostProcess" + v.Suffix, v.PrimaryTonemap, v.VelocityRead);
-
-		const glm::vec2 rcpFrame = {1.0f / static_cast<float>(v.UpWidth), 1.0f / static_cast<float>(v.UpHeight)};
-		int stageIndex = 0; // 0 = tonemap (already emitted into v.TonemapTarget)
-		Ref<RenderTarget> prevTarget = v.TonemapTarget;
-
-		if (v.FxaaOn)
-		{
-			++stageIndex;
-			const Ref<RenderTarget> dst = stageTarget(stageIndex);
-			const Ref<TextureView> srcView = stageSampleView(prevTarget);
-			const Ref<Texture> srcImg = prevTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-			const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-			fc.Graph.AddPass({.Name = "FXAA" + v.Suffix,
-			                  .Target = dst,
-			                  .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
-			                  .Execute = [this, &fc, srcView, rcpFrame, dstFmt](CommandContext& c)
-			                  {
-				                  m_FxaaPass.Draw(fc.Ctx, fc.FrameIndex, srcView, rcpFrame, dstFmt);
-			                  }});
-			prevTarget = dst;
-		}
-
-		if (v.SharpenOn)
-		{
-			++stageIndex;
-			const Ref<RenderTarget> dst = stageTarget(stageIndex);
-			const Ref<TextureView> srcView = stageSampleView(prevTarget);
-			const Ref<Texture> srcImg = prevTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-			const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-			const float sharpness = CVars::Sharpen.Get();
-			fc.Graph.AddPass({.Name = "Sharpen" + v.Suffix,
-			                  .Target = dst,
-			                  .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
-			                  .Execute = [this, &fc, srcView, rcpFrame, sharpness, dstFmt](CommandContext& c)
-			                  {
-				                  m_SharpenPass.Draw(fc.Ctx, fc.FrameIndex, srcView, rcpFrame, sharpness, dstFmt);
-			                  }});
-			prevTarget = dst;
-		}
-	}
-
 	void RenderSystem::AddComparePasses(ViewportRenderContext& v)
 	{
 		FrameContext& fc = v.Frame;
@@ -943,8 +882,10 @@ namespace Snowstorm
 		};
 
 		// Tonemap + LDR post filters (#44): the tail of the primary path. Tonemaps the resolved scene color into
-		// the LDR present chain, then optional FXAA + CAS sharpen, ping-ponging so the last stage lands on
-		// Present. Runs only when the primary post-chain is active (a valid tonemap target exists).
+		// the LDR present chain (via the shared AddTonemapPass), then optional FXAA + CAS sharpen, ping-ponging
+		// so the last stage lands on Present. Runs only when the primary post-chain is active (a valid tonemap
+		// target exists). Owns the FXAA and sharpen passes (exclusive to this effect); tonemap stays shared
+		// (also used by CompareEffect for the ground-truth present).
 		class LdrChainEffect final : public IViewportEffect
 		{
 		public:
@@ -959,10 +900,72 @@ namespace Snowstorm
 				return v.TonemapTarget != nullptr; // the primary post-chain is active
 			}
 
-			void Contribute(ViewportRenderContext& v) override { m_Owner.AddLdrChain(v); }
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+				const RenderTargetComponent& vpRT = v.RT;
+
+				// tonemap -> [FXAA] -> [CAS sharpen] -> present. The stages PING-PONG between PresentTarget and
+				// AAIntermediateTarget so the LAST enabled stage lands on Present (what ImGui samples). Stage k
+				// writes Present when (TotalStages-1-k) is even, else AAIntermediate; each reads the previous
+				// stage's UNORM sample view. Recomputed from v.RT / v.TotalStages (the preamble cached the gates).
+				auto stageTarget = [&](const int stageIndex) -> Ref<RenderTarget>
+				{
+					return ((v.TotalStages - 1 - stageIndex) % 2 == 0) ? vpRT.PresentTarget : vpRT.AAIntermediateTarget;
+				};
+				auto stageSampleView = [&](const Ref<RenderTarget>& t) -> Ref<TextureView>
+				{
+					return (t == vpRT.PresentTarget) ? vpRT.PresentSampleView : vpRT.AAIntermediateSampleView;
+				};
+
+				// SceneColor now reflects the post-upscale, post-TAA image (TemporalEffect republished it when TAA
+				// is on). Tonemap is the shared builder (CompareEffect reuses it for the ground-truth present).
+				m_Owner.AddTonemapPass(fc, v.SceneColor.View, v.TonemapTarget, "PostProcess" + v.Suffix, v.PrimaryTonemap, v.VelocityRead);
+
+				const glm::vec2 rcpFrame = {1.0f / static_cast<float>(v.UpWidth), 1.0f / static_cast<float>(v.UpHeight)};
+				int stageIndex = 0; // 0 = tonemap (already emitted into v.TonemapTarget)
+				Ref<RenderTarget> prevTarget = v.TonemapTarget;
+
+				if (v.FxaaOn)
+				{
+					++stageIndex;
+					const Ref<RenderTarget> dst = stageTarget(stageIndex);
+					const Ref<TextureView> srcView = stageSampleView(prevTarget);
+					const Ref<Texture> srcImg = prevTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+					const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+					fc.Graph.AddPass({.Name = "FXAA" + v.Suffix,
+					                  .Target = dst,
+					                  .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
+					                  .Execute = [this, &fc, srcView, rcpFrame, dstFmt](CommandContext& c)
+					                  {
+						                  m_FxaaPass.Draw(fc.Ctx, fc.FrameIndex, srcView, rcpFrame, dstFmt);
+					                  }});
+					prevTarget = dst;
+				}
+
+				if (v.SharpenOn)
+				{
+					++stageIndex;
+					const Ref<RenderTarget> dst = stageTarget(stageIndex);
+					const Ref<TextureView> srcView = stageSampleView(prevTarget);
+					const Ref<Texture> srcImg = prevTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+					const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+					const float sharpness = CVars::Sharpen.Get();
+					fc.Graph.AddPass({.Name = "Sharpen" + v.Suffix,
+					                  .Target = dst,
+					                  .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
+					                  .Execute = [this, &fc, srcView, rcpFrame, sharpness, dstFmt](CommandContext& c)
+					                  {
+						                  m_SharpenPass.Draw(fc.Ctx, fc.FrameIndex, srcView, rcpFrame, sharpness, dstFmt);
+					                  }});
+					prevTarget = dst;
+				}
+			}
 
 		private:
 			RenderSystem& m_Owner;
+			FxaaPass m_FxaaPass;       // FXAA post filter; exclusive to this effect
+			SharpenPass m_SharpenPass; // CAS sharpen post filter; exclusive to this effect
 		};
 
 		// Compare / ground-truth path (#45/#46/#98): runs last, only in compare mode. Renders a 2nd full-res

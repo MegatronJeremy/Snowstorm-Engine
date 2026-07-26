@@ -69,13 +69,6 @@ namespace Snowstorm
 		                    const std::string& name, RendererService::TonemapParams params,
 		                    const Ref<Texture>& extraRead = nullptr);
 
-		// Tonemap + LDR post filters (#44): tonemap v.SceneColor into the LDR present chain, then optional FXAA
-		// and CAS sharpen. The stages PING-PONG between PresentTarget and AAIntermediateTarget so the LAST
-		// enabled stage always lands on PresentTarget (what ImGui samples). Reads the derived sizing / gates
-		// (TonemapTarget, TotalStages, FxaaOn, SharpenOn) + PrimaryTonemap + VelocityRead from the context.
-		// Called by LdrChainEffect (only when the primary post-chain is active).
-		void AddLdrChain(ViewportRenderContext& v);
-
 		// Compare / ground-truth path (#45/#46/#98): a 2nd full-res unjittered forward + tonemap into the GT
 		// present target, then the PSNR/SSIM metrics compute reduction (upscaled present vs GT present) and the
 		// dataset-export readback (LR color + motion vectors + HDR/LDR GT). All gated on compare being on; the
@@ -118,8 +111,6 @@ namespace Snowstorm
 		IBLBakePass m_IBLBakePass;
 		SkyPass m_SkyPass;
 		PostProcessPass m_PostProcessPass;
-		FxaaPass m_FxaaPass;
-		SharpenPass m_SharpenPass;
 		MetricsPass m_MetricsPass;
 		DatasetExportPass m_DatasetExportPass;
 
