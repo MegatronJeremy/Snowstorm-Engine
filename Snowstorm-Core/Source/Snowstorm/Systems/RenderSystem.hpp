@@ -69,13 +69,6 @@ namespace Snowstorm
 		                    const std::string& name, RendererService::TonemapParams params,
 		                    const Ref<Texture>& extraRead = nullptr);
 
-		// Temporal resolve / TAA (#44): reproject last frame's resolved HDR (history) by velocity, blend with
-		// the current scene color, write this frame's history slot (which feeds tonemap AND becomes next
-		// frame's history), and republish v.SceneColor as the resolved slot. Owns the per-viewport
-		// history-valid flag (insert when it runs, erase when TAA is off so re-enabling starts clean). Called by
-		// TemporalEffect every frame; internally resolves when v.TaaOn, else just clears the flag.
-		void AddTemporalResolve(ViewportRenderContext& v);
-
 		// Tonemap + LDR post filters (#44): tonemap v.SceneColor into the LDR present chain, then optional FXAA
 		// and CAS sharpen. The stages PING-PONG between PresentTarget and AAIntermediateTarget so the LAST
 		// enabled stage always lands on PresentTarget (what ImGui samples). Reads the derived sizing / gates
@@ -127,7 +120,6 @@ namespace Snowstorm
 		PostProcessPass m_PostProcessPass;
 		FxaaPass m_FxaaPass;
 		SharpenPass m_SharpenPass;
-		TemporalResolvePass m_TemporalResolvePass;
 		MetricsPass m_MetricsPass;
 		DatasetExportPass m_DatasetExportPass;
 
@@ -136,11 +128,6 @@ namespace Snowstorm
 		// time — while it's empty (or partial) the remaining inline monolith still runs the rest, so the frame
 		// stays whole between increments.
 		std::vector<Scope<IViewportEffect>> m_ViewportEffects;
-
-		// Viewports whose TAA history slot holds a valid previous frame (#44). A viewport is inserted after
-		// its first temporal-resolve pass; erased when TAA turns off or the targets are rebuilt (resize), so
-		// re-enabling TAA starts clean instead of reprojecting a stale/garbage history on frame one.
-		std::unordered_set<entt::entity> m_TaaHistoryValid;
 
 		// Last scene generation (World::SceneGeneration) this system observed. When it changes, the scene was
 		// wiped (Open/New Scene) — the persistent viewport survives but its temporal history now holds the old
