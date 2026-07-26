@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Snowstorm/Render/Passes/ShadowPass.hpp"
-#include "Snowstorm/Systems/RenderPhaseContext.hpp"
+#include "Snowstorm/Render/RenderPhaseContext.hpp"
 
 namespace Snowstorm
 {

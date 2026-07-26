@@ -1,4 +1,4 @@
-#include "RenderSystem.hpp"
+#include "Snowstorm/Systems/RenderSystem.hpp"
 
 #include "Snowstorm/Components/MaterialComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"

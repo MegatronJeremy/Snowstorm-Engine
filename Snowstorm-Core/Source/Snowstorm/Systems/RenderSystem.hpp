@@ -8,9 +8,9 @@
 #include "Snowstorm/Render/Passes/IBLBakePass.hpp"
 #include "Snowstorm/Render/Passes/PostProcessPass.hpp"
 #include "Snowstorm/Render/Passes/SkyPass.hpp"
+#include "Snowstorm/Render/RenderPhaseContext.hpp"
 #include "Snowstorm/Render/RendererService.hpp" // TonemapParams (used in the effect-chain helper signatures)
-#include "Snowstorm/Systems/RenderPhaseContext.hpp"
-#include "Snowstorm/Systems/ShadowRenderer.hpp"
+#include "Snowstorm/Render/ShadowRenderer.hpp"
 
 #include <entt/entt.hpp>
 
