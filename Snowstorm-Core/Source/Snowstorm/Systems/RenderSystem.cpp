@@ -487,7 +487,7 @@ namespace Snowstorm
 		// inline; it only uses v.SceneColor (the resource that flows forward -> upscale -> TAA -> tonemap),
 		// replacing the former reassigned `sceneColorView` local. The effect classes migrate onto this in the
 		// following increments.
-		ViewportRenderContext v{.Frame = fc, .RT = vpRT, .Cam = cam, .Suffix = passSuffix, .Comparing = comparing};
+		ViewportRenderContext v{.Frame = fc, .RT = vpRT, .ViewportEntity = vpEntity, .Cam = cam, .Suffix = passSuffix, .Comparing = comparing};
 
 		// Build the effect list once (lazy — the pass objects it references are constructed with this system).
 		if (m_ViewportEffects.empty())
@@ -523,11 +523,12 @@ namespace Snowstorm
 		// pass on while exporting even without debug-view/TAA. Requires compare (ground truth exists).
 		const bool exporting = CVars::DatasetExport.Get() && comparing;
 		// The velocity/motion-vector pass now runs as VelocityEffect (registered before ForwardEffect in the
-		// effect list). velocityNeeded is still computed here because the still-inline consumers below (the
-		// neural-temporal upscale, TAA, the motion-vector debug tonemap, dataset export) branch on it.
+		// effect list). velocityNeeded is derived here and cached on the context because both VelocityEffect
+		// and the still-inline consumers (TAA, the motion-vector debug tonemap, dataset export) branch on it.
 		const bool velocityNeeded = (debugView == 1 || taaOn || neuralTemporal || exporting) && vpRT.VelocityTarget &&
 		                            !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
 		                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
+		v.VelocityNeeded = velocityNeeded;
 
 		// Tonemap debug params (#44): visualize the velocity target ONLY when the motion-vector debug
 		// view is explicitly selected — NOT merely when velocity is being rendered (TAA also renders
@@ -541,23 +542,10 @@ namespace Snowstorm
 			primaryTonemap.DebugScale = 40.0f; // per-frame UV velocity is small; scale to a visible range
 		}
 
-		// ---- Primary (upscaled) path ----
-		// Forward + sky now runs through the effect list (currently just ForwardEffect); it publishes
-		// v.SceneColor for the downstream chain. The remaining stages (upscale/TAA/tonemap/LDR filters) are
-		// still inline below and read/update v.SceneColor until they migrate to their own effects (#120 C..G).
-		for (const Scope<IViewportEffect>& effect : m_ViewportEffects)
-		{
-			if (effect->ShouldRun(v))
-			{
-				effect->Contribute(v);
-			}
-		}
-
-		// Post-tonemap LDR filter chain (#44): tonemap -> [FXAA] -> [CAS sharpen] -> present. Both FXAA
-		// and sharpen read an LDR UNORM sample view and write an sRGB target; they PING-PONG between
-		// PresentTarget and AAIntermediateTarget so the LAST enabled stage always lands on PresentTarget
-		// (what ImGui samples). With neither enabled this is tonemap -> Present (unchanged); with FXAA
-		// only it's the exact prior tonemap -> AAIntermediate -> Present path. Both forced off in compare.
+		// Post-tonemap LDR filter sizing (#44), derived up front so the effect chain (UpscaleEffect) and the
+		// still-inline TAA/tonemap/LDR share it. tonemap -> [FXAA] -> [CAS sharpen] -> present PING-PONG
+		// between PresentTarget and AAIntermediateTarget so the LAST enabled stage always lands on Present
+		// (what ImGui samples). Both filters forced off in compare.
 		const bool fxaaOn = !comparing && CVars::AAMode.Get() == 1 && vpRT.AAIntermediateTarget && vpRT.AAIntermediateSampleView;
 		const bool sharpenOn = !comparing && CVars::Sharpen.Get() > 0.0f && vpRT.AAIntermediateTarget &&
 		                       vpRT.AAIntermediateSampleView && vpRT.PresentSampleView;
@@ -577,108 +565,39 @@ namespace Snowstorm
 		};
 		const Ref<RenderTarget> tonemapTarget = stageTarget(0);
 
-		if (tonemapTarget && !vpRT.Target->GetDesc().ColorAttachments.empty() && vpRT.Target->GetDesc().ColorAttachments[0].View)
+		// The primary post-chain runs only when there's a valid tonemap target + scene HDR color. Cache the
+		// derived sizing on the context so UpscaleEffect (in the list) and the inline TAA/tonemap below read
+		// the same values without recomputing.
+		const bool primaryChain = tonemapTarget && !vpRT.Target->GetDesc().ColorAttachments.empty() &&
+		                          vpRT.Target->GetDesc().ColorAttachments[0].View;
+		if (primaryChain)
 		{
 			const auto& hdrDesc = vpRT.Target->GetDesc();
 			const auto& tmDesc = tonemapTarget->GetDesc();
+			v.TonemapTarget = tonemapTarget;
+			v.UpWidth = tmDesc.Width;
+			v.UpHeight = tmDesc.Height;
+			v.Upscaling = vpRT.SceneUpscaleTarget && (hdrDesc.Width != tmDesc.Width || hdrDesc.Height != tmDesc.Height);
+			v.FxaaOn = fxaaOn;
+			v.SharpenOn = sharpenOn;
+			v.TotalStages = totalStages;
+		}
 
-			// Internal-res upscale (#43 part 1): when the scene Target is smaller than the viewport,
-			// bilinear-resample it into SceneUpscaleTarget and tonemap THAT. At scale 1.0 the upscale is
-			// skipped and tonemap reads Target directly (byte-identical to the no-scale path).
-			// ForwardEffect already published the HDR scene color into v.SceneColor; the still-inline chain
-			// (upscale/TAA reassign it, tonemap reads it) works on it through this reference until those
-			// stages migrate to their own effects.
-			Ref<TextureView>& sceneColorView = v.SceneColor.View;
-			const bool upscaling = vpRT.SceneUpscaleTarget && (hdrDesc.Width != tmDesc.Width || hdrDesc.Height != tmDesc.Height);
-			if (upscaling)
+		// ---- Primary (upscaled) path ----
+		// Velocity -> forward -> [upscale] via the effect list; the upscale (bilinear or neural, incl.
+		// temporal) republishes v.SceneColor. The remaining stages (TAA/tonemap/LDR filters) are still inline
+		// below and read/update v.SceneColor until they migrate to their own effects (#120 E..G).
+		for (const Scope<IViewportEffect>& effect : m_ViewportEffects)
+		{
+			if (effect->ShouldRun(v))
 			{
-				const auto& upDesc = vpRT.SceneUpscaleTarget->GetDesc();
-				if (!upDesc.ColorAttachments.empty() && upDesc.ColorAttachments[0].View)
-				{
-					const Ref<TextureView> lowResView = hdrDesc.ColorAttachments[0].View;
-					const Ref<TextureView> upView = upDesc.ColorAttachments[0].View;
-					const PixelFormat upFmt = upView->GetTexture()->GetDesc().Format;
-					const uint32_t upW = tmDesc.Width;
-					const uint32_t upH = tmDesc.Height;
-
-					// Neural upscaler (#47 spatial / #98 temporal): a compute CNN, alternative to the bilinear
-					// pass. It owns its full-res storage output; on success tonemap reads that. Falls back to
-					// bilinear until its shaders finish compiling (PrepareResources false). The bilinear pass
-					// renders into SceneUpscaleTarget; the neural pass writes its own texture.
-					// PrepareResources runs HERE (graph-build time), not in the Execute lambda: a resize may
-					// drain the GPU + recreate the bindless output view, both illegal mid-command-recording. It
-					// returns false while shaders are still compiling — then we fall back to bilinear this frame.
-					// Push the weights path (#99): empty = identity refiner; the pass reloads lazily on change.
-					// upscaler: 1 = neural spatial (LR only), 2 = neural temporal (LR + MV-warped previous
-					// neural output + motion vector). SetTemporal must precede PrepareResources (it rebuilds the
-					// model at the matching input width).
-					const int upscalerMode = CVars::Upscaler.Get();
-					const bool wantTemporal = upscalerMode == 2;
-					m_NeuralUpscalePass.SetTemporal(wantTemporal);
-					m_NeuralUpscalePass.SetWeightsPath(CVars::NeuralWeightsPath.Get());
-					const bool neural = (upscalerMode == 1 || upscalerMode == 2) && m_NeuralUpscalePass.PrepareResources(upW, upH);
-
-					// Temporal history = the pass's OWN previous-frame output. Its output ring is indexed by
-					// frame-in-flight (2 slots), and with 2 frames in flight the OTHER slot holds the prior
-					// frame's neural result — so OutputView(fc.FrameIndex ^ 1) is last frame's upscaled image, no
-					// separate history target or copy needed. Invalid on the first temporal frame per viewport
-					// (that slot never ran) or after a resize; a per-viewport flag signals it, like TAA's.
-					const bool temporal = neural && wantTemporal && velocityNeeded;
-					Ref<TextureView> prevNeural;
-					bool neuralHistValid = false;
-					if (temporal)
-					{
-						prevNeural = m_NeuralUpscalePass.OutputView(fc.FrameIndex ^ 1u);
-						neuralHistValid = m_NeuralTemporalValid.contains(vpEntity) && prevNeural != nullptr;
-						m_NeuralTemporalValid.insert(vpEntity);
-					}
-					else
-					{
-						// Not on the temporal path this frame — drop the flag so re-enabling starts clean.
-						m_NeuralTemporalValid.erase(vpEntity);
-					}
-
-					if (neural)
-					{
-						const Ref<TextureView> velViewNeural = temporal ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View : nullptr;
-						std::vector<RenderGraph::ResourceAccess> reads = {
-						    {lowResView->GetTexture(), RenderGraph::AccessState::Sampled}};
-						if (temporal)
-						{
-							reads.push_back({velViewNeural->GetTexture(), RenderGraph::AccessState::Sampled});
-							if (prevNeural)
-							{
-								reads.push_back({prevNeural->GetTexture(), RenderGraph::AccessState::Sampled});
-							}
-						}
-						fc.Graph.AddPass({.Name = "NeuralUpscale",
-						                  .IsCompute = true,
-						                  .Reads = std::move(reads),
-						                  .Execute = [this, &fc, lowResView, upW, upH, prevNeural, velViewNeural, neuralHistValid, temporal](CommandContext& c)
-						                  {
-							                  // The forward pass left the low-res Target in SHADER_READ_ONLY; the graph
-							                  // now emits the color-write -> compute-read barrier from the .Reads
-							                  // declaration (this is a compute pass), so no manual barrier is needed.
-							                  const Ref<CommandContext> cref(&c, [](CommandContext*) {});
-							                  m_NeuralUpscalePass.Infer(cref, fc.FrameIndex, lowResView, upW, upH,
-							                                            temporal ? prevNeural : nullptr,
-							                                            velViewNeural, neuralHistValid);
-						                  }});
-						sceneColorView = m_NeuralUpscalePass.OutputView(fc.FrameIndex);
-					}
-					else
-					{
-						fc.Graph.AddPass({.Name = "Upscale",
-						                  .Target = vpRT.SceneUpscaleTarget,
-						                  .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
-						                  .Execute = [this, &fc, lowResView, upFmt](CommandContext& c)
-						                  {
-							                  m_UpscalePass.Draw(fc.Ctx, fc.FrameIndex, lowResView, upFmt);
-						                  }});
-						sceneColorView = upView;
-					}
-				}
+				effect->Contribute(v);
 			}
+		}
+
+		if (primaryChain)
+		{
+			Ref<TextureView>& sceneColorView = v.SceneColor.View;
 
 			// ---- Temporal resolve / TAA (#44) ----
 			// After upscale, before tonemap: reproject last frame's resolved HDR (history) by velocity,
@@ -734,7 +653,7 @@ namespace Snowstorm
 			// LDR filter stages after tonemap, in fixed order: FXAA then CAS sharpen. Each reads the
 			// previous stage's target (via its UNORM sample view) and writes its ping-pong target; the
 			// helpers guarantee the last one lands on PresentTarget. rcpFrame is the full present size.
-			const glm::vec2 rcpFrame = {1.0f / static_cast<float>(tmDesc.Width), 1.0f / static_cast<float>(tmDesc.Height)};
+			const glm::vec2 rcpFrame = {1.0f / static_cast<float>(v.UpWidth), 1.0f / static_cast<float>(v.UpHeight)};
 			int stageIndex = 0; // 0 = tonemap (already emitted into tonemapTarget)
 			Ref<RenderTarget> prevTarget = tonemapTarget;
 
@@ -1004,6 +923,96 @@ namespace Snowstorm
 		                  }});
 	}
 
+	void RenderSystem::AddUpscalePasses(ViewportRenderContext& v)
+	{
+		FrameContext& fc = v.Frame;
+		const RenderTargetComponent& vpRT = v.RT;
+
+		const auto& upDesc = vpRT.SceneUpscaleTarget->GetDesc();
+		if (upDesc.ColorAttachments.empty() || !upDesc.ColorAttachments[0].View)
+		{
+			return;
+		}
+
+		const Ref<TextureView> lowResView = vpRT.Target->GetDesc().ColorAttachments[0].View;
+		const Ref<TextureView> upView = upDesc.ColorAttachments[0].View;
+		const PixelFormat upFmt = upView->GetTexture()->GetDesc().Format;
+		const uint32_t upW = v.UpWidth;
+		const uint32_t upH = v.UpHeight;
+
+		// Neural upscaler (#47 spatial / #98 temporal): a compute CNN, alternative to the bilinear pass. It
+		// owns its full-res storage output; on success tonemap reads that. Falls back to bilinear until its
+		// shaders finish compiling (PrepareResources false). The bilinear pass renders into SceneUpscaleTarget;
+		// the neural pass writes its own texture. PrepareResources runs HERE (graph-build time), not in the
+		// Execute lambda: a resize may drain the GPU + recreate the bindless output view, both illegal
+		// mid-command-recording. It returns false while shaders are still compiling — then fall back to
+		// bilinear this frame. upscaler: 1 = neural spatial (LR only), 2 = neural temporal (LR + MV-warped
+		// previous neural output + motion vector). SetTemporal must precede PrepareResources.
+		const int upscalerMode = CVars::Upscaler.Get();
+		const bool wantTemporal = upscalerMode == 2;
+		m_NeuralUpscalePass.SetTemporal(wantTemporal);
+		m_NeuralUpscalePass.SetWeightsPath(CVars::NeuralWeightsPath.Get());
+		const bool neural = (upscalerMode == 1 || upscalerMode == 2) && m_NeuralUpscalePass.PrepareResources(upW, upH);
+
+		// Temporal history = the pass's OWN previous-frame output. Its output ring is indexed by frame-in-
+		// flight (2 slots); with 2 frames in flight the OTHER slot holds the prior frame's neural result, so
+		// OutputView(FrameIndex ^ 1) is last frame's upscaled image (no separate history target/copy). Invalid
+		// on the first temporal frame per viewport (that slot never ran) or after a resize; a per-viewport flag
+		// signals it, like TAA's.
+		const bool temporal = neural && wantTemporal && v.VelocityNeeded;
+		Ref<TextureView> prevNeural;
+		bool neuralHistValid = false;
+		if (temporal)
+		{
+			prevNeural = m_NeuralUpscalePass.OutputView(fc.FrameIndex ^ 1u);
+			neuralHistValid = m_NeuralTemporalValid.contains(v.ViewportEntity) && prevNeural != nullptr;
+			m_NeuralTemporalValid.insert(v.ViewportEntity);
+		}
+		else
+		{
+			// Not on the temporal path this frame — drop the flag so re-enabling starts clean.
+			m_NeuralTemporalValid.erase(v.ViewportEntity);
+		}
+
+		if (neural)
+		{
+			const Ref<TextureView> velViewNeural = temporal ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View : nullptr;
+			std::vector<RenderGraph::ResourceAccess> reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}};
+			if (temporal)
+			{
+				reads.push_back({velViewNeural->GetTexture(), RenderGraph::AccessState::Sampled});
+				if (prevNeural)
+				{
+					reads.push_back({prevNeural->GetTexture(), RenderGraph::AccessState::Sampled});
+				}
+			}
+			fc.Graph.AddPass({.Name = "NeuralUpscale",
+			                  .IsCompute = true,
+			                  .Reads = std::move(reads),
+			                  .Execute = [this, &fc, lowResView, upW, upH, prevNeural, velViewNeural, neuralHistValid, temporal](CommandContext& c)
+			                  {
+				                  // The forward pass left the low-res Target in SHADER_READ_ONLY; the graph now
+				                  // emits the color-write -> compute-read barrier from the .Reads declaration
+				                  // (this is a compute pass), so no manual barrier is needed.
+				                  const Ref<CommandContext> cref(&c, [](CommandContext*) {});
+				                  m_NeuralUpscalePass.Infer(cref, fc.FrameIndex, lowResView, upW, upH,
+				                                            temporal ? prevNeural : nullptr, velViewNeural, neuralHistValid);
+			                  }});
+			v.SceneColor.View = m_NeuralUpscalePass.OutputView(fc.FrameIndex);
+		}
+		else
+		{
+			fc.Graph.AddPass({.Name = "Upscale",
+			                  .Target = vpRT.SceneUpscaleTarget,
+			                  .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
+			                  .Execute = [this, &fc, lowResView, upFmt](CommandContext& c)
+			                  {
+				                  m_UpscalePass.Draw(fc.Ctx, fc.FrameIndex, lowResView, upFmt);
+			                  }});
+			v.SceneColor.View = upView;
+		}
+	}
+
 	// ---- Per-viewport effect chain (#120) ------------------------------------------------------------------
 	// Concrete effects live in the .cpp (file-local): they call back into RenderSystem's public helpers and
 	// pass objects, so they need no header exposure. Each owns one stage's guard + logic; RenderViewport runs
@@ -1077,6 +1086,29 @@ namespace Snowstorm
 		private:
 			RenderSystem& m_Owner;
 		};
+
+		// Internal-res upscale (#43/#47/#98): after forward, when the scene rendered smaller than present,
+		// resample it up (bilinear or the neural upscaler) and republish v.SceneColor. Runs only when the
+		// preamble flagged v.Upscaling (scene Target < present size AND a SceneUpscaleTarget exists).
+		class UpscaleEffect final : public RenderSystem::IViewportEffect
+		{
+		public:
+			explicit UpscaleEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "Upscale"; }
+			[[nodiscard]] bool ShouldRun(const RenderSystem::ViewportRenderContext& v) const override
+			{
+				return v.Upscaling && v.RT.SceneUpscaleTarget;
+			}
+
+			void Contribute(RenderSystem::ViewportRenderContext& v) override { m_Owner.AddUpscalePasses(v); }
+
+		private:
+			RenderSystem& m_Owner;
+		};
 	}
 
 	void RenderSystem::BuildViewportEffects()
@@ -1087,5 +1119,6 @@ namespace Snowstorm
 		m_ViewportEffects.clear();
 		m_ViewportEffects.push_back(CreateScope<VelocityEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ForwardEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<UpscaleEffect>(*this));
 	}
 }

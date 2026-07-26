@@ -98,6 +98,7 @@ namespace Snowstorm
 		{
 			FrameContext& Frame;
 			const RenderTargetComponent& RT;
+			entt::entity ViewportEntity = entt::null; // keys per-viewport temporal state (TAA / neural history)
 			CameraPick Cam;
 			std::string Suffix;
 			bool Comparing = false;
@@ -110,6 +111,23 @@ namespace Snowstorm
 			// The temporal / neural-temporal / motion-vector-debug stages read it. Aux input, not the moving
 			// SceneColor, so it gets its own slot rather than overwriting the thread.
 			Ref<TextureView> Velocity;
+
+			// Whether the velocity pass runs this frame (debug view / TAA / neural-temporal / dataset export).
+			// The consumers (TAA, neural-temporal upscale, motion-vector debug tonemap, dataset) branch on it.
+			bool VelocityNeeded = false;
+
+			// LDR post-chain sizing, derived once in the RenderViewport preamble (they depend only on CVars +
+			// the viewport's targets): the tonemap destination (stage 0 of the ping-pong), the full present
+			// dimensions the upscale/tonemap target at, whether the scene Target is smaller than present (needs
+			// upscaling), and the FXAA/sharpen gates + total post stages. Shared by UpscaleEffect and the
+			// still-inline TAA/tonemap/LDR chain so nothing is recomputed.
+			Ref<RenderTarget> TonemapTarget;
+			uint32_t UpWidth = 0;
+			uint32_t UpHeight = 0;
+			bool Upscaling = false;
+			bool FxaaOn = false;
+			bool SharpenOn = false;
+			int TotalStages = 1;
 		};
 
 		// A composable per-viewport render effect (forward, velocity, upscale, TAA, LDR filters, compare).
@@ -147,6 +165,12 @@ namespace Snowstorm
 		// PrevViewProj from the runtime component). Self-contained target (own depth). Called by VelocityEffect.
 		void AddVelocityPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& velTarget,
 		                     const std::string& name);
+
+		// Internal-res upscale (#43/#47/#98): resample the low-res scene color up to present size, choosing
+		// bilinear or the neural upscaler (spatial or temporal) per render.upscaler, and republish v.SceneColor
+		// as the upscaled image. Touches the per-viewport neural-temporal validity set. Called by UpscaleEffect
+		// (only when v.Upscaling). Reads the derived sizing (UpWidth/UpHeight) from the context.
+		void AddUpscalePasses(ViewportRenderContext& v);
 
 		// Iterate the camera's visibility cache and invoke `draw` for each renderable mesh, skipping stale
 		// (New-Scene-wiped) handles and null instances. Shared by the forward and velocity passes — they
