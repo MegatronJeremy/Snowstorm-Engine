@@ -515,6 +515,7 @@ namespace Snowstorm
 		const bool taaOn = CVars::AAMode.Get() == 2 &&
 		                   vpRT.HistoryTarget[0] && vpRT.HistoryTarget[1] &&
 		                   !vpRT.HistoryTarget[0]->GetDesc().ColorAttachments.empty();
+		v.TaaOn = taaOn;
 		// Neural TEMPORAL upscaler (#98, render.upscaler == 2): reprojects the previous neural output by
 		// motion vectors, so it needs the velocity buffer too. Only meaningful when actually upscaling
 		// (scale < 1); the upscale block below re-checks that.
@@ -597,55 +598,9 @@ namespace Snowstorm
 
 		if (primaryChain)
 		{
+			// SceneColor now reflects the post-upscale, post-TAA image (TemporalEffect ran in the list above
+			// and republished it when TAA is active).
 			Ref<TextureView>& sceneColorView = v.SceneColor.View;
-
-			// ---- Temporal resolve / TAA (#44) ----
-			// After upscale, before tonemap: reproject last frame's resolved HDR (history) by velocity,
-			// neighborhood-clamp + blend with the current frame, write into this frame's history slot —
-			// which then feeds tonemap AND becomes next frame's history. Ping-pong by frame parity.
-			if (taaOn && vpRT.VelocityTarget && !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty())
-			{
-				const uint32_t curIdx = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
-				const Ref<RenderTarget>& curHistory = vpRT.HistoryTarget[curIdx];
-				const Ref<RenderTarget>& prevHistory = vpRT.HistoryTarget[curIdx ^ 1u];
-
-				if (curHistory && prevHistory && !curHistory->GetDesc().ColorAttachments.empty() &&
-				    !prevHistory->GetDesc().ColorAttachments.empty())
-				{
-					const Ref<TextureView> currentView = sceneColorView;
-					const Ref<TextureView> prevHistView = prevHistory->GetDesc().ColorAttachments[0].View;
-					const Ref<TextureView> velView = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
-					const Ref<TextureView> curHistView = curHistory->GetDesc().ColorAttachments[0].View;
-					const PixelFormat histFmt = curHistView->GetTexture()->GetDesc().Format;
-					const glm::vec2 rcpFrame = {1.0f / static_cast<float>(curHistory->GetWidth()),
-					                            1.0f / static_cast<float>(curHistory->GetHeight())};
-					// History invalid on the very first TAA frame (prev slot never written) or after a
-					// resize rebuilt the targets. Simplest robust signal: our own "has this pair been
-					// resolved before" flag, tracked per viewport. Kept minimal — a bool per entity.
-					const bool historyValid = m_TaaHistoryValid.contains(vpEntity);
-					m_TaaHistoryValid.insert(vpEntity);
-
-					fc.Graph.AddPass({.Name = "TemporalResolve" + passSuffix,
-					                  .Target = curHistory,
-					                  .Reads = {{currentView->GetTexture(), RenderGraph::AccessState::Sampled},
-					                            {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled},
-					                            {velView->GetTexture(), RenderGraph::AccessState::Sampled}},
-					                  .Execute = [this, &fc, currentView, prevHistView, velView, rcpFrame, historyValid, histFmt](CommandContext& c)
-					                  {
-						                  m_TemporalResolvePass.Draw(fc.Ctx, fc.FrameIndex, currentView, prevHistView, velView,
-						                                             rcpFrame, historyValid, CVars::TaaBlend.Get(),
-						                                             CVars::TaaMaxBlend.Get(), histFmt);
-					                  }});
-
-					// Tonemap now reads the resolved history slot instead of the raw scene color.
-					sceneColorView = curHistView;
-				}
-			}
-			else
-			{
-				// TAA off: drop the "history valid" flag so re-enabling starts clean (no stale reproject).
-				m_TaaHistoryValid.erase(vpEntity);
-			}
 
 			const Ref<Texture> velocityRead = velocityNeeded ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture() : nullptr;
 			AddTonemapPass(fc, sceneColorView, tonemapTarget, "PostProcess", primaryTonemap, velocityRead);
@@ -1013,6 +968,56 @@ namespace Snowstorm
 		}
 	}
 
+	void RenderSystem::AddTemporalResolve(ViewportRenderContext& v)
+	{
+		FrameContext& fc = v.Frame;
+		const RenderTargetComponent& vpRT = v.RT;
+
+		// TAA off (or targets missing): drop the "history valid" flag so re-enabling starts clean (no stale
+		// reproject), and leave the scene color untouched.
+		if (!v.TaaOn || !vpRT.VelocityTarget || vpRT.VelocityTarget->GetDesc().ColorAttachments.empty())
+		{
+			m_TaaHistoryValid.erase(v.ViewportEntity);
+			return;
+		}
+
+		const uint32_t curIdx = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
+		const Ref<RenderTarget>& curHistory = vpRT.HistoryTarget[curIdx];
+		const Ref<RenderTarget>& prevHistory = vpRT.HistoryTarget[curIdx ^ 1u];
+		if (!curHistory || !prevHistory || curHistory->GetDesc().ColorAttachments.empty() ||
+		    prevHistory->GetDesc().ColorAttachments.empty())
+		{
+			return;
+		}
+
+		const Ref<TextureView> currentView = v.SceneColor.View;
+		const Ref<TextureView> prevHistView = prevHistory->GetDesc().ColorAttachments[0].View;
+		const Ref<TextureView> velView = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
+		const Ref<TextureView> curHistView = curHistory->GetDesc().ColorAttachments[0].View;
+		const PixelFormat histFmt = curHistView->GetTexture()->GetDesc().Format;
+		const glm::vec2 rcpFrame = {1.0f / static_cast<float>(curHistory->GetWidth()),
+		                            1.0f / static_cast<float>(curHistory->GetHeight())};
+		// History invalid on the very first TAA frame (prev slot never written) or after a resize rebuilt the
+		// targets. Simplest robust signal: our own "has this pair been resolved before" flag, per viewport.
+		const bool historyValid = m_TaaHistoryValid.contains(v.ViewportEntity);
+		m_TaaHistoryValid.insert(v.ViewportEntity);
+
+		fc.Graph.AddPass({.Name = "TemporalResolve" + v.Suffix,
+		                  .Target = curHistory,
+		                  .Reads = {{currentView->GetTexture(), RenderGraph::AccessState::Sampled},
+		                            {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled},
+		                            {velView->GetTexture(), RenderGraph::AccessState::Sampled}},
+		                  .Execute = [this, &fc, currentView, prevHistView, velView, rcpFrame, historyValid, histFmt](CommandContext& c)
+		                  {
+			                  m_TemporalResolvePass.Draw(fc.Ctx, fc.FrameIndex, currentView, prevHistView, velView,
+			                                             rcpFrame, historyValid, CVars::TaaBlend.Get(),
+			                                             CVars::TaaMaxBlend.Get(), histFmt);
+		                  }});
+
+		// Tonemap now reads the resolved history slot instead of the raw scene color.
+		v.SceneColor.View = curHistView;
+	}
+
 	// ---- Per-viewport effect chain (#120) ------------------------------------------------------------------
 	// Concrete effects live in the .cpp (file-local): they call back into RenderSystem's public helpers and
 	// pass objects, so they need no header exposure. Each owns one stage's guard + logic; RenderViewport runs
@@ -1109,6 +1114,30 @@ namespace Snowstorm
 		private:
 			RenderSystem& m_Owner;
 		};
+
+		// Temporal resolve / TAA (#44): after upscale, reproject + blend the history and republish v.SceneColor
+		// as the resolved slot. Runs EVERY frame (ShouldRun true) because it also owns clearing the per-viewport
+		// history-valid flag when TAA is off — AddTemporalResolve branches on v.TaaOn internally. Only meaningful
+		// when the primary post-chain runs (there's a scene color to resolve).
+		class TemporalEffect final : public RenderSystem::IViewportEffect
+		{
+		public:
+			explicit TemporalEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "TemporalResolve"; }
+			[[nodiscard]] bool ShouldRun(const RenderSystem::ViewportRenderContext& v) const override
+			{
+				return v.TonemapTarget != nullptr; // the primary post-chain is active
+			}
+
+			void Contribute(RenderSystem::ViewportRenderContext& v) override { m_Owner.AddTemporalResolve(v); }
+
+		private:
+			RenderSystem& m_Owner;
+		};
 	}
 
 	void RenderSystem::BuildViewportEffects()
@@ -1120,5 +1149,6 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<VelocityEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ForwardEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<UpscaleEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<TemporalEffect>(*this));
 	}
 }

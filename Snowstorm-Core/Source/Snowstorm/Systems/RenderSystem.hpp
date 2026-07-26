@@ -116,6 +116,10 @@ namespace Snowstorm
 			// The consumers (TAA, neural-temporal upscale, motion-vector debug tonemap, dataset) branch on it.
 			bool VelocityNeeded = false;
 
+			// Whether TAA (render.aa == 2) is active with valid history targets. TemporalEffect resolves when
+			// set, and clears the per-viewport history-valid flag when NOT set (so re-enabling starts clean).
+			bool TaaOn = false;
+
 			// LDR post-chain sizing, derived once in the RenderViewport preamble (they depend only on CVars +
 			// the viewport's targets): the tonemap destination (stage 0 of the ping-pong), the full present
 			// dimensions the upscale/tonemap target at, whether the scene Target is smaller than present (needs
@@ -171,6 +175,13 @@ namespace Snowstorm
 		// as the upscaled image. Touches the per-viewport neural-temporal validity set. Called by UpscaleEffect
 		// (only when v.Upscaling). Reads the derived sizing (UpWidth/UpHeight) from the context.
 		void AddUpscalePasses(ViewportRenderContext& v);
+
+		// Temporal resolve / TAA (#44): reproject last frame's resolved HDR (history) by velocity, blend with
+		// the current scene color, write this frame's history slot (which feeds tonemap AND becomes next
+		// frame's history), and republish v.SceneColor as the resolved slot. Owns the per-viewport
+		// history-valid flag (insert when it runs, erase when TAA is off so re-enabling starts clean). Called by
+		// TemporalEffect every frame; internally resolves when v.TaaOn, else just clears the flag.
+		void AddTemporalResolve(ViewportRenderContext& v);
 
 		// Iterate the camera's visibility cache and invoke `draw` for each renderable mesh, skipping stale
 		// (New-Scene-wiped) handles and null instances. Shared by the forward and velocity passes — they
