@@ -483,10 +483,9 @@ namespace Snowstorm
 		// FXAA is disabled on BOTH sides while comparing.
 		const bool comparing = CVars::Compare.Get() && vpRT.GroundTruthTarget && vpRT.GroundTruthPresentTarget;
 
-		// Per-viewport context threaded through the effect chain (#120). For now the monolith below is still
-		// inline; it only uses v.SceneColor (the resource that flows forward -> upscale -> TAA -> tonemap),
-		// replacing the former reassigned `sceneColorView` local. The effect classes migrate onto this in the
-		// following increments.
+		// Per-viewport context threaded through the effect chain (#120): the moving SceneColor resource plus the
+		// derived per-frame flags/sizing the effects read. Populated by this preamble, then consumed by the
+		// ordered effect list below — RenderViewport itself contributes no passes.
 		ViewportRenderContext v{.Frame = fc, .RT = vpRT, .ViewportEntity = vpEntity, .Cam = cam, .Suffix = passSuffix, .Comparing = comparing};
 
 		// Build the effect list once (lazy — the pass objects it references are constructed with this system).
@@ -495,16 +494,10 @@ namespace Snowstorm
 			BuildViewportEffects();
 		}
 
-		// Forward + tonemap are now shared member methods (AddForwardPass / AddTonemapPass) so both the primary
-		// path and the compare-mode ground-truth second render call the same code. The primary forward runs
-		// through the effect list (ForwardEffect); the compare tail still calls the methods inline until it
-		// migrates (#120-G).
-
-		// ---- Motion-vector pass (#44) ----
-		// Rendered when the motion-vector debug view is on OR TAA is active (both consume velocity).
-		// Re-renders the visible meshes into the velocity target, projecting each vertex by this frame's
-		// and last frame's matrices (per-object PrevModel from PrevTransformComponent, camera PrevViewProj
-		// from the runtime component). Self-contained target (own depth), so no ordering constraint.
+		// ---- Preamble: derive the per-frame flags/sizing the effects branch on ----
+		// VelocityEffect renders the motion-vector target when the debug view is on OR TAA / the neural temporal
+		// upscaler / dataset export needs it (all consume velocity). We compute the gate here because several
+		// effects (VelocityEffect itself, the tonemap debug view, CompareEffect's export) share it.
 		const int debugView = CVars::DebugView.Get();
 		// TAA (render.aa == 2) needs velocity + history. Unlike FXAA it is NOT forced off in compare:
 		// with render.scale < 1 it is a temporal UPSCALER (TAAU), and measuring whether it recovers the
@@ -523,9 +516,9 @@ namespace Snowstorm
 		// Dataset export (#46) also needs the velocity buffer (an exported channel), so force the velocity
 		// pass on while exporting even without debug-view/TAA. Requires compare (ground truth exists).
 		const bool exporting = CVars::DatasetExport.Get() && comparing;
-		// The velocity/motion-vector pass now runs as VelocityEffect (registered before ForwardEffect in the
-		// effect list). velocityNeeded is derived here and cached on the context because both VelocityEffect
-		// and the still-inline consumers (TAA, the motion-vector debug tonemap, dataset export) branch on it.
+		// velocityNeeded is cached on the context because several effects branch on it: VelocityEffect (whether
+		// to render the buffer), LdrChainEffect (the tonemap debug view samples it), and CompareEffect (dataset
+		// export reads it as a channel).
 		const bool velocityNeeded = (debugView == 1 || taaOn || neuralTemporal || exporting) && vpRT.VelocityTarget &&
 		                            !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
 		                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
