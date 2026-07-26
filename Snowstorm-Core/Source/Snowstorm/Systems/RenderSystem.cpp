@@ -27,24 +27,20 @@ namespace Snowstorm
 {
 	namespace
 	{
-		struct CameraPick
-		{
-			entt::entity Entity = entt::null;
-			const CameraComponent* Cam = nullptr;
-			const CameraRuntimeComponent* Rt = nullptr;
-			const TransformComponent* Transform = nullptr;
-			const CameraVisibilityComponent* Visibility = nullptr;
-		};
+		using CameraPick = RenderSystem::CameraPick;
 
-		CameraPick FindCameraForViewport(const TrackedRegistry& reg,
-		                                 const entt::entity viewportEntity,
-		                                 const entt::view<
-		                                     entt::get_t<
-		                                         const TransformComponent,
-		                                         const CameraComponent,
-		                                         const CameraTargetComponent,
-		                                         const CameraRuntimeComponent,
-		                                         const CameraVisibilityComponent>>& camView)
+		// Resolve which camera drives a viewport: prefer a Primary camera targeting it, else any camera
+		// targeting it, else a null pick. File-local (the entt view type stays out of the header).
+		CameraPick FindCameraForViewport(
+		    const TrackedRegistry& reg,
+		    const entt::entity viewportEntity,
+		    const entt::view<
+		        entt::get_t<
+		            const TransformComponent,
+		            const CameraComponent,
+		            const CameraTargetComponent,
+		            const CameraRuntimeComponent,
+		            const CameraVisibilityComponent>>& camView)
 		{
 			CameraPick pick{};
 
@@ -487,6 +483,12 @@ namespace Snowstorm
 		// FXAA is disabled on BOTH sides while comparing.
 		const bool comparing = CVars::Compare.Get() && vpRT.GroundTruthTarget && vpRT.GroundTruthPresentTarget;
 
+		// Per-viewport context threaded through the effect chain (#120). For now the monolith below is still
+		// inline; it only uses v.SceneColor (the resource that flows forward -> upscale -> TAA -> tonemap),
+		// replacing the former reassigned `sceneColorView` local. The effect classes migrate onto this in the
+		// following increments.
+		ViewportRenderContext v{.Frame = fc, .RT = vpRT, .Cam = cam, .Suffix = passSuffix, .Comparing = comparing};
+
 		// Forward + sky into an arbitrary HDR target. Target-pure (reads camera + the shared per-camera
 		// visibility cache), so it's invoked once normally and twice in compare mode (the instance-buffer
 		// cursor appends across BeginScene calls, like the shadow passes). IBL maps are declared as reads
@@ -717,7 +719,11 @@ namespace Snowstorm
 			// Internal-res upscale (#43 part 1): when the scene Target is smaller than the viewport,
 			// bilinear-resample it into SceneUpscaleTarget and tonemap THAT. At scale 1.0 the upscale is
 			// skipped and tonemap reads Target directly (byte-identical to the no-scale path).
-			Ref<TextureView> sceneColorView = hdrDesc.ColorAttachments[0].View;
+			// The scene-color thread now lives in the per-viewport context (v.SceneColor). Bound by reference
+			// here so the existing chain (upscale/TAA reassign it, tonemap reads it) is unchanged, while the
+			// named resource is what actually flows — the effect classes read v.SceneColor directly later.
+			v.SceneColor.View = hdrDesc.ColorAttachments[0].View;
+			Ref<TextureView>& sceneColorView = v.SceneColor.View;
 			const bool upscaling = vpRT.SceneUpscaleTarget && (hdrDesc.Width != tmDesc.Width || hdrDesc.Height != tmDesc.Height);
 			if (upscaling)
 			{
