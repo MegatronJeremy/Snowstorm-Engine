@@ -69,12 +69,6 @@ namespace Snowstorm
 		                    const std::string& name, RendererService::TonemapParams params,
 		                    const Ref<Texture>& extraRead = nullptr);
 
-		// Internal-res upscale (#43/#47/#98): resample the low-res scene color up to present size, choosing
-		// bilinear or the neural upscaler (spatial or temporal) per render.upscaler, and republish v.SceneColor
-		// as the upscaled image. Touches the per-viewport neural-temporal validity set. Called by UpscaleEffect
-		// (only when v.Upscaling). Reads the derived sizing (UpWidth/UpHeight) from the context.
-		void AddUpscalePasses(ViewportRenderContext& v);
-
 		// Temporal resolve / TAA (#44): reproject last frame's resolved HDR (history) by velocity, blend with
 		// the current scene color, write this frame's history slot (which feeds tonemap AND becomes next
 		// frame's history), and republish v.SceneColor as the resolved slot. Owns the per-viewport
@@ -133,8 +127,6 @@ namespace Snowstorm
 		PostProcessPass m_PostProcessPass;
 		FxaaPass m_FxaaPass;
 		SharpenPass m_SharpenPass;
-		UpscalePass m_UpscalePass;
-		NeuralUpscalePass m_NeuralUpscalePass;
 		TemporalResolvePass m_TemporalResolvePass;
 		MetricsPass m_MetricsPass;
 		DatasetExportPass m_DatasetExportPass;
@@ -150,14 +142,10 @@ namespace Snowstorm
 		// re-enabling TAA starts clean instead of reprojecting a stale/garbage history on frame one.
 		std::unordered_set<entt::entity> m_TaaHistoryValid;
 
-		// Same idea for the neural TEMPORAL upscaler (#98): a viewport is valid once the neural pass has
-		// produced at least one prior-frame output for its OTHER in-flight slot; erased when the temporal path
-		// turns off / resizes, so the first temporal frame warps against zeros (disocclusion), not garbage.
-		std::unordered_set<entt::entity> m_NeuralTemporalValid;
-
 		// Last scene generation (World::SceneGeneration) this system observed. When it changes, the scene was
-		// wiped (Open/New Scene) — the persistent viewport survives but its temporal history now holds the
-		// old scene, so both valid-sets above are cleared to force a clean first frame. See #161.
+		// wiped (Open/New Scene) — the persistent viewport survives but its temporal history now holds the old
+		// scene, so each effect's OnSceneCut fires to clear its own cross-frame state and force a clean first
+		// frame. See #161. (The neural-temporal valid-set now lives on UpscaleEffect.)
 		uint64_t m_LastSceneGeneration = 0;
 
 		// The environment the IBL maps were last baked from. When the live environment differs (e.g. a scene

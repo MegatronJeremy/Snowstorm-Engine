@@ -92,13 +92,18 @@ namespace Snowstorm
 
 		// Scene-cut detection (#161): a scene wipe (Open/New Scene) bumps World::SceneGeneration but keeps
 		// the persistent editor viewport alive, so its per-viewport temporal history (TAA + neural) now holds
-		// the PREVIOUS scene. Drop both valid-sets on the cut so the first frame of the new scene reprojects
-		// against nothing (clean) instead of ghosting the old scene for one frame.
+		// the PREVIOUS scene. Notify each effect on the cut so it drops its own cross-frame temporal state
+		// (TemporalEffect / UpscaleEffect clear their valid-sets); the first frame of the new scene then
+		// reprojects against nothing (clean) instead of ghosting the old scene for one frame.
 		if (const uint64_t gen = m_World->SceneGeneration(); gen != m_LastSceneGeneration)
 		{
 			m_LastSceneGeneration = gen;
-			m_TaaHistoryValid.clear();
-			m_NeuralTemporalValid.clear();
+			// Effects that don't exist yet (before the first RenderViewport, e.g. the initial startup load) hold
+			// no history to invalidate — nothing to clear. A real mid-session scene cut always has them built.
+			for (const Scope<IViewportEffect>& effect : m_ViewportEffects)
+			{
+				effect->OnSceneCut();
+			}
 		}
 
 		const auto viewportView = View<const ViewportComponent, const RenderTargetComponent>();
@@ -474,96 +479,6 @@ namespace Snowstorm
 		                  }});
 	}
 
-	void RenderSystem::AddUpscalePasses(ViewportRenderContext& v)
-	{
-		FrameContext& fc = v.Frame;
-		const RenderTargetComponent& vpRT = v.RT;
-
-		const auto& upDesc = vpRT.SceneUpscaleTarget->GetDesc();
-		if (upDesc.ColorAttachments.empty() || !upDesc.ColorAttachments[0].View)
-		{
-			return;
-		}
-
-		const Ref<TextureView> lowResView = vpRT.Target->GetDesc().ColorAttachments[0].View;
-		const Ref<TextureView> upView = upDesc.ColorAttachments[0].View;
-		const PixelFormat upFmt = upView->GetTexture()->GetDesc().Format;
-		const uint32_t upW = v.UpWidth;
-		const uint32_t upH = v.UpHeight;
-
-		// Neural upscaler (#47 spatial / #98 temporal): a compute CNN, alternative to the bilinear pass. It
-		// owns its full-res storage output; on success tonemap reads that. Falls back to bilinear until its
-		// shaders finish compiling (PrepareResources false). The bilinear pass renders into SceneUpscaleTarget;
-		// the neural pass writes its own texture. PrepareResources runs HERE (graph-build time), not in the
-		// Execute lambda: a resize may drain the GPU + recreate the bindless output view, both illegal
-		// mid-command-recording. It returns false while shaders are still compiling — then fall back to
-		// bilinear this frame. upscaler: 1 = neural spatial (LR only), 2 = neural temporal (LR + MV-warped
-		// previous neural output + motion vector). SetTemporal must precede PrepareResources.
-		const int upscalerMode = CVars::Upscaler.Get();
-		const bool wantTemporal = upscalerMode == 2;
-		m_NeuralUpscalePass.SetTemporal(wantTemporal);
-		m_NeuralUpscalePass.SetWeightsPath(CVars::NeuralWeightsPath.Get());
-		const bool neural = (upscalerMode == 1 || upscalerMode == 2) && m_NeuralUpscalePass.PrepareResources(upW, upH);
-
-		// Temporal history = the pass's OWN previous-frame output. Its output ring is indexed by frame-in-
-		// flight (2 slots); with 2 frames in flight the OTHER slot holds the prior frame's neural result, so
-		// OutputView(FrameIndex ^ 1) is last frame's upscaled image (no separate history target/copy). Invalid
-		// on the first temporal frame per viewport (that slot never ran) or after a resize; a per-viewport flag
-		// signals it, like TAA's.
-		const bool temporal = neural && wantTemporal && v.VelocityNeeded;
-		Ref<TextureView> prevNeural;
-		bool neuralHistValid = false;
-		if (temporal)
-		{
-			prevNeural = m_NeuralUpscalePass.OutputView(fc.FrameIndex ^ 1u);
-			neuralHistValid = m_NeuralTemporalValid.contains(v.ViewportEntity) && prevNeural != nullptr;
-			m_NeuralTemporalValid.insert(v.ViewportEntity);
-		}
-		else
-		{
-			// Not on the temporal path this frame — drop the flag so re-enabling starts clean.
-			m_NeuralTemporalValid.erase(v.ViewportEntity);
-		}
-
-		if (neural)
-		{
-			const Ref<TextureView> velViewNeural = temporal ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View : nullptr;
-			std::vector<RenderGraph::ResourceAccess> reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}};
-			if (temporal)
-			{
-				reads.push_back({velViewNeural->GetTexture(), RenderGraph::AccessState::Sampled});
-				if (prevNeural)
-				{
-					reads.push_back({prevNeural->GetTexture(), RenderGraph::AccessState::Sampled});
-				}
-			}
-			fc.Graph.AddPass({.Name = "NeuralUpscale",
-			                  .IsCompute = true,
-			                  .Reads = std::move(reads),
-			                  .Execute = [this, &fc, lowResView, upW, upH, prevNeural, velViewNeural, neuralHistValid, temporal](CommandContext& c)
-			                  {
-				                  // The forward pass left the low-res Target in SHADER_READ_ONLY; the graph now
-				                  // emits the color-write -> compute-read barrier from the .Reads declaration
-				                  // (this is a compute pass), so no manual barrier is needed.
-				                  const Ref<CommandContext> cref(&c, [](CommandContext*) {});
-				                  m_NeuralUpscalePass.Infer(cref, fc.FrameIndex, lowResView, upW, upH,
-				                                            temporal ? prevNeural : nullptr, velViewNeural, neuralHistValid);
-			                  }});
-			v.SceneColor.View = m_NeuralUpscalePass.OutputView(fc.FrameIndex);
-		}
-		else
-		{
-			fc.Graph.AddPass({.Name = "Upscale",
-			                  .Target = vpRT.SceneUpscaleTarget,
-			                  .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
-			                  .Execute = [this, &fc, lowResView, upFmt](CommandContext& c)
-			                  {
-				                  m_UpscalePass.Draw(fc.Ctx, fc.FrameIndex, lowResView, upFmt);
-			                  }});
-			v.SceneColor.View = upView;
-		}
-	}
-
 	void RenderSystem::AddTemporalResolve(ViewportRenderContext& v)
 	{
 		FrameContext& fc = v.Frame;
@@ -877,7 +792,9 @@ namespace Snowstorm
 
 		// Internal-res upscale (#43/#47/#98): after forward, when the scene rendered smaller than present,
 		// resample it up (bilinear or the neural upscaler) and republish v.SceneColor. Runs only when the
-		// preamble flagged v.Upscaling (scene Target < present size AND a SceneUpscaleTarget exists).
+		// preamble flagged v.Upscaling (scene Target < present size AND a SceneUpscaleTarget exists). Owns both
+		// the bilinear and neural passes plus the neural TEMPORAL per-viewport history-valid set (cleared on a
+		// scene cut so the first temporal frame warps against zeros, not the old scene).
 		class UpscaleEffect final : public IViewportEffect
 		{
 		public:
@@ -892,10 +809,107 @@ namespace Snowstorm
 				return v.Upscaling && v.RT.SceneUpscaleTarget;
 			}
 
-			void Contribute(ViewportRenderContext& v) override { m_Owner.AddUpscalePasses(v); }
+			void OnSceneCut() override { m_NeuralTemporalValid.clear(); }
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+				const RenderTargetComponent& vpRT = v.RT;
+
+				const auto& upDesc = vpRT.SceneUpscaleTarget->GetDesc();
+				if (upDesc.ColorAttachments.empty() || !upDesc.ColorAttachments[0].View)
+				{
+					return;
+				}
+
+				const Ref<TextureView> lowResView = vpRT.Target->GetDesc().ColorAttachments[0].View;
+				const Ref<TextureView> upView = upDesc.ColorAttachments[0].View;
+				const PixelFormat upFmt = upView->GetTexture()->GetDesc().Format;
+				const uint32_t upW = v.UpWidth;
+				const uint32_t upH = v.UpHeight;
+
+				// Neural upscaler (#47 spatial / #98 temporal): a compute CNN, alternative to the bilinear pass.
+				// It owns its full-res storage output; on success tonemap reads that. Falls back to bilinear until
+				// its shaders finish compiling (PrepareResources false). The bilinear pass renders into
+				// SceneUpscaleTarget; the neural pass writes its own texture. PrepareResources runs HERE
+				// (graph-build time), not in the Execute lambda: a resize may drain the GPU + recreate the
+				// bindless output view, both illegal mid-command-recording. It returns false while shaders are
+				// still compiling — then fall back to bilinear this frame. upscaler: 1 = neural spatial (LR only),
+				// 2 = neural temporal (LR + MV-warped previous neural output + motion vector). SetTemporal must
+				// precede PrepareResources.
+				const int upscalerMode = CVars::Upscaler.Get();
+				const bool wantTemporal = upscalerMode == 2;
+				m_NeuralPass.SetTemporal(wantTemporal);
+				m_NeuralPass.SetWeightsPath(CVars::NeuralWeightsPath.Get());
+				const bool neural = (upscalerMode == 1 || upscalerMode == 2) && m_NeuralPass.PrepareResources(upW, upH);
+
+				// Temporal history = the pass's OWN previous-frame output. Its output ring is indexed by frame-in-
+				// flight (2 slots); with 2 frames in flight the OTHER slot holds the prior frame's neural result, so
+				// OutputView(FrameIndex ^ 1) is last frame's upscaled image (no separate history target/copy).
+				// Invalid on the first temporal frame per viewport (that slot never ran) or after a resize; a
+				// per-viewport flag signals it, like TAA's.
+				const bool temporal = neural && wantTemporal && v.VelocityNeeded;
+				Ref<TextureView> prevNeural;
+				bool neuralHistValid = false;
+				if (temporal)
+				{
+					prevNeural = m_NeuralPass.OutputView(fc.FrameIndex ^ 1u);
+					neuralHistValid = m_NeuralTemporalValid.contains(v.ViewportEntity) && prevNeural != nullptr;
+					m_NeuralTemporalValid.insert(v.ViewportEntity);
+				}
+				else
+				{
+					// Not on the temporal path this frame — drop the flag so re-enabling starts clean.
+					m_NeuralTemporalValid.erase(v.ViewportEntity);
+				}
+
+				if (neural)
+				{
+					const Ref<TextureView> velViewNeural = temporal ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View : nullptr;
+					std::vector<RenderGraph::ResourceAccess> reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}};
+					if (temporal)
+					{
+						reads.push_back({velViewNeural->GetTexture(), RenderGraph::AccessState::Sampled});
+						if (prevNeural)
+						{
+							reads.push_back({prevNeural->GetTexture(), RenderGraph::AccessState::Sampled});
+						}
+					}
+					fc.Graph.AddPass({.Name = "NeuralUpscale",
+					                  .IsCompute = true,
+					                  .Reads = std::move(reads),
+					                  .Execute = [this, &fc, lowResView, upW, upH, prevNeural, velViewNeural, neuralHistValid, temporal](CommandContext& c)
+					                  {
+						                  // The forward pass left the low-res Target in SHADER_READ_ONLY; the graph now
+						                  // emits the color-write -> compute-read barrier from the .Reads declaration
+						                  // (this is a compute pass), so no manual barrier is needed.
+						                  const Ref<CommandContext> cref(&c, [](CommandContext*) {});
+						                  m_NeuralPass.Infer(cref, fc.FrameIndex, lowResView, upW, upH,
+						                                     temporal ? prevNeural : nullptr, velViewNeural, neuralHistValid);
+					                  }});
+					v.SceneColor.View = m_NeuralPass.OutputView(fc.FrameIndex);
+				}
+				else
+				{
+					fc.Graph.AddPass({.Name = "Upscale",
+					                  .Target = vpRT.SceneUpscaleTarget,
+					                  .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
+					                  .Execute = [this, &fc, lowResView, upFmt](CommandContext& c)
+					                  {
+						                  m_BilinearPass.Draw(fc.Ctx, fc.FrameIndex, lowResView, upFmt);
+					                  }});
+					v.SceneColor.View = upView;
+				}
+			}
 
 		private:
 			RenderSystem& m_Owner;
+			UpscalePass m_BilinearPass;     // bilinear resample; exclusive to this effect
+			NeuralUpscalePass m_NeuralPass; // neural spatial/temporal CNN; exclusive to this effect
+			// Per-viewport neural-temporal history validity (#98): valid once the neural pass produced a prior
+			// frame for the other in-flight slot; erased when the temporal path turns off / resizes, and cleared
+			// wholesale on a scene cut (OnSceneCut) so the first temporal frame warps against zeros, not garbage.
+			std::unordered_set<entt::entity> m_NeuralTemporalValid;
 		};
 
 		// Temporal resolve / TAA (#44): after upscale, reproject + blend the history and republish v.SceneColor
