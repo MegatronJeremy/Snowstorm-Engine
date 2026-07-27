@@ -96,7 +96,9 @@ namespace Snowstorm
 			// to the sky cube. New 16-byte row; MUST match Engine.hlsli field-for-field.
 			uint32_t ReflGeoTableAddrLo = 0;
 			uint32_t ReflGeoTableAddrHi = 0;
-			float _ReflPad0 = 0.0f;
+			// Debug: 1 = output the raw reflected albedo (RT reflection hit resolution) instead of the shaded
+			// scene, to verify the trace independent of lighting. Reuses a pad slot. Match Engine.hlsli.
+			uint32_t DebugReflections = 0;
 			float _ReflPad1 = 0.0f;
 		};
 	}
@@ -303,6 +305,8 @@ namespace Snowstorm
 		frame.ReflMaxRoughness = CVars::ReflectionMaxRoughness.Get();
 		frame.ReflGeoTableAddrLo = static_cast<uint32_t>(m_ReflectionTableAddress & 0xFFFFFFFFull);
 		frame.ReflGeoTableAddrHi = static_cast<uint32_t>(m_ReflectionTableAddress >> 32);
+		// Debug view 3 = Reflections: DefaultLit outputs the raw reflected albedo for verifying hit resolution.
+		frame.DebugReflections = (CVars::DebugView.Get() == 3) ? 1u : 0u;
 
 		const Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
 		SS_CORE_ASSERT(frameUBO, "Frame UBO missing for frame descriptor set");

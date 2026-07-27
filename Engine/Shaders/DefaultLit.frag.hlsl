@@ -214,6 +214,111 @@ float RayTraceAO(float3 positionWS, float3 Ng, float3 N, float radius, float2 pi
 	occlusion = (occlusion / float(AO_RAY_COUNT)) * AOIntensity;
 	return saturate(1.0 - occlusion);
 }
+
+// Reassemble the reflection geometry table's device address from the two FrameCB halves (see
+// RendererService FrameCB: split lo/hi to keep the cbuffer 4-byte-scalar). 0 = no table this frame.
+uint64_t ReflGeoTableAddress()
+{
+	return (uint64_t(ReflGeoTableAddrHi) << 32) | uint64_t(ReflGeoTableAddrLo);
+}
+
+// One reflection geometry record, matching GeometryRecord (ReflectionGeometrySingleton.hpp) byte-for-byte.
+// Read field-by-field via vk::RawBufferLoad off the record's base address (dx layout, 112-byte stride).
+struct GeoRecord
+{
+	uint64_t VertexAddress;
+	uint64_t IndexAddress;
+	uint AlbedoTextureIndex;
+	float4 BaseColor;
+	float4x4 Model;
+};
+
+GeoRecord LoadGeoRecord(uint64_t tableAddr, uint instanceIndex)
+{
+	const uint64_t base = tableAddr + uint64_t(instanceIndex) * 112ull;
+	GeoRecord r;
+	r.VertexAddress = vk::RawBufferLoad<uint64_t>(base + 0, 8);
+	r.IndexAddress = vk::RawBufferLoad<uint64_t>(base + 8, 8);
+	r.AlbedoTextureIndex = vk::RawBufferLoad<uint>(base + 16, 4);
+	r.BaseColor = float4(vk::RawBufferLoad<float>(base + 32, 4), vk::RawBufferLoad<float>(base + 36, 4),
+	                     vk::RawBufferLoad<float>(base + 40, 4), vk::RawBufferLoad<float>(base + 44, 4));
+	// mat4 is 16 contiguous floats at offset 48 (column-major, matching glm).
+	float4 c0 = float4(vk::RawBufferLoad<float>(base + 48, 4), vk::RawBufferLoad<float>(base + 52, 4),
+	                   vk::RawBufferLoad<float>(base + 56, 4), vk::RawBufferLoad<float>(base + 60, 4));
+	float4 c1 = float4(vk::RawBufferLoad<float>(base + 64, 4), vk::RawBufferLoad<float>(base + 68, 4),
+	                   vk::RawBufferLoad<float>(base + 72, 4), vk::RawBufferLoad<float>(base + 76, 4));
+	float4 c2 = float4(vk::RawBufferLoad<float>(base + 80, 4), vk::RawBufferLoad<float>(base + 84, 4),
+	                   vk::RawBufferLoad<float>(base + 88, 4), vk::RawBufferLoad<float>(base + 92, 4));
+	float4 c3 = float4(vk::RawBufferLoad<float>(base + 96, 4), vk::RawBufferLoad<float>(base + 100, 4),
+	                   vk::RawBufferLoad<float>(base + 104, 4), vk::RawBufferLoad<float>(base + 108, 4));
+	r.Model = float4x4(c0, c1, c2, c3);
+	return r;
+}
+
+// Read a mesh vertex's TexCoord (float2 @ offset 24 in the 48-byte Vertex) by device address.
+float2 LoadVertexUV(uint64_t vertexAddr, uint index)
+{
+	const uint64_t a = vertexAddr + uint64_t(index) * 48ull + 24ull;
+	return float2(vk::RawBufferLoad<float>(a, 4), vk::RawBufferLoad<float>(a + 4, 4));
+}
+
+// Read a mesh vertex's object-space Normal (float3 @ offset 12) by device address.
+float3 LoadVertexNormal(uint64_t vertexAddr, uint index)
+{
+	const uint64_t a = vertexAddr + uint64_t(index) * 48ull + 12ull;
+	return float3(vk::RawBufferLoad<float>(a, 4), vk::RawBufferLoad<float>(a + 4, 4), vk::RawBufferLoad<float>(a + 8, 4));
+}
+
+// Ray-traced reflection ALBEDO (#118, Inc 2): trace the reflection ray `R` from the surface, find the
+// closest hit, resolve it to a surface via the per-instance geometry table (device-address vertex/index
+// buffers + material), and return the reflected albedo (base color * sampled albedo texture). On a miss (or
+// no table), return the prefiltered sky cube in `R` — exactly the env source the IBL specular uses. This is
+// the unlit resolution step; Inc 3 re-lights the hit. `Ng` offsets the ray origin off the surface.
+float3 RayTraceReflectionAlbedo(float3 positionWS, float3 Ng, float3 R)
+{
+	const uint64_t tableAddr = ReflGeoTableAddress();
+
+	RayDesc ray;
+	ray.Origin = positionWS + Ng * 0.02 + R * 0.01; // normal-offset to dodge self-hit
+	ray.Direction = R;
+	ray.TMin = 0.0;
+	ray.TMax = 1e30;
+
+	// Closest hit (no ACCEPT_FIRST_HIT): a reflection needs the FRONT-MOST surface along R.
+	RayQuery<RAY_FLAG_CULL_NON_OPAQUE> q;
+	q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
+	q.Proceed();
+
+	if (q.CommittedStatus() != COMMITTED_TRIANGLE_HIT || tableAddr == 0)
+	{
+		// Miss (or no geometry table): reflect the distant sky. Prefiltered cube at mip 0 = the sharp env.
+		if (PrefilteredCubeIndex != 0)
+		{
+			return Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, R, 0).rgb;
+		}
+		return float3(0, 0, 0);
+	}
+
+	const GeoRecord rec = LoadGeoRecord(tableAddr, q.CommittedInstanceID());
+
+	// The hit's three vertex indices (uint32 index buffer), then barycentric-interpolate the UV.
+	const uint prim = q.CommittedPrimitiveIndex();
+	const uint64_t idxBase = rec.IndexAddress + uint64_t(prim) * 12ull; // 3 * uint32
+	const uint i0 = vk::RawBufferLoad<uint>(idxBase + 0, 4);
+	const uint i1 = vk::RawBufferLoad<uint>(idxBase + 4, 4);
+	const uint i2 = vk::RawBufferLoad<uint>(idxBase + 8, 4);
+
+	const float2 bary = q.CommittedTriangleBarycentrics();
+	const float w = 1.0 - bary.x - bary.y;
+	const float2 uv = w * LoadVertexUV(rec.VertexAddress, i0) + bary.x * LoadVertexUV(rec.VertexAddress, i1) + bary.y * LoadVertexUV(rec.VertexAddress, i2);
+
+	float3 albedo = rec.BaseColor.rgb;
+	if (rec.AlbedoTextureIndex != 0)
+	{
+		albedo *= Textures[NonUniformResourceIndex(rec.AlbedoTextureIndex)].SampleLevel(LinearSampler, uv, 0).rgb;
+	}
+	return albedo;
+}
 #endif
 
 // Directional-sun shadow: RT ray query (when RTShadowEnabled) or the raster shadow map (dedicated map,
@@ -483,6 +588,18 @@ float4 main(PSInput i) : SV_Target0
 	{
 		return float4(ao, ao, ao, 1.0);
 	}
+
+	// Debug view (#118): output the raw reflected albedo (RT reflection hit resolution) so the geometry-table
+	// resolve — device-address vertex/index reads + barycentric UV + bindless albedo sample — is verifiable
+	// on screen independent of the lighting blend. Only meaningful in the RT permutation.
+#ifdef SS_RAYTRACING
+	if (DebugReflections != 0)
+	{
+		const float3 R = reflect(-V, N);
+		const float3 refl = RayTraceReflectionAlbedo(i.PositionWS, normalize(i.NormalWS), R);
+		return float4(refl, 1.0);
+	}
+#endif
 
 	float3 Lo = float3(0, 0, 0);
 

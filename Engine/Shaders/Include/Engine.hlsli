@@ -178,7 +178,9 @@ cbuffer FrameCB : register(b0, space0)
 	// RendererService.cpp field-for-field.
 	uint ReflGeoTableAddrLo;
 	uint ReflGeoTableAddrHi;
-	float _ReflPad0;
+	// Debug: 1 = output the raw reflected albedo (the RT reflection trace's resolved hit color) instead of
+	// the shaded scene, to verify hit resolution independent of the lighting blend. Reuses a pad slot.
+	uint DebugReflections;
 	float _ReflPad1;
 };
 

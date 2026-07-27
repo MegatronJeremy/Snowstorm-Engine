@@ -312,6 +312,15 @@ namespace Snowstorm
 			SS_CORE_WARN("samplerAnisotropy not supported by hardware; disabling it.");
 		}
 
+		// 64-bit ints in shaders: needed by the RT reflection trace's device-address arithmetic
+		// (vk::RawBufferLoad<uint64_t> over the geometry table, #118). Universally supported on RT-class
+		// GPUs; enabled only when present so a device lacking it still creates (the RT permutation just won't
+		// run there — same graceful-fallback contract as the RT extensions).
+		if (supportedFeatures.shaderInt64)
+		{
+			enabledFeatures.shaderInt64 = VK_TRUE;
+		}
+
 		// Common device extensions
 		std::vector<const char*> deviceExtensions = {
 		    VK_KHR_SWAPCHAIN_EXTENSION_NAME,

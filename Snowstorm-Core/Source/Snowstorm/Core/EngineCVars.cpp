@@ -75,7 +75,7 @@ namespace Snowstorm::CVars
 
 	CVar<int> AAMode{"render.aa", 0, "Anti-aliasing: 0 = None, 1 = FXAA (spatial post-process), 2 = TAA (temporal accumulation via jitter + motion vectors, #44)", CVarFlags::Persist};
 
-	CVar<int> DebugView{"render.debugview", 0, "Viewport debug overlay: 0 = Normal (tonemapped scene), 1 = Motion Vectors (per-pixel screen-space velocity as color; drives the velocity pass + tonemap debug branch, #44), 2 = Ambient Occlusion (DefaultLit outputs the isolated grayscale AO term for tuning RTAO, #118)", CVarFlags::Persist};
+	CVar<int> DebugView{"render.debugview", 0, "Viewport debug overlay: 0 = Normal (tonemapped scene), 1 = Motion Vectors (per-pixel screen-space velocity as color; drives the velocity pass + tonemap debug branch, #44), 2 = Ambient Occlusion (DefaultLit outputs the isolated grayscale AO term for tuning RTAO, #118), 3 = Reflections (raw reflected albedo from the RT reflection trace, for verifying hit resolution, #118)", CVarFlags::Persist};
 
 	CVar<float> TaaBlend{"render.taa.blend", 0.9f, "TAA base history weight while moving (higher = smoother/more lag). Live-tunable (#44)", CVarFlags::Persist};
 

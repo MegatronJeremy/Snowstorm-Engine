@@ -216,16 +216,17 @@ namespace Snowstorm
 		}
 
 		// Debug view: 0 = Normal, 1 = Motion Vectors (per-pixel velocity as color; runs the velocity pass +
-		// tonemap debug branch, #44), 2 = Ambient Occlusion (DefaultLit outputs the isolated grayscale AO
-		// term for tuning RTAO, #118). Index maps 1:1 to render.debugview.
+		// tonemap debug branch, #44), 2 = Ambient Occlusion (isolated grayscale AO for tuning RTAO, #118),
+		// 3 = Reflections (raw reflected albedo from the RT reflection trace, for verifying hit resolution,
+		// #118). Index maps 1:1 to render.debugview.
 		{
-			const char* dbgLabels[] = {"Normal", "Motion Vectors", "Ambient Occlusion"};
+			const char* dbgLabels[] = {"Normal", "Motion Vectors", "Ambient Occlusion", "Reflections"};
 			int dbg = CVars::DebugView.Get();
-			if (dbg < 0 || dbg > 2)
+			if (dbg < 0 || dbg > 3)
 			{
 				dbg = 0;
 			}
-			if (ImGui::Combo("Debug View", &dbg, dbgLabels, 3))
+			if (ImGui::Combo("Debug View", &dbg, dbgLabels, 4))
 			{
 				CVars::DebugView.Set(dbg);
 			}
