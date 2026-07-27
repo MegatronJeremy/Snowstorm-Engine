@@ -79,23 +79,24 @@ float SampleShadowFactor(uint texIndex, float4x4 lightViewProj, float4 atlasRect
 }
 
 #ifdef SS_RAYTRACING
-// Ray-traced sun shadow (#118): trace an inline ray-query shadow ray from the surface toward the sun
-// against the scene TLAS. Any opaque hit before the ray reaches "infinity" => shadowed. `L` is the
-// normalized direction TO the sun (= normalize(-DirectionalLights[0].Direction)); `Ng` is the geometric
-// normal used to offset the ray origin along the surface (normal + slight light-dir push), which avoids
-// self-intersection acne without a depth-space bias. Returns lerp(1, visibility, ShadowStrength) to match
-// the raster path's strength dial. Runs only in the RT shader permutation.
-float RayTraceSunShadow(float3 positionWS, float3 Ng, float3 L)
+// Ray-traced shadow (#118): trace an inline ray-query shadow ray from the surface toward a light against
+// the scene TLAS. Any opaque hit before the ray reaches the light (tMax) => shadowed. `L` is the
+// normalized direction TO the light; `Ng` is the geometric normal used to offset the ray origin off the
+// surface (normal + slight light-dir push), which avoids self-intersection acne without a depth-space
+// bias. `tMax` is the ray length: 1e30 for the sun (at infinity), or the distance to a local light minus
+// a small epsilon (so the ray doesn't hit geometry at/behind the light itself). Returns
+// lerp(1, visibility, ShadowStrength) to match the raster path's strength dial. RT permutation only.
+float RayTraceShadow(float3 positionWS, float3 Ng, float3 L, float tMax)
 {
 	// Normal-offset the origin so the ray starts just off the surface; a small along-L push further guards
-	// grazing angles. Scaled by 1e-2 world units — tuned in 1c against acne/peter-panning.
+	// grazing angles. Scaled by 1e-2 world units — tuned against acne/peter-panning.
 	const float3 origin = positionWS + Ng * 0.02 + L * 0.01;
 
 	RayDesc ray;
 	ray.Origin = origin;
 	ray.Direction = L;
 	ray.TMin = 0.0;
-	ray.TMax = 1e30; // directional light is at infinity
+	ray.TMax = tMax;
 
 	// ACCEPT_FIRST_HIT_AND_END_SEARCH: a shadow ray only needs "is anything in the way", so stop at the
 	// first opaque hit. Geometry is built OPAQUE (no any-hit), so CULL_NON_OPAQUE is a no-op safety net.
@@ -115,7 +116,7 @@ float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL)
 #ifdef SS_RAYTRACING
 	if (RTShadowEnabled != 0)
 	{
-		return RayTraceSunShadow(positionWS, Ng, L);
+		return RayTraceShadow(positionWS, Ng, L, 1e30); // sun is at infinity
 	}
 #endif
 	if (ShadowMapIndex == 0)
@@ -125,10 +126,23 @@ float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL)
 	return SampleShadowFactor(ShadowMapIndex, LightViewProj, float4(0, 0, 1, 1), positionWS, NdotL);
 }
 
-// Spot shadow: samples the shared atlas at the spot's tile. Gated by the atlas index being bound AND the
-// spot having been assigned a tile (ShadowIndex >= 0).
-float SampleSpotShadow(SpotLight spot, float3 positionWS, float NdotL)
+// Spot shadow: RT ray query (when RTShadowEnabled and this spot casts) or the shared raster atlas at the
+// spot's tile. `Ng` = geometric normal (ray offset), `L` = direction to the light, `distToLight` = ray
+// length for the RT path. Raster path gated by the atlas index being bound AND the spot having a tile
+// (ShadowIndex >= 0); RT path gated by ShadowIndex >= 0 alone (the "this light casts" sentinel).
+float SampleSpotShadow(SpotLight spot, float3 positionWS, float3 Ng, float3 L, float distToLight, float NdotL)
 {
+#ifdef SS_RAYTRACING
+	if (RTShadowEnabled != 0)
+	{
+		if (spot.ShadowIndex < 0)
+		{
+			return 1.0; // this spot doesn't cast
+		}
+		// Stop just short of the light so the ray can't hit geometry at/behind the light position.
+		return RayTraceShadow(positionWS, Ng, L, max(distToLight - 0.05, 0.0));
+	}
+#endif
 	if (SpotShadowAtlasIndex == 0 || spot.ShadowIndex < 0)
 	{
 		return 1.0;
@@ -154,11 +168,22 @@ int PointShadowFace(float3 dir)
 	return dir.z >= 0.0 ? 4 : 5; // +Z : -Z
 }
 
-// Point (omni) shadow: pick the cube face the surface lies on (by the light->surface direction), then
-// PCF-sample that face's tile of the point atlas via the shared planar projective test. Gated by the
-// atlas being bound AND this light having been assigned a shadow slot (ShadowSlot >= 0).
-float SamplePointShadow(PointLight light, float3 positionWS, float NdotL)
+// Point (omni) shadow: RT ray query (when RTShadowEnabled and this light casts) or the raster point atlas.
+// `Ng` = geometric normal (ray offset), `L` = direction to the light, `distToLight` = ray length for RT.
+// Raster path picks the cube face the surface lies on and PCF-samples that face's tile, gated by the atlas
+// being bound AND a shadow slot assigned (ShadowSlot >= 0); RT path gated by ShadowSlot >= 0 alone.
+float SamplePointShadow(PointLight light, float3 positionWS, float3 Ng, float3 L, float distToLight, float NdotL)
 {
+#ifdef SS_RAYTRACING
+	if (RTShadowEnabled != 0)
+	{
+		if (light.ShadowSlot < 0)
+		{
+			return 1.0; // this light doesn't cast
+		}
+		return RayTraceShadow(positionWS, Ng, L, max(distToLight - 0.05, 0.0));
+	}
+#endif
 	if (PointShadowAtlasIndex == 0 || light.ShadowSlot < 0)
 	{
 		return 1.0;
@@ -343,8 +368,9 @@ float4 main(PSInput i) : SV_Target0
 		const float window = pow(saturate(1.0 - pow(dist / range, 4.0)), 2.0);
 		const float atten = window / max(dist * dist, 1e-4);
 
-		// Shadow: 1 when unshadowed / this light casts no shadow. NdotL uses the surface normal vs L.
-		const float pointShadow = SamplePointShadow(PointLights[p], i.PositionWS, max(dot(N, L), 0.0));
+		// Shadow: 1 when unshadowed / this light casts no shadow. NdotL uses the surface normal vs L. The RT
+		// path traces from the surface to the light (dist), offset by N.
+		const float pointShadow = SamplePointShadow(PointLights[p], i.PositionWS, N, L, dist, max(dot(N, L), 0.0));
 
 		const float3 radiance = PointLights[p].Color * PointLights[p].Intensity * atten;
 		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * pointShadow;
@@ -370,8 +396,9 @@ float4 main(PSInput i) : SV_Target0
 		const float denom = max(SpotLights[s].CosInner - SpotLights[s].CosOuter, 1e-4);
 		const float cone = pow(saturate((cosAngle - SpotLights[s].CosOuter) / denom), 2.0);
 
-		// Shadow: 1 when unshadowed / this spot casts no shadow. NdotL uses the surface normal vs L.
-		const float spotShadow = SampleSpotShadow(SpotLights[s], i.PositionWS, max(dot(N, L), 0.0));
+		// Shadow: 1 when unshadowed / this spot casts no shadow. NdotL uses the surface normal vs L. The RT
+		// path traces from the surface to the spot (dist), offset by N.
+		const float spotShadow = SampleSpotShadow(SpotLights[s], i.PositionWS, N, L, dist, max(dot(N, L), 0.0));
 
 		const float3 radiance = SpotLights[s].Color * SpotLights[s].Intensity * atten * cone;
 		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * spotShadow;
