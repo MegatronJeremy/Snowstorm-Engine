@@ -64,6 +64,12 @@ namespace Snowstorm
 		// True when VK_EXT_debug_utils is enabled (RenderDoc labels + object names usable).
 		[[nodiscard]] bool IsDebugUtilsAvailable() const { return m_DebugUtilsAvailable; }
 
+		// True when the picked device supports inline ray tracing (VK_KHR_ray_query +
+		// VK_KHR_acceleration_structure, feature bits + extensions) and they were enabled at device creation.
+		// Gates all RT features downstream (AS builds, RT shadow pass); false => the raster path runs. Set in
+		// Init from a capability query on the chosen physical device (see QueryRayTracingSupport).
+		[[nodiscard]] bool SupportsRayTracing() const { return m_RayTracingSupported; }
+
 		VkExtent2D GetSwapchainExtent() const { return m_SwapchainExtent; }
 
 		std::vector<VkImage> GetSwapchainImages() const { return m_SwapchainImages; }
@@ -98,6 +104,15 @@ namespace Snowstorm
 		// True when VK_EXT_debug_utils was enabled on the instance (object naming + command labels).
 		// Independent of validation layers — set from instance-extension enumeration in Init.
 		bool m_DebugUtilsAvailable = false;
+
+		// True when VK_KHR_ray_query + VK_KHR_acceleration_structure (features + extensions) are supported on
+		// the picked device and were enabled at device creation. Gates the whole RT path (#118).
+		bool m_RayTracingSupported = false;
+
+		// Query the picked physical device for inline ray-tracing support: the rayQuery + accelerationStructure
+		// feature bits AND the three device extensions (acceleration_structure, ray_query, deferred_host_operations).
+		// Returns true only when all are present; called before device creation to decide whether to enable them.
+		[[nodiscard]] bool QueryRayTracingSupport() const;
 
 		// Pick the present mode honoring m_VSync from the surface's supported modes (FIFO is the only
 		// one guaranteed by spec, so it's the universal fallback).

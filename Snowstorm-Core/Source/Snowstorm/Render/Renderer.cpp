@@ -231,6 +231,12 @@ namespace Snowstorm
 		return s_API->GetMinUniformBufferOffsetAlignment();
 	}
 
+	bool Renderer::IsRayTracingSupported()
+	{
+		SS_CORE_ASSERT(s_API, "Renderer not initialized");
+		return s_API->IsRayTracingSupported();
+	}
+
 	Ref<CommandContext> Renderer::GetGraphicsCommandContext()
 	{
 		SS_CORE_ASSERT(s_API, "Renderer not initialized");

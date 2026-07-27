@@ -10,6 +10,7 @@
 #include "Snowstorm/Render/FrameData.hpp"
 #include "Snowstorm/Render/MaterialInstance.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 #include "Snowstorm/Service/Service.hpp"
 
@@ -184,6 +185,11 @@ namespace Snowstorm
 		// Monotonic frame counter, incremented once per NewFrame(). Drives the temporal jitter Halton index
 		// (#44); a general "which frame is this" primitive for any frame-phased effect. 64-bit — never wraps.
 		[[nodiscard]] uint64_t GetFrameCounter() const { return m_FrameCounter; }
+
+		// True when the device supports + enabled inline ray tracing (#118). Gates the RT shadow path; the RT
+		// systems/passes query this to decide whether to build AS / run the RT pass, and fall back to raster
+		// when false. Forwards to Renderer (device capability).
+		[[nodiscard]] bool IsRayTracingSupported() const { return Renderer::IsRayTracingSupported(); }
 
 		// Per-pass GPU scopes (name, ms, nesting depth) resolved this frame from the graph's timestamp scopes.
 		// Set by RenderSystem each frame; read by the editor overlay. Empty if the device lacks timestamps.

@@ -7,8 +7,10 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <algorithm>
+#include <cstring>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "Snowstorm/Core/EngineCVars.hpp"
 
@@ -311,18 +313,30 @@ namespace Snowstorm
 		}
 
 		// Common device extensions
-		const char* deviceExtensions[] = {
+		std::vector<const char*> deviceExtensions = {
 		    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 		    VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
 		    VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME};
+
+		// Inline ray tracing (#118). Only enabled when the device supports the feature bits AND the three
+		// extensions — QueryRayTracingSupport checks all of them. On a non-RT GPU we skip both the extensions
+		// and the feature structs, so vkCreateDevice still succeeds and the raster path runs unchanged.
+		m_RayTracingSupported = QueryRayTracingSupport();
+		if (m_RayTracingSupported)
+		{
+			deviceExtensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+			deviceExtensions.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+			// acceleration_structure requires deferred_host_operations to be enabled alongside it.
+			deviceExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+		}
 
 		VkDeviceCreateInfo devInfo{};
 		devInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 		devInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreates.size());
 		devInfo.pQueueCreateInfos = queueCreates.data();
 		devInfo.pEnabledFeatures = &enabledFeatures;
-		devInfo.enabledExtensionCount = static_cast<uint32_t>(std::size(deviceExtensions));
-		devInfo.ppEnabledExtensionNames = deviceExtensions;
+		devInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+		devInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
 		// Enable Dynamic Rendering and Buffer Device Address features
 		VkPhysicalDeviceVulkan13Features features13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
@@ -346,6 +360,22 @@ namespace Snowstorm
 
 		devInfo.pNext = &features12;
 
+		// Splice the RT feature structs onto the chain when supported (#118). accelerationStructure enables
+		// building/binding AS; rayQuery enables the inline trace intrinsics in compute. Declared here (outside
+		// the if) so their storage outlives the vkCreateDevice call below.
+		VkPhysicalDeviceAccelerationStructureFeaturesKHR asFeatures{
+		    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR};
+		VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures{
+		    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
+		if (m_RayTracingSupported)
+		{
+			asFeatures.accelerationStructure = VK_TRUE;
+			rayQueryFeatures.rayQuery = VK_TRUE;
+			asFeatures.pNext = &rayQueryFeatures;
+			rayQueryFeatures.pNext = features13.pNext; // preserve any existing tail (currently none)
+			features13.pNext = &asFeatures;
+		}
+
 		VK_CHECK(vkCreateDevice(m_PhysicalDevice, &devInfo, nullptr, &m_Device));
 		volkLoadDevice(m_Device);
 		vkGetDeviceQueue(m_Device, m_GraphicsQueueFamily, 0, &m_GraphicsQueue);
@@ -354,6 +384,8 @@ namespace Snowstorm
 		SS_CORE_INFO("Vulkan queues: graphics family {}, transfer family {}{}.",
 		             m_GraphicsQueueFamily, m_TransferQueueFamily,
 		             HasDedicatedTransferQueue() ? " (dedicated)" : " (shared with graphics)");
+		SS_CORE_INFO("Ray tracing (VK_KHR_ray_query): {}.",
+		             m_RayTracingSupported ? "supported (enabled)" : "not supported (raster fallback)");
 
 		// 5. Graphics command pool (for transient command buffers)
 		VkCommandPoolCreateInfo poolInfo{};
@@ -415,6 +447,42 @@ namespace Snowstorm
 
 		// 7. Swapchain
 		CreateSwapchain();
+	}
+
+	bool VulkanContext::QueryRayTracingSupport() const
+	{
+		// 1) The three device extensions must all be advertised. accelerationStructure pulls in
+		//    deferred_host_operations as a hard dependency; ray_query is the inline-trace path we use.
+		uint32_t extCount = 0;
+		vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extCount, nullptr);
+		std::vector<VkExtensionProperties> available(extCount);
+		vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extCount, available.data());
+
+		const char* required[] = {
+		    VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+		    VK_KHR_RAY_QUERY_EXTENSION_NAME,
+		    VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME};
+		for (const char* need : required)
+		{
+			const bool found = std::any_of(available.begin(), available.end(),
+			                               [need](const VkExtensionProperties& e)
+			                               { return std::strcmp(e.extensionName, need) == 0; });
+			if (!found)
+			{
+				return false;
+			}
+		}
+
+		// 2) The feature bits must be set. Extension advertised but feature off => can't enable it.
+		VkPhysicalDeviceRayQueryFeaturesKHR rq{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
+		VkPhysicalDeviceAccelerationStructureFeaturesKHR as{
+		    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR};
+		as.pNext = &rq;
+		VkPhysicalDeviceFeatures2 features2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+		features2.pNext = &as;
+		vkGetPhysicalDeviceFeatures2(m_PhysicalDevice, &features2);
+
+		return as.accelerationStructure == VK_TRUE && rq.rayQuery == VK_TRUE;
 	}
 
 	bool VulkanContext::CreateSwapchain()

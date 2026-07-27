@@ -32,6 +32,8 @@ namespace Snowstorm
 
 		uint32_t GetMinUniformBufferOffsetAlignment() const override;
 
+		bool IsRayTracingSupported() const override;
+
 		Ref<CommandContext> GetGraphicsCommandContext() override;
 
 		void InitImGuiBackend(void* windowHandle) override;

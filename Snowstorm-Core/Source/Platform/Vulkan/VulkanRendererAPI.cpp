@@ -417,6 +417,11 @@ namespace Snowstorm
 		return static_cast<uint32_t>(a);
 	}
 
+	bool VulkanRendererAPI::IsRayTracingSupported() const
+	{
+		return VulkanContext::Get().SupportsRayTracing();
+	}
+
 	Ref<CommandContext> VulkanRendererAPI::GetGraphicsCommandContext()
 	{
 		return m_GraphicsContexts[m_CurrentFrameIndex];
