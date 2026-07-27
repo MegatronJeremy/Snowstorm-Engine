@@ -293,6 +293,42 @@ namespace Snowstorm
 		}
 
 		ImGui::Spacing();
+		EditorTheme::SectionHeader("Ambient Occlusion");
+
+		// Ray-traced AO (#118): darkens the ambient term in crevices/contacts that IBL + analytic ambient
+		// miss. Only offered on an RT GPU (the shader's RTAO branch is compiled out otherwise). It traces a
+		// few rays/frame and relies on TAA to average them smooth, so the radius/intensity sliders are only
+		// enabled when RT AO is on.
+		{
+			const bool aoRtSupported = Renderer::IsRayTracingSupported();
+			ImGui::BeginDisabled(!aoRtSupported);
+			if (bool aoRt = CVars::AoRT.Get(); ImGui::Checkbox("Ray-traced (RT)##AO", &aoRt))
+			{
+				CVars::AoRT.Set(aoRt);
+			}
+			ImGui::EndDisabled();
+			if (!aoRtSupported)
+			{
+				ImGui::TextDisabled("(requires an RT-capable GPU)");
+			}
+			else
+			{
+				ImGui::TextDisabled("(needs TAA for a clean result)");
+			}
+
+			ImGui::BeginDisabled(!CVars::AoRT.Get());
+			if (float aoRadius = CVars::AORadius.Get(); ImGui::SliderFloat("Radius##AO", &aoRadius, 0.05f, 3.0f, "%.2f m", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::AORadius.Set(aoRadius);
+			}
+			if (float aoIntensity = CVars::AOIntensity.Get(); ImGui::SliderFloat("Intensity##AO", &aoIntensity, 0.0f, 3.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::AOIntensity.Set(aoIntensity);
+			}
+			ImGui::EndDisabled();
+		}
+
+		ImGui::Spacing();
 		EditorTheme::SectionHeader("Image-Based Lighting");
 
 		// IBL toggle: on -> bake the sky into irradiance/prefiltered/BRDF maps (compute) and use them for

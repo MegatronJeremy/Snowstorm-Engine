@@ -41,10 +41,10 @@ namespace Snowstorm
 
 	void TlasBuildSystem::Execute(Timestep)
 	{
-		// Only maintain the TLAS while RT shadows are actually active — nothing samples it in Shadow Map / Off
-		// mode, so building it there is pure waste. Folds in the device-support check (ShadowsRTActive() is
-		// false on a non-RT GPU). Track the state so the OFF->ON transition can force a rebuild below.
-		const bool rtActive = CVars::ShadowsRTActive();
+		// Only maintain the TLAS while something actually samples it — RT shadows OR RTAO. In every other
+		// mode building it is pure waste. Both helpers fold in the device-support check (false on a non-RT
+		// GPU). Track the state so the OFF->ON transition can force a rebuild below.
+		const bool rtActive = CVars::ShadowsRTActive() || CVars::AoRTActive();
 		const bool justEnabled = rtActive && !m_WasRTActive;
 		m_WasRTActive = rtActive;
 		if (!rtActive)
