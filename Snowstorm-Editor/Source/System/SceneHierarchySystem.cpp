@@ -348,6 +348,46 @@ namespace Snowstorm
 		}
 
 		ImGui::Spacing();
+		EditorTheme::SectionHeader("Reflections");
+
+		// Ray-traced reflections (#118): trace a reflection ray, shade the hit, blend into the specular for
+		// smooth surfaces (blurry for rough ones via the roughness-driven cone). RT-only; the shader branch is
+		// compiled out on a non-RT GPU. Like RTAO it's one ray/frame + TAA, so it needs TAA for a clean result;
+		// the sliders are only enabled when RT reflections are on.
+		{
+			const bool reflRtSupported = Renderer::IsRayTracingSupported();
+			ImGui::BeginDisabled(!reflRtSupported);
+			if (bool reflRt = CVars::ReflectionsRT.Get(); ImGui::Checkbox("Ray-traced (RT)##Refl", &reflRt))
+			{
+				CVars::ReflectionsRT.Set(reflRt);
+			}
+			ImGui::EndDisabled();
+			if (!reflRtSupported)
+			{
+				ImGui::TextDisabled("(requires an RT-capable GPU)");
+			}
+			else
+			{
+				ImGui::TextDisabled("(needs TAA for a clean result)");
+			}
+
+			ImGui::BeginDisabled(!CVars::ReflectionsRT.Get());
+			if (float reflIntensity = CVars::ReflectionIntensity.Get(); ImGui::SliderFloat("Intensity##Refl", &reflIntensity, 0.0f, 2.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::ReflectionIntensity.Set(reflIntensity);
+			}
+			if (float reflMaxRough = CVars::ReflectionMaxRoughness.Get(); ImGui::SliderFloat("Max Roughness##Refl", &reflMaxRough, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::ReflectionMaxRoughness.Set(reflMaxRough);
+			}
+			if (float reflCone = CVars::ReflectionConeScale.Get(); ImGui::SliderFloat("Cone Scale##Refl", &reflCone, 0.0f, 3.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::ReflectionConeScale.Set(reflCone);
+			}
+			ImGui::EndDisabled();
+		}
+
+		ImGui::Spacing();
 		EditorTheme::SectionHeader("Image-Based Lighting");
 
 		// IBL toggle: on -> bake the sky into irradiance/prefiltered/BRDF maps (compute) and use them for

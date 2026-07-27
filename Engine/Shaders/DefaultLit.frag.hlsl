@@ -276,27 +276,46 @@ float3 LoadVertexNormal(uint64_t vertexAddr, uint index)
 // reflection matches the scene's lighting. On a miss (or no table), return the prefiltered sky cube in `R`
 // — exactly the env source the IBL specular uses. One bounce only; the reflected hit is NOT itself
 // reflective (no recursion). `Ng` offsets the ray origin off the surface.
-float3 RayTraceReflection(float3 positionWS, float3 Ng, float3 R, bool lit)
+float3 RayTraceReflection(float3 positionWS, float3 Ng, float3 R, bool lit, float roughness, float2 pixelPos)
 {
 	const uint64_t tableAddr = ReflGeoTableAddress();
 
+	// Glossy cone jitter (#118 Inc 4): a rough surface reflects a BLURRY image, not a sharp mirror. Perturb
+	// the reflection direction within a disk of radius (roughness * ReflConeScale) in the plane
+	// perpendicular to R, using the SAME frame-rotated IGN hash + disk sample + orthonormal basis as the
+	// soft-shadow / RTAO traces. One ray/frame; per-frame rotation + TAA accumulate a smooth glossy lobe
+	// over time. roughness == 0 (a mirror) => zero cone => the exact sharp ray, so mirrors are unchanged.
+	float3 dir = R;
+	if (roughness > 0.0)
+	{
+		const float3 up = abs(R.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
+		const float3 tangent = normalize(cross(up, R));
+		const float3 bitangent = cross(R, tangent);
+		const float2 px = pixelPos + float2(FrameCounter * 5.588238, FrameCounter * 3.539418);
+		const float ign = frac(52.9829189 * frac(dot(px, float2(0.06711056, 0.00583715))));
+		const float coneRadius = roughness * ReflConeScale;
+		const float rr = coneRadius * sqrt(ign);
+		const float phi = 2.0 * PI * frac(ign + 0.61803398875); // golden-ratio decorrelation of angle vs radius
+		dir = normalize(R + (rr * cos(phi)) * tangent + (rr * sin(phi)) * bitangent);
+	}
+
 	RayDesc ray;
-	ray.Origin = positionWS + Ng * 0.02 + R * 0.01; // normal-offset to dodge self-hit
-	ray.Direction = R;
+	ray.Origin = positionWS + Ng * 0.02 + dir * 0.01; // normal-offset to dodge self-hit
+	ray.Direction = dir;
 	ray.TMin = 0.0;
 	ray.TMax = 1e30;
 
-	// Closest hit (no ACCEPT_FIRST_HIT): a reflection needs the FRONT-MOST surface along R.
+	// Closest hit (no ACCEPT_FIRST_HIT): a reflection needs the FRONT-MOST surface along the ray.
 	RayQuery<RAY_FLAG_CULL_NON_OPAQUE> q;
 	q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
 	q.Proceed();
 
 	if (q.CommittedStatus() != COMMITTED_TRIANGLE_HIT || tableAddr == 0)
 	{
-		// Miss (or no geometry table): reflect the distant sky. Prefiltered cube at mip 0 = the sharp env.
+		// Miss (or no geometry table): reflect the distant sky along the (jittered) direction.
 		if (PrefilteredCubeIndex != 0)
 		{
-			return Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, R, 0).rgb;
+			return Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, dir, 0).rgb;
 		}
 		return float3(0, 0, 0);
 	}
@@ -508,8 +527,9 @@ float3 FresnelSchlickRoughness(float cosTheta, float3 F0, float roughness)
 // Split-sum image-based lighting: diffuse from the irradiance cube, specular from the prefiltered cube
 // (roughness -> mip) modulated by the BRDF LUT. Returns 0 (caller falls back to analytic ambient) when
 // IBL isn't baked (IrradianceCubeIndex == 0).
-// positionWS/Ng are only used by the RT reflection blend (SS_RAYTRACING); the raster build ignores them.
-float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness, float metallic, float ao, float3 positionWS, float3 Ng)
+// positionWS/Ng/pixelPos are only used by the RT reflection blend (SS_RAYTRACING); the raster build
+// ignores them.
+float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness, float metallic, float ao, float3 positionWS, float3 Ng, float2 pixelPos)
 {
 	if (IrradianceCubeIndex == 0)
 	{
@@ -549,7 +569,7 @@ float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness,
 	if (RTReflEnabled != 0 && roughness < ReflMaxRoughness)
 	{
 		const float reflWeight = saturate(1.0 - roughness / max(ReflMaxRoughness, 1e-3));
-		const float3 rt = RayTraceReflection(positionWS, Ng, R, true); // lit reflected radiance
+		const float3 rt = RayTraceReflection(positionWS, Ng, R, true, roughness, pixelPos); // lit, glossy-jittered
 		const float3 specularRT = rt * specWeight * ReflIntensity;
 		specular = lerp(specular, specularRT, reflWeight);
 	}
@@ -658,7 +678,7 @@ float4 main(PSInput i) : SV_Target0
 	if (DebugReflections != 0)
 	{
 		const float3 R = reflect(-V, N);
-		const float3 refl = RayTraceReflection(i.PositionWS, normalize(i.NormalWS), R, false); // raw albedo
+		const float3 refl = RayTraceReflection(i.PositionWS, normalize(i.NormalWS), R, false, roughness, i.PositionCS.xy); // raw albedo
 		return float4(refl, 1.0);
 	}
 #endif
@@ -730,7 +750,7 @@ float4 main(PSInput i) : SV_Target0
 	// Ambient: prefer split-sum IBL (baked from the sky) when available — metals reflect the environment
 	// and specular picks up sky color. Falls back to the analytic hemisphere ambient (same zenith/horizon/
 	// ground colors the sky shows) when IBL isn't baked, so the look degrades gracefully.
-	float3 ambient = ComputeIBL(N, V, albedo, F0, roughness, metallic, ao, i.PositionWS, normalize(i.NormalWS));
+	float3 ambient = ComputeIBL(N, V, albedo, F0, roughness, metallic, ao, i.PositionWS, normalize(i.NormalWS), i.PositionCS.xy);
 	if (IrradianceCubeIndex == 0)
 	{
 		const float3 ambientEnv = (N.y >= 0.0)

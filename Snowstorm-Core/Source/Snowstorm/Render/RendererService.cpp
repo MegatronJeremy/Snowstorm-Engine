@@ -99,7 +99,9 @@ namespace Snowstorm
 			// Debug: 1 = output the raw reflected albedo (RT reflection hit resolution) instead of the shaded
 			// scene, to verify the trace independent of lighting. Reuses a pad slot. Match Engine.hlsli.
 			uint32_t DebugReflections = 0;
-			float _ReflPad1 = 0.0f;
+			// Glossy reflection cone scale (#118 Inc 4): roughness * this = the jitter cone radius that blurs
+			// the reflection on rough surfaces. Reuses the last reflection pad slot. Match Engine.hlsli.
+			float ReflConeScale = 1.0f;
 		};
 	}
 
@@ -303,6 +305,7 @@ namespace Snowstorm
 		frame.RTReflEnabled = (CVars::ReflectionsRTActive() && m_ReflectionTableAddress != 0) ? 1u : 0u;
 		frame.ReflIntensity = CVars::ReflectionIntensity.Get();
 		frame.ReflMaxRoughness = CVars::ReflectionMaxRoughness.Get();
+		frame.ReflConeScale = CVars::ReflectionConeScale.Get();
 		frame.ReflGeoTableAddrLo = static_cast<uint32_t>(m_ReflectionTableAddress & 0xFFFFFFFFull);
 		frame.ReflGeoTableAddrHi = static_cast<uint32_t>(m_ReflectionTableAddress >> 32);
 		// Debug view 3 = Reflections: DefaultLit outputs the raw reflected albedo for verifying hit resolution.

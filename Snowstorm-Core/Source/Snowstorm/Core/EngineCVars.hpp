@@ -239,6 +239,7 @@ namespace Snowstorm::CVars
 	extern CVar<bool> ReflectionsRT;
 	extern CVar<float> ReflectionIntensity;
 	extern CVar<float> ReflectionMaxRoughness;
+	extern CVar<float> ReflectionConeScale;
 
 	// True when RT reflections should run (render.reflections.rt on AND the device supports RT). Drives
 	// FrameCB.RTReflEnabled + the shader branch + the TLAS build gate + the geometry-table build. False on a

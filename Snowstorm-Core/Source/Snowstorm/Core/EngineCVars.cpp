@@ -109,7 +109,9 @@ namespace Snowstorm::CVars
 
 	CVar<float> ReflectionIntensity{"render.reflections.intensity", 1.0f, "Multiplier on the RT reflection contribution (1 = physical, 0 = none)", CVarFlags::Persist};
 
-	CVar<float> ReflectionMaxRoughness{"render.reflections.max_roughness", 0.6f, "Surfaces rougher than this stay on the cheap prefiltered-env specular; smoother ones get RT reflections (the ray fades in as roughness -> 0)", CVarFlags::Persist};
+	CVar<float> ReflectionMaxRoughness{"render.reflections.max_roughness", 0.8f, "Surfaces rougher than this stay on the cheap prefiltered-env specular; smoother ones get RT reflections (the ray fades in as roughness -> 0)", CVarFlags::Persist};
+
+	CVar<float> ReflectionConeScale{"render.reflections.cone_scale", 1.0f, "How much surface roughness widens the glossy reflection cone (0 = always a sharp mirror ray; higher = blurrier reflections on rough surfaces). Glossy reflections need TAA for a clean result.", CVarFlags::Persist};
 
 	float ClampedRenderScale()
 	{

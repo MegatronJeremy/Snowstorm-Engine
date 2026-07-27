@@ -181,7 +181,9 @@ cbuffer FrameCB : register(b0, space0)
 	// Debug: 1 = output the raw reflected albedo (the RT reflection trace's resolved hit color) instead of
 	// the shaded scene, to verify hit resolution independent of the lighting blend. Reuses a pad slot.
 	uint DebugReflections;
-	float _ReflPad1;
+	// Glossy reflection cone scale (#118 Inc 4): roughness * this = the jitter cone radius; wider => blurrier
+	// reflections on rough surfaces. Reuses the last reflection pad slot. Match RendererService.cpp.
+	float ReflConeScale;
 };
 
 // --- SPACE 1: Material Data ---
