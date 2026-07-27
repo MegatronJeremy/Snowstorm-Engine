@@ -136,6 +136,11 @@ namespace Snowstorm
 		const Ref<CommandContext> ctx = Renderer::GetGraphicsCommandContext();
 		SS_CORE_ASSERT(ctx, "Renderer returned null CommandContext");
 
+		// RT picking read-back: BeginFrame waited on this frame-slot's fence, so a pick dispatched into this
+		// slot framesInFlight frames ago has retired — latch its result now (CPU-only), before this frame may
+		// dispatch a new one into the same slot below.
+		renderer.PumpPickReadback(frameIndex);
+
 		// Resolve the PRIOR frame's per-pass GPU timestamps (this command buffer's last submission has
 		// retired) and reset the pool for this frame's scopes. Must run before any graph pass writes a
 		// scope. The resolved times feed the editor's "GPU passes" overlay (1-frame lag, like the frame total).
@@ -148,6 +153,24 @@ namespace Snowstorm
 		const EnvironmentDataBlock& env = renderer.GetEnvironment();
 		SetupIBL(fc, env);
 		m_ShadowRenderer.RenderShadows(fc, *m_World);
+
+		// RT editor picking (#118 follow-up): trace the queued click ray against the scene TLAS in a tiny
+		// compute pass, so the result reads back on a later frame (RecordPick latches the retired dispatch,
+		// then dispatches the pending one). Added only when a pick is queued AND RT is active — the TLAS is
+		// built by TlasBuildSystem (PreRender) under the same condition, so its bindless slot is live here.
+		// RecordPick also latches any completed prior dispatch, so it must run even when nothing new is
+		// queued; but there's no point adding a GPU pass for a pure latch — the latch happens on the frame a
+		// new pick is queued or the next one is. A no-target compute pass (IsCompute) with no graph Reads: the
+		// TLAS isn't a graph-tracked texture resource (it's the bindless AS slot), so no barrier is derived.
+		if (renderer.HasPendingPick())
+		{
+			graph.AddPass({.Name = "PickTrace",
+			               .IsCompute = true,
+			               .Execute = [&renderer, frameIndex](CommandContext& c)
+			               {
+				               renderer.RecordPick(Renderer::GetGraphicsCommandContext(), frameIndex);
+			               }});
+		}
 
 		// Suffix the forward pass with an index only when there's more than one viewport, so the common
 		// single-viewport case reads as just "Forward" in the profiler (not a meaningless entity id).

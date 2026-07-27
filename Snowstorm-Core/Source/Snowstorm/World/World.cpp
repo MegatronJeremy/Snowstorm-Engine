@@ -10,6 +10,7 @@
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Events/Event.hpp"
 #include "Snowstorm/Systems/CameraControllerSystem.hpp"
+#include "Snowstorm/Systems/TlasInstanceMapSingleton.hpp"
 #include "Snowstorm/World/EditorHooksSingleton.hpp"
 
 namespace Snowstorm
@@ -30,6 +31,11 @@ namespace Snowstorm
 		m_SingletonManager->RegisterSingleton<EditorHooksSingleton>();
 
 		m_SingletonManager->RegisterSingleton<AssetManagerSingleton>(this);
+
+		// TLAS instance index -> entity table for RT editor picking (#118 follow-up). Written by
+		// TlasBuildSystem, read by the editor's pick path. Core-scoped so both the editor and a headless
+		// runtime carry it (harmless when unused: it just stays empty).
+		m_SingletonManager->RegisterSingleton<TlasInstanceMapSingleton>();
 
 		// Create the bridge to the Application event bus. In a headless context (unit tests) there is no
 		// Application, so skip the bridge — input simply never fires, which is fine for logic-only tests.

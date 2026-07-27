@@ -8,6 +8,7 @@
 #define SPIRV_REFLECT_USE_SYSTEM_SPIRV_H
 #include <spirv_reflect.h>
 
+#include "VulkanBindlessManager.hpp"
 #include "VulkanDescriptorSetLayout.hpp"
 
 namespace Snowstorm
@@ -96,9 +97,36 @@ namespace Snowstorm
 			orderedSets[s->set] = s;
 		}
 
+		// A compute shader that reads the engine's global bindless table (set 3 — e.g. an inline RayQuery
+		// against SceneTLAS at t2,space3) must NOT reflect set 3 from SPIR-V: reflection can't reproduce the
+		// manager's UPDATE_AFTER_BIND / PARTIALLY_BOUND / runtime-array flags (nor the AS descriptor type,
+		// which FromSpvDescriptorType doesn't map), so a reflected set-3 layout would be incompatible with the
+		// descriptor set BindGlobalResources() binds. When any reflected set lands at/after set 3, we source
+		// set 3 from the manager instead (exactly like the graphics pipeline) and gap-fill sets 0..2 dense.
+		constexpr uint32_t kBindlessSet = 3;
+		const bool usesBindless = !orderedSets.empty() && orderedSets.rbegin()->first >= kBindlessSet;
+
 		m_LayoutSignature.clear();
 		for (const auto& [setIndex, set] : orderedSets)
 		{
+			if (usesBindless && setIndex >= kBindlessSet)
+			{
+				continue; // set 3 comes from the bindless manager below, not from reflection
+			}
+
+			// Positional indexing (GetSetLayouts()[N] == set N) requires a dense array. When using bindless,
+			// gap-fill any sets the shader skipped (below setIndex) with empty layouts so 0..2 stay dense.
+			if (usesBindless)
+			{
+				while (m_SetLayouts.size() < setIndex)
+				{
+					DescriptorSetLayoutDesc gap{};
+					gap.SetIndex = static_cast<uint32_t>(m_SetLayouts.size());
+					gap.DebugName = m_Desc.DebugName + "_Set" + std::to_string(m_SetLayouts.size()) + "_Empty";
+					m_SetLayouts.push_back(DescriptorSetLayout::Create(gap));
+				}
+			}
+
 			DescriptorSetLayoutDesc layoutDesc{};
 			layoutDesc.SetIndex = setIndex;
 			layoutDesc.DebugName = m_Desc.DebugName + "_Set" + std::to_string(setIndex);
@@ -123,6 +151,20 @@ namespace Snowstorm
 		}
 
 		spvReflectDestroyShaderModule(&reflect);
+
+		// --- Set 3: Global Bindless table (sourced from the manager, matching the graphics pipeline) ---
+		if (usesBindless)
+		{
+			while (m_SetLayouts.size() < kBindlessSet) // gap-fill sets between the last reflected one and set 3
+			{
+				DescriptorSetLayoutDesc gap{};
+				gap.SetIndex = static_cast<uint32_t>(m_SetLayouts.size());
+				gap.DebugName = m_Desc.DebugName + "_Set" + std::to_string(m_SetLayouts.size()) + "_Empty";
+				m_SetLayouts.push_back(DescriptorSetLayout::Create(gap));
+			}
+			void* bindlessHandle = VulkanBindlessManager::Get().GetLayout();
+			m_SetLayouts.push_back(DescriptorSetLayout::CreateFromExternal(bindlessHandle));
+		}
 
 		// --- Push constants (from PipelineDesc, same as graphics) ---
 		m_VkPushConstantRanges.reserve(m_Desc.PushConstants.size());

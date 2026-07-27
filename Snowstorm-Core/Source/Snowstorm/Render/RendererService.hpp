@@ -15,6 +15,7 @@
 #include "Snowstorm/Service/Service.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -217,6 +218,46 @@ namespace Snowstorm
 		void SetDatasetFramesWritten(const uint64_t n) { m_DatasetFramesWritten = n; }
 		[[nodiscard]] uint64_t GetDatasetFramesWritten() const { return m_DatasetFramesWritten; }
 
+		// --- RT editor picking (#118 follow-up) --------------------------------------------------------
+		// The editor requests a pixel-accurate mesh pick by handing over the camera->cursor WORLD ray; a
+		// single-thread compute dispatch traces it against the scene TLAS (RecordPick, driven by RenderSystem)
+		// and latches the committed instance's custom index — TlasBuildSystem's per-entity build order, which
+		// the editor maps back to an entt::entity via TlasInstanceMapSingleton. The GPU result reads back with
+		// a frames-in-flight lag (same as MetricsPass), so the selection lands a frame or two after the click.
+		// This service stays entity-agnostic: it deals only in the raw uint index.
+
+		// Queue a pick. `tMax` bounds the trace (default = camera far-ish; the editor passes the far distance).
+		// Latest-wins: a new request before the previous dispatches overwrites it. No-op sink on a non-RT
+		// device (the editor only calls this when RT is active).
+		void RequestPick(const glm::vec3& worldOrigin, const glm::vec3& worldDir, float tMax = 1e5f);
+
+		// True while a queued ray hasn't been dispatched yet — RenderSystem checks this to decide whether to
+		// add the pick compute pass this frame.
+		[[nodiscard]] bool HasPendingPick() const { return m_PickRequest.Pending; }
+
+		// CPU-only, called by RenderSystem every frame right after Renderer::BeginFrame() (which waited on this
+		// frame-slot's fence, so a dispatch recorded framesInFlight frames ago into this same slot has retired
+		// and its host-visible write is now readable). Maps + latches that result into m_PickResult. Separate
+		// from RecordPick because the read-back must happen on the recurrence of the slot, which is generally a
+		// DIFFERENT frame than the one that queued the pick — folding it into the (pending-only) GPU pass would
+		// strand a single click's result forever.
+		void PumpPickReadback(uint32_t frameIndex);
+
+		// Dispatch the pending ray (if any) into this frame's slot. Called by RenderSystem inside a compute
+		// graph pass, AFTER the TLAS is built and its bindless slot written this frame. Binds the pick pipeline
+		// + set 0 (result + params) + BindGlobalResources (set 3 = the bindless SceneTLAS) + Dispatch(1,1,1).
+		void RecordPick(const Ref<CommandContext>& commandContext, uint32_t frameIndex);
+
+		// Take the most recent completed pick result: the committed instance index, or 0xFFFFFFFF on a miss
+		// (nothing under the cursor). Returns nullopt until a dispatch has read back. Clears on read.
+		[[nodiscard]] std::optional<uint32_t> TryConsumePickResult();
+
+	private:
+		// Create the pick compute pipeline + per-frame-in-flight result/param buffers on first use. The result
+		// buffer is host-visible Storage (the shader writes it, the CPU maps it); the param buffer is a small
+		// Uniform holding the ray. Returns false if the shader hasn't finished async-compiling yet.
+		bool EnsurePickResources();
+
 	private:
 		void FlushBatch(BatchData& batch,
 		                const Ref<CommandContext>& commandContext,
@@ -302,5 +343,23 @@ namespace Snowstorm
 
 		// Running count of dataset-export tuples written to disk (#46), set by RenderSystem when exporting.
 		uint64_t m_DatasetFramesWritten = 0;
+
+		// --- RT editor picking (#118 follow-up) ---
+		// One pending ray, latest-wins (RequestPick overwrites). Cleared when RecordPick dispatches it.
+		struct PickRequest
+		{
+			bool Pending = false;
+			glm::vec3 Origin{0.0f};
+			glm::vec3 Dir{0.0f, 0.0f, -1.0f};
+			float TMax = 1e5f;
+		};
+		PickRequest m_PickRequest;
+
+		Ref<Pipeline> m_PickPipeline;                     // 1-thread inline-RayQuery trace (Pick.comp.hlsl)
+		std::vector<Ref<Buffer>> m_PickResultBuffers;     // host-visible, per frame-in-flight; [0] = instance idx
+		std::vector<Ref<Buffer>> m_PickParamBuffers;      // per frame-in-flight ray UBO
+		std::vector<Ref<DescriptorSet>> m_PickSets;       // per frame-in-flight set 0 (result + params)
+		std::vector<bool> m_PickDispatched;               // this slot has an in-flight/retired dispatch to read
+		std::optional<uint32_t> m_PickResult;             // latest completed result, consumed by the editor
 	};
 }

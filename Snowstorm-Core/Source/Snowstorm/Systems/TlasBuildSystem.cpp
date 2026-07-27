@@ -3,6 +3,7 @@
 #include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Systems/TlasInstanceMapSingleton.hpp"
 #include "Snowstorm/World/World.hpp"
 
 #include "Platform/Vulkan/VulkanBindlessManager.hpp"
@@ -62,7 +63,12 @@ namespace Snowstorm
 		auto& reg = m_World->GetRegistry();
 
 		// Gather one instance per (Transform + resolved Mesh) entity, building each mesh's BLAS lazily.
+		// The entity of each emitted instance is recorded in lockstep (same order, same skips) so the RT
+		// picking path can map a committed instance index back to its entity. VulkanTlas stamps
+		// instanceCustomIndex = the instance's position in this vector, which is exactly instanceEntities'
+		// index — so instanceEntities[CommittedInstanceID()] resolves the hit.
 		std::vector<TLASInstance> instances;
+		std::vector<entt::entity> instanceEntities;
 		for (auto view = reg.view<TransformComponent, MeshComponent>(); const entt::entity e : view)
 		{
 			const auto& mc = reg.Read<MeshComponent>(e);
@@ -79,7 +85,12 @@ namespace Snowstorm
 
 			const auto& tc = reg.Read<TransformComponent>(e);
 			instances.push_back({tc.GetTransformMatrix(), blas->GetDeviceAddress()});
+			instanceEntities.push_back(e);
 		}
+
+		// Publish the index->entity table for RT picking (consumed by the editor). Rebuilt every TLAS build
+		// so it never drifts from what the GPU traces.
+		SingletonView<TlasInstanceMapSingleton>().Instances = std::move(instanceEntities);
 
 		if (!m_TLAS)
 		{

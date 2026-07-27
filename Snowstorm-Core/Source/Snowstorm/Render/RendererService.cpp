@@ -1,5 +1,6 @@
 #include "RendererService.hpp"
 
+#include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
@@ -7,6 +8,9 @@
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/Shader.hpp"
 #include "Snowstorm/Render/Texture.hpp"
+#include "Snowstorm/Service/ServiceManager.hpp"
+
+#include <cstring>
 
 namespace Snowstorm
 {
@@ -548,5 +552,129 @@ namespace Snowstorm
 			m_InstanceBuffers[frameIndex] = Buffer::Create(static_cast<size_t>(kCapacity) * sizeof(InstanceData),
 			                                               BufferUsage::Storage, nullptr, true, "InstanceBuffer");
 		}
+	}
+
+	// ===== RT editor picking (#118 follow-up) ==========================================================
+
+	// Ray uniform the pick shader reads — mirrors PickCB in Pick.comp.hlsl field-for-field (dx layout: each
+	// float3 register-packs with the trailing float).
+	namespace
+	{
+		struct PickCB
+		{
+			glm::vec3 RayOrigin;
+			float RayTMax;
+			glm::vec3 RayDir;
+			float _Pad = 0.0f;
+		};
+	}
+
+	void RendererService::RequestPick(const glm::vec3& worldOrigin, const glm::vec3& worldDir, const float tMax)
+	{
+		if (!Renderer::IsRayTracingSupported())
+		{
+			return; // no TLAS to trace; the editor uses the CPU AABB path in this case and won't call us
+		}
+		m_PickRequest.Pending = true;
+		m_PickRequest.Origin = worldOrigin;
+		m_PickRequest.Dir = worldDir;
+		m_PickRequest.TMax = tMax;
+	}
+
+	bool RendererService::EnsurePickResources()
+	{
+		if (m_PickPipeline)
+		{
+			return true;
+		}
+
+		Ref<Shader> cs = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load("Engine/Shaders/Pick.comp.hlsl");
+		if (!cs || !cs->IsReady())
+		{
+			return false; // async compile in flight; retry next frame
+		}
+
+		PipelineDesc p{};
+		p.Type = PipelineType::Compute;
+		p.Shader = cs;
+		p.DebugName = "PickPipeline";
+		m_PickPipeline = Pipeline::Create(p);
+
+		const uint32_t frames = Renderer::GetFramesInFlight();
+		m_PickResultBuffers.resize(frames);
+		m_PickParamBuffers.resize(frames);
+		m_PickSets.resize(frames);
+		m_PickDispatched.assign(frames, false);
+		for (uint32_t i = 0; i < frames; ++i)
+		{
+			// Host-visible so the CPU can map the traced index directly (no staging copy — it's one uint).
+			m_PickResultBuffers[i] = Buffer::Create(sizeof(uint32_t), BufferUsage::Storage, nullptr, true, "PickResult");
+			m_PickParamBuffers[i] = Buffer::Create(sizeof(PickCB), BufferUsage::Uniform, nullptr, true, "PickParams");
+		}
+		return true;
+	}
+
+	void RendererService::PumpPickReadback(const uint32_t frameIndex)
+	{
+		// Only meaningful once resources exist AND this slot carries a retired dispatch. No EnsurePickResources
+		// here — if the pipeline was never built (no pick ever requested) there's nothing to read.
+		if (frameIndex >= m_PickDispatched.size() || !m_PickDispatched[frameIndex])
+		{
+			return;
+		}
+
+		// The dispatch that wrote this slot was recorded framesInFlight frames ago; BeginFrame already waited
+		// on this slot's fence, so the host-visible write has completed and mapping it can't race the shader.
+		const auto* idx = static_cast<const uint32_t*>(m_PickResultBuffers[frameIndex]->Map());
+		m_PickResult = idx[0];
+		m_PickResultBuffers[frameIndex]->Unmap();
+		m_PickDispatched[frameIndex] = false;
+	}
+
+	void RendererService::RecordPick(const Ref<CommandContext>& commandContext, const uint32_t frameIndex)
+	{
+		if (!m_PickRequest.Pending || !EnsurePickResources() || frameIndex >= m_PickResultBuffers.size())
+		{
+			return;
+		}
+
+		PickCB cb{};
+		cb.RayOrigin = m_PickRequest.Origin;
+		cb.RayTMax = m_PickRequest.TMax;
+		cb.RayDir = glm::normalize(m_PickRequest.Dir);
+		m_PickParamBuffers[frameIndex]->SetData(&cb, sizeof(PickCB), 0);
+
+		const auto& layouts = m_PickPipeline->GetSetLayouts();
+		SS_CORE_ASSERT(!layouts.empty() && layouts[0], "Pick pipeline missing set=0 layout");
+		if (!m_PickSets[frameIndex])
+		{
+			DescriptorSetDesc dsd{};
+			dsd.DebugName = "PickSet";
+			m_PickSets[frameIndex] = DescriptorSet::Create(layouts[0], dsd);
+		}
+		const BufferBinding resultBB{.Buffer = m_PickResultBuffers[frameIndex], .Offset = 0, .Range = sizeof(uint32_t)};
+		m_PickSets[frameIndex]->SetBuffer(0, resultBB);
+		const BufferBinding paramBB{.Buffer = m_PickParamBuffers[frameIndex], .Offset = 0, .Range = sizeof(PickCB)};
+		m_PickSets[frameIndex]->SetBuffer(1, paramBB);
+		m_PickSets[frameIndex]->Commit();
+
+		commandContext->BindPipeline(m_PickPipeline);
+		commandContext->BindDescriptorSet(m_PickSets[frameIndex], 0);
+		commandContext->BindGlobalResources(); // set 3 = the bindless SceneTLAS (written by TlasBuildSystem)
+		commandContext->Dispatch(1, 1, 1);
+
+		m_PickDispatched[frameIndex] = true;
+		m_PickRequest.Pending = false;
+	}
+
+	std::optional<uint32_t> RendererService::TryConsumePickResult()
+	{
+		if (!m_PickResult)
+		{
+			return std::nullopt;
+		}
+		const uint32_t r = *m_PickResult;
+		m_PickResult.reset();
+		return r;
 	}
 }
