@@ -1,15 +1,20 @@
 #include "IBLBakePass.hpp"
 
+#include "Snowstorm/Assets/IBLCache.hpp"
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
+#include "Snowstorm/Render/CommandContext.hpp"
 #include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Render/Shader.hpp"
 #include "Snowstorm/Service/ServiceManager.hpp"
 
 #include <glm/glm.hpp>
+
+#include <algorithm>
+#include <cstring>
 
 namespace Snowstorm
 {
@@ -76,11 +81,40 @@ namespace Snowstorm
 		return kPrefilterMips;
 	}
 
-	void IBLBakePass::EnsureResources()
+	void IBLBakePass::EnsureOutputTextures()
+	{
+		if (m_IrradianceCube)
+		{
+			return; // already created (either path)
+		}
+
+		// The three output maps + the LUT. TransferDst is needed so the cache-hit path can upload into them
+		// (SetCubeData / SetData); Storage is needed so the miss-path compute can write them.
+		m_IrradianceCube = CreateCubeTexture(kIrradianceCubeSize, 1, PixelFormat::RGBA16_SFloat, "IBL_IrradianceCube");
+		m_PrefilteredCube = CreateCubeTexture(kPrefilterCubeSize, kPrefilterMips, PixelFormat::RGBA16_SFloat, "IBL_PrefilteredCube");
+
+		// 2D BRDF LUT (RG16F is enough, but reuse RGBA16F to avoid another format dependency). Storage (compute
+		// writes it), Sampled (shading reads it), TransferDst (cache-hit upload), TransferSrc (cache-save readback).
+		TextureDesc lutDesc{};
+		lutDesc.Dimension = TextureDimension::Texture2D;
+		lutDesc.Format = PixelFormat::RGBA16_SFloat;
+		lutDesc.Usage = TextureUsage::Sampled | TextureUsage::Storage | TextureUsage::TransferDst | TextureUsage::TransferSrc;
+		lutDesc.Width = kBRDFLutSize;
+		lutDesc.Height = kBRDFLutSize;
+		lutDesc.DebugName = "IBL_BRDFLut";
+		m_BRDFLut = Texture::Create(lutDesc);
+
+		// Full-resource sampled views, kept alive: these auto-register in the bindless arrays (indices feed FrameCB).
+		m_IrradianceCubeView = m_IrradianceCube->GetDefaultView();
+		m_PrefilteredCubeView = m_PrefilteredCube->GetDefaultView();
+		m_BRDFLutView = m_BRDFLut->GetDefaultView();
+	}
+
+	bool IBLBakePass::EnsureBakePipelines()
 	{
 		if (m_CapturePipeline)
 		{
-			return;
+			return true;
 		}
 
 		// Load via the app-scoped ShaderLibrary (not Shader::Create) so these compute shaders register for
@@ -93,7 +127,7 @@ namespace Snowstorm
 		if (!captureCs || !irradianceCs || !prefilterCs || !brdfCs)
 		{
 			SS_CORE_ERROR("[IBL] failed to load bake compute shaders");
-			return;
+			return false;
 		}
 
 		// Compute shaders compile asynchronously (ShaderLibrary::Load submits to a worker). Building a
@@ -103,7 +137,7 @@ namespace Snowstorm
 		// mirror of GetOrCreatePipeline's readiness gate.
 		if (!captureCs->IsReady() || !irradianceCs->IsReady() || !prefilterCs->IsReady() || !brdfCs->IsReady())
 		{
-			return;
+			return false;
 		}
 
 		const auto makeComputePipe = [](const Ref<Shader>& cs, const char* name)
@@ -119,26 +153,10 @@ namespace Snowstorm
 		m_PrefilterPipeline = makeComputePipe(prefilterCs, "IBLPrefilterPipeline");
 		m_BRDFLutPipeline = makeComputePipe(brdfCs, "IBLBRDFLutPipeline");
 
+		// Intermediate env cube (miss-path only): the sky capture convolved by irradiance + prefilter. Not a
+		// bindless output, so no TransferDst.
 		m_EnvCube = CreateCubeTexture(kEnvCubeSize, 1, PixelFormat::RGBA16_SFloat, "IBL_EnvCube");
-		m_IrradianceCube = CreateCubeTexture(kIrradianceCubeSize, 1, PixelFormat::RGBA16_SFloat, "IBL_IrradianceCube");
-		m_PrefilteredCube = CreateCubeTexture(kPrefilterCubeSize, kPrefilterMips, PixelFormat::RGBA16_SFloat, "IBL_PrefilteredCube");
-
-		// 2D BRDF LUT (RG16F is enough, but reuse RGBA16F to avoid another format dependency).
-		TextureDesc lutDesc{};
-		lutDesc.Dimension = TextureDimension::Texture2D;
-		lutDesc.Format = PixelFormat::RGBA16_SFloat;
-		lutDesc.Usage = TextureUsage::Sampled | TextureUsage::Storage;
-		lutDesc.Width = kBRDFLutSize;
-		lutDesc.Height = kBRDFLutSize;
-		lutDesc.DebugName = "IBL_BRDFLut";
-		m_BRDFLut = Texture::Create(lutDesc);
-
-		// Full-resource sampled views, kept alive: env is bound as the convolution source; the others
-		// auto-register in the bindless arrays (their indices feed FrameCB).
-		m_EnvCubeView = m_EnvCube->GetDefaultView();
-		m_IrradianceCubeView = m_IrradianceCube->GetDefaultView();
-		m_PrefilteredCubeView = m_PrefilteredCube->GetDefaultView();
-		m_BRDFLutView = m_BRDFLut->GetDefaultView();
+		m_EnvCubeView = m_EnvCube->GetDefaultView(); // bound as the convolution source
 
 		SamplerDesc sd{};
 		sd.MinFilter = Filter::Linear;
@@ -149,6 +167,7 @@ namespace Snowstorm
 		sd.EnableAnisotropy = false;
 		sd.DebugName = "IBLSampler";
 		m_Sampler = Sampler::Create(sd);
+		return true;
 	}
 
 	void IBLBakePass::AddBakePasses(RenderGraph& graph, const LightDataBlock& lights, const EnvironmentDataBlock& environment)
@@ -158,10 +177,32 @@ namespace Snowstorm
 			return;
 		}
 
-		EnsureResources();
-		if (!m_CapturePipeline)
+		// A re-bake (environment change, #64) would clobber a still-armed save from the PREVIOUS bake before
+		// PumpCacheSave got to it. RenderSystem drained the GPU (Renderer::WaitIdle) before this call, so the
+		// prior readback definitely completed — flush that save now, synchronously, so no bake is lost.
+		if (m_CacheSaveCountdown > 0)
 		{
-			return; // shader load failed; logged in EnsureResources
+			m_CacheSaveCountdown = 1; // fire on this tick
+			PumpCacheSave();
+		}
+
+		// ---- Disk-cache hit (#34): the maps for this exact sky+sun already exist on disk. Upload them and
+		// skip the whole GPU bake (compute + the 4 async shader compiles) — the ~300 ms cold-start saving. ----
+		const uint64_t envHash = HashIBLEnvironment(environment, lights);
+		if (const std::optional<CookedIBL> cached =
+		        IBLCacheIO::Load(envHash, kIrradianceCubeSize, kPrefilterCubeSize, kPrefilterMips, kBRDFLutSize))
+		{
+			EnsureOutputTextures();
+			UploadFromCache(*cached);
+			SS_CORE_INFO("[IBL] loaded maps from cache (hash={:016x}) -- skipped bake", envHash);
+			return;
+		}
+
+		// ---- Miss: bake on GPU as before, then read the maps back and save them for next time. ----
+		EnsureOutputTextures();
+		if (!EnsureBakePipelines())
+		{
+			return; // shaders still compiling (or load failed) — retry next frame
 		}
 
 		// Environment params from the current sky (linear HDR; sun = DirectionalLights[0]).
@@ -315,5 +356,127 @@ namespace Snowstorm
 		             m_IrradianceCubeView->GetGlobalBindlessIndex(),
 		             m_PrefilteredCubeView->GetGlobalBindlessIndex(),
 		             m_BRDFLutView->GetGlobalBindlessIndex());
+
+		// Read the freshly-baked maps back so PumpCacheSave() can write the .ssibl next frame. The readback
+		// pass runs after the bake passes above (same frame), reading each map Sampled. Cold path only — a
+		// cache hit returned early and never reaches here.
+		m_PendingEnvHash = envHash;
+		AddReadbackPass(graph);
+	}
+
+	void IBLBakePass::UploadFromCache(const CookedIBL& ibl)
+	{
+		m_IrradianceCube->SetCubeData(ibl.Irradiance);
+		m_PrefilteredCube->SetCubeData(ibl.Prefiltered);
+		m_BRDFLut->SetData(ibl.BRDFLut.data(), static_cast<uint32_t>(ibl.BRDFLut.size()));
+		m_Baked = true;
+	}
+
+	void IBLBakePass::AddReadbackPass(RenderGraph& graph)
+	{
+		constexpr uint32_t kTexelBytes = 8; // RGBA16_SFloat
+
+		// One host-visible buffer per subresource, ordered irradiance faces (6) -> prefiltered face-major
+		// (6 * mips) -> LUT (1). PumpCacheSave maps them in this same order.
+		m_ReadbackBuffers.clear();
+		const auto addBuf = [&](const uint32_t w, const uint32_t h, const char* dbg)
+		{
+			m_ReadbackBuffers.push_back(Buffer::Create(static_cast<size_t>(w) * h * kTexelBytes,
+			                                           BufferUsage::Readback, nullptr, true, dbg));
+		};
+		for (uint32_t f = 0; f < 6; ++f)
+		{
+			addBuf(kIrradianceCubeSize, kIrradianceCubeSize, "IBLReadback_Irr");
+		}
+		for (uint32_t f = 0; f < 6; ++f)
+		{
+			for (uint32_t m = 0; m < kPrefilterMips; ++m)
+			{
+				const uint32_t s = std::max(1u, kPrefilterCubeSize >> m);
+				addBuf(s, s, "IBLReadback_Pref");
+			}
+		}
+		addBuf(kBRDFLutSize, kBRDFLutSize, "IBLReadback_Lut");
+
+		graph.AddPass({.Name = "IBLReadback",
+		               .IsCompute = true, // no render target; records copies
+		               .Reads = {{m_IrradianceCube, RenderGraph::AccessState::Sampled},
+		                         {m_PrefilteredCube, RenderGraph::AccessState::Sampled},
+		                         {m_BRDFLut, RenderGraph::AccessState::Sampled}},
+		               .Execute = [this](CommandContext& ctx)
+		               {
+			               uint32_t b = 0;
+			               for (uint32_t f = 0; f < 6; ++f)
+			               {
+				               ctx.CopyTextureToBuffer(m_IrradianceCube, m_ReadbackBuffers[b++], 0, f);
+			               }
+			               for (uint32_t f = 0; f < 6; ++f)
+			               {
+				               for (uint32_t m = 0; m < kPrefilterMips; ++m)
+				               {
+					               ctx.CopyTextureToBuffer(m_PrefilteredCube, m_ReadbackBuffers[b++], m, f);
+				               }
+			               }
+			               ctx.CopyTextureToBuffer(m_BRDFLut, m_ReadbackBuffers[b++], 0, 0);
+		               }});
+
+		// Arm the deferred save. This readback pass executes at the END of the current frame; wait 2
+		// PumpCacheSave ticks so the copy's fence has retired before we Map() the buffers (mapping the same
+		// frame would read before the GPU wrote — the crash this replaced).
+		m_CacheSaveCountdown = 2;
+	}
+
+	void IBLBakePass::PumpCacheSave()
+	{
+		if (m_CacheSaveCountdown <= 0)
+		{
+			return;
+		}
+		if (--m_CacheSaveCountdown > 0)
+		{
+			return; // still waiting for the readback submit's fence to retire
+		}
+
+		constexpr uint32_t kTexelBytes = 8; // RGBA16_SFloat
+		const auto readBuf = [](const Ref<Buffer>& buf, const uint32_t w, const uint32_t h)
+		{
+			std::vector<uint8_t> out(static_cast<size_t>(w) * h * kTexelBytes);
+			if (const void* p = buf->Map())
+			{
+				std::memcpy(out.data(), p, out.size());
+			}
+			buf->Unmap();
+			return out;
+		};
+
+		CookedIBL ibl;
+		ibl.IrradianceSize = kIrradianceCubeSize;
+		ibl.PrefilteredSize = kPrefilterCubeSize;
+		ibl.PrefilteredMips = kPrefilterMips;
+		ibl.BRDFLutSize = kBRDFLutSize;
+
+		uint32_t b = 0;
+		ibl.Irradiance.assign(6, std::vector<std::vector<uint8_t>>(1));
+		for (uint32_t f = 0; f < 6; ++f)
+		{
+			ibl.Irradiance[f][0] = readBuf(m_ReadbackBuffers[b++], kIrradianceCubeSize, kIrradianceCubeSize);
+		}
+		ibl.Prefiltered.assign(6, std::vector<std::vector<uint8_t>>(kPrefilterMips));
+		for (uint32_t f = 0; f < 6; ++f)
+		{
+			for (uint32_t m = 0; m < kPrefilterMips; ++m)
+			{
+				const uint32_t s = std::max(1u, kPrefilterCubeSize >> m);
+				ibl.Prefiltered[f][m] = readBuf(m_ReadbackBuffers[b++], s, s);
+			}
+		}
+		ibl.BRDFLut = readBuf(m_ReadbackBuffers[b++], kBRDFLutSize, kBRDFLutSize);
+
+		m_ReadbackBuffers.clear(); // GPU done (this runs a frame after the readback submit retired)
+
+		if (IBLCacheIO::Save(m_PendingEnvHash, ibl))
+		{
+			SS_CORE_INFO("[IBL] wrote map cache (hash={:016x})", m_PendingEnvHash);
+		}
 	}
 }

@@ -441,11 +441,6 @@ namespace Snowstorm
 		}
 
 		const VmaAllocator allocator = GetAllocator();
-		VulkanContext& ctx = VulkanContext::Get();
-		const uint32_t xferFamily = ctx.GetTransferQueueFamilyIndex();
-		const uint32_t gfxFamily = ctx.GetGraphicsQueueFamilyIndex();
-		const bool ownershipTransfer = ctx.HasDedicatedTransferQueue();
-
 		const VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
 		const VkImageLayout finalLayout = GetReadyLayout();
 
@@ -485,11 +480,15 @@ namespace Snowstorm
 		}
 		vmaFlushAllocation(allocator, stagingAlloc, 0, total);
 
-		// Transfer queue: copy every (face, mip), then RELEASE ownership to graphics. Pure copies, no blit —
-		// mirrors SetMipData but with all 6 array layers and baseArrayLayer = face per copy.
-		TransferSubmit([&](const VkCommandBuffer cmd)
-		               {
-			CmdTransitionImage(cmd, m_Image, aspect, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, m_Desc.MipLevels, 6);
+		// Single GRAPHICS-queue submit (mirrors SetData, NOT SetMipData's transfer-queue path). This texture
+		// is a long-lived IBL map that also flows through RenderGraph passes and can be re-baked later; a
+		// dedicated-transfer-queue upload with a queue-family ownership transfer left its tracked layout in a
+		// state the graph didn't expect on the next re-bake (sampled while still TRANSFER_DST -> crash under
+		// rapid scene switching). Keeping the whole upload on the graphics queue keeps m_CurrentLayout coherent
+		// with the graph. It's a cold-path cache restore, so the async-transfer optimization isn't worth the risk.
+		ImmediateSubmit([&](const VkCommandBuffer cmd)
+		                {
+			CmdTransitionImage(cmd, m_Image, aspect, m_CurrentLayout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, m_Desc.MipLevels, 6);
 
 			for (uint32_t f = 0; f < 6; ++f)
 			{
@@ -506,35 +505,7 @@ namespace Snowstorm
 				}
 			}
 
-			VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-			b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-			b.newLayout = finalLayout;
-			b.srcQueueFamilyIndex = ownershipTransfer ? xferFamily : VK_QUEUE_FAMILY_IGNORED;
-			b.dstQueueFamilyIndex = ownershipTransfer ? gfxFamily : VK_QUEUE_FAMILY_IGNORED;
-			b.image = m_Image;
-			b.subresourceRange = {aspect, 0, m_Desc.MipLevels, 0, 6};
-			b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			b.dstAccessMask = 0; // release: dst scope defined by the acquire on the other queue
-			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-			                     0, 0, nullptr, 0, nullptr, 1, &b); });
-
-		// Graphics queue: ACQUIRE for sampling (only for a real cross-family transfer; see SetMipData).
-		if (ownershipTransfer)
-		{
-			ImmediateSubmit([&](const VkCommandBuffer cmd)
-			                {
-				VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-				b.oldLayout = finalLayout;
-				b.newLayout = finalLayout;
-				b.srcQueueFamilyIndex = xferFamily;
-				b.dstQueueFamilyIndex = gfxFamily;
-				b.image = m_Image;
-				b.subresourceRange = {aspect, 0, m_Desc.MipLevels, 0, 6};
-				b.srcAccessMask = 0;
-				b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-				vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-				                     0, 0, nullptr, 0, nullptr, 1, &b); });
-		}
+			CmdTransitionImage(cmd, m_Image, aspect, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, finalLayout, m_Desc.MipLevels, 6); });
 
 		m_CurrentLayout = finalLayout;
 		vmaDestroyBuffer(allocator, staging, stagingAlloc);

@@ -226,6 +226,11 @@ namespace Snowstorm
 			m_BakedEnvironment = env;
 		}
 
+		// Deferred IBL cache save (#34): after a miss-path bake, the maps were read back into host buffers; a
+		// frame later (its submit fence retired) this maps them and writes the .ssibl so the next run hits the
+		// cache. No-op on a cache hit or when no save is pending.
+		m_IBLBakePass.PumpCacheSave();
+
 		// Push the baked IBL indices into the renderer's FrameCB assembly — but only while IBL is enabled.
 		// Toggling off writes zeros, so DefaultLit falls back to the analytic ambient (the maps stay baked,
 		// ready to re-enable without another bake). Mirrors the SetShadowData hand-off.

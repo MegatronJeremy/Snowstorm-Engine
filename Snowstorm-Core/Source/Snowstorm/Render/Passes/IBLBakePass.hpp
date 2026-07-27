@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Snowstorm/Lighting/LightingUniforms.hpp"
+#include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Render/RenderGraph.hpp"
 #include "Snowstorm/Render/Sampler.hpp"
@@ -20,11 +21,22 @@ namespace Snowstorm
 	class IBLBakePass final
 	{
 	public:
-		// Create the bake resources (once) and append the four bake compute passes to this frame's graph.
-		// Call once, on the frame IBL is first enabled, with the GPU drained (resource creation updates the
-		// bindless set; RenderSystem does Renderer::WaitIdle() first). The dispatches then run inside
-		// graph.Execute, before the mesh pass that samples the maps. No-ops once baked.
+		// Make the IBL maps for the given environment available this frame. Two paths, both gated by
+		// RenderSystem (GPU already drained via Renderer::WaitIdle before the call, since either path updates
+		// the bindless set):
+		//   * DISK-CACHE HIT (#34): the maps for this environment's hash are on disk -> create the output
+		//     textures and upload the cached bytes (SetCubeData / SetData). No shaders, no pipelines, no compute
+		//     -- this is the ~300 ms cold-bake skip. Fully synchronous; marks baked immediately.
+		//   * MISS: append the four bake compute passes to this frame's graph (as before). If the maps are
+		//     small enough to read back, ALSO append a readback pass; PumpCacheSave() (called next frame) then
+		//     maps the buffers and writes the .ssibl so subsequent runs hit the cache.
+		// No-ops once baked.
 		void AddBakePasses(RenderGraph& graph, const LightDataBlock& lights, const EnvironmentDataBlock& environment);
+
+		// Drive the deferred cache save: once a miss-path bake's readback has completed (one frame later, its
+		// fence retired), map the readback buffers, assemble a CookedIBL, and write it to disk. No-op unless a
+		// save is pending. Call once per frame from RenderSystem after the bake frame. Cold path only.
+		void PumpCacheSave();
 
 		[[nodiscard]] bool IsBaked() const { return m_Baked; }
 
@@ -47,9 +59,21 @@ namespace Snowstorm
 		[[nodiscard]] const Ref<Texture>& BRDFLut() const { return m_BRDFLut; }
 
 	private:
-		// One-time GPU-resource creation (pipelines, cubes, LUT, sampler). Registers the maps' views in the
-		// bindless arrays (updates the bindless descriptor set — caller must have drained the GPU first).
-		void EnsureResources();
+		// The output maps (cubes + LUT + views + sampler). Needed by BOTH paths — the cache-hit path uploads
+		// into these, the miss path computes into them. Registers the views in the bindless arrays (updates the
+		// bindless descriptor set — caller must have drained the GPU first). Idempotent.
+		void EnsureOutputTextures();
+
+		// The four bake compute pipelines + the intermediate env cube. Only the MISS path needs these; the
+		// cache-hit path never loads or compiles the bake shaders. Returns false while the shaders are still
+		// compiling (async) — the caller retries next frame. Idempotent.
+		bool EnsureBakePipelines();
+
+		// Upload cached bytes into the output textures (cache-hit path). Marks baked.
+		void UploadFromCache(const struct CookedIBL& ibl);
+
+		// Append a graph pass that reads the just-baked maps back into m_ReadbackBuffers (miss path, cold only).
+		void AddReadbackPass(RenderGraph& graph);
 
 		Ref<Pipeline> m_CapturePipeline;    // sky -> env cube
 		Ref<Pipeline> m_IrradiancePipeline; // env cube -> irradiance cube
@@ -67,6 +91,17 @@ namespace Snowstorm
 		Ref<Sampler> m_Sampler; // linear clamp sampler for the convolution
 
 		bool m_Baked = false;
+
+		// Deferred cache-save state (#34, miss path only). After a bake, a readback pass copies the maps into
+		// these host-visible buffers; one frame later (fence retired) PumpCacheSave() maps them, assembles a
+		// CookedIBL, and writes the .ssibl. One buffer per (irradiance face), per (prefiltered face, mip), plus
+		// the LUT. m_CacheSavePending gates PumpCacheSave; m_PendingEnvHash keys the file.
+		std::vector<Ref<Buffer>> m_ReadbackBuffers; // ordered: irradiance faces, then prefiltered face-major, then LUT
+		// Frames to wait before mapping the readback buffers. AddReadbackPass sets it to 2 (the readback GPU
+		// work executes at the END of this frame, and the copy result must be fence-visible before we map);
+		// PumpCacheSave counts down and saves at 0. > 0 => a save is armed.
+		int m_CacheSaveCountdown = 0;
+		uint64_t m_PendingEnvHash = 0;
 
 		// Per-face UBOs / descriptor sets / face views recorded into the bake command buffer; they must
 		// outlive the in-flight frame. Parked here for the session (the bake runs once; freeing them needs
