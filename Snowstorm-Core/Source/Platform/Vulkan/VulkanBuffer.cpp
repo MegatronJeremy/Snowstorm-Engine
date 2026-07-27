@@ -46,6 +46,17 @@ namespace Snowstorm
 		// Enable device address usage by default - buffers can be used with GPU pointers
 		usageFlags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
+		// Ray tracing (#118): a BLAS reads a mesh's vertex/index buffers as triangle geometry, which requires
+		// them to carry ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY. OR it in for Vertex/Index buffers only
+		// when the device supports RT — a no-op on non-RT GPUs (and on non-geometry buffers), so nothing else
+		// pays for it. The AS's own backing/scratch/instance buffers are created directly in the Vulkan RHI
+		// (VulkanBlas/VulkanTlas), not through this backend-agnostic Buffer, so no new BufferUsage value is
+		// needed here.
+		if ((usage == BufferUsage::Vertex || usage == BufferUsage::Index) && GetVulkanContext().SupportsRayTracing())
+		{
+			usageFlags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+		}
+
 		m_UsageFlags = usageFlags;
 
 		VmaAllocationCreateInfo allocInfo{};
