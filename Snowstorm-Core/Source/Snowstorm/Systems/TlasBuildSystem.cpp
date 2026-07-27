@@ -2,7 +2,7 @@
 
 #include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
-#include "Snowstorm/Render/Renderer.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/World/World.hpp"
 
 #include "Platform/Vulkan/VulkanBindlessManager.hpp"
@@ -30,13 +30,20 @@ namespace Snowstorm
 
 	void TlasBuildSystem::Execute(Timestep)
 	{
-		if (!Renderer::IsRayTracingSupported())
+		// Only maintain the TLAS while RT shadows are actually active — nothing samples it in Shadow Map / Off
+		// mode, so building it there is pure waste. Folds in the device-support check (ShadowsRTActive() is
+		// false on a non-RT GPU). Track the state so the OFF->ON transition can force a rebuild below.
+		const bool rtActive = CVars::ShadowsRTActive();
+		const bool justEnabled = rtActive && !m_WasRTActive;
+		m_WasRTActive = rtActive;
+		if (!rtActive)
 		{
 			return;
 		}
 
-		// Rebuild only when the scene changed (after the first build). Same early-out shape as VisibilitySystem.
-		if (m_BuiltOnce && !IsSceneDirtyThisFrame())
+		// Rebuild when the scene changed OR RT shadows just turned on (the scene's per-frame dirty flags were
+		// consumed while RT was off, so a plain dirty-check would miss the need to build the first TLAS).
+		if (m_BuiltOnce && !justEnabled && !IsSceneDirtyThisFrame())
 		{
 			return;
 		}
