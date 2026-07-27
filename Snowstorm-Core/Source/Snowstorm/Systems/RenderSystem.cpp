@@ -400,7 +400,7 @@ namespace Snowstorm
 	}
 
 	void RenderSystem::AddForwardPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& hdrTarget,
-	                                  const std::string& name, const bool jittered)
+	                                  const std::string& name, const bool jittered, const bool forceRasterShadow)
 	{
 		std::vector<RenderGraph::ResourceAccess> meshReads;
 		if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
@@ -413,10 +413,10 @@ namespace Snowstorm
 		fc.Graph.AddPass({.Name = name,
 		                  .Target = hdrTarget,
 		                  .Reads = std::move(meshReads),
-		                  .Execute = [this, &fc, cam, hdrTarget, jittered](CommandContext& c)
+		                  .Execute = [this, &fc, cam, hdrTarget, jittered, forceRasterShadow](CommandContext& c)
 		                  {
 			                  const glm::vec3 camPos = cam.Transform->Position;
-			                  fc.Renderer.BeginScene(*cam.Rt, camPos, fc.Ctx, fc.FrameIndex, jittered);
+			                  fc.Renderer.BeginScene(*cam.Rt, camPos, fc.Ctx, fc.FrameIndex, jittered, forceRasterShadow);
 
 			                  auto& assets = SingletonView<AssetManagerSingleton>();
 

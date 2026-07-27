@@ -69,11 +69,15 @@ namespace Snowstorm
 		// useJitteredProjection (#44): when true, FrameCB.ViewProj uses cameraRt.JitteredViewProjection (the
 		// temporal sub-pixel offset) instead of the canonical ViewProjection. Only the forward COLOR pass
 		// sets it; shadow/velocity/ground-truth pass false so their matrices stay geometrically true.
+		// forceRasterShadow (#118): when true, this pass's FrameCB.RTShadowEnabled is forced to 0 (raster
+		// shadow map) regardless of the render.shadows.rt CVar. The compare-mode ground-truth pass sets it so
+		// the RT-shadows A/B metric compares the RT main render against a raster reference in one frame.
 		void BeginScene(const CameraRuntimeComponent& cameraRt,
 		                const glm::vec3& cameraWorldPosition,
 		                const Ref<CommandContext>& commandContext,
 		                uint32_t frameIndex,
-		                bool useJitteredProjection = false);
+		                bool useJitteredProjection = false,
+		                bool forceRasterShadow = false);
 
 		void EndScene();
 
@@ -284,8 +288,9 @@ namespace Snowstorm
 		uint32_t m_InstanceBufferCapacity = 0;      // in InstanceData elements
 		uint32_t m_InstanceWriteCursor = 0;         // elements written this frame
 
-		uint64_t m_FrameCounter = 0; // monotonic; ++ per NewFrame() (temporal jitter index, #44)
-		float m_MipBias = 0.0f;      // texture mip-LOD bias for the current scene pass (TAA, #44)
+		uint64_t m_FrameCounter = 0;      // monotonic; ++ per NewFrame() (temporal jitter index, #44)
+		float m_MipBias = 0.0f;           // texture mip-LOD bias for the current scene pass (TAA, #44)
+		bool m_ForceRasterShadow = false; // this pass forces raster shadows (compare GT render, #118)
 
 		RenderStats m_Stats{};
 

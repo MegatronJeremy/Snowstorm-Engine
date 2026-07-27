@@ -53,8 +53,10 @@ namespace Snowstorm
 		// AddForwardPass: forward + procedural sky into an arbitrary HDR target. Target-pure (reads the camera
 		// + the shared per-camera visibility cache), so it runs once normally and twice in compare mode. IBL
 		// maps are declared as reads so the graph transitions them to shader-read before shading.
+		// forceRasterShadow (#118): the compare-mode ground-truth render passes true so its sun shadow stays on
+		// the raster shadow map even when render.shadows.rt is on — giving the RT-vs-raster A/B a reference.
 		void AddForwardPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& hdrTarget,
-		                    const std::string& name, bool jittered);
+		                    const std::string& name, bool jittered, bool forceRasterShadow = false);
 
 		// AddTonemapPass: tonemap an HDR scene-color view into an LDR target (exposure/ACES; hardware sRGB on
 		// write). Declares the HDR color (and, for the motion-vector debug view, the velocity target) as

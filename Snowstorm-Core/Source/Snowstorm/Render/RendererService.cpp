@@ -89,12 +89,14 @@ namespace Snowstorm
 	                                 const glm::vec3& cameraWorldPosition,
 	                                 const Ref<CommandContext>& commandContext,
 	                                 const uint32_t frameIndex,
-	                                 const bool useJitteredProjection)
+	                                 const bool useJitteredProjection,
+	                                 const bool forceRasterShadow)
 	{
 		SS_CORE_ASSERT(commandContext, "Renderer requires a valid CommandContext");
 
 		m_CommandContext = commandContext;
 		m_FrameIndex = frameIndex;
+		m_ForceRasterShadow = forceRasterShadow; // #118: GT pass forces raster for the RT-vs-raster A/B
 
 		// The forward COLOR pass passes useJitteredProjection=true so FrameCB.ViewProj (and the sky's
 		// derived InvViewProj) carry the temporal sub-pixel offset (#44). Every other caller — shadow,
@@ -231,7 +233,8 @@ namespace Snowstorm
 		frame.ShadowTexelSize = 1.0f / static_cast<float>(fd.Shadow.ShadowResolution != 0 ? fd.Shadow.ShadowResolution : 2048u);
 		// RT sun shadow (#118): only when the CVar is on AND the device supports RT — the shader's ray-query
 		// branch is compiled out on non-RT devices, so this stays 0 there and the raster path always runs.
-		frame.RTShadowEnabled = (CVars::ShadowsRT.Get() && Renderer::IsRayTracingSupported()) ? 1u : 0u;
+		// A pass may force raster (the compare GT render) so the RT-vs-raster metric has a reference.
+		frame.RTShadowEnabled = (!m_ForceRasterShadow && CVars::ShadowsRT.Get() && Renderer::IsRayTracingSupported()) ? 1u : 0u;
 		frame.SpotShadowAtlasIndex = fd.Shadow.SpotShadowAtlasIndex;
 		frame.PointShadowAtlasIndex = fd.Shadow.PointShadowAtlasIndex;
 

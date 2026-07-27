@@ -452,7 +452,10 @@ namespace Snowstorm
 				}
 
 				// Ground-truth 2nd render + its tonemap are the shared builders (also used by the primary path).
-				m_Owner.AddForwardPass(fc, cam, vpRT.GroundTruthTarget, "ForwardGT" + passSuffix, false); // ground truth: never jittered
+				// forceRasterShadow=true: the GT reference always uses the raster shadow map, so when RT shadows
+				// are on the compare metric measures RT (main) vs raster (GT) — the #118 RT-shadow A/B. When RT
+				// is off both renders are raster, so the metric harmlessly reports the upscaler A/B as before.
+				m_Owner.AddForwardPass(fc, cam, vpRT.GroundTruthTarget, "ForwardGT" + passSuffix, false, /*forceRasterShadow*/ true); // GT: never jittered
 				m_Owner.AddTonemapPass(fc, vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View, vpRT.GroundTruthPresentTarget,
 				                       "PostProcessGT" + passSuffix, RendererService::TonemapParams{});
 
