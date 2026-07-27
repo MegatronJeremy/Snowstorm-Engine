@@ -215,4 +215,15 @@ namespace Snowstorm::CVars
 	// Multiplier on the IBL ambient contribution. Separate from SkyIntensity because the irradiance cube
 	// is already cosine-convolved (different scale than the analytic hemisphere lerp); tune to taste.
 	extern CVar<float> IBLIntensity;
+
+	// Ray-traced ambient occlusion (#118): trace hemisphere occlusion rays inline in DefaultLit and darken
+	// the ambient term. Prefer AoRTActive() over reading AoRT directly. Needs TAA for a clean result (few
+	// rays/frame, temporally accumulated). AORadius = occlusion distance (world units); AOIntensity = strength.
+	extern CVar<bool> AoRT;
+	extern CVar<float> AORadius;
+	extern CVar<float> AOIntensity;
+
+	// True when RTAO should run (render.ao.rt on AND the device supports RT). Drives FrameCB.RTAOEnabled +
+	// the shader's ray-query branch + the TLAS build gate. False on a non-RT GPU (RTAO shader compiled out).
+	[[nodiscard]] bool AoRTActive();
 }

@@ -67,8 +67,16 @@ namespace Snowstorm
 			// sampling the raster shadow map; 0 = raster path. Only set when the device supports RT (the
 			// shader's RT branch is compiled out otherwise). Reuses a reserved pad slot (layout unchanged).
 			uint32_t RTShadowEnabled = 0;
-			float _ReservedPad2 = 0.0f;
-			float _ReservedPad3 = 0.0f;
+			// Ray-traced ambient occlusion (#118): RTAOEnabled gates the RTAO trace; AORadius is the occlusion
+			// sample distance (world units). Both reuse former reserved pad slots. MUST match Engine.hlsli.
+			uint32_t RTAOEnabled = 0;
+			float AORadius = 0.5f;
+			// AOIntensity scales the darkening; FrameCounter is the monotonic frame index (low 32 bits) RTAO
+			// rotates its sample set by so TAA averages it smooth. New 16-byte row; matches Engine.hlsli.
+			float AOIntensity = 1.0f;
+			uint32_t FrameCounter = 0;
+			float _AOPad0 = 0.0f;
+			float _AOPad1 = 0.0f;
 		};
 	}
 
@@ -237,6 +245,14 @@ namespace Snowstorm
 		frame.RTShadowEnabled = (!m_ForceRasterShadow && CVars::ShadowsRTActive()) ? 1u : 0u;
 		frame.SpotShadowAtlasIndex = fd.Shadow.SpotShadowAtlasIndex;
 		frame.PointShadowAtlasIndex = fd.Shadow.PointShadowAtlasIndex;
+
+		// RT ambient occlusion (#118): active only when render.ao.rt is on AND the device supports RT
+		// (AoRTActive folds both). The shader's RTAO branch is compiled out on non-RT devices, so this stays
+		// 0 there. FrameCounter drives the per-frame sample rotation that TAA averages into smooth AO.
+		frame.RTAOEnabled = CVars::AoRTActive() ? 1u : 0u;
+		frame.AORadius = CVars::AORadius.Get();
+		frame.AOIntensity = CVars::AOIntensity.Get();
+		frame.FrameCounter = static_cast<uint32_t>(m_FrameCounter);
 
 		// IBL indices: the bake pass pushes them via SetIBLData only while IBL is enabled (it writes zeros
 		// when off), so a non-zero irradiance index means "baked AND on" — turning IBL off leaves the maps

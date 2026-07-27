@@ -107,6 +107,62 @@ float RayTraceShadow(float3 positionWS, float3 Ng, float3 L, float tMax)
 	const float visibility = (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) ? 0.0 : 1.0;
 	return lerp(1.0, visibility, ShadowStrength);
 }
+
+// Number of AO rays per pixel per frame. Compile-time (changes the shader's cost class, not a live knob) —
+// kept low because per-frame sample rotation + TAA accumulate many effective samples over time.
+#define AO_RAY_COUNT 2
+
+// Ray-traced ambient occlusion (#118): shoot AO_RAY_COUNT cosine-weighted hemisphere rays around the
+// surface normal `N`; each is a short occlusion ray (TMax = AORadius). A near hit darkens more than a far
+// one (distance falloff). Returns an occlusion FACTOR in [0,1] (1 = fully open, 0 = fully occluded) already
+// scaled by AOIntensity. `Ng` offsets the ray origin off the surface (acne guard, like the shadow path).
+// The sample set is rotated per pixel + per frame (FrameCounter) so TAA averages successive frames into a
+// smooth result — few rays here, many effective samples after temporal accumulation. RT permutation only.
+float RayTraceAO(float3 positionWS, float3 Ng, float3 N, float radius, float2 pixelPos)
+{
+	// Build an orthonormal basis (tangent, bitangent, N) to orient the hemisphere.
+	const float3 up = abs(N.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
+	const float3 tangent = normalize(cross(up, N));
+	const float3 bitangent = cross(N, tangent);
+
+	// Per-pixel + per-frame rotation seed. Interleaved-gradient-noise style hash of the pixel position,
+	// offset by the frame counter so each frame draws a different rotation → TAA converges the noise out.
+	const float2 px = pixelPos + float2(FrameCounter * 5.588238, FrameCounter * 3.539418);
+	const float ign = frac(52.9829189 * frac(dot(px, float2(0.06711056, 0.00583715))));
+
+	const float3 origin = positionWS + Ng * 0.02;
+
+	float occlusion = 0.0;
+	[unroll] for (int s = 0; s < AO_RAY_COUNT; ++s)
+	{
+		// Cosine-weighted hemisphere sample. Stratify by ray index, jitter by the per-pixel/frame hash.
+		const float u1 = frac((float(s) + ign) / float(AO_RAY_COUNT));
+		const float u2 = frac(ign + float(s) * 0.61803398875); // golden-ratio decorrelation
+		const float r = sqrt(u1);
+		const float phi = 2.0 * PI * u2;
+		const float3 localDir = float3(r * cos(phi), r * sin(phi), sqrt(max(0.0, 1.0 - u1)));
+		const float3 dir = normalize(localDir.x * tangent + localDir.y * bitangent + localDir.z * N);
+
+		RayDesc ray;
+		ray.Origin = origin;
+		ray.Direction = dir;
+		ray.TMin = 0.0;
+		ray.TMax = radius;
+
+		RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_CULL_NON_OPAQUE> q;
+		q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
+		q.Proceed();
+
+		if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+		{
+			// Distance falloff: a hit right at the surface fully occludes; one near AORadius barely does.
+			occlusion += 1.0 - saturate(q.CommittedRayT() / radius);
+		}
+	}
+
+	occlusion = (occlusion / float(AO_RAY_COUNT)) * AOIntensity;
+	return saturate(1.0 - occlusion);
+}
 #endif
 
 // Directional-sun shadow: RT ray query (when RTShadowEnabled) or the raster shadow map (dedicated map,
@@ -334,11 +390,22 @@ float4 main(PSInput i) : SV_Target0
 	}
 	roughness = clamp(roughness, 0.04, 1.0); // avoid a zero-area specular lobe
 
-	const float ao = (AOTextureIndex != 0) ? SampleBindless(AOTextureIndex, i.TexCoord).r : 1.0;
+	float ao = (AOTextureIndex != 0) ? SampleBindless(AOTextureIndex, i.TexCoord).r : 1.0;
 
 	const float3 N = ResolveNormal(i, NormalTextureIndex);
 	const float3 V = normalize(CameraPosition - i.PositionWS);
 	const float3 F0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
+
+	// Ray-traced ambient occlusion (#118): fold the RTAO factor into `ao` so BOTH the IBL branch and the
+	// analytic-hemisphere fallback below inherit it (each multiplies by `ao`). Multiplies the material AO
+	// map, never brightens. Offset the ray origin along the geometric (interpolated vertex) normal, and
+	// orient the hemisphere by the mapped shading normal N. Direct lighting (Lo) is untouched.
+#ifdef SS_RAYTRACING
+	if (RTAOEnabled != 0)
+	{
+		ao *= RayTraceAO(i.PositionWS, normalize(i.NormalWS), N, AORadius, i.PositionCS.xy);
+	}
+#endif
 
 	float3 Lo = float3(0, 0, 0);
 

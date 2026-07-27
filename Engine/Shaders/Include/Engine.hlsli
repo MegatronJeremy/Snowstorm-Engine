@@ -146,8 +146,19 @@ cbuffer FrameCB : register(b0, space0)
 	// 0 = sample the raster shadow map. Reuses a former reserved pad slot; MUST match FrameCB in
 	// RendererService.cpp (uint there too).
 	uint RTShadowEnabled;
-	float _ReservedPad2;
-	float _ReservedPad3;
+	// Ray-traced ambient occlusion (#118): 1 = trace hemisphere occlusion rays and darken ambient
+	// (SS_RAYTRACING builds only), 0 = no RTAO. AORadius is the occlusion sample distance in world units.
+	// Both reuse former reserved pad slots (layout unchanged).
+	uint RTAOEnabled;
+	float AORadius;
+	// AOIntensity scales the darkening (1 = physical, >1 = artistic boost). FrameCounter is the monotonic
+	// frame index (low 32 bits) — the first shader-reachable frame counter; RTAO rotates its sample set by
+	// it each frame so TAA averages successive samples into smooth AO. New 16-byte row; MUST match
+	// RendererService.cpp field-for-field.
+	float AOIntensity;
+	uint FrameCounter;
+	float _AOPad0;
+	float _AOPad1;
 };
 
 // --- SPACE 1: Material Data ---

@@ -95,6 +95,12 @@ namespace Snowstorm::CVars
 
 	CVar<float> IBLIntensity{"render.ibl.intensity", 0.75f, "Multiplier on the IBL ambient contribution", CVarFlags::Persist};
 
+	CVar<bool> AoRT{"render.ao.rt", false, "Ray-traced ambient occlusion (#118): trace hemisphere occlusion rays inline in DefaultLit and darken the ambient term. Requires an RT GPU (ignored otherwise). Few rays/frame + per-frame rotation — needs TAA (render.aa = TAA) for a clean result; noisy without it.", CVarFlags::Persist};
+
+	CVar<float> AORadius{"render.ao.radius", 0.5f, "RTAO occlusion sample distance in world units (larger = broader, softer occlusion)", CVarFlags::Persist};
+
+	CVar<float> AOIntensity{"render.ao.intensity", 1.0f, "RTAO darkening strength (1 = physical, >1 = artistic boost, 0 = none)", CVarFlags::Persist};
+
 	float ClampedRenderScale()
 	{
 		const float s = RenderScale.Get();
@@ -136,5 +142,13 @@ namespace Snowstorm::CVars
 		// the SS_RAYTRACING shader permutation exists. On a non-RT GPU mode 2 degrades to no shadows (the RT
 		// branch is compiled out), matching the graceful-fallback contract of the original render.shadows.rt.
 		return ShadowsMode.Get() == 2 && Renderer::IsRayTracingSupported();
+	}
+
+	bool AoRTActive()
+	{
+		// render.ao.rt on AND an RT-capable device (where the SS_RAYTRACING permutation exists). Mirrors
+		// ShadowsRTActive: on a non-RT GPU the RTAO shader branch is compiled out, so this stays false and
+		// RTAO is a no-op. Also drives the TLAS build gate (TlasBuildSystem).
+		return AoRT.Get() && Renderer::IsRayTracingSupported();
 	}
 }
