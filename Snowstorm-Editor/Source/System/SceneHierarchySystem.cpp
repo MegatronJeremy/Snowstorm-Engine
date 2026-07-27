@@ -254,12 +254,11 @@ namespace Snowstorm
 			}
 		}
 
-		// Raster-only sub-settings (Resolution, Soft PCF) are meaningless under Ray Traced / Off — grey them
-		// out so the UI reflects that only mode Shadow Map uses them.
 		const bool rasterMode = (mode == 1);
-		ImGui::BeginDisabled(!rasterMode);
+		const bool rtMode = (mode == 2);
 
-		// Resolution: changing it rebuilds the shadow map target at the start of the next frame.
+		// Resolution is raster-only (the RT path has no shadow map) — grey out unless Shadow Map.
+		ImGui::BeginDisabled(!rasterMode);
 		{
 			constexpr int kResolutions[] = {1024, 2048, 4096};
 			const int current = CVars::ShadowResolution.Get();
@@ -277,14 +276,33 @@ namespace Snowstorm
 				CVars::ShadowResolution.Set(kResolutions[idx]);
 			}
 		}
+		ImGui::EndDisabled();
 
-		// Soft (3x3 PCF) vs hard (single tap). RT shadows are always hard (1 ray), so this is raster-only.
-		if (bool soft = CVars::ShadowSoft.Get(); ImGui::Checkbox("Soft (PCF)", &soft))
+		// Soft governs BOTH techniques: 3x3 PCF for the raster map, cone-sampled penumbra for RT. Meaningful
+		// in mode 1 and 2, so only grey it out when shadows are Off.
+		ImGui::BeginDisabled(mode == 0);
+		if (bool soft = CVars::ShadowSoft.Get(); ImGui::Checkbox("Soft", &soft))
 		{
 			CVars::ShadowSoft.Set(soft);
 		}
-
 		ImGui::EndDisabled();
+
+		// RT soft-shadow light sizes (#118) — drive the penumbra width; only used by the RT soft path, so
+		// enable them only in Ray Traced mode with Soft on. Larger = softer. Needs TAA for a clean result.
+		ImGui::BeginDisabled(!(rtMode && CVars::ShadowSoft.Get()));
+		if (float sunAngle = CVars::ShadowSunAngleDeg.Get(); ImGui::SliderFloat("Sun Angle", &sunAngle, 0.0f, 10.0f, "%.2f deg", ImGuiSliderFlags_AlwaysClamp))
+		{
+			CVars::ShadowSunAngleDeg.Set(sunAngle);
+		}
+		if (float srcRadius = CVars::ShadowSourceRadius.Get(); ImGui::SliderFloat("Source Radius", &srcRadius, 0.0f, 2.0f, "%.2f m", ImGuiSliderFlags_AlwaysClamp))
+		{
+			CVars::ShadowSourceRadius.Set(srcRadius);
+		}
+		ImGui::EndDisabled();
+		if (rtMode)
+		{
+			ImGui::TextDisabled("(RT penumbra needs TAA for a clean result)");
+		}
 
 		// Strength: how dark shadows get (1 = full occlusion, 0 = none). Read into FrameCB each frame.
 		if (float strength = CVars::ShadowStrength.Get(); ImGui::SliderFloat("Strength", &strength, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
