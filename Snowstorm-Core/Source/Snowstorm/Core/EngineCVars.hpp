@@ -202,11 +202,16 @@ namespace Snowstorm::CVars
 	// Shadow-map resolution (square). Changing it rebuilds the shadow target. Higher = sharper, costlier.
 	extern CVar<int> ShadowResolution;
 
-	// Soft shadows: 3x3 PCF when on, single hard tap when off.
+	// Soft shadows: 3x3 PCF for the raster shadow map; cone-sampled penumbra for RT shadows. Off = hard.
 	extern CVar<bool> ShadowSoft;
 
 	// How dark shadows get: 1 = full occlusion, 0 = none. Lerps the sun's visibility toward 1.
 	extern CVar<float> ShadowStrength;
+
+	// RT soft-shadow light sizes (#118): the sun's angular diameter (degrees; real sun ~0.53) and a local
+	// light's physical source radius (world units). Larger => wider penumbra. Only used by the RT soft path.
+	extern CVar<float> ShadowSunAngleDeg;
+	extern CVar<float> ShadowSourceRadius;
 
 	// Image-based lighting: bake irradiance/prefiltered cubes from the sky on compute and use them for
 	// ambient (#52). On by default; turn off to fall back to the analytic hemisphere ambient.

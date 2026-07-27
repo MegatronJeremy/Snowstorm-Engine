@@ -160,7 +160,15 @@ cbuffer FrameCB : register(b0, space0)
 	// Debug: 1 = output the isolated grayscale AO term (material AO * RTAO) instead of the shaded scene, for
 	// tuning the RTAO radius/intensity against the raw signal. Reuses a former pad slot.
 	uint DebugAO;
-	float _AOPad1;
+	// Soft RT shadows (#118): SunAngularRadius is the sun's angular HALF-size in radians (= ½ angular
+	// diameter; real sun ~0.0047 rad). LightSourceRadius is a local light's physical radius in world units.
+	// Drive the shadow-ray cone jitter (bigger source => wider penumbra). Consumed only when ShadowSoft != 0
+	// in the RT path. SunAngularRadius fills the last pad; LightSourceRadius starts a new 16-byte row.
+	float SunAngularRadius;
+	float LightSourceRadius;
+	float _ShadowSoftPad0;
+	float _ShadowSoftPad1;
+	float _ShadowSoftPad2;
 };
 
 // --- SPACE 1: Material Data ---

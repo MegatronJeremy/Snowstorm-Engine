@@ -108,6 +108,57 @@ float RayTraceShadow(float3 positionWS, float3 Ng, float3 L, float tMax)
 	return lerp(1.0, visibility, ShadowStrength);
 }
 
+// Shadow rays per light per frame for the soft path. Compile-time (a cost-class knob, not a live one) —
+// kept low because per-frame sample rotation + TAA accumulate many effective samples over time.
+#define SHADOW_RAY_COUNT 2
+
+// Soft ray-traced shadow (#118): like RayTraceShadow, but instead of one ray straight at the light, shoot
+// SHADOW_RAY_COUNT rays whose directions are jittered within a disk of radius `coneRadius` (tan of the
+// light's angular half-size) perpendicular to `L` — modelling the light's AREA. Averaging the hits gives a
+// visibility in [0,1] (a penumbra) instead of {0,1}. Sharp where the caster is close (small subtended
+// angle), softening with distance — the physical behaviour. Reuses the RTAO disk-sample + orthonormal
+// basis + frame-rotated IGN hash so successive frames pick different directions and TAA smooths the noise.
+// coneRadius == 0 reduces exactly to the hard single ray. RT permutation only.
+float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, float coneRadius, float2 pixelPos)
+{
+	// Orthonormal basis around the light direction L to place disk offsets in the plane perpendicular to it.
+	const float3 up = abs(L.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
+	const float3 tangent = normalize(cross(up, L));
+	const float3 bitangent = cross(L, tangent);
+
+	// Per-pixel + per-frame rotation seed (same interleaved-gradient-noise hash RTAO uses).
+	const float2 px = pixelPos + float2(FrameCounter * 5.588238, FrameCounter * 3.539418);
+	const float ign = frac(52.9829189 * frac(dot(px, float2(0.06711056, 0.00583715))));
+
+	const float3 origin = positionWS + Ng * 0.02 + L * 0.01;
+
+	float visSum = 0.0;
+	[unroll] for (int s = 0; s < SHADOW_RAY_COUNT; ++s)
+	{
+		// Uniform disk sample (stratified by ray index, jittered by the hash), scaled to the cone radius.
+		const float u1 = frac((float(s) + ign) / float(SHADOW_RAY_COUNT));
+		const float u2 = frac(ign + float(s) * 0.61803398875); // golden-ratio decorrelation
+		const float rr = coneRadius * sqrt(u1);
+		const float phi = 2.0 * PI * u2;
+		const float3 dir = normalize(L + (rr * cos(phi)) * tangent + (rr * sin(phi)) * bitangent);
+
+		RayDesc ray;
+		ray.Origin = origin;
+		ray.Direction = dir;
+		ray.TMin = 0.0;
+		ray.TMax = tMax;
+
+		RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_CULL_NON_OPAQUE> q;
+		q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
+		q.Proceed();
+
+		visSum += (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) ? 0.0 : 1.0;
+	}
+
+	const float visibility = visSum / float(SHADOW_RAY_COUNT);
+	return lerp(1.0, visibility, ShadowStrength);
+}
+
 // Number of AO rays per pixel per frame. Compile-time (changes the shader's cost class, not a live knob) —
 // kept low because per-frame sample rotation + TAA accumulate many effective samples over time.
 #define AO_RAY_COUNT 2
@@ -166,13 +217,19 @@ float RayTraceAO(float3 positionWS, float3 Ng, float3 N, float radius, float2 pi
 #endif
 
 // Directional-sun shadow: RT ray query (when RTShadowEnabled) or the raster shadow map (dedicated map,
-// gated by ShadowMapIndex; 0 = no shadows). `Ng`/`L` are only used by the RT path.
-float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL)
+// gated by ShadowMapIndex; 0 = no shadows). `Ng`/`L`/`pixelPos` are only used by the RT path.
+float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL, float2 pixelPos)
 {
 #ifdef SS_RAYTRACING
 	if (RTShadowEnabled != 0)
 	{
-		return RayTraceShadow(positionWS, Ng, L, 1e30); // sun is at infinity
+		// Soft (cone-sampled penumbra) when enabled — the sun's angular half-size subtends a disk of
+		// radius tan(SunAngularRadius) perpendicular to L. Else the hard single ray. Sun is at infinity.
+		if (ShadowSoft != 0)
+		{
+			return RayTraceSoftShadow(positionWS, Ng, L, 1e30, tan(SunAngularRadius), pixelPos);
+		}
+		return RayTraceShadow(positionWS, Ng, L, 1e30);
 	}
 #endif
 	if (ShadowMapIndex == 0)
@@ -186,7 +243,7 @@ float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL)
 // spot's tile. `Ng` = geometric normal (ray offset), `L` = direction to the light, `distToLight` = ray
 // length for the RT path. Raster path gated by the atlas index being bound AND the spot having a tile
 // (ShadowIndex >= 0); RT path gated by ShadowIndex >= 0 alone (the "this light casts" sentinel).
-float SampleSpotShadow(SpotLight spot, float3 positionWS, float3 Ng, float3 L, float distToLight, float NdotL)
+float SampleSpotShadow(SpotLight spot, float3 positionWS, float3 Ng, float3 L, float distToLight, float NdotL, float2 pixelPos)
 {
 #ifdef SS_RAYTRACING
 	if (RTShadowEnabled != 0)
@@ -196,7 +253,14 @@ float SampleSpotShadow(SpotLight spot, float3 positionWS, float3 Ng, float3 L, f
 			return 1.0; // this spot doesn't cast
 		}
 		// Stop just short of the light so the ray can't hit geometry at/behind the light position.
-		return RayTraceShadow(positionWS, Ng, L, max(distToLight - 0.05, 0.0));
+		const float tMax = max(distToLight - 0.05, 0.0);
+		// Soft: a source of radius LightSourceRadius at distToLight subtends a cone of half-angle whose
+		// tangent is (radius / distance) — bigger/closer source => wider penumbra.
+		if (ShadowSoft != 0)
+		{
+			return RayTraceSoftShadow(positionWS, Ng, L, tMax, LightSourceRadius / max(distToLight, 1e-4), pixelPos);
+		}
+		return RayTraceShadow(positionWS, Ng, L, tMax);
 	}
 #endif
 	if (SpotShadowAtlasIndex == 0 || spot.ShadowIndex < 0)
@@ -228,7 +292,7 @@ int PointShadowFace(float3 dir)
 // `Ng` = geometric normal (ray offset), `L` = direction to the light, `distToLight` = ray length for RT.
 // Raster path picks the cube face the surface lies on and PCF-samples that face's tile, gated by the atlas
 // being bound AND a shadow slot assigned (ShadowSlot >= 0); RT path gated by ShadowSlot >= 0 alone.
-float SamplePointShadow(PointLight light, float3 positionWS, float3 Ng, float3 L, float distToLight, float NdotL)
+float SamplePointShadow(PointLight light, float3 positionWS, float3 Ng, float3 L, float distToLight, float NdotL, float2 pixelPos)
 {
 #ifdef SS_RAYTRACING
 	if (RTShadowEnabled != 0)
@@ -237,7 +301,12 @@ float SamplePointShadow(PointLight light, float3 positionWS, float3 Ng, float3 L
 		{
 			return 1.0; // this light doesn't cast
 		}
-		return RayTraceShadow(positionWS, Ng, L, max(distToLight - 0.05, 0.0));
+		const float tMax = max(distToLight - 0.05, 0.0);
+		if (ShadowSoft != 0)
+		{
+			return RayTraceSoftShadow(positionWS, Ng, L, tMax, LightSourceRadius / max(distToLight, 1e-4), pixelPos);
+		}
+		return RayTraceShadow(positionWS, Ng, L, tMax);
 	}
 #endif
 	if (PointShadowAtlasIndex == 0 || light.ShadowSlot < 0)
@@ -425,7 +494,7 @@ float4 main(PSInput i) : SV_Target0
 		const float3 radiance = DirectionalLights[l].Color * DirectionalLights[l].Intensity;
 		// Shadow multiplies the whole contribution; ambient is unaffected so shadows stay lit-but-dim. N is
 		// the shading normal, reused to offset the RT shadow ray origin off the surface (good enough here).
-		const float shadow = (l == 0) ? SampleSunShadow(i.PositionWS, N, L, max(dot(N, L), 0.0)) : 1.0;
+		const float shadow = (l == 0) ? SampleSunShadow(i.PositionWS, N, L, max(dot(N, L), 0.0), i.PositionCS.xy) : 1.0;
 		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * shadow;
 	}
 
@@ -445,7 +514,7 @@ float4 main(PSInput i) : SV_Target0
 
 		// Shadow: 1 when unshadowed / this light casts no shadow. NdotL uses the surface normal vs L. The RT
 		// path traces from the surface to the light (dist), offset by N.
-		const float pointShadow = SamplePointShadow(PointLights[p], i.PositionWS, N, L, dist, max(dot(N, L), 0.0));
+		const float pointShadow = SamplePointShadow(PointLights[p], i.PositionWS, N, L, dist, max(dot(N, L), 0.0), i.PositionCS.xy);
 
 		const float3 radiance = PointLights[p].Color * PointLights[p].Intensity * atten;
 		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * pointShadow;
@@ -473,7 +542,7 @@ float4 main(PSInput i) : SV_Target0
 
 		// Shadow: 1 when unshadowed / this spot casts no shadow. NdotL uses the surface normal vs L. The RT
 		// path traces from the surface to the spot (dist), offset by N.
-		const float spotShadow = SampleSpotShadow(SpotLights[s], i.PositionWS, N, L, dist, max(dot(N, L), 0.0));
+		const float spotShadow = SampleSpotShadow(SpotLights[s], i.PositionWS, N, L, dist, max(dot(N, L), 0.0), i.PositionCS.xy);
 
 		const float3 radiance = SpotLights[s].Color * SpotLights[s].Intensity * atten * cone;
 		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * spotShadow;
