@@ -26,5 +26,11 @@ namespace Snowstorm
 		// begins we capture the transform before any edit; on release we push one TransformCommand.
 		bool m_GizmoDragging = false;
 		TransformComponent m_DragBefore;
+
+		// RT picking (#118 follow-up): a GPU pick-ray trace reads back a frame or two after the click, so the
+		// request and the resulting selection land on different frames. m_PickPending guards the poll;
+		// m_PickWasDoubleClick carries the click's double-ness so the deferred result can still frame the camera.
+		bool m_PickPending = false;
+		bool m_PickWasDoubleClick = false;
 	};
 }

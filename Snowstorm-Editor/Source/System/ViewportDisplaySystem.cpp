@@ -15,7 +15,9 @@
 #include "Snowstorm/Lighting/LightingComponents.hpp"
 #include "Snowstorm/Math/Bounds.hpp"
 #include "Snowstorm/Math/Picking.hpp"
+#include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
+#include "Snowstorm/Systems/TlasInstanceMapSingleton.hpp"
 #include "Singletons/EditorCommands.hpp"
 #include "Singletons/EditorHistorySingleton.hpp"
 #include "Singletons/EditorSelectionSingleton.hpp"
@@ -35,6 +37,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 
 namespace Snowstorm
 {
@@ -70,12 +73,70 @@ namespace Snowstorm
 			return fallback;
 		}
 
-		// Ray-pick the nearest mesh entity under (px,py) within the viewport. Returns entt::null on miss.
+		// Pick the light whose billboard ICON is under (px,py): a hit if the click lands within the icon's
+		// screen radius of the light's projected origin (Unity/Unreal icon picking). Lights have no mesh to
+		// raycast, so this is their only hitbox. Returns entt::null on miss; among candidates, the icon
+		// nearest the camera wins. Split out of PickEntity so BOTH the CPU-AABB path and the RT path can run
+		// the icon test FIRST — an icon is a screen-space OVERLAY that must beat any mesh under it (otherwise
+		// a huge enclosing mesh like the whole Sponza model steals every click).
+		entt::entity PickLightIcon(TrackedRegistry& reg, const glm::mat4& viewProj,
+		                           const float px, const float py, const float width, const float height)
+		{
+			entt::entity lightHit = entt::null;
+			float bestLightT = std::numeric_limits<float>::max();
+			auto tryPickLightAt = [&](const glm::vec3& worldPos, const entt::entity e)
+			{
+				const glm::vec4 clip = viewProj * glm::vec4(worldPos, 1.0f);
+				if (clip.w <= 1e-5f)
+				{
+					return; // behind camera
+				}
+				const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+				// NDC -> viewport-local pixels (same Y-flip as ScreenPointToRay's inverse). px/py here are
+				// already relative to the viewport top-left, so no rect offset is added.
+				const float sx = (ndc.x * 0.5f + 0.5f) * width;
+				const float sy = (0.5f - ndc.y * 0.5f) * height;
+				if (glm::abs(sx - px) > kLightIconRadiusPx || glm::abs(sy - py) > kLightIconRadiusPx)
+				{
+					return;
+				}
+				// clip.w is the perspective view-space depth (already computed) — smaller = nearer the camera,
+				// so it's the natural nearest-wins tiebreak among overlapping icons. No extra matrix work.
+				if (clip.w < bestLightT)
+				{
+					bestLightT = clip.w;
+					lightHit = e;
+				}
+			};
+
+			for (auto pv = reg.view<const PointLightComponent, const TransformComponent>(); const entt::entity e : pv)
+			{
+				tryPickLightAt(reg.Read<TransformComponent>(e).Position, e);
+			}
+			for (auto sv = reg.view<const SpotLightComponent, const TransformComponent>(); const entt::entity e : sv)
+			{
+				tryPickLightAt(reg.Read<TransformComponent>(e).Position, e);
+			}
+			for (auto dv = reg.view<const DirectionalLightComponent, const TransformComponent>(); const entt::entity e : dv)
+			{
+				tryPickLightAt(reg.Read<TransformComponent>(e).Position, e);
+			}
+			return lightHit;
+		}
+
+		// CPU fallback pick (used when RT is off): nearest mesh AABB under (px,py), with a light icon taking
+		// precedence over any mesh (see PickLightIcon). Returns entt::null on miss. The AABB test is coarse —
+		// a large enclosing box is hit even when no triangle is under the cursor; the RT path (PickEntity's
+		// GPU sibling) fixes that when ray tracing is active.
 		entt::entity PickEntity(TrackedRegistry& reg, const glm::mat4& viewProj,
 		                        const float px, const float py, const float width, const float height)
 		{
-			const Ray ray = ScreenPointToRay(px, py, width, height, viewProj);
+			if (const entt::entity lightHit = PickLightIcon(reg, viewProj, px, py, width, height); lightHit != entt::null)
+			{
+				return lightHit; // icon overlay beats geometry
+			}
 
+			const Ray ray = ScreenPointToRay(px, py, width, height, viewProj);
 			entt::entity hit = entt::null;
 			float bestT = std::numeric_limits<float>::max();
 
@@ -98,53 +159,7 @@ namespace Snowstorm
 				}
 			}
 
-			// Lights have no mesh to raycast, so they're picked by their billboard ICON: a hit if the click
-			// lands within the icon's screen radius of its projected origin (Unity/Unreal icon picking). An
-			// icon is a screen-space OVERLAY, so an icon hit ALWAYS wins over a mesh hit regardless of depth
-			// (otherwise a huge enclosing mesh like the whole Sponza model — whose AABB starts nearer the
-			// camera — steals every click). Among lights, the nearest-to-camera icon wins. Tracked in its own
-			// bestLightT so it never competes with the mesh bestT.
-			entt::entity lightHit = entt::null;
-			float bestLightT = std::numeric_limits<float>::max();
-			auto tryPickLightAt = [&](const glm::vec3& worldPos, const entt::entity e)
-			{
-				const glm::vec4 clip = viewProj * glm::vec4(worldPos, 1.0f);
-				if (clip.w <= 1e-5f)
-				{
-					return; // behind camera
-				}
-				const glm::vec3 ndc = glm::vec3(clip) / clip.w;
-				// NDC -> viewport-local pixels (same Y-flip as ScreenPointToRay's inverse). px/py here are
-				// already relative to the viewport top-left, so no rect offset is added.
-				const float sx = (ndc.x * 0.5f + 0.5f) * width;
-				const float sy = (0.5f - ndc.y * 0.5f) * height;
-				if (glm::abs(sx - px) > kLightIconRadiusPx || glm::abs(sy - py) > kLightIconRadiusPx)
-				{
-					return;
-				}
-				const float t = glm::dot(worldPos - ray.Origin, ray.Direction); // distance along the view ray
-				if (t > 0.0f && t < bestLightT)
-				{
-					bestLightT = t;
-					lightHit = e;
-				}
-			};
-
-			for (auto pv = reg.view<const PointLightComponent, const TransformComponent>(); const entt::entity e : pv)
-			{
-				tryPickLightAt(reg.Read<TransformComponent>(e).Position, e);
-			}
-			for (auto sv = reg.view<const SpotLightComponent, const TransformComponent>(); const entt::entity e : sv)
-			{
-				tryPickLightAt(reg.Read<TransformComponent>(e).Position, e);
-			}
-			for (auto dv = reg.view<const DirectionalLightComponent, const TransformComponent>(); const entt::entity e : dv)
-			{
-				tryPickLightAt(reg.Read<TransformComponent>(e).Position, e);
-			}
-
-			// Icon overlay beats geometry: if any light icon was under the cursor, select it over the mesh.
-			return (lightHit != entt::null) ? lightHit : hit;
+			return hit;
 		}
 
 		// Project a world point to viewport pixel coordinates via the camera's ViewProjection. Returns false
@@ -402,6 +417,25 @@ namespace Snowstorm
 			selection.Selected = {};
 		}
 
+		// Deferred RT pick result: a GPU click-ray trace requested a frame or two ago has read back. Map
+		// the committed TLAS instance index to its entity via the build-order table and apply the selection
+		// (0xFFFFFFFF or an out-of-range index = a miss, i.e. clicked empty space -> deselect).
+		if (m_PickPending)
+		{
+			if (const std::optional<uint32_t> idx = ServiceView<RendererService>().TryConsumePickResult())
+			{
+				const auto& map = m_World->GetSingleton<TlasInstanceMapSingleton>().Instances;
+				const entt::entity hit = (*idx != 0xFFFFFFFFu && *idx < map.size()) ? map[*idx] : entt::null;
+				const Entity picked{hit, m_World};
+				selection.SelectEntity(picked);
+				if (picked.IsValid() && m_PickWasDoubleClick)
+				{
+					FrameCameraOnEntity(*m_World, picked.Handle());
+				}
+				m_PickPending = false;
+			}
+		}
+
 		// Capture the viewport content rect now (top-left + width) so the Play toolbar can be drawn as a
 		// top-CENTER floating overlay AFTER the image below, without stealing a layout row above it.
 		const ImVec2 contentMin = ImGui::GetCursorScreenPos();
@@ -610,13 +644,39 @@ namespace Snowstorm
 				const float localY = mouse.y - imageStart.y;
 				if (localX >= 0.0f && localY >= 0.0f && localX <= vp.Size.x && localY <= vp.Size.y)
 				{
-					const Entity picked{PickEntity(reg, camRt.ViewProjection, localX, localY, vp.Size.x, vp.Size.y), m_World};
-					selection.SelectEntity(picked); // clears any Content-Browser asset selection
+					const bool doubleClick = ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
 
-					// Double-click focuses the camera on the picked entity (same as F / hierarchy double-click).
-					if (picked.IsValid() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+					// Light icons are screen-space overlays and must beat any mesh under them, so test them on
+					// the CPU first regardless of technique — they have no BLAS for the RT path to hit anyway.
+					const entt::entity lightHit = PickLightIcon(reg, camRt.ViewProjection, localX, localY, vp.Size.x, vp.Size.y);
+					if (lightHit != entt::null)
 					{
-						FrameCameraOnEntity(*m_World, picked.Handle());
+						const Entity picked{lightHit, m_World};
+						selection.SelectEntity(picked);
+						if (doubleClick)
+						{
+							FrameCameraOnEntity(*m_World, picked.Handle());
+						}
+					}
+					else if (CVars::ShadowsRTActive() || CVars::AoRTActive())
+					{
+						// RT is live (a TLAS exists): trace the click ray on the GPU for a pixel-accurate mesh
+						// pick. The result reads back a frame or two later — poll it below. Stash whether this
+						// click was a double so the deferred result can still frame the camera.
+						const Ray ray = ScreenPointToRay(localX, localY, vp.Size.x, vp.Size.y, camRt.ViewProjection);
+						ServiceView<RendererService>().RequestPick(ray.Origin, ray.Direction);
+						m_PickWasDoubleClick = doubleClick;
+						m_PickPending = true;
+					}
+					else
+					{
+						// No RT: coarse CPU AABB pick (resolves synchronously).
+						const Entity picked{PickEntity(reg, camRt.ViewProjection, localX, localY, vp.Size.x, vp.Size.y), m_World};
+						selection.SelectEntity(picked); // clears any Content-Browser asset selection
+						if (picked.IsValid() && doubleClick)
+						{
+							FrameCameraOnEntity(*m_World, picked.Handle());
+						}
 					}
 				}
 			}
