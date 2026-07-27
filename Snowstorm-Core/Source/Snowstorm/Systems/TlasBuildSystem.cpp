@@ -12,19 +12,30 @@ namespace Snowstorm
 {
 	bool TlasBuildSystem::IsSceneDirtyThisFrame() const
 	{
-		// A transform move or a mesh add/remove/resolve changes the instance set or its placement.
-		if (!ChangedView<TransformComponent>().empty())
+		// The TLAS instances are exactly the (Transform + Mesh) entities. It needs a rebuild only when the
+		// instance SET changes (a mesh/transform added or removed, a mesh resolved) or an instance's
+		// PLACEMENT changes (the transform of a MESH entity moved).
+		//
+		// Add/remove are one-shot events (spawn/despawn) — cheap to over-trigger, so left unfiltered.
+		if (!ChangedView<MeshComponent>().empty()) // mesh resolved / swapped
 			return true;
-		if (!ChangedView<MeshComponent>().empty())
+		if (!InitView<MeshComponent>().empty() || !InitView<TransformComponent>().empty())
 			return true;
-		if (!InitView<TransformComponent>().empty())
+		if (!FiniView<MeshComponent>().empty() || !FiniView<TransformComponent>().empty())
 			return true;
-		if (!InitView<MeshComponent>().empty())
-			return true;
-		if (!FiniView<TransformComponent>().empty())
-			return true;
-		if (!FiniView<MeshComponent>().empty())
-			return true;
+
+		// Placement change is the PER-FRAME hot path: only a changed transform that belongs to a mesh entity
+		// moves an instance. This filters out the camera — whose transform CameraControllerSystem rewrites
+		// every frame you move — so free-flying the view does NOT rebuild the TLAS (the camera isn't an
+		// instance; moving it changes no geometry).
+		const auto& reg = m_World->GetRegistry();
+		for (const entt::entity e : ChangedView<TransformComponent>())
+		{
+			if (reg.all_of<MeshComponent>(e))
+			{
+				return true;
+			}
+		}
 		return false;
 	}
 
