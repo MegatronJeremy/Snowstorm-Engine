@@ -269,12 +269,14 @@ float3 LoadVertexNormal(uint64_t vertexAddr, uint index)
 	return float3(vk::RawBufferLoad<float>(a, 4), vk::RawBufferLoad<float>(a + 4, 4), vk::RawBufferLoad<float>(a + 8, 4));
 }
 
-// Ray-traced reflection ALBEDO (#118, Inc 2): trace the reflection ray `R` from the surface, find the
-// closest hit, resolve it to a surface via the per-instance geometry table (device-address vertex/index
-// buffers + material), and return the reflected albedo (base color * sampled albedo texture). On a miss (or
-// no table), return the prefiltered sky cube in `R` — exactly the env source the IBL specular uses. This is
-// the unlit resolution step; Inc 3 re-lights the hit. `Ng` offsets the ray origin off the surface.
-float3 RayTraceReflectionAlbedo(float3 positionWS, float3 Ng, float3 R)
+// Ray-traced reflection (#118): trace the reflection ray `R` from the surface, find the closest hit,
+// resolve it to a surface via the per-instance geometry table (device-address vertex/index buffers +
+// material), and return its color. `lit`=false returns the raw reflected ALBEDO (the debug view — proves
+// hit resolution); `lit`=true RE-LIGHTS the hit cheaply (albedo * (sun*shadow-ray + IBL-ambient)) so the
+// reflection matches the scene's lighting. On a miss (or no table), return the prefiltered sky cube in `R`
+// — exactly the env source the IBL specular uses. One bounce only; the reflected hit is NOT itself
+// reflective (no recursion). `Ng` offsets the ray origin off the surface.
+float3 RayTraceReflection(float3 positionWS, float3 Ng, float3 R, bool lit)
 {
 	const uint64_t tableAddr = ReflGeoTableAddress();
 
@@ -301,7 +303,8 @@ float3 RayTraceReflectionAlbedo(float3 positionWS, float3 Ng, float3 R)
 
 	const GeoRecord rec = LoadGeoRecord(tableAddr, q.CommittedInstanceID());
 
-	// The hit's three vertex indices (uint32 index buffer), then barycentric-interpolate the UV.
+	// The hit's three vertex indices (uint32 index buffer), then barycentric-interpolate UV (and, when lit,
+	// the object-space normal).
 	const uint prim = q.CommittedPrimitiveIndex();
 	const uint64_t idxBase = rec.IndexAddress + uint64_t(prim) * 12ull; // 3 * uint32
 	const uint i0 = vk::RawBufferLoad<uint>(idxBase + 0, 4);
@@ -317,7 +320,45 @@ float3 RayTraceReflectionAlbedo(float3 positionWS, float3 Ng, float3 R)
 	{
 		albedo *= Textures[NonUniformResourceIndex(rec.AlbedoTextureIndex)].SampleLevel(LinearSampler, uv, 0).rgb;
 	}
-	return albedo;
+
+	if (!lit)
+	{
+		return albedo; // debug view: raw resolved albedo
+	}
+
+	// --- Re-light the reflected hit (cheap: sun + IBL ambient, no point/spot loop, no recursion) ---
+	// Interpolated object normal -> world via the record's Model (rows hold glm's columns, so
+	// mul(n, Model3x3) computes glmModel * n). Ignores non-uniform scale (inverse-transpose) — fine here.
+	const float3 nObj = w * LoadVertexNormal(rec.VertexAddress, i0) + bary.x * LoadVertexNormal(rec.VertexAddress, i1) + bary.y * LoadVertexNormal(rec.VertexAddress, i2);
+	const float3 Nw = normalize(mul(nObj, (float3x3)rec.Model));
+	const float3 hitPos = ray.Origin + R * q.CommittedRayT();
+
+	// Sun (DirectionalLights[0]) with a shadow ray from the reflected hit — so reflected surfaces show cast
+	// shadows. Ambient from the IBL irradiance cube (already cosine-convolved) * albedo, or a small flat
+	// term when IBL is off, so shadowed/indirect areas of the reflection aren't pure black.
+	float3 direct = float3(0, 0, 0);
+	if (LightCount > 0)
+	{
+		const float3 Lsun = normalize(-DirectionalLights[0].Direction);
+		const float ndl = saturate(dot(Nw, Lsun));
+		if (ndl > 0.0)
+		{
+			const float sh = RayTraceShadow(hitPos, Nw, Lsun, 1e30);
+			direct = DirectionalLights[0].Color * DirectionalLights[0].Intensity * ndl * sh;
+		}
+	}
+
+	float3 ambient;
+	if (IrradianceCubeIndex != 0)
+	{
+		ambient = Cubemaps[NonUniformResourceIndex(IrradianceCubeIndex)].SampleLevel(LinearSampler, Nw, 0).rgb * IBLIntensity;
+	}
+	else
+	{
+		ambient = float3(0.03, 0.03, 0.03); // faint fill so reflected shadow isn't crushed to black
+	}
+
+	return albedo * (direct + ambient);
 }
 #endif
 
@@ -467,7 +508,8 @@ float3 FresnelSchlickRoughness(float cosTheta, float3 F0, float roughness)
 // Split-sum image-based lighting: diffuse from the irradiance cube, specular from the prefiltered cube
 // (roughness -> mip) modulated by the BRDF LUT. Returns 0 (caller falls back to analytic ambient) when
 // IBL isn't baked (IrradianceCubeIndex == 0).
-float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness, float metallic, float ao)
+// positionWS/Ng are only used by the RT reflection blend (SS_RAYTRACING); the raster build ignores them.
+float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness, float metallic, float ao, float3 positionWS, float3 Ng)
 {
 	if (IrradianceCubeIndex == 0)
 	{
@@ -482,20 +524,40 @@ float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness,
 	const float3 irradiance = Cubemaps[NonUniformResourceIndex(IrradianceCubeIndex)].SampleLevel(LinearSampler, N, 0).rgb;
 	const float3 diffuse = irradiance * albedo;
 
-	// Specular: prefiltered env at the reflection vector, lod from roughness; scaled by the BRDF LUT.
+	// Specular env radiance: the prefiltered cube at the reflection vector (roughness -> mip).
 	const float3 R = reflect(-V, N);
 	const float lod = roughness * float(max(PrefilteredMipCount, 1u) - 1u);
-	const float3 prefiltered = Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, R, lod).rgb;
+	const float3 envRadiance = Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, R, lod).rgb;
 
 	// BRDF LUT (split-sum scale+bias), indexed by (NdotV, roughness). Sampled through ClampSampler (NOT the
 	// wrapping LinearSampler): a LUT must clamp, or a bilinear tap at NdotV~1 wraps to the grazing edge and
-	// produces a hard brightness seam down the middle of the view.
+	// produces a hard brightness seam down the middle of the view. This split-sum weight applies to BOTH the
+	// env-cube and the RT reflection, so their energy/Fresnel stay consistent.
 	const float2 brdf = Textures[NonUniformResourceIndex(BRDFLutIndex)].SampleLevel(ClampSampler, float2(NdotV, roughness), 0).rg;
-	const float3 specular = prefiltered * (F0 * brdf.x + brdf.y);
+	const float3 specWeight = F0 * brdf.x + brdf.y;
 
-	// Scale by the dedicated IBLIntensity dial (separate from SkyIntensity: the irradiance cube is
-	// already cosine-convolved, a different scale than the analytic hemisphere lerp). Tune to taste.
-	return (kd * diffuse + specular) * ao * IBLIntensity;
+	// Env-cube specular is part of the baked ambient approximation, so it's dialed by IBLIntensity like the
+	// diffuse below.
+	float3 specular = envRadiance * specWeight * IBLIntensity;
+
+	// RT reflections (#118): for smooth surfaces, blend in a traced, re-lit reflection of the ACTUAL scene.
+	// reflWeight is a PURE roughness falloff (rough surfaces stay on the cheap cube; ReflMaxRoughness is the
+	// cutoff) — it decides how mirror-like the surface is, NOT how bright. Brightness is the RT term's OWN
+	// ReflIntensity dial, deliberately DECOUPLED from IBLIntensity: an RT reflection is real scene light, not
+	// the baked-ambient approximation, so turning ambient down must not dim it.
+#ifdef SS_RAYTRACING
+	if (RTReflEnabled != 0 && roughness < ReflMaxRoughness)
+	{
+		const float reflWeight = saturate(1.0 - roughness / max(ReflMaxRoughness, 1e-3));
+		const float3 rt = RayTraceReflection(positionWS, Ng, R, true); // lit reflected radiance
+		const float3 specularRT = rt * specWeight * ReflIntensity;
+		specular = lerp(specular, specularRT, reflWeight);
+	}
+#endif
+
+	// Diffuse is the baked-ambient irradiance term, dialed by IBLIntensity. Specular already carries its own
+	// scale (IBLIntensity for the env cube, ReflIntensity for the RT reflection).
+	return (kd * diffuse * IBLIntensity + specular) * ao;
 }
 
 // One light's Cook-Torrance contribution (diffuse + specular), given the already-normalized light
@@ -596,7 +658,7 @@ float4 main(PSInput i) : SV_Target0
 	if (DebugReflections != 0)
 	{
 		const float3 R = reflect(-V, N);
-		const float3 refl = RayTraceReflectionAlbedo(i.PositionWS, normalize(i.NormalWS), R);
+		const float3 refl = RayTraceReflection(i.PositionWS, normalize(i.NormalWS), R, false); // raw albedo
 		return float4(refl, 1.0);
 	}
 #endif
@@ -668,7 +730,7 @@ float4 main(PSInput i) : SV_Target0
 	// Ambient: prefer split-sum IBL (baked from the sky) when available — metals reflect the environment
 	// and specular picks up sky color. Falls back to the analytic hemisphere ambient (same zenith/horizon/
 	// ground colors the sky shows) when IBL isn't baked, so the look degrades gracefully.
-	float3 ambient = ComputeIBL(N, V, albedo, F0, roughness, metallic, ao);
+	float3 ambient = ComputeIBL(N, V, albedo, F0, roughness, metallic, ao, i.PositionWS, normalize(i.NormalWS));
 	if (IrradianceCubeIndex == 0)
 	{
 		const float3 ambientEnv = (N.y >= 0.0)
