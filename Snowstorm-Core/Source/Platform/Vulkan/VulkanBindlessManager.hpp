@@ -52,7 +52,14 @@ namespace Snowstorm
 		bool m_RayTracing = false; // binding 2 (TLAS) present only when the device supports RT
 
 		uint32_t m_NextFreeIndex = 0;
-		uint32_t m_NextFreeCubeIndex = 0;
+		// Cube slot 0 is RESERVED as the "no cube" sentinel: FrameCB cube indices (IrradianceCube,
+		// PrefilteredCube) use `== 0` to mean "unset -> fall back" (analytic ambient), and DefaultLit's
+		// reflection miss-path does the same. Handing slot 0 to a real cube makes that cube read as "off" —
+		// which is exactly the bug where the first-registered cube (the irradiance map on a procedural-sky
+		// scene with no skybox cube) landed at 0 and silently disabled IBL. The 2D array gets this guarantee
+		// for free (an async placeholder texture consumes 2D slot 0 at startup); cubes have no placeholder,
+		// so reserve it explicitly by starting handout at 1.
+		uint32_t m_NextFreeCubeIndex = 1;
 		std::mutex m_IndexMutex;
 	};
 }
