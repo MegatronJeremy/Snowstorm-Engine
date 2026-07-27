@@ -78,9 +78,46 @@ float SampleShadowFactor(uint texIndex, float4x4 lightViewProj, float4 atlasRect
 	return lerp(1.0, visibility, ShadowStrength);
 }
 
-// Directional-sun shadow: dedicated map (full-texture rect), gated by ShadowMapIndex (0 = no shadows).
-float SampleSunShadow(float3 positionWS, float NdotL)
+#ifdef SS_RAYTRACING
+// Ray-traced sun shadow (#118): trace an inline ray-query shadow ray from the surface toward the sun
+// against the scene TLAS. Any opaque hit before the ray reaches "infinity" => shadowed. `L` is the
+// normalized direction TO the sun (= normalize(-DirectionalLights[0].Direction)); `Ng` is the geometric
+// normal used to offset the ray origin along the surface (normal + slight light-dir push), which avoids
+// self-intersection acne without a depth-space bias. Returns lerp(1, visibility, ShadowStrength) to match
+// the raster path's strength dial. Runs only in the RT shader permutation.
+float RayTraceSunShadow(float3 positionWS, float3 Ng, float3 L)
 {
+	// Normal-offset the origin so the ray starts just off the surface; a small along-L push further guards
+	// grazing angles. Scaled by 1e-2 world units — tuned in 1c against acne/peter-panning.
+	const float3 origin = positionWS + Ng * 0.02 + L * 0.01;
+
+	RayDesc ray;
+	ray.Origin = origin;
+	ray.Direction = L;
+	ray.TMin = 0.0;
+	ray.TMax = 1e30; // directional light is at infinity
+
+	// ACCEPT_FIRST_HIT_AND_END_SEARCH: a shadow ray only needs "is anything in the way", so stop at the
+	// first opaque hit. Geometry is built OPAQUE (no any-hit), so CULL_NON_OPAQUE is a no-op safety net.
+	RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_CULL_NON_OPAQUE> q;
+	q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
+	q.Proceed();
+
+	const float visibility = (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) ? 0.0 : 1.0;
+	return lerp(1.0, visibility, ShadowStrength);
+}
+#endif
+
+// Directional-sun shadow: RT ray query (when RTShadowEnabled) or the raster shadow map (dedicated map,
+// gated by ShadowMapIndex; 0 = no shadows). `Ng`/`L` are only used by the RT path.
+float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL)
+{
+#ifdef SS_RAYTRACING
+	if (RTShadowEnabled != 0)
+	{
+		return RayTraceSunShadow(positionWS, Ng, L);
+	}
+#endif
 	if (ShadowMapIndex == 0)
 	{
 		return 1.0;
@@ -286,8 +323,9 @@ float4 main(PSInput i) : SV_Target0
 	{
 		const float3 L = normalize(-DirectionalLights[l].Direction);
 		const float3 radiance = DirectionalLights[l].Color * DirectionalLights[l].Intensity;
-		// Shadow multiplies the whole contribution; ambient is unaffected so shadows stay lit-but-dim.
-		const float shadow = (l == 0) ? SampleSunShadow(i.PositionWS, max(dot(N, L), 0.0)) : 1.0;
+		// Shadow multiplies the whole contribution; ambient is unaffected so shadows stay lit-but-dim. N is
+		// the shading normal, reused to offset the RT shadow ray origin off the surface (good enough here).
+		const float shadow = (l == 0) ? SampleSunShadow(i.PositionWS, N, L, max(dot(N, L), 0.0)) : 1.0;
 		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * shadow;
 	}
 

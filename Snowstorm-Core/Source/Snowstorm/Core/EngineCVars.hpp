@@ -186,6 +186,11 @@ namespace Snowstorm::CVars
 	// Off = skip the shadow pass entirely; the per-light CastShadows flag is the authored on/off above it.
 	extern CVar<bool> Shadows;
 
+	// Ray-traced sun shadow (#118): when on AND the device supports RT, DefaultLit traces a hardware
+	// ray-query shadow ray to the sun instead of sampling the raster shadow map — the clean raster-vs-RT
+	// A/B. Ignored on non-RT GPUs (the shader's RT path is compiled out). Read per-frame into FrameCB.
+	extern CVar<bool> ShadowsRT;
+
 	// Shadow-map resolution (square). Changing it rebuilds the shadow target. Higher = sharper, costlier.
 	extern CVar<int> ShadowResolution;
 

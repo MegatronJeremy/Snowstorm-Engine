@@ -83,6 +83,8 @@ namespace Snowstorm::CVars
 
 	CVar<bool> Shadows{"render.shadows", true, "Global directional shadow toggle (off = skip the shadow pass)", CVarFlags::Persist};
 
+	CVar<bool> ShadowsRT{"render.shadows.rt", false, "Ray-trace the sun's shadow inline in DefaultLit (hardware ray query) instead of sampling the raster shadow map. Requires an RT-capable GPU; ignored otherwise. The clean raster-vs-RT A/B toggle (#118)", CVarFlags::Persist};
+
 	CVar<int> ShadowResolution{"render.shadow.resolution", 2048, "Shadow-map resolution (square); changing it rebuilds the shadow target", CVarFlags::Persist};
 
 	CVar<bool> ShadowSoft{"render.shadow.soft", true, "Soft shadows (3x3 PCF) when on, hard single-tap when off", CVarFlags::Persist};

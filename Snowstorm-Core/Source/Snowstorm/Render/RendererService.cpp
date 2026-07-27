@@ -63,7 +63,10 @@ namespace Snowstorm
 			// sharper mip for the temporal resolve to accumulate; 0 otherwise. Reuses a former reserved pad
 			// slot (layout unchanged). MUST match Engine.hlsli FrameCB field-for-field.
 			float MipBias = 0.0f;
-			float _ReservedPad1 = 0.0f;
+			// Ray-traced sun shadow (#118): 1 = DefaultLit traces the sun's shadow via ray query instead of
+			// sampling the raster shadow map; 0 = raster path. Only set when the device supports RT (the
+			// shader's RT branch is compiled out otherwise). Reuses a reserved pad slot (layout unchanged).
+			uint32_t RTShadowEnabled = 0;
 			float _ReservedPad2 = 0.0f;
 			float _ReservedPad3 = 0.0f;
 		};
@@ -226,6 +229,9 @@ namespace Snowstorm
 		frame.ShadowStrength = CVars::ShadowStrength.Get();
 		frame.ShadowSoft = CVars::ShadowSoft.Get() ? 1u : 0u;
 		frame.ShadowTexelSize = 1.0f / static_cast<float>(fd.Shadow.ShadowResolution != 0 ? fd.Shadow.ShadowResolution : 2048u);
+		// RT sun shadow (#118): only when the CVar is on AND the device supports RT — the shader's ray-query
+		// branch is compiled out on non-RT devices, so this stays 0 there and the raster path always runs.
+		frame.RTShadowEnabled = (CVars::ShadowsRT.Get() && Renderer::IsRayTracingSupported()) ? 1u : 0u;
 		frame.SpotShadowAtlasIndex = fd.Shadow.SpotShadowAtlasIndex;
 		frame.PointShadowAtlasIndex = fd.Shadow.PointShadowAtlasIndex;
 

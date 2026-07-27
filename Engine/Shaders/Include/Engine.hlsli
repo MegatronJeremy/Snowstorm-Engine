@@ -142,7 +142,10 @@ cbuffer FrameCB : register(b0, space0)
 	// thin/distant surfaces; 0 when TAA is off. Consumed by SampleBindless in DefaultLit. Reuses a former
 	// reserved pad slot, so the FrameCB layout is unchanged. MUST match the FrameCB in RendererService.cpp.
 	float MipBias;
-	float _ReservedPad1;
+	// Ray-traced sun shadow (#118): 1 = trace the sun's shadow via ray query (SS_RAYTRACING builds only),
+	// 0 = sample the raster shadow map. Reuses a former reserved pad slot; MUST match FrameCB in
+	// RendererService.cpp (uint there too).
+	uint RTShadowEnabled;
 	float _ReservedPad2;
 	float _ReservedPad3;
 };
@@ -179,3 +182,12 @@ SamplerState ClampSampler : register(s2, space1);
 // are indexed into Cubemaps[] by a separate bindless index (see VulkanBindlessManager::RegisterCube).
 Texture2D Textures[] : register(t0, space3);
 TextureCube Cubemaps[] : register(t1, space3);
+
+// Scene top-level acceleration structure for inline ray query (#118). Bindless set 3, binding 2 (see
+// VulkanBindlessManager::BINDING_TLAS). Declared only in the SS_RAYTRACING permutation — on a non-RT
+// device the define is absent, so the SPIR-V carries no RayQueryKHR capability (which would need the
+// device extension). Written each frame by TlasBuildSystem; unwritten (PARTIALLY_BOUND) before the first
+// build, so callers must gate on RTShadowEnabled, which is only set once a scene TLAS exists.
+#ifdef SS_RAYTRACING
+RaytracingAccelerationStructure SceneTLAS : register(t2, space3);
+#endif

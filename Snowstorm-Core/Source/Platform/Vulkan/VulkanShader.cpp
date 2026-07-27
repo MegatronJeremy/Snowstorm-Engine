@@ -1,6 +1,7 @@
 #include "VulkanShader.hpp"
 
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -283,11 +284,29 @@ namespace Snowstorm
 			cmd += profile;
 			cmd += L" -fspv-target-env=vulkan1.2 -fvk-use-dx-layout -Zpr";
 
+			// Ray-tracing shader permutation (#118): define SS_RAYTRACING only when the device supports inline
+			// ray query. Shaders wrap their TLAS declaration + trace in `#ifdef SS_RAYTRACING`, so on a non-RT
+			// device those blocks compile out and no SPIR-V carries the RayQueryKHR capability (which would
+			// require the extension and fail to load). Device caps are fixed at runtime, so exactly one
+			// permutation is ever needed. The define is folded into the cache key in the caller.
+			const bool rayTracing = Renderer::IsRayTracingSupported();
+			if (rayTracing)
+			{
+				cmd += L" -D SS_RAYTRACING=1";
+			}
+
 			// --- DEBUG FLAGS ---
 			// -Zi: Include debug information
 			// -Od: Disable optimizations (makes debugging MUCH easier)
-			// -fspv-debug=vulkan-with-source: Specific SPIR-V debug info
-			cmd += L" -Zi -Od -fspv-debug=vulkan-with-source";
+			// -fspv-debug=vulkan-with-source: rich SPIR-V debug info (source lines). OMITTED in the RT
+			// permutation: dxc 1.9 crashes with an access violation when this NonSemantic-source debug info is
+			// combined with inline ray query (a known dxc bug). -Zi/-Od still give usable debug info; only the
+			// embedded-source detail is dropped, and only for RT-capable devices.
+			cmd += L" -Zi -Od";
+			if (!rayTracing)
+			{
+				cmd += L" -fspv-debug=vulkan-with-source";
+			}
 
 			cmd += L" -I ";
 			cmd += QuoteArg(includePathW);
@@ -367,6 +386,13 @@ namespace Snowstorm
 			h ^= Hash64(fullText.data(), fullText.size());
 			h ^= HashIncludeHeaders();
 			h ^= Hash64(flagsTag, std::strlen(flagsTag));
+			// The RT permutation define (see CompileStageWithDxc) changes the emitted SPIR-V, so it must key
+			// the cache — otherwise an RT and a non-RT build would collide on the same .spv.
+			if (Renderer::IsRayTracingSupported())
+			{
+				static constexpr char kRtTag[] = "rt1";
+				h ^= Hash64(kRtTag, sizeof(kRtTag) - 1);
+			}
 
 			const std::string key = ToHex64(h);
 			const std::string stem = srcPath.stem().string(); // e.g. "Mesh.vert" -> "Mesh.vert"
@@ -465,8 +491,10 @@ namespace Snowstorm
 		if (!m_FragPath.empty())
 		{
 			std::string vert, frag;
-			if (!CompileStageFileToSpirvCache(m_VertPath, L"vs_6_0", "v2_vulkan1.2_dxlayout_Zpr_vs6", vert) ||
-			    !CompileStageFileToSpirvCache(m_FragPath, L"ps_6_0", "v2_vulkan1.2_dxlayout_Zpr_ps6", frag))
+			// SM 6.5 (was 6.0): the fragment stage may use inline ray query for RT sun shadows (#118); it's a
+			// strict superset so vertex/fragment shaders that don't use it compile identically.
+			if (!CompileStageFileToSpirvCache(m_VertPath, L"vs_6_5", "v3_vulkan1.2_dxlayout_Zpr_vs65", vert) ||
+			    !CompileStageFileToSpirvCache(m_FragPath, L"ps_6_5", "v3_vulkan1.2_dxlayout_Zpr_ps65", frag))
 			{
 				SS_CORE_ERROR("VulkanShader: failed to compile graphics shader {}", m_Filepath);
 				return; // leaves m_Ready false: the pipeline never builds, rather than building from garbage
@@ -482,7 +510,9 @@ namespace Snowstorm
 		}
 
 		// Single-path: a compute shader. Since graphics shaders are now two-path (separate vert+frag
-		// files), a single-path shader is unambiguously compute — compile the file directly as cs_6_0.
+		// files), a single-path shader is unambiguously compute — compile the file directly as cs_6_5.
+		// SM 6.5 (was 6.0) is required for inline ray query (RayQuery/TraceRayInline, #118) and is a strict
+		// superset, so every existing compute shader still compiles unchanged.
 		const fs::path p(m_VertPath);
 		if (p.extension() != ".hlsl")
 		{
@@ -491,7 +521,7 @@ namespace Snowstorm
 		}
 
 		std::string comp;
-		if (!CompileStageFileToSpirvCache(m_VertPath, L"cs_6_0", "v2_vulkan1.2_dxlayout_Zpr_cs6", comp))
+		if (!CompileStageFileToSpirvCache(m_VertPath, L"cs_6_5", "v3_vulkan1.2_dxlayout_Zpr_cs65", comp))
 		{
 			SS_CORE_ERROR("VulkanShader: failed to compile compute shader {}", m_VertPath);
 			return;
