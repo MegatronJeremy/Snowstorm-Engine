@@ -407,6 +407,14 @@ float4 main(PSInput i) : SV_Target0
 	}
 #endif
 
+	// Debug view (#118): output the isolated grayscale AO term (material AO * RTAO) so the RTAO radius/
+	// intensity can be tuned against the raw signal without the lit scene on top. Returns pre-tonemap
+	// linear; the tonemap pass leaves it near-grayscale (AO is [0,1], so exposure/ACES barely shift it).
+	if (DebugAO != 0)
+	{
+		return float4(ao, ao, ao, 1.0);
+	}
+
 	float3 Lo = float3(0, 0, 0);
 
 	// --- Directional lights (the sun). Only light 0 casts shadows in this single-map implementation.

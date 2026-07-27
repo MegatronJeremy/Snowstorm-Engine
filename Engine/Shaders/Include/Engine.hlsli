@@ -157,7 +157,9 @@ cbuffer FrameCB : register(b0, space0)
 	// RendererService.cpp field-for-field.
 	float AOIntensity;
 	uint FrameCounter;
-	float _AOPad0;
+	// Debug: 1 = output the isolated grayscale AO term (material AO * RTAO) instead of the shaded scene, for
+	// tuning the RTAO radius/intensity against the raw signal. Reuses a former pad slot.
+	uint DebugAO;
 	float _AOPad1;
 };
 

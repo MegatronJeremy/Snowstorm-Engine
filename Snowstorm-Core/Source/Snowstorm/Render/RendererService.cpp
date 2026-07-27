@@ -75,7 +75,8 @@ namespace Snowstorm
 			// rotates its sample set by so TAA averages it smooth. New 16-byte row; matches Engine.hlsli.
 			float AOIntensity = 1.0f;
 			uint32_t FrameCounter = 0;
-			float _AOPad0 = 0.0f;
+			// Debug: 1 = DefaultLit outputs the isolated grayscale AO term (for tuning). Reuses a pad slot.
+			uint32_t DebugAO = 0;
 			float _AOPad1 = 0.0f;
 		};
 	}
@@ -253,6 +254,8 @@ namespace Snowstorm
 		frame.AORadius = CVars::AORadius.Get();
 		frame.AOIntensity = CVars::AOIntensity.Get();
 		frame.FrameCounter = static_cast<uint32_t>(m_FrameCounter);
+		// Debug view 2 = Ambient Occlusion: DefaultLit outputs the isolated AO term for tuning (#118).
+		frame.DebugAO = (CVars::DebugView.Get() == 2) ? 1u : 0u;
 
 		// IBL indices: the bake pass pushes them via SetIBLData only while IBL is enabled (it writes zeros
 		// when off), so a non-zero irradiance index means "baked AND on" — turning IBL off leaves the maps

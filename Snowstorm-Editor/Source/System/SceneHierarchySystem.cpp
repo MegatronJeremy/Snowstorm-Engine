@@ -215,17 +215,17 @@ namespace Snowstorm
 			CVars::Jitter.Set(jitter);
 		}
 
-		// Debug view (#44): Motion Vectors visualizes per-pixel screen-space velocity as color (the
-		// temporal-upscaling substrate). Index maps 1:1 to render.debugview (0=Normal, 1=Motion Vectors).
-		// When on, a velocity pass runs and the tonemap step shows velocity instead of the scene.
+		// Debug view: 0 = Normal, 1 = Motion Vectors (per-pixel velocity as color; runs the velocity pass +
+		// tonemap debug branch, #44), 2 = Ambient Occlusion (DefaultLit outputs the isolated grayscale AO
+		// term for tuning RTAO, #118). Index maps 1:1 to render.debugview.
 		{
-			const char* dbgLabels[] = {"Normal", "Motion Vectors"};
+			const char* dbgLabels[] = {"Normal", "Motion Vectors", "Ambient Occlusion"};
 			int dbg = CVars::DebugView.Get();
-			if (dbg < 0 || dbg > 1)
+			if (dbg < 0 || dbg > 2)
 			{
 				dbg = 0;
 			}
-			if (ImGui::Combo("Debug View", &dbg, dbgLabels, 2))
+			if (ImGui::Combo("Debug View", &dbg, dbgLabels, 3))
 			{
 				CVars::DebugView.Set(dbg);
 			}
