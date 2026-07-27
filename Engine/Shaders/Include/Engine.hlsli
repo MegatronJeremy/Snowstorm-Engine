@@ -166,9 +166,20 @@ cbuffer FrameCB : register(b0, space0)
 	// in the RT path. SunAngularRadius fills the last pad; LightSourceRadius starts a new 16-byte row.
 	float SunAngularRadius;
 	float LightSourceRadius;
-	float _ShadowSoftPad0;
-	float _ShadowSoftPad1;
-	float _ShadowSoftPad2;
+	// RT reflections (#118): RTReflEnabled gates the reflection trace (SS_RAYTRACING builds + a geometry
+	// table present); ReflIntensity scales the contribution; ReflMaxRoughness is the roughness cutoff
+	// (smoother = RT, rougher = the prefiltered cube). Reuse the former shadow-soft pad slots.
+	uint RTReflEnabled;
+	float ReflIntensity;
+	float ReflMaxRoughness;
+	// GPU device address of the per-instance GeometryRecord table, split lo/hi (see RendererService.cpp).
+	// Reassembled to a uint64 in the shader and read with vk::RawBufferLoad to resolve a reflected hit's
+	// surface. 0 = no table -> reflection falls back to the sky cube. New 16-byte row; MUST match
+	// RendererService.cpp field-for-field.
+	uint ReflGeoTableAddrLo;
+	uint ReflGeoTableAddrHi;
+	float _ReflPad0;
+	float _ReflPad1;
 };
 
 // --- SPACE 1: Material Data ---

@@ -105,6 +105,12 @@ namespace Snowstorm::CVars
 
 	CVar<float> AOIntensity{"render.ao.intensity", 1.0f, "RTAO darkening strength (1 = physical, >1 = artistic boost, 0 = none)", CVarFlags::Persist};
 
+	CVar<bool> ReflectionsRT{"render.reflections.rt", false, "Ray-traced reflections (#118): trace a reflection ray inline in DefaultLit, shade the reflected hit (albedo + sun + ambient), and blend it into the specular term for smooth surfaces. Requires an RT GPU (ignored otherwise). One ray/pixel — needs TAA (render.aa = TAA) for a clean result.", CVarFlags::Persist};
+
+	CVar<float> ReflectionIntensity{"render.reflections.intensity", 1.0f, "Multiplier on the RT reflection contribution (1 = physical, 0 = none)", CVarFlags::Persist};
+
+	CVar<float> ReflectionMaxRoughness{"render.reflections.max_roughness", 0.6f, "Surfaces rougher than this stay on the cheap prefiltered-env specular; smoother ones get RT reflections (the ray fades in as roughness -> 0)", CVarFlags::Persist};
+
 	float ClampedRenderScale()
 	{
 		const float s = RenderScale.Get();
@@ -154,5 +160,13 @@ namespace Snowstorm::CVars
 		// ShadowsRTActive: on a non-RT GPU the RTAO shader branch is compiled out, so this stays false and
 		// RTAO is a no-op. Also drives the TLAS build gate (TlasBuildSystem).
 		return AoRT.Get() && Renderer::IsRayTracingSupported();
+	}
+
+	bool ReflectionsRTActive()
+	{
+		// render.reflections.rt on AND an RT-capable device. Mirrors AoRTActive; on a non-RT GPU the
+		// reflection shader branch is compiled out so this stays false. Drives the TLAS build gate AND the
+		// per-instance geometry-table build (both only needed when reflections actually trace).
+		return ReflectionsRT.Get() && Renderer::IsRayTracingSupported();
 	}
 }

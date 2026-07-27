@@ -36,6 +36,11 @@ namespace Snowstorm
 		void SetBaseColor(const glm::vec4& color);
 		[[nodiscard]] const glm::vec4& GetBaseColor() const { return m_Constants.BaseColor; }
 
+		// Full resolved material constants (base color, bindless texture indices, metallic/roughness, ...).
+		// Read by the RT reflection geometry table (#118 follow-up), which needs the albedo bindless index +
+		// base color to shade a reflected hit off the raster path.
+		[[nodiscard]] const Material::Constants& GetConstants() const { return m_Constants; }
+
 		// Generic per-instance custom data (see InstanceData::PerInstanceCustomData). Four free floats the
 		// bound shader interprets as it wishes; the renderer copies this straight into the instance record.
 		void SetPerInstanceCustomData(const glm::vec4& v)

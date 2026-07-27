@@ -10,6 +10,7 @@
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Events/Event.hpp"
 #include "Snowstorm/Systems/CameraControllerSystem.hpp"
+#include "Snowstorm/Systems/ReflectionGeometrySingleton.hpp"
 #include "Snowstorm/Systems/TlasInstanceMapSingleton.hpp"
 #include "Snowstorm/World/EditorHooksSingleton.hpp"
 
@@ -36,6 +37,11 @@ namespace Snowstorm
 		// TlasBuildSystem, read by the editor's pick path. Core-scoped so both the editor and a headless
 		// runtime carry it (harmless when unused: it just stays empty).
 		m_SingletonManager->RegisterSingleton<TlasInstanceMapSingleton>();
+
+		// Per-instance geometry/material table for RT reflections (#118 follow-up). Written by TlasBuildSystem
+		// alongside the TLAS, read by RendererService to feed the reflection trace. Empty unless RT reflections
+		// are active.
+		m_SingletonManager->RegisterSingleton<ReflectionGeometrySingleton>();
 
 		// Create the bridge to the Application event bus. In a headless context (unit tests) there is no
 		// Application, so skip the bridge — input simply never fires, which is fine for logic-only tests.

@@ -179,6 +179,13 @@ namespace Snowstorm
 		// pushes these each frame (mirrors SetShadowData); FrameCB picks them up in AcquireFrameSet.
 		void SetIBLData(uint32_t irradianceIndex, uint32_t prefilteredIndex, uint32_t brdfLutIndex, uint32_t prefilteredMipCount);
 
+		// GPU device address of the per-instance reflection geometry table (RT reflections, #118). Pushed each
+		// frame by RenderSystem from the ReflectionGeometrySingleton that TlasBuildSystem fills; folded into
+		// FrameCB so DefaultLit's reflection trace can resolve a committed hit to a surface via
+		// vk::RawBufferLoad. 0 = no table this frame (reflection falls back to the sky cube). Mirrors
+		// SetIBLData/SetShadowData — a plain per-frame handoff, not GPU FrameData.
+		void SetReflectionGeometryAddress(const uint64_t address) { m_ReflectionTableAddress = address; }
+
 		// Current frame's lights / environment (uploaded by the PreRender systems). The IBL bake reads
 		// these to capture the sky; exposed so the bake lives in its own pass, not the renderer.
 		[[nodiscard]] const LightDataBlock& GetLights() const { return m_FrameData.Lights; }
@@ -296,6 +303,10 @@ namespace Snowstorm
 		// CPU-side sun shadow fit produced by LightingSystem, consumed by RenderSystem's directional shadow
 		// pass (see SunShadowFit above). Not GPU FrameData — a plain per-frame handoff between the two systems.
 		SunShadowFit m_SunShadowFit{};
+
+		// GPU device address of this frame's RT reflection geometry table (#118); pushed by
+		// SetReflectionGeometryAddress, read into FrameCB in AcquireFrameSet. 0 = no table.
+		uint64_t m_ReflectionTableAddress = 0;
 
 		std::vector<BatchData> m_Batches;
 

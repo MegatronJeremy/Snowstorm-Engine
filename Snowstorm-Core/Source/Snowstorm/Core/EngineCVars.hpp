@@ -231,4 +231,17 @@ namespace Snowstorm::CVars
 	// True when RTAO should run (render.ao.rt on AND the device supports RT). Drives FrameCB.RTAOEnabled +
 	// the shader's ray-query branch + the TLAS build gate. False on a non-RT GPU (RTAO shader compiled out).
 	[[nodiscard]] bool AoRTActive();
+
+	// Ray-traced reflections (#118): trace a reflection ray inline in DefaultLit, shade the reflected hit,
+	// blend into the specular term for smooth surfaces. Prefer ReflectionsRTActive() over reading the bool.
+	// ReflectionIntensity scales the contribution; ReflectionMaxRoughness is the roughness cutoff (smoother
+	// = RT, rougher = the cheap prefiltered cube).
+	extern CVar<bool> ReflectionsRT;
+	extern CVar<float> ReflectionIntensity;
+	extern CVar<float> ReflectionMaxRoughness;
+
+	// True when RT reflections should run (render.reflections.rt on AND the device supports RT). Drives
+	// FrameCB.RTReflEnabled + the shader branch + the TLAS build gate + the geometry-table build. False on a
+	// non-RT GPU (reflection shader compiled out).
+	[[nodiscard]] bool ReflectionsRTActive();
 }

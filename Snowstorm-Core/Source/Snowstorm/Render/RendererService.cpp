@@ -85,9 +85,19 @@ namespace Snowstorm
 			// local light physical radius (world units). Drive the shadow-ray cone jitter. Match Engine.hlsli.
 			float SunAngularRadius = 0.0f;
 			float LightSourceRadius = 0.1f;
-			float _ShadowSoftPad0 = 0.0f;
-			float _ShadowSoftPad1 = 0.0f;
-			float _ShadowSoftPad2 = 0.0f;
+			// Ray-traced reflections (#118): RTReflEnabled gates the reflection trace; ReflIntensity scales the
+			// contribution; ReflMaxRoughness is the roughness cutoff. Reuse the former shadow-soft pad slots.
+			uint32_t RTReflEnabled = 0;
+			float ReflIntensity = 1.0f;
+			float ReflMaxRoughness = 0.6f;
+			// GPU device address of the per-instance GeometryRecord table (RT reflections resolve a hit's
+			// surface via vk::RawBufferLoad on this). Split lo/hi so the cbuffer stays 4-byte-scalar (dx layout
+			// packs uints tightly; a uint64 would force 8-byte alignment). 0 = no table -> reflection falls back
+			// to the sky cube. New 16-byte row; MUST match Engine.hlsli field-for-field.
+			uint32_t ReflGeoTableAddrLo = 0;
+			uint32_t ReflGeoTableAddrHi = 0;
+			float _ReflPad0 = 0.0f;
+			float _ReflPad1 = 0.0f;
 		};
 	}
 
@@ -282,6 +292,17 @@ namespace Snowstorm
 			frame.PrefilteredMipCount = fd.IBL.PrefilteredMipCount;
 			frame.IBLIntensity = CVars::IBLIntensity.Get();
 		}
+
+		// RT reflections (#118): active only when render.reflections.rt is on AND the device supports RT
+		// (ReflectionsRTActive folds both) AND a geometry table exists this frame. The shader branch is
+		// compiled out on non-RT devices, so this stays 0 there. The table address is pushed by RenderSystem
+		// (SetReflectionGeometryAddress) from the ReflectionGeometrySingleton that TlasBuildSystem fills; 0
+		// (no table) makes the shader fall back to the sky cube. Intensity/max-roughness ride off the CVars.
+		frame.RTReflEnabled = (CVars::ReflectionsRTActive() && m_ReflectionTableAddress != 0) ? 1u : 0u;
+		frame.ReflIntensity = CVars::ReflectionIntensity.Get();
+		frame.ReflMaxRoughness = CVars::ReflectionMaxRoughness.Get();
+		frame.ReflGeoTableAddrLo = static_cast<uint32_t>(m_ReflectionTableAddress & 0xFFFFFFFFull);
+		frame.ReflGeoTableAddrHi = static_cast<uint32_t>(m_ReflectionTableAddress >> 32);
 
 		const Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
 		SS_CORE_ASSERT(frameUBO, "Frame UBO missing for frame descriptor set");

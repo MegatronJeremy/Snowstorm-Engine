@@ -1,8 +1,13 @@
 #include "TlasBuildSystem.hpp"
 
+#include "Snowstorm/Components/MaterialComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Render/Buffer.hpp"
+#include "Snowstorm/Render/MaterialInstance.hpp"
+#include "Snowstorm/Render/Mesh.hpp"
+#include "Snowstorm/Systems/ReflectionGeometrySingleton.hpp"
 #include "Snowstorm/Systems/TlasInstanceMapSingleton.hpp"
 #include "Snowstorm/World/World.hpp"
 
@@ -42,10 +47,11 @@ namespace Snowstorm
 
 	void TlasBuildSystem::Execute(Timestep)
 	{
-		// Only maintain the TLAS while something actually samples it — RT shadows OR RTAO. In every other
-		// mode building it is pure waste. Both helpers fold in the device-support check (false on a non-RT
-		// GPU). Track the state so the OFF->ON transition can force a rebuild below.
-		const bool rtActive = CVars::ShadowsRTActive() || CVars::AoRTActive();
+		// Only maintain the TLAS while something actually samples it — RT shadows, RTAO, or RT reflections. In
+		// every other mode building it is pure waste. Each helper folds in the device-support check (false on a
+		// non-RT GPU). Track the state so the OFF->ON transition can force a rebuild below.
+		const bool reflectionsActive = CVars::ReflectionsRTActive();
+		const bool rtActive = CVars::ShadowsRTActive() || CVars::AoRTActive() || reflectionsActive;
 		const bool justEnabled = rtActive && !m_WasRTActive;
 		m_WasRTActive = rtActive;
 		if (!rtActive)
@@ -69,6 +75,10 @@ namespace Snowstorm
 		// index — so instanceEntities[CommittedInstanceID()] resolves the hit.
 		std::vector<TLASInstance> instances;
 		std::vector<entt::entity> instanceEntities;
+		// RT reflections (#118): a parallel per-instance geometry/material table so a reflected hit resolves to
+		// a shadeable surface. Only gathered when reflections are active (dead weight otherwise). Filled in
+		// lockstep with `instances`, so record[i] describes the instance the GPU stamps instanceCustomIndex = i.
+		std::vector<GeometryRecord> geoRecords;
 		for (auto view = reg.view<TransformComponent, MeshComponent>(); const entt::entity e : view)
 		{
 			const auto& mc = reg.Read<MeshComponent>(e);
@@ -84,13 +94,52 @@ namespace Snowstorm
 			}
 
 			const auto& tc = reg.Read<TransformComponent>(e);
-			instances.push_back({tc.GetTransformMatrix(), blas->GetDeviceAddress()});
+			const glm::mat4 model = tc.GetTransformMatrix();
+			instances.push_back({model, blas->GetDeviceAddress()});
 			instanceEntities.push_back(e);
+
+			if (reflectionsActive)
+			{
+				GeometryRecord rec{};
+				rec.VertexAddress = mc.MeshInstance->GetVertexBuffer()->GetGPUAddress();
+				rec.IndexAddress = mc.MeshInstance->GetIndexBuffer()->GetGPUAddress();
+				rec.Model = model;
+				// Material may not be resolved yet (async) — a null record still shades as BaseColor white; the
+				// table stays index-aligned regardless, so a missing material never desyncs the mapping.
+				if (const auto* matc = reg.try_get_const<MaterialComponent>(e); matc && matc->MaterialInstance)
+				{
+					const Material::Constants& c = matc->MaterialInstance->GetConstants();
+					rec.AlbedoTextureIndex = c.AlbedoTextureIndex;
+					rec.BaseColor = c.BaseColor;
+				}
+				geoRecords.push_back(rec);
+			}
 		}
 
 		// Publish the index->entity table for RT picking (consumed by the editor). Rebuilt every TLAS build
 		// so it never drifts from what the GPU traces.
 		SingletonView<TlasInstanceMapSingleton>().Instances = std::move(instanceEntities);
+
+		// Publish the reflection geometry table (consumed by RendererService -> DefaultLit). Grow the GPU
+		// buffer when the instance count outgrows it (device-address Storage so the shader can RawBufferLoad
+		// records); address 0 when reflections are off so the shader falls back to the sky cube.
+		auto& reflGeo = SingletonView<ReflectionGeometrySingleton>();
+		if (reflectionsActive && !geoRecords.empty())
+		{
+			const uint32_t needed = static_cast<uint32_t>(geoRecords.size());
+			if (!reflGeo.Table || reflGeo.Capacity < needed)
+			{
+				reflGeo.Capacity = needed;
+				reflGeo.Table = Buffer::Create(static_cast<size_t>(needed) * sizeof(GeometryRecord),
+				                               BufferUsage::Storage, nullptr, true, "ReflectionGeometryTable");
+				reflGeo.TableAddress = reflGeo.Table->GetGPUAddress();
+			}
+			reflGeo.Table->SetData(geoRecords.data(), needed * sizeof(GeometryRecord), 0);
+		}
+		else
+		{
+			reflGeo.TableAddress = 0; // no table this frame -> shader uses the sky-cube fallback
+		}
 
 		if (!m_TLAS)
 		{

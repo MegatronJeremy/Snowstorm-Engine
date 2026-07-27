@@ -16,6 +16,7 @@
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Systems/ReflectionGeometrySingleton.hpp"
 #include "Snowstorm/Render/RenderGraph.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
@@ -149,6 +150,11 @@ namespace Snowstorm
 		RenderGraph graph;
 
 		FrameContext fc{.Graph = graph, .Renderer = renderer, .Ctx = ctx, .Reg = reg, .FrameIndex = frameIndex};
+
+		// RT reflections (#118): hand the per-instance geometry-table address (TlasBuildSystem filled it in
+		// PreRender) to the renderer so AcquireFrameSet folds it into FrameCB. 0 when reflections are off ->
+		// the shader's reflection trace falls back to the sky cube.
+		renderer.SetReflectionGeometryAddress(SingletonView<ReflectionGeometrySingleton>().TableAddress);
 
 		const EnvironmentDataBlock& env = renderer.GetEnvironment();
 		SetupIBL(fc, env);
