@@ -2,6 +2,8 @@
 
 #include "Snowstorm/Core/Log.hpp"
 
+#include <vector>
+
 namespace Snowstorm
 {
 	VulkanBindlessManager& VulkanBindlessManager::Get()
@@ -13,42 +15,54 @@ namespace Snowstorm
 	void VulkanBindlessManager::Init()
 	{
 		m_Device = GetVulkanDevice();
+		m_RayTracing = GetVulkanContext().SupportsRayTracing();
 
 		// 1. Create Descriptor Pool with the UpdateAfterBind flag. Two SAMPLED_IMAGE bindings live in one
 		// set: binding 0 = Texture2D[], binding 1 = TextureCube[] (both SAMPLED_IMAGE; the cube-ness is in
-		// the image view type). Pool must hold the sum of both arrays.
-		VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MAX_BINDLESS_TEXTURES + MAX_BINDLESS_CUBES};
+		// the image view type). Pool must hold the sum of both arrays, plus (when RT is on) one TLAS slot.
+		std::vector<VkDescriptorPoolSize> poolSizes = {
+		    {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MAX_BINDLESS_TEXTURES + MAX_BINDLESS_CUBES}};
+		if (m_RayTracing)
+		{
+			poolSizes.push_back({VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1});
+		}
 		VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
 		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
 		poolInfo.maxSets = 1;
-		poolInfo.poolSizeCount = 1;
-		poolInfo.pPoolSizes = &poolSize;
+		poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+		poolInfo.pPoolSizes = poolSizes.data();
 		vkCreateDescriptorPool(m_Device, &poolInfo, nullptr, &m_DescriptorPool);
 
 		// 2. Create Layout with Bindless Flags. ALL_GRAPHICS (was Fragment-only) so cube env maps can also
 		// be sampled in other stages later; the 2D array keeps working in fragment shaders as before.
-		VkDescriptorSetLayoutBinding bindings[2]{};
-		bindings[0].binding = BINDING_TEXTURE2D;
-		bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-		bindings[0].descriptorCount = MAX_BINDLESS_TEXTURES;
-		bindings[0].stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
-		bindings[1].binding = BINDING_TEXTURECUBE;
-		bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-		bindings[1].descriptorCount = MAX_BINDLESS_CUBES;
-		bindings[1].stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
+		// Binding 2 = the scene TLAS (a single acceleration structure), added only when the device supports
+		// RT (#118). It's PARTIALLY_BOUND, so shaders that don't declare it are unaffected; ray-query shaders
+		// (COMPUTE) read it. Kept in the same set so every pipeline that binds set 3 gets the TLAS for free.
+		std::vector<VkDescriptorSetLayoutBinding> bindings = {
+		    {BINDING_TEXTURE2D, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MAX_BINDLESS_TEXTURES, VK_SHADER_STAGE_ALL_GRAPHICS, nullptr},
+		    {BINDING_TEXTURECUBE, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MAX_BINDLESS_CUBES, VK_SHADER_STAGE_ALL_GRAPHICS, nullptr}};
 
 		constexpr VkDescriptorBindingFlags bindingFlag = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
 		                                                 VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
-		const VkDescriptorBindingFlags flags[2] = {bindingFlag, bindingFlag};
+		std::vector<VkDescriptorBindingFlags> flags = {bindingFlag, bindingFlag};
+
+		if (m_RayTracing)
+		{
+			bindings.push_back({BINDING_TLAS, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1,
+			                    VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_ALL_GRAPHICS, nullptr});
+			// An AS binding cannot be UPDATE_AFTER_BIND (not allowed by the spec); PARTIALLY_BOUND only.
+			flags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
+		}
+
 		VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO};
-		flagsInfo.bindingCount = 2;
-		flagsInfo.pBindingFlags = flags;
+		flagsInfo.bindingCount = static_cast<uint32_t>(flags.size());
+		flagsInfo.pBindingFlags = flags.data();
 
 		VkDescriptorSetLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
 		layoutInfo.pNext = &flagsInfo;
 		layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-		layoutInfo.bindingCount = 2;
-		layoutInfo.pBindings = bindings;
+		layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+		layoutInfo.pBindings = bindings.data();
 		vkCreateDescriptorSetLayout(m_Device, &layoutInfo, nullptr, &m_Layout);
 
 		// 3. Allocate the one and only Global Set
@@ -109,6 +123,37 @@ namespace Snowstorm
 		write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 		write.descriptorCount = 1;
 		write.pImageInfo = &imageInfo;
+
+		vkUpdateDescriptorSets(m_Device, 1, &write, 0, nullptr);
+	}
+
+	void VulkanBindlessManager::WriteAccelerationStructure(const VkAccelerationStructureKHR tlas)
+	{
+		if (!m_RayTracing)
+		{
+			return; // binding 2 doesn't exist on a non-RT device
+		}
+
+		std::scoped_lock lock(m_IndexMutex);
+
+		// A null TLAS leaves the (PARTIALLY_BOUND) slot unwritten; ray-query shaders must gate on RT being on.
+		if (tlas == VK_NULL_HANDLE)
+		{
+			return;
+		}
+
+		VkWriteDescriptorSetAccelerationStructureKHR asWrite{
+		    VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR};
+		asWrite.accelerationStructureCount = 1;
+		asWrite.pAccelerationStructures = &tlas;
+
+		VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+		write.pNext = &asWrite;
+		write.dstSet = m_DescriptorSet;
+		write.dstBinding = BINDING_TLAS;
+		write.dstArrayElement = 0;
+		write.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+		write.descriptorCount = 1;
 
 		vkUpdateDescriptorSets(m_Device, 1, &write, 0, nullptr);
 	}

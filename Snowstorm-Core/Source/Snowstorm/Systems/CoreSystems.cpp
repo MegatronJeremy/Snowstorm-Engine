@@ -19,6 +19,7 @@
 #include "Snowstorm/Systems/RuntimeInitSystem.hpp"
 #include "Snowstorm/Systems/ScriptSystem.hpp"
 #include "Snowstorm/Systems/ShaderReloadSystem.hpp"
+#include "Snowstorm/Systems/TlasBuildSystem.hpp"
 #include "Snowstorm/Systems/VisibilitySystem.hpp"
 
 namespace Snowstorm
@@ -46,6 +47,9 @@ namespace Snowstorm
 		sm.RegisterSystem<EnvironmentSystem>(SystemPhase::PreRender);
 		sm.RegisterSystem<LightingSystem>(SystemPhase::PreRender);
 		sm.RegisterSystem<VisibilitySystem>(SystemPhase::PreRender);
+		// Build/refresh the ray-tracing TLAS from the resolved meshes before the RT passes consume it (#118).
+		// No-op on a non-RT device. After MeshResolve (Resolve phase) so MeshInstance handles are populated.
+		sm.RegisterSystem<TlasBuildSystem>(SystemPhase::PreRender);
 		// Temporal jitter (#44): fill each camera's JitteredViewProjection every frame. After the runtime
 		// update (Resolve) so Projection/View exist; reads the unjittered VP, writes a jittered copy.
 		sm.RegisterSystem<CameraJitterSystem>(SystemPhase::PreRender);

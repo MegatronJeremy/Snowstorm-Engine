@@ -1,10 +1,12 @@
 #pragma once
 
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Math/Math.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace Snowstorm
 {
@@ -26,5 +28,33 @@ namespace Snowstorm
 		static Ref<BLAS> Create(const Ref<Buffer>& vertexBuffer, uint32_t vertexCount, uint32_t vertexStride,
 		                        uint32_t positionOffset, const Ref<Buffer>& indexBuffer, uint32_t indexCount,
 		                        const std::string& debugName = "");
+	};
+
+	// One renderable in a TLAS: a mesh's BLAS placed by a world transform. The build reads BlasAddress
+	// (from BLAS::GetDeviceAddress()) and the upper 3x4 of Transform.
+	struct TLASInstance
+	{
+		glm::mat4 Transform{1.0f};
+		uint64_t BlasAddress = 0;
+	};
+
+	// Top-level acceleration structure (#118): the scene's set of instanced BLASes that ray-query shaders
+	// trace against. Rebuilt/refit per frame as the scene changes (TlasBuildSystem). Backend-agnostic handle;
+	// the Vulkan impl owns a VkAccelerationStructureKHR + instance/scratch buffers and exposes its handle to
+	// the bindless descriptor. Create only when the device supports RT.
+	class TLAS
+	{
+	public:
+		virtual ~TLAS() = default;
+
+		// (Re)build the TLAS from the given instances. Synchronous — builds on ImmediateSubmit (graphics
+		// queue). Empty instance list => an empty (but valid) TLAS. A full rebuild each call: the scene's
+		// instance count is small and TlasBuildSystem only calls this when the scene actually changed, so the
+		// cost is negligible; incremental refit (UPDATE mode) is a deferred optimization, not needed here.
+		virtual void Build(const std::vector<TLASInstance>& instances) = 0;
+
+		[[nodiscard]] virtual uint32_t GetInstanceCount() const = 0;
+
+		static Ref<TLAS> Create(const std::string& debugName = "");
 	};
 }
