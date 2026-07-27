@@ -241,6 +241,17 @@ namespace Snowstorm
 			CVars::Shadows.Set(shadows);
 		}
 
+		// Ray-traced sun shadow (#118): trace the sun's shadow via hardware ray query instead of the raster
+		// shadow map — the clean raster-vs-RT A/B. Only shown on an RT-capable GPU (the shader's RT path is
+		// compiled out otherwise, so the toggle would do nothing).
+		if (Renderer::IsRayTracingSupported())
+		{
+			if (bool rt = CVars::ShadowsRT.Get(); ImGui::Checkbox("Ray-traced (RT)", &rt))
+			{
+				CVars::ShadowsRT.Set(rt);
+			}
+		}
+
 		// Resolution: changing it rebuilds the shadow map target at the start of the next frame.
 		{
 			constexpr int kResolutions[] = {1024, 2048, 4096};
