@@ -68,7 +68,11 @@ namespace Snowstorm
 		}
 		renderer3DSingleton.SetSunShadowFit(sunFit);
 
-		const bool shadowsEnabled = CVars::ShadowsRasterActive(); // raster atlas tiles (points + spots); Inc 3 handles RT casters
+		const bool shadowsEnabled = CVars::ShadowsRasterActive(); // raster atlas tiles (points + spots)
+		// Under RT shadows (#118) there is no atlas budget: every casting light gets a ray-traced shadow. We
+		// mark a caster with the >= 0 sentinel (ShadowSlot/ShadowIndex) the shader gate reads as "trace me",
+		// WITHOUT consuming an atlas tile or filling the (unused-under-RT) matrices/rects.
+		const bool rtShadows = CVars::ShadowsRTActive();
 
 		// Point lights: position from the entity transform (Unity/Unreal model -- the light carries no
 		// position of its own). Joined with TransformComponent so an untransformed light is simply skipped.
@@ -91,7 +95,13 @@ namespace Snowstorm
 			// kPointAtlasCols grid, tile index = slot*6 + face). The matrices/rects are pure math here;
 			// RenderSystem renders each tile and binds the atlas texture (mirrors the spot path exactly).
 			int shadowSlot = -1;
-			if (shadowsEnabled && light.CastShadows)
+			if (rtShadows && light.CastShadows)
+			{
+				// RT: mark as casting (shader traces to the light); the payload slot is unused, so use 0 as a
+				// sacrificial >= 0 sentinel. No atlas budget => every caster gets a shadow.
+				shadowSlot = 0;
+			}
+			else if (shadowsEnabled && light.CastShadows)
 			{
 				if (nextPointShadowSlot < MAX_SHADOW_POINTS)
 				{
@@ -163,7 +173,13 @@ namespace Snowstorm
 			int shadowIndex = -1;
 			glm::mat4 shadowViewProj(1.0f);
 			glm::vec4 atlasRect(0, 0, 1, 1);
-			if (shadowsEnabled && light.CastShadows && nextShadowTile < ShadowPass::kMaxShadowSpots)
+			if (rtShadows && light.CastShadows)
+			{
+				// RT: mark as casting (shader traces to the spot); the atlas tile/matrix are unused, so use 0
+				// as a sacrificial >= 0 sentinel. No tile budget => every caster gets a shadow.
+				shadowIndex = 0;
+			}
+			else if (shadowsEnabled && light.CastShadows && nextShadowTile < ShadowPass::kMaxShadowSpots)
 			{
 				shadowIndex = nextShadowTile++;
 				shadowViewProj = ShadowPass::ComputeSpotViewProj(transform.Position, forward, outer, light.Range);
