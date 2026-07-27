@@ -3,6 +3,7 @@
 #include "Snowstorm/Math/Bounds.hpp"
 #include "Snowstorm/Math/Math.hpp"
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Render/AccelerationStructure.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
 
 #include <vector>
@@ -34,6 +35,11 @@ namespace Snowstorm
 		[[nodiscard]] const MeshBounds& GetBounds() const { return m_Bounds; }
 		void SetBounds(const MeshBounds& b) { m_Bounds = b; }
 
+		// The mesh's ray-tracing BLAS, built lazily on first call and cached (#118). Null when the device has
+		// no RT support. Built from this mesh's own vertex/index buffers (Position at offset 0, stride
+		// sizeof(Vertex)); a TLAS instance references its device address. Callers gate on RT support.
+		[[nodiscard]] const Ref<BLAS>& GetOrBuildBLAS();
+
 	private:
 		Ref<Buffer> m_VertexBuffer;
 		Ref<Buffer> m_IndexBuffer;
@@ -42,5 +48,7 @@ namespace Snowstorm
 		uint32_t m_IndexCount = 0;
 
 		MeshBounds m_Bounds{}; //-- bounds won't be set by default
+
+		Ref<BLAS> m_BLAS; // lazily built on first GetOrBuildBLAS(); null until then / when RT unsupported
 	};
 }
