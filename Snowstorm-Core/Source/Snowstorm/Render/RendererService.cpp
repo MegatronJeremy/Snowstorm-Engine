@@ -231,10 +231,10 @@ namespace Snowstorm
 		frame.ShadowStrength = CVars::ShadowStrength.Get();
 		frame.ShadowSoft = CVars::ShadowSoft.Get() ? 1u : 0u;
 		frame.ShadowTexelSize = 1.0f / static_cast<float>(fd.Shadow.ShadowResolution != 0 ? fd.Shadow.ShadowResolution : 2048u);
-		// RT sun shadow (#118): only when the CVar is on AND the device supports RT — the shader's ray-query
-		// branch is compiled out on non-RT devices, so this stays 0 there and the raster path always runs.
-		// A pass may force raster (the compare GT render) so the RT-vs-raster metric has a reference.
-		frame.RTShadowEnabled = (!m_ForceRasterShadow && CVars::ShadowsRT.Get() && Renderer::IsRayTracingSupported()) ? 1u : 0u;
+		// RT shadow (#118): active only in shadow mode Ray Traced AND on an RT device (ShadowsRTActive folds
+		// both checks). The shader's ray-query branch is compiled out on non-RT devices, so this stays 0
+		// there. A pass may force raster (the compare GT render) so the RT-vs-raster metric has a reference.
+		frame.RTShadowEnabled = (!m_ForceRasterShadow && CVars::ShadowsRTActive()) ? 1u : 0u;
 		frame.SpotShadowAtlasIndex = fd.Shadow.SpotShadowAtlasIndex;
 		frame.PointShadowAtlasIndex = fd.Shadow.PointShadowAtlasIndex;
 

@@ -234,23 +234,30 @@ namespace Snowstorm
 		ImGui::Spacing();
 		EditorTheme::SectionHeader("Shadows");
 
-		// Global shadow toggle (scalability kill-switch). The per-light "Cast Shadows" flag in the
-		// inspector is the authored on/off above this; both must be on for shadows to render.
-		if (bool shadows = CVars::Shadows.Get(); ImGui::Checkbox("Enabled", &shadows))
+		// Shadow technique (#118): one dropdown — Off / Shadow Map (raster) / Ray Traced (hardware ray query,
+		// all light types). Mirrors the Anti-Aliasing combo. The per-light "Cast Shadows" flag in the
+		// inspector is the authored on/off above this. Ray Traced is only selectable on an RT-capable GPU
+		// (the shader's RT path is compiled out otherwise); grey it out on a non-RT device.
+		const bool rtSupported = Renderer::IsRayTracingSupported();
+		int mode = CVars::ShadowsMode.Get();
+		if (mode < 0 || mode > 2)
 		{
-			CVars::Shadows.Set(shadows);
+			mode = 1;
 		}
-
-		// Ray-traced sun shadow (#118): trace the sun's shadow via hardware ray query instead of the raster
-		// shadow map — the clean raster-vs-RT A/B. Only shown on an RT-capable GPU (the shader's RT path is
-		// compiled out otherwise, so the toggle would do nothing).
-		if (Renderer::IsRayTracingSupported())
 		{
-			if (bool rt = CVars::ShadowsRT.Get(); ImGui::Checkbox("Ray-traced (RT)", &rt))
+			const char* modeLabels[] = {"Off", "Shadow Map", "Ray Traced"};
+			// Only offer Ray Traced when supported; otherwise cap the list at 2 entries so it can't be picked.
+			const int modeCount = rtSupported ? 3 : 2;
+			if (ImGui::Combo("Technique", &mode, modeLabels, modeCount))
 			{
-				CVars::ShadowsRT.Set(rt);
+				CVars::ShadowsMode.Set(mode);
 			}
 		}
+
+		// Raster-only sub-settings (Resolution, Soft PCF) are meaningless under Ray Traced / Off — grey them
+		// out so the UI reflects that only mode Shadow Map uses them.
+		const bool rasterMode = (mode == 1);
+		ImGui::BeginDisabled(!rasterMode);
 
 		// Resolution: changing it rebuilds the shadow map target at the start of the next frame.
 		{
@@ -271,11 +278,13 @@ namespace Snowstorm
 			}
 		}
 
-		// Soft (3x3 PCF) vs hard (single tap).
+		// Soft (3x3 PCF) vs hard (single tap). RT shadows are always hard (1 ray), so this is raster-only.
 		if (bool soft = CVars::ShadowSoft.Get(); ImGui::Checkbox("Soft (PCF)", &soft))
 		{
 			CVars::ShadowSoft.Set(soft);
 		}
+
+		ImGui::EndDisabled();
 
 		// Strength: how dark shadows get (1 = full occlusion, 0 = none). Read into FrameCB each frame.
 		if (float strength = CVars::ShadowStrength.Get(); ImGui::SliderFloat("Strength", &strength, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))

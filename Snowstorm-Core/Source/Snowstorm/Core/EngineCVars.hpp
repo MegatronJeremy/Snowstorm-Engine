@@ -182,14 +182,22 @@ namespace Snowstorm::CVars
 	extern CVar<bool> Jitter;
 
 	// --- Shadows (quality settings; runtime-tweakable from the editor's Settings panel) ---
-	// Global shadow kill-switch (scalability layer, like Unity Quality Settings / UE sg.ShadowQuality).
-	// Off = skip the shadow pass entirely; the per-light CastShadows flag is the authored on/off above it.
-	extern CVar<bool> Shadows;
+	// Shadow technique (scalability layer, like Unity Quality Settings / UE sg.ShadowQuality): 0 = Off,
+	// 1 = Shadow Map (raster depth maps + PCF), 2 = Ray Traced (hardware ray query, all light types).
+	// Mode 2 skips the raster shadow passes; on a non-RT GPU it degrades to Off. Prefer the ShadowsRaster
+	// Active()/ShadowsRTActive() helpers below over reading this directly. Replaces the old render.shadows +
+	// render.shadows.rt bools (#118). The per-light CastShadows flag is the authored on/off above this.
+	extern CVar<int> ShadowsMode;
 
-	// Ray-traced sun shadow (#118): when on AND the device supports RT, DefaultLit traces a hardware
-	// ray-query shadow ray to the sun instead of sampling the raster shadow map — the clean raster-vs-RT
-	// A/B. Ignored on non-RT GPUs (the shader's RT path is compiled out). Read per-frame into FrameCB.
-	extern CVar<bool> ShadowsRT;
+	// True when the RASTER shadow path is active (ShadowsMode == Shadow Map). Gates the raster shadow passes
+	// (sun/spot/point depth maps) AND the LightingSystem atlas-tile assignment — so mode Off and mode Ray
+	// Traced both skip them.
+	[[nodiscard]] bool ShadowsRasterActive();
+
+	// True when RAY-TRACED shadows should run (ShadowsMode == Ray Traced AND the device supports RT). Drives
+	// FrameCB.RTShadowEnabled / the shader's ray-query branch. False on a non-RT GPU (the RT shader path is
+	// compiled out there), so mode Ray Traced gracefully degrades to no shadows rather than crashing.
+	[[nodiscard]] bool ShadowsRTActive();
 
 	// Shadow-map resolution (square). Changing it rebuilds the shadow target. Higher = sharper, costlier.
 	extern CVar<int> ShadowResolution;

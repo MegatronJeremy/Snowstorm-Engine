@@ -1,5 +1,7 @@
 #include "EngineCVars.hpp"
 
+#include "Snowstorm/Render/Renderer.hpp"
+
 namespace Snowstorm::CVars
 {
 	CVar<int> SmokeFrames{"smoke.frames", 0, "Run N frames then exit cleanly (0 = until window closed)"};
@@ -81,9 +83,7 @@ namespace Snowstorm::CVars
 
 	CVar<float> Sharpen{"render.sharpen", 0.0f, "Post-tonemap contrast-adaptive sharpen (AMD CAS) strength, 0..1 (0 = off). Display-space + hue-safe; counters TAA/upscale softening, runs after tonemap like FXAA. Guidance: ~0.3 for native+TAA, ~0.5 when upscaling (render.scale<1); >0.7 over-sharpens and re-introduces aliasing TAA removed, so keep it light (#44)", CVarFlags::Persist};
 
-	CVar<bool> Shadows{"render.shadows", true, "Global directional shadow toggle (off = skip the shadow pass)", CVarFlags::Persist};
-
-	CVar<bool> ShadowsRT{"render.shadows.rt", false, "Ray-trace the sun's shadow inline in DefaultLit (hardware ray query) instead of sampling the raster shadow map. Requires an RT-capable GPU; ignored otherwise. The clean raster-vs-RT A/B toggle (#118)", CVarFlags::Persist};
+	CVar<int> ShadowsMode{"render.shadows.mode", 1, "Shadow technique: 0 = Off, 1 = Shadow Map (raster depth maps + PCF), 2 = Ray Traced (hardware ray query, requires an RT GPU; falls back to Off on a non-RT device). Mode 2 skips the raster shadow passes entirely. Replaces the old render.shadows/render.shadows.rt toggles (#118)", CVarFlags::Persist};
 
 	CVar<int> ShadowResolution{"render.shadow.resolution", 2048, "Shadow-map resolution (square); changing it rebuilds the shadow target", CVarFlags::Persist};
 
@@ -121,5 +121,20 @@ namespace Snowstorm::CVars
 			return 1.0f;
 		}
 		return s;
+	}
+
+	bool ShadowsRasterActive()
+	{
+		// Mode 1 (Shadow Map) is the only mode that runs the raster shadow passes + the LightingSystem atlas
+		// tile assignment. Mode 0 (Off) and mode 2 (Ray Traced) both skip them.
+		return ShadowsMode.Get() == 1;
+	}
+
+	bool ShadowsRTActive()
+	{
+		// Mode 2 (Ray Traced) drives the shader's ray-query branch — but only on an RT-capable device, where
+		// the SS_RAYTRACING shader permutation exists. On a non-RT GPU mode 2 degrades to no shadows (the RT
+		// branch is compiled out), matching the graceful-fallback contract of the original render.shadows.rt.
+		return ShadowsMode.Get() == 2 && Renderer::IsRayTracingSupported();
 	}
 }

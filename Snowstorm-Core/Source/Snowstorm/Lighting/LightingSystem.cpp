@@ -62,13 +62,13 @@ namespace Snowstorm
 		// the sun's authored CastShadows flag; ComputeSunViewProj also fails (Valid stays false) when the
 		// scene has no renderable bounds, in which case RenderSystem leaves ShadowMapIndex 0 (fully lit).
 		RendererService::SunShadowFit sunFit{};
-		if (CVars::Shadows.Get() && haveSun && sunCasts)
+		if (CVars::ShadowsRasterActive() && haveSun && sunCasts)
 		{
 			sunFit.Valid = ShadowPass::ComputeSunViewProj(*m_World, sunDir, sunFit.LightViewProj);
 		}
 		renderer3DSingleton.SetSunShadowFit(sunFit);
 
-		const bool shadowsEnabled = CVars::Shadows.Get(); // global scalability kill-switch (points + spots)
+		const bool shadowsEnabled = CVars::ShadowsRasterActive(); // raster atlas tiles (points + spots); Inc 3 handles RT casters
 
 		// Point lights: position from the entity transform (Unity/Unreal model -- the light carries no
 		// position of its own). Joined with TransformComponent so an untransformed light is simply skipped.

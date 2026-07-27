@@ -48,7 +48,7 @@ namespace Snowstorm
 		}
 
 		glm::mat4 lightViewProj{1.0f};
-		if (CVars::Shadows.Get() && sunCasts && ShadowPass::ComputeSunViewProj(world, sunDir, lightViewProj))
+		if (CVars::ShadowsRasterActive() && sunCasts && ShadowPass::ComputeSunViewProj(world, sunDir, lightViewProj))
 		{
 			const Ref<RenderTarget>& shadowRT = m_ShadowPass.GetOrCreateShadowTarget();
 			const uint32_t shadowIndex =
@@ -116,7 +116,7 @@ namespace Snowstorm
 			}
 		}
 
-		if (CVars::Shadows.Get() && shadowSpotCount > 0)
+		if (CVars::ShadowsRasterActive() && shadowSpotCount > 0)
 		{
 			const Ref<RenderTarget>& atlasRT = m_ShadowPass.GetOrCreateSpotAtlas();
 			const uint32_t atlasIndex = atlasRT->GetDesc().DepthAttachment->View->GetGlobalBindlessIndex();
@@ -183,7 +183,7 @@ namespace Snowstorm
 		renderer.SetPointShadowAtlasIndex(0);
 
 		const LightDataBlock& lights = renderer.GetLights();
-		if (!CVars::Shadows.Get() || lights.PointShadowCount <= 0)
+		if (!CVars::ShadowsRasterActive() || lights.PointShadowCount <= 0)
 		{
 			return;
 		}
