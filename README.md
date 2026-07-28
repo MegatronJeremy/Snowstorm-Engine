@@ -2,7 +2,7 @@
 
 [![build](https://github.com/MegatronJeremy/Snowstorm-Engine/actions/workflows/build.yml/badge.svg)](https://github.com/MegatronJeremy/Snowstorm-Engine/actions/workflows/build.yml)
 
-<img width="2556" height="1367" alt="image" src="https://github.com/user-attachments/assets/abd58ba1-19d0-477c-a396-6c370ac659ab" />
+<img width="2556" height="1368" alt="Screenshot 2026-07-28 110355" src="https://github.com/user-attachments/assets/88978263-edab-4341-b454-ac4852975b10" />
 
 A 3D game engine with a backend-agnostic renderer, an EnTT-based entity-component-system, and a
 Dear ImGui editor. The rendering abstraction currently targets **Vulkan**; DirectX 12 is planned.
