@@ -14,6 +14,10 @@ namespace Snowstorm
 		    value("Perspective", CameraComponent::ProjectionType::Perspective),
 		    value("Orthographic", CameraComponent::ProjectionType::Orthographic));
 
+		registration::enumeration<CameraComponent::ExposureMode>("ExposureMode")(
+		    value("Manual", CameraComponent::ExposureMode::Manual),
+		    value("Auto", CameraComponent::ExposureMode::Auto));
+
 		registration::class_<CameraComponent>("Snowstorm::CameraComponent")
 		    .property("Projection", &CameraComponent::Projection)
 		    // FOV is stored in radians; clamp the slider to ~5deg..~175deg so it can't go degenerate.
@@ -28,7 +32,17 @@ namespace Snowstorm
 		    .property("OrthographicFar", &CameraComponent::OrthographicFar)
 		    .property("Primary", &CameraComponent::Primary)
 		    .property("FixedAspectRatio", &CameraComponent::FixedAspectRatio)
-		    .property("AspectRatio", &CameraComponent::AspectRatio)(metadata("Min", 0.01f));
+		    .property("AspectRatio", &CameraComponent::AspectRatio)(metadata("Min", 0.01f))
+		    // Physical exposure. Aperture/shutter/ISO must stay positive (they feed a log2); the auto
+		    // EV bounds are intentionally unclamped (a negative MinEV is legitimate for dark scenes).
+		    .property("Exposure", &CameraComponent::Exposure)
+		    .property("Aperture", &CameraComponent::Aperture)(metadata("Min", 0.5f), metadata("Speed", 0.05f))
+		    .property("ShutterSpeed", &CameraComponent::ShutterSpeed)(metadata("Min", 1e-6f), metadata("Speed", 0.0005f))
+		    .property("ISO", &CameraComponent::ISO)(metadata("Min", 1.0f), metadata("Speed", 1.0f))
+		    .property("ExposureCompensation", &CameraComponent::ExposureCompensation)(metadata("Speed", 0.05f))
+		    .property("MinEV", &CameraComponent::MinEV)(metadata("Speed", 0.1f))
+		    .property("MaxEV", &CameraComponent::MaxEV)(metadata("Speed", 0.1f))
+		    .property("AdaptationSpeed", &CameraComponent::AdaptationSpeed)(metadata("Min", 0.0f), metadata("Speed", 0.05f));
 	}
 
 	AUTO_REGISTER_COMPONENT(CameraComponent);
