@@ -13,18 +13,21 @@ namespace Snowstorm
 		using namespace rttr;
 
 		registration::class_<DirectionalLightComponent>("Snowstorm::DirectionalLightComponent")
+		    .property("Enabled", &DirectionalLightComponent::Enabled) // inspector: checkbox (per-light on/off)
 		    .property("Direction", &DirectionalLightComponent::Direction)
 		    .property("Color", &DirectionalLightComponent::Color)(metadata("Color", true)) // inspector: color picker
 		    .property("Intensity", &DirectionalLightComponent::Intensity)(metadata("Min", 0.0f), metadata("Speed", 0.01f))
 		    .property("CastShadows", &DirectionalLightComponent::CastShadows); // inspector: checkbox
 
 		registration::class_<PointLightComponent>("Snowstorm::PointLightComponent")
+		    .property("Enabled", &PointLightComponent::Enabled) // inspector: checkbox (per-light on/off)
 		    .property("Color", &PointLightComponent::Color)(metadata("Color", true))
 		    .property("Intensity", &PointLightComponent::Intensity)(metadata("Min", 0.0f), metadata("Speed", 0.01f))
 		    .property("Range", &PointLightComponent::Range)(metadata("Min", 0.0f), metadata("Speed", 0.1f))
 		    .property("CastShadows", &PointLightComponent::CastShadows); // inspector: checkbox
 
 		registration::class_<SpotLightComponent>("Snowstorm::SpotLightComponent")
+		    .property("Enabled", &SpotLightComponent::Enabled) // inspector: checkbox (per-light on/off)
 		    .property("Color", &SpotLightComponent::Color)(metadata("Color", true))
 		    .property("Intensity", &SpotLightComponent::Intensity)(metadata("Min", 0.0f), metadata("Speed", 0.01f))
 		    .property("Range", &SpotLightComponent::Range)(metadata("Min", 0.0f), metadata("Speed", 0.1f))

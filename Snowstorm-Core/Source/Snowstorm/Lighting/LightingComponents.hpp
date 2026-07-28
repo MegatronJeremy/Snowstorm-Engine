@@ -6,6 +6,12 @@ namespace Snowstorm
 {
 	struct DirectionalLightComponent
 	{
+		// Per-light on/off (Unity Light.enabled / Unreal SetVisibility / Godot Light3D.visible). A disabled
+		// light is skipped in the gather, so it contributes no direct light and no shadow -- without deleting
+		// the entity, so it can be toggled back on live. Distinct from CastShadows (which keeps the light but
+		// drops its shadow) and from VisibilityComponent::Mask (which culls meshes, not lights).
+		bool Enabled = true;
+
 		glm::vec3 Direction;
 		glm::vec3 Color;
 		float Intensity = 1.0f;
@@ -22,6 +28,8 @@ namespace Snowstorm
 	// existing translate/rotate gizmo manipulate lights for free.
 	struct PointLightComponent
 	{
+		bool Enabled = true; // per-light on/off; disabled lights are skipped in the gather (see DirectionalLightComponent::Enabled)
+
 		glm::vec3 Color{1.0f};
 		float Intensity = 1.0f;
 		float Range = 10.0f; // distance at which the light's contribution smoothly reaches zero
@@ -38,6 +46,8 @@ namespace Snowstorm
 	// inside Inner it's full, past Outer it's zero.
 	struct SpotLightComponent
 	{
+		bool Enabled = true; // per-light on/off; disabled lights are skipped in the gather (see DirectionalLightComponent::Enabled)
+
 		glm::vec3 Color{1.0f};
 		float Intensity = 1.0f;
 		float Range = 10.0f;

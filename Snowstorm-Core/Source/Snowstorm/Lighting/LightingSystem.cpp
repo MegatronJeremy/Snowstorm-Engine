@@ -38,6 +38,10 @@ namespace Snowstorm
 			}
 
 			auto& directionalLight = lightView.get<DirectionalLightComponent>(entity);
+			if (!directionalLight.Enabled) // per-light off: contributes no light and can't be the sun
+			{
+				continue;
+			}
 			if (!haveSun)
 			{
 				haveSun = true;
@@ -87,6 +91,10 @@ namespace Snowstorm
 				break;
 			}
 			const auto& light = pointView.get<PointLightComponent>(entity);
+			if (!light.Enabled) // per-light off: skip entirely (no light, no shadow slot)
+			{
+				continue;
+			}
 			const auto& transform = pointView.get<TransformComponent>(entity);
 
 			// Assign a shadow payload slot if this omni casts, shadows are globally enabled, and a slot is
@@ -158,6 +166,10 @@ namespace Snowstorm
 				break;
 			}
 			const auto& light = spotView.get<SpotLightComponent>(entity);
+			if (!light.Enabled) // per-light off: skip entirely (no light, no shadow tile)
+			{
+				continue;
+			}
 			const auto& transform = spotView.get<TransformComponent>(entity);
 
 			const glm::mat3 rot = glm::mat3(transform.GetTransformMatrix());
