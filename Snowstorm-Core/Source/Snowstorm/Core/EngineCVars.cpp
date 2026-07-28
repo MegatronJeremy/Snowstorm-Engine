@@ -75,7 +75,7 @@ namespace Snowstorm::CVars
 
 	CVar<int> AAMode{"render.aa", 0, "Anti-aliasing: 0 = None, 1 = FXAA (spatial post-process), 2 = TAA (temporal accumulation via jitter + motion vectors, #44)", CVarFlags::Persist};
 
-	CVar<int> DebugView{"render.debugview", 0, "Viewport debug overlay: 0 = Normal (tonemapped scene), 1 = Motion Vectors (per-pixel screen-space velocity as color; drives the velocity pass + tonemap debug branch, #44), 2 = Ambient Occlusion (DefaultLit outputs the isolated grayscale AO term for tuning RTAO, #118), 3 = Reflections (raw reflected albedo from the RT reflection trace, for verifying hit resolution, #118)", CVarFlags::Persist};
+	CVar<int> DebugView{"render.debugview", 0, "Viewport debug overlay: 0 = Normal (tonemapped scene), 1 = Motion Vectors (per-pixel screen-space velocity as color; drives the velocity pass + tonemap debug branch, #44), 2 = Ambient Occlusion (DefaultLit outputs the isolated grayscale AO term for tuning RTAO, #118), 3 = Reflections (raw reflected albedo from the RT reflection trace, for verifying hit resolution, #118), 4 = Global Illumination (raw RT GI indirect term, for tuning intensity/range, #118)", CVarFlags::Persist};
 
 	CVar<float> TaaBlend{"render.taa.blend", 0.9f, "TAA base history weight while moving (higher = smoother/more lag). Live-tunable (#44)", CVarFlags::Persist};
 
@@ -112,6 +112,12 @@ namespace Snowstorm::CVars
 	CVar<float> ReflectionMaxRoughness{"render.reflections.max_roughness", 0.8f, "Surfaces rougher than this stay on the cheap prefiltered-env specular; smoother ones get RT reflections (the ray fades in as roughness -> 0)", CVarFlags::Persist};
 
 	CVar<float> ReflectionConeScale{"render.reflections.cone_scale", 1.0f, "How much surface roughness widens the glossy reflection cone (0 = always a sharp mirror ray; higher = blurrier reflections on rough surfaces). Glossy reflections need TAA for a clean result.", CVarFlags::Persist};
+
+	CVar<bool> GIRT{"render.gi.rt", false, "Ray-traced 1-bounce diffuse global illumination (#118): from each shaded point, trace hemisphere rays, shade what they hit (albedo * sun), and add the average as indirect light (color bleeding + contact fill). Requires an RT GPU (ignored otherwise). Few rays/frame — needs TAA (render.aa = TAA) for a clean result; noisy without it.", CVarFlags::Persist};
+
+	CVar<float> GIIntensity{"render.gi.intensity", 1.0f, "Multiplier on the RT GI indirect contribution (1 = physical, 0 = none)", CVarFlags::Persist};
+
+	CVar<float> GIRange{"render.gi.range", 8.0f, "RT GI gather ray max distance in world units — how far a bounce can come from (larger = broader indirect, more cost)", CVarFlags::Persist};
 
 	float ClampedRenderScale()
 	{
@@ -170,5 +176,13 @@ namespace Snowstorm::CVars
 		// reflection shader branch is compiled out so this stays false. Drives the TLAS build gate AND the
 		// per-instance geometry-table build (both only needed when reflections actually trace).
 		return ReflectionsRT.Get() && Renderer::IsRayTracingSupported();
+	}
+
+	bool GIRTActive()
+	{
+		// render.gi.rt on AND an RT-capable device. Mirrors ReflectionsRTActive; on a non-RT GPU the GI shader
+		// branch is compiled out so this stays false. Drives the TLAS build gate AND the geometry-table build
+		// (GI shades its hits through the same table reflections use).
+		return GIRT.Get() && Renderer::IsRayTracingSupported();
 	}
 }

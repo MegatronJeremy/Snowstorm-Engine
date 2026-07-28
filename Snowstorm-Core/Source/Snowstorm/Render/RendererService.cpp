@@ -102,6 +102,14 @@ namespace Snowstorm
 			// Glossy reflection cone scale (#118 Inc 4): roughness * this = the jitter cone radius that blurs
 			// the reflection on rough surfaces. Reuses the last reflection pad slot. Match Engine.hlsli.
 			float ReflConeScale = 1.0f;
+			// 1-bounce RT diffuse GI (#118): RTGIEnabled gates the hemisphere gather; GIIntensity scales the
+			// indirect contribution; GIRange is the gather ray max distance (world units). New 16-byte row;
+			// MUST match Engine.hlsli field-for-field.
+			uint32_t RTGIEnabled = 0;
+			float GIIntensity = 1.0f;
+			float GIRange = 8.0f;
+			// Debug: 1 = output the raw GI indirect term (DebugView == 4). Reuses the GI row's pad slot.
+			uint32_t DebugGI = 0;
 		};
 	}
 
@@ -310,6 +318,15 @@ namespace Snowstorm
 		frame.ReflGeoTableAddrHi = static_cast<uint32_t>(m_ReflectionTableAddress >> 32);
 		// Debug view 3 = Reflections: DefaultLit outputs the raw reflected albedo for verifying hit resolution.
 		frame.DebugReflections = (CVars::DebugView.Get() == 3) ? 1u : 0u;
+
+		// 1-bounce RT diffuse GI (#118): active only when render.gi.rt is on AND the device supports RT
+		// (GIRTActive folds both) AND the geometry table exists (GI shades hits through it, same as
+		// reflections). 0 disables the shader's GI gather. DebugView 4 = GI (raw indirect term).
+		frame.RTGIEnabled = (CVars::GIRTActive() && m_ReflectionTableAddress != 0) ? 1u : 0u;
+		frame.GIIntensity = CVars::GIIntensity.Get();
+		frame.GIRange = CVars::GIRange.Get();
+		// Debug view 4 = GI: DefaultLit outputs the raw indirect term. Gate on RT active too (needs the table).
+		frame.DebugGI = (CVars::DebugView.Get() == 4 && CVars::GIRTActive() && m_ReflectionTableAddress != 0) ? 1u : 0u;
 
 		const Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
 		SS_CORE_ASSERT(frameUBO, "Frame UBO missing for frame descriptor set");

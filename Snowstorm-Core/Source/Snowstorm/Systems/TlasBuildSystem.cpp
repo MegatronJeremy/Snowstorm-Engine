@@ -50,8 +50,10 @@ namespace Snowstorm
 		// Only maintain the TLAS while something actually samples it — RT shadows, RTAO, or RT reflections. In
 		// every other mode building it is pure waste. Each helper folds in the device-support check (false on a
 		// non-RT GPU). Track the state so the OFF->ON transition can force a rebuild below.
-		const bool reflectionsActive = CVars::ReflectionsRTActive();
-		const bool rtActive = CVars::ShadowsRTActive() || CVars::AoRTActive() || reflectionsActive;
+		// The per-instance geometry/material table is needed by any effect that SHADES a ray hit — RT
+		// reflections and RT GI both resolve hits through it. (Shadows/AO are occupancy-only, no table.)
+		const bool geoTableNeeded = CVars::ReflectionsRTActive() || CVars::GIRTActive();
+		const bool rtActive = CVars::ShadowsRTActive() || CVars::AoRTActive() || geoTableNeeded;
 		const bool justEnabled = rtActive && !m_WasRTActive;
 		m_WasRTActive = rtActive;
 		if (!rtActive)
@@ -98,7 +100,7 @@ namespace Snowstorm
 			instances.push_back({model, blas->GetDeviceAddress()});
 			instanceEntities.push_back(e);
 
-			if (reflectionsActive)
+			if (geoTableNeeded)
 			{
 				GeometryRecord rec{};
 				rec.VertexAddress = mc.MeshInstance->GetVertexBuffer()->GetGPUAddress();
@@ -124,7 +126,7 @@ namespace Snowstorm
 		// buffer when the instance count outgrows it (device-address Storage so the shader can RawBufferLoad
 		// records); address 0 when reflections are off so the shader falls back to the sky cube.
 		auto& reflGeo = SingletonView<ReflectionGeometrySingleton>();
-		if (reflectionsActive && !geoRecords.empty())
+		if (geoTableNeeded && !geoRecords.empty())
 		{
 			const uint32_t needed = static_cast<uint32_t>(geoRecords.size());
 			if (!reflGeo.Table || reflGeo.Capacity < needed)

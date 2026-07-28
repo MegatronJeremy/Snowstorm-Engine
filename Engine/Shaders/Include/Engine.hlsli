@@ -184,6 +184,15 @@ cbuffer FrameCB : register(b0, space0)
 	// Glossy reflection cone scale (#118 Inc 4): roughness * this = the jitter cone radius; wider => blurrier
 	// reflections on rough surfaces. Reuses the last reflection pad slot. Match RendererService.cpp.
 	float ReflConeScale;
+	// 1-bounce RT diffuse GI (#118): RTGIEnabled gates the hemisphere gather; GIIntensity scales the indirect
+	// contribution; GIRange is the gather ray max distance (world units). New 16-byte row; MUST match
+	// RendererService.cpp field-for-field.
+	uint RTGIEnabled;
+	float GIIntensity;
+	float GIRange;
+	// Debug: 1 = output the raw GI indirect term instead of the shaded scene (DebugView == 4). Reuses the GI
+	// row's pad slot. Match RendererService.cpp.
+	uint DebugGI;
 };
 
 // --- SPACE 1: Material Data ---

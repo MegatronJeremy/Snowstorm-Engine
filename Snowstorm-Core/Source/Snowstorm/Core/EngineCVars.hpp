@@ -241,8 +241,19 @@ namespace Snowstorm::CVars
 	extern CVar<float> ReflectionMaxRoughness;
 	extern CVar<float> ReflectionConeScale;
 
+	// Ray-traced 1-bounce diffuse global illumination (#118): hemisphere-gather indirect light. Prefer
+	// GIRTActive() over reading the bool. GIIntensity scales the contribution; GIRange is the gather ray
+	// max distance (world units).
+	extern CVar<bool> GIRT;
+	extern CVar<float> GIIntensity;
+	extern CVar<float> GIRange;
+
 	// True when RT reflections should run (render.reflections.rt on AND the device supports RT). Drives
 	// FrameCB.RTReflEnabled + the shader branch + the TLAS build gate + the geometry-table build. False on a
 	// non-RT GPU (reflection shader compiled out).
 	[[nodiscard]] bool ReflectionsRTActive();
+
+	// True when RT GI should run (render.gi.rt on AND the device supports RT). Drives FrameCB.RTGIEnabled +
+	// the shader branch + the TLAS build gate + the geometry-table build. False on a non-RT GPU.
+	[[nodiscard]] bool GIRTActive();
 }

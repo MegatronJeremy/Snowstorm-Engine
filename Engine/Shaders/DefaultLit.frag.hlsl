@@ -163,6 +163,11 @@ float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, flo
 // kept low because per-frame sample rotation + TAA accumulate many effective samples over time.
 #define AO_RAY_COUNT 2
 
+// Number of GI hemisphere rays per pixel per frame (#118). Compile-time cost-class knob, like AO. A full
+// hemisphere integral is noisier than one shadow/reflection ray, so this leans hard on per-frame rotation
+// + TAA to converge; kept low for cost.
+#define GI_RAY_COUNT 2
+
 // Ray-traced ambient occlusion (#118): shoot AO_RAY_COUNT cosine-weighted hemisphere rays around the
 // surface normal `N`; each is a short occlusion ray (TMax = AORadius). A near hit darkens more than a far
 // one (distance falloff). Returns an occlusion FACTOR in [0,1] (1 = fully open, 0 = fully occluded) already
@@ -276,6 +281,77 @@ float3 LoadVertexNormal(uint64_t vertexAddr, uint index)
 // reflection matches the scene's lighting. On a miss (or no table), return the prefiltered sky cube in `R`
 // — exactly the env source the IBL specular uses. One bounce only; the reflected hit is NOT itself
 // reflective (no recursion). `Ng` offsets the ray origin off the surface.
+// Resolve a committed inline-RayQuery triangle hit to its surface albedo via the bindless geometry table
+// (device-address vertex/index reads + barycentric UV + bindless albedo sample). Just the albedo — used by
+// the Reflections debug view. Caller guarantees tableAddr != 0. `hitPos` (out) is the world hit position,
+// recovered by the caller from the ray; here we return albedo + the interpolated world normal for the
+// lit path to reuse (avoids a second RawBufferLoad of the same record).
+struct HitSurface
+{
+	float3 Albedo;
+	float3 Nw; // interpolated world normal
+};
+HitSurface ResolveHit(uint64_t tableAddr, uint instanceId, uint prim, float2 bary)
+{
+	const GeoRecord rec = LoadGeoRecord(tableAddr, instanceId);
+
+	const uint64_t idxBase = rec.IndexAddress + uint64_t(prim) * 12ull; // 3 * uint32
+	const uint i0 = vk::RawBufferLoad<uint>(idxBase + 0, 4);
+	const uint i1 = vk::RawBufferLoad<uint>(idxBase + 4, 4);
+	const uint i2 = vk::RawBufferLoad<uint>(idxBase + 8, 4);
+
+	const float w = 1.0 - bary.x - bary.y;
+	const float2 uv = w * LoadVertexUV(rec.VertexAddress, i0) + bary.x * LoadVertexUV(rec.VertexAddress, i1) + bary.y * LoadVertexUV(rec.VertexAddress, i2);
+
+	HitSurface s;
+	s.Albedo = rec.BaseColor.rgb;
+	if (rec.AlbedoTextureIndex != 0)
+	{
+		s.Albedo *= Textures[NonUniformResourceIndex(rec.AlbedoTextureIndex)].SampleLevel(LinearSampler, uv, 0).rgb;
+	}
+	// Interpolated object normal -> world via the record's Model (rows hold glm's columns, so
+	// mul(n, Model3x3) computes glmModel * n). Ignores non-uniform scale (inverse-transpose) — fine here.
+	const float3 nObj = w * LoadVertexNormal(rec.VertexAddress, i0) + bary.x * LoadVertexNormal(rec.VertexAddress, i1) + bary.y * LoadVertexNormal(rec.VertexAddress, i2);
+	s.Nw = normalize(mul(nObj, (float3x3)rec.Model));
+	return s;
+}
+
+// Shade a committed hit as LIT surface radiance (#118): resolve it (ResolveHit) then re-light cheaply —
+// sun (DirectionalLights[0]) with a shadow ray from the hit + an IBL/flat ambient fill (so a hit on a
+// shadowed surface still contributes its ambient, not black). ONE bounce: the shaded hit does NOT itself
+// trace reflections/GI (its ambient is the cheap IBL term). Shared by RT reflections and RTGI so both get
+// the same correct hit shading. `hitPos` = world hit position (caller: rayOrigin + rayDir * CommittedRayT).
+float3 ShadeSurfaceHit(uint64_t tableAddr, uint instanceId, uint prim, float2 bary, float3 hitPos)
+{
+	const HitSurface s = ResolveHit(tableAddr, instanceId, prim, bary);
+
+	float3 direct = float3(0, 0, 0);
+	if (LightCount > 0)
+	{
+		const float3 Lsun = normalize(-DirectionalLights[0].Direction);
+		const float ndl = saturate(dot(s.Nw, Lsun));
+		if (ndl > 0.0)
+		{
+			const float sh = RayTraceShadow(hitPos, s.Nw, Lsun, 1e30);
+			direct = DirectionalLights[0].Color * DirectionalLights[0].Intensity * ndl * sh;
+		}
+	}
+
+	float3 ambient;
+	if (IrradianceCubeIndex != 0)
+	{
+		ambient = Cubemaps[NonUniformResourceIndex(IrradianceCubeIndex)].SampleLevel(LinearSampler, s.Nw, 0).rgb * IBLIntensity;
+	}
+	else
+	{
+		ambient = float3(0.03, 0.03, 0.03); // faint fill so shadowed/indirect areas aren't crushed to black
+	}
+
+	return s.Albedo * (direct + ambient);
+}
+
+// Ray-traced reflection (#118): trace R (glossy-jittered by roughness), resolve + re-light the hit
+// (ShadeSurfaceHit) or reflect the sky on a miss. lit=false returns raw resolved albedo (debug view).
 float3 RayTraceReflection(float3 positionWS, float3 Ng, float3 R, bool lit, float roughness, float2 pixelPos)
 {
 	const uint64_t tableAddr = ReflGeoTableAddress();
@@ -320,64 +396,72 @@ float3 RayTraceReflection(float3 positionWS, float3 Ng, float3 R, bool lit, floa
 		return float3(0, 0, 0);
 	}
 
-	const GeoRecord rec = LoadGeoRecord(tableAddr, q.CommittedInstanceID());
-
-	// The hit's three vertex indices (uint32 index buffer), then barycentric-interpolate UV (and, when lit,
-	// the object-space normal).
-	const uint prim = q.CommittedPrimitiveIndex();
-	const uint64_t idxBase = rec.IndexAddress + uint64_t(prim) * 12ull; // 3 * uint32
-	const uint i0 = vk::RawBufferLoad<uint>(idxBase + 0, 4);
-	const uint i1 = vk::RawBufferLoad<uint>(idxBase + 4, 4);
-	const uint i2 = vk::RawBufferLoad<uint>(idxBase + 8, 4);
-
-	const float2 bary = q.CommittedTriangleBarycentrics();
-	const float w = 1.0 - bary.x - bary.y;
-	const float2 uv = w * LoadVertexUV(rec.VertexAddress, i0) + bary.x * LoadVertexUV(rec.VertexAddress, i1) + bary.y * LoadVertexUV(rec.VertexAddress, i2);
-
-	float3 albedo = rec.BaseColor.rgb;
-	if (rec.AlbedoTextureIndex != 0)
-	{
-		albedo *= Textures[NonUniformResourceIndex(rec.AlbedoTextureIndex)].SampleLevel(LinearSampler, uv, 0).rgb;
-	}
-
 	if (!lit)
 	{
-		return albedo; // debug view: raw resolved albedo
+		return ResolveHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics()).Albedo; // debug view
 	}
 
-	// --- Re-light the reflected hit (cheap: sun + IBL ambient, no point/spot loop, no recursion) ---
-	// Interpolated object normal -> world via the record's Model (rows hold glm's columns, so
-	// mul(n, Model3x3) computes glmModel * n). Ignores non-uniform scale (inverse-transpose) — fine here.
-	const float3 nObj = w * LoadVertexNormal(rec.VertexAddress, i0) + bary.x * LoadVertexNormal(rec.VertexAddress, i1) + bary.y * LoadVertexNormal(rec.VertexAddress, i2);
-	const float3 Nw = normalize(mul(nObj, (float3x3)rec.Model));
-	const float3 hitPos = ray.Origin + R * q.CommittedRayT();
+	const float3 hitPos = ray.Origin + dir * q.CommittedRayT();
+	return ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos);
+}
 
-	// Sun (DirectionalLights[0]) with a shadow ray from the reflected hit — so reflected surfaces show cast
-	// shadows. Ambient from the IBL irradiance cube (already cosine-convolved) * albedo, or a small flat
-	// term when IBL is off, so shadowed/indirect areas of the reflection aren't pure black.
-	float3 direct = float3(0, 0, 0);
-	if (LightCount > 0)
+// Ray-traced 1-bounce diffuse global illumination (#118). From the shaded point, trace GI_RAY_COUNT
+// cosine-weighted hemisphere rays around N (the SAME ray-gen as RTAO), shade each committed hit as lit
+// surface radiance (ShadeSurfaceHit — albedo * sun-with-shadow-ray + ambient), and average. On a miss the
+// ray sees open sky, contributing the sky/IBL radiance in that direction (so sky bounce isn't lost). The
+// cosine weight is baked into the sampling, so the Monte-Carlo estimate of incoming radiance is just the
+// mean of the samples; multiply by the receiver albedo (diffuse response) here. Bounded by GIRange so far
+// geometry doesn't dominate and to cap cost. Per-frame IGN rotation + TAA converge the few rays. One
+// bounce: the shaded hits use the cheap IBL/flat ambient, no recursion. RT permutation only.
+float3 RayTraceGI(float3 positionWS, float3 Ng, float3 N, float3 receiverAlbedo, float2 pixelPos)
+{
+	const uint64_t tableAddr = ReflGeoTableAddress();
+
+	// Orthonormal basis (tangent, bitangent, N) to orient the hemisphere — same as RTAO.
+	const float3 up = abs(N.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
+	const float3 tangent = normalize(cross(up, N));
+	const float3 bitangent = cross(N, tangent);
+
+	const float2 px = pixelPos + float2(FrameCounter * 5.588238, FrameCounter * 3.539418);
+	const float ign = frac(52.9829189 * frac(dot(px, float2(0.06711056, 0.00583715))));
+
+	const float3 origin = positionWS + Ng * 0.02;
+
+	float3 incoming = float3(0, 0, 0);
+	[unroll] for (int s = 0; s < GI_RAY_COUNT; ++s)
 	{
-		const float3 Lsun = normalize(-DirectionalLights[0].Direction);
-		const float ndl = saturate(dot(Nw, Lsun));
-		if (ndl > 0.0)
+		// Cosine-weighted hemisphere sample (stratified by ray index, jittered by the hash) — identical to RTAO.
+		const float u1 = frac((float(s) + ign) / float(GI_RAY_COUNT));
+		const float u2 = frac(ign + float(s) * 0.61803398875);
+		const float r = sqrt(u1);
+		const float phi = 2.0 * PI * u2;
+		const float3 localDir = float3(r * cos(phi), r * sin(phi), sqrt(max(0.0, 1.0 - u1)));
+		const float3 dir = normalize(localDir.x * tangent + localDir.y * bitangent + localDir.z * N);
+
+		RayDesc ray;
+		ray.Origin = origin;
+		ray.Direction = dir;
+		ray.TMin = 0.0;
+		ray.TMax = GIRange;
+
+		RayQuery<RAY_FLAG_CULL_NON_OPAQUE> q;
+		q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
+		q.Proceed();
+
+		if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT && tableAddr != 0)
 		{
-			const float sh = RayTraceShadow(hitPos, Nw, Lsun, 1e30);
-			direct = DirectionalLights[0].Color * DirectionalLights[0].Intensity * ndl * sh;
+			const float3 hitPos = origin + dir * q.CommittedRayT();
+			incoming += ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos);
+		}
+		else if (PrefilteredCubeIndex != 0)
+		{
+			// Miss -> open sky along the ray: the prefiltered env contributes sky bounce (dialed by IBLIntensity
+			// so it's consistent with the baked ambient this GI adds on top of).
+			incoming += Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, dir, 0).rgb * IBLIntensity;
 		}
 	}
 
-	float3 ambient;
-	if (IrradianceCubeIndex != 0)
-	{
-		ambient = Cubemaps[NonUniformResourceIndex(IrradianceCubeIndex)].SampleLevel(LinearSampler, Nw, 0).rgb * IBLIntensity;
-	}
-	else
-	{
-		ambient = float3(0.03, 0.03, 0.03); // faint fill so reflected shadow isn't crushed to black
-	}
-
-	return albedo * (direct + ambient);
+	return (incoming / float(GI_RAY_COUNT)) * receiverAlbedo * GIIntensity;
 }
 #endif
 
@@ -528,8 +612,11 @@ float3 FresnelSchlickRoughness(float cosTheta, float3 F0, float roughness)
 // (roughness -> mip) modulated by the BRDF LUT. Returns 0 (caller falls back to analytic ambient) when
 // IBL isn't baked (IrradianceCubeIndex == 0).
 // positionWS/Ng/pixelPos are only used by the RT reflection blend (SS_RAYTRACING); the raster build
-// ignores them.
-float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness, float metallic, float ao, float3 positionWS, float3 Ng, float2 pixelPos)
+// ignores them. When useGIDiffuse != 0, the baked-irradiance DIFFUSE term is REPLACED by giDiffuse (the
+// traced 1-bounce GI) — the diffuse indirect becomes scene-derived instead of the constant sky
+// approximation (Lumen/RTXGI model). Specular (env cube + RT reflection) is unaffected. giDiffuse already
+// carries the receiver albedo + GIIntensity; kd (metal energy) and ao still modulate it here.
+float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness, float metallic, float ao, float3 positionWS, float3 Ng, float2 pixelPos, uint useGIDiffuse, float3 giDiffuse)
 {
 	if (IrradianceCubeIndex == 0)
 	{
@@ -540,9 +627,20 @@ float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness,
 	const float3 F = FresnelSchlickRoughness(NdotV, F0, roughness);
 	const float3 kd = (1.0 - F) * (1.0 - metallic); // metals have no diffuse
 
-	// Diffuse: irradiance (already cosine-convolved) * albedo.
-	const float3 irradiance = Cubemaps[NonUniformResourceIndex(IrradianceCubeIndex)].SampleLevel(LinearSampler, N, 0).rgb;
-	const float3 diffuse = irradiance * albedo;
+	// Diffuse indirect: normally the baked irradiance cube * albedo (a constant sky approximation). When RT
+	// GI is active, REPLACE it with the traced 1-bounce indirect (giDiffuse already carries albedo +
+	// GIIntensity) so the diffuse fill is scene-derived (color bleed, contact fill) instead of the guess.
+	// The IBLIntensity dial applies only to the baked path; giDiffuse has its own GIIntensity.
+	float3 diffuse;
+	if (useGIDiffuse != 0)
+	{
+		diffuse = giDiffuse; // scene-traced; NOT scaled by IBLIntensity (see return)
+	}
+	else
+	{
+		const float3 irradiance = Cubemaps[NonUniformResourceIndex(IrradianceCubeIndex)].SampleLevel(LinearSampler, N, 0).rgb;
+		diffuse = irradiance * albedo * IBLIntensity;
+	}
 
 	// Specular env radiance: the prefiltered cube at the reflection vector (roughness -> mip).
 	const float3 R = reflect(-V, N);
@@ -575,9 +673,10 @@ float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness,
 	}
 #endif
 
-	// Diffuse is the baked-ambient irradiance term, dialed by IBLIntensity. Specular already carries its own
-	// scale (IBLIntensity for the env cube, ReflIntensity for the RT reflection).
-	return (kd * diffuse * IBLIntensity + specular) * ao;
+	// diffuse already carries its own scale (IBLIntensity for the baked path, GIIntensity for the traced GI);
+	// specular likewise (IBLIntensity for the env cube, ReflIntensity for the RT reflection). kd (metal
+	// energy) + ao modulate the whole ambient.
+	return (kd * diffuse + specular) * ao;
 }
 
 // One light's Cook-Torrance contribution (diffuse + specular), given the already-normalized light
@@ -683,6 +782,22 @@ float4 main(PSInput i) : SV_Target0
 	}
 #endif
 
+	// 1-bounce RT diffuse GI (#118): gather indirect light once here so both the debug view and the additive
+	// ambient below reuse it. Computed when GI is enabled OR the GI debug view is active (so the debug view
+	// works even before enabling the additive fold). Compiled out on non-RT devices.
+	float3 giIndirect = float3(0, 0, 0);
+#ifdef SS_RAYTRACING
+	if (RTGIEnabled != 0 || DebugGI != 0)
+	{
+		giIndirect = RayTraceGI(i.PositionWS, normalize(i.NormalWS), N, albedo, i.PositionCS.xy);
+	}
+	// Debug view 4 = GI: output the raw indirect term for tuning (intensity/range) against the raw signal.
+	if (DebugGI != 0)
+	{
+		return float4(giIndirect, 1.0);
+	}
+#endif
+
 	float3 Lo = float3(0, 0, 0);
 
 	// --- Directional lights (the sun). Only light 0 casts shadows in this single-map implementation.
@@ -747,16 +862,40 @@ float4 main(PSInput i) : SV_Target0
 		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * spotShadow;
 	}
 
+	// 1-bounce RT diffuse GI (#118): when active, the traced indirect REPLACES the DIFFUSE ambient (Lumen/
+	// RTXGI model) — the diffuse fill becomes scene-derived (color bleed, contact fill) instead of the
+	// constant sky guess. Specular ambient (env cube / RT reflection) is unaffected. Off => the baked/
+	// analytic diffuse as before.
+	uint useGI = 0;
+	float3 giDiffuse = float3(0, 0, 0);
+#ifdef SS_RAYTRACING
+	if (RTGIEnabled != 0)
+	{
+		useGI = 1;
+		giDiffuse = giIndirect; // already albedo * GIIntensity
+	}
+#endif
+
 	// Ambient: prefer split-sum IBL (baked from the sky) when available — metals reflect the environment
 	// and specular picks up sky color. Falls back to the analytic hemisphere ambient (same zenith/horizon/
 	// ground colors the sky shows) when IBL isn't baked, so the look degrades gracefully.
-	float3 ambient = ComputeIBL(N, V, albedo, F0, roughness, metallic, ao, i.PositionWS, normalize(i.NormalWS), i.PositionCS.xy);
+	float3 ambient = ComputeIBL(N, V, albedo, F0, roughness, metallic, ao, i.PositionWS, normalize(i.NormalWS), i.PositionCS.xy, useGI, giDiffuse);
 	if (IrradianceCubeIndex == 0)
 	{
-		const float3 ambientEnv = (N.y >= 0.0)
-		                              ? lerp(SkyHorizonColor, SkyZenithColor, saturate(N.y))
-		                              : lerp(SkyHorizonColor, GroundColor, saturate(-N.y));
-		ambient = ambientEnv * SkyIntensity * albedo * ao;
+		// No baked IBL: analytic hemisphere diffuse, OR the traced GI diffuse when GI replaces it.
+		float3 ambientDiffuse;
+		if (useGI != 0)
+		{
+			ambientDiffuse = giDiffuse; // scene-traced diffuse (carries albedo + GIIntensity)
+		}
+		else
+		{
+			const float3 ambientEnv = (N.y >= 0.0)
+			                              ? lerp(SkyHorizonColor, SkyZenithColor, saturate(N.y))
+			                              : lerp(SkyHorizonColor, GroundColor, saturate(-N.y));
+			ambientDiffuse = ambientEnv * SkyIntensity * albedo;
+		}
+		ambient = ambientDiffuse * ao;
 	}
 
 	float3 color = Lo + ambient;

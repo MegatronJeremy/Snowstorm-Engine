@@ -220,13 +220,13 @@ namespace Snowstorm
 		// 3 = Reflections (raw reflected albedo from the RT reflection trace, for verifying hit resolution,
 		// #118). Index maps 1:1 to render.debugview.
 		{
-			const char* dbgLabels[] = {"Normal", "Motion Vectors", "Ambient Occlusion", "Reflections"};
+			const char* dbgLabels[] = {"Normal", "Motion Vectors", "Ambient Occlusion", "Reflections", "Global Illumination"};
 			int dbg = CVars::DebugView.Get();
-			if (dbg < 0 || dbg > 3)
+			if (dbg < 0 || dbg > 4)
 			{
 				dbg = 0;
 			}
-			if (ImGui::Combo("Debug View", &dbg, dbgLabels, 4))
+			if (ImGui::Combo("Debug View", &dbg, dbgLabels, 5))
 			{
 				CVars::DebugView.Set(dbg);
 			}
@@ -383,6 +383,43 @@ namespace Snowstorm
 			if (float reflCone = CVars::ReflectionConeScale.Get(); ImGui::SliderFloat("Cone Scale##Refl", &reflCone, 0.0f, 3.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
 			{
 				CVars::ReflectionConeScale.Set(reflCone);
+			}
+			ImGui::EndDisabled();
+		}
+
+		ImGui::Spacing();
+		EditorTheme::SectionHeader("Global Illumination");
+
+		// Ray-traced 1-bounce diffuse GI (#118): from each shaded point, gather hemisphere rays, shade the
+		// hits, and REPLACE the diffuse ambient with that scene-derived indirect (color bleeding + contact
+		// fill). RT-only; the shader branch is compiled out on a non-RT GPU. A hemisphere integral is noisier
+		// than one ray, so it needs TAA even more than the other RT effects; the sliders are enabled only when
+		// RT GI is on.
+		{
+			const bool giRtSupported = Renderer::IsRayTracingSupported();
+			ImGui::BeginDisabled(!giRtSupported);
+			if (bool giRt = CVars::GIRT.Get(); ImGui::Checkbox("Ray-traced (RT)##GI", &giRt))
+			{
+				CVars::GIRT.Set(giRt);
+			}
+			ImGui::EndDisabled();
+			if (!giRtSupported)
+			{
+				ImGui::TextDisabled("(requires an RT-capable GPU)");
+			}
+			else
+			{
+				ImGui::TextDisabled("(replaces diffuse ambient; needs TAA)");
+			}
+
+			ImGui::BeginDisabled(!CVars::GIRT.Get());
+			if (float giIntensity = CVars::GIIntensity.Get(); ImGui::SliderFloat("Intensity##GI", &giIntensity, 0.0f, 4.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::GIIntensity.Set(giIntensity);
+			}
+			if (float giRange = CVars::GIRange.Get(); ImGui::SliderFloat("Range##GI", &giRange, 0.5f, 30.0f, "%.1f m", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::GIRange.Set(giRange);
 			}
 			ImGui::EndDisabled();
 		}
