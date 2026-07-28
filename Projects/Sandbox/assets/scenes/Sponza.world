@@ -2,21 +2,176 @@
   "Entities": [
     {
       "Components": {
-        "Snowstorm::PointLightComponent": {
+        "Snowstorm::SpotLightComponent": {
           "CastShadows": true,
           "Color": [
-            0.9620254039764404,
-            1.0,
-            0.0
+            0.699999988079071,
+            0.800000011920929,
+            1.0
           ],
-          "Intensity": 25.0,
-          "Range": 10.0
+          "Enabled": false,
+          "InnerAngleDeg": 18.0,
+          "Intensity": 120.0,
+          "OuterAngleDeg": 35.0,
+          "Range": 30.0
         },
         "Snowstorm::TransformComponent": {
           "Position": [
-            3.323397636413574,
-            3.3934290409088135,
-            -0.5130223035812378
+            -3.0,
+            10.0,
+            0.0
+          ],
+          "Rotation": [
+            -1.5707963705062866,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 1
+        }
+      },
+      "Name": "Window Shaft (cool)",
+      "UUID": "6001001000000000005"
+    },
+    {
+      "Components": {
+        "Snowstorm::SpotLightComponent": {
+          "CastShadows": true,
+          "Color": [
+            0.699999988079071,
+            0.800000011920929,
+            1.0
+          ],
+          "Enabled": false,
+          "InnerAngleDeg": 18.0,
+          "Intensity": 120.0,
+          "OuterAngleDeg": 35.0,
+          "Range": 30.0
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            3.0,
+            10.0,
+            0.0
+          ],
+          "Rotation": [
+            -1.5707963705062866,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 1
+        }
+      },
+      "Name": "Window Shaft 2 (cool)",
+      "UUID": "6001001000000000006"
+    },
+    {
+      "Components": {
+        "Snowstorm::SpotLightComponent": {
+          "CastShadows": true,
+          "Color": [
+            0.699999988079071,
+            0.800000011920929,
+            1.0
+          ],
+          "Enabled": false,
+          "InnerAngleDeg": 18.0,
+          "Intensity": 120.0,
+          "OuterAngleDeg": 35.0,
+          "Range": 30.0
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            9.0,
+            10.0,
+            0.0
+          ],
+          "Rotation": [
+            -1.5707963705062866,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 1
+        }
+      },
+      "Name": "Window Shaft 3 (cool)",
+      "UUID": "6001001000000000007"
+    },
+    {
+      "Components": {
+        "Snowstorm::PointLightComponent": {
+          "CastShadows": false,
+          "Color": [
+            0.6000000238418579,
+            0.699999988079071,
+            0.8999999761581421
+          ],
+          "Enabled": false,
+          "Intensity": 4.0,
+          "Range": 25.0
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0.0,
+            6.0,
+            0.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 1
+        }
+      },
+      "Name": "Cool Bounce Fill",
+      "UUID": "6001001000000000008"
+    },
+    {
+      "Components": {
+        "Snowstorm::PointLightComponent": {
+          "CastShadows": false,
+          "Color": [
+            1.0,
+            0.6000000238418579,
+            0.2800000011920929
+          ],
+          "Enabled": false,
+          "Intensity": 30.0,
+          "Range": 30.0
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0.0,
+            1.5,
+            -0.35139673948287964
           ],
           "Rotation": [
             -0.0,
@@ -33,46 +188,156 @@
           "Mask": 1
         }
       },
-      "Name": "Point Light",
-      "UUID": "10690005358920337761"
+      "Name": "Hero Brazier (warm)",
+      "UUID": "6001001000000000009"
     },
     {
       "Components": {
-        "Snowstorm::SpotLightComponent": {
+        "Snowstorm::PointLightComponent": {
           "CastShadows": true,
           "Color": [
             1.0,
-            0.15189874172210693,
-            0.4954336881637573
+            0.550000011920929,
+            0.20000000298023224
           ],
-          "InnerAngleDeg": 20.0,
-          "Intensity": 80.0,
-          "OuterAngleDeg": 30.0,
-          "Range": 20.0
+          "Enabled": true,
+          "Intensity": 18.0,
+          "Range": 9.0
         },
         "Snowstorm::TransformComponent": {
           "Position": [
-            -4.200562000274658,
-            4.694706916809082,
-            -1.0316112041473389
+            2.5,
+            2.5999999046325684,
+            3.5999999046325684
           ],
           "Rotation": [
-            -0.7117253541946411,
-            -2.7697274684906006,
-            -0.4090231955051422
+            0.0,
+            0.0,
+            0.0
           ],
           "Scale": [
-            0.9999994039535522,
-            0.9999967217445374,
-            0.9999973773956299
+            1.0,
+            1.0,
+            1.0
           ]
         },
         "Snowstorm::VisibilityComponent": {
           "Mask": 1
         }
       },
-      "Name": "Spot Light",
-      "UUID": "685850235769641349"
+      "Name": "Torch Warm B",
+      "UUID": "6001001000000000002"
+    },
+    {
+      "Components": {
+        "Snowstorm::PointLightComponent": {
+          "CastShadows": true,
+          "Color": [
+            1.0,
+            0.550000011920929,
+            0.20000000298023224
+          ],
+          "Enabled": true,
+          "Intensity": 18.0,
+          "Range": 9.0
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            -8.0,
+            2.5999999046325684,
+            3.5999999046325684
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 1
+        }
+      },
+      "Name": "Torch Warm A",
+      "UUID": "6001001000000000001"
+    },
+    {
+      "Components": {
+        "Snowstorm::PointLightComponent": {
+          "CastShadows": true,
+          "Color": [
+            1.0,
+            0.550000011920929,
+            0.20000000298023224
+          ],
+          "Enabled": true,
+          "Intensity": 18.0,
+          "Range": 9.0
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            -8.0,
+            2.5999999046325684,
+            -3.5999999046325684
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 1
+        }
+      },
+      "Name": "Torch Warm C",
+      "UUID": "6001001000000000003"
+    },
+    {
+      "Components": {
+        "Snowstorm::PointLightComponent": {
+          "CastShadows": true,
+          "Color": [
+            1.0,
+            0.550000011920929,
+            0.20000000298023224
+          ],
+          "Enabled": true,
+          "Intensity": 18.0,
+          "Range": 9.0
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            2.5,
+            2.5999999046325684,
+            -3.5999999046325684
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 1
+        }
+      },
+      "Name": "Torch Warm D",
+      "UUID": "6001001000000000004"
     },
     {
       "Components": {
@@ -884,11 +1149,12 @@
             0.8999999761581421
           ],
           "Direction": [
-            1.2000000476837158,
-            -1.399999976158142,
-            -0.699999988079071
+            -15.0,
+            -90.0,
+            5.0
           ],
-          "Intensity": 1.0
+          "Enabled": true,
+          "Intensity": 8.0
         },
         "Snowstorm::VisibilityComponent": {
           "Mask": 3
@@ -911,7 +1177,7 @@
             0.6200000047683716,
             0.75
           ],
-          "SkyIntensity": 0.30000001192092896,
+          "SkyIntensity": 1.0,
           "SkyZenithColor": [
             0.10000000149011612,
             0.2199999988079071,
