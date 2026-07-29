@@ -67,6 +67,33 @@ Set it yourself when debugging validation interactively. GPU resources are also 
 `SetVulkanObjectName` (`VK_EXT_debug_utils`), so validation/RenderDoc report e.g. `Swapchain[0]`
 instead of a raw `VkImage 0x...` handle.
 
+## GPU perf benchmark (run before/after any render-path change)
+
+`Scripts/perf-bench.py` is the GPU analogue of the smoke test: a golden-file microbenchmark gate.
+It runs the Editor headlessly once per **RT-effect config** (via `perf.bench.frames` /
+`SS_PERF_BENCH_FRAMES`), each of which averages the render graph's per-pass GPU timings over a fixed
+frame budget and writes a JSON (`PerfBench.hpp` builds it; `Application::Run` drives it past a 15-frame
+warmup that also covers the 1-frame timestamp lag). The script parses each JSON, prints a per-pass
+table, and **diffs against a committed baseline** in `Scripts/perf-baseline/`, failing (exit 1) if any
+pass regresses beyond `--threshold` (default 15%).
+
+```
+py Scripts/perf-bench.py                    # run the matrix, diff vs baseline, PASS/FAIL
+py Scripts/perf-bench.py --update-baseline  # capture current results as the new baseline
+py Scripts/perf-bench.py --only +gi         # one config (rt-off | shadows | +ao | +refl | +gi)
+py Scripts/perf-bench.py --frames 300       # more frames = less noise, slower
+```
+
+The config matrix (`rt-off → shadows → +ao → +refl → +gi`) enables one RT effect at a time, so the
+**Forward-pass ms delta between adjacent configs is that effect's cost** — the RT effects are inline in
+the Forward pass, so this A/B *is* the per-effect timing (there's no separate GPU scope per effect, by
+design). Sub-0.05 ms passes are ignored (timestamp noise). Like smoke, it needs a **real GPU** (Vulkan
+timestamps) so it's a **local** gate, not CI; on a device without timestamp support the JSON sets
+`timestampsSupported:false` and the script skips rather than false-failing. **Baselines are
+per-machine** (GPU differences make ms non-comparable) — re-run `--update-baseline` on a new box, and
+the script warns if the recorded device differs. Re-baseline deliberately (with a commit) when a change
+*intends* to shift perf; never to paper over an unexplained regression.
+
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc

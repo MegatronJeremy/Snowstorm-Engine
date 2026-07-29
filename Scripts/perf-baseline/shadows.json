@@ -1,0 +1,45 @@
+{
+  "device": "",
+  "config": "Projects/Sandbox/assets/scenes/Sponza.world",
+  "frames": 200,
+  "timestampsSupported": true,
+  "totalGpuMs": 5.9297,
+  "passes": {
+    "Editor": {
+      "avgMs": 0.0234,
+      "minMs": 0.0213,
+      "maxMs": 0.0378,
+      "depth": 0
+    },
+    "Forward": {
+      "avgMs": 5.7848,
+      "minMs": 5.4878,
+      "maxMs": 8.2698,
+      "depth": 0
+    },
+    "PostProcess": {
+      "avgMs": 0.0089,
+      "minMs": 0.0082,
+      "maxMs": 0.0404,
+      "depth": 0
+    },
+    "Sky": {
+      "avgMs": 0.0,
+      "minMs": 0.0,
+      "maxMs": 0.0,
+      "depth": 1
+    },
+    "TemporalResolve": {
+      "avgMs": 0.0566,
+      "minMs": 0.0306,
+      "maxMs": 0.1691,
+      "depth": 0
+    },
+    "Velocity": {
+      "avgMs": 0.0546,
+      "minMs": 0.0521,
+      "maxMs": 0.0868,
+      "depth": 0
+    }
+  }
+}

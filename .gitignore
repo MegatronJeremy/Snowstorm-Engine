@@ -13,6 +13,10 @@ Engine/cache
 *.sln
 *.log
 *.json
+# Committed golden perf baselines (not generated artifacts): re-included past the blanket *.json so the
+# perf-bench regression gate has a tracked reference. See Scripts/perf-bench.py.
+!Scripts/perf-baseline/
+!Scripts/perf-baseline/*.json
 *.DotSettings
 *.DotSettings.user
 *.ini
