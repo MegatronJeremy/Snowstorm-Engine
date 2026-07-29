@@ -7,8 +7,11 @@
 #include "Snowstorm/Core/CoreServices.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Debug/Instrumentor.hpp"
+#include "Snowstorm/Render/PerfBench.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
+
+#include <fstream>
 
 namespace Snowstorm
 {
@@ -105,6 +108,14 @@ namespace Snowstorm
 		double metricsPsnrAccum = 0.0, metricsSsimAccum = 0.0;
 		int metricsFrames = 0;
 
+		// Headless GPU perf benchmark (perf.bench.frames > 0): accumulate the per-pass GPU timings over a
+		// fixed frame budget (past warmup), write an averaged JSON, then exit. The GPU analogue of smoke mode
+		// — Scripts/perf-bench.py drives RT-effect configs + diffs a committed baseline. Off unless set.
+		const int perfBenchFrames = CVars::PerfBenchFrames.Get();
+		const bool perfBenchMode = perfBenchFrames > 0;
+		PerfBenchAccumulator perfBench;
+		constexpr uint64_t kPerfBenchWarmup = 15; // discard pipeline/shader/streaming warmup + the 1-frame scope lag
+
 		// VSync-toggle stress (debug.vsync_stress > 0): flip VSync every N frames to force repeated
 		// swapchain recreation. A test hook — surfaces present/acquire-semaphore reuse bugs that only
 		// appear across a swapchain rebuild (the steady-state smoke never toggles). Off by default.
@@ -199,6 +210,34 @@ namespace Snowstorm
 						metricsPsnrAccum = metricsSsimAccum = 0.0;
 						metricsFrames = 0;
 					}
+				}
+			}
+
+			// GPU perf benchmark accumulation + exit. GetGpuPassTimes() returns the PREVIOUS frame's resolved
+			// scopes (1-frame lag), so the warmup skip also covers that lag. Accumulate past warmup; once the
+			// budget is met, write the averaged JSON and request shutdown (mirrors smoke mode).
+			if (perfBenchMode && frameNo > kPerfBenchWarmup)
+			{
+				auto& renderer = m_ServiceManager->GetService<RendererService>();
+				perfBench.AddFrame(renderer.GetGpuPassTimes(), Renderer::GetLastGpuFrameMs());
+				if (perfBench.FrameCount() >= static_cast<uint32_t>(perfBenchFrames))
+				{
+					const std::string& path = CVars::PerfBenchPath.Get();
+					// Device name isn't plumbed through the RHI yet; leave empty and let perf-bench.py treat it
+					// as unknown (its baseline-device check is warn-only). timestampsSupported = we actually
+					// captured scopes (false on a device without GPU timestamps -> script skips, no false-fail).
+					const std::string json = perfBench.ToJson(/*device*/ "", CVars::StartupScene.Get(), !perfBench.Empty());
+					if (std::ofstream out(path); out)
+					{
+						out << json;
+						SS_CORE_INFO("Perf bench: wrote {} ({} frames, {} passes).", path, perfBench.FrameCount(),
+						             perfBench.Empty() ? 0 : 1);
+					}
+					else
+					{
+						SS_CORE_ERROR("Perf bench: failed to open '{}' for writing.", path);
+					}
+					m_Running = false;
 				}
 			}
 

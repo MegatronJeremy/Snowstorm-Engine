@@ -12,6 +12,13 @@ namespace Snowstorm::CVars
 	// test to drive the app headlessly.
 	extern CVar<int> SmokeFrames;
 
+	// Headless GPU perf benchmark (local regression gate, GPU analogue of smoke.frames). When > 0, run
+	// this many frames accumulating per-pass GPU timings (RendererService::GetGpuPassTimes) past warmup,
+	// write an averaged JSON to perf.bench.path, then exit. Scripts/perf-bench.py drives configs + diffs a
+	// committed baseline. CLI/env-only (not persisted), like smoke.frames.
+	extern CVar<int> PerfBenchFrames;
+	extern CVar<std::string> PerfBenchPath;
+
 	// Toggle VSync every N frames (0 = off). A test hook: recreating the swapchain repeatedly under
 	// validation surfaces present/acquire-semaphore reuse bugs that steady-state running never triggers.
 	extern CVar<int> VSyncStress;
