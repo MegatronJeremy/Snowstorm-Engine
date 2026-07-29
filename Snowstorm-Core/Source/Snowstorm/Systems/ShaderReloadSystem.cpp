@@ -1,5 +1,8 @@
 #include "ShaderReloadSystem.hpp"
 
+#include "Snowstorm/Assets/MaterialAsset.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Render/Shader.hpp"
 
@@ -7,27 +10,58 @@ namespace Snowstorm
 {
 	void ShaderReloadSystem::Execute(const Timestep ts)
 	{
+		auto& shaderLibrary = ServiceView<ShaderLibrary>();
+
+		bool needPipelineRebuild = false;
+
+		// DefaultLit RT-permutation swap (#118 perf): the lit shader compiles the cheap non-RT variant when no
+		// RT effect is active, and the heavy RT variant otherwise. A permutation change is NOT an mtime change,
+		// so ReloadAll below won't catch it — drive it explicitly here. Checked every frame (a cheap CVar read)
+		// so toggling an RT effect swaps promptly. The key is the composite the mesh pipeline loads.
+		{
+			const std::string litKey = std::string("Engine/Shaders/Mesh.vert.hlsl|") + kDefaultFragmentShader;
+			if (shaderLibrary.Exists(litKey))
+			{
+				const Ref<Shader>& lit = shaderLibrary.Get(litKey);
+				const bool wantRT = CVars::AnyRTEffectActive();
+				if (!m_LitInitialized || wantRT != m_LastWantRT)
+				{
+					const ShaderPermutation desired = wantRT ? ShaderPermutation::Auto : ShaderPermutation::ForceNonRT;
+					if (lit->GetPermutation() != desired)
+					{
+						lit->SetPermutation(desired);
+						lit->Recompile(); // synchronous; warm .spv cache makes this a fs::exists check after first build
+						needPipelineRebuild = true;
+						SS_CORE_INFO("DefaultLit RT permutation -> {}", wantRT ? "RT" : "non-RT");
+					}
+					m_LastWantRT = wantRT;
+					m_LitInitialized = true;
+				}
+			}
+		}
+
 		static float timeSinceLastCheck = 0.0f;
 		timeSinceLastCheck += ts.GetSeconds();
 
-		//-- check for updates every 1 second
+		//-- check for source edits every 1 second (hot reload)
 		if (timeSinceLastCheck > 1.0f)
 		{
-			auto& shaderLibrary = ServiceView<ShaderLibrary>();
-
-			// 1) Recompile any shader whose source (or an included header) changed -> bumps its version and
-			//    writes fresh SPIR-V to the cache.
+			// Recompile any shader whose source (or an included header) changed -> bumps its version and writes
+			// fresh SPIR-V to the cache. (ReloadAll self-skips unchanged shaders.)
 			shaderLibrary.ReloadAll();
+			needPipelineRebuild = true; // a changed shader bumps its version; the sweep below self-skips otherwise
+			timeSinceLastCheck = 0.0f;
+		}
 
-			// 2) Rebuild any live pipeline whose shader version advanced. A pipeline bakes its VkShaderModules
-			//    at creation, so recompiled SPIR-V is invisible until the VkPipeline is rebuilt from it. Each
-			//    Reload() self-skips when its shader is unchanged, so this sweep is cheap when nothing changed.
-			//    Runs in the AssetSync phase (before Render), so no command buffer is open when the pipeline
-			//    drains the device and swaps its handle.
+		if (needPipelineRebuild)
+		{
+			// Rebuild any live pipeline whose shader version advanced (hot-reload OR the permutation swap above).
+			// A pipeline bakes its VkShaderModules at creation, so recompiled SPIR-V is invisible until the
+			// VkPipeline is rebuilt from it. Each Reload() self-skips when its shader is unchanged, so this is
+			// cheap. Runs in the AssetSync phase (before Render), so no command buffer is open when the pipeline
+			// drains the device and swaps its handle.
 			Pipeline::ForEachLive([](const Ref<Pipeline>& pipeline)
 			                      { pipeline->Reload(); });
-
-			timeSinceLastCheck = 0.0f;
 		}
 	}
 }
