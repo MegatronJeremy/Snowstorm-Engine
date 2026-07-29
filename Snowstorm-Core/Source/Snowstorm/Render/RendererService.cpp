@@ -110,6 +110,13 @@ namespace Snowstorm
 			float GIRange = 8.0f;
 			// Debug: 1 = output the raw GI indirect term (DebugView == 4). Reuses the GI row's pad slot.
 			uint32_t DebugGI = 0;
+			// RT reflection ray max distance (#118 perf): the reflection trace's TMax. Bounding it lets a
+			// sky-bound ray early-out instead of traversing the whole scene. New 16-byte row (ReflRange + 3
+			// pad); MUST match Engine.hlsli field-for-field.
+			float ReflRange = 40.0f;
+			float _ReflRangePad0 = 0.0f;
+			float _ReflRangePad1 = 0.0f;
+			float _ReflRangePad2 = 0.0f;
 		};
 	}
 
@@ -314,6 +321,7 @@ namespace Snowstorm
 		frame.ReflIntensity = CVars::ReflectionIntensity.Get();
 		frame.ReflMaxRoughness = CVars::ReflectionMaxRoughness.Get();
 		frame.ReflConeScale = CVars::ReflectionConeScale.Get();
+		frame.ReflRange = CVars::ReflectionRange.Get(); // TMax bound (perf): sky-bound rays early-out past this
 		frame.ReflGeoTableAddrLo = static_cast<uint32_t>(m_ReflectionTableAddress & 0xFFFFFFFFull);
 		frame.ReflGeoTableAddrHi = static_cast<uint32_t>(m_ReflectionTableAddress >> 32);
 		// Debug view 3 = Reflections: DefaultLit outputs the raw reflected albedo for verifying hit resolution.

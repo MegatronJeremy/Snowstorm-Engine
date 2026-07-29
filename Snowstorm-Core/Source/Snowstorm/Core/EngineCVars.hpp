@@ -247,6 +247,7 @@ namespace Snowstorm::CVars
 	extern CVar<float> ReflectionIntensity;
 	extern CVar<float> ReflectionMaxRoughness;
 	extern CVar<float> ReflectionConeScale;
+	extern CVar<float> ReflectionRange;
 
 	// Ray-traced 1-bounce diffuse global illumination (#118): hemisphere-gather indirect light. Prefer
 	// GIRTActive() over reading the bool. GIIntensity scales the contribution; GIRange is the gather ray

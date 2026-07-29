@@ -384,6 +384,14 @@ namespace Snowstorm
 			{
 				CVars::ReflectionConeScale.Set(reflCone);
 			}
+			if (float reflRange = CVars::ReflectionRange.Get(); ImGui::SliderFloat("Range (m)##Refl", &reflRange, 0.5f, 60.0f, "%.1f", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::ReflectionRange.Set(reflRange);
+			}
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("Max reflection ray distance (perf cap): nearer surfaces reflect real geometry; past this the ray sees the sky.");
+			}
 			ImGui::EndDisabled();
 		}
 

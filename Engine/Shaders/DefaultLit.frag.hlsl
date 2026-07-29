@@ -379,7 +379,10 @@ float3 RayTraceReflection(float3 positionWS, float3 Ng, float3 R, bool lit, floa
 	ray.Origin = positionWS + Ng * 0.02 + dir * 0.01; // normal-offset to dodge self-hit
 	ray.Direction = dir;
 	ray.TMin = 0.0;
-	ray.TMax = 1e30;
+	// Bounded by ReflRange (#118 perf): a ray finding nothing within this distance falls back to the sky
+	// cube below, so capping TMax lets the BVH traversal early-out instead of walking the whole scene extent
+	// on every sky-bound ray. No visual change within range; past it, distant geometry reflects as sky.
+	ray.TMax = ReflRange;
 
 	// Closest hit (no ACCEPT_FIRST_HIT): a reflection needs the FRONT-MOST surface along the ray.
 	RayQuery<RAY_FLAG_CULL_NON_OPAQUE> q;

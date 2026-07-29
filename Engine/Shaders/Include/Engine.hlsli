@@ -193,6 +193,14 @@ cbuffer FrameCB : register(b0, space0)
 	// Debug: 1 = output the raw GI indirect term instead of the shaded scene (DebugView == 4). Reuses the GI
 	// row's pad slot. Match RendererService.cpp.
 	uint DebugGI;
+	// RT reflection ray max distance in world units (#118 perf): the reflection trace's TMax. A ray that
+	// finds no geometry within this distance falls back to the sky cube, so bounding it lets the BVH
+	// traversal early-out instead of walking the whole scene extent on every sky-bound ray. New 16-byte row
+	// (ReflRange + 3 pad); MUST match RendererService.cpp field-for-field.
+	float ReflRange;
+	float _ReflRangePad0;
+	float _ReflRangePad1;
+	float _ReflRangePad2;
 };
 
 // --- SPACE 1: Material Data ---
