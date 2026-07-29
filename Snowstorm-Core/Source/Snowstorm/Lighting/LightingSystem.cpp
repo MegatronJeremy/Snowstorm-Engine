@@ -55,10 +55,11 @@ namespace Snowstorm
 			    .Padding{}};
 		}
 
-		if (droppedLights)
+		if (droppedLights && !m_WarnedDroppedDirectional)
 		{
 			SS_CORE_WARN("More than {} directional lights in scene; extra lights ignored.", MAX_DIRECTIONAL_LIGHTS);
 		}
+		m_WarnedDroppedDirectional = droppedLights;
 
 		// Directional-sun shadow FIT (world -> light clip), the sun analogue of the per-spot fit computed
 		// below. Kept here so ALL shadow setup lives in the light system; RenderSystem only binds the depth
@@ -142,16 +143,18 @@ namespace Snowstorm
 			    .ShadowPad = {0, 0, 0}};
 		}
 		lightData.PointShadowCount = nextPointShadowSlot;
-		if (droppedPoint)
+		if (droppedPoint && !m_WarnedDroppedPoint)
 		{
 			SS_CORE_WARN("More than {} point lights in scene; extra lights ignored.", MAX_POINT_LIGHTS);
 		}
-		if (droppedPointShadow)
+		m_WarnedDroppedPoint = droppedPoint;
+		if (droppedPointShadow && !m_WarnedDroppedPointShadow)
 		{
 			SS_CORE_WARN("More than {} shadow-casting point lights; extra ones render unshadowed (each omni "
 			             "shadow costs 6 depth passes).",
 			             MAX_SHADOW_POINTS);
 		}
+		m_WarnedDroppedPointShadow = droppedPointShadow;
 
 		// Spot lights: position + forward (-Z) from the transform; cone half-angles stored as cosines so
 		// the shader compares against dot() with no per-fragment trig. OuterAngle is clamped >= InnerAngle
@@ -214,10 +217,11 @@ namespace Snowstorm
 			    .ShadowViewProj = shadowViewProj,
 			    .ShadowAtlasRect = atlasRect};
 		}
-		if (droppedSpot)
+		if (droppedSpot && !m_WarnedDroppedSpot)
 		{
 			SS_CORE_WARN("More than {} spot lights in scene; extra lights ignored.", MAX_SPOT_LIGHTS);
 		}
+		m_WarnedDroppedSpot = droppedSpot;
 
 		renderer3DSingleton.UploadLights(lightData);
 	}
