@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Service/Service.hpp"
@@ -16,6 +17,27 @@ namespace Snowstorm
 		Vertex = 0,
 		Fragment = 1,
 		Compute = 2
+	};
+
+	// A shader-variant define set: each entry is a preprocessor macro, `"NAME"` or `"NAME=value"`, passed to
+	// the compiler as `-D <entry>` and folded (in order) into the .spv cache key so each variant caches
+	// separately. This is the generic permutation mechanism (cf. Unity multi_compile keywords / Unreal
+	// FShaderPermutationVector): the compile chain takes one define LIST, not one bool per feature, so a new
+	// permutation axis is a `push_back` where the list is built — it never widens a function signature.
+	using ShaderDefines = std::vector<std::string>;
+
+	// Ray-tracing shader permutation selector (#118 perf). A shader wrapping its TLAS/RayQuery code in
+	// `#ifdef SS_RAYTRACING` can be compiled as the cheap NON-RT variant or the heavy RT variant.
+	//   Auto       = follow device capability (RT variant on an RT GPU) — the original behavior; the right
+	//                default for a shader that ALWAYS needs RT when the device has it (e.g. Pick).
+	//   ForceNonRT = never emit the RT variant, even on an RT GPU. DefaultLit uses this when no RT effect is
+	//                enabled, so a scene with RT off doesn't pay the RT permutation's occupancy tax.
+	// A non-RT device compiles the non-RT variant either way (the effects are force-off there). Changing a
+	// shader's permutation then Recompile()-ing swaps the SPIR-V (version bumps -> pipelines rebuild).
+	enum class ShaderPermutation : uint8_t
+	{
+		Auto = 0,
+		ForceNonRT = 1
 	};
 
 	class Shader
@@ -45,6 +67,12 @@ namespace Snowstorm
 
 		// Changes whenever recompilation produced new artifacts
 		[[nodiscard]] virtual uint64_t GetVersion() const = 0;
+
+		// RT permutation selector (#118 perf). Default Auto = device-gated (original behavior). Set to
+		// ForceNonRT + Recompile() to swap to the cheap non-RT SPIR-V (e.g. DefaultLit when no RT effect is
+		// on). Read at Compile() time; the choice keys the .spv cache so variants don't collide.
+		[[nodiscard]] virtual ShaderPermutation GetPermutation() const = 0;
+		virtual void SetPermutation(ShaderPermutation p) = 0;
 
 		void Recompile()
 		{

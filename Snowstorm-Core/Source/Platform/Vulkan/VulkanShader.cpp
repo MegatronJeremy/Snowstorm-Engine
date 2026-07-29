@@ -265,7 +265,8 @@ namespace Snowstorm
 		bool CompileStageWithDxc(const fs::path& dxcExe,
 		                         const fs::path& inputHlsl,
 		                         const fs::path& outputSpv,
-		                         const wchar_t* profile)
+		                         const wchar_t* profile,
+		                         const ShaderDefines& defines)
 		{
 			const std::wstring exe = dxcExe.wstring();
 			const std::wstring in = inputHlsl.wstring();
@@ -284,24 +285,28 @@ namespace Snowstorm
 			cmd += profile;
 			cmd += L" -fspv-target-env=vulkan1.2 -fvk-use-dx-layout -Zpr";
 
-			// Ray-tracing shader permutation (#118): define SS_RAYTRACING only when the device supports inline
-			// ray query. Shaders wrap their TLAS declaration + trace in `#ifdef SS_RAYTRACING`, so on a non-RT
-			// device those blocks compile out and no SPIR-V carries the RayQueryKHR capability (which would
-			// require the extension and fail to load). Device caps are fixed at runtime, so exactly one
-			// permutation is ever needed. The define is folded into the cache key in the caller.
-			const bool rayTracing = Renderer::IsRayTracingSupported();
-			if (rayTracing)
+			// Variant defines: one `-D` per entry. The list is the generic permutation mechanism — a shader
+			// wraps optional features in `#ifdef NAME` and the caller resolves which NAMEs to enable, so no
+			// per-feature branch lives here. The same list keys the .spv cache (see CompileStageFileToSpirvCache)
+			// so distinct variants never collide.
+			bool rayTracing = false;
+			for (const std::string& def : defines)
 			{
-				cmd += L" -D SS_RAYTRACING=1";
+				cmd += L" -D ";
+				cmd += std::wstring(def.begin(), def.end()); // ASCII macro names only
+				if (def == "SS_RAYTRACING=1" || def == "SS_RAYTRACING")
+				{
+					rayTracing = true;
+				}
 			}
 
 			// --- DEBUG FLAGS ---
 			// -Zi: Include debug information
 			// -Od: Disable optimizations (makes debugging MUCH easier)
-			// -fspv-debug=vulkan-with-source: rich SPIR-V debug info (source lines). OMITTED in the RT
+			// -fspv-debug=vulkan-with-source: rich SPIR-V debug info (source lines). OMITTED for the RT
 			// permutation: dxc 1.9 crashes with an access violation when this NonSemantic-source debug info is
 			// combined with inline ray query (a known dxc bug). -Zi/-Od still give usable debug info; only the
-			// embedded-source detail is dropped, and only for RT-capable devices.
+			// embedded-source detail is dropped, and only when SS_RAYTRACING is defined.
 			cmd += L" -Zi -Od";
 			if (!rayTracing)
 			{
@@ -353,7 +358,7 @@ namespace Snowstorm
 		// stage profiles in the cache key so a vert and frag of the same content don't collide. Returns
 		// false (outSpv empty) on failure.
 		bool CompileStageFileToSpirvCache(const std::string& sourcePath, const wchar_t* profile,
-		                                  const char* flagsTag, std::string& outSpv)
+		                                  const char* flagsTag, const ShaderDefines& defines, std::string& outSpv)
 		{
 			// Shader load paths are engine-relative (e.g. "Engine/Shaders/Foo.hlsl"). Resolve against the
 			// engine root (exe-relative) so a moved/packaged exe still finds them; an absolute path (rare)
@@ -386,12 +391,13 @@ namespace Snowstorm
 			h ^= Hash64(fullText.data(), fullText.size());
 			h ^= HashIncludeHeaders();
 			h ^= Hash64(flagsTag, std::strlen(flagsTag));
-			// The RT permutation define (see CompileStageWithDxc) changes the emitted SPIR-V, so it must key
-			// the cache — otherwise an RT and a non-RT build would collide on the same .spv.
-			if (Renderer::IsRayTracingSupported())
+			// Variant defines change the emitted SPIR-V, so every enabled define must key the cache — otherwise
+			// two variants of the same source would collide on one .spv. Hashed in order (the caller keeps the
+			// list order stable), so e.g. the effect-gated non-RT build of a shader on an RT GPU gets its own
+			// .spv distinct from the RT build. Generic: a new permutation axis needs no change here.
+			for (const std::string& def : defines)
 			{
-				static constexpr char kRtTag[] = "rt1";
-				h ^= Hash64(kRtTag, sizeof(kRtTag) - 1);
+				h ^= Hash64(def.data(), def.size());
 			}
 
 			const std::string key = ToHex64(h);
@@ -434,7 +440,7 @@ namespace Snowstorm
 			}
 
 			// Compile the real source file directly (DXC resolves #include via -I; the file is unmodified).
-			if (!CompileStageWithDxc(dxcExe, srcPath, outSpvPath, profile))
+			if (!CompileStageWithDxc(dxcExe, srcPath, outSpvPath, profile, defines))
 			{
 				return false;
 			}
@@ -486,6 +492,18 @@ namespace Snowstorm
 		// sees a fully-populated result or nothing. m_VertPath/m_FragPath are immutable post-construction, so
 		// reading them here is race-free.
 
+		// Build this compile's variant define list from the shader's permutation intent. THIS is the single
+		// place a new permutation axis is added (one push_back) — the compile chain + cache key are generic
+		// over the list, so nothing downstream changes. Read once here so both stages + the cache key agree.
+		ShaderDefines defines;
+		// RT axis (#118): emit SS_RAYTRACING only when the device supports RT AND the selector isn't
+		// ForceNonRT. A non-RT device never emits RT regardless (effects are force-off there anyway).
+		if (Renderer::IsRayTracingSupported() &&
+		    m_Permutation.load(std::memory_order_relaxed) != ShaderPermutation::ForceNonRT)
+		{
+			defines.emplace_back("SS_RAYTRACING=1");
+		}
+
 		// Two-path graphics: separate vertex + fragment files, each a plain single-`main` HLSL file
 		// compiled directly (no #type split). The preferred form.
 		if (!m_FragPath.empty())
@@ -493,8 +511,8 @@ namespace Snowstorm
 			std::string vert, frag;
 			// SM 6.5 (was 6.0): the fragment stage may use inline ray query for RT sun shadows (#118); it's a
 			// strict superset so vertex/fragment shaders that don't use it compile identically.
-			if (!CompileStageFileToSpirvCache(m_VertPath, L"vs_6_5", "v3_vulkan1.2_dxlayout_Zpr_vs65", vert) ||
-			    !CompileStageFileToSpirvCache(m_FragPath, L"ps_6_5", "v3_vulkan1.2_dxlayout_Zpr_ps65", frag))
+			if (!CompileStageFileToSpirvCache(m_VertPath, L"vs_6_5", "v3_vulkan1.2_dxlayout_Zpr_vs65", defines, vert) ||
+			    !CompileStageFileToSpirvCache(m_FragPath, L"ps_6_5", "v3_vulkan1.2_dxlayout_Zpr_ps65", defines, frag))
 			{
 				SS_CORE_ERROR("VulkanShader: failed to compile graphics shader {}", m_Filepath);
 				return; // leaves m_Ready false: the pipeline never builds, rather than building from garbage
@@ -521,7 +539,7 @@ namespace Snowstorm
 		}
 
 		std::string comp;
-		if (!CompileStageFileToSpirvCache(m_VertPath, L"cs_6_5", "v3_vulkan1.2_dxlayout_Zpr_cs65", comp))
+		if (!CompileStageFileToSpirvCache(m_VertPath, L"cs_6_5", "v3_vulkan1.2_dxlayout_Zpr_cs65", defines, comp))
 		{
 			SS_CORE_ERROR("VulkanShader: failed to compile compute shader {}", m_VertPath);
 			return;

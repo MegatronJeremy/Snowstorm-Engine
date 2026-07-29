@@ -256,4 +256,11 @@ namespace Snowstorm::CVars
 	// True when RT GI should run (render.gi.rt on AND the device supports RT). Drives FrameCB.RTGIEnabled +
 	// the shader branch + the TLAS build gate + the geometry-table build. False on a non-RT GPU.
 	[[nodiscard]] bool GIRTActive();
+
+	// True when ANY inline-RT effect is active (shadows/AO/reflections/GI). Drives the DefaultLit shader
+	// permutation swap (#118 perf): when false, DefaultLit compiles the cheap non-RT variant so a scene with
+	// RT off doesn't pay the RT permutation's occupancy tax. Folds device support via the four helpers, so
+	// it's always false on a non-RT GPU. Also the natural single gate for the TLAS build (mirrors the OR in
+	// TlasBuildSystem).
+	[[nodiscard]] bool AnyRTEffectActive();
 }

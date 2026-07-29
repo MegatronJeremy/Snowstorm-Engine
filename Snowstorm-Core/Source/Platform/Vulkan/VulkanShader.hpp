@@ -24,6 +24,9 @@ namespace Snowstorm
 		[[nodiscard]] bool IsReady() const override { return m_Ready.load(std::memory_order_acquire); }
 		[[nodiscard]] uint64_t GetVersion() const override { return m_Version.load(std::memory_order_relaxed); }
 
+		[[nodiscard]] ShaderPermutation GetPermutation() const override { return m_Permutation.load(std::memory_order_relaxed); }
+		void SetPermutation(const ShaderPermutation p) override { m_Permutation.store(p, std::memory_order_relaxed); }
+
 	protected:
 		// Runs the DXC compile for every stage and publishes the resulting SPIR-V paths. Called on a
 		// JobSystem worker by ShaderLibrary (or synchronously by Recompile/hot-reload). Thread-safe:
@@ -48,5 +51,10 @@ namespace Snowstorm
 
 		std::atomic<bool> m_Ready{false};
 		std::atomic<uint64_t> m_Version{0};
+
+		// Desired RT permutation, read at Compile() time. Auto = device-gated (original). Written on the main
+		// thread (permutation swap) then Recompile()d, so relaxed atomic is enough — the recompile is the
+		// happens-before edge that republishes SPIR-V.
+		std::atomic<ShaderPermutation> m_Permutation{ShaderPermutation::Auto};
 	};
 }

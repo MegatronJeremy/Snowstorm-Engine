@@ -185,4 +185,12 @@ namespace Snowstorm::CVars
 		// (GI shades its hits through the same table reflections use).
 		return GIRT.Get() && Renderer::IsRayTracingSupported();
 	}
+
+	bool AnyRTEffectActive()
+	{
+		// OR of the four inline-RT effect gates (each already folds device support). Drives the DefaultLit
+		// permutation swap (#118 perf): false => compile the cheap non-RT variant. Always false on a non-RT
+		// GPU. Mirrors the rtActive OR in TlasBuildSystem — kept here as the single shared definition.
+		return ShadowsRTActive() || AoRTActive() || ReflectionsRTActive() || GIRTActive();
+	}
 }
