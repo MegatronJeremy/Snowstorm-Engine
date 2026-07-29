@@ -34,6 +34,9 @@ namespace Snowstorm
 		Ref<TLAS> m_TLAS; // created lazily on first RT-enabled build; scene-scoped
 		bool m_BuiltOnce = false;
 		bool m_WasRTActive = false;              // RT-active state last frame — detects the off->on edge to force a rebuild
+		bool m_WasGeoTableNeeded = false;        // geometry-table need last frame — detects the off->on edge when
+		                                         // reflections/GI turn on while the TLAS is already built (shadows/AO
+		                                         // only), so the newly-required per-instance table gets built
 		uint32_t m_LastLoggedCount = UINT32_MAX; // de-dupe the instance-count log across per-frame rebuilds
 	};
 }

@@ -55,15 +55,23 @@ namespace Snowstorm
 		const bool geoTableNeeded = CVars::ReflectionsRTActive() || CVars::GIRTActive();
 		const bool rtActive = CVars::ShadowsRTActive() || CVars::AoRTActive() || geoTableNeeded;
 		const bool justEnabled = rtActive && !m_WasRTActive;
+		// Reflections/GI need the per-instance geometry table; shadows/AO don't. If the TLAS is already being
+		// maintained for shadows/AO and reflections/GI are THEN turned on, geoTableNeeded flips false->true
+		// without rtActive changing — so justEnabled stays false and a static scene's dirty-check skips the
+		// rebuild, leaving TableAddress 0 and the reflection/GI trace falling back to sky (the "toggles don't
+		// work" bug). Force a rebuild on that sub-transition too.
+		const bool geoTableJustNeeded = geoTableNeeded && !m_WasGeoTableNeeded;
 		m_WasRTActive = rtActive;
+		m_WasGeoTableNeeded = geoTableNeeded;
 		if (!rtActive)
 		{
 			return;
 		}
 
-		// Rebuild when the scene changed OR RT shadows just turned on (the scene's per-frame dirty flags were
-		// consumed while RT was off, so a plain dirty-check would miss the need to build the first TLAS).
-		if (m_BuiltOnce && !justEnabled && !IsSceneDirtyThisFrame())
+		// Rebuild when the scene changed OR RT just turned on OR the geometry table just became needed (the
+		// scene's per-frame dirty flags were consumed on prior frames, so a plain dirty-check would miss both
+		// enable edges).
+		if (m_BuiltOnce && !justEnabled && !geoTableJustNeeded && !IsSceneDirtyThisFrame())
 		{
 			return;
 		}
