@@ -12,9 +12,11 @@
 // hold only the last-written index by GPU-execution time — both draws would sample the same image. A
 // push constant is recorded per-draw, so each tonemap gets its own source.
 //
-// DebugMode (#44): 0 = normal tonemapped scene; 1 = motion-vector visualization — instead of the scene,
-// sample the velocity target (DebugTexIndex) and map the screen-space velocity to color so moving pixels
-// light up and static ones stay black. DebugScale amplifies the tiny per-frame UV deltas to a visible range.
+// DebugMode (#44/#124): 0 = normal tonemapped scene; 1 = motion-vector visualization — instead of the
+// scene, sample the velocity target (DebugTexIndex) and map the screen-space velocity to color so moving
+// pixels light up and static ones stay black; 2 = world-normal visualization — sample the depth+normal
+// prepass G-buffer (DebugTexIndex) and map the [-1,1] world normal to [0,1] RGB. DebugScale amplifies the
+// tiny per-frame UV deltas (mode 1) to a visible range.
 [[vk::push_constant]] struct TonemapPush
 {
 	uint SceneColorIndex;
@@ -63,6 +65,14 @@ float4 main(FullscreenVSOut input) : SV_Target
 		// Output is LINEAR (hardware sRGB-encodes on write), so the debug color would gamma-brighten; keep
 		// it simple — the goal is "does it move", not a calibrated readout.
 		return float4(saturate(abs(vel) * gTonemap.DebugScale), 0.0, 1.0);
+	}
+
+	// World-normal debug (#124): the depth+normal prepass stores world normals in [-1,1]; remap to [0,1]
+	// RGB so +X/+Y/+Z read as red/green/blue. Sky (no geometry) stored a zero normal -> mid-grey.
+	if (gTonemap.DebugMode == 2)
+	{
+		const float3 n = Textures[NonUniformResourceIndex(gTonemap.DebugTexIndex)].Load(int3(texel, 0)).xyz;
+		return float4(n * 0.5 + 0.5, 1.0);
 	}
 
 	const float3 hdr = Textures[NonUniformResourceIndex(gTonemap.SceneColorIndex)].Load(int3(texel, 0)).rgb;

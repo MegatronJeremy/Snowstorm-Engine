@@ -49,6 +49,14 @@ namespace Snowstorm
 		// future temporal resolve can read it via bindless. Null until first allocated.
 		Ref<RenderTarget> VelocityTarget;
 
+		// Partial G-buffer for half-res RT GI (#124): world-space normal (RGBA16F) + a SAMPLED D32 depth,
+		// rendered by the depth+normal prepass BEFORE the forward pass. The GI compute pass reconstructs each
+		// receiver's world position from depth + InvViewProj and reads the normal (a forward renderer has no
+		// depth/normal buffer otherwise); the bilateral upsample uses both as edge-stopping guides. Full
+		// viewport res (the upsample guide must be full-res). Only rendered when GI is active (GIRTActive()).
+		// Null until first allocated.
+		Ref<RenderTarget> GBufferNormalTarget;
+
 		// Temporal-resolve history ping-pong (#44 TAA). Two full-res HDR (color-only) targets: each frame
 		// the resolve reads the PREVIOUS one as history, reprojects it by the velocity buffer, blends with
 		// the current frame, and writes the result into the CURRENT one — which both feeds tonemap and

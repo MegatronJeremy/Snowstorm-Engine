@@ -793,6 +793,8 @@ namespace Snowstorm
 		rtc.GroundTruthPresentSampleView = CreatePresentSampleView(rtc.GroundTruthPresentTarget);
 		// Motion-vector target (#44); ViewportResizeSystem rebuilds it at render.scale on the first frame.
 		rtc.VelocityTarget = CreateVelocityTarget(windowWidth, windowHeight, "Main Viewport");
+		// Depth+normal G-buffer (#124), full viewport res (the bilateral upsample guide must be full-res).
+		rtc.GBufferNormalTarget = CreateDepthNormalTarget(windowWidth, windowHeight, "Main Viewport");
 		// TAA history ping-pong (#44).
 		rtc.HistoryTarget[0] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport History0");
 		rtc.HistoryTarget[1] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport History1");

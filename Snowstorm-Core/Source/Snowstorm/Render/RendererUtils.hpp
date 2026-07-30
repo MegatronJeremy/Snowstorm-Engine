@@ -72,6 +72,14 @@ namespace Snowstorm
 	// attachment. Sampled usage auto-registers it for bindless sampling.
 	Ref<RenderTarget> CreateShadowDepthTarget(uint32_t size, const char* debugPrefix);
 
+	// Camera-view partial G-buffer for half-res RT GI (#124): world-space normal in an RGBA16F color
+	// attachment + a D32 depth attachment that is ALSO Sampled (unlike the scene target's write-only
+	// depth). A prepass renders scene geometry into it; the half-res GI compute pass then reconstructs each
+	// receiver's world position from depth + InvViewProj and reads the world normal — the per-pixel
+	// position/normal source a forward renderer otherwise lacks. Both attachments Sampled (auto-registered
+	// for bindless) so the GI + bilateral-upsample passes can read them.
+	Ref<RenderTarget> CreateDepthNormalTarget(uint32_t w, uint32_t h, const char* debugPrefix);
+
 	// HDR cubemap for IBL (env / irradiance / prefiltered). 6 faces, `mips` mip levels, sampled +
 	// storage (compute writes it) usage. Its full-cube view auto-registers in the cube bindless array.
 	Ref<Texture> CreateCubeTexture(uint32_t size, uint32_t mips, PixelFormat format, const char* debugName);

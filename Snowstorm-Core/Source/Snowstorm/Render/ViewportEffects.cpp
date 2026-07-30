@@ -14,6 +14,7 @@
 
 // The per-effect-exclusive passes, each owned by the effect that drives it (see the class members below).
 #include "Snowstorm/Render/Passes/DatasetExportPass.hpp"
+#include "Snowstorm/Render/Passes/DepthNormalPass.hpp"
 #include "Snowstorm/Render/Passes/FxaaPass.hpp"
 #include "Snowstorm/Render/Passes/MetricsPass.hpp"
 #include "Snowstorm/Render/Passes/NeuralUpscalePass.hpp"
@@ -31,6 +32,64 @@ namespace Snowstorm
 {
 	namespace
 	{
+		// Depth+normal prepass (#124): re-renders visible meshes into the partial G-buffer (world normal
+		// color + sampled depth) BEFORE the forward pass, so the half-res RT GI compute pass has a per-pixel
+		// world-position (from depth) + world-normal source, and the bilateral upsample has an edge guide.
+		// Gated by gbufferNeeded (GI active OR the normal debug view). Publishes the normal view onto the
+		// context. Uses the UNJITTERED camera VP so the G-buffer aligns 1:1 with the full-res consumers.
+		class DepthNormalEffect final : public IViewportEffect
+		{
+		public:
+			explicit DepthNormalEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "DepthNormal"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded;
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+				const CameraPick& cam = v.Cam;
+				const Ref<RenderTarget>& gbuf = v.RT.GBufferNormalTarget;
+
+				const auto& gbufDesc = gbuf->GetDesc();
+				const PixelFormat colorFmt = gbufDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+				const PixelFormat depthFmt = gbufDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
+				// Unjittered VP (the CameraRuntimeComponent's ViewProjection is the unjittered truth): the
+				// G-buffer feeds full-res consumers (GI reconstruct + bilateral upsample) that reason in stable
+				// screen space — a jittered VP would misalign depth/normal with them.
+				const glm::mat4 viewProj = cam.Rt->ViewProjection;
+
+				fc.Graph.AddPass({.Name = "DepthNormal" + v.Suffix,
+				                  .Target = gbuf,
+				                  .Execute = [this, &fc, cam, colorFmt, depthFmt, viewProj](CommandContext& c)
+				                  {
+					                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, fc.Ctx, fc.FrameIndex);
+
+					                  m_Owner.DrawVisibleMeshes(fc, cam,
+					                                            [&](entt::entity, const TransformComponent& tr, const MeshComponent& mesh, const MaterialComponent& mat)
+					                                            {
+						                                            fc.Renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, 0,
+						                                                                 glm::vec4(0.0f), tr.GetTransformMatrix());
+					                                            });
+
+					                  m_Pass.RecordDepthNormal(fc.Renderer, colorFmt, depthFmt, viewProj);
+				                  }});
+
+				v.GBufferNormal = gbuf->GetDesc().ColorAttachments[0].View;
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			DepthNormalPass m_Pass; // owned here: the depth+normal prepass is exclusive to this effect
+		};
+
 		// Motion-vector pass (#44): re-renders visible meshes into the velocity target, projecting each vertex
 		// by this frame's and last frame's matrices. Runs BEFORE forward so the buffer is ready for the passes
 		// that consume it (TAA / neural-temporal / the motion-vector debug tonemap). Gated by velocityNeeded:
@@ -372,7 +431,7 @@ namespace Snowstorm
 
 				// SceneColor now reflects the post-upscale, post-TAA image (TemporalEffect republished it when TAA
 				// is on). Tonemap is the shared builder (CompareEffect reuses it for the ground-truth present).
-				m_Owner.AddTonemapPass(fc, v.SceneColor.View, v.TonemapTarget, "PostProcess" + v.Suffix, v.PrimaryTonemap, v.VelocityRead);
+				m_Owner.AddTonemapPass(fc, v.SceneColor.View, v.TonemapTarget, "PostProcess" + v.Suffix, v.PrimaryTonemap, v.DebugRead);
 
 				const glm::vec2 rcpFrame = {1.0f / static_cast<float>(v.UpWidth), 1.0f / static_cast<float>(v.UpHeight)};
 				int stageIndex = 0; // 0 = tonemap (already emitted into v.TonemapTarget)
@@ -545,9 +604,10 @@ namespace Snowstorm
 	void RenderSystem::BuildViewportEffects()
 	{
 		// Built once, in fixed order. Effects are added as they're extracted from the monolith (#120 B..G).
-		// Velocity runs before forward so its buffer is ready for the consumers (TAA / neural-temporal / the
-		// motion-vector debug tonemap).
+		// DepthNormal + Velocity run before forward so their buffers are ready for the consumers (the GI
+		// sub-chain / TAA / neural-temporal / the debug tonemaps).
 		m_ViewportEffects.clear();
+		m_ViewportEffects.push_back(CreateScope<DepthNormalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<VelocityEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ForwardEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<UpscaleEffect>(*this));

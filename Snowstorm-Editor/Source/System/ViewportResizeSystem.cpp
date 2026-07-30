@@ -86,7 +86,7 @@ namespace Snowstorm
 				const auto& rt = reg.Read<RenderTargetComponent>(vpEntity);
 				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget ||
 				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget || !rt.VelocityTarget ||
-				                     !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
+				                     !rt.GBufferNormalTarget || !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
 				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Compare each
 				// against its own expected extent so a scale change (Target only) still triggers a rebuild.
 				const bool viewportResized = rt.PresentTarget && (rt.PresentTarget->GetDesc().Width != w || rt.PresentTarget->GetDesc().Height != h);
@@ -124,6 +124,10 @@ namespace Snowstorm
 					// reads it 1:1 via integer Load(). Always allocated (negligible); only rendered when
 					// render.debugview != 0.
 					rtW.VelocityTarget = CreateVelocityTarget(w, h, "Viewport");
+					// Depth+normal G-buffer (#124): full viewport res (the bilateral upsample guide must be
+					// full-res). Always allocated (negligible); only rendered when GI is active or the normal
+					// debug view is selected.
+					rtW.GBufferNormalTarget = CreateDepthNormalTarget(w, h, "Viewport");
 					// TAA history ping-pong (#44): two full-res color-only HDR targets. Always allocated;
 					// only rendered into when render.aa == TAA. Recreated on resize so history matches size.
 					rtW.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0");

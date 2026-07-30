@@ -337,16 +337,33 @@ namespace Snowstorm
 		                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 		v.VelocityNeeded = velocityNeeded;
 
-		// Tonemap debug params (#44): visualize the velocity target ONLY when the motion-vector debug
-		// view is explicitly selected — NOT merely when velocity is being rendered (TAA also renders
-		// velocity but must show the real tonemapped scene). Keyed off debugView, not velocityNeeded.
-		// Applied to the primary path only (compare mode keeps its GT side normal).
+		// The depth+normal prepass (#124) renders the G-buffer when GI is active OR the normal-buffer debug
+		// view (5) is selected — the latter lets you eyeball the prepass in isolation before GI consumes it.
+		const bool giActive = CVars::GIRTActive();
+		const bool gbufferNeeded = (giActive || debugView == 5) && vpRT.GBufferNormalTarget &&
+		                           !vpRT.GBufferNormalTarget->GetDesc().ColorAttachments.empty() &&
+		                           vpRT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+		v.GBufferNeeded = gbufferNeeded;
+
+		// Tonemap debug params (#44/#124): visualize an aux buffer ONLY when its debug view is explicitly
+		// selected — NOT merely when the buffer is being rendered (TAA/GI render their buffers but must show
+		// the real tonemapped scene). Keyed off debugView. Applied to the primary path only (compare mode
+		// keeps its GT side normal). DebugMode 1 = motion vectors (velocity), 2 = world normal (G-buffer).
 		RendererService::TonemapParams primaryTonemap{};
+		Ref<Texture> debugRead;
 		if (debugView == 1 && velocityNeeded)
 		{
 			primaryTonemap.DebugMode = 1;
 			primaryTonemap.DebugTexIndex = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 			primaryTonemap.DebugScale = 40.0f; // per-frame UV velocity is small; scale to a visible range
+			debugRead = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+		}
+		else if (debugView == 5 && gbufferNeeded)
+		{
+			primaryTonemap.DebugMode = 2;
+			primaryTonemap.DebugTexIndex = vpRT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
+			primaryTonemap.DebugScale = 1.0f; // normals map [-1,1] -> [0,1] in the shader
+			debugRead = vpRT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View->GetTexture();
 		}
 
 		// Post-tonemap LDR filter sizing (#44), derived up front so the effect chain (UpscaleEffect /
@@ -382,9 +399,9 @@ namespace Snowstorm
 			v.SharpenOn = sharpenOn;
 			v.TotalStages = totalStages;
 			v.PrimaryTonemap = primaryTonemap;
-			// Velocity backing texture, declared as an extra Sampled read by the tonemap pass only when the
-			// motion-vector debug view samples it (else null). VelocityEffect renders it earlier in the list.
-			v.VelocityRead = velocityNeeded ? vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture() : nullptr;
+			// The debug aux texture (velocity or G-buffer normal), declared as an extra Sampled read by the
+			// tonemap pass only when a debug view samples it (else null). Its producing effect runs earlier.
+			v.DebugRead = debugRead;
 		}
 
 		// ---- Primary (upscaled) path ----

@@ -226,6 +226,58 @@ namespace Snowstorm
 		return RenderTarget::Create(rtDesc);
 	}
 
+	Ref<RenderTarget> CreateDepthNormalTarget(uint32_t w, uint32_t h, const char* debugPrefix)
+	{
+		// Partial G-buffer for half-res RT GI (#124): world-space normal color + a SAMPLED depth. The GI
+		// compute pass reads both (normal directly; world position reconstructed from depth + InvViewProj),
+		// and the bilateral upsample uses them as edge-stopping guides. Distinct from the scene/velocity
+		// depth (DepthStencil-only, write-only) precisely because those can't be sampled.
+		TextureDesc colorDesc{};
+		colorDesc.Dimension = TextureDimension::Texture2D;
+		colorDesc.Format = PixelFormat::RGBA16_SFloat; // signed 16F: world normal xyz in [-1,1]
+		colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled;
+		colorDesc.Width = w;
+		colorDesc.Height = h;
+		colorDesc.DebugName = std::string(debugPrefix) + "_GBufferNormal";
+
+		Ref<Texture> colorTex = Texture::Create(colorDesc);
+		Ref<TextureView> colorView = TextureView::Create(colorTex, MakeFullViewDesc(colorDesc));
+
+		TextureDesc depthDesc{};
+		depthDesc.Dimension = TextureDimension::Texture2D;
+		depthDesc.Format = PixelFormat::D32_Float;
+		// DepthStencil (written by the prepass) + Sampled (read by GI/upsample; auto-registers for bindless).
+		depthDesc.Usage = TextureUsage::DepthStencil | TextureUsage::Sampled;
+		depthDesc.Width = w;
+		depthDesc.Height = h;
+		depthDesc.DebugName = std::string(debugPrefix) + "_GBufferDepth";
+
+		Ref<Texture> depthTex = Texture::Create(depthDesc);
+		Ref<TextureView> depthView = TextureView::Create(depthTex, MakeFullViewDesc(depthDesc));
+
+		RenderTargetDesc rtDesc{};
+		rtDesc.Width = w;
+		rtDesc.Height = h;
+		rtDesc.IsSwapchainTarget = false;
+
+		RenderTargetAttachment colorAtt{};
+		colorAtt.View = colorView;
+		colorAtt.AttachmentIndex = 0;
+		colorAtt.ClearColor = {0.0f, 0.0f, 0.0f, 0.0f}; // zero normal where nothing draws (sky)
+		colorAtt.LoadOp = RenderTargetLoadOp::Clear;
+		colorAtt.StoreOp = RenderTargetStoreOp::Store;
+		rtDesc.ColorAttachments.push_back(colorAtt);
+
+		DepthStencilAttachment depthAtt{};
+		depthAtt.View = depthView;
+		depthAtt.ClearDepth = 1.0f;
+		depthAtt.DepthLoadOp = RenderTargetLoadOp::Clear;
+		depthAtt.DepthStoreOp = RenderTargetStoreOp::Store;
+		rtDesc.DepthAttachment = depthAtt;
+
+		return RenderTarget::Create(rtDesc);
+	}
+
 	Ref<Texture> CreateCubeTexture(const uint32_t size, const uint32_t mips, const PixelFormat format, const char* debugName)
 	{
 		TextureDesc td{};

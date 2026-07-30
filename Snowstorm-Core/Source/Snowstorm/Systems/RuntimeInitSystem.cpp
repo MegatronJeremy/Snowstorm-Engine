@@ -106,7 +106,7 @@ namespace Snowstorm
 
 			if (!rtc.Target || !rtc.PresentTarget || !rtc.AAIntermediateTarget || !rtc.SceneUpscaleTarget ||
 			    !rtc.GroundTruthTarget || !rtc.GroundTruthPresentTarget || !rtc.VelocityTarget ||
-			    !rtc.HistoryTarget[0] || !rtc.HistoryTarget[1])
+			    !rtc.GBufferNormalTarget || !rtc.HistoryTarget[0] || !rtc.HistoryTarget[1])
 			{
 				needsCreate = true;
 			}
@@ -133,7 +133,8 @@ namespace Snowstorm
 				wRtc.GroundTruthTarget = CreateDefaultSceneRenderTarget(w, h, "ViewportGT");
 				wRtc.GroundTruthPresentTarget = CreatePresentTarget(w, h, "ViewportGT");
 				wRtc.GroundTruthPresentSampleView = CreatePresentSampleView(wRtc.GroundTruthPresentTarget);
-				wRtc.VelocityTarget = CreateVelocityTarget(w, h, "Viewport");               // motion vectors (#44), full viewport res
+				wRtc.VelocityTarget = CreateVelocityTarget(w, h, "Viewport");                 // motion vectors (#44), full viewport res
+				wRtc.GBufferNormalTarget = CreateDepthNormalTarget(w, h, "Viewport");         // depth+normal G-buffer (#124), full res
 				wRtc.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0"); // TAA history (#44)
 				wRtc.HistoryTarget[1] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory1");
 			}

@@ -80,9 +80,18 @@ namespace Snowstorm
 		// SceneColor, so it gets its own slot rather than overwriting the thread.
 		Ref<TextureView> Velocity;
 
+		// The depth+normal prepass G-buffer's normal color view (#124), published by DepthNormalEffect when
+		// it runs (null otherwise). The half-res GI compute pass + the bilateral upsample read it (and its
+		// paired depth) as their per-pixel geometry source / edge-stopping guide. Aux input like Velocity.
+		Ref<TextureView> GBufferNormal;
+
 		// Whether the velocity pass runs this frame (debug view / TAA / neural-temporal / dataset export).
 		// The consumers (TAA, neural-temporal upscale, motion-vector debug tonemap, dataset) branch on it.
 		bool VelocityNeeded = false;
+
+		// Whether the depth+normal prepass runs this frame (#124): GI active OR the normal debug view (5).
+		// DepthNormalEffect renders the G-buffer when set; the GI pass + bilateral upsample consume it.
+		bool GBufferNeeded = false;
 
 		// Whether TAA (render.aa == 2) is active with valid history targets. TemporalEffect resolves when
 		// set, and clears the per-viewport history-valid flag when NOT set (so re-enabling starts clean).
@@ -105,9 +114,11 @@ namespace Snowstorm
 		// is selected (else default = the normal ACES tonemap). Filled in the preamble, read by LdrChain.
 		RendererService::TonemapParams PrimaryTonemap;
 
-		// The velocity target's backing texture, declared as an extra Sampled read by the tonemap pass when
-		// the motion-vector debug view samples it (null otherwise). Derived in the preamble.
-		Ref<Texture> VelocityRead;
+		// The backing texture the tonemap DEBUG branch samples via bindless (null when the normal tonemapped
+		// view is shown), declared as an extra Sampled read by the tonemap pass so the graph transitions it to
+		// shader-read first. Carries the velocity target (motion-vector view) or the G-buffer normal (#124),
+		// whichever debug view is selected. Derived in the preamble.
+		Ref<Texture> DebugRead;
 	};
 
 	// A composable per-viewport render effect (forward, velocity, upscale, TAA, LDR filters, compare).
