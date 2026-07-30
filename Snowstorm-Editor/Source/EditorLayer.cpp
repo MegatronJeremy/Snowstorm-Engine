@@ -801,6 +801,12 @@ namespace Snowstorm
 		rtc.GITargetView = rtc.GITarget->GetDefaultView();
 		// Full-res GI target (#124), full viewport res; the bilateral upsample renders into it.
 		rtc.GIUpscaleTarget = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport GIUpscale");
+		// Half-res AO target (#126); ViewportResizeSystem rebuilds it at render.ao.scale on the first frame.
+		rtc.AOTarget = CreateAOTarget(ScaledExtent(windowWidth, CVars::ClampedAOScale()),
+		                              ScaledExtent(windowHeight, CVars::ClampedAOScale()), "Main Viewport");
+		rtc.AOTargetView = rtc.AOTarget->GetDefaultView();
+		// Full-res AO target (#126), full viewport res; the bilateral upsample renders into it.
+		rtc.AOUpscaleTarget = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport AOUpscale");
 		// TAA history ping-pong (#44).
 		rtc.HistoryTarget[0] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport History0");
 		rtc.HistoryTarget[1] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport History1");

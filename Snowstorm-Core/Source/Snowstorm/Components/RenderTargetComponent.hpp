@@ -71,6 +71,18 @@ namespace Snowstorm
 		// is a fullscreen graphics pass), unlike the half-res GITarget (a compute UAV). Null until allocated.
 		Ref<RenderTarget> GIUpscaleTarget;
 
+		// Half-res RT AO (#126): the RTAO occlusion trace runs into this Sampled|Storage R16F target at
+		// render.ao.scale. Stores a scalar occlusion FACTOR [0,1] (1 = open). Independent of the GI target —
+		// AO and GI are separate passes (either can run without the other). A bare Texture + view (compute
+		// writes it as a UAV), like GITarget.
+		Ref<Texture> AOTarget;
+		Ref<TextureView> AOTargetView;
+
+		// Full-res AO factor (#126): the depth+normal-aware bilateral upsample renders the half-res AOTarget
+		// into this full-viewport target, which the forward pass samples (by screen UV) and folds into `ao`.
+		// A RenderTarget (the upsample is a fullscreen graphics pass). Null until allocated.
+		Ref<RenderTarget> AOUpscaleTarget;
+
 		// Temporal-resolve history ping-pong (#44 TAA). Two full-res HDR (color-only) targets: each frame
 		// the resolve reads the PREVIOUS one as history, reprojects it by the velocity buffer, blends with
 		// the current frame, and writes the result into the CURRENT one — which both feeds tonemap and

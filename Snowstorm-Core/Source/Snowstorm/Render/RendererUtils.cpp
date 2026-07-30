@@ -292,6 +292,20 @@ namespace Snowstorm
 		return Texture::Create(td);
 	}
 
+	Ref<Texture> CreateAOTarget(uint32_t w, uint32_t h, const char* debugPrefix)
+	{
+		// Half-res AO factor (#126): compute writes it (Storage/UAV), the bilateral upsample samples it. Scalar
+		// occlusion in .r; RGBA16F because the RHI has no single-channel float format (negligible at half-res).
+		TextureDesc td{};
+		td.Dimension = TextureDimension::Texture2D;
+		td.Format = PixelFormat::RGBA16_SFloat;
+		td.Usage = TextureUsage::Sampled | TextureUsage::Storage;
+		td.Width = w;
+		td.Height = h;
+		td.DebugName = std::string(debugPrefix) + "_AO";
+		return Texture::Create(td);
+	}
+
 	Ref<Texture> CreateCubeTexture(const uint32_t size, const uint32_t mips, const PixelFormat format, const char* debugName)
 	{
 		TextureDesc td{};

@@ -18,6 +18,7 @@
 #include "Snowstorm/Render/Passes/DatasetExportPass.hpp"
 #include "Snowstorm/Render/Passes/DepthNormalPass.hpp"
 #include "Snowstorm/Render/Passes/FxaaPass.hpp"
+#include "Snowstorm/Render/Passes/AOPass.hpp"
 #include "Snowstorm/Render/Passes/GIPass.hpp"
 #include "Snowstorm/Render/Passes/GIUpsamplePass.hpp"
 #include "Snowstorm/Render/Passes/MetricsPass.hpp"
@@ -206,6 +207,59 @@ namespace Snowstorm
 		private:
 			RenderSystem& m_Owner;
 			GIUpsamplePass m_Pass; // owned here: exclusive to this effect
+		};
+
+		// Half-res RT AO compute pass (#126) — the AO analogue of GIEffect, a strict subset (occupancy-only,
+		// no geometry table). Traces the occlusion hemisphere at render.ao.scale over the depth+normal
+		// G-buffer, writing a scalar occlusion factor into AOTarget. Runs after the GI sub-chain, before
+		// Forward. Gated on AoRTActive() alone — AO needs no geometry table (unlike GI). Independent of GI:
+		// AO can run with GI off. Debug view 2 shows the raw output.
+		class AOEffect final : public IViewportEffect
+		{
+		public:
+			explicit AOEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "AO"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::AoRTActive() && v.RT.AOTarget && v.RT.AOTargetView;
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+
+				const auto& gbufDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const uint32_t fullW = gbufDesc.Width;
+				const uint32_t fullH = gbufDesc.Height;
+				const float scale = CVars::ClampedAOScale();
+				const uint32_t aoW = ScaledExtent(fullW, scale);
+				const uint32_t aoH = ScaledExtent(fullH, scale);
+
+				const Ref<TextureView> gbufView = gbufDesc.ColorAttachments[0].View;
+				const Ref<TextureView> aoView = v.RT.AOTargetView;
+				const glm::mat4 invViewProj = glm::inverse(fc.Renderer.GetFrameData().ViewProjection);
+				const float radius = CVars::AORadius.Get();
+				const float intensity = CVars::AOIntensity.Get();
+				const auto frameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
+
+				fc.Graph.AddPass({.Name = "AO" + v.Suffix,
+				                  .IsCompute = true,
+				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, invViewProj, radius, intensity, frameCounter, gbufView, aoView, aoW, aoH](CommandContext& c)
+				                  {
+					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, radius, intensity, frameCounter,
+					                                  gbufView, aoView, aoW, aoH);
+				                  }});
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			AOPass m_Pass; // owned here: the AO compute pass is exclusive to this effect
 		};
 
 		// Motion-vector pass (#44): re-renders visible meshes into the velocity target, projecting each vertex
@@ -743,6 +797,7 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<DepthNormalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<GIEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<GIUpsampleEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<AOEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<VelocityEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ForwardEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<UpscaleEffect>(*this));

@@ -106,22 +106,26 @@ namespace Snowstorm
 
 			const uint32_t giW = ScaledExtent(w, CVars::ClampedGIScale());
 			const uint32_t giH = ScaledExtent(h, CVars::ClampedGIScale());
+			const uint32_t aoW = ScaledExtent(w, CVars::ClampedAOScale());
+			const uint32_t aoH = ScaledExtent(h, CVars::ClampedAOScale());
 
 			if (!rtc.Target || !rtc.PresentTarget || !rtc.AAIntermediateTarget || !rtc.SceneUpscaleTarget ||
 			    !rtc.GroundTruthTarget || !rtc.GroundTruthPresentTarget || !rtc.VelocityTarget ||
 			    !rtc.GBufferNormalTarget || !rtc.GITarget || !rtc.GIUpscaleTarget ||
+			    !rtc.AOTarget || !rtc.AOUpscaleTarget ||
 			    !rtc.HistoryTarget[0] || !rtc.HistoryTarget[1])
 			{
 				needsCreate = true;
 			}
 			else
 			{
-				// Present tracks full size; Target tracks scaled size; GI tracks gi-scaled — check each so any
-				// scale change rebuilds.
+				// Present tracks full size; Target tracks scaled size; GI/AO track their own scaled — check each
+				// so any scale change rebuilds.
 				const auto& presentDesc = rtc.PresentTarget->GetDesc();
 				const auto& targetDesc = rtc.Target->GetDesc();
 				if (presentDesc.Width != w || presentDesc.Height != h || targetDesc.Width != sw || targetDesc.Height != sh ||
-				    rtc.GITarget->GetDesc().Width != giW || rtc.GITarget->GetDesc().Height != giH)
+				    rtc.GITarget->GetDesc().Width != giW || rtc.GITarget->GetDesc().Height != giH ||
+				    rtc.AOTarget->GetDesc().Width != aoW || rtc.AOTarget->GetDesc().Height != aoH)
 				{
 					needsCreate = true;
 				}
@@ -144,6 +148,9 @@ namespace Snowstorm
 				wRtc.GITarget = CreateGITarget(giW, giH, "Viewport");                 // half-res GI (#124)
 				wRtc.GITargetView = wRtc.GITarget->GetDefaultView();
 				wRtc.GIUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale"); // full-res GI (#124)
+				wRtc.AOTarget = CreateAOTarget(aoW, aoH, "Viewport");                       // half-res AO (#126)
+				wRtc.AOTargetView = wRtc.AOTarget->GetDefaultView();
+				wRtc.AOUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportAOUpscale"); // full-res AO (#126)
 				wRtc.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0"); // TAA history (#44)
 				wRtc.HistoryTarget[1] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory1");
 			}

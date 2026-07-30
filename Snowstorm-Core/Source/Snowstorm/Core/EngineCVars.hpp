@@ -234,9 +234,15 @@ namespace Snowstorm::CVars
 	extern CVar<bool> AoRT;
 	extern CVar<float> AORadius;
 	extern CVar<float> AOIntensity;
+	// RT AO internal resolution fraction (#126): the RTAO occlusion trace runs at this fraction of viewport
+	// res, then a depth-aware bilateral upsample restores full res. 0.5 = quarter the pixels. Clamp with
+	// ClampedAOScale(). Independent of render.gi.scale — AO and GI are separate passes.
+	extern CVar<float> AOScale;
+	// render.ao.scale clamped to [0.25, 1.0]. Use everywhere the value is consumed.
+	[[nodiscard]] float ClampedAOScale();
 
-	// True when RTAO should run (render.ao.rt on AND the device supports RT). Drives FrameCB.RTAOEnabled +
-	// the shader's ray-query branch + the TLAS build gate. False on a non-RT GPU (RTAO shader compiled out).
+	// True when RTAO should run (render.ao.rt on AND the device supports RT). Drives the AO compute pass gate
+	// + the TLAS build gate. False on a non-RT GPU. (Post-#126 AO no longer traces in the forward shader.)
 	[[nodiscard]] bool AoRTActive();
 
 	// Ray-traced reflections (#118): trace a reflection ray inline in DefaultLit, shade the reflected hit,

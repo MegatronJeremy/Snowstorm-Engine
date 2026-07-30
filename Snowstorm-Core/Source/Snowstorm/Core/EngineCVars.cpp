@@ -127,6 +127,8 @@ namespace Snowstorm::CVars
 
 	CVar<float> GIScale{"render.gi.scale", 0.5f, "RT GI internal resolution: the GI hemisphere gather runs at this fraction of viewport res (0.5 = quarter the pixels = ~4x cheaper), then a depth-aware bilateral upsample restores full res (#124). 1.0 = full-res reference for the A/B. Clamped to [0.25, 1.0].", CVarFlags::Persist};
 
+	CVar<float> AOScale{"render.ao.scale", 0.5f, "RT AO internal resolution: the RTAO occlusion trace runs at this fraction of viewport res (0.5 = quarter the pixels = ~4x cheaper), then a depth-aware bilateral upsample restores full res (#126). 1.0 = full-res reference. Clamped to [0.25, 1.0].", CVarFlags::Persist};
+
 	float ClampedRenderScale()
 	{
 		const float s = RenderScale.Get();
@@ -144,6 +146,20 @@ namespace Snowstorm::CVars
 	float ClampedGIScale()
 	{
 		const float s = GIScale.Get();
+		if (s < 0.25f)
+		{
+			return 0.25f;
+		}
+		if (s > 1.0f)
+		{
+			return 1.0f;
+		}
+		return s;
+	}
+
+	float ClampedAOScale()
+	{
+		const float s = AOScale.Get();
 		if (s < 0.25f)
 		{
 			return 0.25f;

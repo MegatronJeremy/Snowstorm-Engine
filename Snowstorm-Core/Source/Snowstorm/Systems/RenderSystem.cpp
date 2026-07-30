@@ -337,12 +337,13 @@ namespace Snowstorm
 		                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 		v.VelocityNeeded = velocityNeeded;
 
-		// The depth+normal prepass (#124) renders the G-buffer when GI is active OR a debug view that needs it
-		// is selected (5 = world normals, 6 = raw half-res GI — both let you eyeball the substrate in
-		// isolation). The GI compute pass itself additionally requires GI active + a geometry table.
+		// The depth+normal prepass renders the G-buffer when GI (#124) OR AO (#126) is active, OR a debug view
+		// that needs it is selected (5 = world normals, 6 = raw half-res GI, 2 = raw half-res AO — each lets you
+		// eyeball the substrate in isolation). The GI/AO compute passes additionally check their own gates.
 		const bool giActive = CVars::GIRTActive();
-		const bool gbufferNeeded = (giActive || debugView == 5 || debugView == 6) && vpRT.GBufferNormalTarget &&
-		                           !vpRT.GBufferNormalTarget->GetDesc().ColorAttachments.empty() &&
+		const bool aoActive = CVars::AoRTActive();
+		const bool gbufferNeeded = (giActive || aoActive || debugView == 5 || debugView == 6 || debugView == 2) &&
+		                           vpRT.GBufferNormalTarget && !vpRT.GBufferNormalTarget->GetDesc().ColorAttachments.empty() &&
 		                           vpRT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
 		v.GBufferNeeded = gbufferNeeded;
 
@@ -376,6 +377,16 @@ namespace Snowstorm
 			primaryTonemap.DebugScale = static_cast<float>(vpRT.GITarget->GetDesc().Width) /
 			                            static_cast<float>(vpRT.GBufferNormalTarget->GetDesc().Width);
 			debugRead = vpRT.GITarget;
+		}
+		else if (debugView == 2 && aoActive && gbufferNeeded && vpRT.AOTarget && vpRT.AOTargetView)
+		{
+			// Raw half-res AO factor (#126), same half-res point-fetch readout as GI (DebugMode 3). The AO
+			// factor lives in .r; DebugMode 4 outputs it as grayscale. Only meaningful when the AO pass ran.
+			primaryTonemap.DebugMode = 4;
+			primaryTonemap.DebugTexIndex = vpRT.AOTargetView->GetGlobalBindlessIndex();
+			primaryTonemap.DebugScale = static_cast<float>(vpRT.AOTarget->GetDesc().Width) /
+			                            static_cast<float>(vpRT.GBufferNormalTarget->GetDesc().Width);
+			debugRead = vpRT.AOTarget;
 		}
 
 		// Post-tonemap LDR filter sizing (#44), derived up front so the effect chain (UpscaleEffect /

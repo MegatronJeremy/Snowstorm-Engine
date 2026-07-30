@@ -86,6 +86,15 @@ float4 main(FullscreenVSOut input) : SV_Target
 		return float4(TonemapACES(gi * Exposure), 1.0);
 	}
 
+	// Half-res AO debug view (#126): same half-res point-fetch as GI (DebugMode 3). The AO factor is a scalar
+	// in .r ([0,1], 1 = fully open); output it as grayscale so dark = occluded. No tonemap (it's already [0,1]).
+	if (gTonemap.DebugMode == 4)
+	{
+		const int2 aoTexel = int2(float2(texel) * gTonemap.DebugScale);
+		const float ao = Textures[NonUniformResourceIndex(gTonemap.DebugTexIndex)].Load(int3(aoTexel, 0)).r;
+		return float4(ao, ao, ao, 1.0);
+	}
+
 	const float3 hdr = Textures[NonUniformResourceIndex(gTonemap.SceneColorIndex)].Load(int3(texel, 0)).rgb;
 
 	// Output LINEAR; the sRGB-format present target hardware-encodes on write (#79).

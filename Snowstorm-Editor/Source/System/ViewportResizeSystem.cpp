@@ -85,19 +85,24 @@ namespace Snowstorm
 				// GI target renders at render.gi.scale (#124), independent of render.scale.
 				const uint32_t giW = ScaledExtent(w, CVars::ClampedGIScale());
 				const uint32_t giH = ScaledExtent(h, CVars::ClampedGIScale());
+				// AO target renders at render.ao.scale (#126), independent of both.
+				const uint32_t aoW = ScaledExtent(w, CVars::ClampedAOScale());
+				const uint32_t aoH = ScaledExtent(h, CVars::ClampedAOScale());
 
 				const auto& rt = reg.Read<RenderTargetComponent>(vpEntity);
 				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget ||
 				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget || !rt.VelocityTarget ||
 				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIUpscaleTarget ||
+				                     !rt.AOTarget || !rt.AOUpscaleTarget ||
 				                     !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
 				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Compare each
 				// against its own expected extent so a scale change (Target only) still triggers a rebuild.
 				const bool viewportResized = rt.PresentTarget && (rt.PresentTarget->GetDesc().Width != w || rt.PresentTarget->GetDesc().Height != h);
 				const bool scaleChanged = rt.Target && (rt.Target->GetDesc().Width != sw || rt.Target->GetDesc().Height != sh);
-				// GI scale can change independently (render.gi.scale) — rebuild the GI target when it does.
+				// GI/AO scales can change independently — rebuild each when its own scaled extent changes.
 				const bool giScaleChanged = rt.GITarget && (rt.GITarget->GetDesc().Width != giW || rt.GITarget->GetDesc().Height != giH);
-				if (missing || viewportResized || scaleChanged || giScaleChanged)
+				const bool aoScaleChanged = rt.AOTarget && (rt.AOTarget->GetDesc().Width != aoW || rt.AOTarget->GetDesc().Height != aoH);
+				if (missing || viewportResized || scaleChanged || giScaleChanged || aoScaleChanged)
 				{
 					// Drain the GPU before dropping the old targets: replacing the Ref destroys the VkImage/
 					// view immediately, but in-flight frames may still be sampling them (the post-process pass
@@ -141,6 +146,13 @@ namespace Snowstorm
 					// Full-res GI target (#124): the bilateral upsample renders the half-res GI into this, and the
 					// forward pass samples it (by screen UV) as the diffuse GI. Full viewport res.
 					rtW.GIUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale");
+					// Half-res AO target (#126): viewport * render.ao.scale. Always allocated; only dispatched
+					// when AO is active. Rebuilt on viewport OR ao.scale change. Independent of GI.
+					rtW.AOTarget = CreateAOTarget(aoW, aoH, "Viewport");
+					rtW.AOTargetView = rtW.AOTarget->GetDefaultView();
+					// Full-res AO target (#126): the bilateral upsample renders the half-res AO into this; the
+					// forward pass samples it (by screen UV) and folds it into `ao`. Full viewport res.
+					rtW.AOUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportAOUpscale");
 					// TAA history ping-pong (#44): two full-res color-only HDR targets. Always allocated;
 					// only rendered into when render.aa == TAA. Recreated on resize so history matches size.
 					rtW.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0");
