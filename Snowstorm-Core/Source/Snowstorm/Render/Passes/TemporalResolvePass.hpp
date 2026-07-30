@@ -27,11 +27,13 @@ namespace Snowstorm
 	public:
 		// Blend current + reprojected history into the current render target (a full-res HDR history slot).
 		// `current`/`history`/`velocity` are the three HDR/velocity source views; `rcpFrame` = 1/render-size;
-		// `historyValid` false on the first frame / after a reset (outputs current only). Records into `ctx`;
-		// no-op until the shader has compiled.
+		// `historyValid` false on the first frame / after a reset (outputs current only). `nearPlane`/`farPlane`
+		// linearize the packed NDC depths and `depthRejectScale` is the relative disocclusion threshold (0 =
+		// off) for the #127 depth rejection. Records into `ctx`; no-op until the shader has compiled.
 		void Draw(const Ref<CommandContext>& ctx, uint32_t frameIndex,
 		          const Ref<TextureView>& current, const Ref<TextureView>& history, const Ref<TextureView>& velocity,
-		          const glm::vec2& rcpFrame, bool historyValid, float blend, float maxBlend, PixelFormat colorFormat);
+		          const glm::vec2& rcpFrame, bool historyValid, float blend, float maxBlend,
+		          float nearPlane, float farPlane, float depthRejectScale, PixelFormat colorFormat);
 
 	private:
 		void EnsurePipeline(PixelFormat colorFormat);

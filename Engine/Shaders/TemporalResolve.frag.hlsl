@@ -17,7 +17,12 @@ cbuffer ResolveCB : register(b3, space1)
 	float BlendHistory; // BASE history weight (used at speed) — the render.taa.blend CVar
 	float MaxBlend;     // history weight when the pixel is ~static: deeper accumulation to kill specular
 	                    // shimmer (a static camera still jitters, so shiny surfaces alias frame-to-frame)
-	float3 _Pad;
+	// Depth disocclusion rejection (#127): Near/Far linearize the packed NDC depths (perspectiveRH_ZO, ZO
+	// clip); DepthRejectScale is the RELATIVE view-space threshold (0 = OFF -> exactly the pre-#127 resolve,
+	// a clean A/B toggle). Reuses the former _Pad row, so the CB size is unchanged (2 x 16-byte rows).
+	float Near;
+	float Far;
+	float DepthRejectScale;
 };
 
 Texture2D CurrentTex : register(t4, space1);     // current-frame HDR color (jittered)
@@ -121,6 +126,15 @@ float3 ClipToAABB(float3 history, float3 center, float3 cmin, float3 cmax)
 	return history; // already inside
 }
 
+// Linearize an NDC depth (perspectiveRH_ZO, ZO clip range [0,1]) to view-space distance. Matches the
+// camera's glm::perspectiveRH_ZO projection: d = 1 at the far plane, 0 at near. Used by the #127
+// disocclusion test so the reject threshold is in metric view-space (a fixed NDC delta is meaningless —
+// depth precision is wildly non-linear). Guard the denominator so a far-plane/sky texel (d==1) can't /0.
+float LinearizeDepth(float d)
+{
+	return (Near * Far) / max(Far - d * (Far - Near), 1e-6);
+}
+
 float4 main(FullscreenVSOut input) : SV_Target
 {
 	const int2 texel = int2(input.PositionCS.xy);
@@ -128,10 +142,16 @@ float4 main(FullscreenVSOut input) : SV_Target
 
 	const float3 currentHDR = CurrentTex.Load(int3(texel, 0)).rgb;
 
-	// First frame / history invalid: nothing to blend, output current.
+	// Current NDC depth rides the velocity target's .z (#127): the velocity pass depth-tests geometry, so
+	// this is the nearest fragment's depth, matching its motion vector. Packed into our output .a so it
+	// becomes next frame's history depth (the Dprev the reproject below reads).
+	const float depthCurr = VelocityTex.Load(int3(texel, 0)).z;
+
+	// First frame / history invalid: nothing to blend, output current — but STILL write depth into .a so
+	// next frame's disocclusion test has a valid previous depth to compare against.
 	if (HistoryValid < 0.5)
 	{
-		return float4(currentHDR, 1.0);
+		return float4(currentHDR, depthCurr);
 	}
 
 	// Reproject: where was this pixel last frame? velocity = curr_uv - prev_uv, so prev_uv = uv - velocity.
@@ -141,7 +161,7 @@ float4 main(FullscreenVSOut input) : SV_Target
 	// Off-screen history can't be trusted (disocclusion at the screen edge) -> fall back to current.
 	if (histUv.x < 0.0 || histUv.x > 1.0 || histUv.y < 0.0 || histUv.y > 1.0)
 	{
-		return float4(currentHDR, 1.0);
+		return float4(currentHDR, depthCurr);
 	}
 
 	// Catmull-Rom (sharpening bicubic) history reconstruction — counters the compounding bilinear-resample
@@ -192,7 +212,26 @@ float4 main(FullscreenVSOut input) : SV_Target
 
 	// Velocity-aware blend weight: accumulate HARD when static (toward MaxBlend) so the many jittered
 	// samples average out; use the lower BASE weight under motion so nothing ghosts.
-	const float blend = lerp(BlendHistory, MaxBlend, staticness);
+	float blend = lerp(BlendHistory, MaxBlend, staticness);
+
+	// DEPTH DISOCCLUSION REJECTION (#127). The neighborhood clamp only rejects history whose COLOR is an
+	// outlier; a disoccluded background revealed behind moving geometry often reprojects onto history of a
+	// similar color and slips through, leaving a ghost trail. Depth catches it directly: last frame's depth
+	// at the reprojected UV rides the previous history's .a (a plain tap — Catmull-Rom is rgb-only). If the
+	// current surface's linear depth differs from the reprojected history's beyond a relative threshold, the
+	// history is a DIFFERENT surface -> drive its weight toward 0 so the reveal falls back to the current
+	// frame. Smoothstep (not a hard cutoff) so a near-threshold edge attenuates instead of popping.
+	// DepthRejectScale == 0 disables it (blend unchanged) — the pre-#127 behaviour, for a clean A/B.
+	if (DepthRejectScale > 0.0)
+	{
+		const float depthPrev = HistoryTex.SampleLevel(LinearClamp, histUv, 0).a;
+		const float linCurr = LinearizeDepth(depthCurr);
+		const float linPrev = LinearizeDepth(depthPrev);
+		const float rel = abs(linCurr - linPrev) / max(linCurr, 1e-4);
+		// 1 when depths agree, ramping to 0 as the relative gap crosses [scale, 2*scale].
+		const float depthConfidence = 1.0 - smoothstep(DepthRejectScale, 2.0 * DepthRejectScale, rel);
+		blend *= depthConfidence;
+	}
 
 	// Accumulate in weighted YCoCg, back to weighted RGB, then EXPAND to real HDR. The blend/clamp run in
 	// tonemap-compressed [0,1) space (that's what stabilizes them). This pass is PURE accumulation in linear
@@ -201,5 +240,6 @@ float4 main(FullscreenVSOut input) : SV_Target
 	// channel. Sharpening is a display-space op and lives in a post-tonemap pass (SharpenPass, like FXAA).
 	const float3 resolvedYCoCg = lerp(currentYCoCg, clipped, blend);
 	const float3 resolvedHDR = TonemapWeightInverse(clamp(YCoCgToRgb(resolvedYCoCg), 0.0, 0.999));
-	return float4(max(resolvedHDR, 0.0), 1.0);
+	// .a = this frame's depth -> becomes next frame's history depth for the reproject above.
+	return float4(max(resolvedHDR, 0.0), depthCurr);
 }

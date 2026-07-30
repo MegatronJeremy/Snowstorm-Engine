@@ -110,6 +110,22 @@ namespace Snowstorm
 			{
 				CVars::AAMode.Set(aa);
 			}
+
+			// TAA depth-disocclusion rejection (#127): rejects reprojected history across a depth
+			// discontinuity, removing the ghost trail on disoccluded silhouettes under motion. Only
+			// meaningful in TAA mode. 0 = off (a clean A/B against the pre-#127 resolve).
+			ImGui::BeginDisabled(aa != 2);
+			if (float depthReject = CVars::TaaDepthReject.Get();
+			    ImGui::SliderFloat("Depth Reject##TAA", &depthReject, 0.0f, 0.1f, "%.3f", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::TaaDepthReject.Set(depthReject);
+			}
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("TAA disocclusion rejection: reject history whose depth differs by more than "
+				                  "this fraction of view-space depth. 0 = off. ~0.02 is a good start.");
+			}
+			ImGui::EndDisabled();
 		}
 
 		// Post-tonemap contrast-adaptive sharpen (#44). Display-space + hue-safe (runs after tonemap like

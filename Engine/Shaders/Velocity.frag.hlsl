@@ -8,8 +8,15 @@
 // history as histUv = uv - velocity in top-left UV space, so the velocity stored here has to be in that
 // same space. (An earlier -0.5 Y flip here negated only the Y term, so vertical reprojection went the
 // wrong way -> ghosting/smear on vertical motion; invisible in the abs()-based motion-vector debug view.)
-// The +0.5 bias cancels in the curr-prev delta, so only the 0.5 scale + Y sign actually matter. .zw
-// unused (0). Paired with Velocity.vert.hlsl. No color output transform (raw data buffer).
+// The +0.5 bias cancels in the curr-prev delta, so only the 0.5 scale + Y sign actually matter.
+//
+// .z = current NDC depth (SV_Position.z, the depth-buffer value) for TAA depth-based disocclusion
+// rejection (#127): the temporal resolve compares this against last frame's depth (packed into the
+// resolved-history .a) at the reprojected UV and rejects history across a depth discontinuity, killing
+// the ghost trail on disoccluded silhouettes. fp16 in the RGBA16F velocity target — lossy near the far
+// plane but adequate for a RELATIVE reject (same tradeoff the #124 G-buffer depth .w accepts). The pass
+// depth-tests geometry, so the nearest fragment's depth wins here, matching its velocity. .w unused (0).
+// Paired with Velocity.vert.hlsl. No color output transform (raw data buffer).
 
 struct VelocityVSOut
 {
@@ -23,5 +30,5 @@ float4 main(VelocityVSOut input) : SV_Target
 	const float2 currUV = (input.CurrCS.xy / input.CurrCS.w) * 0.5 + 0.5;
 	const float2 prevUV = (input.PrevCS.xy / input.PrevCS.w) * 0.5 + 0.5;
 	const float2 velocity = currUV - prevUV;
-	return float4(velocity, 0.0, 0.0);
+	return float4(velocity, input.PositionCS.z, 0.0);
 }

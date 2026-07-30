@@ -131,6 +131,10 @@ namespace Snowstorm::CVars
 	// accumulates more frames to average out specular shimmer that jitter causes on shiny surfaces.
 	extern CVar<float> TaaBlend;
 	extern CVar<float> TaaMaxBlend;
+	// TAA depth-disocclusion rejection (#127): relative view-space depth threshold above which reprojected
+	// history is treated as a different surface and rejected (removes ghost trails on disoccluded edges).
+	// 0 = off (pre-#127 behaviour), for a clean A/B.
+	extern CVar<float> TaaDepthReject;
 
 	// Post-tonemap contrast-adaptive sharpen (AMD CAS) strength, 0..1 (#44). Display-space (runs after
 	// tonemap, like FXAA), so it's hue-safe — a sharpen in linear HDR before ACES turns overshoot into a hue

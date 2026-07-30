@@ -85,6 +85,8 @@ namespace Snowstorm::CVars
 
 	CVar<float> TaaMaxBlend{"render.taa.maxblend", 0.97f, "TAA history weight when the pixel is ~static: deeper accumulation to average out specular shimmer that jitter causes on shiny surfaces (#44)", CVarFlags::Persist};
 
+	CVar<float> TaaDepthReject{"render.taa.depth_reject", 0.02f, "TAA depth-disocclusion rejection threshold: reject reprojected history whose linear depth differs by more than this fraction of view-space depth (kills ghost trails on disoccluded silhouettes). 0 = off (#127)", CVarFlags::Persist};
+
 	CVar<float> Sharpen{"render.sharpen", 0.0f, "Post-tonemap contrast-adaptive sharpen (AMD CAS) strength, 0..1 (0 = off). Display-space + hue-safe; counters TAA/upscale softening, runs after tonemap like FXAA. Guidance: ~0.3 for native+TAA, ~0.5 when upscaling (render.scale<1); >0.7 over-sharpens and re-introduces aliasing TAA removed, so keep it light (#44)", CVarFlags::Persist};
 
 	CVar<int> ShadowsMode{"render.shadows.mode", 1, "Shadow technique: 0 = Off, 1 = Shadow Map (raster depth maps + PCF), 2 = Ray Traced (hardware ray query, requires an RT GPU; falls back to Off on a non-RT device). Mode 2 skips the raster shadow passes entirely. Replaces the old render.shadows/render.shadows.rt toggles (#118)", CVarFlags::Persist};

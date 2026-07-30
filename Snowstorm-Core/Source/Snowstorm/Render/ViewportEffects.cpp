@@ -1,5 +1,6 @@
 #include "Snowstorm/Systems/RenderSystem.hpp"
 
+#include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Components/MaterialComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/PrevTransformComponent.hpp"
@@ -613,16 +614,22 @@ namespace Snowstorm
 				const bool historyValid = m_HistoryValid.contains(v.ViewportEntity);
 				m_HistoryValid.insert(v.ViewportEntity);
 
+				// Depth disocclusion rejection (#127): the shader linearizes the packed NDC depths with the
+				// camera's near/far. Sky/no-camera guard: fall back to the CameraComponent defaults.
+				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
+				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+				const float depthReject = CVars::TaaDepthReject.Get();
+
 				fc.Graph.AddPass({.Name = "TemporalResolve" + v.Suffix,
 				                  .Target = curHistory,
 				                  .Reads = {{currentView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {velView->GetTexture(), RenderGraph::AccessState::Sampled}},
-				                  .Execute = [this, &fc, currentView, prevHistView, velView, rcpFrame, historyValid, histFmt](CommandContext& c)
+				                  .Execute = [this, &fc, currentView, prevHistView, velView, rcpFrame, historyValid, nearPlane, farPlane, depthReject, histFmt](CommandContext& c)
 				                  {
 					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, currentView, prevHistView, velView,
 					                              rcpFrame, historyValid, CVars::TaaBlend.Get(),
-					                              CVars::TaaMaxBlend.Get(), histFmt);
+					                              CVars::TaaMaxBlend.Get(), nearPlane, farPlane, depthReject, histFmt);
 				                  }});
 
 				// Tonemap now reads the resolved history slot instead of the raw scene color.

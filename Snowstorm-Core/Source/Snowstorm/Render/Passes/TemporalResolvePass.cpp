@@ -19,7 +19,11 @@ namespace Snowstorm
 			float HistoryValid = 0.0f;
 			float BlendHistory = 0.9f; // base weight while moving
 			float MaxBlend = 0.97f;    // weight when ~static (velocity-ramped in-shader)
-			glm::vec3 _Pad{0.0f};
+			// Depth disocclusion rejection (#127): Near/Far linearize the packed NDC depths; DepthRejectScale
+			// is the relative view-space threshold (0 = off). Reuses the former _Pad row (same 32-byte struct).
+			float Near = 0.1f;
+			float Far = 500.0f;
+			float DepthRejectScale = 0.0f;
 		};
 
 		// Set 1 (space1). Bindings parked high to dodge the material bindings (0/1/2) that
@@ -87,6 +91,7 @@ namespace Snowstorm
 	void TemporalResolvePass::Draw(const Ref<CommandContext>& ctx, const uint32_t frameIndex,
 	                               const Ref<TextureView>& current, const Ref<TextureView>& history, const Ref<TextureView>& velocity,
 	                               const glm::vec2& rcpFrame, const bool historyValid, const float blend, const float maxBlend,
+	                               const float nearPlane, const float farPlane, const float depthRejectScale,
 	                               const PixelFormat colorFormat)
 	{
 		if (!ctx || !current || !history || !velocity)
@@ -126,6 +131,9 @@ namespace Snowstorm
 		cb.HistoryValid = historyValid ? 1.0f : 0.0f;
 		cb.BlendHistory = blend;
 		cb.MaxBlend = maxBlend;
+		cb.Near = nearPlane;
+		cb.Far = farPlane;
+		cb.DepthRejectScale = depthRejectScale;
 		m_UniformBuffers[frameIndex]->SetData(&cb, sizeof(ResolveCB), 0);
 
 		// Source views change every frame (history ping-pongs, targets resize), so refresh all bindings.
