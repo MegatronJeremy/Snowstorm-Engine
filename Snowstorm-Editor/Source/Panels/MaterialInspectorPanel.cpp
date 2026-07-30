@@ -57,38 +57,93 @@ namespace Snowstorm
 		// "Engine/Shaders/<name>.frag.hlsl" paths a material stores. Only fragment shaders whose entry point
 		// takes `PSInput` are mesh-surface shaders (paired with the shared Mesh.vert.hlsl); the rest are
 		// post-process / fullscreen passes (Tonemap, FXAA, Sky, ...) that would render garbage on a mesh, so
-		// they must NOT be offered. This is a cheap disk scan cached once per editor session — new shaders
-		// need a restart to appear (acceptable; authoring a new surface shader is a deliberate, rare act).
+		// they must NOT be offered. The result is cached, with an explicit Rescan action for shaders authored
+		// during the current editor session.
 		// Engine assets resolve under the engine root, not the project — see the Assets/->Engine/ split.
-		const std::vector<std::string>& MaterialShaders()
+		struct MaterialShaderCache
 		{
-			static std::vector<std::string> shaders = []
+			std::vector<std::string> Items;
+			bool Initialized = false;
+		};
+		MaterialShaderCache g_MaterialShaderCache;
+
+		bool RefreshMaterialShaders(std::string& error)
+		{
+			error.clear();
+			std::vector<std::string> shaders;
+			const std::filesystem::path dir = "Engine/Shaders";
+			std::error_code ec;
+			std::filesystem::directory_iterator it(dir, ec);
+			if (ec)
 			{
-				std::vector<std::string> out;
-				const std::filesystem::path dir = "Engine/Shaders";
-				std::error_code ec;
-				if (std::filesystem::exists(dir, ec))
+				error = "Cannot scan " + dir.string() + ": " + ec.message();
+				return false;
+			}
+
+			const std::filesystem::directory_iterator end;
+			while (it != end)
+			{
+				const std::filesystem::directory_entry& entry = *it;
+				const std::filesystem::path& path = entry.path();
+				if (path.extension() == ".hlsl" && path.stem().extension() == ".frag")
 				{
-					for (const auto& entry : std::filesystem::directory_iterator(dir, ec))
+					const bool regularFile = entry.is_regular_file(ec);
+					if (ec)
 					{
-						const std::filesystem::path& p = entry.path();
-						if (p.extension() != ".hlsl" || p.stem().extension() != ".frag")
+						error = "Cannot inspect " + path.string() + ": " + ec.message();
+						return false;
+					}
+					if (regularFile)
+					{
+						std::ifstream in(path);
+						if (!in)
 						{
-							continue; // want "*.frag.hlsl"
+							error = "Cannot read " + path.string();
+							return false;
 						}
-						std::ifstream in(p);
-						std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+						const std::string text((std::istreambuf_iterator<char>(in)),
+						                       std::istreambuf_iterator<char>());
+						if (in.bad())
+						{
+							error = "Failed while reading " + path.string();
+							return false;
+						}
 						// Mesh-surface signature: the fragment entry takes PSInput (mesh vertex output).
 						if (text.find("main(PSInput") != std::string::npos)
 						{
-							out.push_back("Engine/Shaders/" + p.filename().string());
+							shaders.push_back("Engine/Shaders/" + path.filename().string());
 						}
 					}
 				}
-				std::ranges::sort(out);
-				return out;
-			}();
-			return shaders;
+
+				it.increment(ec);
+				if (ec)
+				{
+					error = "Cannot continue scanning " + dir.string() + ": " + ec.message();
+					return false;
+				}
+			}
+
+			std::ranges::sort(shaders);
+			shaders.erase(std::unique(shaders.begin(), shaders.end()), shaders.end());
+			g_MaterialShaderCache.Items.swap(shaders);
+			g_MaterialShaderCache.Initialized = true;
+			return true;
+		}
+
+		const std::vector<std::string>& MaterialShaders()
+		{
+			if (!g_MaterialShaderCache.Initialized)
+			{
+				// Do not retry every frame after an initial failure. Rescan is the explicit retry path.
+				g_MaterialShaderCache.Initialized = true;
+				std::string error;
+				if (!RefreshMaterialShaders(error))
+				{
+					SS_CORE_WARN("Material shader scan failed: {}", error);
+				}
+			}
+			return g_MaterialShaderCache.Items;
 		}
 
 		// A texture-handle row: reuse the inspector's asset picker (same widget the component inspector uses
@@ -144,6 +199,26 @@ namespace Snowstorm
 		// --- Shader (the data-driven path — the whole point of #167). A dropdown of the mesh-surface shaders
 		// discovered on disk (typo-proof), plus a collapsible free-form path for a shader not in the list. ---
 		ImGui::TextUnformatted("Shader");
+		ImGui::SameLine();
+		if (ImGui::SmallButton("Rescan##material-shaders"))
+		{
+			auto& notify = world.GetSingleton<EditorNotificationsSingleton>();
+			std::string error;
+			if (RefreshMaterialShaders(error))
+			{
+				notify.Push("Found " + std::to_string(g_MaterialShaderCache.Items.size()) + " material shaders",
+				            EditorToastType::Success);
+			}
+			else
+			{
+				SS_CORE_WARN("Material shader rescan failed: {}", error);
+				notify.Push("Shader rescan failed (see log)", EditorToastType::Error);
+			}
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Rescan Engine/Shaders for material fragment shaders.");
+		}
 		ImGui::SetNextItemWidth(-1.0f);
 		const std::vector<std::string>& shaderList = MaterialShaders();
 		if (ImGui::BeginCombo("##shader", m.FragmentShader.c_str()))
