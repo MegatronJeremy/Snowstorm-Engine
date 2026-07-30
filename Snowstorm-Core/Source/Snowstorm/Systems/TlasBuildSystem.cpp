@@ -142,9 +142,14 @@ namespace Snowstorm
 				reflGeo.Capacity = needed;
 				reflGeo.Table = Buffer::Create(static_cast<size_t>(needed) * sizeof(GeometryRecord),
 				                               BufferUsage::Storage, nullptr, true, "ReflectionGeometryTable");
-				reflGeo.TableAddress = reflGeo.Table->GetGPUAddress();
 			}
 			reflGeo.Table->SetData(geoRecords.data(), needed * sizeof(GeometryRecord), 0);
+			// Publish the address EVERY time the table is populated, not only when the buffer is (re)created.
+			// The buffer survives an RT-off cycle (it's cached, not freed), while the else-branch below zeroes
+			// TableAddress when the table isn't needed. So re-enabling reflections/GI after a shadows/AO-only
+			// spell reuses the existing buffer, skips the creation branch, and — if the address were set only
+			// there — would leave TableAddress 0 forever (GI/reflections dead until restart). Set it here.
+			reflGeo.TableAddress = reflGeo.Table->GetGPUAddress();
 		}
 		else
 		{
