@@ -8,9 +8,17 @@
 // Paired with DepthNormal.frag.hlsl.
 #include "Include/MeshInput.hlsli"
 
+// Combined push constant (both stages): the VS reads ViewProj; the FS reads the alpha-mask fields. One
+// struct, one 80-byte range visible to VERTEX|FRAGMENT — avoids sharing MaterialInstance's descriptor set
+// (whose set-1 layout differs from this pass's, which caused a pipeline-layout-incompatibility device loss).
+// The albedo index rides bindless (set 3), so the per-batch material data is just these 3 scalars here.
 struct DepthNormalPush
 {
 	float4x4 ViewProj;
+	uint AlbedoTextureIndex; // bindless index (0 = no albedo -> no clip)
+	uint AlphaMaskEnabled;   // 1 = alpha-cutout (glTF MASK)
+	float AlphaCutoff;       // albedo.a threshold
+	float BaseAlpha;         // material BaseColor.a (multiplies the sampled alpha)
 };
 [[vk::push_constant]] DepthNormalPush gDN;
 
@@ -18,6 +26,7 @@ struct DepthNormalVSOut
 {
 	float4 PositionCS : SV_Position; // clip pos (drives rasterization + depth write)
 	float3 NormalWS : TEXCOORD0;     // world-space geometric normal, interpolated
+	float2 TexCoord : TEXCOORD1;     // UV for alpha-mask clip in the fragment stage (#124)
 };
 
 DepthNormalVSOut main(VSInput i, uint iid : SV_InstanceID)
@@ -29,6 +38,7 @@ DepthNormalVSOut main(VSInput i, uint iid : SV_InstanceID)
 
 	// Normal matrix: treat Model as rigid/affine (mat3(model)), same as Mesh.vert.
 	o.NormalWS = normalize(mul(i.Normal, (float3x3)model));
+	o.TexCoord = i.TexCoord;
 	o.PositionCS = mul(posWS, gDN.ViewProj);
 	return o;
 }

@@ -83,7 +83,7 @@ namespace Snowstorm
 						                                                                 glm::vec4(0.0f), tr.GetTransformMatrix());
 					                                            });
 
-					                  m_Pass.RecordDepthNormal(fc.Renderer, colorFmt, depthFmt, viewProj);
+					                  m_Pass.RecordDepthNormal(fc.Renderer, fc.FrameIndex, colorFmt, depthFmt, viewProj);
 				                  }});
 
 				v.GBufferNormal = gbuf->GetDesc().ColorAttachments[0].View;

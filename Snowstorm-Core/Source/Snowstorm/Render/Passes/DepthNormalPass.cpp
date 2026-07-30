@@ -2,7 +2,9 @@
 
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/Mesh.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/Shader.hpp"
 #include "Snowstorm/Service/ServiceManager.hpp"
@@ -54,9 +56,11 @@ namespace Snowstorm
 		p.VertexLayout = vertexLayout;
 		p.ColorFormats = {colorFormat}; // RGBA16F world normal
 		p.DepthFormat = depthFormat;
-		// 64-byte vertex push constant: ViewProj (see DepthNormal.vert.hlsl) — same shape as the shadow pass,
-		// so DrawBatchesDepthOnly (which pushes exactly one mat4) drives this pass unchanged.
-		p.PushConstants = {{.Offset = 0, .Size = sizeof(glm::mat4), .Stages = ShaderStage::Vertex}};
+		// 80-byte push constant visible to BOTH stages: the VS reads ViewProj (mat4), the FS reads the 4
+		// alpha-mask scalars (albedo index, mask flag, cutoff, base alpha). One combined range avoids sharing
+		// MaterialInstance's descriptor set (whose set-1 layout differs -> pipeline-layout device loss).
+		p.PushConstants = {{.Offset = 0, .Size = sizeof(glm::mat4) + 4 * sizeof(uint32_t),
+		                    .Stages = ShaderStage::Vertex | ShaderStage::Fragment}};
 		p.Raster.Cull = CullMode::None; // match the forward/shadow passes (Sponza has single-sided geometry)
 		p.DepthStencil.EnableDepthTest = true;
 		p.DepthStencil.EnableDepthWrite = true;
@@ -69,17 +73,52 @@ namespace Snowstorm
 		m_DepthFormat = depthFormat;
 	}
 
-	void DepthNormalPass::RecordDepthNormal(RendererService& renderer, const PixelFormat colorFormat, const PixelFormat depthFormat,
-	                                        const glm::mat4& viewProj)
+	const Ref<DescriptorSet>& DepthNormalPass::EnsureSamplerSet(const uint32_t frameIndex)
+	{
+		if (!m_Sampler)
+		{
+			SamplerDesc s{};
+			s.MinFilter = Filter::Linear;
+			s.MagFilter = Filter::Linear;
+			s.MipmapMode = SamplerMipmapMode::Linear;
+			s.AddressU = SamplerAddressMode::Repeat; // alpha-keyed foliage atlases tile; match the lit sampler
+			s.AddressV = SamplerAddressMode::Repeat;
+			s.AddressW = SamplerAddressMode::Repeat;
+			s.EnableAnisotropy = false;
+			s.DebugName = "DepthNormalAlphaSampler";
+			m_Sampler = Sampler::Create(s);
+		}
+
+		const uint32_t frames = Renderer::GetFramesInFlight();
+		if (m_SamplerSets.size() < frames)
+		{
+			m_SamplerSets.resize(frames);
+		}
+		if (!m_SamplerSets[frameIndex])
+		{
+			// Set 1 of the DepthNormal pipeline: a single sampler at binding 0 (see DepthNormal.frag).
+			const auto& setLayouts = m_Pipeline->GetSetLayouts();
+			SS_CORE_ASSERT(setLayouts.size() > 1 && setLayouts[1], "DepthNormal pipeline missing set 1 (sampler)");
+			DescriptorSetDesc dsd{};
+			dsd.DebugName = "DepthNormal_Set1_Sampler";
+			m_SamplerSets[frameIndex] = DescriptorSet::Create(setLayouts[1], dsd);
+			m_SamplerSets[frameIndex]->SetSampler(0, m_Sampler);
+			m_SamplerSets[frameIndex]->Commit();
+		}
+		return m_SamplerSets[frameIndex];
+	}
+
+	void DepthNormalPass::RecordDepthNormal(RendererService& renderer, const uint32_t frameIndex, const PixelFormat colorFormat,
+	                                        const PixelFormat depthFormat, const glm::mat4& viewProj)
 	{
 		EnsurePipeline(colorFormat, depthFormat);
 		if (!m_Pipeline)
 		{
 			return; // shader not compiled yet
 		}
-		// DrawBatchesDepthOnly binds only set 2 (instances) + pushes one mat4 as a vertex push constant —
-		// exactly this pass's interface. The pipeline having a color attachment doesn't change the bind path
-		// (the color write is driven by the render pass the graph opened around us), so it's reused verbatim.
-		renderer.DrawBatchesDepthOnly(m_Pipeline, viewProj);
+		// Material-aware draw: binds the pass sampler (set 1) + bindless (set 3) + set 2 instances, and pushes
+		// per-batch alpha-mask params so the fragment stage clips cutout geometry. (Not DrawBatchesDepthOnly,
+		// which is set-2-only — the shadow pass's interface, no alpha clip.)
+		renderer.DrawBatchesDepthNormal(m_Pipeline, viewProj, EnsureSamplerSet(frameIndex));
 	}
 }

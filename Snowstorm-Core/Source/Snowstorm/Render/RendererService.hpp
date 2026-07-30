@@ -118,6 +118,17 @@ namespace Snowstorm
 		                         const glm::mat4& viewProj,
 		                         const glm::mat4& prevViewProj);
 
+		// Draw the accumulated batches through the depth+normal prepass pipeline (#124). Like
+		// DrawBatchesDepthOnly (set 2 instances), but ALSO binds `samplerSet` at set 1 (a plain sampler, pass-
+		// owned) + the bindless table (set 3), and pushes per-batch alpha-mask params in an 80-byte push
+		// constant (VP + albedo bindless index + mask flag + cutoff + base alpha) so the fragment stage can
+		// clip cutout geometry (Sponza plants/vines) — a phantom solid quad in the GI G-buffer otherwise.
+		// Deliberately does NOT bind MaterialInstance's descriptor set (its set-1 layout differs from this
+		// pipeline's -> layout-incompatibility device loss); the albedo index + cutoff ride the push constant
+		// instead. No set 0 (FrameCB). Instances appended at the running cursor (NOT cleared — camera owns it).
+		void DrawBatchesDepthNormal(const Ref<Pipeline>& depthNormalPipeline, const glm::mat4& viewProj,
+		                            const Ref<DescriptorSet>& samplerSet);
+
 		// Bind the given pipeline + its set=0 Frame descriptor (FrameCB) and draw a vertex-buffer-less
 		// fullscreen triangle (3 verts from SV_VertexID). Used by SkyPass; the FrameCB carries everything
 		// the fullscreen shader needs (InvViewProj, environment). No-op outside an active scene pass.

@@ -553,6 +553,58 @@ namespace Snowstorm
 		}
 	}
 
+	void RendererService::DrawBatchesDepthNormal(const Ref<Pipeline>& depthNormalPipeline, const glm::mat4& viewProj,
+	                                             const Ref<DescriptorSet>& samplerSet)
+	{
+		if (!m_CommandContext || m_Batches.empty() || !depthNormalPipeline)
+		{
+			return;
+		}
+
+		const auto& setLayouts = depthNormalPipeline->GetSetLayouts();
+		SS_CORE_ASSERT(setLayouts.size() > 2 && setLayouts[2], "DepthNormal pipeline missing set 2 (instances)");
+
+		m_CommandContext->BindPipeline(depthNormalPipeline);
+
+		// Per-batch push constant: VP (VS) + the 4 alpha-mask scalars (FS). Mirrors DepthNormalPush in
+		// DepthNormal.vert.hlsl field-for-field; the VP is constant across batches but rides the same range.
+		struct DepthNormalPush
+		{
+			glm::mat4 ViewProj;
+			uint32_t AlbedoTextureIndex;
+			uint32_t AlphaMaskEnabled;
+			float AlphaCutoff;
+			float BaseAlpha;
+		};
+
+		const Ref<DescriptorSet>& objectSet = AcquireObjectSet(depthNormalPipeline, m_FrameIndex, "Set2_Instances_DepthNormal");
+
+		// Sets 1 (pass sampler) + 2 (instances) are the same for every batch — bind once. Set 3 (bindless
+		// textures) likewise. Set 0 (FrameCB) is an unbound gap. Only the per-batch push constant changes.
+		m_CommandContext->BindDescriptorSets(1, {samplerSet, objectSet});
+		m_CommandContext->BindGlobalResources(); // set 3 = bindless textures for the albedo alpha sample
+
+		for (auto& batch : m_Batches)
+		{
+			if (batch.Instances.empty() || !batch.Mesh)
+				continue;
+
+			DepthNormalPush push{};
+			push.ViewProj = viewProj;
+			if (batch.MaterialInstance)
+			{
+				const Material::Constants& c = batch.MaterialInstance->GetConstants();
+				push.AlbedoTextureIndex = c.AlbedoTextureIndex;
+				push.AlphaMaskEnabled = c.AlphaMaskEnabled;
+				push.AlphaCutoff = c.AlphaCutoff;
+				push.BaseAlpha = c.BaseColor.a;
+			}
+			m_CommandContext->PushConstants(&push, sizeof(push), 0);
+
+			WriteBatchInstancedDraw(batch, " in depth+normal pass");
+		}
+	}
+
 	void RendererService::FlushBatch(BatchData& batch,
 	                                 const Ref<CommandContext>& commandContext,
 	                                 const uint32_t frameIndex)
