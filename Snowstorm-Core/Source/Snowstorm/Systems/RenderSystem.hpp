@@ -58,9 +58,10 @@ namespace Snowstorm
 		// giTextureIndex (#124): the full-res upsampled GI target's bindless index (0 = no GI). Set on the
 		// renderer INSIDE this pass's execute lambda (per-pass, execute-ordered) so the compare GT render can
 		// pass 0 for a GI-free reference without the primary pass's index leaking through the shared FrameCB.
+		// aoTextureIndex (#126): the same for the full-res upsampled AO target (0 = no AO), independent of GI.
 		void AddForwardPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& hdrTarget,
 		                    const std::string& name, bool jittered, bool forceRasterShadow = false,
-		                    uint32_t giTextureIndex = 0);
+		                    uint32_t giTextureIndex = 0, uint32_t aoTextureIndex = 0);
 
 		// AddTonemapPass: tonemap an HDR scene-color view into an LDR target (exposure/ACES; hardware sRGB on
 		// write). Declares the HDR color (and, for the motion-vector debug view, the velocity target) as

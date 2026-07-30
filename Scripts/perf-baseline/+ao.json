@@ -3,24 +3,42 @@
   "config": "Projects/Sandbox/assets/scenes/Sponza.world",
   "frames": 300,
   "timestampsSupported": true,
-  "totalGpuMs": 7.6846,
+  "totalGpuMs": 6.1044,
   "passes": {
+    "AO": {
+      "avgMs": 0.1423,
+      "minMs": 0.1326,
+      "maxMs": 0.2176,
+      "depth": 0
+    },
+    "AOUpsample": {
+      "avgMs": 0.0283,
+      "minMs": 0.027,
+      "maxMs": 0.0326,
+      "depth": 0
+    },
+    "DepthNormal": {
+      "avgMs": 0.18,
+      "minMs": 0.1699,
+      "maxMs": 0.2026,
+      "depth": 0
+    },
     "Editor": {
-      "avgMs": 0.044,
-      "minMs": 0.037,
-      "maxMs": 0.0877,
+      "avgMs": 0.0396,
+      "minMs": 0.0377,
+      "maxMs": 0.0698,
       "depth": 0
     },
     "Forward": {
-      "avgMs": 7.3464,
-      "minMs": 6.862,
-      "maxMs": 8.6578,
+      "avgMs": 5.402,
+      "minMs": 5.0751,
+      "maxMs": 6.3719,
       "depth": 0
     },
     "PostProcess": {
-      "avgMs": 0.0255,
-      "minMs": 0.0149,
-      "maxMs": 0.0894,
+      "avgMs": 0.0319,
+      "minMs": 0.015,
+      "maxMs": 0.0919,
       "depth": 0
     },
     "Sky": {
@@ -30,15 +48,15 @@
       "depth": 1
     },
     "TemporalResolve": {
-      "avgMs": 0.1775,
-      "minMs": 0.1326,
-      "maxMs": 0.2188,
+      "avgMs": 0.1868,
+      "minMs": 0.1134,
+      "maxMs": 0.2568,
       "depth": 0
     },
     "Velocity": {
-      "avgMs": 0.0896,
-      "minMs": 0.0852,
-      "maxMs": 0.1442,
+      "avgMs": 0.0814,
+      "minMs": 0.0777,
+      "maxMs": 0.1015,
       "depth": 0
     }
   }

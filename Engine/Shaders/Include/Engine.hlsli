@@ -207,8 +207,11 @@ cbuffer FrameCB : register(b0, space0)
 	// is the CURRENT scene target's pixel size (viewport * render.scale), so the forward pass samples the
 	// full-res GI by screen UV (SV_Position.xy / RenderTargetSize) regardless of render.scale. New 16-byte
 	// row; MUST match RendererService.cpp field-for-field.
+	// RTAOTextureIndex (#126): bindless index of the full-res upsampled RT-AO factor (0 = no AO -> analytic
+	// AO). Named RTAO, not AO, to avoid colliding with MaterialCB's AOTextureIndex (the baked AO map).
+	// Shares RenderTargetSize (same screen-UV divide as GI); takes the former _GIPad0 slot.
 	uint GITextureIndex;
-	uint _GIPad0;
+	uint RTAOTextureIndex;
 	float2 RenderTargetSize;
 };
 

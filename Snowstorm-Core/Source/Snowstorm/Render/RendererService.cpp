@@ -121,7 +121,7 @@ namespace Snowstorm
 			// keep baked/analytic diffuse) + the current scene target's pixel size, so the forward pass samples
 			// the full-res GI by screen UV regardless of render.scale. New 16-byte row; match Engine.hlsli.
 			uint32_t GITextureIndex = 0;
-			uint32_t _GIPad0 = 0;
+			uint32_t AOTextureIndex = 0; // #126: full-res upsampled AO factor bindless index (0 = no AO)
 			glm::vec2 RenderTargetSize{0.0f, 0.0f};
 		};
 	}
@@ -347,6 +347,10 @@ namespace Snowstorm
 		// sample. Pushed per-viewport by ForwardEffect via SetGITexture just before the forward pass.
 		frame.GITextureIndex = m_GITextureIndex;
 		frame.RenderTargetSize = m_GIRenderTargetSize;
+
+		// Half-res AO consumption (#126): the full-res upsampled AO target's bindless index (0 = no AO ->
+		// DefaultLit keeps its analytic AO). Shares RenderTargetSize with GI for the screen-UV sample.
+		frame.AOTextureIndex = m_AOTextureIndex;
 
 		const Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
 		SS_CORE_ASSERT(frameUBO, "Frame UBO missing for frame descriptor set");

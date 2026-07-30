@@ -344,6 +344,13 @@ namespace Snowstorm
 			{
 				CVars::AOIntensity.Set(aoIntensity);
 			}
+			// Internal resolution (#126): AO traces at this fraction of viewport res, then a bilateral upsample
+			// restores full res — mirrors the GI Resolution slider. 0.5 = quarter the rays; 1.0 = full-res.
+			if (float aoScale = CVars::AOScale.Get(); ImGui::SliderFloat("Resolution##AO", &aoScale, 0.25f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::AOScale.Set(aoScale);
+			}
+			ImGui::TextDisabled("(0.5 = quarter-res trace + upsample; 1.0 = full-res)");
 			ImGui::EndDisabled();
 		}
 

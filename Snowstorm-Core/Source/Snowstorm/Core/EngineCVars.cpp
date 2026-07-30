@@ -226,11 +226,12 @@ namespace Snowstorm::CVars
 
 	bool AnyRTEffectActive()
 	{
-		// OR of the inline-RT effects that STILL trace inside DefaultLit (shadows, AO, reflections). Drives
-		// the DefaultLit permutation swap (#118 perf): false => compile the cheap non-RT variant. Always false
-		// on a non-RT GPU. GI is deliberately EXCLUDED (#124): it moved to a half-res compute pass + full-res
-		// texture sample, so the forward shader no longer ray-traces for GI — a GI-only scene now compiles the
-		// cheap DefaultLit. GI's own TLAS need is covered by TlasBuildSystem's separate geoTable gate.
-		return ShadowsRTActive() || AoRTActive() || ReflectionsRTActive();
+		// OR of the inline-RT effects that STILL trace inside DefaultLit (shadows, reflections). Drives the
+		// DefaultLit permutation swap (#118 perf): false => compile the cheap non-RT variant. Always false on a
+		// non-RT GPU. GI (#124) and AO (#126) are deliberately EXCLUDED: both moved to a half-res compute pass +
+		// full-res texture sample, so the forward shader no longer ray-traces for them — a GI-only or AO-only
+		// scene now compiles the cheap DefaultLit. Their TLAS need is covered by TlasBuildSystem's own gate,
+		// which still ORs in AoRTActive()/GIRTActive().
+		return ShadowsRTActive() || ReflectionsRTActive();
 	}
 }

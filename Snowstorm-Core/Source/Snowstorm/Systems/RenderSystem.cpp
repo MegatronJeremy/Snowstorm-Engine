@@ -470,7 +470,7 @@ namespace Snowstorm
 
 	void RenderSystem::AddForwardPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& hdrTarget,
 	                                  const std::string& name, const bool jittered, const bool forceRasterShadow,
-	                                  const uint32_t giTextureIndex)
+	                                  const uint32_t giTextureIndex, const uint32_t aoTextureIndex)
 	{
 		std::vector<RenderGraph::ResourceAccess> meshReads;
 		if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
@@ -491,6 +491,17 @@ namespace Snowstorm
 				                     RenderGraph::AccessState::Sampled});
 			}
 		}
+		// Full-res AO target: same screen-UV bindless sample as GI (#126). Declare the Sampled read so the
+		// graph transitions it out of the AOUpsample pass's color-attachment layout before this pass.
+		if (aoTextureIndex != 0)
+		{
+			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
+			    rt && rt->AOUpscaleTarget && !rt->AOUpscaleTarget->GetDesc().ColorAttachments.empty())
+			{
+				meshReads.push_back({rt->AOUpscaleTarget->GetDesc().ColorAttachments[0].View->GetTexture(),
+				                     RenderGraph::AccessState::Sampled});
+			}
+		}
 
 		// GI screen size = this pass's scene target size (viewport * render.scale), for the UV divide.
 		const glm::vec2 sceneSize{static_cast<float>(hdrTarget->GetDesc().Width), static_cast<float>(hdrTarget->GetDesc().Height)};
@@ -498,12 +509,14 @@ namespace Snowstorm
 		fc.Graph.AddPass({.Name = name,
 		                  .Target = hdrTarget,
 		                  .Reads = std::move(meshReads),
-		                  .Execute = [this, &fc, cam, hdrTarget, jittered, forceRasterShadow, giTextureIndex, sceneSize](CommandContext& c)
+		                  .Execute = [this, &fc, cam, hdrTarget, jittered, forceRasterShadow, giTextureIndex, aoTextureIndex, sceneSize](CommandContext& c)
 		                  {
 			                  // Per-pass GI (execute-ordered so the compare GT render's giTextureIndex=0 can't be
 			                  // overwritten by the primary pass's index at build time). AcquireFrameSet (called in
 			                  // Flush) folds these into FrameCB. sceneSize drives the screen-UV GI sample.
 			                  fc.Renderer.SetGITexture(giTextureIndex, sceneSize);
+			                  // Per-pass AO (same execute-ordered reason as GI). Shares sceneSize for the UV divide.
+			                  fc.Renderer.SetAOTexture(aoTextureIndex, sceneSize);
 
 			                  const glm::vec3 camPos = cam.Transform->Position;
 			                  fc.Renderer.BeginScene(*cam.Rt, camPos, fc.Ctx, fc.FrameIndex, jittered, forceRasterShadow);

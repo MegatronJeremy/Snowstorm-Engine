@@ -20,6 +20,7 @@
 #include "Snowstorm/Render/Passes/FxaaPass.hpp"
 #include "Snowstorm/Render/Passes/AOPass.hpp"
 #include "Snowstorm/Render/Passes/GIPass.hpp"
+#include "Snowstorm/Render/Passes/AOUpsamplePass.hpp"
 #include "Snowstorm/Render/Passes/GIUpsamplePass.hpp"
 #include "Snowstorm/Render/Passes/MetricsPass.hpp"
 #include "Snowstorm/Render/Passes/NeuralUpscalePass.hpp"
@@ -262,6 +263,54 @@ namespace Snowstorm
 			AOPass m_Pass; // owned here: the AO compute pass is exclusive to this effect
 		};
 
+		// Depth+normal-aware bilateral upsample of the half-res AO to full res (#126) — the scalar twin of
+		// GIUpsampleEffect. Runs after AOEffect, before Forward: reads the half-res AOTarget + the full-res
+		// G-buffer guide, writes the full-res AOUpscaleTarget the forward pass samples. Same gate as AOEffect
+		// (AO active) plus the destination existing. No republish of SceneColor — the forward pass consumes
+		// AOUpscaleTarget via FrameCB.AOTextureIndex, set by ForwardEffect from this target's bindless index.
+		class AOUpsampleEffect final : public IViewportEffect
+		{
+		public:
+			explicit AOUpsampleEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "AOUpsample"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::AoRTActive() && v.RT.AOTarget && v.RT.AOTargetView &&
+				       v.RT.AOUpscaleTarget && !v.RT.AOUpscaleTarget->GetDesc().ColorAttachments.empty();
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+
+				const auto& aoDesc = v.RT.AOTarget->GetDesc();
+				const uint32_t aoW = aoDesc.Width;
+				const uint32_t aoH = aoDesc.Height;
+				const Ref<TextureView> aoView = v.RT.AOTargetView;
+				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+				const Ref<RenderTarget>& dst = v.RT.AOUpscaleTarget;
+				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+
+				fc.Graph.AddPass({.Name = "AOUpsample" + v.Suffix,
+				                  .Target = dst,
+				                  .Reads = {{aoView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, aoView, gbufView, aoW, aoH, dstFmt](CommandContext& c)
+				                  {
+					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, aoView, gbufView, aoW, aoH, dstFmt);
+				                  }});
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			AOUpsamplePass m_Pass; // owned here: exclusive to this effect
+		};
+
 		// Motion-vector pass (#44): re-renders visible meshes into the velocity target, projecting each vertex
 		// by this frame's and last frame's matrices. Runs BEFORE forward so the buffer is ready for the passes
 		// that consume it (TAA / neural-temporal / the motion-vector debug tonemap). Gated by velocityNeeded:
@@ -362,8 +411,17 @@ namespace Snowstorm
 					giIndex = v.RT.GIUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 				}
 
+				// Half-res AO consumption (#126): mirror of the GI index above. 0 = no AO -> ao factor unchanged.
+				// Independent of GI (AO can run with GI off), needs no geometry table.
+				uint32_t aoIndex = 0;
+				if (v.GBufferNeeded && CVars::AoRTActive() && v.RT.AOUpscaleTarget &&
+				    !v.RT.AOUpscaleTarget->GetDesc().ColorAttachments.empty())
+				{
+					aoIndex = v.RT.AOUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
+				}
+
 				m_Owner.AddForwardPass(v.Frame, v.Cam, v.RT.Target, "Forward" + v.Suffix, /*jittered*/ true,
-				                       /*forceRasterShadow*/ false, giIndex);
+				                       /*forceRasterShadow*/ false, giIndex, aoIndex);
 				// Publish the HDR scene color for the downstream chain (upscale/TAA/tonemap).
 				v.SceneColor.Target = v.RT.Target;
 				if (const auto& desc = v.RT.Target->GetDesc(); !desc.ColorAttachments.empty())
@@ -798,6 +856,7 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<GIEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<GIUpsampleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<AOEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<AOUpsampleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<VelocityEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ForwardEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<UpscaleEffect>(*this));
