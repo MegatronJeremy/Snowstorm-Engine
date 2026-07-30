@@ -795,6 +795,10 @@ namespace Snowstorm
 		rtc.VelocityTarget = CreateVelocityTarget(windowWidth, windowHeight, "Main Viewport");
 		// Depth+normal G-buffer (#124), full viewport res (the bilateral upsample guide must be full-res).
 		rtc.GBufferNormalTarget = CreateDepthNormalTarget(windowWidth, windowHeight, "Main Viewport");
+		// Half-res GI target (#124); ViewportResizeSystem rebuilds it at render.gi.scale on the first frame.
+		rtc.GITarget = CreateGITarget(ScaledExtent(windowWidth, CVars::ClampedGIScale()),
+		                              ScaledExtent(windowHeight, CVars::ClampedGIScale()), "Main Viewport");
+		rtc.GITargetView = rtc.GITarget->GetDefaultView();
 		// TAA history ping-pong (#44).
 		rtc.HistoryTarget[0] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport History0");
 		rtc.HistoryTarget[1] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport History1");

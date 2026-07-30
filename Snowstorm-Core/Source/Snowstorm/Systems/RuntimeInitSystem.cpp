@@ -104,18 +104,23 @@ namespace Snowstorm
 
 			bool needsCreate = false;
 
+			const uint32_t giW = ScaledExtent(w, CVars::ClampedGIScale());
+			const uint32_t giH = ScaledExtent(h, CVars::ClampedGIScale());
+
 			if (!rtc.Target || !rtc.PresentTarget || !rtc.AAIntermediateTarget || !rtc.SceneUpscaleTarget ||
 			    !rtc.GroundTruthTarget || !rtc.GroundTruthPresentTarget || !rtc.VelocityTarget ||
-			    !rtc.GBufferNormalTarget || !rtc.HistoryTarget[0] || !rtc.HistoryTarget[1])
+			    !rtc.GBufferNormalTarget || !rtc.GITarget || !rtc.HistoryTarget[0] || !rtc.HistoryTarget[1])
 			{
 				needsCreate = true;
 			}
 			else
 			{
-				// Present tracks full size; Target tracks scaled size — check each so a scale change rebuilds.
+				// Present tracks full size; Target tracks scaled size; GI tracks gi-scaled — check each so any
+				// scale change rebuilds.
 				const auto& presentDesc = rtc.PresentTarget->GetDesc();
 				const auto& targetDesc = rtc.Target->GetDesc();
-				if (presentDesc.Width != w || presentDesc.Height != h || targetDesc.Width != sw || targetDesc.Height != sh)
+				if (presentDesc.Width != w || presentDesc.Height != h || targetDesc.Width != sw || targetDesc.Height != sh ||
+				    rtc.GITarget->GetDesc().Width != giW || rtc.GITarget->GetDesc().Height != giH)
 				{
 					needsCreate = true;
 				}
@@ -135,6 +140,8 @@ namespace Snowstorm
 				wRtc.GroundTruthPresentSampleView = CreatePresentSampleView(wRtc.GroundTruthPresentTarget);
 				wRtc.VelocityTarget = CreateVelocityTarget(w, h, "Viewport");                 // motion vectors (#44), full viewport res
 				wRtc.GBufferNormalTarget = CreateDepthNormalTarget(w, h, "Viewport");         // depth+normal G-buffer (#124), full res
+				wRtc.GITarget = CreateGITarget(giW, giH, "Viewport");                         // half-res GI (#124)
+				wRtc.GITargetView = wRtc.GITarget->GetDefaultView();
 				wRtc.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0"); // TAA history (#44)
 				wRtc.HistoryTarget[1] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory1");
 			}

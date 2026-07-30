@@ -75,6 +75,17 @@ float4 main(FullscreenVSOut input) : SV_Target
 		return float4(n * 0.5 + 0.5, 1.0);
 	}
 
+	// Half-res GI debug view (#124): the GI target is smaller than the present target, so scale the present
+	// texel by DebugScale (= gi_res / present_res, < 1) to find the matching GI texel (point fetch — a debug
+	// readout, exact filtering isn't the point). The GI target stores linear-HDR incoming irradiance;
+	// tonemap it like the scene so it's viewable rather than clipping.
+	if (gTonemap.DebugMode == 3)
+	{
+		const int2 giTexel = int2(float2(texel) * gTonemap.DebugScale);
+		const float3 gi = Textures[NonUniformResourceIndex(gTonemap.DebugTexIndex)].Load(int3(giTexel, 0)).rgb;
+		return float4(TonemapACES(gi * Exposure), 1.0);
+	}
+
 	const float3 hdr = Textures[NonUniformResourceIndex(gTonemap.SceneColorIndex)].Load(int3(texel, 0)).rgb;
 
 	// Output LINEAR; the sRGB-format present target hardware-encodes on write (#79).

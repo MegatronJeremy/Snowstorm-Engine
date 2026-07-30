@@ -278,6 +278,20 @@ namespace Snowstorm
 		return RenderTarget::Create(rtDesc);
 	}
 
+	Ref<Texture> CreateGITarget(uint32_t w, uint32_t h, const char* debugPrefix)
+	{
+		// Half-res GI irradiance (#124): compute writes it (Storage/UAV), the bilateral upsample samples it
+		// (Sampled). RGBA16F to hold linear HDR bounce. A bare Texture2D, not a RenderTarget — no attachment.
+		TextureDesc td{};
+		td.Dimension = TextureDimension::Texture2D;
+		td.Format = PixelFormat::RGBA16_SFloat;
+		td.Usage = TextureUsage::Sampled | TextureUsage::Storage;
+		td.Width = w;
+		td.Height = h;
+		td.DebugName = std::string(debugPrefix) + "_GI";
+		return Texture::Create(td);
+	}
+
 	Ref<Texture> CreateCubeTexture(const uint32_t size, const uint32_t mips, const PixelFormat format, const char* debugName)
 	{
 		TextureDesc td{};

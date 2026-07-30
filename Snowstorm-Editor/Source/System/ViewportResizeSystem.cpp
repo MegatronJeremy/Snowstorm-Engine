@@ -82,16 +82,21 @@ namespace Snowstorm
 				const float scale = CVars::ClampedRenderScale();
 				const uint32_t sw = ScaledExtent(w, scale);
 				const uint32_t sh = ScaledExtent(h, scale);
+				// GI target renders at render.gi.scale (#124), independent of render.scale.
+				const uint32_t giW = ScaledExtent(w, CVars::ClampedGIScale());
+				const uint32_t giH = ScaledExtent(h, CVars::ClampedGIScale());
 
 				const auto& rt = reg.Read<RenderTargetComponent>(vpEntity);
 				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget ||
 				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget || !rt.VelocityTarget ||
-				                     !rt.GBufferNormalTarget || !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
+				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
 				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Compare each
 				// against its own expected extent so a scale change (Target only) still triggers a rebuild.
 				const bool viewportResized = rt.PresentTarget && (rt.PresentTarget->GetDesc().Width != w || rt.PresentTarget->GetDesc().Height != h);
 				const bool scaleChanged = rt.Target && (rt.Target->GetDesc().Width != sw || rt.Target->GetDesc().Height != sh);
-				if (missing || viewportResized || scaleChanged)
+				// GI scale can change independently (render.gi.scale) — rebuild the GI target when it does.
+				const bool giScaleChanged = rt.GITarget && (rt.GITarget->GetDesc().Width != giW || rt.GITarget->GetDesc().Height != giH);
+				if (missing || viewportResized || scaleChanged || giScaleChanged)
 				{
 					// Drain the GPU before dropping the old targets: replacing the Ref destroys the VkImage/
 					// view immediately, but in-flight frames may still be sampling them (the post-process pass
@@ -128,6 +133,10 @@ namespace Snowstorm
 					// full-res). Always allocated (negligible); only rendered when GI is active or the normal
 					// debug view is selected.
 					rtW.GBufferNormalTarget = CreateDepthNormalTarget(w, h, "Viewport");
+					// Half-res GI target (#124): viewport * render.gi.scale. Always allocated (negligible); only
+					// dispatched into when GI is active. Rebuilt on viewport OR gi.scale change.
+					rtW.GITarget = CreateGITarget(giW, giH, "Viewport");
+					rtW.GITargetView = rtW.GITarget->GetDefaultView();
 					// TAA history ping-pong (#44): two full-res color-only HDR targets. Always allocated;
 					// only rendered into when render.aa == TAA. Recreated on resize so history matches size.
 					rtW.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0");

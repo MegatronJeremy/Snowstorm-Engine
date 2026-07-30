@@ -255,6 +255,11 @@ namespace Snowstorm::CVars
 	extern CVar<bool> GIRT;
 	extern CVar<float> GIIntensity;
 	extern CVar<float> GIRange;
+	// RT GI internal resolution fraction (#124): the GI gather runs at this fraction of viewport res, then a
+	// depth-aware bilateral upsample restores full res. 0.5 = quarter the pixels. Clamp with ClampedGIScale().
+	extern CVar<float> GIScale;
+	// render.gi.scale clamped to [0.25, 1.0]. Use everywhere the value is consumed.
+	[[nodiscard]] float ClampedGIScale();
 
 	// True when RT reflections should run (render.reflections.rt on AND the device supports RT). Drives
 	// FrameCB.RTReflEnabled + the shader branch + the TLAS build gate + the geometry-table build. False on a

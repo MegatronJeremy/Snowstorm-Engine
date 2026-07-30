@@ -57,6 +57,14 @@ namespace Snowstorm
 		// Null until first allocated.
 		Ref<RenderTarget> GBufferNormalTarget;
 
+		// Half-res RT GI (#124): the GI hemisphere gather runs into this Sampled|Storage RGBA16F target at
+		// render.gi.scale (0.5 => quarter the pixels), reconstructing world position from the G-buffer depth.
+		// Stores INCOMING IRRADIANCE only (no albedo — that's multiplied at full res in the forward pass, so
+		// half-res GI never blurs albedo edges). Inc 3's bilateral upsample reads this + the G-buffer guide
+		// into GIUpscaleTarget. Not a RenderTarget (compute writes it as a UAV) — a bare Texture + view.
+		Ref<Texture> GITarget;
+		Ref<TextureView> GITargetView;
+
 		// Temporal-resolve history ping-pong (#44 TAA). Two full-res HDR (color-only) targets: each frame
 		// the resolve reads the PREVIOUS one as history, reprojects it by the velocity buffer, blends with
 		// the current frame, and writes the result into the CURRENT one — which both feeds tonemap and

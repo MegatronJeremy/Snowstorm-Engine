@@ -7,8 +7,10 @@
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/ECS/TrackedRegistry.hpp"
+#include "Snowstorm/Render/FrameData.hpp"
 #include "Snowstorm/Render/RenderGraph.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
+#include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Render/RenderTarget.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
@@ -16,6 +18,7 @@
 #include "Snowstorm/Render/Passes/DatasetExportPass.hpp"
 #include "Snowstorm/Render/Passes/DepthNormalPass.hpp"
 #include "Snowstorm/Render/Passes/FxaaPass.hpp"
+#include "Snowstorm/Render/Passes/GIPass.hpp"
 #include "Snowstorm/Render/Passes/MetricsPass.hpp"
 #include "Snowstorm/Render/Passes/NeuralUpscalePass.hpp"
 #include "Snowstorm/Render/Passes/SharpenPass.hpp"
@@ -88,6 +91,71 @@ namespace Snowstorm
 		private:
 			RenderSystem& m_Owner;
 			DepthNormalPass m_Pass; // owned here: the depth+normal prepass is exclusive to this effect
+		};
+
+		// Half-res RT GI compute pass (#124): traces the diffuse GI hemisphere at render.gi.scale over the
+		// depth+normal G-buffer (produced by DepthNormalEffect just before), writing incoming irradiance into
+		// the half-res GITarget. Runs after DepthNormal, before forward. Gated on GI actually being active AND
+		// a geometry table existing this frame (hits resolve through it) — the DepthNormalEffect gate is
+		// broader (it also runs for the normal debug view), so re-check here. Publishes nothing onto the moving
+		// SceneColor; Inc 3's upsample + forward consumption read GITarget. Debug view 6 shows the raw output.
+		class GIEffect final : public IViewportEffect
+		{
+		public:
+			explicit GIEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "GI"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				// GBufferNeeded guarantees the prepass ran; also require GI active + a geometry table + the
+				// half-res target. The table address is published to the renderer each frame by RenderSystem.
+				return v.GBufferNeeded && CVars::GIRTActive() && v.RT.GITarget && v.RT.GITargetView &&
+				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+
+				// Half-res GI extent = the G-buffer (full viewport) scaled by render.gi.scale. The G-buffer
+				// target's color[0] view carries the full-res dimensions.
+				const auto& gbufDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const uint32_t fullW = gbufDesc.Width;
+				const uint32_t fullH = gbufDesc.Height;
+				const float scale = CVars::ClampedGIScale();
+				const uint32_t giW = ScaledExtent(fullW, scale);
+				const uint32_t giH = ScaledExtent(fullH, scale);
+
+				// The G-buffer color carries BOTH world normal (.xyz) and NDC depth (.w), so the GI pass samples
+				// one plain color image — not the depth-stencil attachment (which a compute sampled-image
+				// descriptor rejects for its DEPTH_STENCIL_READ_ONLY layout).
+				const Ref<TextureView> gbufView = gbufDesc.ColorAttachments[0].View;
+				const Ref<TextureView> giView = v.RT.GITargetView;
+				const uint64_t tableAddr = fc.Renderer.GetReflectionGeometryAddress();
+				const FrameData& frameData = fc.Renderer.GetFrameData();
+				const auto frameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
+
+				// Compute pass: reads the G-buffer (Sampled), writes GITarget (Storage — the pass transitions it
+				// to GENERAL for the UAV write, then back to Sampled for Inc 3's upsample).
+				fc.Graph.AddPass({.Name = "GI" + v.Suffix,
+				                  .IsCompute = true,
+				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, giView, giW, giH](CommandContext& c)
+				                  {
+					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, frameData, tableAddr, frameCounter,
+					                                  gbufView, giView, giW, giH);
+				                  }});
+
+				v.GBufferNormal = gbufView; // republish (DepthNormalEffect already set it; harmless, keeps intent local)
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			GIPass m_Pass; // owned here: the GI compute pass is exclusive to this effect
 		};
 
 		// Motion-vector pass (#44): re-renders visible meshes into the velocity target, projecting each vertex
@@ -608,6 +676,7 @@ namespace Snowstorm
 		// sub-chain / TAA / neural-temporal / the debug tonemaps).
 		m_ViewportEffects.clear();
 		m_ViewportEffects.push_back(CreateScope<DepthNormalEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<GIEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<VelocityEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ForwardEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<UpscaleEffect>(*this));

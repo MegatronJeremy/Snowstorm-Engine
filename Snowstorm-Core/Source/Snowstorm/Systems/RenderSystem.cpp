@@ -337,10 +337,11 @@ namespace Snowstorm
 		                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 		v.VelocityNeeded = velocityNeeded;
 
-		// The depth+normal prepass (#124) renders the G-buffer when GI is active OR the normal-buffer debug
-		// view (5) is selected — the latter lets you eyeball the prepass in isolation before GI consumes it.
+		// The depth+normal prepass (#124) renders the G-buffer when GI is active OR a debug view that needs it
+		// is selected (5 = world normals, 6 = raw half-res GI — both let you eyeball the substrate in
+		// isolation). The GI compute pass itself additionally requires GI active + a geometry table.
 		const bool giActive = CVars::GIRTActive();
-		const bool gbufferNeeded = (giActive || debugView == 5) && vpRT.GBufferNormalTarget &&
+		const bool gbufferNeeded = (giActive || debugView == 5 || debugView == 6) && vpRT.GBufferNormalTarget &&
 		                           !vpRT.GBufferNormalTarget->GetDesc().ColorAttachments.empty() &&
 		                           vpRT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
 		v.GBufferNeeded = gbufferNeeded;
@@ -364,6 +365,17 @@ namespace Snowstorm
 			primaryTonemap.DebugTexIndex = vpRT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 			primaryTonemap.DebugScale = 1.0f; // normals map [-1,1] -> [0,1] in the shader
 			debugRead = vpRT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+		}
+		else if (debugView == 6 && gbufferNeeded && vpRT.GITarget && vpRT.GITargetView)
+		{
+			// Raw half-res GI irradiance. The GI target is smaller than the present target, so pass the size
+			// ratio (gi_res / present_res, < 1) as DebugScale — the shader scales the present texel by it to
+			// find the matching GI texel (point fetch, a debug readout). Only meaningful when the GI pass ran.
+			primaryTonemap.DebugMode = 3;
+			primaryTonemap.DebugTexIndex = vpRT.GITargetView->GetGlobalBindlessIndex();
+			primaryTonemap.DebugScale = static_cast<float>(vpRT.GITarget->GetDesc().Width) /
+			                            static_cast<float>(vpRT.GBufferNormalTarget->GetDesc().Width);
+			debugRead = vpRT.GITarget;
 		}
 
 		// Post-tonemap LDR filter sizing (#44), derived up front so the effect chain (UpscaleEffect /

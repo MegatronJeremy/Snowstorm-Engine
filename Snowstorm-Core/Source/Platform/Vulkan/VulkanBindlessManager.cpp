@@ -33,14 +33,17 @@ namespace Snowstorm
 		poolInfo.pPoolSizes = poolSizes.data();
 		vkCreateDescriptorPool(m_Device, &poolInfo, nullptr, &m_DescriptorPool);
 
-		// 2. Create Layout with Bindless Flags. ALL_GRAPHICS (was Fragment-only) so cube env maps can also
-		// be sampled in other stages later; the 2D array keeps working in fragment shaders as before.
-		// Binding 2 = the scene TLAS (a single acceleration structure), added only when the device supports
-		// RT (#118). It's PARTIALLY_BOUND, so shaders that don't declare it are unaffected; ray-query shaders
-		// (COMPUTE) read it. Kept in the same set so every pipeline that binds set 3 gets the TLAS for free.
+		// 2. Create Layout with Bindless Flags. COMPUTE | ALL_GRAPHICS so the bindless texture/cube arrays are
+		// sampleable in compute too — the half-res GI compute pass (#124) samples bindless albedo + IBL
+		// cubemaps to shade its ray hits, the same arrays the fragment lit path reads. (Was ALL_GRAPHICS only;
+		// widening it is free — a stage flag, no extra descriptors.) Binding 2 = the scene TLAS (a single
+		// acceleration structure), added only when the device supports RT (#118). It's PARTIALLY_BOUND, so
+		// shaders that don't declare it are unaffected; ray-query shaders (COMPUTE) read it. Kept in the same
+		// set so every pipeline that binds set 3 gets the TLAS for free.
+		constexpr VkShaderStageFlags kBindlessStages = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_ALL_GRAPHICS;
 		std::vector<VkDescriptorSetLayoutBinding> bindings = {
-		    {BINDING_TEXTURE2D, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MAX_BINDLESS_TEXTURES, VK_SHADER_STAGE_ALL_GRAPHICS, nullptr},
-		    {BINDING_TEXTURECUBE, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MAX_BINDLESS_CUBES, VK_SHADER_STAGE_ALL_GRAPHICS, nullptr}};
+		    {BINDING_TEXTURE2D, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MAX_BINDLESS_TEXTURES, kBindlessStages, nullptr},
+		    {BINDING_TEXTURECUBE, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MAX_BINDLESS_CUBES, kBindlessStages, nullptr}};
 
 		constexpr VkDescriptorBindingFlags bindingFlag = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
 		                                                 VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;

@@ -185,11 +185,20 @@ namespace Snowstorm
 		// vk::RawBufferLoad. 0 = no table this frame (reflection falls back to the sky cube). Mirrors
 		// SetIBLData/SetShadowData — a plain per-frame handoff, not GPU FrameData.
 		void SetReflectionGeometryAddress(const uint64_t address) { m_ReflectionTableAddress = address; }
+		// The per-instance geometry-table device address published this frame (0 = no table). The half-res GI
+		// compute pass (#124) reads it to resolve ray hits, same as the inline reflection/GI path via FrameCB.
+		[[nodiscard]] uint64_t GetReflectionGeometryAddress() const { return m_ReflectionTableAddress; }
 
 		// Current frame's lights / environment (uploaded by the PreRender systems). The IBL bake reads
 		// these to capture the sky; exposed so the bake lives in its own pass, not the renderer.
 		[[nodiscard]] const LightDataBlock& GetLights() const { return m_FrameData.Lights; }
 		[[nodiscard]] const EnvironmentDataBlock& GetEnvironment() const { return m_FrameData.Environment; }
+
+		// The whole assembled per-frame input block (camera + lights + environment + shadow + IBL). Exposed
+		// for compute passes that need a cross-section of it — the half-res GI pass (#124) reads camera VP,
+		// the sun, and the IBL indices together to populate its own params CB (rather than threading a
+		// half-dozen separate getters). Read-only snapshot for the current frame.
+		[[nodiscard]] const FrameData& GetFrameData() const { return m_FrameData; }
 
 		// Stats from the most recently submitted scene pass (reset each BeginScene).
 		[[nodiscard]] const RenderStats& GetStats() const { return m_Stats; }

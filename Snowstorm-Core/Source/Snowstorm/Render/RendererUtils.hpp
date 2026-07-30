@@ -80,6 +80,11 @@ namespace Snowstorm
 	// for bindless) so the GI + bilateral-upsample passes can read them.
 	Ref<RenderTarget> CreateDepthNormalTarget(uint32_t w, uint32_t h, const char* debugPrefix);
 
+	// Half-res GI irradiance target (#124): a Sampled|Storage RGBA16F Texture2D (NOT a RenderTarget — the GI
+	// compute pass writes it as a UAV, and the bilateral upsample samples it). Sized to the GI internal
+	// resolution (viewport * render.gi.scale). Returns the texture; take GetDefaultView() for binding.
+	Ref<Texture> CreateGITarget(uint32_t w, uint32_t h, const char* debugPrefix);
+
 	// HDR cubemap for IBL (env / irradiance / prefiltered). 6 faces, `mips` mip levels, sampled +
 	// storage (compute writes it) usage. Its full-cube view auto-registers in the cube bindless array.
 	Ref<Texture> CreateCubeTexture(uint32_t size, uint32_t mips, PixelFormat format, const char* debugName);

@@ -220,13 +220,13 @@ namespace Snowstorm
 		// 3 = Reflections (raw reflected albedo from the RT reflection trace, for verifying hit resolution,
 		// #118). Index maps 1:1 to render.debugview.
 		{
-			const char* dbgLabels[] = {"Normal", "Motion Vectors", "Ambient Occlusion", "Reflections", "Global Illumination", "World Normals"};
+			const char* dbgLabels[] = {"Normal", "Motion Vectors", "Ambient Occlusion", "Reflections", "Global Illumination", "World Normals", "Half-res GI"};
 			int dbg = CVars::DebugView.Get();
-			if (dbg < 0 || dbg > 5)
+			if (dbg < 0 || dbg > 6)
 			{
 				dbg = 0;
 			}
-			if (ImGui::Combo("Debug View", &dbg, dbgLabels, 6))
+			if (ImGui::Combo("Debug View", &dbg, dbgLabels, 7))
 			{
 				CVars::DebugView.Set(dbg);
 			}
@@ -429,6 +429,13 @@ namespace Snowstorm
 			{
 				CVars::GIRange.Set(giRange);
 			}
+			// Internal resolution (#124): GI traces at this fraction of viewport res, then a bilateral upsample
+			// restores full res. 0.5 = quarter the rays (~4x cheaper); 1.0 = full-res reference for the A/B.
+			if (float giScale = CVars::GIScale.Get(); ImGui::SliderFloat("Resolution##GI", &giScale, 0.25f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::GIScale.Set(giScale);
+			}
+			ImGui::TextDisabled("(0.5 = quarter-res trace + upsample; 1.0 = full-res)");
 			ImGui::EndDisabled();
 		}
 

@@ -79,7 +79,7 @@ namespace Snowstorm::CVars
 
 	CVar<int> AAMode{"render.aa", 0, "Anti-aliasing: 0 = None, 1 = FXAA (spatial post-process), 2 = TAA (temporal accumulation via jitter + motion vectors, #44)", CVarFlags::Persist};
 
-	CVar<int> DebugView{"render.debugview", 0, "Viewport debug overlay: 0 = Normal (tonemapped scene), 1 = Motion Vectors (per-pixel screen-space velocity as color; drives the velocity pass + tonemap debug branch, #44), 2 = Ambient Occlusion (DefaultLit outputs the isolated grayscale AO term for tuning RTAO, #118), 3 = Reflections (raw reflected albedo from the RT reflection trace, for verifying hit resolution, #118), 4 = Global Illumination (raw RT GI indirect term, for tuning intensity/range, #118), 5 = World Normals (the depth+normal prepass G-buffer, [-1,1] normal mapped to RGB, for verifying the half-res GI substrate, #124)", CVarFlags::Persist};
+	CVar<int> DebugView{"render.debugview", 0, "Viewport debug overlay: 0 = Normal (tonemapped scene), 1 = Motion Vectors (per-pixel screen-space velocity as color; drives the velocity pass + tonemap debug branch, #44), 2 = Ambient Occlusion (DefaultLit outputs the isolated grayscale AO term for tuning RTAO, #118), 3 = Reflections (raw reflected albedo from the RT reflection trace, for verifying hit resolution, #118), 4 = Global Illumination (raw RT GI indirect term, for tuning intensity/range, #118), 5 = World Normals (the depth+normal prepass G-buffer, [-1,1] normal mapped to RGB, for verifying the half-res GI substrate, #124), 6 = Half-res GI (the raw half-res GI irradiance buffer, tonemapped, before the bilateral upsample, #124)", CVarFlags::Persist};
 
 	CVar<float> TaaBlend{"render.taa.blend", 0.9f, "TAA base history weight while moving (higher = smoother/more lag). Live-tunable (#44)", CVarFlags::Persist};
 
@@ -125,9 +125,25 @@ namespace Snowstorm::CVars
 
 	CVar<float> GIRange{"render.gi.range", 8.0f, "RT GI gather ray max distance in world units — how far a bounce can come from (larger = broader indirect, more cost)", CVarFlags::Persist};
 
+	CVar<float> GIScale{"render.gi.scale", 0.5f, "RT GI internal resolution: the GI hemisphere gather runs at this fraction of viewport res (0.5 = quarter the pixels = ~4x cheaper), then a depth-aware bilateral upsample restores full res (#124). 1.0 = full-res reference for the A/B. Clamped to [0.25, 1.0].", CVarFlags::Persist};
+
 	float ClampedRenderScale()
 	{
 		const float s = RenderScale.Get();
+		if (s < 0.25f)
+		{
+			return 0.25f;
+		}
+		if (s > 1.0f)
+		{
+			return 1.0f;
+		}
+		return s;
+	}
+
+	float ClampedGIScale()
+	{
+		const float s = GIScale.Get();
 		if (s < 0.25f)
 		{
 			return 0.25f;
