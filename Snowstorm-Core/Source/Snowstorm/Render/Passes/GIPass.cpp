@@ -148,7 +148,7 @@ namespace Snowstorm
 			m_Sets[frameIndex] = DescriptorSet::Create(layouts[0], dsd);
 		}
 		m_Sets[frameIndex]->SetTexture(kGBufferBinding, gbuffer); // .xyz normal, .w depth
-		m_Sets[frameIndex]->SetTexture(kOutputBinding, output);  // storage image (UAV)
+		m_Sets[frameIndex]->SetTexture(kOutputBinding, output);   // storage image (UAV)
 		m_Sets[frameIndex]->SetSampler(kSamplerBinding, m_Sampler);
 		const BufferBinding cbBB{.Buffer = m_ParamBuffers[frameIndex], .Offset = 0, .Range = sizeof(GICB)};
 		m_Sets[frameIndex]->SetBuffer(kParamsBinding, cbBB);

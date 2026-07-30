@@ -44,7 +44,7 @@ namespace Snowstorm
 		PixelFormat m_ColorFormat = PixelFormat::Unknown;
 		PixelFormat m_DepthFormat = PixelFormat::Unknown;
 
-		Ref<Sampler> m_Sampler;                   // clamp-linear, for the alpha-mask albedo tap
+		Ref<Sampler> m_Sampler;                        // clamp-linear, for the alpha-mask albedo tap
 		std::vector<Ref<DescriptorSet>> m_SamplerSets; // set 1 (sampler only), one per frame-in-flight
 	};
 }

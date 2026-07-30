@@ -41,7 +41,7 @@ namespace Snowstorm
 
 		Ref<Pipeline> m_Pipeline;
 		Ref<Sampler> m_Sampler;
-		std::vector<Ref<Buffer>> m_ParamBuffers;   // one per frame-in-flight
-		std::vector<Ref<DescriptorSet>> m_Sets;    // one per frame-in-flight
+		std::vector<Ref<Buffer>> m_ParamBuffers; // one per frame-in-flight
+		std::vector<Ref<DescriptorSet>> m_Sets;  // one per frame-in-flight
 	};
 }

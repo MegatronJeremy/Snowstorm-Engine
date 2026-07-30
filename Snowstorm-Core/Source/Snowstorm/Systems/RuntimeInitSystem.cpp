@@ -139,11 +139,11 @@ namespace Snowstorm
 				wRtc.GroundTruthTarget = CreateDefaultSceneRenderTarget(w, h, "ViewportGT");
 				wRtc.GroundTruthPresentTarget = CreatePresentTarget(w, h, "ViewportGT");
 				wRtc.GroundTruthPresentSampleView = CreatePresentSampleView(wRtc.GroundTruthPresentTarget);
-				wRtc.VelocityTarget = CreateVelocityTarget(w, h, "Viewport");                 // motion vectors (#44), full viewport res
-				wRtc.GBufferNormalTarget = CreateDepthNormalTarget(w, h, "Viewport");         // depth+normal G-buffer (#124), full res
-				wRtc.GITarget = CreateGITarget(giW, giH, "Viewport");                         // half-res GI (#124)
+				wRtc.VelocityTarget = CreateVelocityTarget(w, h, "Viewport");         // motion vectors (#44), full viewport res
+				wRtc.GBufferNormalTarget = CreateDepthNormalTarget(w, h, "Viewport"); // depth+normal G-buffer (#124), full res
+				wRtc.GITarget = CreateGITarget(giW, giH, "Viewport");                 // half-res GI (#124)
 				wRtc.GITargetView = wRtc.GITarget->GetDefaultView();
-				wRtc.GIUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale");    // full-res GI (#124)
+				wRtc.GIUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale"); // full-res GI (#124)
 				wRtc.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0"); // TAA history (#44)
 				wRtc.HistoryTarget[1] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory1");
 			}

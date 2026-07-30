@@ -59,8 +59,7 @@ namespace Snowstorm
 		// 80-byte push constant visible to BOTH stages: the VS reads ViewProj (mat4), the FS reads the 4
 		// alpha-mask scalars (albedo index, mask flag, cutoff, base alpha). One combined range avoids sharing
 		// MaterialInstance's descriptor set (whose set-1 layout differs -> pipeline-layout device loss).
-		p.PushConstants = {{.Offset = 0, .Size = sizeof(glm::mat4) + 4 * sizeof(uint32_t),
-		                    .Stages = ShaderStage::Vertex | ShaderStage::Fragment}};
+		p.PushConstants = {{.Offset = 0, .Size = sizeof(glm::mat4) + 4 * sizeof(uint32_t), .Stages = ShaderStage::Vertex | ShaderStage::Fragment}};
 		p.Raster.Cull = CullMode::None; // match the forward/shadow passes (Sponza has single-sided geometry)
 		p.DepthStencil.EnableDepthTest = true;
 		p.DepthStencil.EnableDepthWrite = true;

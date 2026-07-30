@@ -401,11 +401,11 @@ namespace Snowstorm
 		};
 		PickRequest m_PickRequest;
 
-		Ref<Pipeline> m_PickPipeline;                     // 1-thread inline-RayQuery trace (Pick.comp.hlsl)
-		std::vector<Ref<Buffer>> m_PickResultBuffers;     // host-visible, per frame-in-flight; [0] = instance idx
-		std::vector<Ref<Buffer>> m_PickParamBuffers;      // per frame-in-flight ray UBO
-		std::vector<Ref<DescriptorSet>> m_PickSets;       // per frame-in-flight set 0 (result + params)
-		std::vector<bool> m_PickDispatched;               // this slot has an in-flight/retired dispatch to read
-		std::optional<uint32_t> m_PickResult;             // latest completed result, consumed by the editor
+		Ref<Pipeline> m_PickPipeline;                 // 1-thread inline-RayQuery trace (Pick.comp.hlsl)
+		std::vector<Ref<Buffer>> m_PickResultBuffers; // host-visible, per frame-in-flight; [0] = instance idx
+		std::vector<Ref<Buffer>> m_PickParamBuffers;  // per frame-in-flight ray UBO
+		std::vector<Ref<DescriptorSet>> m_PickSets;   // per frame-in-flight set 0 (result + params)
+		std::vector<bool> m_PickDispatched;           // this slot has an in-flight/retired dispatch to read
+		std::optional<uint32_t> m_PickResult;         // latest completed result, consumed by the editor
 	};
 }
