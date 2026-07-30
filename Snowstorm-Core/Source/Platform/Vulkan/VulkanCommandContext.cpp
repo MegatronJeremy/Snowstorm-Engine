@@ -443,21 +443,23 @@ namespace Snowstorm
 			srcAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
 		}
 
-		const VkImageLayout layout = vkTex->GetCurrentLayout();
-
-		VkImageMemoryBarrier2 barrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+		// A GLOBAL memory barrier (VkMemoryBarrier2), NOT an image barrier: the layout is already correct
+		// (TransitionToSampled moved it to SHADER_READ_ONLY, or it was already there), so we need only the
+		// execution+memory dependency write -> compute-read. An image barrier here would have to name a layout,
+		// and pairing oldLayout=SHADER_READ_ONLY with srcAccess=COLOR_ATTACHMENT_WRITE is a malformed
+		// layout/access combo sync-validation rejects (a write access on a read-only layout). A global memory
+		// barrier carries the same src/dst scopes without a layout, so the dependency is created cleanly — the
+		// same shape BarrierComputeStorage uses for compute->compute. Applies to every caller (the G-buffer ->
+		// GI compute read that surfaced this, plus the existing scene-color -> metrics/neural/dataset reads).
+		VkMemoryBarrier2 barrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
 		barrier.srcStageMask = srcStage;
 		barrier.srcAccessMask = srcAccess;
 		barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
 		barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
-		barrier.oldLayout = layout;
-		barrier.newLayout = layout;
-		barrier.image = vkTex->GetImage();
-		barrier.subresourceRange = {vkTex->GetAspectMask(), 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
 
 		VkDependencyInfo dep{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-		dep.imageMemoryBarrierCount = 1;
-		dep.pImageMemoryBarriers = &barrier;
+		dep.memoryBarrierCount = 1;
+		dep.pMemoryBarriers = &barrier;
 		vkCmdPipelineBarrier2(m_CommandBuffer, &dep);
 
 		// The pending write is now visible to compute-sampled-read; clear the recorded scope so a redundant

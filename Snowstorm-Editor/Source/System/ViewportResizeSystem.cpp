@@ -89,7 +89,8 @@ namespace Snowstorm
 				const auto& rt = reg.Read<RenderTargetComponent>(vpEntity);
 				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget ||
 				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget || !rt.VelocityTarget ||
-				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
+				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIUpscaleTarget ||
+				                     !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
 				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Compare each
 				// against its own expected extent so a scale change (Target only) still triggers a rebuild.
 				const bool viewportResized = rt.PresentTarget && (rt.PresentTarget->GetDesc().Width != w || rt.PresentTarget->GetDesc().Height != h);
@@ -137,6 +138,9 @@ namespace Snowstorm
 					// dispatched into when GI is active. Rebuilt on viewport OR gi.scale change.
 					rtW.GITarget = CreateGITarget(giW, giH, "Viewport");
 					rtW.GITargetView = rtW.GITarget->GetDefaultView();
+					// Full-res GI target (#124): the bilateral upsample renders the half-res GI into this, and the
+					// forward pass samples it (by screen UV) as the diffuse GI. Full viewport res.
+					rtW.GIUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale");
 					// TAA history ping-pong (#44): two full-res color-only HDR targets. Always allocated;
 					// only rendered into when render.aa == TAA. Recreated on resize so history matches size.
 					rtW.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0");

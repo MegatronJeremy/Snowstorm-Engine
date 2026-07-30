@@ -19,6 +19,7 @@
 #include "Snowstorm/Render/Passes/DepthNormalPass.hpp"
 #include "Snowstorm/Render/Passes/FxaaPass.hpp"
 #include "Snowstorm/Render/Passes/GIPass.hpp"
+#include "Snowstorm/Render/Passes/GIUpsamplePass.hpp"
 #include "Snowstorm/Render/Passes/MetricsPass.hpp"
 #include "Snowstorm/Render/Passes/NeuralUpscalePass.hpp"
 #include "Snowstorm/Render/Passes/SharpenPass.hpp"
@@ -158,6 +159,55 @@ namespace Snowstorm
 			GIPass m_Pass; // owned here: the GI compute pass is exclusive to this effect
 		};
 
+		// Depth+normal-aware bilateral upsample of the half-res GI to full res (#124). Runs after GIEffect,
+		// before Forward: reads the half-res GITarget + the full-res G-buffer guide, writes the full-res
+		// GIUpscaleTarget the forward pass samples. Same gate as GIEffect (GI active + geometry table). No
+		// republish of SceneColor — the forward pass consumes GIUpscaleTarget via FrameCB.GITextureIndex,
+		// which ForwardEffect sets from this target's bindless index.
+		class GIUpsampleEffect final : public IViewportEffect
+		{
+		public:
+			explicit GIUpsampleEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "GIUpsample"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::GIRTActive() && v.RT.GITarget && v.RT.GITargetView &&
+				       v.RT.GIUpscaleTarget && !v.RT.GIUpscaleTarget->GetDesc().ColorAttachments.empty() &&
+				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+
+				const auto& giDesc = v.RT.GITarget->GetDesc();
+				const uint32_t giW = giDesc.Width;
+				const uint32_t giH = giDesc.Height;
+				const Ref<TextureView> giView = v.RT.GITargetView;
+				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+				const Ref<RenderTarget>& dst = v.RT.GIUpscaleTarget;
+				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+
+				fc.Graph.AddPass({.Name = "GIUpsample" + v.Suffix,
+				                  .Target = dst,
+				                  .Reads = {{giView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, giView, gbufView, giW, giH, dstFmt](CommandContext& c)
+				                  {
+					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, giView, gbufView, giW, giH, dstFmt);
+				                  }});
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			GIUpsamplePass m_Pass; // owned here: exclusive to this effect
+		};
+
 		// Motion-vector pass (#44): re-renders visible meshes into the velocity target, projecting each vertex
 		// by this frame's and last frame's matrices. Runs BEFORE forward so the buffer is ready for the passes
 		// that consume it (TAA / neural-temporal / the motion-vector debug tonemap). Gated by velocityNeeded:
@@ -244,7 +294,22 @@ namespace Snowstorm
 
 			void Contribute(ViewportRenderContext& v) override
 			{
-				m_Owner.AddForwardPass(v.Frame, v.Cam, v.RT.Target, "Forward" + v.Suffix, /*jittered*/ true);
+				// Half-res GI consumption (#124): if the GI sub-chain ran this frame, feed the forward pass the
+				// full-res upsampled GI target's bindless index (0 = no GI -> baked ambient). Passed to
+				// AddForwardPass, which sets it on the renderer INSIDE its execute lambda (per-pass, execute-
+				// ordered) — NOT here at build time, or the compare GT forward (a second AddForwardPass) would
+				// read this primary pass's index (the FrameCB mirror trap, same reason forceRasterShadow threads
+				// through the lambda). The GT render passes giIndex=0, keeping the reference GI-free.
+				uint32_t giIndex = 0;
+				if (v.GBufferNeeded && CVars::GIRTActive() && v.RT.GIUpscaleTarget &&
+				    !v.RT.GIUpscaleTarget->GetDesc().ColorAttachments.empty() &&
+				    v.Frame.Renderer.GetReflectionGeometryAddress() != 0)
+				{
+					giIndex = v.RT.GIUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
+				}
+
+				m_Owner.AddForwardPass(v.Frame, v.Cam, v.RT.Target, "Forward" + v.Suffix, /*jittered*/ true,
+				                       /*forceRasterShadow*/ false, giIndex);
 				// Publish the HDR scene color for the downstream chain (upscale/TAA/tonemap).
 				v.SceneColor.Target = v.RT.Target;
 				if (const auto& desc = v.RT.Target->GetDesc(); !desc.ColorAttachments.empty())
@@ -677,6 +742,7 @@ namespace Snowstorm
 		m_ViewportEffects.clear();
 		m_ViewportEffects.push_back(CreateScope<DepthNormalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<GIEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<GIUpsampleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<VelocityEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ForwardEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<UpscaleEffect>(*this));

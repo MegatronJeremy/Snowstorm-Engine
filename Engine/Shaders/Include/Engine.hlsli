@@ -201,6 +201,15 @@ cbuffer FrameCB : register(b0, space0)
 	float _ReflRangePad0;
 	float _ReflRangePad1;
 	float _ReflRangePad2;
+
+	// Half-res GI consumption (#124): GITextureIndex is the bindless index of the full-res upsampled GI
+	// irradiance target (0 = no GI this frame -> keep the baked/analytic diffuse ambient). RenderTargetSize
+	// is the CURRENT scene target's pixel size (viewport * render.scale), so the forward pass samples the
+	// full-res GI by screen UV (SV_Position.xy / RenderTargetSize) regardless of render.scale. New 16-byte
+	// row; MUST match RendererService.cpp field-for-field.
+	uint GITextureIndex;
+	uint _GIPad0;
+	float2 RenderTargetSize;
 };
 
 // --- SPACE 1: Material Data ---

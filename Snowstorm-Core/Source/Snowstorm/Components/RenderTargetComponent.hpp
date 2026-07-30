@@ -65,6 +65,12 @@ namespace Snowstorm
 		Ref<Texture> GITarget;
 		Ref<TextureView> GITargetView;
 
+		// Full-res GI irradiance (#124): the depth+normal-aware bilateral upsample renders the half-res
+		// GITarget into this full-viewport color-only HDR target, which the forward pass then samples (by
+		// screen UV) and multiplies by full-res albedo into the diffuse ambient. A RenderTarget (the upsample
+		// is a fullscreen graphics pass), unlike the half-res GITarget (a compute UAV). Null until allocated.
+		Ref<RenderTarget> GIUpscaleTarget;
+
 		// Temporal-resolve history ping-pong (#44 TAA). Two full-res HDR (color-only) targets: each frame
 		// the resolve reads the PREVIOUS one as history, reprojects it by the velocity buffer, blends with
 		// the current frame, and writes the result into the CURRENT one — which both feeds tonemap and

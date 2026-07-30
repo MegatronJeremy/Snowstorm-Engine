@@ -55,8 +55,12 @@ namespace Snowstorm
 		// maps are declared as reads so the graph transitions them to shader-read before shading.
 		// forceRasterShadow (#118): the compare-mode ground-truth render passes true so its sun shadow stays on
 		// the raster shadow map even when render.shadows.rt is on — giving the RT-vs-raster A/B a reference.
+		// giTextureIndex (#124): the full-res upsampled GI target's bindless index (0 = no GI). Set on the
+		// renderer INSIDE this pass's execute lambda (per-pass, execute-ordered) so the compare GT render can
+		// pass 0 for a GI-free reference without the primary pass's index leaking through the shared FrameCB.
 		void AddForwardPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& hdrTarget,
-		                    const std::string& name, bool jittered, bool forceRasterShadow = false);
+		                    const std::string& name, bool jittered, bool forceRasterShadow = false,
+		                    uint32_t giTextureIndex = 0);
 
 		// AddTonemapPass: tonemap an HDR scene-color view into an LDR target (exposure/ACES; hardware sRGB on
 		// write). Declares the HDR color (and, for the motion-vector debug view, the velocity target) as

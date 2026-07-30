@@ -408,64 +408,9 @@ float3 RayTraceReflection(float3 positionWS, float3 Ng, float3 R, bool lit, floa
 	return ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos);
 }
 
-// Ray-traced 1-bounce diffuse global illumination (#118). From the shaded point, trace GI_RAY_COUNT
-// cosine-weighted hemisphere rays around N (the SAME ray-gen as RTAO), shade each committed hit as lit
-// surface radiance (ShadeSurfaceHit — albedo * sun-with-shadow-ray + ambient), and average. On a miss the
-// ray sees open sky, contributing the sky/IBL radiance in that direction (so sky bounce isn't lost). The
-// cosine weight is baked into the sampling, so the Monte-Carlo estimate of incoming radiance is just the
-// mean of the samples; multiply by the receiver albedo (diffuse response) here. Bounded by GIRange so far
-// geometry doesn't dominate and to cap cost. Per-frame IGN rotation + TAA converge the few rays. One
-// bounce: the shaded hits use the cheap IBL/flat ambient, no recursion. RT permutation only.
-float3 RayTraceGI(float3 positionWS, float3 Ng, float3 N, float3 receiverAlbedo, float2 pixelPos)
-{
-	const uint64_t tableAddr = ReflGeoTableAddress();
-
-	// Orthonormal basis (tangent, bitangent, N) to orient the hemisphere — same as RTAO.
-	const float3 up = abs(N.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
-	const float3 tangent = normalize(cross(up, N));
-	const float3 bitangent = cross(N, tangent);
-
-	const float2 px = pixelPos + float2(FrameCounter * 5.588238, FrameCounter * 3.539418);
-	const float ign = frac(52.9829189 * frac(dot(px, float2(0.06711056, 0.00583715))));
-
-	const float3 origin = positionWS + Ng * 0.02;
-
-	float3 incoming = float3(0, 0, 0);
-	[unroll] for (int s = 0; s < GI_RAY_COUNT; ++s)
-	{
-		// Cosine-weighted hemisphere sample (stratified by ray index, jittered by the hash) — identical to RTAO.
-		const float u1 = frac((float(s) + ign) / float(GI_RAY_COUNT));
-		const float u2 = frac(ign + float(s) * 0.61803398875);
-		const float r = sqrt(u1);
-		const float phi = 2.0 * PI * u2;
-		const float3 localDir = float3(r * cos(phi), r * sin(phi), sqrt(max(0.0, 1.0 - u1)));
-		const float3 dir = normalize(localDir.x * tangent + localDir.y * bitangent + localDir.z * N);
-
-		RayDesc ray;
-		ray.Origin = origin;
-		ray.Direction = dir;
-		ray.TMin = 0.0;
-		ray.TMax = GIRange;
-
-		RayQuery<RAY_FLAG_CULL_NON_OPAQUE> q;
-		q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
-		q.Proceed();
-
-		if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT && tableAddr != 0)
-		{
-			const float3 hitPos = origin + dir * q.CommittedRayT();
-			incoming += ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos);
-		}
-		else if (PrefilteredCubeIndex != 0)
-		{
-			// Miss -> open sky along the ray: the prefiltered env contributes sky bounce (dialed by IBLIntensity
-			// so it's consistent with the baked ambient this GI adds on top of).
-			incoming += Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, dir, 0).rgb * IBLIntensity;
-		}
-	}
-
-	return (incoming / float(GI_RAY_COUNT)) * receiverAlbedo * GIIntensity;
-}
+// NOTE (#124): the inline RayTraceGI hemisphere gather was DELETED here — GI now runs in a separate
+// half-res compute pass (GI.comp.hlsl) and is bilateral-upsampled to a full-res target the forward pass
+// samples (see the GITextureIndex read in main). ShadeSurfaceHit above stays: RT reflections still use it.
 #endif
 
 // Directional-sun shadow: RT ray query (when RTShadowEnabled) or the raster shadow map (dedicated map,
@@ -785,21 +730,24 @@ float4 main(PSInput i) : SV_Target0
 	}
 #endif
 
-	// 1-bounce RT diffuse GI (#118): gather indirect light once here so both the debug view and the additive
-	// ambient below reuse it. Computed when GI is enabled OR the GI debug view is active (so the debug view
-	// works even before enabling the additive fold). Compiled out on non-RT devices.
+	// Half-res RT diffuse GI (#124): the GI hemisphere gather now runs in a separate compute pass at
+	// render.gi.scale and is bilateral-upsampled to a full-res target (GITextureIndex). Here the forward
+	// pass just SAMPLES that irradiance by screen UV and multiplies the receiver albedo in (kept out of the
+	// half-res buffer so the upsample can't blur albedo edges). 0 index = GI off this frame -> no indirect.
+	// Replaces the old inline per-pixel RayTraceGI (deleted): GI no longer traces in the forward shader.
 	float3 giIndirect = float3(0, 0, 0);
-#ifdef SS_RAYTRACING
-	if (RTGIEnabled != 0 || DebugGI != 0)
+	if (GITextureIndex != 0)
 	{
-		giIndirect = RayTraceGI(i.PositionWS, normalize(i.NormalWS), N, albedo, i.PositionCS.xy);
+		const float2 giUv = i.PositionCS.xy / max(RenderTargetSize, float2(1.0, 1.0));
+		const float3 giIrradiance = Textures[NonUniformResourceIndex(GITextureIndex)].SampleLevel(LinearSampler, giUv, 0).rgb;
+		giIndirect = giIrradiance * albedo; // irradiance * receiver albedo = diffuse indirect response
 	}
-	// Debug view 4 = GI: output the raw indirect term for tuning (intensity/range) against the raw signal.
+	// Debug view 4 = GI: output the (upsampled) indirect term for tuning intensity/range against the raw
+	// signal. Now works in the non-RT permutation too, since it's just a texture read.
 	if (DebugGI != 0)
 	{
 		return float4(giIndirect, 1.0);
 	}
-#endif
 
 	float3 Lo = float3(0, 0, 0);
 
@@ -871,13 +819,11 @@ float4 main(PSInput i) : SV_Target0
 	// analytic diffuse as before.
 	uint useGI = 0;
 	float3 giDiffuse = float3(0, 0, 0);
-#ifdef SS_RAYTRACING
-	if (RTGIEnabled != 0)
+	if (GITextureIndex != 0)
 	{
 		useGI = 1;
-		giDiffuse = giIndirect; // already albedo * GIIntensity
+		giDiffuse = giIndirect; // upsampled GI irradiance * receiver albedo (see gather above)
 	}
-#endif
 
 	// Ambient: prefer split-sum IBL (baked from the sky) when available — metals reflect the environment
 	// and specular picks up sky color. Falls back to the analytic hemisphere ambient (same zenith/horizon/

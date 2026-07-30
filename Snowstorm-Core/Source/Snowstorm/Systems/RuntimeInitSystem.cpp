@@ -109,7 +109,8 @@ namespace Snowstorm
 
 			if (!rtc.Target || !rtc.PresentTarget || !rtc.AAIntermediateTarget || !rtc.SceneUpscaleTarget ||
 			    !rtc.GroundTruthTarget || !rtc.GroundTruthPresentTarget || !rtc.VelocityTarget ||
-			    !rtc.GBufferNormalTarget || !rtc.GITarget || !rtc.HistoryTarget[0] || !rtc.HistoryTarget[1])
+			    !rtc.GBufferNormalTarget || !rtc.GITarget || !rtc.GIUpscaleTarget ||
+			    !rtc.HistoryTarget[0] || !rtc.HistoryTarget[1])
 			{
 				needsCreate = true;
 			}
@@ -142,6 +143,7 @@ namespace Snowstorm
 				wRtc.GBufferNormalTarget = CreateDepthNormalTarget(w, h, "Viewport");         // depth+normal G-buffer (#124), full res
 				wRtc.GITarget = CreateGITarget(giW, giH, "Viewport");                         // half-res GI (#124)
 				wRtc.GITargetView = wRtc.GITarget->GetDefaultView();
+				wRtc.GIUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale");    // full-res GI (#124)
 				wRtc.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0"); // TAA history (#44)
 				wRtc.HistoryTarget[1] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory1");
 			}

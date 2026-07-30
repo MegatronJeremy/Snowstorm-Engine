@@ -458,7 +458,8 @@ namespace Snowstorm
 	}
 
 	void RenderSystem::AddForwardPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& hdrTarget,
-	                                  const std::string& name, const bool jittered, const bool forceRasterShadow)
+	                                  const std::string& name, const bool jittered, const bool forceRasterShadow,
+	                                  const uint32_t giTextureIndex)
 	{
 		std::vector<RenderGraph::ResourceAccess> meshReads;
 		if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
@@ -467,12 +468,32 @@ namespace Snowstorm
 			             {m_IBLBakePass.PrefilteredCube(), RenderGraph::AccessState::Sampled},
 			             {m_IBLBakePass.BRDFLut(), RenderGraph::AccessState::Sampled}};
 		}
+		// Full-res GI target: the forward shader samples it by screen UV (bindless), so declare it a Sampled
+		// read — the graph then transitions it from the GIUpsample pass's color-attachment layout to
+		// shader-read before this pass (same as the IBL cubemaps above). Only when GI is fed this pass.
+		if (giTextureIndex != 0)
+		{
+			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
+			    rt && rt->GIUpscaleTarget && !rt->GIUpscaleTarget->GetDesc().ColorAttachments.empty())
+			{
+				meshReads.push_back({rt->GIUpscaleTarget->GetDesc().ColorAttachments[0].View->GetTexture(),
+				                     RenderGraph::AccessState::Sampled});
+			}
+		}
+
+		// GI screen size = this pass's scene target size (viewport * render.scale), for the UV divide.
+		const glm::vec2 sceneSize{static_cast<float>(hdrTarget->GetDesc().Width), static_cast<float>(hdrTarget->GetDesc().Height)};
 
 		fc.Graph.AddPass({.Name = name,
 		                  .Target = hdrTarget,
 		                  .Reads = std::move(meshReads),
-		                  .Execute = [this, &fc, cam, hdrTarget, jittered, forceRasterShadow](CommandContext& c)
+		                  .Execute = [this, &fc, cam, hdrTarget, jittered, forceRasterShadow, giTextureIndex, sceneSize](CommandContext& c)
 		                  {
+			                  // Per-pass GI (execute-ordered so the compare GT render's giTextureIndex=0 can't be
+			                  // overwritten by the primary pass's index at build time). AcquireFrameSet (called in
+			                  // Flush) folds these into FrameCB. sceneSize drives the screen-UV GI sample.
+			                  fc.Renderer.SetGITexture(giTextureIndex, sceneSize);
+
 			                  const glm::vec3 camPos = cam.Transform->Position;
 			                  fc.Renderer.BeginScene(*cam.Rt, camPos, fc.Ctx, fc.FrameIndex, jittered, forceRasterShadow);
 

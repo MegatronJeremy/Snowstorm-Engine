@@ -799,6 +799,8 @@ namespace Snowstorm
 		rtc.GITarget = CreateGITarget(ScaledExtent(windowWidth, CVars::ClampedGIScale()),
 		                              ScaledExtent(windowHeight, CVars::ClampedGIScale()), "Main Viewport");
 		rtc.GITargetView = rtc.GITarget->GetDefaultView();
+		// Full-res GI target (#124), full viewport res; the bilateral upsample renders into it.
+		rtc.GIUpscaleTarget = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport GIUpscale");
 		// TAA history ping-pong (#44).
 		rtc.HistoryTarget[0] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport History0");
 		rtc.HistoryTarget[1] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport History1");

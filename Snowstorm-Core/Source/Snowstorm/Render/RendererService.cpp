@@ -117,6 +117,12 @@ namespace Snowstorm
 			float _ReflRangePad0 = 0.0f;
 			float _ReflRangePad1 = 0.0f;
 			float _ReflRangePad2 = 0.0f;
+			// Half-res GI consumption (#124): the full-res upsampled GI target's bindless index (0 = no GI ->
+			// keep baked/analytic diffuse) + the current scene target's pixel size, so the forward pass samples
+			// the full-res GI by screen UV regardless of render.scale. New 16-byte row; match Engine.hlsli.
+			uint32_t GITextureIndex = 0;
+			uint32_t _GIPad0 = 0;
+			glm::vec2 RenderTargetSize{0.0f, 0.0f};
 		};
 	}
 
@@ -335,6 +341,12 @@ namespace Snowstorm
 		frame.GIRange = CVars::GIRange.Get();
 		// Debug view 4 = GI: DefaultLit outputs the raw indirect term. Gate on RT active too (needs the table).
 		frame.DebugGI = (CVars::DebugView.Get() == 4 && CVars::GIRTActive() && m_ReflectionTableAddress != 0) ? 1u : 0u;
+
+		// Half-res GI consumption (#124): the full-res upsampled GI target's bindless index (0 = no GI ->
+		// DefaultLit keeps the baked/analytic diffuse) + the scene target's pixel size for the screen-UV
+		// sample. Pushed per-viewport by ForwardEffect via SetGITexture just before the forward pass.
+		frame.GITextureIndex = m_GITextureIndex;
+		frame.RenderTargetSize = m_GIRenderTargetSize;
 
 		const Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
 		SS_CORE_ASSERT(frameUBO, "Frame UBO missing for frame descriptor set");

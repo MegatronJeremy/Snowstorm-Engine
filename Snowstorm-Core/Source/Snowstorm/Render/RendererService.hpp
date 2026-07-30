@@ -189,6 +189,16 @@ namespace Snowstorm
 		// compute pass (#124) reads it to resolve ray hits, same as the inline reflection/GI path via FrameCB.
 		[[nodiscard]] uint64_t GetReflectionGeometryAddress() const { return m_ReflectionTableAddress; }
 
+		// Half-res GI consumption (#124): the ForwardEffect sets the full-res upsampled GI target's bindless
+		// index (0 = no GI this frame) + the scene target's pixel size before the forward pass, and
+		// AcquireFrameSet folds both into FrameCB so DefaultLit samples the GI by screen UV. Reset to 0 each
+		// frame by the effects that don't set it, so a stale index can't leak GI into a non-GI viewport.
+		void SetGITexture(const uint32_t bindlessIndex, const glm::vec2& renderTargetSize)
+		{
+			m_GITextureIndex = bindlessIndex;
+			m_GIRenderTargetSize = renderTargetSize;
+		}
+
 		// Current frame's lights / environment (uploaded by the PreRender systems). The IBL bake reads
 		// these to capture the sky; exposed so the bake lives in its own pass, not the renderer.
 		[[nodiscard]] const LightDataBlock& GetLights() const { return m_FrameData.Lights; }
@@ -316,6 +326,11 @@ namespace Snowstorm
 		// GPU device address of this frame's RT reflection geometry table (#118); pushed by
 		// SetReflectionGeometryAddress, read into FrameCB in AcquireFrameSet. 0 = no table.
 		uint64_t m_ReflectionTableAddress = 0;
+
+		// Half-res GI consumption (#124): the full-res upsampled GI target's bindless index (0 = no GI) + the
+		// scene target's pixel size, pushed per-viewport by SetGITexture, read into FrameCB in AcquireFrameSet.
+		uint32_t m_GITextureIndex = 0;
+		glm::vec2 m_GIRenderTargetSize{0.0f, 0.0f};
 
 		std::vector<BatchData> m_Batches;
 
