@@ -24,13 +24,15 @@ namespace Snowstorm
 	public:
 		// Accumulate: read `current` (this frame's raw half-res GI, Sampled), `gbuffer` (full-res guide for
 		// the current depth), `velocity` (full-res motion + depth), `historyPrev` (previous accumulated GI:
-		// .rgb irradiance, .a depth); write `output` (half-res accumulated GI, Storage). `historyValid` gates
-		// the blend (false on the first frame / after a reset -> passes current through). near/far linearize
-		// the depths for the disocclusion test; `depthReject` is the relative threshold (0 = off). Lazily
-		// builds the pipeline (async shader); no-op until ready.
+		// .rgb irradiance), `momentsPrev` (previous SVGF moments: .r μ1, .g μ2, .b histLen, .a prev depth);
+		// write `output` (accumulated GI .rgb + variance .a, Storage) and `momentsOut` (this frame's moments).
+		// `historyValid` gates the blend (false on the first frame / after a reset -> passes current through).
+		// near/far linearize the depths for the disocclusion test; `depthReject` is the relative threshold
+		// (0 = off). #129 Inc 3c added the moments in/out for textbook SVGF variance. Lazy pipeline build.
 		void Dispatch(const Ref<CommandContext>& ctx, uint32_t frameIndex,
 		              const Ref<TextureView>& current, const Ref<TextureView>& gbuffer,
 		              const Ref<TextureView>& velocity, const Ref<TextureView>& historyPrev,
+		              const Ref<TextureView>& momentsPrev, const Ref<TextureView>& momentsOut,
 		              const Ref<TextureView>& output, uint32_t outW, uint32_t outH,
 		              bool historyValid, float blend, float maxBlend, float nearPlane, float farPlane,
 		              float depthReject);

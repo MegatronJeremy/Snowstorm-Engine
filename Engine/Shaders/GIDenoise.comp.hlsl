@@ -37,6 +37,8 @@ cbuffer GIDenoiseCB : register(b4, space0)
 // B3-spline à-trous kernel row {1/16, 4/16, 6/16, 4/16, 1/16}; the 2D weight is the outer product.
 static const float kKernel[5] = {0.0625, 0.25, 0.375, 0.25, 0.0625};
 
+float Luma(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
+
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
@@ -65,41 +67,39 @@ void main(uint3 id : SV_DispatchThreadID)
 		return;
 	}
 
-	const float3 centerGI = GIIn.Load(int3(centerPx, 0)).rgb;
+	const float4 centerIn = GIIn.Load(int3(centerPx, 0));
+	const float3 centerGI = centerIn.rgb;
+	const float centerVar = max(centerIn.a, 0.0); // #129 Inc 3c: SVGF variance rides .a (from the temporal pass)
+	const float lumaCenter = Luma(centerGI);
 
-	// SVGF luminance edge-stop (#129 Inc 3b): the fixed depth+normal kernel over-blurs converged detail and
-	// under-blurs noisy regions equally. Adding a luminance term that ADAPTS to the local noise level widens
-	// the effective filter where the signal is noisy (disocclusions / thin history) and keeps it tight where
-	// it's already smooth. SVGF drives this from temporally-accumulated variance; we estimate variance
-	// SPATIALLY from the 3x3 neighborhood of THIS pass's input instead — no moment buffers to plumb/desync,
-	// ~the same result for a spatial à-trous (the temporal moments mainly help the very first disocclusion
-	// frame, which our temporal stage + multiple à-trous passes already cover). LumaPhi == 0 => term OFF.
-	const float lumaCenter = dot(centerGI, float3(0.2126, 0.7152, 0.0722));
-	float lumaVar = 0.0;
+	// SVGF luminance edge-stop (#129 Inc 3c, textbook temporal-moment variant). The denominator uses the
+	// temporally-accumulated variance (not a per-pass spatial estimate as in Inc 3b), pre-blurred by a 3x3
+	// gaussian so a single noisy variance texel doesn't destabilize the weight (the SVGF g_{3x3}(Var) step).
+	// High variance (noisy / just-disoccluded) => large denom => luminance differences barely attenuate =>
+	// WIDE blur; low variance (converged) => small denom => luminance edges preserved. LumaPhi == 0 => OFF.
+	float varBlur = centerVar;
 	if (LumaPhi > 0.0)
 	{
-		float m1 = 0.0;
-		float m2 = 0.0;
+		float vs = 0.0;
+		float vw = 0.0;
 		[unroll] for (int vy = -1; vy <= 1; ++vy)
 		{
 			[unroll] for (int vx = -1; vx <= 1; ++vx)
 			{
 				const int2 vp = clamp(centerPx + int2(vx, vy), int2(0, 0), int2(OutSize) - 1);
-				const float l = dot(GIIn.Load(int3(vp, 0)).rgb, float3(0.2126, 0.7152, 0.0722));
-				m1 += l;
-				m2 += l * l;
+				const float gw = kKernel[vx + 2] * kKernel[vy + 2]; // reuse the B3-spline row (index 1..3) as a 3x3 gaussian
+				vs += max(GIIn.Load(int3(vp, 0)).a, 0.0) * gw;
+				vw += gw;
 			}
 		}
-		const float mean = m1 / 9.0;
-		lumaVar = max(m2 / 9.0 - mean * mean, 0.0);
+		varBlur = vs / max(vw, 1e-8);
 	}
-	// Denominator for the luminance weight: LumaPhi * stddev (+eps). High variance => large denom => the
-	// luminance diff barely attenuates => WIDE blur; low variance => small denom => luminance differences cut
-	// taps => detail preserved. This is the SVGF w_l = exp(-|l_c - l_t| / (phi*sqrt(var)+eps)) term.
-	const float lumaDenom = LumaPhi * sqrt(lumaVar) + 1e-4;
+	const float lumaDenom = LumaPhi * sqrt(max(varBlur, 0.0)) + 1e-4;
 
 	float3 accum = float3(0, 0, 0);
 	float wsum = 0.0;
+	float varAccum = 0.0; // #129 Inc 3c part 2: filter the variance through the à-trous with SQUARED weights
+	float varWsum = 0.0;
 
 	[unroll] for (int dy = -2; dy <= 2; ++dy)
 	{
@@ -108,7 +108,8 @@ void main(uint3 id : SV_DispatchThreadID)
 			const int2 tap = centerPx + int2(dx, dy) * Step;
 			const int2 tapC = clamp(tap, int2(0, 0), int2(OutSize) - 1);
 
-			const float3 gi = GIIn.Load(int3(tapC, 0)).rgb;
+			const float4 tapIn = GIIn.Load(int3(tapC, 0));
+			const float3 gi = tapIn.rgb;
 
 			// Guide at the tap: POINT-fetch the full-res texel nearest the half-res tap center (never bilinear).
 			const float2 tapUV = (float2(tapC) + 0.5) / float2(OutSize);
@@ -119,21 +120,24 @@ void main(uint3 id : SV_DispatchThreadID)
 			// so its large depth diff (wD -> 0) drops it — no explicit sky guard needed on taps.
 			const float wN = pow(saturate(dot(Nc, DecodeNormalOct(gt.xy))), KNormalPow);
 			const float wD = exp(-abs(Dc - gt.w) * KDepthScale);
-			// Luminance term (#129 Inc 3b): variance-scaled, so noisy regions blur through it. 1.0 when off.
+			// SVGF luminance term: variance-scaled, so noisy regions blur through it. 1.0 when off.
 			float wL = 1.0;
 			if (LumaPhi > 0.0)
 			{
-				const float lumaTap = dot(gi, float3(0.2126, 0.7152, 0.0722));
-				wL = exp(-abs(lumaCenter - lumaTap) / lumaDenom);
+				wL = exp(-abs(lumaCenter - Luma(gi)) / lumaDenom);
 			}
 			const float wK = kKernel[dx + 2] * kKernel[dy + 2];
 			const float w = wK * wN * wD * wL;
 
 			accum += gi * w;
 			wsum += w;
+			// Variance filters with the SQUARE of the weights (variance of a weighted sum), per SVGF.
+			varAccum += (w * w) * max(tapIn.a, 0.0);
+			varWsum += w * w;
 		}
 	}
 
 	// wsum is always >= the center tap's weight (wN=wD=wL=1 there), so it never underflows — no fallback needed.
-	GIOut[centerPx] = float4(accum / wsum, 1.0);
+	const float outVar = (varWsum > 1e-12) ? (varAccum / varWsum) : centerVar;
+	GIOut[centerPx] = float4(accum / wsum, outVar);
 }

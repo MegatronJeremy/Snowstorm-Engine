@@ -93,6 +93,7 @@ namespace Snowstorm
 				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget ||
 				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget || !rt.VelocityTarget ||
 				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIHistory[0] || !rt.GIHistory[1] ||
+				                     !rt.GIMoments[0] || !rt.GIMoments[1] || !rt.ReflMoments[0] || !rt.ReflMoments[1] ||
 				                     !rt.GIDenoiseScratch[0] || !rt.GIDenoiseScratch[1] || !rt.GIUpscaleTarget ||
 				                     !rt.AOTarget || !rt.AOUpscaleTarget ||
 				                     !rt.ReflectionTarget || !rt.ReflHistory[0] || !rt.ReflHistory[1] ||
@@ -152,6 +153,10 @@ namespace Snowstorm
 					rtW.GIHistoryView[0] = rtW.GIHistory[0]->GetDefaultView();
 					rtW.GIHistory[1] = CreateGITarget(giW, giH, "ViewportGIHistory1");
 					rtW.GIHistoryView[1] = rtW.GIHistory[1]->GetDefaultView();
+					rtW.GIMoments[0] = CreateGITarget(giW, giH, "ViewportGIMoments0"); // SVGF moments (#129 Inc 3c)
+					rtW.GIMomentsView[0] = rtW.GIMoments[0]->GetDefaultView();
+					rtW.GIMoments[1] = CreateGITarget(giW, giH, "ViewportGIMoments1");
+					rtW.GIMomentsView[1] = rtW.GIMoments[1]->GetDefaultView();
 					// GI denoiser ping-pong scratch pair (#125): same half-res shape as GITarget. Always allocated;
 					// only written when the denoiser runs. Rebuilt on viewport OR gi.scale change (tracks GITarget).
 					rtW.GIDenoiseScratch[0] = CreateGITarget(giW, giH, "ViewportGIDenoise0");
@@ -177,6 +182,10 @@ namespace Snowstorm
 					rtW.ReflHistoryView[0] = rtW.ReflHistory[0]->GetDefaultView();
 					rtW.ReflHistory[1] = CreateGITarget(w, h, "ViewportReflHistory1");
 					rtW.ReflHistoryView[1] = rtW.ReflHistory[1]->GetDefaultView();
+					rtW.ReflMoments[0] = CreateGITarget(w, h, "ViewportReflMoments0"); // SVGF moments (#129 Inc 3c)
+					rtW.ReflMomentsView[0] = rtW.ReflMoments[0]->GetDefaultView();
+					rtW.ReflMoments[1] = CreateGITarget(w, h, "ViewportReflMoments1");
+					rtW.ReflMomentsView[1] = rtW.ReflMoments[1]->GetDefaultView();
 					rtW.ReflDenoiseScratch[0] = CreateGITarget(w, h, "ViewportReflDenoise0");
 					rtW.ReflDenoiseScratchView[0] = rtW.ReflDenoiseScratch[0]->GetDefaultView();
 					rtW.ReflDenoiseScratch[1] = CreateGITarget(w, h, "ViewportReflDenoise1");

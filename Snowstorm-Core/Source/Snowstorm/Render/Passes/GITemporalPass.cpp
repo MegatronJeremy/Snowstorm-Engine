@@ -37,6 +37,8 @@ namespace Snowstorm
 		constexpr uint32_t kOutputBinding = 4;
 		constexpr uint32_t kSamplerBinding = 5;
 		constexpr uint32_t kParamsBinding = 6;
+		constexpr uint32_t kMomentsPrevBinding = 7; // #129 Inc 3c
+		constexpr uint32_t kMomentsOutBinding = 8;
 	}
 
 	void GITemporalPass::EnsureResources()
@@ -83,11 +85,12 @@ namespace Snowstorm
 	void GITemporalPass::Dispatch(const Ref<CommandContext>& ctx, const uint32_t frameIndex,
 	                              const Ref<TextureView>& current, const Ref<TextureView>& gbuffer,
 	                              const Ref<TextureView>& velocity, const Ref<TextureView>& historyPrev,
+	                              const Ref<TextureView>& momentsPrev, const Ref<TextureView>& momentsOut,
 	                              const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH,
 	                              const bool historyValid, const float blend, const float maxBlend,
 	                              const float nearPlane, const float farPlane, const float depthReject)
 	{
-		if (!ctx || !current || !gbuffer || !velocity || !historyPrev || !output || outW == 0 || outH == 0)
+		if (!ctx || !current || !gbuffer || !velocity || !historyPrev || !momentsPrev || !momentsOut || !output || outW == 0 || outH == 0)
 		{
 			return;
 		}
@@ -122,18 +125,23 @@ namespace Snowstorm
 		m_Sets[frameIndex]->SetTexture(kHistoryBinding, historyPrev);
 		m_Sets[frameIndex]->SetTexture(kOutputBinding, output);
 		m_Sets[frameIndex]->SetSampler(kSamplerBinding, m_Sampler);
+		m_Sets[frameIndex]->SetTexture(kMomentsPrevBinding, momentsPrev); // #129 Inc 3c
+		m_Sets[frameIndex]->SetTexture(kMomentsOutBinding, momentsOut);
 		const BufferBinding cbBB{.Buffer = m_ParamBuffers[frameIndex], .Offset = 0, .Range = sizeof(GITemporalCB)};
 		m_Sets[frameIndex]->SetBuffer(kParamsBinding, cbBB);
 		m_Sets[frameIndex]->Commit();
 
-		// Output must be GENERAL for the UAV write; the inputs are already SHADER_READ (the graph declared them
-		// Sampled). Transition to Sampled after so the à-trous denoiser / next frame's reproject reads it.
+		// Output + moments must be GENERAL for the UAV write; the inputs are already SHADER_READ (the graph
+		// declared them Sampled). Transition both to Sampled after so the à-trous denoiser / next frame's
+		// reproject reads them.
 		ctx->TransitionToStorage(output->GetTexture());
+		ctx->TransitionToStorage(momentsOut->GetTexture());
 
 		ctx->BindPipeline(m_Pipeline);
 		ctx->BindDescriptorSet(m_Sets[frameIndex], 0);
 		ctx->Dispatch((outW + 7) / 8, (outH + 7) / 8, 1);
 
 		ctx->TransitionToSampled(output->GetTexture());
+		ctx->TransitionToSampled(momentsOut->GetTexture());
 	}
 }

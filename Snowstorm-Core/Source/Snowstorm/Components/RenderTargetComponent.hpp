@@ -75,6 +75,15 @@ namespace Snowstorm
 		Ref<Texture> GIHistory[2];
 		Ref<TextureView> GIHistoryView[2];
 
+		// Half-res GI temporal MOMENTS ping-pong (#129 Inc 3c): textbook SVGF variance. Parallel to GIHistory,
+		// reprojected + reset identically (SAME motion vector, SAME disocclusion reject) so it can't desync from
+		// the color. RGBA16F: .r = μ1 (E[luminance]), .g = μ2 (E[luminance²]), .b = history length (frames
+		// accumulated, capped; reset to 1 on reject). Variance = max(μ2 − μ1², 0); the temporal pass writes it
+		// into the accumulated-GI output's .a for the à-trous to consume + filter. Only written when
+		// GITemporalActive(). Null until allocated.
+		Ref<Texture> GIMoments[2];
+		Ref<TextureView> GIMomentsView[2];
+
 		// Half-res GI denoiser ping-pong scratch pair (#125): the edge-aware à-trous denoiser keeps its INPUT
 		// (the temporally-accumulated GI, or the raw GITarget when temporal is off) untouched and ping-pongs
 		// between these two, so iteration 0 reads the input and every later iteration alternates [0]<->[1]. The
@@ -120,6 +129,12 @@ namespace Snowstorm
 		// allocated.
 		Ref<Texture> ReflHistory[2];
 		Ref<TextureView> ReflHistoryView[2];
+
+		// Full-res RT reflection temporal MOMENTS ping-pong (#129 Inc 3c): the reflection twin of GIMoments.
+		// Same RGBA16F layout (.r μ1, .g μ2, .b history length) reprojected/reset with the reflection history.
+		// Only written when ReflectionTemporalActive(). Null until allocated.
+		Ref<Texture> ReflMoments[2];
+		Ref<TextureView> ReflMomentsView[2];
 
 		// Full-res RT reflection spatial-denoiser ping-pong (#129 Inc 3a): the reflection twin of
 		// GIDenoiseScratch. The edge-avoiding à-trous (reusing GIDenoisePass) ping-pongs between these two,

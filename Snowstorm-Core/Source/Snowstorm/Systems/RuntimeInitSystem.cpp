@@ -151,6 +151,10 @@ namespace Snowstorm
 				wRtc.GIHistoryView[0] = wRtc.GIHistory[0]->GetDefaultView();
 				wRtc.GIHistory[1] = CreateGITarget(giW, giH, "ViewportGIHistory1");
 				wRtc.GIHistoryView[1] = wRtc.GIHistory[1]->GetDefaultView();
+				wRtc.GIMoments[0] = CreateGITarget(giW, giH, "ViewportGIMoments0"); // SVGF moments (#129 Inc 3c)
+				wRtc.GIMomentsView[0] = wRtc.GIMoments[0]->GetDefaultView();
+				wRtc.GIMoments[1] = CreateGITarget(giW, giH, "ViewportGIMoments1");
+				wRtc.GIMomentsView[1] = wRtc.GIMoments[1]->GetDefaultView();
 				wRtc.GIDenoiseScratch[0] = CreateGITarget(giW, giH, "ViewportGIDenoise0"); // denoiser ping-pong (#125)
 				wRtc.GIDenoiseScratchView[0] = wRtc.GIDenoiseScratch[0]->GetDefaultView();
 				wRtc.GIDenoiseScratch[1] = CreateGITarget(giW, giH, "ViewportGIDenoise1");
@@ -165,6 +169,10 @@ namespace Snowstorm
 				wRtc.ReflHistoryView[0] = wRtc.ReflHistory[0]->GetDefaultView();
 				wRtc.ReflHistory[1] = CreateGITarget(w, h, "ViewportReflHistory1");
 				wRtc.ReflHistoryView[1] = wRtc.ReflHistory[1]->GetDefaultView();
+				wRtc.ReflMoments[0] = CreateGITarget(w, h, "ViewportReflMoments0"); // SVGF moments (#129 Inc 3c)
+				wRtc.ReflMomentsView[0] = wRtc.ReflMoments[0]->GetDefaultView();
+				wRtc.ReflMoments[1] = CreateGITarget(w, h, "ViewportReflMoments1");
+				wRtc.ReflMomentsView[1] = wRtc.ReflMoments[1]->GetDefaultView();
 				wRtc.ReflDenoiseScratch[0] = CreateGITarget(w, h, "ViewportReflDenoise0"); // reflection à-trous ping-pong (#129 Inc 3a)
 				wRtc.ReflDenoiseScratchView[0] = wRtc.ReflDenoiseScratch[0]->GetDefaultView();
 				wRtc.ReflDenoiseScratch[1] = CreateGITarget(w, h, "ViewportReflDenoise1");

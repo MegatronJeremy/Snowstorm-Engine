@@ -208,6 +208,8 @@ namespace Snowstorm
 				const uint32_t curIdx = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
 				const Ref<TextureView> curHistView = v.RT.GIHistoryView[curIdx];
 				const Ref<TextureView> prevHistView = v.RT.GIHistoryView[curIdx ^ 1u];
+				const Ref<TextureView> curMomView = v.RT.GIMomentsView[curIdx];       // #129 Inc 3c: same parity
+				const Ref<TextureView> prevMomView = v.RT.GIMomentsView[curIdx ^ 1u]; // as the history ping-pong
 				const Ref<TextureView> currentView = v.GIView; // this frame's raw GI trace
 				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
 				const Ref<TextureView> velView = v.Velocity;
@@ -230,12 +232,14 @@ namespace Snowstorm
 				                  .Reads = {{currentView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {velView->GetTexture(), RenderGraph::AccessState::Sampled},
-				                            {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled}},
-				                  .Execute = [this, &fc, currentView, gbufView, velView, prevHistView, curHistView, giW, giH, historyValid, nearPlane, farPlane, depthReject](CommandContext& c)
+				                            {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {prevMomView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, currentView, gbufView, velView, prevHistView, curHistView, prevMomView, curMomView, giW, giH, historyValid, nearPlane, farPlane, depthReject](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, currentView, gbufView, velView, prevHistView,
-					                                  curHistView, giW, giH, historyValid, CVars::GITemporalBlend.Get(),
-					                                  CVars::GITemporalMaxBlend.Get(), nearPlane, farPlane, depthReject);
+					                                  prevMomView, curMomView, curHistView, giW, giH, historyValid,
+					                                  CVars::GITemporalBlend.Get(), CVars::GITemporalMaxBlend.Get(),
+					                                  nearPlane, farPlane, depthReject);
 				                  }});
 
 				v.GIView = curHistView; // the accumulated buffer is now the live GI
@@ -566,6 +570,8 @@ namespace Snowstorm
 				const uint32_t curIdx = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
 				const Ref<TextureView> curHistView = v.RT.ReflHistoryView[curIdx];
 				const Ref<TextureView> prevHistView = v.RT.ReflHistoryView[curIdx ^ 1u];
+				const Ref<TextureView> curMomView = v.RT.ReflMomentsView[curIdx];       // #129 Inc 3c: same parity
+				const Ref<TextureView> prevMomView = v.RT.ReflMomentsView[curIdx ^ 1u]; // as the history ping-pong
 				const Ref<TextureView> currentView = v.ReflectionView; // this frame's raw reflection trace
 				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
 				const Ref<TextureView> velView = v.Velocity;
@@ -586,12 +592,14 @@ namespace Snowstorm
 				                  .Reads = {{currentView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {velView->GetTexture(), RenderGraph::AccessState::Sampled},
-				                            {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled}},
-				                  .Execute = [this, &fc, currentView, gbufView, velView, prevHistView, curHistView, reflW, reflH, historyValid, nearPlane, farPlane, depthReject](CommandContext& c)
+				                            {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {prevMomView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, currentView, gbufView, velView, prevHistView, curHistView, prevMomView, curMomView, reflW, reflH, historyValid, nearPlane, farPlane, depthReject](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, currentView, gbufView, velView, prevHistView,
-					                                  curHistView, reflW, reflH, historyValid, CVars::ReflectionTemporalBlend.Get(),
-					                                  CVars::ReflectionTemporalMaxBlend.Get(), nearPlane, farPlane, depthReject);
+					                                  prevMomView, curMomView, curHistView, reflW, reflH, historyValid,
+					                                  CVars::ReflectionTemporalBlend.Get(), CVars::ReflectionTemporalMaxBlend.Get(),
+					                                  nearPlane, farPlane, depthReject);
 				                  }});
 
 				v.ReflectionView = curHistView; // the accumulated buffer is now the live reflection

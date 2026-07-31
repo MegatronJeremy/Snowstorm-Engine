@@ -22,8 +22,10 @@ Texture2D<float4> GICurrent : register(t0, space0);     // this frame's raw half
 Texture2D<float4> GBufferNormal : register(t1, space0); // full-res guide: .xyz world normal, .w NDC depth
 Texture2D<float4> VelocityTex : register(t2, space0);   // full-res motion: .xy = curr_uv - prev_uv, .z = NDC depth
 Texture2D<float4> GIHistoryPrev : register(t3, space0); // previous accumulated GI: .rgb irradiance, .a NDC depth
-[[vk::image_format("rgba16f")]] RWTexture2D<float4> GIOut : register(u4, space0); // accumulated GI out
+[[vk::image_format("rgba16f")]] RWTexture2D<float4> GIOut : register(u4, space0); // accumulated GI (.rgb) + variance (.a) out
 SamplerState LinearSampler : register(s5, space0);      // clamp-linear for reprojected history / velocity
+Texture2D<float4> MomentsPrev : register(t7, space0);   // #129 Inc 3c: prev SVGF moments .r=μ1 .g=μ2 .b=histLen
+[[vk::image_format("rgba16f")]] RWTexture2D<float4> MomentsOut : register(u8, space0); // this frame's moments out
 
 cbuffer GITemporalCB : register(b6, space0)
 {
@@ -36,6 +38,9 @@ cbuffer GITemporalCB : register(b6, space0)
 	float Far;
 	float DepthRejectScale; // relative view-space threshold (0 = OFF); reuses the TAA #127 value
 };
+
+static const float3 kLumaWeights = float3(0.2126, 0.7152, 0.0722);
+float Luma(float3 c) { return dot(c, kLumaWeights); }
 
 // Linearize an NDC depth (perspectiveRH_ZO, ZO clip [0,1]) to view-space distance — identical to the TAA
 // resolve so the two disocclusion tests agree. Guard the denominator so a far/sky texel (d==1) can't /0.
@@ -72,19 +77,39 @@ void main(uint3 id : SV_DispatchThreadID)
 	const float2 uv = (float2(px) + 0.5) / float2(OutSize);
 
 	const float3 currentGI = GICurrent.Load(int3(px, 0)).rgb;
+	const float lumaCurr = Luma(currentGI);
 	// This pixel's depth from the G-buffer, POINT-fetched at the nearest texel (never bilinear — a linear tap
-	// blends depth across silhouettes, the edge-bleed cause: #129 Inc 2c). Packed into the output .a so it
-	// becomes next frame's history depth for the reproject below.
+	// blends depth across silhouettes, the edge-bleed cause: #129 Inc 2c).
 	uint2 gbDims;
 	GBufferNormal.GetDimensions(gbDims.x, gbDims.y);
 	const int2 gbTexel = clamp(int2(uv * float2(gbDims)), int2(0, 0), int2(gbDims) - 1);
 	const float depthCurr = GBufferNormal.Load(int3(gbTexel, 0)).w;
 
-	// First frame / history invalid: nothing to blend, output current — but still write depth into .a so next
-	// frame's disocclusion test has a valid previous depth.
+	// 7x7 SPATIAL luminance moments of this frame's raw trace — the SVGF fallback variance used on a RESET
+	// (first frame / disocclusion / off-screen), where there's no temporal history to estimate variance from.
+	// A young pixel gets this wide spatial variance so the à-trous blurs it hard until temporal history builds.
+	float sM1 = 0.0;
+	float sM2 = 0.0;
+	[unroll] for (int sy = -3; sy <= 3; ++sy)
+	{
+		[unroll] for (int sx = -3; sx <= 3; ++sx)
+		{
+			const int2 sp = clamp(px + int2(sx, sy), int2(0, 0), int2(OutSize) - 1);
+			const float l = Luma(max(GICurrent.Load(int3(sp, 0)).rgb, 0.0));
+			sM1 += l;
+			sM2 += l * l;
+		}
+	}
+	sM1 /= 49.0;
+	sM2 /= 49.0;
+	const float spatialVar = max(sM2 - sM1 * sM1, 0.0);
+
+	// RESET path (first frame / history invalid): output current color, seed moments from this frame
+	// (μ1=luma, μ2=luma², histLen=1), and write the SPATIAL variance so the à-trous still smooths the pixel.
 	if (HistoryValid < 0.5)
 	{
-		GIOut[px] = float4(currentGI, depthCurr);
+		GIOut[px] = float4(currentGI, spatialVar);
+		MomentsOut[px] = float4(lumaCurr, lumaCurr * lumaCurr, 1.0, depthCurr);
 		return;
 	}
 
@@ -93,19 +118,23 @@ void main(uint3 id : SV_DispatchThreadID)
 	const float2 velocity = VelocityTex.SampleLevel(LinearSampler, uv, 0).xy;
 	const float2 histUv = uv - velocity;
 
-	// Off-screen history can't be trusted (disocclusion at the screen edge) -> current only.
+	// Off-screen history can't be trusted (disocclusion at the screen edge) -> reset (current + spatial var).
 	if (histUv.x < 0.0 || histUv.x > 1.0 || histUv.y < 0.0 || histUv.y > 1.0)
 	{
-		GIOut[px] = float4(currentGI, depthCurr);
+		GIOut[px] = float4(currentGI, spatialVar);
+		MomentsOut[px] = float4(lumaCurr, lumaCurr * lumaCurr, 1.0, depthCurr);
 		return;
 	}
 
-	// Reprojected accumulated history (.rgb = irradiance/radiance, .a = prev depth for the reject). Bilinear
-	// tap: history lands between texels under motion, and a smooth reproject wants the interpolated value —
-	// the neighborhood clamp below is what stops this from ghosting across a moving edge (a point tap here
-	// would just alias instead). .a (depth) is taken from the same tap; it's only a coarse disocclusion cue.
+	// Reprojected accumulated history (.rgb = irradiance/radiance). Bilinear tap: history lands between texels
+	// under motion, and a smooth reproject wants the interpolated value — the neighborhood clamp below is what
+	// stops this from ghosting across a moving edge (a point tap here would just alias instead).
 	const float4 histSample = GIHistoryPrev.SampleLevel(LinearSampler, histUv, 0);
 	const float3 historyGI = max(histSample.rgb, 0.0);
+	// Prev moments + depth reproject with the SAME motion vector as the color, so they can't desync (#129 Inc
+	// 3c). .r=μ1 .g=μ2 .b=histLen .a=prev NDC depth (moved here from the color .a, which now carries variance).
+	const float4 momentsPrev = MomentsPrev.SampleLevel(LinearSampler, histUv, 0);
+	const float depthPrev = momentsPrev.a;
 
 	// Staticness: 1 at rest, 0 by ~2 px/frame of motion (velocity in UV; * OutSize -> half-res pixels).
 	const float speedPixels = length(velocity * float2(OutSize));
@@ -147,16 +176,30 @@ void main(uint3 id : SV_DispatchThreadID)
 	// Depth-disocclusion rejection (#127): if the current surface's linear depth differs from the reprojected
 	// history's beyond a relative threshold, the history is a DIFFERENT surface -> drive its weight to 0 so
 	// the reveal falls back to this frame's trace. Smoothstep so a near-threshold edge attenuates, not pops.
+	float depthConfidence = 1.0;
 	if (DepthRejectScale > 0.0)
 	{
 		const float linCurr = LinearizeDepth(depthCurr);
-		const float linPrev = LinearizeDepth(histSample.a);
+		const float linPrev = LinearizeDepth(depthPrev);
 		const float rel = abs(linCurr - linPrev) / max(linCurr, 1e-4);
-		const float depthConfidence = 1.0 - smoothstep(DepthRejectScale, 2.0 * DepthRejectScale, rel);
+		depthConfidence = 1.0 - smoothstep(DepthRejectScale, 2.0 * DepthRejectScale, rel);
 		blend *= depthConfidence;
 	}
 
 	// Accumulate the CLAMPED history (not the raw reprojected history) so a moving edge can't drag a trail.
 	const float3 accumulated = lerp(currentGI, clampedHistory, blend);
-	GIOut[px] = float4(max(accumulated, 0.0), depthCurr);
+
+	// SVGF temporal moment accumulation (#129 Inc 3c). History length grows by 1 each accepted frame (capped),
+	// and RESETS toward 1 as depthConfidence -> 0 (a disocclusion), so a revealed pixel is treated as young.
+	// Accumulate μ1/μ2 with the SAME blend as the color so the variance tracks the accumulated signal. When
+	// history is thin (young pixel), the temporal variance is unreliable, so fall back to the wide 7x7 spatial
+	// variance until histLen builds up (~the SVGF "spatial estimate for the first few frames" rule).
+	const float histLen = min(momentsPrev.b * depthConfidence + 1.0, 32.0);
+	const float mom1 = lerp(lumaCurr, momentsPrev.r, blend);
+	const float mom2 = lerp(lumaCurr * lumaCurr, momentsPrev.g, blend);
+	const float temporalVar = max(mom2 - mom1 * mom1, 0.0);
+	const float variance = (histLen < 4.0) ? max(temporalVar, spatialVar) : temporalVar;
+
+	GIOut[px] = float4(max(accumulated, 0.0), variance);           // .a = variance for the à-trous (#129 Inc 3c)
+	MomentsOut[px] = float4(mom1, mom2, histLen, depthCurr);       // persist moments + depth for next frame
 }
