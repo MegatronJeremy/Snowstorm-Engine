@@ -345,7 +345,7 @@ namespace Snowstorm
 		// eyeball the substrate in isolation). The GI/AO compute passes additionally check their own gates.
 		const bool giActive = CVars::GIRTActive();
 		const bool aoActive = CVars::AoRTActive();
-		const bool gbufferNeeded = (giActive || aoActive || debugView == 5 || debugView == 6 || debugView == 2) &&
+		const bool gbufferNeeded = (giActive || aoActive || debugView == 5 || debugView == 6 || debugView == 7 || debugView == 2) &&
 		                           vpRT.GBufferNormalTarget && !vpRT.GBufferNormalTarget->GetDesc().ColorAttachments.empty() &&
 		                           vpRT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
 		v.GBufferNeeded = gbufferNeeded;
@@ -390,6 +390,29 @@ namespace Snowstorm
 			primaryTonemap.DebugScale = static_cast<float>(vpRT.AOTarget->GetDesc().Width) /
 			                            static_cast<float>(vpRT.GBufferNormalTarget->GetDesc().Width);
 			debugRead = vpRT.AOTarget;
+		}
+		else if (debugView == 7 && giActive && gbufferNeeded && vpRT.GITarget && vpRT.GITargetView)
+		{
+			// Denoised/accumulated half-res GI (#125): the LIVE GI buffer after the temporal + à-trous stages,
+			// vs view 6's RAW trace — the A/B that shows what the denoiser did. Point at whichever buffer the GI
+			// sub-chain last wrote this frame, mirroring the v.GIView moving pointer: denoiser on => the à-trous
+			// landed in GIDenoiseScratch[0]; else temporal on => GIHistory[cur]; else the raw GITarget. Same
+			// half-res point-fetch readout as view 6 (DebugMode 3, gi/present size ratio as DebugScale).
+			Ref<TextureView> liveGI = vpRT.GITargetView;
+			if (CVars::GIDenoiseActive() && vpRT.GIDenoiseScratchView[0])
+			{
+				liveGI = vpRT.GIDenoiseScratchView[0];
+			}
+			else if (CVars::GITemporalActive() && vpRT.GIHistory[0] && vpRT.GIHistory[1])
+			{
+				const uint32_t curIdx = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
+				liveGI = vpRT.GIHistoryView[curIdx];
+			}
+			primaryTonemap.DebugMode = 3;
+			primaryTonemap.DebugTexIndex = liveGI->GetGlobalBindlessIndex();
+			primaryTonemap.DebugScale = static_cast<float>(vpRT.GITarget->GetDesc().Width) /
+			                            static_cast<float>(vpRT.GBufferNormalTarget->GetDesc().Width);
+			debugRead = liveGI->GetTexture();
 		}
 
 		// Post-tonemap LDR filter sizing (#44), derived up front so the effect chain (UpscaleEffect /

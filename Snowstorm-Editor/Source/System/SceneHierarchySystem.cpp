@@ -236,13 +236,13 @@ namespace Snowstorm
 		// 3 = Reflections (raw reflected albedo from the RT reflection trace, for verifying hit resolution,
 		// #118). Index maps 1:1 to render.debugview.
 		{
-			const char* dbgLabels[] = {"Normal", "Motion Vectors", "Ambient Occlusion", "Reflections", "Global Illumination", "World Normals", "Half-res GI"};
+			const char* dbgLabels[] = {"Normal", "Motion Vectors", "Ambient Occlusion", "Reflections", "Global Illumination", "World Normals", "Half-res GI (raw)", "Half-res GI (denoised)"};
 			int dbg = CVars::DebugView.Get();
-			if (dbg < 0 || dbg > 6)
+			if (dbg < 0 || dbg > 7)
 			{
 				dbg = 0;
 			}
-			if (ImGui::Combo("Debug View", &dbg, dbgLabels, 7))
+			if (ImGui::Combo("Debug View", &dbg, dbgLabels, 8))
 			{
 				CVars::DebugView.Set(dbg);
 			}
