@@ -65,6 +65,13 @@ namespace Snowstorm
 		Ref<Texture> GITarget;
 		Ref<TextureView> GITargetView;
 
+		// Half-res GI denoiser ping-pong scratch (#125): the edge-aware à-trous denoiser reads GITarget and
+		// writes here (then swaps) each iteration, so the final filtered result lands back in GITarget and the
+		// bilateral upsample downstream is untouched. Same shape as GITarget (Sampled|Storage RGBA16F at
+		// render.gi.scale). Only used when the denoiser runs (GIDenoise + iterations > 0). Null until allocated.
+		Ref<Texture> GIDenoiseScratch;
+		Ref<TextureView> GIDenoiseScratchView;
+
 		// Full-res GI irradiance (#124): the depth+normal-aware bilateral upsample renders the half-res
 		// GITarget into this full-viewport color-only HDR target, which the forward pass then samples (by
 		// screen UV) and multiplies by full-res albedo into the diffuse ambient. A RenderTarget (the upsample

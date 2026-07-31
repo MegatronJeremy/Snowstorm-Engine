@@ -92,7 +92,7 @@ namespace Snowstorm
 				const auto& rt = reg.Read<RenderTargetComponent>(vpEntity);
 				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget ||
 				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget || !rt.VelocityTarget ||
-				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIUpscaleTarget ||
+				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIDenoiseScratch || !rt.GIUpscaleTarget ||
 				                     !rt.AOTarget || !rt.AOUpscaleTarget ||
 				                     !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
 				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Compare each
@@ -143,6 +143,10 @@ namespace Snowstorm
 					// dispatched into when GI is active. Rebuilt on viewport OR gi.scale change.
 					rtW.GITarget = CreateGITarget(giW, giH, "Viewport");
 					rtW.GITargetView = rtW.GITarget->GetDefaultView();
+					// GI denoiser ping-pong scratch (#125): same half-res shape as GITarget. Always allocated;
+					// only written when the denoiser runs. Rebuilt on viewport OR gi.scale change (tracks GITarget).
+					rtW.GIDenoiseScratch = CreateGITarget(giW, giH, "ViewportGIDenoise");
+					rtW.GIDenoiseScratchView = rtW.GIDenoiseScratch->GetDefaultView();
 					// Full-res GI target (#124): the bilateral upsample renders the half-res GI into this, and the
 					// forward pass samples it (by screen UV) as the diffuse GI. Full viewport res.
 					rtW.GIUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale");

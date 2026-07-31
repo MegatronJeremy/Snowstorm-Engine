@@ -147,6 +147,8 @@ namespace Snowstorm
 				wRtc.GBufferNormalTarget = CreateDepthNormalTarget(w, h, "Viewport"); // depth+normal G-buffer (#124), full res
 				wRtc.GITarget = CreateGITarget(giW, giH, "Viewport");                 // half-res GI (#124)
 				wRtc.GITargetView = wRtc.GITarget->GetDefaultView();
+				wRtc.GIDenoiseScratch = CreateGITarget(giW, giH, "ViewportGIDenoise"); // denoiser ping-pong (#125)
+				wRtc.GIDenoiseScratchView = wRtc.GIDenoiseScratch->GetDefaultView();
 				wRtc.GIUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale"); // full-res GI (#124)
 				wRtc.AOTarget = CreateAOTarget(aoW, aoH, "Viewport");                       // half-res AO (#126)
 				wRtc.AOTargetView = wRtc.AOTarget->GetDefaultView();

@@ -271,6 +271,16 @@ namespace Snowstorm::CVars
 	// render.gi.scale clamped to [0.25, 1.0]. Use everywhere the value is consumed.
 	[[nodiscard]] float ClampedGIScale();
 
+	// Spatial denoiser for the half-res RT GI (#125): an edge-aware à-trous wavelet blur run on the half-res
+	// GITarget (between the GI trace and the bilateral upsample), so each ray "looks like" several — cleaner
+	// GI at the same GI_RAY_COUNT. Depth+normal edge-stopping (reuses the G-buffer guide), no variance term
+	// (the temporal half of SVGF stays with TAA). Off => bit-identical to the pre-#125 look. Iterations is the
+	// à-trous pass count (stride doubles each pass: 1,2,4,…); clamp with ClampedGIDenoiseIterations().
+	extern CVar<bool> GIDenoise;
+	extern CVar<int> GIDenoiseIterations;
+	// render.gi.denoise.iterations clamped to [0, 5]. Use everywhere the value is consumed.
+	[[nodiscard]] int ClampedGIDenoiseIterations();
+
 	// True when RT reflections should run (render.reflections.rt on AND the device supports RT). Drives
 	// FrameCB.RTReflEnabled + the shader branch + the TLAS build gate + the geometry-table build. False on a
 	// non-RT GPU (reflection shader compiled out).

@@ -129,6 +129,10 @@ namespace Snowstorm::CVars
 
 	CVar<float> GIScale{"render.gi.scale", 0.5f, "RT GI internal resolution: the GI hemisphere gather runs at this fraction of viewport res (0.5 = quarter the pixels = ~4x cheaper), then a depth-aware bilateral upsample restores full res (#124). 1.0 = full-res reference for the A/B. Clamped to [0.25, 1.0].", CVarFlags::Persist};
 
+	CVar<bool> GIDenoise{"render.gi.denoise", true, "Spatial denoiser for the half-res RT GI (#125): an edge-aware à-trous wavelet blur on GITarget before the bilateral upsample, so each ray looks like several — cleaner GI at the same ray count. Off = the pre-#125 look (TAA-only denoise). Read per-frame; toggle live to A/B.", CVarFlags::Persist};
+
+	CVar<int> GIDenoiseIterations{"render.gi.denoise.iterations", 3, "RT GI denoiser à-trous pass count (#125): each pass doubles the tap stride (1,2,4,…) for a wider edge-aware blur. More passes = smoother but costlier / more over-blur risk. Clamped to [0, 5]; 0 disables the denoiser like render.gi.denoise off.", CVarFlags::Persist};
+
 	CVar<float> AOScale{"render.ao.scale", 0.5f, "RT AO internal resolution: the RTAO occlusion trace runs at this fraction of viewport res (0.5 = quarter the pixels = ~4x cheaper), then a depth-aware bilateral upsample restores full res (#126). 1.0 = full-res reference. Clamped to [0.25, 1.0].", CVarFlags::Persist};
 
 	float ClampedRenderScale()
@@ -157,6 +161,20 @@ namespace Snowstorm::CVars
 			return 1.0f;
 		}
 		return s;
+	}
+
+	int ClampedGIDenoiseIterations()
+	{
+		const int n = GIDenoiseIterations.Get();
+		if (n < 0)
+		{
+			return 0;
+		}
+		if (n > 5)
+		{
+			return 5;
+		}
+		return n;
 	}
 
 	float ClampedAOScale()
