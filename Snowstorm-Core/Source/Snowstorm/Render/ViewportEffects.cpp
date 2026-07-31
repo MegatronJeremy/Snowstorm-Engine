@@ -524,6 +524,84 @@ namespace Snowstorm
 			ReflectionPass m_Pass; // owned here: the reflection compute pass is exclusive to this effect
 		};
 
+		// RT reflection temporal accumulation (#129 Inc 2) — the reflection twin of GITemporalEffect, reusing
+		// GITemporalPass verbatim. Runs between ReflectionEffect and Forward: reproject the previous accumulated
+		// reflection by the motion vectors, depth-disocclusion-reject, blend with this frame's raw trace, write
+		// ReflHistory[cur] — which the forward pass then samples AND becomes next frame's history. Republishes
+		// v.ReflectionView. Reflections are view-dependent, so the blend defaults are lower than GI's (a moving
+		// camera changes a mirror even on a static surface). Runs whenever reflections are live (not just when
+		// temporal is on) so it OWNS clearing the history-valid flag when toggled off (mirrors GITemporalEffect).
+		class ReflectionTemporalEffect final : public IViewportEffect
+		{
+		public:
+			explicit ReflectionTemporalEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "ReflectionTemporal"; }
+
+			void OnSceneCut() override { m_HistoryValid.clear(); }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::ReflectionsRTActive() && v.ReflectionView &&
+				       v.RT.ReflHistory[0] && v.RT.ReflHistory[1] &&
+				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+
+				// Temporal off (or no velocity this frame): drop the valid flag so re-enabling starts clean, and
+				// leave v.ReflectionView as the raw trace (the forward samples it directly — the shimmery path).
+				if (!CVars::ReflectionTemporalActive() || !v.Velocity)
+				{
+					m_HistoryValid.erase(v.ViewportEntity);
+					return;
+				}
+
+				const uint32_t curIdx = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
+				const Ref<TextureView> curHistView = v.RT.ReflHistoryView[curIdx];
+				const Ref<TextureView> prevHistView = v.RT.ReflHistoryView[curIdx ^ 1u];
+				const Ref<TextureView> currentView = v.ReflectionView; // this frame's raw reflection trace
+				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+				const Ref<TextureView> velView = v.Velocity;
+
+				const auto& reflDesc = v.RT.ReflectionTarget->GetDesc();
+				const uint32_t reflW = reflDesc.Width;
+				const uint32_t reflH = reflDesc.Height;
+
+				const bool historyValid = m_HistoryValid.contains(v.ViewportEntity);
+				m_HistoryValid.insert(v.ViewportEntity);
+
+				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
+				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+				const float depthReject = CVars::TaaDepthReject.Get();
+
+				fc.Graph.AddPass({.Name = "ReflectionTemporal" + v.Suffix,
+				                  .IsCompute = true,
+				                  .Reads = {{currentView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {velView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, currentView, gbufView, velView, prevHistView, curHistView, reflW, reflH, historyValid, nearPlane, farPlane, depthReject](CommandContext& c)
+				                  {
+					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, currentView, gbufView, velView, prevHistView,
+					                                  curHistView, reflW, reflH, historyValid, CVars::ReflectionTemporalBlend.Get(),
+					                                  CVars::ReflectionTemporalMaxBlend.Get(), nearPlane, farPlane, depthReject);
+				                  }});
+
+				v.ReflectionView = curHistView; // the accumulated buffer is now the live reflection
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			GITemporalPass m_Pass; // reused verbatim (#129 Inc 2); its own instance so it doesn't collide with GI's
+			std::unordered_set<entt::entity> m_HistoryValid;
+		};
+
 		// Motion-vector pass (#44): re-renders visible meshes into the velocity target, projecting each vertex
 		// by this frame's and last frame's matrices. Runs BEFORE forward so the buffer is ready for the passes
 		// that consume it (TAA / neural-temporal / the motion-vector debug tonemap). Gated by velocityNeeded:
@@ -546,10 +624,11 @@ namespace Snowstorm
 				                   !v.RT.HistoryTarget[0]->GetDesc().ColorAttachments.empty();
 				const bool neuralTemporal = CVars::Upscaler.Get() == 2;
 				const bool exporting = CVars::DatasetExport.Get() && v.Comparing;
-				// GI temporal accumulation (#125) reprojects by motion vectors, so it forces the velocity pass on
-				// whenever GI is running — even without TAA / debug / neural.
+				// GI (#125) and reflection (#129) temporal accumulation reproject by motion vectors, so either
+				// forces the velocity pass on whenever its effect is running — even without TAA / debug / neural.
 				const bool giTemporal = CVars::GIRTActive() && CVars::GITemporalActive();
-				return (debugView == 1 || taaOn || neuralTemporal || exporting || giTemporal) && v.RT.VelocityTarget &&
+				const bool reflTemporal = CVars::ReflectionsRTActive() && CVars::ReflectionTemporalActive();
+				return (debugView == 1 || taaOn || neuralTemporal || exporting || giTemporal || reflTemporal) && v.RT.VelocityTarget &&
 				       !v.RT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
 				       v.RT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 			}
@@ -641,14 +720,16 @@ namespace Snowstorm
 				// wrote — the raw trace, or the temporally-accumulated buffer if that ran — so reading the moving
 				// pointer means this needs no change when the temporal stage is added.
 				uint32_t reflIndex = 0;
+				Ref<Texture> reflTexture;
 				if (v.GBufferNeeded && CVars::ReflectionsRTActive() && v.ReflectionView &&
 				    v.Frame.Renderer.GetReflectionGeometryAddress() != 0)
 				{
 					reflIndex = v.ReflectionView->GetGlobalBindlessIndex();
+					reflTexture = v.ReflectionView->GetTexture(); // the live buffer, for the graph barrier
 				}
 
 				m_Owner.AddForwardPass(v.Frame, v.Cam, v.RT.Target, "Forward" + v.Suffix, /*jittered*/ true,
-				                       /*forceRasterShadow*/ false, giIndex, aoIndex, reflIndex);
+				                       /*forceRasterShadow*/ false, giIndex, aoIndex, reflIndex, reflTexture);
 				// Publish the HDR scene color for the downstream chain (upscale/TAA/tonemap).
 				v.SceneColor.Target = v.RT.Target;
 				if (const auto& desc = v.RT.Target->GetDesc(); !desc.ColorAttachments.empty())
@@ -1095,6 +1176,7 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<AOEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<AOUpsampleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ReflectionEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<ReflectionTemporalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ForwardEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<UpscaleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<TemporalEffect>(*this));

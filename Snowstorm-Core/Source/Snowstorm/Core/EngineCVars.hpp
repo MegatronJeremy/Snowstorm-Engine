@@ -259,6 +259,16 @@ namespace Snowstorm::CVars
 	extern CVar<float> ReflectionConeScale;
 	extern CVar<float> ReflectionRange;
 
+	// RT reflection temporal accumulation (#129): reproject the previous reflection by the motion vectors and
+	// blend with this frame's trace (depth-disocclusion reject) — reuses the GI temporal pass to kill the
+	// static reflection shimmer. Reflections are VIEW-DEPENDENT, so the default blend is lower than GI's (a
+	// moving camera changes a mirror's content even on a static surface — too much history ghosts). Off =>
+	// the raw few-ray trace (shimmery). ReflectionTemporalActive() forces the velocity pass on.
+	extern CVar<bool> ReflectionTemporal;
+	extern CVar<float> ReflectionTemporalBlend;
+	extern CVar<float> ReflectionTemporalMaxBlend;
+	[[nodiscard]] bool ReflectionTemporalActive();
+
 	// Ray-traced 1-bounce diffuse global illumination (#118): hemisphere-gather indirect light. Prefer
 	// GIRTActive() over reading the bool. GIIntensity scales the contribution; GIRange is the gather ray
 	// max distance (world units).

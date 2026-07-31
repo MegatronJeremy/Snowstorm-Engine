@@ -329,9 +329,10 @@ namespace Snowstorm
 		// Dataset export (#46) also needs the velocity buffer (an exported channel), so force the velocity
 		// pass on while exporting even without debug-view/TAA. Requires compare (ground truth exists).
 		const bool exporting = CVars::DatasetExport.Get() && comparing;
-		// GI temporal accumulation (#125) reprojects the GI by motion vectors, so it forces the velocity pass on
-		// whenever GI is running (mirrors VelocityEffect::ShouldRun so the flag and the pass agree).
-		const bool giTemporal = CVars::GIRTActive() && CVars::GITemporalActive();
+		// GI (#125) and reflection (#129) temporal accumulation reproject by motion vectors, so either forces
+		// the velocity pass on whenever its effect runs (mirrors VelocityEffect::ShouldRun so flag + pass agree).
+		const bool giTemporal = (CVars::GIRTActive() && CVars::GITemporalActive()) ||
+		                        (CVars::ReflectionsRTActive() && CVars::ReflectionTemporalActive());
 		// velocityNeeded is cached on the context because several effects branch on it: VelocityEffect (whether
 		// to render the buffer), LdrChainEffect (the tonemap debug view samples it), and CompareEffect (dataset
 		// export reads it as a channel).
@@ -500,7 +501,7 @@ namespace Snowstorm
 	void RenderSystem::AddForwardPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& hdrTarget,
 	                                  const std::string& name, const bool jittered, const bool forceRasterShadow,
 	                                  const uint32_t giTextureIndex, const uint32_t aoTextureIndex,
-	                                  const uint32_t reflTextureIndex)
+	                                  const uint32_t reflTextureIndex, const Ref<Texture>& reflTexture)
 	{
 		std::vector<RenderGraph::ResourceAccess> meshReads;
 		if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
@@ -532,19 +533,13 @@ namespace Snowstorm
 				                     RenderGraph::AccessState::Sampled});
 			}
 		}
-		// Full-res RT reflection target (#129): the forward shader samples it by screen UV (bindless). The
-		// reflection pass (or its temporal stage) already left it Sampled, but declare the read so the graph
-		// orders this pass after the writer. It's a bare Texture (compute UAV), so read the view off the
-		// component's ReflectionTarget/ReflHistory — but the effect published the live one via the bindless
-		// index; we only need SOME live reflection view here for the barrier. Use ReflectionTarget as the
-		// stable handle (the temporal history aliases the same shape; the graph barrier is per-texture).
-		if (reflTextureIndex != 0)
+		// Full-res RT reflection target (#129): the forward shader samples it by screen UV (bindless). Declare
+		// the read so the graph orders this pass after the writer AND transitions the buffer to Sampled. Barrier
+		// the ACTUAL live texture the forward samples — the raw ReflectionTarget, or ReflHistory[cur] when the
+		// temporal stage ran — passed in as reflTexture (a per-texture barrier on a stand-in would miss it).
+		if (reflTextureIndex != 0 && reflTexture)
 		{
-			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
-			    rt && rt->ReflectionTarget)
-			{
-				meshReads.push_back({rt->ReflectionTarget, RenderGraph::AccessState::Sampled});
-			}
+			meshReads.push_back({reflTexture, RenderGraph::AccessState::Sampled});
 		}
 
 		// GI screen size = this pass's scene target size (viewport * render.scale), for the UV divide.

@@ -82,7 +82,15 @@ void main(uint3 id : SV_DispatchThreadID)
 	// sampler for simplicity; the bilateral upsample (Inc 3) is where edge-correctness is enforced.
 	const float2 uv = (float2(id.xy) + 0.5) / float2(OutSize);
 
-	const float4 gbuf = GBufferNormal.SampleLevel(LinearSampler, uv, 0);
+	// POINT-fetch the full-res G-buffer at the nearest texel to this half-res pixel's center — never bilinear.
+	// A linear tap blends depth across silhouettes (midpoint depth -> a reconstructed world position in mid-air
+	// -> a garbage GI sample that bleeds a pixel past the edge). This was the "edge bleeding" (#129 Inc 2c); the
+	// old code sampled linear "for simplicity" and left edge-correctness to the upsample, but the leak is in the
+	// TRACE. Map the half-res UV to the full-res texel via the G-buffer's own dimensions.
+	uint2 gbDims;
+	GBufferNormal.GetDimensions(gbDims.x, gbDims.y);
+	const int2 gbTexel = clamp(int2(uv * float2(gbDims)), int2(0, 0), int2(gbDims) - 1);
+	const float4 gbuf = GBufferNormal.Load(int3(gbTexel, 0));
 	const float depth = gbuf.w; // NDC depth packed into .w by the prepass
 	// Sky / no geometry: the prepass clears depth to 1.0 and a real far-plane fragment is also ~1.0, so
 	// depth >= 1 means "nothing here" (#129 Inc 1b — the old zero-normal test is invalid now that .xy is an

@@ -27,7 +27,7 @@ namespace Snowstorm
 			float ReflRange = 40.0f;
 
 			glm::uvec2 OutSize{0, 0};
-			float _Pad0 = 0.0f;
+			float ReflConeScale = 1.0f;
 			uint32_t FrameCounter = 0;
 
 			glm::vec3 SunDirection{0.0f};
@@ -115,6 +115,7 @@ namespace Snowstorm
 		cb.CameraPosition = frame.CameraPosition;
 		cb.ReflRange = CVars::ReflectionRange.Get();
 		cb.OutSize = {outW, outH};
+		cb.ReflConeScale = CVars::ReflectionConeScale.Get();
 		cb.FrameCounter = frameCounter;
 
 		cb.LightCount = static_cast<uint32_t>(frame.Lights.LightCount);

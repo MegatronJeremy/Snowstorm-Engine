@@ -18,7 +18,8 @@
 Texture2D<float4> GIIn : register(t0, space0);          // half-res incoming irradiance (rgb) to filter
 Texture2D<float4> GBufferNormal : register(t1, space0); // full-res guide: .xyz world normal, .w NDC depth
 [[vk::image_format("rgba16f")]] RWTexture2D<float4> GIOut : register(u2, space0); // filtered half-res irradiance
-SamplerState LinearSampler : register(s3, space0);      // guide sampling (GI is Load'd at integer texels)
+// #129 Inc 2c: no sampler — both the GI input and the G-buffer guide are POINT-fetched via Load (never
+// bilinear, to avoid cross-edge blend). Nothing in this pass samples, so no SamplerState is declared.
 
 cbuffer GIDenoiseCB : register(b4, space0)
 {
@@ -44,10 +45,14 @@ void main(uint3 id : SV_DispatchThreadID)
 	}
 
 	const int2 centerPx = int2(id.xy);
-	// UV of this half-res pixel's center, used to sample the full-res guide (the guide is full-res, so its
-	// depth/normal at this UV is the receiver at this half-res texel — same convention as GI.comp.hlsl).
+	// Guide at this half-res pixel: POINT-fetch the nearest full-res G-buffer texel (never bilinear — a linear
+	// tap blends across silhouettes into a midpoint normal/depth, fuzzing the edge-stopping so the à-trous
+	// smears GI across the edge, #129 Inc 2c). Map the half-res center UV to the full-res texel via GetDimensions.
 	const float2 centerUV = (float2(centerPx) + 0.5) / float2(OutSize);
-	const float4 gc = GBufferNormal.SampleLevel(LinearSampler, centerUV, 0);
+	uint2 gbDims;
+	GBufferNormal.GetDimensions(gbDims.x, gbDims.y);
+	const int2 centerTexel = clamp(int2(centerUV * float2(gbDims)), int2(0, 0), int2(gbDims) - 1);
+	const float4 gc = GBufferNormal.Load(int3(centerTexel, 0));
 	const float3 Nc = DecodeNormalOct(gc.xy); // #129 Inc 1b: .xy octahedral normal
 	const float Dc = gc.w;
 
@@ -71,9 +76,10 @@ void main(uint3 id : SV_DispatchThreadID)
 
 			const float3 gi = GIIn.Load(int3(tapC, 0)).rgb;
 
-			// Guide at the tap (full-res G-buffer at the tap's half-res texel-center UV).
+			// Guide at the tap: POINT-fetch the full-res texel nearest the half-res tap center (never bilinear).
 			const float2 tapUV = (float2(tapC) + 0.5) / float2(OutSize);
-			const float4 gt = GBufferNormal.SampleLevel(LinearSampler, tapUV, 0);
+			const int2 tapTexel = clamp(int2(tapUV * float2(gbDims)), int2(0, 0), int2(gbDims) - 1);
+			const float4 gt = GBufferNormal.Load(int3(tapTexel, 0));
 
 			// Edge-stopping: reject taps across normal creases / depth discontinuities. A sky tap has depth ~1,
 			// so its large depth diff (wD -> 0) drops it — no explicit sky guard needed on taps.

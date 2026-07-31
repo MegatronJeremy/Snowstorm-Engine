@@ -44,6 +44,22 @@ float LinearizeDepth(float d)
 	return (Near * Far) / max(Far - d * (Far - Near), 1e-6);
 }
 
+// Clip `history` toward `center` so it lands inside the AABB [cmin, cmax]. Clipping along the history->center
+// ray (vs a per-channel clamp) keeps the result on the line to a plausible current value. Lifted from the TAA
+// resolve (TemporalResolve.frag) — here it operates in linear RGB, the GI/reflection signal's space.
+float3 ClipToAABB(float3 history, float3 center, float3 cmin, float3 cmax)
+{
+	const float3 halfSize = 0.5 * (cmax - cmin) + 1e-5;
+	const float3 offset = history - center;
+	const float3 ratio = abs(offset) / halfSize;
+	const float maxRatio = max(ratio.x, max(ratio.y, ratio.z));
+	if (maxRatio > 1.0)
+	{
+		return center + offset / maxRatio; // pull back onto the box surface
+	}
+	return history; // already inside
+}
+
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
@@ -56,9 +72,13 @@ void main(uint3 id : SV_DispatchThreadID)
 	const float2 uv = (float2(px) + 0.5) / float2(OutSize);
 
 	const float3 currentGI = GICurrent.Load(int3(px, 0)).rgb;
-	// This pixel's NDC depth from the half-res G-buffer (.w). Packed into the output .a so it becomes next
-	// frame's history depth for the reproject below.
-	const float depthCurr = GBufferNormal.SampleLevel(LinearSampler, uv, 0).w;
+	// This pixel's depth from the G-buffer, POINT-fetched at the nearest texel (never bilinear — a linear tap
+	// blends depth across silhouettes, the edge-bleed cause: #129 Inc 2c). Packed into the output .a so it
+	// becomes next frame's history depth for the reproject below.
+	uint2 gbDims;
+	GBufferNormal.GetDimensions(gbDims.x, gbDims.y);
+	const int2 gbTexel = clamp(int2(uv * float2(gbDims)), int2(0, 0), int2(gbDims) - 1);
+	const float depthCurr = GBufferNormal.Load(int3(gbTexel, 0)).w;
 
 	// First frame / history invalid: nothing to blend, output current — but still write depth into .a so next
 	// frame's disocclusion test has a valid previous depth.
@@ -80,13 +100,45 @@ void main(uint3 id : SV_DispatchThreadID)
 		return;
 	}
 
-	// Reprojected accumulated GI (clamp-linear tap; .rgb = irradiance, .a = prev depth for the reject).
+	// Reprojected accumulated history (.rgb = irradiance/radiance, .a = prev depth for the reject). Bilinear
+	// tap: history lands between texels under motion, and a smooth reproject wants the interpolated value —
+	// the neighborhood clamp below is what stops this from ghosting across a moving edge (a point tap here
+	// would just alias instead). .a (depth) is taken from the same tap; it's only a coarse disocclusion cue.
 	const float4 histSample = GIHistoryPrev.SampleLevel(LinearSampler, histUv, 0);
 	const float3 historyGI = max(histSample.rgb, 0.0);
 
 	// Staticness: 1 at rest, 0 by ~2 px/frame of motion (velocity in UV; * OutSize -> half-res pixels).
 	const float speedPixels = length(velocity * float2(OutSize));
 	const float staticness = saturate(1.0 - speedPixels * 0.5);
+
+	// NEIGHBORHOOD COLOR CLAMP (#129 Inc 2d) — the fix for moving-edge ghosting. The depth reject alone misses
+	// history that reprojects onto a same-depth but DIFFERENT-content neighbour (the common case at a moving
+	// silhouette, and for view-dependent reflections whose content changes even at constant depth). Build the
+	// AABB of this frame's 3x3 trace neighborhood and clip the reprojected history into it: stale history that
+	// falls outside the plausible local range is pulled back to an in-range value, killing the trail. This is
+	// the SVGF/TAA temporal-rejection the pass previously lacked — orthogonal to the à-trous (which does
+	// intra-frame SPATIAL edge-stopping, nothing about stale temporal history). Done in linear RGB (the signal
+	// is linear irradiance/radiance, not tonemapped LDR like the TAA resolve).
+	float3 m1 = 0.0; // sum
+	float3 m2 = 0.0; // sum of squares
+	[unroll] for (int dy = -1; dy <= 1; ++dy)
+	{
+		[unroll] for (int dx = -1; dx <= 1; ++dx)
+		{
+			const float3 s = max(GICurrent.Load(int3(clamp(px + int2(dx, dy), int2(0, 0), int2(OutSize) - 1), 0)).rgb, 0.0);
+			m1 += s;
+			m2 += s * s;
+		}
+	}
+	const float3 mean = m1 / 9.0;
+	const float3 sigma = sqrt(max(m2 / 9.0 - mean * mean, 0.0));
+	// Velocity-aware box width: WIDE when static (gamma high -> effectively no clamp, so the deep accumulation
+	// that kills few-ray shimmer is preserved), TIGHT under motion (gamma ~1 std-dev -> rejects ghosts). Same
+	// idea as the TAA resolve's velocity-aware clamp.
+	const float gamma = lerp(1.0, 8.0, staticness);
+	const float3 boxMin = mean - gamma * sigma;
+	const float3 boxMax = mean + gamma * sigma;
+	const float3 clampedHistory = ClipToAABB(historyGI, mean, boxMin, boxMax);
 
 	// Velocity-aware blend: accumulate HARD when static (toward MaxBlend) so many frames' few-ray samples
 	// average out; drop to the lower base weight under motion so nothing ghosts. Mirrors the TAA resolve.
@@ -104,7 +156,7 @@ void main(uint3 id : SV_DispatchThreadID)
 		blend *= depthConfidence;
 	}
 
-	// Pure accumulation in linear irradiance (no clamp — the à-trous next handles spatial outliers).
-	const float3 accumulated = lerp(currentGI, historyGI, blend);
+	// Accumulate the CLAMPED history (not the raw reprojected history) so a moving edge can't drag a trail.
+	const float3 accumulated = lerp(currentGI, clampedHistory, blend);
 	GIOut[px] = float4(max(accumulated, 0.0), depthCurr);
 }

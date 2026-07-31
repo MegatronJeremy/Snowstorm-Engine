@@ -22,7 +22,8 @@ Texture2D<float4> GBufferNormal : register(t0, space0);                         
 // Occlusion factor in .r (the RHI has no single-channel float format; RGBA16F matches GITarget — a half-res
 // target, so the 4x-vs-R16 memory is negligible). The upsample + forward read only .r.
 [[vk::image_format("rgba16f")]] RWTexture2D<float4> AOOut : register(u1, space0);    // half-res occlusion factor [0,1] in .r
-SamplerState LinearSampler : register(s2, space0);
+// #129 Inc 2c: AO no longer declares a sampler — the G-buffer is now POINT-fetched via Load (no bilinear),
+// and AO is occupancy-only (no hit shading, no bindless texture/cubemap sampling), so nothing needs one.
 
 cbuffer AOCB : register(b3, space0)
 {
@@ -49,7 +50,12 @@ void main(uint3 id : SV_DispatchThreadID)
 
 	const float2 uv = (float2(id.xy) + 0.5) / float2(OutSize);
 
-	const float4 gbuf = GBufferNormal.SampleLevel(LinearSampler, uv, 0);
+	// POINT-fetch the full-res G-buffer at the nearest texel — never bilinear (a linear tap blends depth across
+	// silhouettes -> midpoint depth -> world position in mid-air -> AO that bleeds past the edge). #129 Inc 2c.
+	uint2 gbDims;
+	GBufferNormal.GetDimensions(gbDims.x, gbDims.y);
+	const int2 gbTexel = clamp(int2(uv * float2(gbDims)), int2(0, 0), int2(gbDims) - 1);
+	const float4 gbuf = GBufferNormal.Load(int3(gbTexel, 0));
 	const float depth = gbuf.w; // NDC depth packed into .w by the prepass
 	// Sky / no geometry (prepass clears depth to 1.0; far plane also ~1.0) -> fully open (AO = 1). #129 Inc 1b:
 	// depth-based, not zero-normal (oct(0,0) is a valid normal now).

@@ -36,15 +36,17 @@ namespace Snowstorm
 		{
 			return;
 		}
+		// #129 Inc 2c: NEAREST (point) filter — the guide must not bilinear-blend across silhouettes (fuzzes the
+		// bilateral rejection -> AO smears over edges). The half-res AO is Load'd, unaffected by the filter.
 		SamplerDesc s{};
-		s.MinFilter = Filter::Linear;
-		s.MagFilter = Filter::Linear;
-		s.MipmapMode = SamplerMipmapMode::Linear;
+		s.MinFilter = Filter::Nearest;
+		s.MagFilter = Filter::Nearest;
+		s.MipmapMode = SamplerMipmapMode::Nearest;
 		s.AddressU = SamplerAddressMode::ClampToEdge;
 		s.AddressV = SamplerAddressMode::ClampToEdge;
 		s.AddressW = SamplerAddressMode::ClampToEdge;
 		s.EnableAnisotropy = false;
-		s.DebugName = "AOUpsampleSampler";
+		s.DebugName = "AOUpsamplePointSampler";
 		m_Sampler = Sampler::Create(s);
 		SS_CORE_ASSERT(m_Sampler, "Failed to create AO upsample sampler");
 	}

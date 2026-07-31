@@ -121,6 +121,12 @@ namespace Snowstorm::CVars
 
 	CVar<float> ReflectionRange{"render.reflections.range", 40.0f, "RT reflection ray max distance in world units. A ray finding no geometry within this range falls back to the sky cube; bounding it lets the BVH traversal early-out instead of walking the whole scene on every sky-bound ray (perf). Larger = reflect farther geometry, more cost.", CVarFlags::Persist};
 
+	CVar<bool> ReflectionTemporal{"render.reflections.temporal", true, "RT reflection temporal accumulation (#129): reproject the previous reflection by the motion vectors and blend with this frame's trace (depth-disocclusion reject, reusing the GI temporal pass) — kills the static reflection shimmer the raw few-ray trace leaves. Off = the shimmery raw trace. Read per-frame; forces the velocity pass on.", CVarFlags::Persist};
+
+	CVar<float> ReflectionTemporalBlend{"render.reflections.temporal.blend", 0.8f, "RT reflection temporal history weight while moving. LOWER than GI's (0.9) because reflections are view-dependent — a moving camera changes a mirror's reflected content even on a static surface, so heavy history ghosts. The velocity-aware blend lerps between this and maxblend by staticness (#129).", CVarFlags::Persist};
+
+	CVar<float> ReflectionTemporalMaxBlend{"render.reflections.temporal.maxblend", 0.95f, "RT reflection temporal history weight when the pixel is ~static: deeper accumulation to average out the few-ray noise (the at-rest reflection shimmer). Slightly below GI's 0.97 to keep mirrors responsive (#129).", CVarFlags::Persist};
+
 	CVar<bool> GIRT{"render.gi.rt", false, "Ray-traced 1-bounce diffuse global illumination (#118): from each shaded point, trace hemisphere rays, shade what they hit (albedo * sun), and add the average as indirect light (color bleeding + contact fill). Requires an RT GPU (ignored otherwise). Few rays/frame — needs TAA (render.aa = TAA) for a clean result; noisy without it.", CVarFlags::Persist};
 
 	CVar<float> GIIntensity{"render.gi.intensity", 1.0f, "Multiplier on the RT GI indirect contribution (1 = physical, 0 = none)", CVarFlags::Persist};
@@ -250,6 +256,11 @@ namespace Snowstorm::CVars
 		// reflection shader branch is compiled out so this stays false. Drives the TLAS build gate AND the
 		// per-instance geometry-table build (both only needed when reflections actually trace).
 		return ReflectionsRT.Get() && Renderer::IsRayTracingSupported();
+	}
+
+	bool ReflectionTemporalActive()
+	{
+		return ReflectionTemporal.Get();
 	}
 
 	bool GIRTActive()

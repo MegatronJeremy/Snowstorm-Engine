@@ -36,15 +36,18 @@ namespace Snowstorm
 		{
 			return;
 		}
+		// #129 Inc 2c: NEAREST (point) filter — the guide must NOT be bilinear-blended across silhouettes (that
+		// midpoint normal/depth fuzzes the bilateral rejection and smears GI over the edge). The half-res GI
+		// itself is Load'd at integer texels, so it's unaffected by the sampler filter.
 		SamplerDesc s{};
-		s.MinFilter = Filter::Linear;
-		s.MagFilter = Filter::Linear;
-		s.MipmapMode = SamplerMipmapMode::Linear;
+		s.MinFilter = Filter::Nearest;
+		s.MagFilter = Filter::Nearest;
+		s.MipmapMode = SamplerMipmapMode::Nearest;
 		s.AddressU = SamplerAddressMode::ClampToEdge;
 		s.AddressV = SamplerAddressMode::ClampToEdge;
 		s.AddressW = SamplerAddressMode::ClampToEdge;
 		s.EnableAnisotropy = false;
-		s.DebugName = "GIUpsampleSampler";
+		s.DebugName = "GIUpsamplePointSampler";
 		m_Sampler = Sampler::Create(s);
 		SS_CORE_ASSERT(m_Sampler, "Failed to create GI upsample sampler");
 	}

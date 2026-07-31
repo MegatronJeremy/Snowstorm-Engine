@@ -13,7 +13,7 @@
 
 Texture2D<float4> GITex : register(t4, space1);      // half-res incoming irradiance (rgb)
 Texture2D<float4> GBufferTex : register(t5, space1); // full-res guide: .xy oct normal, .z roughness, .w NDC depth
-SamplerState LinearClamp : register(s6, space1);
+SamplerState PointClamp : register(s6, space1); // #129 Inc 2c: NEAREST filter (GIUpsamplePass) — point-fetch the guide, never bilinear across edges
 
 cbuffer GIUpsampleCB : register(b7, space1)
 {
@@ -31,9 +31,11 @@ float4 main(FullscreenVSOut input) : SV_Target
 {
 	const float2 uv = float2(input.NDC.x * 0.5 + 0.5, input.NDC.y * 0.5 + 0.5);
 
-	// This full-res pixel's guide (center). Sample the full-res G-buffer at uv. #129 Inc 1b: .xy is an
-	// octahedral normal now, decode it; depth stays in .w.
-	const float4 gc = GBufferTex.SampleLevel(LinearClamp, uv, 0);
+	// This full-res pixel's guide (center). Sampled through a NEAREST (point) sampler — never bilinear: at a
+	// silhouette a linear tap blends the two surfaces' normals/depths into a midpoint that matches NEITHER, so
+	// the bilateral weights below reject wrongly and GI smears ~1px across the edge (#129 Inc 2c edge bleed).
+	// The sampler is Filter::Nearest (GIUpsamplePass), so SampleLevel here is a point fetch. .xy oct normal, .w depth.
+	const float4 gc = GBufferTex.SampleLevel(PointClamp, uv, 0);
 	const float3 Nc = DecodeNormalOct(gc.xy);
 	const float Dc = gc.w;
 
@@ -73,9 +75,10 @@ float4 main(FullscreenVSOut input) : SV_Target
 		const int2 tapC = clamp(tap, int2(0, 0), int2(GISize) - 1);
 		const float3 gi = GITex.Load(int3(tapC, 0)).rgb;
 
-		// Guide at the tap's center (full-res G-buffer sampled at the half-res texel center UV).
+		// Guide at the tap's center: point-sampled (PointClamp) at the half-res tap-center UV — never bilinear,
+		// same cross-edge-blend reason as the center guide above.
 		const float2 tapUV = (float2(tapC) + 0.5) / float2(GISize);
-		const float4 gt = GBufferTex.SampleLevel(LinearClamp, tapUV, 0);
+		const float4 gt = GBufferTex.SampleLevel(PointClamp, tapUV, 0);
 
 		const float wN = pow(saturate(dot(Nc, DecodeNormalOct(gt.xy))), kNormalPow);
 		const float wD = exp(-abs(Dc - gt.w) * kDepthScale);

@@ -25,11 +25,11 @@ namespace Snowstorm
 			glm::vec3 _Pad{0.0f};
 		};
 
-		// Binding indices in GIDenoise.comp.hlsl set 0.
+		// Binding indices in GIDenoise.comp.hlsl set 0. Binding 3 (former sampler) is intentionally unused
+		// (#129 Inc 2c: the pass point-fetches everything via Load); params stays at 4 to match the shader.
 		constexpr uint32_t kGIInBinding = 0;
 		constexpr uint32_t kGBufferBinding = 1;
 		constexpr uint32_t kOutputBinding = 2;
-		constexpr uint32_t kSamplerBinding = 3;
 		constexpr uint32_t kParamsBinding = 4;
 
 		// Max à-trous iterations per frame = ClampedGIDenoiseIterations() ceiling. Sizes the per-frame set/UBO
@@ -63,18 +63,7 @@ namespace Snowstorm
 		m_Pipeline = Pipeline::Create(p);
 		SS_CORE_ASSERT(m_Pipeline, "Failed to create GI denoise pipeline");
 
-		// Clamp-linear sampler for the guide fetch (the GI itself is Load'd at integer texels — sampler unused
-		// for it, but the shader declares one binding shared by both; guide sampling is the consumer).
-		SamplerDesc s{};
-		s.MinFilter = Filter::Linear;
-		s.MagFilter = Filter::Linear;
-		s.MipmapMode = SamplerMipmapMode::Linear;
-		s.AddressU = SamplerAddressMode::ClampToEdge;
-		s.AddressV = SamplerAddressMode::ClampToEdge;
-		s.AddressW = SamplerAddressMode::ClampToEdge;
-		s.EnableAnisotropy = false;
-		s.DebugName = "GIDenoiseSampler";
-		m_Sampler = Sampler::Create(s);
+		// #129 Inc 2c: no sampler — the GI input and G-buffer guide are both point-fetched via Load.
 
 		const uint32_t frames = Renderer::GetFramesInFlight();
 		m_ParamBuffers.resize(frames * kMaxSlots);
@@ -121,7 +110,6 @@ namespace Snowstorm
 		m_Sets[idx]->SetTexture(kGIInBinding, input);      // half-res GI to filter
 		m_Sets[idx]->SetTexture(kGBufferBinding, gbuffer); // .xyz normal, .w depth guide
 		m_Sets[idx]->SetTexture(kOutputBinding, output);   // storage image (UAV)
-		m_Sets[idx]->SetSampler(kSamplerBinding, m_Sampler);
 		const BufferBinding cbBB{.Buffer = m_ParamBuffers[idx], .Offset = 0, .Range = sizeof(GIDenoiseCB)};
 		m_Sets[idx]->SetBuffer(kParamsBinding, cbBB);
 		m_Sets[idx]->Commit();

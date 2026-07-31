@@ -38,8 +38,8 @@ cbuffer ReflCB : register(b4, space0)
 	float ReflRange;       // reflection ray max distance (world units)
 
 	uint2 OutSize;         // full-res dispatch dimensions
-	float _Pad0;
-	uint FrameCounter;     // reserved (sharp ray uses no per-frame rotation; kept for CB parity)
+	float ReflConeScale;   // how much roughness widens the glossy jitter cone (render.reflections.cone_scale)
+	uint FrameCounter;     // per-frame rotation of the glossy jitter (temporal accumulation averages it)
 
 	// Sun (DirectionalLights[0]) for the one-bounce hit shading — consumed by RTHitShading.hlsli.
 	float3 SunDirection;
@@ -63,6 +63,8 @@ cbuffer ReflCB : register(b4, space0)
 #include "Include/RTHitShading.hlsli"
 #include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky (#129 Inc 1b)
 
+static const float PI = 3.14159265359;
+
 uint64_t GeoTableAddress()
 {
 	return (uint64_t(ReflGeoTableAddrHi) << 32) | uint64_t(ReflGeoTableAddrLo);
@@ -78,7 +80,14 @@ void main(uint3 id : SV_DispatchThreadID)
 
 	const float2 uv = (float2(id.xy) + 0.5) / float2(OutSize);
 
-	const float depth = GBufferNormal.SampleLevel(LinearSampler, uv, 0).w; // NDC depth from the main G-buffer
+	// Reflection is FULL-res, 1:1 with the G-buffer, so POINT-fetch (Load) both G-buffers by integer texel —
+	// never bilinear-sample depth/normal. A linear tap blends across silhouettes (midpoint depth -> a
+	// reconstructed world position in mid-air -> a garbage reflection that bleeds a pixel past the edge). This
+	// was the "edge bleeding" on reflections + GI (#129 Inc 2c). The bindless albedo/cubemap fetches in the hit
+	// shading still use LinearSampler; only the G-buffer reconstruction must be point-sampled.
+	const float4 mainGB = GBufferNormal.Load(int3(id.xy, 0)); // .z roughness, .w depth
+	const float depth = mainGB.w;                             // NDC depth from the main G-buffer
+	const float roughness = mainGB.z;                         // perceptual roughness (#129 Inc 1c)
 
 	// Sky / no geometry (prepass clears depth to 1.0; far plane also ~1.0) -> no reflection. Write 0 radiance
 	// + a large hit distance (a "miss" for the temporal depth reject). Depth-based sky test (#129 Inc 1b).
@@ -96,15 +105,34 @@ void main(uint3 id : SV_DispatchThreadID)
 	// #129 Inc 1c: reflect off the NORMAL-MAPPED shading normal (separate target) — the fix for "reflections
 	// look flat / shift with angle". AO/GI use the geometric normal in the main G-buffer; reflections need the
 	// bumped one to match DefaultLit's shading.
-	const float3 N = DecodeNormalOct(GBufferShading.SampleLevel(LinearSampler, uv, 0).xy);
+	const float3 N = DecodeNormalOct(GBufferShading.Load(int3(id.xy, 0)).xy); // point-fetch (see above)
 	const float3 V = normalize(CameraPosition - positionWS);
-	const float3 R = reflect(-V, N); // sharp mirror reflection vector
+	const float3 R = reflect(-V, N); // mirror reflection vector
+
+	// Glossy cone jitter (#129 Inc 2b): a SHARP one-ray-per-pixel mirror trace ALIASES the reflected scene into
+	// a pixelated grid (the "blocky" raw buffer). Perturb the ray within a roughness-scaled disk around R, with
+	// a per-frame IGN rotation, so the reflection temporal pass averages the jittered samples into a smooth
+	// reflection over frames — exactly what the old inline reflection + TAA did. roughness == 0 (a perfect
+	// mirror) => zero cone => the exact sharp ray, so true mirrors stay crisp. Same disk-sample math as GI/RTAO.
+	float3 dir = R;
+	if (roughness > 0.0)
+	{
+		const float3 up = abs(R.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
+		const float3 tangent = normalize(cross(up, R));
+		const float3 bitangent = cross(R, tangent);
+		const float2 px = float2(id.xy) + float2(FrameCounter * 5.588238, FrameCounter * 3.539418);
+		const float ign = frac(52.9829189 * frac(dot(px, float2(0.06711056, 0.00583715))));
+		const float coneRadius = roughness * ReflConeScale;
+		const float rr = coneRadius * sqrt(ign);
+		const float phi = 2.0 * PI * frac(ign + 0.61803398875); // golden-ratio decorrelation of angle vs radius
+		dir = normalize(R + (rr * cos(phi)) * tangent + (rr * sin(phi)) * bitangent);
+	}
 
 	const uint64_t tableAddr = GeoTableAddress();
 
 	RayDesc ray;
-	ray.Origin = positionWS + N * 0.02 + R * 0.01; // normal-offset to dodge self-hit
-	ray.Direction = R;
+	ray.Origin = positionWS + N * 0.02 + dir * 0.01; // normal-offset to dodge self-hit
+	ray.Direction = dir;
 	ray.TMin = 0.0;
 	ray.TMax = ReflRange;
 
@@ -116,17 +144,18 @@ void main(uint3 id : SV_DispatchThreadID)
 	if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT && tableAddr != 0)
 	{
 		const float hitT = q.CommittedRayT();
-		const float3 hitPos = ray.Origin + R * hitT;
+		const float3 hitPos = ray.Origin + dir * hitT;
 		const float3 radiance = ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos);
 		ReflOut[id.xy] = float4(radiance, hitT);
 		return;
 	}
 
-	// Miss (or no geometry table): reflect the distant sky along R. Large hit distance = "miss" for temporal.
+	// Miss (or no geometry table): reflect the distant sky along the (jittered) direction. Large hit distance
+	// = "miss" for temporal.
 	float3 sky = float3(0, 0, 0);
 	if (PrefilteredCubeIndex != 0)
 	{
-		sky = Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, R, 0).rgb;
+		sky = Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, dir, 0).rgb;
 	}
 	ReflOut[id.xy] = float4(sky, ReflRange);
 }

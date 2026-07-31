@@ -37,7 +37,6 @@ namespace Snowstorm
 		void EnsureResources();
 
 		Ref<Pipeline> m_Pipeline;
-		Ref<Sampler> m_Sampler;
 		// Per (frame, slot): the denoiser dispatches multiple iterations per frame, so one set/UBO per frame is
 		// not enough — index by frameIndex * kMaxSlots + slot. kMaxSlots caps ClampedGIDenoiseIterations() (5).
 		std::vector<Ref<Buffer>> m_ParamBuffers;

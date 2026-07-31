@@ -30,7 +30,7 @@ namespace Snowstorm
 		// Binding indices in AO.comp.hlsl set 0.
 		constexpr uint32_t kGBufferBinding = 0;
 		constexpr uint32_t kOutputBinding = 1;
-		constexpr uint32_t kSamplerBinding = 2;
+		// binding 2 (former sampler) intentionally unused (#129 Inc 2c); params stays at 3 to match the shader.
 		constexpr uint32_t kParamsBinding = 3;
 	}
 
@@ -55,16 +55,7 @@ namespace Snowstorm
 		m_Pipeline = Pipeline::Create(p);
 		SS_CORE_ASSERT(m_Pipeline, "Failed to create AO pipeline");
 
-		SamplerDesc s{};
-		s.MinFilter = Filter::Linear;
-		s.MagFilter = Filter::Linear;
-		s.MipmapMode = SamplerMipmapMode::Linear;
-		s.AddressU = SamplerAddressMode::ClampToEdge;
-		s.AddressV = SamplerAddressMode::ClampToEdge;
-		s.AddressW = SamplerAddressMode::ClampToEdge;
-		s.EnableAnisotropy = false;
-		s.DebugName = "AOSampler";
-		m_Sampler = Sampler::Create(s);
+		// #129 Inc 2c: no sampler — AO point-fetches the G-buffer (Load) and does no bindless texture sampling.
 
 		const uint32_t frames = Renderer::GetFramesInFlight();
 		m_ParamBuffers.resize(frames);
@@ -109,7 +100,6 @@ namespace Snowstorm
 		}
 		m_Sets[frameIndex]->SetTexture(kGBufferBinding, gbuffer); // .xyz normal, .w depth
 		m_Sets[frameIndex]->SetTexture(kOutputBinding, output);   // storage image (UAV)
-		m_Sets[frameIndex]->SetSampler(kSamplerBinding, m_Sampler);
 		const BufferBinding cbBB{.Buffer = m_ParamBuffers[frameIndex], .Offset = 0, .Range = sizeof(AOCB)};
 		m_Sets[frameIndex]->SetBuffer(kParamsBinding, cbBB);
 		m_Sets[frameIndex]->Commit();
