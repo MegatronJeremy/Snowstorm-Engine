@@ -1,0 +1,40 @@
+{
+  "Entities": [
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "12112538743247314239"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0.6357491612434387,
+            6.009020805358887,
+            18.933042526245117
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 1
+        }
+      },
+      "Name": "Plane",
+      "UUID": "10546541069829501041"
+    }
+  ],
+  "Scene": {
+    "Name": "Untitled",
+    "Version": 1
+  }
+}

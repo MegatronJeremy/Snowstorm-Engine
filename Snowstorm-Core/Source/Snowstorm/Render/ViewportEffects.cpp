@@ -20,6 +20,7 @@
 #include "Snowstorm/Render/Passes/DepthNormalPass.hpp"
 #include "Snowstorm/Render/Passes/FxaaPass.hpp"
 #include "Snowstorm/Render/Passes/AOPass.hpp"
+#include "Snowstorm/Render/Passes/GIDenoisePass.hpp"
 #include "Snowstorm/Render/Passes/GIPass.hpp"
 #include "Snowstorm/Render/Passes/AOUpsamplePass.hpp"
 #include "Snowstorm/Render/Passes/GIUpsamplePass.hpp"
@@ -162,6 +163,69 @@ namespace Snowstorm
 			GIPass m_Pass; // owned here: the GI compute pass is exclusive to this effect
 		};
 
+		// Spatial denoiser for the half-res RT GI (#125): an edge-avoiding à-trous wavelet run between GIEffect
+		// and GIUpsampleEffect. Keeps GITarget as the RAW trace (untouched — debug view 6) and ping-pongs
+		// between the two GIDenoiseScratch buffers, so the final filtered result lands in GIDenoiseScratch[0]
+		// (which the upsample then reads instead of GITarget when GIDenoiseActive()). Iteration i uses stride
+		// 1<<i (à-trous). Gated on GI running AND GIDenoiseActive(); when off, no passes are added and the
+		// upsample falls back to GITarget — the pre-#125 path. Reference: Dammertz et al. edge-avoiding à-trous.
+		class GIDenoiseEffect final : public IViewportEffect
+		{
+		public:
+			explicit GIDenoiseEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "GIDenoise"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				// Same GI-active gate as GIUpsampleEffect, plus the denoiser toggle. Needs both scratch buffers.
+				return v.GBufferNeeded && CVars::GIRTActive() && CVars::GIDenoiseActive() && v.RT.GITarget &&
+				       v.RT.GITargetView && v.RT.GIDenoiseScratch[0] && v.RT.GIDenoiseScratch[1] &&
+				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+
+				const auto& giDesc = v.RT.GITarget->GetDesc();
+				const uint32_t giW = giDesc.Width;
+				const uint32_t giH = giDesc.Height;
+				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+				const int iterations = CVars::ClampedGIDenoiseIterations();
+
+				// Ping-pong so the LAST write always lands in scratch[0], for any iteration count: iteration 0
+				// reads the raw GITarget and writes scratch[(N-1)&1]; each later iteration alternates. N=1 -> [0];
+				// N=2 -> [1] then [0]; N=3 -> [0],[1],[0]. The upsample/debug read scratch[0] as the denoised GI.
+				int dst = (iterations - 1) & 1;
+				for (int i = 0; i < iterations; ++i)
+				{
+					const Ref<TextureView> srcView = (i == 0) ? v.RT.GITargetView : v.RT.GIDenoiseScratchView[dst ^ 1];
+					const Ref<TextureView> dstView = v.RT.GIDenoiseScratchView[dst];
+					const int step = 1 << i;
+					const auto slot = static_cast<uint32_t>(i);
+
+					fc.Graph.AddPass({.Name = "GIDenoise" + std::to_string(i) + v.Suffix,
+					                  .IsCompute = true,
+					                  .Reads = {{srcView->GetTexture(), RenderGraph::AccessState::Sampled},
+					                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
+					                  .Execute = [this, &fc, slot, step, srcView, gbufView, dstView, giW, giH](CommandContext& c)
+					                  {
+						                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, slot, step, srcView, gbufView, dstView, giW, giH);
+					                  }});
+
+					dst ^= 1;
+				}
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			GIDenoisePass m_Pass; // owned here: the denoiser compute pass is exclusive to this effect
+		};
+
 		// Depth+normal-aware bilateral upsample of the half-res GI to full res (#124). Runs after GIEffect,
 		// before Forward: reads the half-res GITarget + the full-res G-buffer guide, writes the full-res
 		// GIUpscaleTarget the forward pass samples. Same gate as GIEffect (GI active + geometry table). No
@@ -191,7 +255,10 @@ namespace Snowstorm
 				const auto& giDesc = v.RT.GITarget->GetDesc();
 				const uint32_t giW = giDesc.Width;
 				const uint32_t giH = giDesc.Height;
-				const Ref<TextureView> giView = v.RT.GITargetView;
+				// When the denoiser ran (#125) it left the filtered result in GIDenoiseScratch[0]; otherwise the
+				// raw GITarget is the live GI. Read whichever is current so the upsample never samples stale data.
+				const bool denoised = CVars::GIDenoiseActive() && v.RT.GIDenoiseScratchView[0];
+				const Ref<TextureView> giView = denoised ? v.RT.GIDenoiseScratchView[0] : v.RT.GITargetView;
 				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
 				const Ref<RenderTarget>& dst = v.RT.GIUpscaleTarget;
 				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
@@ -861,6 +928,7 @@ namespace Snowstorm
 		m_ViewportEffects.clear();
 		m_ViewportEffects.push_back(CreateScope<DepthNormalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<GIEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<GIDenoiseEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<GIUpsampleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<AOEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<AOUpsampleEffect>(*this));

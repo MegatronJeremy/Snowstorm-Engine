@@ -92,7 +92,7 @@ namespace Snowstorm
 				const auto& rt = reg.Read<RenderTargetComponent>(vpEntity);
 				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget ||
 				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget || !rt.VelocityTarget ||
-				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIDenoiseScratch || !rt.GIUpscaleTarget ||
+				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIDenoiseScratch[0] || !rt.GIDenoiseScratch[1] || !rt.GIUpscaleTarget ||
 				                     !rt.AOTarget || !rt.AOUpscaleTarget ||
 				                     !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
 				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Compare each
@@ -143,10 +143,12 @@ namespace Snowstorm
 					// dispatched into when GI is active. Rebuilt on viewport OR gi.scale change.
 					rtW.GITarget = CreateGITarget(giW, giH, "Viewport");
 					rtW.GITargetView = rtW.GITarget->GetDefaultView();
-					// GI denoiser ping-pong scratch (#125): same half-res shape as GITarget. Always allocated;
+					// GI denoiser ping-pong scratch pair (#125): same half-res shape as GITarget. Always allocated;
 					// only written when the denoiser runs. Rebuilt on viewport OR gi.scale change (tracks GITarget).
-					rtW.GIDenoiseScratch = CreateGITarget(giW, giH, "ViewportGIDenoise");
-					rtW.GIDenoiseScratchView = rtW.GIDenoiseScratch->GetDefaultView();
+					rtW.GIDenoiseScratch[0] = CreateGITarget(giW, giH, "ViewportGIDenoise0");
+					rtW.GIDenoiseScratchView[0] = rtW.GIDenoiseScratch[0]->GetDefaultView();
+					rtW.GIDenoiseScratch[1] = CreateGITarget(giW, giH, "ViewportGIDenoise1");
+					rtW.GIDenoiseScratchView[1] = rtW.GIDenoiseScratch[1]->GetDefaultView();
 					// Full-res GI target (#124): the bilateral upsample renders the half-res GI into this, and the
 					// forward pass samples it (by screen UV) as the diffuse GI. Full viewport res.
 					rtW.GIUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale");

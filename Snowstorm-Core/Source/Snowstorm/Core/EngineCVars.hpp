@@ -280,6 +280,11 @@ namespace Snowstorm::CVars
 	extern CVar<int> GIDenoiseIterations;
 	// render.gi.denoise.iterations clamped to [0, 5]. Use everywhere the value is consumed.
 	[[nodiscard]] int ClampedGIDenoiseIterations();
+	// True when the GI denoiser should run: the toggle is on AND the clamped iteration count is > 0. The one
+	// condition the denoise effect + its consumers (the upsample's source selection, debug view 7) share, so
+	// they agree on whether the denoised buffer (GIDenoiseScratch[0]) or the raw GITarget is the live GI.
+	// Does NOT fold the GI-active/table gate — the callers already require GI to be running.
+	[[nodiscard]] bool GIDenoiseActive();
 
 	// True when RT reflections should run (render.reflections.rt on AND the device supports RT). Drives
 	// FrameCB.RTReflEnabled + the shader branch + the TLAS build gate + the geometry-table build. False on a

@@ -177,6 +177,11 @@ namespace Snowstorm::CVars
 		return n;
 	}
 
+	bool GIDenoiseActive()
+	{
+		return GIDenoise.Get() && ClampedGIDenoiseIterations() > 0;
+	}
+
 	float ClampedAOScale()
 	{
 		const float s = AOScale.Get();
