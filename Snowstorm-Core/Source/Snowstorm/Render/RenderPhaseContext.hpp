@@ -85,6 +85,13 @@ namespace Snowstorm
 		// paired depth) as their per-pixel geometry source / edge-stopping guide. Aux input like Velocity.
 		Ref<TextureView> GBufferNormal;
 
+		// The current live half-res GI buffer as it flows GI-trace -> [temporal] -> [denoise] -> upsample
+		// (#125). GIEffect publishes the raw GITarget; GITemporalEffect and GIDenoiseEffect each republish
+		// the buffer they wrote (GIHistory[cur] / GIDenoiseScratch[0]); GIUpsampleEffect reads whatever is
+		// current. Threaded like SceneColor so an optional stage in the middle can't leave a consumer reading
+		// a stale buffer. Null until GIEffect runs.
+		Ref<TextureView> GIView;
+
 		// Whether the velocity pass runs this frame (debug view / TAA / neural-temporal / dataset export).
 		// The consumers (TAA, neural-temporal upscale, motion-vector debug tonemap, dataset) branch on it.
 		bool VelocityNeeded = false;

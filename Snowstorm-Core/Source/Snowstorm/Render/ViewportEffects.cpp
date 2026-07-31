@@ -22,6 +22,7 @@
 #include "Snowstorm/Render/Passes/AOPass.hpp"
 #include "Snowstorm/Render/Passes/GIDenoisePass.hpp"
 #include "Snowstorm/Render/Passes/GIPass.hpp"
+#include "Snowstorm/Render/Passes/GITemporalPass.hpp"
 #include "Snowstorm/Render/Passes/AOUpsamplePass.hpp"
 #include "Snowstorm/Render/Passes/GIUpsamplePass.hpp"
 #include "Snowstorm/Render/Passes/MetricsPass.hpp"
@@ -156,11 +157,96 @@ namespace Snowstorm
 				                  }});
 
 				v.GBufferNormal = gbufView; // republish (DepthNormalEffect already set it; harmless, keeps intent local)
+				v.GIView = giView;          // the raw trace is the live GI buffer; temporal/denoise republish downstream (#125)
 			}
 
 		private:
 			RenderSystem& m_Owner;
 			GIPass m_Pass; // owned here: the GI compute pass is exclusive to this effect
+		};
+
+		// GI temporal accumulation (#125), the temporal half of SVGF. Runs between GIEffect and GIDenoiseEffect:
+		// reprojects the previous accumulated GI (GIHistory[prev]) by the motion vectors, depth-disocclusion-
+		// rejects it (reused from TAA #127), blends with this frame's raw GITarget trace, and writes GIHistory
+		// [cur] — which becomes the à-trous denoiser's input AND next frame's history. Republishes v.GIView so
+		// the denoiser/upsample read the accumulated buffer. Gated on GI running AND GITemporalActive() (which
+		// forces the velocity pass on in the RenderSystem preamble). When off, v.GIView stays the raw trace.
+		class GITemporalEffect final : public IViewportEffect
+		{
+		public:
+			explicit GITemporalEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "GITemporal"; }
+
+			void OnSceneCut() override { m_HistoryValid.clear(); }
+
+			// Runs whenever the GI sub-chain is live (not just when temporal is on) so it can OWN clearing the
+			// history-valid flag when temporal is toggled off — otherwise re-enabling would reproject against
+			// stale history and ghost. Mirrors TemporalEffect (#44). The actual accumulation is gated inside.
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::GIRTActive() && v.GIView && v.RT.GIHistory[0] && v.RT.GIHistory[1] &&
+				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+
+				// Temporal off (or no velocity buffer this frame): drop the valid flag so re-enabling starts
+				// clean, and leave v.GIView as the raw trace (the à-trous filters it directly — spatial-only).
+				if (!CVars::GITemporalActive() || !v.Velocity)
+				{
+					m_HistoryValid.erase(v.ViewportEntity);
+					return;
+				}
+
+				const uint32_t curIdx = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
+				const Ref<TextureView> curHistView = v.RT.GIHistoryView[curIdx];
+				const Ref<TextureView> prevHistView = v.RT.GIHistoryView[curIdx ^ 1u];
+				const Ref<TextureView> currentView = v.GIView; // this frame's raw GI trace
+				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+				const Ref<TextureView> velView = v.Velocity;
+
+				const auto& giDesc = v.RT.GITarget->GetDesc();
+				const uint32_t giW = giDesc.Width;
+				const uint32_t giH = giDesc.Height;
+
+				// History invalid on the first temporal frame (prev slot never written) or after a resize; our
+				// per-viewport "has this pair resolved before" flag is the simplest robust signal (mirrors TAA).
+				const bool historyValid = m_HistoryValid.contains(v.ViewportEntity);
+				m_HistoryValid.insert(v.ViewportEntity);
+
+				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
+				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+				const float depthReject = CVars::TaaDepthReject.Get(); // share the TAA disocclusion threshold
+
+				fc.Graph.AddPass({.Name = "GITemporal" + v.Suffix,
+				                  .IsCompute = true,
+				                  .Reads = {{currentView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {velView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, currentView, gbufView, velView, prevHistView, curHistView, giW, giH, historyValid, nearPlane, farPlane, depthReject](CommandContext& c)
+				                  {
+					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, currentView, gbufView, velView, prevHistView,
+					                                  curHistView, giW, giH, historyValid, CVars::GITemporalBlend.Get(),
+					                                  CVars::GITemporalMaxBlend.Get(), nearPlane, farPlane, depthReject);
+				                  }});
+
+				v.GIView = curHistView; // the accumulated buffer is now the live GI
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			GITemporalPass m_Pass; // owned here: the GI temporal pass is exclusive to this effect
+			// Per-viewport temporal history validity (#125): valid once accumulated at least once; erased when
+			// temporal turns off (below) / resizes, and cleared wholesale on a scene cut (OnSceneCut) so the
+			// first frame after a cut warps against zeros, not the old scene.
+			std::unordered_set<entt::entity> m_HistoryValid;
 		};
 
 		// Spatial denoiser for the half-res RT GI (#125): an edge-avoiding à-trous wavelet run between GIEffect
@@ -181,9 +267,10 @@ namespace Snowstorm
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				// Same GI-active gate as GIUpsampleEffect, plus the denoiser toggle. Needs both scratch buffers.
-				return v.GBufferNeeded && CVars::GIRTActive() && CVars::GIDenoiseActive() && v.RT.GITarget &&
-				       v.RT.GITargetView && v.RT.GIDenoiseScratch[0] && v.RT.GIDenoiseScratch[1] &&
+				// Same GI-active gate as GIUpsampleEffect, plus the denoiser toggle. Needs both scratch buffers
+				// and a live GI buffer (v.GIView — the raw trace, or the temporally-accumulated buffer if that ran).
+				return v.GBufferNeeded && CVars::GIRTActive() && CVars::GIDenoiseActive() && v.GIView &&
+				       v.RT.GIDenoiseScratch[0] && v.RT.GIDenoiseScratch[1] &&
 				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
 			}
 
@@ -198,12 +285,12 @@ namespace Snowstorm
 				const int iterations = CVars::ClampedGIDenoiseIterations();
 
 				// Ping-pong so the LAST write always lands in scratch[0], for any iteration count: iteration 0
-				// reads the raw GITarget and writes scratch[(N-1)&1]; each later iteration alternates. N=1 -> [0];
-				// N=2 -> [1] then [0]; N=3 -> [0],[1],[0]. The upsample/debug read scratch[0] as the denoised GI.
+				// reads the live GI (v.GIView — raw trace or accumulated) and writes scratch[(N-1)&1]; each later
+				// iteration alternates. N=1 -> [0]; N=2 -> [1],[0]; N=3 -> [0],[1],[0]. Upsample/debug read scratch[0].
 				int dst = (iterations - 1) & 1;
 				for (int i = 0; i < iterations; ++i)
 				{
-					const Ref<TextureView> srcView = (i == 0) ? v.RT.GITargetView : v.RT.GIDenoiseScratchView[dst ^ 1];
+					const Ref<TextureView> srcView = (i == 0) ? v.GIView : v.RT.GIDenoiseScratchView[dst ^ 1];
 					const Ref<TextureView> dstView = v.RT.GIDenoiseScratchView[dst];
 					const int step = 1 << i;
 					const auto slot = static_cast<uint32_t>(i);
@@ -219,6 +306,8 @@ namespace Snowstorm
 
 					dst ^= 1;
 				}
+
+				v.GIView = v.RT.GIDenoiseScratchView[0]; // the denoised buffer is now the live GI
 			}
 
 		private:
@@ -243,7 +332,7 @@ namespace Snowstorm
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				return v.GBufferNeeded && CVars::GIRTActive() && v.RT.GITarget && v.RT.GITargetView &&
+				return v.GBufferNeeded && CVars::GIRTActive() && v.GIView &&
 				       v.RT.GIUpscaleTarget && !v.RT.GIUpscaleTarget->GetDesc().ColorAttachments.empty() &&
 				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
 			}
@@ -255,10 +344,10 @@ namespace Snowstorm
 				const auto& giDesc = v.RT.GITarget->GetDesc();
 				const uint32_t giW = giDesc.Width;
 				const uint32_t giH = giDesc.Height;
-				// When the denoiser ran (#125) it left the filtered result in GIDenoiseScratch[0]; otherwise the
-				// raw GITarget is the live GI. Read whichever is current so the upsample never samples stale data.
-				const bool denoised = CVars::GIDenoiseActive() && v.RT.GIDenoiseScratchView[0];
-				const Ref<TextureView> giView = denoised ? v.RT.GIDenoiseScratchView[0] : v.RT.GITargetView;
+				// v.GIView is whatever the GI sub-chain last wrote: raw trace -> [temporal] -> [denoise] (#125).
+				// Reading the moving pointer means the upsample never samples a stale buffer regardless of which
+				// optional stages ran this frame.
+				const Ref<TextureView> giView = v.GIView;
 				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
 				const Ref<RenderTarget>& dst = v.RT.GIUpscaleTarget;
 				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
@@ -401,7 +490,10 @@ namespace Snowstorm
 				                   !v.RT.HistoryTarget[0]->GetDesc().ColorAttachments.empty();
 				const bool neuralTemporal = CVars::Upscaler.Get() == 2;
 				const bool exporting = CVars::DatasetExport.Get() && v.Comparing;
-				return (debugView == 1 || taaOn || neuralTemporal || exporting) && v.RT.VelocityTarget &&
+				// GI temporal accumulation (#125) reprojects by motion vectors, so it forces the velocity pass on
+				// whenever GI is running — even without TAA / debug / neural.
+				const bool giTemporal = CVars::GIRTActive() && CVars::GITemporalActive();
+				return (debugView == 1 || taaOn || neuralTemporal || exporting || giTemporal) && v.RT.VelocityTarget &&
 				       !v.RT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
 				       v.RT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 			}
@@ -924,15 +1016,17 @@ namespace Snowstorm
 	{
 		// Built once, in fixed order. Effects are added as they're extracted from the monolith (#120 B..G).
 		// DepthNormal + Velocity run before forward so their buffers are ready for the consumers (the GI
-		// sub-chain / TAA / neural-temporal / the debug tonemaps).
+		// sub-chain / TAA / neural-temporal / the debug tonemaps). Velocity runs right after DepthNormal (both
+		// prepasses) so v.Velocity is published BEFORE GITemporalEffect, which reprojects the GI by it (#125).
 		m_ViewportEffects.clear();
 		m_ViewportEffects.push_back(CreateScope<DepthNormalEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<VelocityEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<GIEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<GITemporalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<GIDenoiseEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<GIUpsampleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<AOEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<AOUpsampleEffect>(*this));
-		m_ViewportEffects.push_back(CreateScope<VelocityEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ForwardEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<UpscaleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<TemporalEffect>(*this));

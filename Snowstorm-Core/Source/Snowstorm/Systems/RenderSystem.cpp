@@ -329,10 +329,13 @@ namespace Snowstorm
 		// Dataset export (#46) also needs the velocity buffer (an exported channel), so force the velocity
 		// pass on while exporting even without debug-view/TAA. Requires compare (ground truth exists).
 		const bool exporting = CVars::DatasetExport.Get() && comparing;
+		// GI temporal accumulation (#125) reprojects the GI by motion vectors, so it forces the velocity pass on
+		// whenever GI is running (mirrors VelocityEffect::ShouldRun so the flag and the pass agree).
+		const bool giTemporal = CVars::GIRTActive() && CVars::GITemporalActive();
 		// velocityNeeded is cached on the context because several effects branch on it: VelocityEffect (whether
 		// to render the buffer), LdrChainEffect (the tonemap debug view samples it), and CompareEffect (dataset
 		// export reads it as a channel).
-		const bool velocityNeeded = (debugView == 1 || taaOn || neuralTemporal || exporting) && vpRT.VelocityTarget &&
+		const bool velocityNeeded = (debugView == 1 || taaOn || neuralTemporal || exporting || giTemporal) && vpRT.VelocityTarget &&
 		                            !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
 		                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 		v.VelocityNeeded = velocityNeeded;

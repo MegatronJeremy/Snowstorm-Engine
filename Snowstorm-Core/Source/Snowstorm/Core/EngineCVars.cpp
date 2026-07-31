@@ -129,6 +129,12 @@ namespace Snowstorm::CVars
 
 	CVar<float> GIScale{"render.gi.scale", 0.5f, "RT GI internal resolution: the GI hemisphere gather runs at this fraction of viewport res (0.5 = quarter the pixels = ~4x cheaper), then a depth-aware bilateral upsample restores full res (#124). 1.0 = full-res reference for the A/B. Clamped to [0.25, 1.0].", CVarFlags::Persist};
 
+	CVar<bool> GITemporal{"render.gi.temporal", true, "GI temporal accumulation (#125), SVGF's temporal half: reproject the previous accumulated GI by the motion vectors and blend with this frame's few-ray trace before the à-trous filter, so each pixel integrates many frames — fixes the static/slow-motion shimmer a spatial-only denoiser leaves. Depth-disocclusion reject (reused from TAA #127) prevents ghosting. Off = à-trous filters the raw trace. Read per-frame; forces the velocity pass on.", CVarFlags::Persist};
+
+	CVar<float> GITemporalBlend{"render.gi.temporal.blend", 0.9f, "GI temporal history weight while the camera/pixel is moving (higher = smoother/more lag, more ghosting risk). The velocity-aware blend lerps between this and maxblend by staticness. Mirrors render.taa.blend (#125).", CVarFlags::Persist};
+
+	CVar<float> GITemporalMaxBlend{"render.gi.temporal.maxblend", 0.97f, "GI temporal history weight when the pixel is ~static: deeper accumulation to average out the few-ray noise that causes at-rest GI shimmer. Mirrors render.taa.maxblend (#125).", CVarFlags::Persist};
+
 	CVar<bool> GIDenoise{"render.gi.denoise", true, "Spatial denoiser for the half-res RT GI (#125): an edge-aware à-trous wavelet blur on GITarget before the bilateral upsample, so each ray looks like several — cleaner GI at the same ray count. Off = the pre-#125 look (TAA-only denoise). Read per-frame; toggle live to A/B.", CVarFlags::Persist};
 
 	CVar<int> GIDenoiseIterations{"render.gi.denoise.iterations", 3, "RT GI denoiser à-trous pass count (#125): each pass doubles the tap stride (1,2,4,…) for a wider edge-aware blur. More passes = smoother but costlier / more over-blur risk. Clamped to [0, 5]; 0 disables the denoiser like render.gi.denoise off.", CVarFlags::Persist};
@@ -180,6 +186,11 @@ namespace Snowstorm::CVars
 	bool GIDenoiseActive()
 	{
 		return GIDenoise.Get() && ClampedGIDenoiseIterations() > 0;
+	}
+
+	bool GITemporalActive()
+	{
+		return GITemporal.Get();
 	}
 
 	float ClampedAOScale()

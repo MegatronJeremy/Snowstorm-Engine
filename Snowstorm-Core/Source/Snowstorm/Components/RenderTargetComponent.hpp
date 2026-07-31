@@ -65,12 +65,23 @@ namespace Snowstorm
 		Ref<Texture> GITarget;
 		Ref<TextureView> GITargetView;
 
-		// Half-res GI denoiser ping-pong scratch pair (#125): the edge-aware à-trous denoiser keeps GITarget as
-		// the RAW trace output (untouched — debug view 6) and ping-pongs between these two, so iteration 0 reads
-		// the raw GITarget and every later iteration alternates [0]<->[1]. The dispatch order is chosen so the
-		// final filtered result ALWAYS lands in [0] regardless of iteration-count parity, which the bilateral
-		// upsample (and debug view 7) then read. Same shape as GITarget (Sampled|Storage RGBA16F at
-		// render.gi.scale). Only written when the denoiser runs (GIDenoiseActive()). Null until allocated.
+		// Half-res GI temporal-accumulation history ping-pong (#125): SVGF's temporal half. Each frame the GI
+		// temporal pass reprojects the PREVIOUS slot by the motion vectors, depth-disocclusion-rejects it
+		// (reusing the TAA/#127 logic), blends it with this frame's raw GITarget trace, and writes the CURRENT
+		// slot — which both feeds the à-trous denoiser AND becomes next frame's history. Indexed by frame-counter
+		// parity (frame&1). .rgb = accumulated irradiance, .a = the half-res NDC depth (from the G-buffer) so
+		// next frame's disocclusion test has a previous depth to compare. Same half-res shape as GITarget, but a
+		// bare Texture+view (compute UAV). Only written when GITemporalActive(). Null until allocated.
+		Ref<Texture> GIHistory[2];
+		Ref<TextureView> GIHistoryView[2];
+
+		// Half-res GI denoiser ping-pong scratch pair (#125): the edge-aware à-trous denoiser keeps its INPUT
+		// (the temporally-accumulated GI, or the raw GITarget when temporal is off) untouched and ping-pongs
+		// between these two, so iteration 0 reads the input and every later iteration alternates [0]<->[1]. The
+		// dispatch order is chosen so the final filtered result ALWAYS lands in [0] regardless of iteration-count
+		// parity, which the bilateral upsample (and debug view 7) then read. Same shape as GITarget (Sampled|
+		// Storage RGBA16F at render.gi.scale). Only written when the denoiser runs (GIDenoiseActive()). Null
+		// until allocated.
 		Ref<Texture> GIDenoiseScratch[2];
 		Ref<TextureView> GIDenoiseScratchView[2];
 

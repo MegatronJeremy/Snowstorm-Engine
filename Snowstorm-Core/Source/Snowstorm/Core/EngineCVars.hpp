@@ -276,6 +276,20 @@ namespace Snowstorm::CVars
 	// GI at the same GI_RAY_COUNT. Depth+normal edge-stopping (reuses the G-buffer guide), no variance term
 	// (the temporal half of SVGF stays with TAA). Off => bit-identical to the pre-#125 look. Iterations is the
 	// à-trous pass count (stride doubles each pass: 1,2,4,…); clamp with ClampedGIDenoiseIterations().
+	// GI temporal accumulation (#125): the temporal half of SVGF. Reprojects the previous accumulated GI by
+	// the motion vectors and blends it with this frame's few-ray trace BEFORE the à-trous spatial filter, so
+	// each pixel integrates many frames' samples — the actual fix for the static/slow-motion shimmer a
+	// spatial-only filter leaves (few rays => a fresh noise realization every frame). Depth-disocclusion
+	// rejection (reused from the TAA resolve, #127) keeps it from ghosting across silhouettes. Blend =
+	// history weight while moving; MaxBlend = deeper weight when ~static (kills the at-rest shimmer). Off =>
+	// the à-trous filters the raw trace directly (the spatial-only #125 Inc 2 behaviour).
+	extern CVar<bool> GITemporal;
+	extern CVar<float> GITemporalBlend;
+	extern CVar<float> GITemporalMaxBlend;
+	// True when GI temporal accumulation should run: the toggle is on. Forces the velocity pass on (the
+	// reproject needs motion vectors). Does NOT fold the GI-active gate — callers already require GI running.
+	[[nodiscard]] bool GITemporalActive();
+
 	extern CVar<bool> GIDenoise;
 	extern CVar<int> GIDenoiseIterations;
 	// render.gi.denoise.iterations clamped to [0, 5]. Use everywhere the value is consumed.

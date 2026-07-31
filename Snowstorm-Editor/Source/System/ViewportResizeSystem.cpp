@@ -92,7 +92,8 @@ namespace Snowstorm
 				const auto& rt = reg.Read<RenderTargetComponent>(vpEntity);
 				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget ||
 				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget || !rt.VelocityTarget ||
-				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIDenoiseScratch[0] || !rt.GIDenoiseScratch[1] || !rt.GIUpscaleTarget ||
+				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIHistory[0] || !rt.GIHistory[1] ||
+					                     !rt.GIDenoiseScratch[0] || !rt.GIDenoiseScratch[1] || !rt.GIUpscaleTarget ||
 				                     !rt.AOTarget || !rt.AOUpscaleTarget ||
 				                     !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
 				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Compare each
@@ -143,6 +144,12 @@ namespace Snowstorm
 					// dispatched into when GI is active. Rebuilt on viewport OR gi.scale change.
 					rtW.GITarget = CreateGITarget(giW, giH, "Viewport");
 					rtW.GITargetView = rtW.GITarget->GetDefaultView();
+					// GI temporal history ping-pong (#125): same half-res shape as GITarget. Always allocated;
+					// only written when temporal accumulation runs. Rebuilt on viewport OR gi.scale change.
+					rtW.GIHistory[0] = CreateGITarget(giW, giH, "ViewportGIHistory0");
+					rtW.GIHistoryView[0] = rtW.GIHistory[0]->GetDefaultView();
+					rtW.GIHistory[1] = CreateGITarget(giW, giH, "ViewportGIHistory1");
+					rtW.GIHistoryView[1] = rtW.GIHistory[1]->GetDefaultView();
 					// GI denoiser ping-pong scratch pair (#125): same half-res shape as GITarget. Always allocated;
 					// only written when the denoiser runs. Rebuilt on viewport OR gi.scale change (tracks GITarget).
 					rtW.GIDenoiseScratch[0] = CreateGITarget(giW, giH, "ViewportGIDenoise0");
