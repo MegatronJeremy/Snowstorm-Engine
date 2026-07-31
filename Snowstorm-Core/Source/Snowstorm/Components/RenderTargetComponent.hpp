@@ -103,6 +103,24 @@ namespace Snowstorm
 		// A RenderTarget (the upsample is a fullscreen graphics pass). Null until allocated.
 		Ref<RenderTarget> AOUpscaleTarget;
 
+		// Full-res RT reflection (#129): the reflection trace runs into this Sampled|Storage RGBA16F target at
+		// FULL viewport res (reflections are high-frequency — half-res would soften mirrors). Stores RAW
+		// reflected radiance (.rgb, no Fresnel/BRDF weight — the forward pass applies that per-pixel) + the hit
+		// distance (.a, for the temporal depth-reject). The forward pass samples it by screen UV and blends it
+		// into the specular term. A bare Texture + view (compute writes it as a UAV), like GITarget. Null until
+		// allocated. Only dispatched into when ReflectionsRTActive().
+		Ref<Texture> ReflectionTarget;
+		Ref<TextureView> ReflectionTargetView;
+
+		// Full-res RT reflection temporal history ping-pong (#129): the reflection twin of GIHistory. Each
+		// frame the reflection temporal pass reprojects the previous slot by the motion vectors, depth-reject,
+		// blends with this frame's trace, and writes the current slot — feeding the forward pass AND becoming
+		// next frame's history. Indexed by frame-counter parity. .rgb accumulated radiance, .a hit distance.
+		// Same full-res shape as ReflectionTarget. Only written when ReflectionTemporalActive(). Null until
+		// allocated.
+		Ref<Texture> ReflHistory[2];
+		Ref<TextureView> ReflHistoryView[2];
+
 		// Temporal-resolve history ping-pong (#44 TAA). Two full-res HDR (color-only) targets: each frame
 		// the resolve reads the PREVIOUS one as history, reprojects it by the velocity buffer, blends with
 		// the current frame, and writes the result into the CURRENT one — which both feeds tonemap and

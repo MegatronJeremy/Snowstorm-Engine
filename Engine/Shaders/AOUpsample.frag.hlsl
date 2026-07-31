@@ -8,8 +8,10 @@
 // Self-contained set-1 resources parked at high bindings (the shared fullscreen VS drags Engine.hlsli's
 // set-1 material bindings). Paired with Fullscreen.vert.hlsl.
 
+#include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky (#129 Inc 1b)
+
 Texture2D<float4> AOTex : register(t4, space1);      // half-res AO factor in .r
-Texture2D<float4> GBufferTex : register(t5, space1); // full-res guide: .xyz world normal, .w NDC depth
+Texture2D<float4> GBufferTex : register(t5, space1); // full-res guide: .xy oct normal, .z roughness, .w NDC depth
 SamplerState LinearClamp : register(s6, space1);
 
 cbuffer AOUpsampleCB : register(b7, space1)
@@ -28,13 +30,13 @@ float main(FullscreenVSOut input) : SV_Target
 {
 	const float2 uv = float2(input.NDC.x * 0.5 + 0.5, input.NDC.y * 0.5 + 0.5);
 
-	// This full-res pixel's guide (center).
+	// This full-res pixel's guide (center). #129 Inc 1b: .xy is octahedral, decode it; depth in .w.
 	const float4 gc = GBufferTex.SampleLevel(LinearClamp, uv, 0);
-	const float3 Nc = gc.xyz;
+	const float3 Nc = DecodeNormalOct(gc.xy);
 	const float Dc = gc.w;
 
-	// Sky / no geometry (zero normal or far-plane depth): fully open (AO = 1).
-	if (dot(Nc, Nc) < 1e-6 || Dc >= 1.0)
+	// Sky / no geometry (far-plane / cleared depth): fully open (AO = 1).
+	if (IsSky(Dc))
 	{
 		return 1.0;
 	}
@@ -70,7 +72,7 @@ float main(FullscreenVSOut input) : SV_Target
 		const float2 tapUV = (float2(tapC) + 0.5) / float2(AOSize);
 		const float4 gt = GBufferTex.SampleLevel(LinearClamp, tapUV, 0);
 
-		const float wN = pow(saturate(dot(Nc, gt.xyz)), kNormalPow);
+		const float wN = pow(saturate(dot(Nc, DecodeNormalOct(gt.xy))), kNormalPow);
 		const float wD = exp(-abs(Dc - gt.w) * kDepthScale);
 		const float w = bw[t] * wN * wD;
 

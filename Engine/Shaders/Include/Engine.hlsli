@@ -213,6 +213,15 @@ cbuffer FrameCB : register(b0, space0)
 	uint GITextureIndex;
 	uint RTAOTextureIndex;
 	float2 RenderTargetSize;
+
+	// RT reflection consumption (#129): bindless index of the full-res reflection target (0 = no RT
+	// reflection -> the specular stays on the prefiltered env cube). The forward pass samples it by the same
+	// screen UV (SV_Position.xy / RenderTargetSize) and blends it into specular. New 16-byte row; MUST match
+	// RendererService.cpp field-for-field.
+	uint ReflectionTextureIndex;
+	uint _ReflTexPad0;
+	uint _ReflTexPad1;
+	uint _ReflTexPad2;
 };
 
 // --- SPACE 1: Material Data ---

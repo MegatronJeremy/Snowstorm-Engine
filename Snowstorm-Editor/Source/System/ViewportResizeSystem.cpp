@@ -93,8 +93,9 @@ namespace Snowstorm
 				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget ||
 				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget || !rt.VelocityTarget ||
 				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIHistory[0] || !rt.GIHistory[1] ||
-					                     !rt.GIDenoiseScratch[0] || !rt.GIDenoiseScratch[1] || !rt.GIUpscaleTarget ||
+				                     !rt.GIDenoiseScratch[0] || !rt.GIDenoiseScratch[1] || !rt.GIUpscaleTarget ||
 				                     !rt.AOTarget || !rt.AOUpscaleTarget ||
+				                     !rt.ReflectionTarget || !rt.ReflHistory[0] || !rt.ReflHistory[1] ||
 				                     !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
 				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Compare each
 				// against its own expected extent so a scale change (Target only) still triggers a rebuild.
@@ -166,6 +167,15 @@ namespace Snowstorm
 					// Full-res AO target (#126): the bilateral upsample renders the half-res AO into this; the
 					// forward pass samples it (by screen UV) and folds it into `ao`. Full viewport res.
 					rtW.AOUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportAOUpscale");
+					// Full-res RT reflection + temporal history (#129): full viewport res (reflections are
+					// high-frequency). Always allocated; only dispatched when reflections are active. Rebuilt on
+					// viewport resize (not gi.scale — these are full-res).
+					rtW.ReflectionTarget = CreateGITarget(w, h, "ViewportReflection");
+					rtW.ReflectionTargetView = rtW.ReflectionTarget->GetDefaultView();
+					rtW.ReflHistory[0] = CreateGITarget(w, h, "ViewportReflHistory0");
+					rtW.ReflHistoryView[0] = rtW.ReflHistory[0]->GetDefaultView();
+					rtW.ReflHistory[1] = CreateGITarget(w, h, "ViewportReflHistory1");
+					rtW.ReflHistoryView[1] = rtW.ReflHistory[1]->GetDefaultView();
 					// TAA history ping-pong (#44): two full-res color-only HDR targets. Always allocated;
 					// only rendered into when render.aa == TAA. Recreated on resize so history matches size.
 					rtW.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0");

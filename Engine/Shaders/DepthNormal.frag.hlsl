@@ -1,21 +1,26 @@
-// Depth+normal prepass, fragment stage (#124). Writes the interpolated world-space normal (.xyz,
-// re-normalized) AND the NDC depth (.w = SV_Position.z, the depth-buffer value) into ONE RGBA16F color
-// target. Packing depth into .w means the half-res GI compute pass (and the bilateral upsample) sample a
-// single plain COLOR image — NOT the depth-stencil attachment. That matters: a depth-stencil image in a
-// shader lives in DEPTH_STENCIL_READ_ONLY layout, which a compute sampled-image descriptor (expecting
-// SHADER_READ_ONLY) rejects; a color image transitions to SHADER_READ_ONLY cleanly. The D32 attachment is
-// still present for the prepass's own z-test (+ forward early-z), just never sampled. fp16 depth loses
-// precision near the far plane, but half-res GI is coarse and the ray origin's normal-offset guards
-// self-intersection. Paired with DepthNormal.vert.hlsl.
+// Depth+normal prepass, fragment stage (#124, upgraded #129 Inc 1b). Writes the G-buffer as ONE RGBA16F
+// color target, packed per GBufferEncode.hlsli: .xy = octahedral NORMAL-MAPPED world normal, .z =
+// perceptual roughness, .w = NDC depth (SV_Position.z). Packing into a plain COLOR image (not the
+// depth-stencil attachment) matters: a depth-stencil image in a shader lives in DEPTH_STENCIL_READ_ONLY
+// layout, which a compute sampled-image descriptor (expecting SHADER_READ_ONLY) rejects; a color image
+// transitions cleanly. The D32 attachment is still present for the prepass's own z-test (+ forward
+// early-z), just never sampled.
 //
-// Alpha-mask clip (#124): cutout geometry (glTF MASK — Sponza's plants/vines/chains) must punch holes in
-// the G-buffer too, or the GI pass reconstructs phantom solid surfaces where the texture is transparent
-// (wrong ray origins + wrong bilateral silhouettes). The per-material alpha fields + bindless albedo index
-// ride the PUSH CONSTANT (see DepthNormal.vert), and the albedo is sampled from the bindless Textures[]
-// array (set 3) with this pass's OWN sampler (set 1, binding 0) — deliberately NOT the material's
-// descriptor set: that set was allocated against DefaultLit's set-1 layout, and binding it under this
-// pipeline is a layout-incompatibility device loss. Sets 0 (FrameCB) + 2 (instances-in-VS) round out the
-// layout; set 2 is bound for the VS's InstanceData.
+// #129 Inc 1c: the prepass is now MRT and writes TWO normals, because ray occlusion/GI and reflections
+// want DIFFERENT normals (the standard deferred split — cf. Unreal Lumen / NRD, which keep both):
+//   SV_Target0 (main G-buffer): .xy = octahedral GEOMETRIC normal, .z = roughness, .w = NDC depth. AO/GI
+//     orient their sample hemisphere off this — the geometric normal keeps the hemisphere flush on the true
+//     surface, so rays don't dip below a bumped normal and self-occlude (the AO darkening #129 Inc 1b caused).
+//   SV_Target1 (shading-normal target): .xy = octahedral NORMAL-MAPPED normal. ONLY the reflection pass
+//     reads this — reflections must reflect off the bumped normal to match DefaultLit's shading.
+// Roughness rides target0.z for the reflection trace-skip / future glossy blur. Normal map + MR texture are
+// sampled from bindless Textures[] (set 3) via push indices, with this pass's OWN sampler (set 1, binding 0)
+// — NOT the material set (allocated against DefaultLit's set-1 layout; binding it here is a device loss).
+//
+// Alpha-mask clip (#124): cutout geometry (glTF MASK) must punch holes in the G-buffer too, or the RT
+// passes reconstruct phantom solid surfaces where the texture is transparent.
+
+#include "Include/GBufferEncode.hlsli"
 
 struct DepthNormalPush
 {
@@ -24,35 +29,74 @@ struct DepthNormalPush
 	uint AlphaMaskEnabled;
 	float AlphaCutoff;
 	float BaseAlpha;
+
+	uint NormalTextureIndex;
+	float Roughness;
+	uint MetallicRoughnessTextureIndex;
+	uint _Pad0;
 };
 [[vk::push_constant]] DepthNormalPush gDN;
 
-// This pass's own sampler (set 1, binding 0) — NOT the material set. Clamp-linear is fine for an alpha tap.
+// This pass's own sampler (set 1, binding 0) — NOT the material set. Clamp-linear is fine for these taps.
 SamplerState AlbedoSampler : register(s0, space1);
 
-// Bindless 2D textures (set 3) — the same array DefaultLit samples; the albedo index comes via the push.
+// Bindless 2D textures (set 3) — the same array DefaultLit samples; indices come via the push.
 Texture2D Textures[] : register(t0, space3);
 
 struct DepthNormalVSOut
 {
 	float4 PositionCS : SV_Position;
 	float3 NormalWS : TEXCOORD0;
-	float2 TexCoord : TEXCOORD1;
+	float4 TangentWS : TEXCOORD1;
+	float2 TexCoord : TEXCOORD2;
 };
 
-float4 main(DepthNormalVSOut input) : SV_Target
+// Normal mapping — mirrors DefaultLit's ResolveNormal (TBN from the interpolated normal+tangent, Gram-
+// Schmidt re-orthogonalized, sampled tangent-space normal [0,1]->[-1,1]). Geometric normal when no map.
+float3 ResolveShadingNormal(float3 nWS, float4 tangentWS, float2 uv)
 {
-	// Alpha-mask cutout: discard texels below the cutoff BEFORE writing the G-buffer, so transparent parts
-	// of a cutout leaf leave a hole (no phantom normal/depth). Mirrors DefaultLit's clip(). clip() discards
-	// when its argument is < 0. Only for MASK materials with an albedo texture; a no-op otherwise.
+	const float3 N = normalize(nWS);
+	if (gDN.NormalTextureIndex == 0)
+	{
+		return N;
+	}
+	float3 T = normalize(tangentWS.xyz);
+	T = normalize(T - N * dot(N, T)); // re-orthogonalize so interpolation skew doesn't tilt the basis
+	const float3 B = cross(N, T) * tangentWS.w;
+	const float3 sampled = Textures[NonUniformResourceIndex(gDN.NormalTextureIndex)].Sample(AlbedoSampler, uv).xyz * 2.0 - 1.0;
+	const float3x3 TBN = float3x3(T, B, N);
+	return normalize(mul(sampled, TBN));
+}
+
+struct DepthNormalOut
+{
+	float4 Main : SV_Target0;    // .xy oct GEOMETRIC normal, .z roughness, .w NDC depth
+	float4 Shading : SV_Target1; // .xy oct NORMAL-MAPPED normal (reflection pass only); .zw unused
+};
+
+DepthNormalOut main(DepthNormalVSOut input)
+{
+	// Alpha-mask cutout: discard transparent texels BEFORE writing, so a cutout leaf leaves a hole.
 	if (gDN.AlphaMaskEnabled != 0 && gDN.AlbedoTextureIndex != 0)
 	{
 		const float alpha = Textures[NonUniformResourceIndex(gDN.AlbedoTextureIndex)].Sample(AlbedoSampler, input.TexCoord).a * gDN.BaseAlpha;
 		clip(alpha - gDN.AlphaCutoff);
 	}
 
-	// Re-normalize: linear interpolation across the triangle shortens the normal. .w = NDC depth (0..1),
-	// which SV_Position.z carries in the fragment stage — the same value the depth buffer stores.
-	const float3 n = normalize(input.NormalWS);
-	return float4(n, input.PositionCS.z);
+	const float3 nGeom = normalize(input.NormalWS);                                        // geometric (ray effects)
+	const float3 nShade = ResolveShadingNormal(input.NormalWS, input.TangentWS, input.TexCoord); // normal-mapped (reflections)
+
+	// Per-pixel roughness: material scalar * MR-texture .g (glTF packing), matching DefaultLit. Clamp to the
+	// same floor so a mirror still reads a tiny non-zero roughness (consumers may branch on it).
+	float roughness = gDN.Roughness;
+	if (gDN.MetallicRoughnessTextureIndex != 0)
+	{
+		roughness *= Textures[NonUniformResourceIndex(gDN.MetallicRoughnessTextureIndex)].Sample(AlbedoSampler, input.TexCoord).g;
+	}
+	roughness = clamp(roughness, 0.04, 1.0);
+
+	DepthNormalOut o;
+	o.Main = PackGBuffer(nGeom, roughness, input.PositionCS.z); // .xy geometric, .z roughness, .w depth
+	o.Shading = float4(EncodeNormalOct(nShade), 0.0, 0.0);      // .xy shading normal (reflection pass)
+	return o;
 }

@@ -30,6 +30,8 @@ cbuffer GIDenoiseCB : register(b4, space0)
 	float3 _Pad;
 };
 
+#include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky (#129 Inc 1b)
+
 // B3-spline à-trous kernel row {1/16, 4/16, 6/16, 4/16, 1/16}; the 2D weight is the outer product.
 static const float kKernel[5] = {0.0625, 0.25, 0.375, 0.25, 0.0625};
 
@@ -46,12 +48,12 @@ void main(uint3 id : SV_DispatchThreadID)
 	// depth/normal at this UV is the receiver at this half-res texel — same convention as GI.comp.hlsl).
 	const float2 centerUV = (float2(centerPx) + 0.5) / float2(OutSize);
 	const float4 gc = GBufferNormal.SampleLevel(LinearSampler, centerUV, 0);
-	const float3 Nc = gc.xyz;
+	const float3 Nc = DecodeNormalOct(gc.xy); // #129 Inc 1b: .xy octahedral normal
 	const float Dc = gc.w;
 
-	// Sky / no geometry (zero normal or far plane): pass the GI through untouched, matching the trace +
+	// Sky / no geometry (far plane / cleared depth): pass the GI through untouched, matching the trace +
 	// upsample guards. Filtering across a sky edge would bleed black into lit pixels.
-	if (dot(Nc, Nc) < 1e-6 || Dc >= 1.0)
+	if (IsSky(Dc))
 	{
 		GIOut[centerPx] = GIIn.Load(int3(centerPx, 0));
 		return;
@@ -73,9 +75,9 @@ void main(uint3 id : SV_DispatchThreadID)
 			const float2 tapUV = (float2(tapC) + 0.5) / float2(OutSize);
 			const float4 gt = GBufferNormal.SampleLevel(LinearSampler, tapUV, 0);
 
-			// Edge-stopping: reject taps across normal creases / depth discontinuities. Sky taps (zero normal)
-			// fall out via wN -> 0 (dot with a zero vector) and the far-plane depth diff, so no explicit guard.
-			const float wN = pow(saturate(dot(Nc, gt.xyz)), KNormalPow);
+			// Edge-stopping: reject taps across normal creases / depth discontinuities. A sky tap has depth ~1,
+			// so its large depth diff (wD -> 0) drops it — no explicit sky guard needed on taps.
+			const float wN = pow(saturate(dot(Nc, DecodeNormalOct(gt.xy))), KNormalPow);
 			const float wD = exp(-abs(Dc - gt.w) * KDepthScale);
 			const float wK = kKernel[dx + 2] * kKernel[dy + 2];
 			const float w = wK * wN * wD;

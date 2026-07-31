@@ -18,7 +18,7 @@ static const float PI = 3.14159265359;
 // One G-buffer color image carries BOTH the world normal (.xyz) and the NDC depth (.w) — see
 // DepthNormal.frag. Sampling one plain color image (not the depth-stencil attachment) sidesteps the
 // DEPTH_STENCIL_READ_ONLY-vs-SHADER_READ_ONLY layout mismatch a compute sampled-image descriptor rejects.
-Texture2D<float4> GBufferNormal : register(t0, space0);                              // .xyz = world normal, .w = NDC depth
+Texture2D<float4> GBufferNormal : register(t0, space0);                              // .xy = oct GEOMETRIC normal, .z = roughness, .w = NDC depth (#129 Inc 1c)
 // Occlusion factor in .r (the RHI has no single-channel float format; RGBA16F matches GITarget — a half-res
 // target, so the 4x-vs-R16 memory is negligible). The upsample + forward read only .r.
 [[vk::image_format("rgba16f")]] RWTexture2D<float4> AOOut : register(u1, space0);    // half-res occlusion factor [0,1] in .r
@@ -37,6 +37,8 @@ cbuffer AOCB : register(b3, space0)
 // ---- Set 3: engine bindless pool (gap-filled by the compute pipeline builder) ----
 RaytracingAccelerationStructure SceneTLAS : register(t2, space3);
 
+#include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky (#129 Inc 1b)
+
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
@@ -49,9 +51,9 @@ void main(uint3 id : SV_DispatchThreadID)
 
 	const float4 gbuf = GBufferNormal.SampleLevel(LinearSampler, uv, 0);
 	const float depth = gbuf.w; // NDC depth packed into .w by the prepass
-	// Sky / no geometry: a zero-length normal means the pixel is sky (prepass cleared the color target to 0);
-	// also treat depth >= 1 (far plane) as sky. No surface -> fully open (AO = 1).
-	if (dot(gbuf.xyz, gbuf.xyz) < 1e-6 || depth >= 1.0)
+	// Sky / no geometry (prepass clears depth to 1.0; far plane also ~1.0) -> fully open (AO = 1). #129 Inc 1b:
+	// depth-based, not zero-normal (oct(0,0) is a valid normal now).
+	if (IsSky(depth))
 	{
 		AOOut[id.xy] = 1.0;
 		return;
@@ -62,8 +64,8 @@ void main(uint3 id : SV_DispatchThreadID)
 	float4 worldH = mul(float4(ndc, depth, 1.0), InvViewProj);
 	const float3 positionWS = worldH.xyz / worldH.w;
 
-	const float3 N = normalize(gbuf.xyz);
-	const float3 Ng = N; // the prepass stores the geometric-ish vertex normal; reuse for the ray offset
+	const float3 N = DecodeNormalOct(gbuf.xy); // .xy = octahedral world normal (#129 Inc 1b)
+	const float3 Ng = N; // reuse the shading normal for the ray offset
 
 	// Orthonormal basis (tangent, bitangent, N) to orient the cosine hemisphere.
 	const float3 up = abs(N.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);

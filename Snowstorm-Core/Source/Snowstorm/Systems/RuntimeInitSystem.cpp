@@ -159,6 +159,12 @@ namespace Snowstorm
 				wRtc.AOTarget = CreateAOTarget(aoW, aoH, "Viewport");                       // half-res AO (#126)
 				wRtc.AOTargetView = wRtc.AOTarget->GetDefaultView();
 				wRtc.AOUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportAOUpscale"); // full-res AO (#126)
+				wRtc.ReflectionTarget = CreateGITarget(w, h, "ViewportReflection");         // full-res RT reflection (#129)
+				wRtc.ReflectionTargetView = wRtc.ReflectionTarget->GetDefaultView();
+				wRtc.ReflHistory[0] = CreateGITarget(w, h, "ViewportReflHistory0");         // reflection temporal history (#129)
+				wRtc.ReflHistoryView[0] = wRtc.ReflHistory[0]->GetDefaultView();
+				wRtc.ReflHistory[1] = CreateGITarget(w, h, "ViewportReflHistory1");
+				wRtc.ReflHistoryView[1] = wRtc.ReflHistory[1]->GetDefaultView();
 				wRtc.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0"); // TAA history (#44)
 				wRtc.HistoryTarget[1] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory1");
 			}

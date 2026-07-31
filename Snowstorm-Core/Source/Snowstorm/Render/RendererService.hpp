@@ -219,6 +219,17 @@ namespace Snowstorm
 			m_GIRenderTargetSize = renderTargetSize;
 		}
 
+		// Full-res RT reflection consumption (#129): mirror of SetGITexture. The forward shader samples the
+		// full-res reflection target by screen UV and blends it into the specular term (replacing the old
+		// inline RayTraceReflection). The buffer is full-res, so no size divide is needed, but it shares the
+		// RenderTargetSize push for a uniform UV convention. 0 = no RT reflection this frame; reset to 0 per
+		// frame by non-reflection viewports so a stale index can't leak.
+		void SetReflTexture(const uint32_t bindlessIndex, const glm::vec2& renderTargetSize)
+		{
+			m_ReflectionTextureIndex = bindlessIndex;
+			m_GIRenderTargetSize = renderTargetSize;
+		}
+
 		// Current frame's lights / environment (uploaded by the PreRender systems). The IBL bake reads
 		// these to capture the sky; exposed so the bake lives in its own pass, not the renderer.
 		[[nodiscard]] const LightDataBlock& GetLights() const { return m_FrameData.Lights; }
@@ -355,6 +366,11 @@ namespace Snowstorm
 		// Half-res AO consumption (#126): the full-res upsampled AO target's bindless index (0 = no AO), pushed
 		// per-viewport by SetAOTexture, read into FrameCB in AcquireFrameSet. Shares m_GIRenderTargetSize.
 		uint32_t m_AOTextureIndex = 0;
+
+		// Full-res RT reflection consumption (#129): the reflection target's bindless index (0 = no RT
+		// reflection), pushed per-viewport by SetReflTexture, read into FrameCB in AcquireFrameSet. Shares
+		// m_GIRenderTargetSize.
+		uint32_t m_ReflectionTextureIndex = 0;
 
 		std::vector<BatchData> m_Batches;
 

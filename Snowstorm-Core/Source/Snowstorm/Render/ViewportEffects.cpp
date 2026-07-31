@@ -23,6 +23,7 @@
 #include "Snowstorm/Render/Passes/GIDenoisePass.hpp"
 #include "Snowstorm/Render/Passes/GIPass.hpp"
 #include "Snowstorm/Render/Passes/GITemporalPass.hpp"
+#include "Snowstorm/Render/Passes/ReflectionPass.hpp"
 #include "Snowstorm/Render/Passes/AOUpsamplePass.hpp"
 #include "Snowstorm/Render/Passes/GIUpsamplePass.hpp"
 #include "Snowstorm/Render/Passes/MetricsPass.hpp"
@@ -468,6 +469,61 @@ namespace Snowstorm
 			AOUpsamplePass m_Pass; // owned here: exclusive to this effect
 		};
 
+		// Full-res RT reflection compute pass (#129): the reflection analogue of GIEffect, lifting the inline
+		// RayTraceReflection out of DefaultLit into a standalone pass over the depth+normal G-buffer. Traces one
+		// sharp reflection ray per full-res pixel, shades the hit through the geometry table, and writes raw
+		// reflected radiance into ReflectionTarget. Runs after the AO sub-chain, before Forward. Gated on
+		// reflections active AND a geometry table (hits resolve through it). Publishes v.ReflectionView (the
+		// moving live-reflection pointer, like v.GIView); the temporal stage (Inc 2) republishes it.
+		class ReflectionEffect final : public IViewportEffect
+		{
+		public:
+			explicit ReflectionEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "Reflection"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::ReflectionsRTActive() && v.RT.ReflectionTarget && v.RT.ReflectionTargetView &&
+				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+
+				const auto& reflDesc = v.RT.ReflectionTarget->GetDesc();
+				const uint32_t reflW = reflDesc.Width;
+				const uint32_t reflH = reflDesc.Height;
+				const auto& gbufAtts = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments;
+				const Ref<TextureView> gbufView = gbufAtts[0].View;    // main: geometric normal + roughness + depth
+				const Ref<TextureView> shadingView = gbufAtts[1].View; // #129 Inc 1c: normal-mapped shading normal
+				const Ref<TextureView> reflView = v.RT.ReflectionTargetView;
+				const uint64_t tableAddr = fc.Renderer.GetReflectionGeometryAddress();
+				const FrameData& frameData = fc.Renderer.GetFrameData();
+				const auto frameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
+
+				fc.Graph.AddPass({.Name = "Reflection" + v.Suffix,
+				                  .IsCompute = true,
+				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {shadingView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, shadingView, reflView, reflW, reflH](CommandContext& c)
+				                  {
+					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, frameData, tableAddr, frameCounter,
+					                                  gbufView, shadingView, reflView, reflW, reflH);
+				                  }});
+
+				v.ReflectionView = reflView; // the raw trace is the live reflection buffer; temporal republishes downstream
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			ReflectionPass m_Pass; // owned here: the reflection compute pass is exclusive to this effect
+		};
+
 		// Motion-vector pass (#44): re-renders visible meshes into the velocity target, projecting each vertex
 		// by this frame's and last frame's matrices. Runs BEFORE forward so the buffer is ready for the passes
 		// that consume it (TAA / neural-temporal / the motion-vector debug tonemap). Gated by velocityNeeded:
@@ -580,8 +636,19 @@ namespace Snowstorm
 					aoIndex = v.RT.AOUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 				}
 
+				// RT reflection consumption (#129): the live reflection buffer's bindless index (0 = no RT
+				// reflection -> env-cube specular). v.ReflectionView is whatever the reflection sub-chain last
+				// wrote — the raw trace, or the temporally-accumulated buffer if that ran — so reading the moving
+				// pointer means this needs no change when the temporal stage is added.
+				uint32_t reflIndex = 0;
+				if (v.GBufferNeeded && CVars::ReflectionsRTActive() && v.ReflectionView &&
+				    v.Frame.Renderer.GetReflectionGeometryAddress() != 0)
+				{
+					reflIndex = v.ReflectionView->GetGlobalBindlessIndex();
+				}
+
 				m_Owner.AddForwardPass(v.Frame, v.Cam, v.RT.Target, "Forward" + v.Suffix, /*jittered*/ true,
-				                       /*forceRasterShadow*/ false, giIndex, aoIndex);
+				                       /*forceRasterShadow*/ false, giIndex, aoIndex, reflIndex);
 				// Publish the HDR scene color for the downstream chain (upscale/TAA/tonemap).
 				v.SceneColor.Target = v.RT.Target;
 				if (const auto& desc = v.RT.Target->GetDesc(); !desc.ColorAttachments.empty())
@@ -1027,6 +1094,7 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<GIUpsampleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<AOEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<AOUpsampleEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<ReflectionEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ForwardEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<UpscaleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<TemporalEffect>(*this));

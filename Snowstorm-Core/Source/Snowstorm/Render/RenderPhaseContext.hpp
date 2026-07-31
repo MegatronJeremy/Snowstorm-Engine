@@ -92,6 +92,12 @@ namespace Snowstorm
 		// a stale buffer. Null until GIEffect runs.
 		Ref<TextureView> GIView;
 
+		// The current live full-res RT reflection buffer as it flows Reflection-trace -> [temporal] -> forward
+		// (#129). ReflectionEffect publishes the raw ReflectionTarget; ReflectionTemporalEffect republishes
+		// the accumulated GIHistory[cur]; ForwardEffect reads whatever is current for the specular blend.
+		// Threaded like GIView. Null until ReflectionEffect runs.
+		Ref<TextureView> ReflectionView;
+
 		// Whether the velocity pass runs this frame (debug view / TAA / neural-temporal / dataset export).
 		// The consumers (TAA, neural-temporal upscale, motion-vector debug tonemap, dataset) branch on it.
 		bool VelocityNeeded = false;

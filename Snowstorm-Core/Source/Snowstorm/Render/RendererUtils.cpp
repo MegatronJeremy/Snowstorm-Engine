@@ -234,7 +234,7 @@ namespace Snowstorm
 		// depth (DepthStencil-only, write-only) precisely because those can't be sampled.
 		TextureDesc colorDesc{};
 		colorDesc.Dimension = TextureDimension::Texture2D;
-		colorDesc.Format = PixelFormat::RGBA16_SFloat; // signed 16F: world normal xyz in [-1,1]
+		colorDesc.Format = PixelFormat::RGBA16_SFloat; // main G-buffer: .xy oct GEOMETRIC normal, .z roughness, .w depth
 		colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled;
 		colorDesc.Width = w;
 		colorDesc.Height = h;
@@ -242,6 +242,15 @@ namespace Snowstorm
 
 		Ref<Texture> colorTex = Texture::Create(colorDesc);
 		Ref<TextureView> colorView = TextureView::Create(colorTex, MakeFullViewDesc(colorDesc));
+
+		// #129 Inc 1c: second color attachment for the NORMAL-MAPPED shading normal (.xy oct), which ONLY the
+		// reflection pass reads. Split from the main G-buffer because AO/GI orient their sample hemisphere off
+		// the GEOMETRIC normal (avoids self-occlusion on bumped surfaces), while reflections need the bumped
+		// normal to match DefaultLit's shading. Same full-res RGBA16F shape.
+		TextureDesc shadingDesc = colorDesc;
+		shadingDesc.DebugName = std::string(debugPrefix) + "_GBufferShadingNormal";
+		Ref<Texture> shadingTex = Texture::Create(shadingDesc);
+		Ref<TextureView> shadingView = TextureView::Create(shadingTex, MakeFullViewDesc(shadingDesc));
 
 		TextureDesc depthDesc{};
 		depthDesc.Dimension = TextureDimension::Texture2D;
@@ -263,10 +272,21 @@ namespace Snowstorm
 		RenderTargetAttachment colorAtt{};
 		colorAtt.View = colorView;
 		colorAtt.AttachmentIndex = 0;
-		colorAtt.ClearColor = {0.0f, 0.0f, 0.0f, 0.0f}; // zero normal where nothing draws (sky)
+		colorAtt.ClearColor = {0.0f, 0.0f, 0.0f, 1.0f}; // #129 Inc 1b: sky = depth(.w)=1.0 (consumers test IsSky(depth); oct-encoded .xy has no "zero normal" sentinel anymore)
 		colorAtt.LoadOp = RenderTargetLoadOp::Clear;
 		colorAtt.StoreOp = RenderTargetStoreOp::Store;
 		rtDesc.ColorAttachments.push_back(colorAtt);
+
+		// #129 Inc 1c: attachment 1 = shading normal (SV_Target1 in DepthNormal.frag). Reflection pass samples
+		// ColorAttachments[1].View. Cleared to 0 (sky reads a zero shading normal, but reflections gate on the
+		// main G-buffer's depth, so the value there is don't-care).
+		RenderTargetAttachment shadingAtt{};
+		shadingAtt.View = shadingView;
+		shadingAtt.AttachmentIndex = 1;
+		shadingAtt.ClearColor = {0.0f, 0.0f, 0.0f, 0.0f};
+		shadingAtt.LoadOp = RenderTargetLoadOp::Clear;
+		shadingAtt.StoreOp = RenderTargetStoreOp::Store;
+		rtDesc.ColorAttachments.push_back(shadingAtt);
 
 		DepthStencilAttachment depthAtt{};
 		depthAtt.View = depthView;

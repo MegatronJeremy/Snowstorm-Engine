@@ -159,197 +159,12 @@ float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, flo
 	return lerp(1.0, visibility, ShadowStrength);
 }
 
-// Reassemble the reflection geometry table's device address from the two FrameCB halves (see
-// RendererService FrameCB: split lo/hi to keep the cbuffer 4-byte-scalar). 0 = no table this frame.
-uint64_t ReflGeoTableAddress()
-{
-	return (uint64_t(ReflGeoTableAddrHi) << 32) | uint64_t(ReflGeoTableAddrLo);
-}
-
-// One reflection geometry record, matching GeometryRecord (ReflectionGeometrySingleton.hpp) byte-for-byte.
-// Read field-by-field via vk::RawBufferLoad off the record's base address (dx layout, 112-byte stride).
-struct GeoRecord
-{
-	uint64_t VertexAddress;
-	uint64_t IndexAddress;
-	uint AlbedoTextureIndex;
-	float4 BaseColor;
-	float4x4 Model;
-};
-
-GeoRecord LoadGeoRecord(uint64_t tableAddr, uint instanceIndex)
-{
-	const uint64_t base = tableAddr + uint64_t(instanceIndex) * 112ull;
-	GeoRecord r;
-	r.VertexAddress = vk::RawBufferLoad<uint64_t>(base + 0, 8);
-	r.IndexAddress = vk::RawBufferLoad<uint64_t>(base + 8, 8);
-	r.AlbedoTextureIndex = vk::RawBufferLoad<uint>(base + 16, 4);
-	r.BaseColor = float4(vk::RawBufferLoad<float>(base + 32, 4), vk::RawBufferLoad<float>(base + 36, 4),
-	                     vk::RawBufferLoad<float>(base + 40, 4), vk::RawBufferLoad<float>(base + 44, 4));
-	// mat4 is 16 contiguous floats at offset 48 (column-major, matching glm).
-	float4 c0 = float4(vk::RawBufferLoad<float>(base + 48, 4), vk::RawBufferLoad<float>(base + 52, 4),
-	                   vk::RawBufferLoad<float>(base + 56, 4), vk::RawBufferLoad<float>(base + 60, 4));
-	float4 c1 = float4(vk::RawBufferLoad<float>(base + 64, 4), vk::RawBufferLoad<float>(base + 68, 4),
-	                   vk::RawBufferLoad<float>(base + 72, 4), vk::RawBufferLoad<float>(base + 76, 4));
-	float4 c2 = float4(vk::RawBufferLoad<float>(base + 80, 4), vk::RawBufferLoad<float>(base + 84, 4),
-	                   vk::RawBufferLoad<float>(base + 88, 4), vk::RawBufferLoad<float>(base + 92, 4));
-	float4 c3 = float4(vk::RawBufferLoad<float>(base + 96, 4), vk::RawBufferLoad<float>(base + 100, 4),
-	                   vk::RawBufferLoad<float>(base + 104, 4), vk::RawBufferLoad<float>(base + 108, 4));
-	r.Model = float4x4(c0, c1, c2, c3);
-	return r;
-}
-
-// Read a mesh vertex's TexCoord (float2 @ offset 24 in the 48-byte Vertex) by device address.
-float2 LoadVertexUV(uint64_t vertexAddr, uint index)
-{
-	const uint64_t a = vertexAddr + uint64_t(index) * 48ull + 24ull;
-	return float2(vk::RawBufferLoad<float>(a, 4), vk::RawBufferLoad<float>(a + 4, 4));
-}
-
-// Read a mesh vertex's object-space Normal (float3 @ offset 12) by device address.
-float3 LoadVertexNormal(uint64_t vertexAddr, uint index)
-{
-	const uint64_t a = vertexAddr + uint64_t(index) * 48ull + 12ull;
-	return float3(vk::RawBufferLoad<float>(a, 4), vk::RawBufferLoad<float>(a + 4, 4), vk::RawBufferLoad<float>(a + 8, 4));
-}
-
-// Ray-traced reflection (#118): trace the reflection ray `R` from the surface, find the closest hit,
-// resolve it to a surface via the per-instance geometry table (device-address vertex/index buffers +
-// material), and return its color. `lit`=false returns the raw reflected ALBEDO (the debug view — proves
-// hit resolution); `lit`=true RE-LIGHTS the hit cheaply (albedo * (sun*shadow-ray + IBL-ambient)) so the
-// reflection matches the scene's lighting. On a miss (or no table), return the prefiltered sky cube in `R`
-// — exactly the env source the IBL specular uses. One bounce only; the reflected hit is NOT itself
-// reflective (no recursion). `Ng` offsets the ray origin off the surface.
-// Resolve a committed inline-RayQuery triangle hit to its surface albedo via the bindless geometry table
-// (device-address vertex/index reads + barycentric UV + bindless albedo sample). Just the albedo — used by
-// the Reflections debug view. Caller guarantees tableAddr != 0. `hitPos` (out) is the world hit position,
-// recovered by the caller from the ray; here we return albedo + the interpolated world normal for the
-// lit path to reuse (avoids a second RawBufferLoad of the same record).
-struct HitSurface
-{
-	float3 Albedo;
-	float3 Nw; // interpolated world normal
-};
-HitSurface ResolveHit(uint64_t tableAddr, uint instanceId, uint prim, float2 bary)
-{
-	const GeoRecord rec = LoadGeoRecord(tableAddr, instanceId);
-
-	const uint64_t idxBase = rec.IndexAddress + uint64_t(prim) * 12ull; // 3 * uint32
-	const uint i0 = vk::RawBufferLoad<uint>(idxBase + 0, 4);
-	const uint i1 = vk::RawBufferLoad<uint>(idxBase + 4, 4);
-	const uint i2 = vk::RawBufferLoad<uint>(idxBase + 8, 4);
-
-	const float w = 1.0 - bary.x - bary.y;
-	const float2 uv = w * LoadVertexUV(rec.VertexAddress, i0) + bary.x * LoadVertexUV(rec.VertexAddress, i1) + bary.y * LoadVertexUV(rec.VertexAddress, i2);
-
-	HitSurface s;
-	s.Albedo = rec.BaseColor.rgb;
-	if (rec.AlbedoTextureIndex != 0)
-	{
-		s.Albedo *= Textures[NonUniformResourceIndex(rec.AlbedoTextureIndex)].SampleLevel(LinearSampler, uv, 0).rgb;
-	}
-	// Interpolated object normal -> world via the record's Model (rows hold glm's columns, so
-	// mul(n, Model3x3) computes glmModel * n). Ignores non-uniform scale (inverse-transpose) — fine here.
-	const float3 nObj = w * LoadVertexNormal(rec.VertexAddress, i0) + bary.x * LoadVertexNormal(rec.VertexAddress, i1) + bary.y * LoadVertexNormal(rec.VertexAddress, i2);
-	s.Nw = normalize(mul(nObj, (float3x3)rec.Model));
-	return s;
-}
-
-// Shade a committed hit as LIT surface radiance (#118): resolve it (ResolveHit) then re-light cheaply —
-// sun (DirectionalLights[0]) with a shadow ray from the hit + an IBL/flat ambient fill (so a hit on a
-// shadowed surface still contributes its ambient, not black). ONE bounce: the shaded hit does NOT itself
-// trace reflections/GI (its ambient is the cheap IBL term). Shared by RT reflections and RTGI so both get
-// the same correct hit shading. `hitPos` = world hit position (caller: rayOrigin + rayDir * CommittedRayT).
-float3 ShadeSurfaceHit(uint64_t tableAddr, uint instanceId, uint prim, float2 bary, float3 hitPos)
-{
-	const HitSurface s = ResolveHit(tableAddr, instanceId, prim, bary);
-
-	float3 direct = float3(0, 0, 0);
-	if (LightCount > 0)
-	{
-		const float3 Lsun = normalize(-DirectionalLights[0].Direction);
-		const float ndl = saturate(dot(s.Nw, Lsun));
-		if (ndl > 0.0)
-		{
-			const float sh = RayTraceShadow(hitPos, s.Nw, Lsun, 1e30);
-			direct = DirectionalLights[0].Color * DirectionalLights[0].Intensity * ndl * sh;
-		}
-	}
-
-	float3 ambient;
-	if (IrradianceCubeIndex != 0)
-	{
-		ambient = Cubemaps[NonUniformResourceIndex(IrradianceCubeIndex)].SampleLevel(LinearSampler, s.Nw, 0).rgb * IBLIntensity;
-	}
-	else
-	{
-		ambient = float3(0.03, 0.03, 0.03); // faint fill so shadowed/indirect areas aren't crushed to black
-	}
-
-	return s.Albedo * (direct + ambient);
-}
-
-// Ray-traced reflection (#118): trace R (glossy-jittered by roughness), resolve + re-light the hit
-// (ShadeSurfaceHit) or reflect the sky on a miss. lit=false returns raw resolved albedo (debug view).
-float3 RayTraceReflection(float3 positionWS, float3 Ng, float3 R, bool lit, float roughness, float2 pixelPos)
-{
-	const uint64_t tableAddr = ReflGeoTableAddress();
-
-	// Glossy cone jitter (#118 Inc 4): a rough surface reflects a BLURRY image, not a sharp mirror. Perturb
-	// the reflection direction within a disk of radius (roughness * ReflConeScale) in the plane
-	// perpendicular to R, using the SAME frame-rotated IGN hash + disk sample + orthonormal basis as the
-	// soft-shadow / RTAO traces. One ray/frame; per-frame rotation + TAA accumulate a smooth glossy lobe
-	// over time. roughness == 0 (a mirror) => zero cone => the exact sharp ray, so mirrors are unchanged.
-	float3 dir = R;
-	if (roughness > 0.0)
-	{
-		const float3 up = abs(R.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
-		const float3 tangent = normalize(cross(up, R));
-		const float3 bitangent = cross(R, tangent);
-		const float2 px = pixelPos + float2(FrameCounter * 5.588238, FrameCounter * 3.539418);
-		const float ign = frac(52.9829189 * frac(dot(px, float2(0.06711056, 0.00583715))));
-		const float coneRadius = roughness * ReflConeScale;
-		const float rr = coneRadius * sqrt(ign);
-		const float phi = 2.0 * PI * frac(ign + 0.61803398875); // golden-ratio decorrelation of angle vs radius
-		dir = normalize(R + (rr * cos(phi)) * tangent + (rr * sin(phi)) * bitangent);
-	}
-
-	RayDesc ray;
-	ray.Origin = positionWS + Ng * 0.02 + dir * 0.01; // normal-offset to dodge self-hit
-	ray.Direction = dir;
-	ray.TMin = 0.0;
-	// Bounded by ReflRange (#118 perf): a ray finding nothing within this distance falls back to the sky
-	// cube below, so capping TMax lets the BVH traversal early-out instead of walking the whole scene extent
-	// on every sky-bound ray. No visual change within range; past it, distant geometry reflects as sky.
-	ray.TMax = ReflRange;
-
-	// Closest hit (no ACCEPT_FIRST_HIT): a reflection needs the FRONT-MOST surface along the ray.
-	RayQuery<RAY_FLAG_CULL_NON_OPAQUE> q;
-	q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
-	q.Proceed();
-
-	if (q.CommittedStatus() != COMMITTED_TRIANGLE_HIT || tableAddr == 0)
-	{
-		// Miss (or no geometry table): reflect the distant sky along the (jittered) direction.
-		if (PrefilteredCubeIndex != 0)
-		{
-			return Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, dir, 0).rgb;
-		}
-		return float3(0, 0, 0);
-	}
-
-	if (!lit)
-	{
-		return ResolveHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics()).Albedo; // debug view
-	}
-
-	const float3 hitPos = ray.Origin + dir * q.CommittedRayT();
-	return ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos);
-}
-
-// NOTE (#124): the inline RayTraceGI hemisphere gather was DELETED here — GI now runs in a separate
-// half-res compute pass (GI.comp.hlsl) and is bilateral-upsampled to a full-res target the forward pass
-// samples (see the GITextureIndex read in main). ShadeSurfaceHit above stays: RT reflections still use it.
+// NOTE (#124/#129): the inline RayTraceGI hemisphere gather AND RayTraceReflection (plus the geometry-
+// table read + hit-shading helpers they used) were DELETED here — GI runs in a half-res compute pass
+// (GI.comp.hlsl) and reflections in a full-res compute pass (Reflection.comp.hlsl), each writing a target
+// the forward pass samples by screen UV (GITextureIndex / ReflectionTextureIndex reads in main). The
+// shared hit-shading helpers now live in Include/RTHitShading.hlsli (used by both compute passes).
+// RayTraceShadow / RayTraceSoftShadow STAY above — the primary sun/point/spot lighting still traces them.
 #endif
 
 // Directional-sun shadow: RT ray query (when RTShadowEnabled) or the raster shadow map (dedicated map,
@@ -545,20 +360,21 @@ float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness,
 	// diffuse below.
 	float3 specular = envRadiance * specWeight * IBLIntensity;
 
-	// RT reflections (#118): for smooth surfaces, blend in a traced, re-lit reflection of the ACTUAL scene.
-	// reflWeight is a PURE roughness falloff (rough surfaces stay on the cheap cube; ReflMaxRoughness is the
-	// cutoff) — it decides how mirror-like the surface is, NOT how bright. Brightness is the RT term's OWN
-	// ReflIntensity dial, deliberately DECOUPLED from IBLIntensity: an RT reflection is real scene light, not
-	// the baked-ambient approximation, so turning ambient down must not dim it.
-#ifdef SS_RAYTRACING
-	if (RTReflEnabled != 0 && roughness < ReflMaxRoughness)
+	// RT reflections (#129): for smooth surfaces, blend in the traced reflection of the ACTUAL scene. The
+	// trace now runs in a SEPARATE full-res pass (ReflectionPass) that writes raw reflected radiance into a
+	// buffer (ReflectionTextureIndex), so it can be temporally accumulated to kill the few-ray shimmer —
+	// unlike the old inline trace. Here the forward pass just SAMPLES that buffer by screen UV and applies
+	// the same weights: reflWeight is a PURE roughness falloff (rough surfaces stay on the cheap cube;
+	// ReflMaxRoughness is the cutoff), specWeight is the split-sum Fresnel/BRDF, and ReflIntensity is the RT
+	// term's OWN brightness dial (decoupled from IBLIntensity — real scene light, not baked ambient).
+	if (ReflectionTextureIndex != 0 && roughness < ReflMaxRoughness)
 	{
+		const float2 reflUv = pixelPos / max(RenderTargetSize, float2(1.0, 1.0));
+		const float3 rt = Textures[NonUniformResourceIndex(ReflectionTextureIndex)].SampleLevel(LinearSampler, reflUv, 0).rgb;
 		const float reflWeight = saturate(1.0 - roughness / max(ReflMaxRoughness, 1e-3));
-		const float3 rt = RayTraceReflection(positionWS, Ng, R, true, roughness, pixelPos); // lit, glossy-jittered
 		const float3 specularRT = rt * specWeight * ReflIntensity;
 		specular = lerp(specular, specularRT, reflWeight);
 	}
-#endif
 
 	// diffuse already carries its own scale (IBLIntensity for the baked path, GIIntensity for the traced GI);
 	// specular likewise (IBLIntensity for the env cube, ReflIntensity for the RT reflection). kd (metal
@@ -653,17 +469,20 @@ float4 main(PSInput i) : SV_Target0
 	// the tonemap pass (Tonemap.frag.hlsl DebugMode 4), same as half-res GI — so there's no in-shader AO
 	// debug branch here anymore (it would be overwritten by that tonemap pass regardless).
 
-	// Debug view (#118): output the raw reflected albedo (RT reflection hit resolution) so the geometry-table
-	// resolve — device-address vertex/index reads + barycentric UV + bindless albedo sample — is verifiable
-	// on screen independent of the lighting blend. Only meaningful in the RT permutation.
-#ifdef SS_RAYTRACING
+	// Debug view 3 (#129): output the raw reflection buffer (the separate ReflectionPass's traced+shaded
+	// radiance) so the reflection signal is verifiable on screen independent of the specular blend. Reads the
+	// full-res reflection target by screen UV. Gated by DebugReflections (DebugView == 3); if reflections are
+	// off / no table this frame the index is 0 -> black.
 	if (DebugReflections != 0)
 	{
-		const float3 R = reflect(-V, N);
-		const float3 refl = RayTraceReflection(i.PositionWS, normalize(i.NormalWS), R, false, roughness, i.PositionCS.xy); // raw albedo
+		float3 refl = float3(0, 0, 0);
+		if (ReflectionTextureIndex != 0)
+		{
+			const float2 reflUv = i.PositionCS.xy / max(RenderTargetSize, float2(1.0, 1.0));
+			refl = Textures[NonUniformResourceIndex(ReflectionTextureIndex)].SampleLevel(LinearSampler, reflUv, 0).rgb;
+		}
 		return float4(refl, 1.0);
 	}
-#endif
 
 	// Half-res RT diffuse GI (#124): the GI hemisphere gather now runs in a separate compute pass at
 	// render.gi.scale and is bilateral-upsampled to a full-res target (GITextureIndex). Here the forward

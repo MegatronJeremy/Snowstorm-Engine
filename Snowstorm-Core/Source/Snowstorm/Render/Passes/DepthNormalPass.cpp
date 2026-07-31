@@ -54,12 +54,16 @@ namespace Snowstorm
 		p.Type = PipelineType::Graphics;
 		p.Shader = shader;
 		p.VertexLayout = vertexLayout;
-		p.ColorFormats = {colorFormat}; // RGBA16F world normal
+		// #129 Inc 1c: MRT — attachment 0 = main G-buffer (geometric normal + roughness + depth), attachment 1 =
+		// shading normal. Both RGBA16F, so the same format twice (the shading target shares the main's shape).
+		p.ColorFormats = {colorFormat, colorFormat};
 		p.DepthFormat = depthFormat;
-		// 80-byte push constant visible to BOTH stages: the VS reads ViewProj (mat4), the FS reads the 4
-		// alpha-mask scalars (albedo index, mask flag, cutoff, base alpha). One combined range avoids sharing
-		// MaterialInstance's descriptor set (whose set-1 layout differs -> pipeline-layout device loss).
-		p.PushConstants = {{.Offset = 0, .Size = sizeof(glm::mat4) + 4 * sizeof(uint32_t), .Stages = ShaderStage::Vertex | ShaderStage::Fragment}};
+		// 96-byte push constant visible to BOTH stages: the VS reads ViewProj (mat4), the FS reads the alpha-mask
+		// scalars (albedo index, mask flag, cutoff, base alpha) + the #129 Inc 1b material fields (normal index,
+		// roughness, MR index, pad) so the prepass outputs the normal-mapped normal + roughness. One combined
+		// range avoids sharing MaterialInstance's descriptor set (whose set-1 layout differs -> device loss).
+		// Still within the 128-byte guaranteed-minimum Vulkan push size. Mirrors DepthNormalPush field-for-field.
+		p.PushConstants = {{.Offset = 0, .Size = sizeof(glm::mat4) + 8 * sizeof(uint32_t), .Stages = ShaderStage::Vertex | ShaderStage::Fragment}};
 		p.Raster.Cull = CullMode::None; // match the forward/shadow passes (Sponza has single-sided geometry)
 		p.DepthStencil.EnableDepthTest = true;
 		p.DepthStencil.EnableDepthWrite = true;

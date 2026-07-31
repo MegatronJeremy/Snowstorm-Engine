@@ -340,12 +340,15 @@ namespace Snowstorm
 		                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 		v.VelocityNeeded = velocityNeeded;
 
-		// The depth+normal prepass renders the G-buffer when GI (#124) OR AO (#126) is active, OR a debug view
-		// that needs it is selected (5 = world normals, 6 = raw half-res GI, 2 = raw half-res AO — each lets you
-		// eyeball the substrate in isolation). The GI/AO compute passes additionally check their own gates.
+		// The depth+normal prepass renders the G-buffer when GI (#124) OR AO (#126) OR RT reflections (#129)
+		// are active, OR a debug view that needs it is selected (5 = world normals, 6 = raw half-res GI, 2 = raw
+		// half-res AO, 3 = reflections — each lets you eyeball the substrate in isolation). The compute passes
+		// additionally check their own gates. Reflections need it because ReflectionPass reconstructs each
+		// pixel's world position + normal from the G-buffer (like GI), so reflections-only must still prepass.
 		const bool giActive = CVars::GIRTActive();
 		const bool aoActive = CVars::AoRTActive();
-		const bool gbufferNeeded = (giActive || aoActive || debugView == 5 || debugView == 6 || debugView == 7 || debugView == 2) &&
+		const bool reflActive = CVars::ReflectionsRTActive();
+		const bool gbufferNeeded = (giActive || aoActive || reflActive || debugView == 5 || debugView == 6 || debugView == 7 || debugView == 2 || debugView == 3) &&
 		                           vpRT.GBufferNormalTarget && !vpRT.GBufferNormalTarget->GetDesc().ColorAttachments.empty() &&
 		                           vpRT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
 		v.GBufferNeeded = gbufferNeeded;
@@ -496,7 +499,8 @@ namespace Snowstorm
 
 	void RenderSystem::AddForwardPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& hdrTarget,
 	                                  const std::string& name, const bool jittered, const bool forceRasterShadow,
-	                                  const uint32_t giTextureIndex, const uint32_t aoTextureIndex)
+	                                  const uint32_t giTextureIndex, const uint32_t aoTextureIndex,
+	                                  const uint32_t reflTextureIndex)
 	{
 		std::vector<RenderGraph::ResourceAccess> meshReads;
 		if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
@@ -528,6 +532,20 @@ namespace Snowstorm
 				                     RenderGraph::AccessState::Sampled});
 			}
 		}
+		// Full-res RT reflection target (#129): the forward shader samples it by screen UV (bindless). The
+		// reflection pass (or its temporal stage) already left it Sampled, but declare the read so the graph
+		// orders this pass after the writer. It's a bare Texture (compute UAV), so read the view off the
+		// component's ReflectionTarget/ReflHistory — but the effect published the live one via the bindless
+		// index; we only need SOME live reflection view here for the barrier. Use ReflectionTarget as the
+		// stable handle (the temporal history aliases the same shape; the graph barrier is per-texture).
+		if (reflTextureIndex != 0)
+		{
+			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
+			    rt && rt->ReflectionTarget)
+			{
+				meshReads.push_back({rt->ReflectionTarget, RenderGraph::AccessState::Sampled});
+			}
+		}
 
 		// GI screen size = this pass's scene target size (viewport * render.scale), for the UV divide.
 		const glm::vec2 sceneSize{static_cast<float>(hdrTarget->GetDesc().Width), static_cast<float>(hdrTarget->GetDesc().Height)};
@@ -535,7 +553,7 @@ namespace Snowstorm
 		fc.Graph.AddPass({.Name = name,
 		                  .Target = hdrTarget,
 		                  .Reads = std::move(meshReads),
-		                  .Execute = [this, &fc, cam, hdrTarget, jittered, forceRasterShadow, giTextureIndex, aoTextureIndex, sceneSize](CommandContext& c)
+		                  .Execute = [this, &fc, cam, hdrTarget, jittered, forceRasterShadow, giTextureIndex, aoTextureIndex, reflTextureIndex, sceneSize](CommandContext& c)
 		                  {
 			                  // Per-pass GI (execute-ordered so the compare GT render's giTextureIndex=0 can't be
 			                  // overwritten by the primary pass's index at build time). AcquireFrameSet (called in
@@ -543,6 +561,9 @@ namespace Snowstorm
 			                  fc.Renderer.SetGITexture(giTextureIndex, sceneSize);
 			                  // Per-pass AO (same execute-ordered reason as GI). Shares sceneSize for the UV divide.
 			                  fc.Renderer.SetAOTexture(aoTextureIndex, sceneSize);
+			                  // Per-pass RT reflection (#129, same execute-ordered reason). Shares sceneSize for the
+			                  // screen-UV sample. 0 on the GT compare render keeps the reference reflection-free.
+			                  fc.Renderer.SetReflTexture(reflTextureIndex, sceneSize);
 
 			                  const glm::vec3 camPos = cam.Transform->Position;
 			                  fc.Renderer.BeginScene(*cam.Rt, camPos, fc.Ctx, fc.FrameIndex, jittered, forceRasterShadow);

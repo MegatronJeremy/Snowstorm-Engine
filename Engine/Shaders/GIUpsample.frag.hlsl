@@ -9,8 +9,10 @@
 // trace. Paired with Fullscreen.vert.hlsl. Self-contained resources on SET 1 (see UpscalePass note): the
 // shared fullscreen VS drags Engine.hlsli's set-1 material bindings, so park these at high bindings.
 
+#include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky (#129 Inc 1b)
+
 Texture2D<float4> GITex : register(t4, space1);      // half-res incoming irradiance (rgb)
-Texture2D<float4> GBufferTex : register(t5, space1); // full-res guide: .xyz world normal, .w NDC depth
+Texture2D<float4> GBufferTex : register(t5, space1); // full-res guide: .xy oct normal, .z roughness, .w NDC depth
 SamplerState LinearClamp : register(s6, space1);
 
 cbuffer GIUpsampleCB : register(b7, space1)
@@ -29,13 +31,14 @@ float4 main(FullscreenVSOut input) : SV_Target
 {
 	const float2 uv = float2(input.NDC.x * 0.5 + 0.5, input.NDC.y * 0.5 + 0.5);
 
-	// This full-res pixel's guide (center). Sample the full-res G-buffer at uv.
+	// This full-res pixel's guide (center). Sample the full-res G-buffer at uv. #129 Inc 1b: .xy is an
+	// octahedral normal now, decode it; depth stays in .w.
 	const float4 gc = GBufferTex.SampleLevel(LinearClamp, uv, 0);
-	const float3 Nc = gc.xyz;
+	const float3 Nc = DecodeNormalOct(gc.xy);
 	const float Dc = gc.w;
 
-	// Sky / no geometry (the prepass cleared depth to 1.0): no GI here.
-	if (Dc >= 1.0)
+	// Sky / no geometry (the prepass clears depth to 1.0): no GI here.
+	if (IsSky(Dc))
 	{
 		return float4(0, 0, 0, 1);
 	}
@@ -74,7 +77,7 @@ float4 main(FullscreenVSOut input) : SV_Target
 		const float2 tapUV = (float2(tapC) + 0.5) / float2(GISize);
 		const float4 gt = GBufferTex.SampleLevel(LinearClamp, tapUV, 0);
 
-		const float wN = pow(saturate(dot(Nc, gt.xyz)), kNormalPow);
+		const float wN = pow(saturate(dot(Nc, DecodeNormalOct(gt.xy))), kNormalPow);
 		const float wD = exp(-abs(Dc - gt.w) * kDepthScale);
 		const float w = bw[t] * wN * wD;
 

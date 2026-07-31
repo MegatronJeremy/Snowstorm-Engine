@@ -8,10 +8,13 @@
 // Paired with DepthNormal.frag.hlsl.
 #include "Include/MeshInput.hlsli"
 
-// Combined push constant (both stages): the VS reads ViewProj; the FS reads the alpha-mask fields. One
-// struct, one 80-byte range visible to VERTEX|FRAGMENT — avoids sharing MaterialInstance's descriptor set
-// (whose set-1 layout differs from this pass's, which caused a pipeline-layout-incompatibility device loss).
-// The albedo index rides bindless (set 3), so the per-batch material data is just these 3 scalars here.
+// Combined push constant (both stages): the VS reads ViewProj; the FS reads the alpha-mask + material
+// fields. One struct visible to VERTEX|FRAGMENT — avoids sharing MaterialInstance's descriptor set (whose
+// set-1 layout differs from this pass's, which caused a pipeline-layout-incompatibility device loss). The
+// albedo/normal/MR indices ride bindless (set 3), so the per-batch material data is just these scalars.
+// #129 Inc 1b added NormalTextureIndex + Roughness + MetallicRoughnessTextureIndex so the prepass outputs
+// the SAME normal-mapped normal + per-pixel roughness DefaultLit uses (the G-buffer now feeds reflections,
+// which are far more sensitive to the flat-vs-bumped normal than diffuse GI was).
 struct DepthNormalPush
 {
 	float4x4 ViewProj;
@@ -19,6 +22,11 @@ struct DepthNormalPush
 	uint AlphaMaskEnabled;   // 1 = alpha-cutout (glTF MASK)
 	float AlphaCutoff;       // albedo.a threshold
 	float BaseAlpha;         // material BaseColor.a (multiplies the sampled alpha)
+
+	uint NormalTextureIndex;             // bindless normal map (0 = geometric normal only)
+	float Roughness;                     // material scalar roughness
+	uint MetallicRoughnessTextureIndex;  // bindless MR map (0 = scalar only); .g = roughness
+	uint _Pad0;
 };
 [[vk::push_constant]] DepthNormalPush gDN;
 
@@ -26,7 +34,8 @@ struct DepthNormalVSOut
 {
 	float4 PositionCS : SV_Position; // clip pos (drives rasterization + depth write)
 	float3 NormalWS : TEXCOORD0;     // world-space geometric normal, interpolated
-	float2 TexCoord : TEXCOORD1;     // UV for alpha-mask clip in the fragment stage (#124)
+	float4 TangentWS : TEXCOORD1;    // world-space tangent (.xyz) + handedness sign (.w) for normal mapping
+	float2 TexCoord : TEXCOORD2;     // UV for alpha-mask clip + normal/MR texture sample in the FS
 };
 
 DepthNormalVSOut main(VSInput i, uint iid : SV_InstanceID)
@@ -37,7 +46,10 @@ DepthNormalVSOut main(VSInput i, uint iid : SV_InstanceID)
 	const float4 posWS = mul(float4(i.Position, 1.0), model);
 
 	// Normal matrix: treat Model as rigid/affine (mat3(model)), same as Mesh.vert.
-	o.NormalWS = normalize(mul(i.Normal, (float3x3)model));
+	const float3x3 model3 = (float3x3)model;
+	o.NormalWS = normalize(mul(i.Normal, model3));
+	// World tangent (.xyz) + the bitangent handedness sign (.w), matching Mesh.vert / DefaultLit's TBN.
+	o.TangentWS = float4(normalize(mul(i.Tangent.xyz, model3)), i.Tangent.w);
 	o.TexCoord = i.TexCoord;
 	o.PositionCS = mul(posWS, gDN.ViewProj);
 	return o;

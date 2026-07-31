@@ -123,6 +123,13 @@ namespace Snowstorm
 			uint32_t GITextureIndex = 0;
 			uint32_t AOTextureIndex = 0; // #126: full-res upsampled AO factor bindless index (0 = no AO)
 			glm::vec2 RenderTargetSize{0.0f, 0.0f};
+
+			// #129: full-res RT reflection target bindless index (0 = no RT reflection). New 16-byte row;
+			// matches Engine.hlsli FrameCB tail field-for-field.
+			uint32_t ReflectionTextureIndex = 0;
+			uint32_t _ReflTexPad0 = 0;
+			uint32_t _ReflTexPad1 = 0;
+			uint32_t _ReflTexPad2 = 0;
 		};
 	}
 
@@ -352,6 +359,11 @@ namespace Snowstorm
 		// DefaultLit keeps its analytic AO). Shares RenderTargetSize with GI for the screen-UV sample.
 		frame.AOTextureIndex = m_AOTextureIndex;
 
+		// RT reflection consumption (#129): the full-res reflection target's bindless index (0 = no RT
+		// reflection -> DefaultLit keeps the prefiltered env-cube specular). Pushed per-viewport by
+		// ForwardEffect via SetReflTexture just before the forward pass.
+		frame.ReflectionTextureIndex = m_ReflectionTextureIndex;
+
 		const Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
 		SS_CORE_ASSERT(frameUBO, "Frame UBO missing for frame descriptor set");
 		frameUBO->SetData(&frame, sizeof(FrameCB), 0);
@@ -570,8 +582,10 @@ namespace Snowstorm
 
 		m_CommandContext->BindPipeline(depthNormalPipeline);
 
-		// Per-batch push constant: VP (VS) + the 4 alpha-mask scalars (FS). Mirrors DepthNormalPush in
+		// Per-batch push constant: VP (VS) + alpha-mask + material fields (FS). Mirrors DepthNormalPush in
 		// DepthNormal.vert.hlsl field-for-field; the VP is constant across batches but rides the same range.
+		// #129 Inc 1b added NormalTextureIndex + Roughness + MetallicRoughnessTextureIndex so the prepass
+		// outputs the normal-mapped normal + per-pixel roughness (the G-buffer now feeds RT reflections).
 		struct DepthNormalPush
 		{
 			glm::mat4 ViewProj;
@@ -579,6 +593,11 @@ namespace Snowstorm
 			uint32_t AlphaMaskEnabled;
 			float AlphaCutoff;
 			float BaseAlpha;
+
+			uint32_t NormalTextureIndex;
+			float Roughness;
+			uint32_t MetallicRoughnessTextureIndex;
+			uint32_t _Pad0;
 		};
 
 		const Ref<DescriptorSet>& objectSet = AcquireObjectSet(depthNormalPipeline, m_FrameIndex, "Set2_Instances_DepthNormal");
@@ -602,6 +621,9 @@ namespace Snowstorm
 				push.AlphaMaskEnabled = c.AlphaMaskEnabled;
 				push.AlphaCutoff = c.AlphaCutoff;
 				push.BaseAlpha = c.BaseColor.a;
+				push.NormalTextureIndex = c.NormalTextureIndex;
+				push.Roughness = c.Roughness;
+				push.MetallicRoughnessTextureIndex = c.MetallicRoughnessTextureIndex;
 			}
 			m_CommandContext->PushConstants(&push, sizeof(push), 0);
 
