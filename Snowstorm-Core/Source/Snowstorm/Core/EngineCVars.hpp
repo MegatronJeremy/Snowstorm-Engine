@@ -269,6 +269,18 @@ namespace Snowstorm::CVars
 	extern CVar<float> ReflectionTemporalMaxBlend;
 	[[nodiscard]] bool ReflectionTemporalActive();
 
+	// RT reflection spatial denoiser (#129 Inc 3a): an edge-avoiding à-trous wavelet over the reflection
+	// buffer (reuses the GI denoiser pass), guided by the main G-buffer (receiver geometric normal + depth),
+	// run after the reflection temporal accumulation — fills the edge/disocclusion noise temporal can't reach
+	// (reflections had no spatial filter before). Iterations = à-trous pass count (stride doubles 1,2,4,…);
+	// clamp with ClampedReflectionDenoiseIterations(). Off => temporal-only (noisy at edges).
+	extern CVar<bool> ReflectionDenoise;
+	extern CVar<int> ReflectionDenoiseIterations;
+	[[nodiscard]] int ClampedReflectionDenoiseIterations();
+	[[nodiscard]] bool ReflectionDenoiseActive();
+	// SVGF variance-guided luminance-phi for the reflection denoiser (#129 Inc 3b). 0 = off.
+	extern CVar<float> ReflectionDenoiseVariance;
+
 	// Ray-traced 1-bounce diffuse global illumination (#118): hemisphere-gather indirect light. Prefer
 	// GIRTActive() over reading the bool. GIIntensity scales the contribution; GIRange is the gather ray
 	// max distance (world units).
@@ -304,6 +316,10 @@ namespace Snowstorm::CVars
 	extern CVar<int> GIDenoiseIterations;
 	// render.gi.denoise.iterations clamped to [0, 5]. Use everywhere the value is consumed.
 	[[nodiscard]] int ClampedGIDenoiseIterations();
+	// SVGF variance-guided à-trous luminance-phi (#129 Inc 3b): scales the luminance edge-stop by the local
+	// noise level so the filter widens in noisy/disoccluded regions and stays tight where converged. 0 = off
+	// (the fixed depth+normal kernel). Shared by GI + reflection denoisers (each has its own CVar below).
+	extern CVar<float> GIDenoiseVariance;
 	// True when the GI denoiser should run: the toggle is on AND the clamped iteration count is > 0. The one
 	// condition the denoise effect + its consumers (the upsample's source selection, debug view 7) share, so
 	// they agree on whether the denoised buffer (GIDenoiseScratch[0]) or the raw GITarget is the live GI.

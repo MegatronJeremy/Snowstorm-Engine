@@ -121,6 +121,14 @@ namespace Snowstorm
 		Ref<Texture> ReflHistory[2];
 		Ref<TextureView> ReflHistoryView[2];
 
+		// Full-res RT reflection spatial-denoiser ping-pong (#129 Inc 3a): the reflection twin of
+		// GIDenoiseScratch. The edge-avoiding à-trous (reusing GIDenoisePass) ping-pongs between these two,
+		// reading the temporally-accumulated reflection and landing the filtered result in [0] (parity-seeded),
+		// which the forward pass then samples. Same full-res shape as ReflectionTarget. Only written when
+		// ReflectionDenoiseActive(). Null until allocated.
+		Ref<Texture> ReflDenoiseScratch[2];
+		Ref<TextureView> ReflDenoiseScratchView[2];
+
 		// Temporal-resolve history ping-pong (#44 TAA). Two full-res HDR (color-only) targets: each frame
 		// the resolve reads the PREVIOUS one as history, reprojects it by the velocity buffer, blends with
 		// the current frame, and writes the result into the CURRENT one — which both feeds tonemap and

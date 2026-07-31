@@ -165,6 +165,10 @@ namespace Snowstorm
 				wRtc.ReflHistoryView[0] = wRtc.ReflHistory[0]->GetDefaultView();
 				wRtc.ReflHistory[1] = CreateGITarget(w, h, "ViewportReflHistory1");
 				wRtc.ReflHistoryView[1] = wRtc.ReflHistory[1]->GetDefaultView();
+				wRtc.ReflDenoiseScratch[0] = CreateGITarget(w, h, "ViewportReflDenoise0"); // reflection à-trous ping-pong (#129 Inc 3a)
+				wRtc.ReflDenoiseScratchView[0] = wRtc.ReflDenoiseScratch[0]->GetDefaultView();
+				wRtc.ReflDenoiseScratch[1] = CreateGITarget(w, h, "ViewportReflDenoise1");
+				wRtc.ReflDenoiseScratchView[1] = wRtc.ReflDenoiseScratch[1]->GetDefaultView();
 				wRtc.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0"); // TAA history (#44)
 				wRtc.HistoryTarget[1] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory1");
 			}

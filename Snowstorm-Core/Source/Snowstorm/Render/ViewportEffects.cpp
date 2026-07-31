@@ -296,13 +296,14 @@ namespace Snowstorm
 					const int step = 1 << i;
 					const auto slot = static_cast<uint32_t>(i);
 
+					const float lumaPhi = CVars::GIDenoiseVariance.Get();
 					fc.Graph.AddPass({.Name = "GIDenoise" + std::to_string(i) + v.Suffix,
 					                  .IsCompute = true,
 					                  .Reads = {{srcView->GetTexture(), RenderGraph::AccessState::Sampled},
 					                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
-					                  .Execute = [this, &fc, slot, step, srcView, gbufView, dstView, giW, giH](CommandContext& c)
+					                  .Execute = [this, &fc, slot, step, srcView, gbufView, dstView, giW, giH, lumaPhi](CommandContext& c)
 					                  {
-						                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, slot, step, srcView, gbufView, dstView, giW, giH);
+						                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, slot, step, srcView, gbufView, dstView, giW, giH, lumaPhi);
 					                  }});
 
 					dst ^= 1;
@@ -600,6 +601,72 @@ namespace Snowstorm
 			RenderSystem& m_Owner;
 			GITemporalPass m_Pass; // reused verbatim (#129 Inc 2); its own instance so it doesn't collide with GI's
 			std::unordered_set<entt::entity> m_HistoryValid;
+		};
+
+		// RT reflection spatial denoiser (#129 Inc 3a) — the reflection twin of GIDenoiseEffect, reusing
+		// GIDenoisePass verbatim. Runs between ReflectionTemporalEffect and Forward: an edge-avoiding à-trous
+		// over the temporally-accumulated reflection, guided by the MAIN G-buffer (the receiver's geometric
+		// normal + depth — reflection edges are receiver-surface edges), smoothing the edge/disocclusion noise
+		// temporal can't reach. Ping-pongs the two ReflDenoiseScratch buffers so the filtered result lands in
+		// [0] (parity-seeded), which the forward pass samples. Republishes v.ReflectionView. Gated on reflections
+		// running AND ReflectionDenoiseActive(); off => forward reads the raw temporal buffer (noisier at edges).
+		class ReflectionDenoiseEffect final : public IViewportEffect
+		{
+		public:
+			explicit ReflectionDenoiseEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "ReflectionDenoise"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::ReflectionsRTActive() && CVars::ReflectionDenoiseActive() && v.ReflectionView &&
+				       v.RT.ReflDenoiseScratch[0] && v.RT.ReflDenoiseScratch[1] &&
+				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+
+				const auto& reflDesc = v.RT.ReflectionTarget->GetDesc();
+				const uint32_t reflW = reflDesc.Width;
+				const uint32_t reflH = reflDesc.Height;
+				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+				const int iterations = CVars::ClampedReflectionDenoiseIterations();
+
+				// Ping-pong so the LAST write lands in scratch[0] for any iteration count (same parity trick as
+				// GIDenoiseEffect): iteration 0 reads the live reflection (v.ReflectionView — the temporal buffer)
+				// and writes scratch[(N-1)&1]; each later iteration alternates. Forward reads scratch[0].
+				int dst = (iterations - 1) & 1;
+				for (int i = 0; i < iterations; ++i)
+				{
+					const Ref<TextureView> srcView = (i == 0) ? v.ReflectionView : v.RT.ReflDenoiseScratchView[dst ^ 1];
+					const Ref<TextureView> dstView = v.RT.ReflDenoiseScratchView[dst];
+					const int step = 1 << i;
+					const auto slot = static_cast<uint32_t>(i);
+
+					const float lumaPhi = CVars::ReflectionDenoiseVariance.Get();
+					fc.Graph.AddPass({.Name = "ReflectionDenoise" + std::to_string(i) + v.Suffix,
+					                  .IsCompute = true,
+					                  .Reads = {{srcView->GetTexture(), RenderGraph::AccessState::Sampled},
+					                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
+					                  .Execute = [this, &fc, slot, step, srcView, gbufView, dstView, reflW, reflH, lumaPhi](CommandContext& c)
+					                  {
+						                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, slot, step, srcView, gbufView, dstView, reflW, reflH, lumaPhi);
+					                  }});
+
+					dst ^= 1;
+				}
+
+				v.ReflectionView = v.RT.ReflDenoiseScratchView[0]; // the denoised buffer is now the live reflection
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			GIDenoisePass m_Pass; // reused verbatim (#129 Inc 3a); own instance so its per-frame sets don't collide with GI's
 		};
 
 		// Motion-vector pass (#44): re-renders visible meshes into the velocity target, projecting each vertex
@@ -1177,6 +1244,7 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<AOUpsampleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ReflectionEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ReflectionTemporalEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<ReflectionDenoiseEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ForwardEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<UpscaleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<TemporalEffect>(*this));

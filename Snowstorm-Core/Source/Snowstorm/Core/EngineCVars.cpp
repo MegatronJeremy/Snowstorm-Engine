@@ -127,6 +127,12 @@ namespace Snowstorm::CVars
 
 	CVar<float> ReflectionTemporalMaxBlend{"render.reflections.temporal.maxblend", 0.95f, "RT reflection temporal history weight when the pixel is ~static: deeper accumulation to average out the few-ray noise (the at-rest reflection shimmer). Slightly below GI's 0.97 to keep mirrors responsive (#129).", CVarFlags::Persist};
 
+	CVar<bool> ReflectionDenoise{"render.reflections.denoise", true, "RT reflection spatial denoiser (#129 Inc 3a): edge-avoiding à-trous wavelet over the reflection buffer (reuses the GI denoiser), guided by the receiver G-buffer, after the temporal accumulation — smooths the edge/disocclusion noise temporal can't reach. Off = temporal-only (noisier at edges). Read per-frame.", CVarFlags::Persist};
+
+	CVar<int> ReflectionDenoiseIterations{"render.reflections.denoise.iterations", 3, "RT reflection denoiser à-trous pass count (#129 Inc 3a): each pass doubles the tap stride (1,2,4,…) for a wider edge-aware blur. More = smoother but costlier / more over-blur on glossy detail. Clamped to [0, 5]; 0 disables like render.reflections.denoise off.", CVarFlags::Persist};
+
+	CVar<float> ReflectionDenoiseVariance{"render.reflections.denoise.variance", 4.0f, "SVGF variance-guided à-trous luminance-phi for reflections (#129 Inc 3b): widens the à-trous in noisy/disoccluded regions, tight where converged. 0 = off. ~2-8 typical.", CVarFlags::Persist};
+
 	CVar<bool> GIRT{"render.gi.rt", false, "Ray-traced 1-bounce diffuse global illumination (#118): from each shaded point, trace hemisphere rays, shade what they hit (albedo * sun), and add the average as indirect light (color bleeding + contact fill). Requires an RT GPU (ignored otherwise). Few rays/frame — needs TAA (render.aa = TAA) for a clean result; noisy without it.", CVarFlags::Persist};
 
 	CVar<float> GIIntensity{"render.gi.intensity", 1.0f, "Multiplier on the RT GI indirect contribution (1 = physical, 0 = none)", CVarFlags::Persist};
@@ -144,6 +150,8 @@ namespace Snowstorm::CVars
 	CVar<bool> GIDenoise{"render.gi.denoise", true, "Spatial denoiser for the half-res RT GI (#125): an edge-aware à-trous wavelet blur on GITarget before the bilateral upsample, so each ray looks like several — cleaner GI at the same ray count. Off = the pre-#125 look (TAA-only denoise). Read per-frame; toggle live to A/B.", CVarFlags::Persist};
 
 	CVar<int> GIDenoiseIterations{"render.gi.denoise.iterations", 3, "RT GI denoiser à-trous pass count (#125): each pass doubles the tap stride (1,2,4,…) for a wider edge-aware blur. More passes = smoother but costlier / more over-blur risk. Clamped to [0, 5]; 0 disables the denoiser like render.gi.denoise off.", CVarFlags::Persist};
+
+	CVar<float> GIDenoiseVariance{"render.gi.denoise.variance", 4.0f, "SVGF variance-guided à-trous luminance-phi for GI (#129 Inc 3b): scales the luminance edge-stop by local noise so the filter widens in noisy/disoccluded regions, tight where converged. 0 = off (fixed depth+normal kernel). ~2-8 typical; higher = more adaptive blur.", CVarFlags::Persist};
 
 	CVar<float> AOScale{"render.ao.scale", 0.5f, "RT AO internal resolution: the RTAO occlusion trace runs at this fraction of viewport res (0.5 = quarter the pixels = ~4x cheaper), then a depth-aware bilateral upsample restores full res (#126). 1.0 = full-res reference. Clamped to [0.25, 1.0].", CVarFlags::Persist};
 
@@ -192,6 +200,25 @@ namespace Snowstorm::CVars
 	bool GIDenoiseActive()
 	{
 		return GIDenoise.Get() && ClampedGIDenoiseIterations() > 0;
+	}
+
+	int ClampedReflectionDenoiseIterations()
+	{
+		const int n = ReflectionDenoiseIterations.Get();
+		if (n < 0)
+		{
+			return 0;
+		}
+		if (n > 5)
+		{
+			return 5;
+		}
+		return n;
+	}
+
+	bool ReflectionDenoiseActive()
+	{
+		return ReflectionDenoise.Get() && ClampedReflectionDenoiseIterations() > 0;
 	}
 
 	bool GITemporalActive()

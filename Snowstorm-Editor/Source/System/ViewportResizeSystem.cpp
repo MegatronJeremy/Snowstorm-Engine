@@ -96,6 +96,7 @@ namespace Snowstorm
 				                     !rt.GIDenoiseScratch[0] || !rt.GIDenoiseScratch[1] || !rt.GIUpscaleTarget ||
 				                     !rt.AOTarget || !rt.AOUpscaleTarget ||
 				                     !rt.ReflectionTarget || !rt.ReflHistory[0] || !rt.ReflHistory[1] ||
+				                     !rt.ReflDenoiseScratch[0] || !rt.ReflDenoiseScratch[1] ||
 				                     !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
 				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Compare each
 				// against its own expected extent so a scale change (Target only) still triggers a rebuild.
@@ -176,6 +177,10 @@ namespace Snowstorm
 					rtW.ReflHistoryView[0] = rtW.ReflHistory[0]->GetDefaultView();
 					rtW.ReflHistory[1] = CreateGITarget(w, h, "ViewportReflHistory1");
 					rtW.ReflHistoryView[1] = rtW.ReflHistory[1]->GetDefaultView();
+					rtW.ReflDenoiseScratch[0] = CreateGITarget(w, h, "ViewportReflDenoise0");
+					rtW.ReflDenoiseScratchView[0] = rtW.ReflDenoiseScratch[0]->GetDefaultView();
+					rtW.ReflDenoiseScratch[1] = CreateGITarget(w, h, "ViewportReflDenoise1");
+					rtW.ReflDenoiseScratchView[1] = rtW.ReflDenoiseScratch[1]->GetDefaultView();
 					// TAA history ping-pong (#44): two full-res color-only HDR targets. Always allocated;
 					// only rendered into when render.aa == TAA. Recreated on resize so history matches size.
 					rtW.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0");

@@ -31,7 +31,7 @@ namespace Snowstorm
 		// its own set). Lazily builds the pipeline (async shader); no-op until ready.
 		void Dispatch(const Ref<CommandContext>& ctx, uint32_t frameIndex, uint32_t slot, int step,
 		              const Ref<TextureView>& input, const Ref<TextureView>& gbuffer,
-		              const Ref<TextureView>& output, uint32_t outW, uint32_t outH);
+		              const Ref<TextureView>& output, uint32_t outW, uint32_t outH, float lumaPhi = 0.0f);
 
 	private:
 		void EnsureResources();

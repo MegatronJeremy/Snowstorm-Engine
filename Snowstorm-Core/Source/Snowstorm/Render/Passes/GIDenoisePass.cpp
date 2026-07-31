@@ -22,7 +22,8 @@ namespace Snowstorm
 			float KNormalPow = 8.0f;
 
 			float KDepthScale = 2000.0f;
-			glm::vec3 _Pad{0.0f};
+			float LumaPhi = 0.0f; // SVGF luminance edge-stop scale (#129 Inc 3b); 0 = off
+			glm::vec2 _Pad{0.0f};
 		};
 
 		// Binding indices in GIDenoise.comp.hlsl set 0. Binding 3 (former sampler) is intentionally unused
@@ -76,7 +77,8 @@ namespace Snowstorm
 
 	void GIDenoisePass::Dispatch(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const uint32_t slot,
 	                             const int step, const Ref<TextureView>& input, const Ref<TextureView>& gbuffer,
-	                             const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH)
+	                             const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH,
+	                             const float lumaPhi)
 	{
 		if (!ctx || !input || !gbuffer || !output || outW == 0 || outH == 0)
 		{
@@ -97,6 +99,7 @@ namespace Snowstorm
 		cb.Step = step;
 		cb.KNormalPow = kNormalPow;
 		cb.KDepthScale = kDepthScale;
+		cb.LumaPhi = lumaPhi; // #129 Inc 3b: 0 disables the variance-guided luminance term
 		m_ParamBuffers[idx]->SetData(&cb, sizeof(GIDenoiseCB), 0);
 
 		const auto& layouts = m_Pipeline->GetSetLayouts();
