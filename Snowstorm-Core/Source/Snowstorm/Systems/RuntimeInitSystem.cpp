@@ -151,6 +151,7 @@ namespace Snowstorm
 				wRtc.GIUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale"); // full-res GI (#124)
 				wRtc.AOTarget = CreateAOTarget(aoW, aoH, "Viewport");                       // half-res AO (#126)
 				wRtc.AOTargetView = wRtc.AOTarget->GetDefaultView();
+				AllocateDenoiser(wRtc.AODenoiser, aoW, aoH, "ViewportAO");                  // AO SVGF denoiser buffers (#130)
 				wRtc.AOUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportAOUpscale"); // full-res AO (#126)
 				wRtc.ReflectionTarget = CreateGITarget(w, h, "ViewportReflection");         // full-res RT reflection (#129)
 				wRtc.ReflectionTargetView = wRtc.ReflectionTarget->GetDefaultView();

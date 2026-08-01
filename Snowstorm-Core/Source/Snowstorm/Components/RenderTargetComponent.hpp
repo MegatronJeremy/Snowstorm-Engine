@@ -84,6 +84,13 @@ namespace Snowstorm
 		Ref<Texture> AOTarget;
 		Ref<TextureView> AOTargetView;
 
+		// Half-res AO SVGF denoiser state (#130): the third DenoiserInstance (after GI/reflections, #132) —
+		// history + moments + à-trous scratch ping-pongs + history-valid flag. Half-res (render.ao.scale, tracks
+		// AOTarget). The occlusion factor rides .r/.rgb (grey), so the shared color-path denoiser treats it as a
+		// luminance signal unchanged; the raw trace's .a carries hit distance for the guided à-trous. See
+		// DenoiserInstance.
+		DenoiserInstance AODenoiser;
+
 		// Full-res AO factor (#126): the depth+normal-aware bilateral upsample renders the half-res AOTarget
 		// into this full-viewport target, which the forward pass samples (by screen UV) and folds into `ao`.
 		// A RenderTarget (the upsample is a fullscreen graphics pass). Null until allocated.

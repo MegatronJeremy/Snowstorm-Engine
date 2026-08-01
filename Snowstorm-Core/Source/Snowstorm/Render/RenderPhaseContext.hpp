@@ -92,6 +92,13 @@ namespace Snowstorm
 		// a stale buffer. Null until GIEffect runs.
 		Ref<TextureView> GIView;
 
+		// The current live half-res AO buffer as it flows AO-trace -> [temporal] -> [denoise] -> upsample
+		// (#130). AOEffect publishes the raw AOTarget; AOTemporalEffect / AODenoiseEffect each republish the
+		// buffer they wrote (AODenoiser.History[cur] / .Scratch[0]); AOUpsampleEffect reads whatever is
+		// current. Threaded like GIView so an optional stage in the middle can't leave the upsample reading a
+		// stale buffer. Null until AOEffect runs.
+		Ref<TextureView> AOView;
+
 		// The current live full-res RT reflection buffer as it flows Reflection-trace -> [temporal] -> forward
 		// (#129). ReflectionEffect publishes the raw ReflectionTarget; ReflectionTemporalEffect republishes
 		// the accumulated GIHistory[cur]; ForwardEffect reads whatever is current for the specular blend.

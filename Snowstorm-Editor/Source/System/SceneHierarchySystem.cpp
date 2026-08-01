@@ -358,6 +358,44 @@ namespace Snowstorm
 							CVars::AOScale.Set(aoScale);
 						}
 						ImGui::TextDisabled("(0.5 = quarter-res trace + upsample; 1.0 = full-res)");
+
+						// AO SVGF denoiser (#130): temporal accumulation + edge-avoiding à-trous over the AO factor —
+						// the shared machinery GI/reflections use (#132). Mirrors the GI denoiser controls; sub-sliders
+						// enabled only when their stage is on.
+						ImGui::Spacing();
+						if (bool aoTemporal = CVars::AOTemporal.Get(); ImGui::Checkbox("Temporal Accumulation##AO", &aoTemporal))
+						{
+							CVars::AOTemporal.Set(aoTemporal);
+						}
+						ImGui::BeginDisabled(!CVars::AOTemporal.Get());
+						if (float b = CVars::AOTemporalBlend.Get(); ImGui::SliderFloat("History (moving)##AOT", &b, 0.0f, 0.98f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+						{
+							CVars::AOTemporalBlend.Set(b);
+						}
+						if (float mb = CVars::AOTemporalMaxBlend.Get(); ImGui::SliderFloat("History (static)##AOT", &mb, 0.0f, 0.99f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+						{
+							CVars::AOTemporalMaxBlend.Set(mb);
+						}
+						ImGui::EndDisabled();
+
+						if (bool aoDenoise = CVars::AODenoise.Get(); ImGui::Checkbox("Spatial Denoise (à-trous)##AO", &aoDenoise))
+						{
+							CVars::AODenoise.Set(aoDenoise);
+						}
+						ImGui::BeginDisabled(!CVars::AODenoise.Get());
+						if (int it = CVars::AODenoiseIterations.Get(); ImGui::SliderInt("Iterations##AOD", &it, 0, 5, "%d", ImGuiSliderFlags_AlwaysClamp))
+						{
+							CVars::AODenoiseIterations.Set(it);
+						}
+						if (float vp = CVars::AODenoiseVariance.Get(); ImGui::SliderFloat("Variance φ##AOD", &vp, 0.0f, 16.0f, "%.1f", ImGuiSliderFlags_AlwaysClamp))
+						{
+							CVars::AODenoiseVariance.Set(vp);
+						}
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::SetTooltip("SVGF variance guidance: higher = blur noisy/disoccluded regions wider; 0 = plain depth+normal à-trous.");
+						}
+						ImGui::EndDisabled();
 						ImGui::EndDisabled();
 					}
 

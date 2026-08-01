@@ -360,11 +360,97 @@ namespace Snowstorm
 					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, radius, intensity, frameCounter,
 					                                  gbufView, aoView, aoW, aoH);
 				                  }});
+
+				v.AOView = aoView; // the raw trace is the live AO buffer; temporal/denoise republish downstream (#130)
 			}
 
 		private:
 			RenderSystem& m_Owner;
 			AOPass m_Pass; // owned here: the AO compute pass is exclusive to this effect
+		};
+
+		// RTAO temporal accumulation (#130) — the AO twin of GITemporalEffect, via the shared Denoiser (#132).
+		// Runs between AOEffect and AODenoiseEffect: reproject the previous accumulated AO by the motion vectors,
+		// depth-disocclusion-reject, blend with this frame's few-ray trace, republish v.AOView. Occlusion is
+		// view-independent (like GI), so the blend defaults mirror GI's. Runs whenever AO is live (not just when
+		// temporal is on) so it OWNS clearing the history-valid flag when toggled off (mirrors GITemporalEffect).
+		class AOTemporalEffect final : public IViewportEffect
+		{
+		public:
+			explicit AOTemporalEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "AOTemporal"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::AoRTActive() && v.AOView && v.RT.AODenoiser.Allocated();
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+				auto& inst = fc.Reg.Write<RenderTargetComponent>(v.ViewportEntity).AODenoiser;
+				const auto& aoDesc = v.RT.AOTarget->GetDesc();
+				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+
+				DenoiserConfig cfg{};
+				cfg.TemporalActive = CVars::AOTemporalActive();
+				cfg.TemporalBlend = CVars::AOTemporalBlend.Get();
+				cfg.TemporalMaxBlend = CVars::AOTemporalMaxBlend.Get();
+				cfg.NamePrefix = "AO";
+
+				// The accumulated (or passthrough) buffer becomes the live AO (#130: shared Denoiser).
+				v.AOView = m_Denoiser.Temporal(fc, inst, cfg, v.AOView, gbufView, v.Velocity, v.Cam,
+				                               aoDesc.Width, aoDesc.Height, v.Suffix);
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			Denoiser m_Denoiser; // owned here: the shared SVGF processor for AO (#130)
+		};
+
+		// RTAO spatial denoiser (#130) — the AO twin of GIDenoiseEffect, via the shared Denoiser. Runs between
+		// AOTemporalEffect and AOUpsampleEffect: an edge-avoiding à-trous over the temporally-accumulated AO,
+		// guided by the main G-buffer (receiver normal + depth). Republishes v.AOView. Gated on AO running AND
+		// AODenoiseActive(); off => the upsample reads the raw/temporal buffer (noisier).
+		class AODenoiseEffect final : public IViewportEffect
+		{
+		public:
+			explicit AODenoiseEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "AODenoise"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::AoRTActive() && CVars::AODenoiseActive() && v.AOView &&
+				       v.RT.AODenoiser.Allocated();
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+				const auto& aoDesc = v.RT.AOTarget->GetDesc();
+				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+
+				DenoiserConfig cfg{};
+				cfg.DenoiseIterations = CVars::ClampedAODenoiseIterations();
+				cfg.VariancePhi = CVars::AODenoiseVariance.Get();
+				cfg.NamePrefix = "AO";
+
+				// The à-trous-filtered buffer (Scratch[0]) becomes the live AO (#130: shared Denoiser).
+				v.AOView = m_Denoiser.Atrous(fc, v.RT.AODenoiser, cfg, v.AOView, gbufView,
+				                             aoDesc.Width, aoDesc.Height, v.Suffix);
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			Denoiser m_Denoiser; // owned here: the shared SVGF processor for AO's à-trous (#130)
 		};
 
 		// Depth+normal-aware bilateral upsample of the half-res AO to full res (#126) — the scalar twin of
@@ -384,7 +470,7 @@ namespace Snowstorm
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				return v.GBufferNeeded && CVars::AoRTActive() && v.RT.AOTarget && v.RT.AOTargetView &&
+				return v.GBufferNeeded && CVars::AoRTActive() && v.RT.AOTarget && v.AOView &&
 				       v.RT.AOUpscaleTarget && !v.RT.AOUpscaleTarget->GetDesc().ColorAttachments.empty();
 			}
 
@@ -395,7 +481,7 @@ namespace Snowstorm
 				const auto& aoDesc = v.RT.AOTarget->GetDesc();
 				const uint32_t aoW = aoDesc.Width;
 				const uint32_t aoH = aoDesc.Height;
-				const Ref<TextureView> aoView = v.RT.AOTargetView;
+				const Ref<TextureView> aoView = v.AOView; // live AO after temporal/denoise (#130), was v.RT.AOTargetView
 				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
 				const Ref<RenderTarget>& dst = v.RT.AOUpscaleTarget;
 				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
@@ -1135,6 +1221,8 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<GIDenoiseEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<GIUpsampleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<AOEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<AOTemporalEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<AODenoiseEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<AOUpsampleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ReflectionEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ReflectionTemporalEffect>(*this));

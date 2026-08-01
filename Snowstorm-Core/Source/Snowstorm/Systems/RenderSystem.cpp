@@ -113,6 +113,7 @@ namespace Snowstorm
 				auto& rtc = reg.Write<RenderTargetComponent>(vpEnt);
 				rtc.GIDenoiser.HistoryValid = false;
 				rtc.ReflectionDenoiser.HistoryValid = false;
+				rtc.AODenoiser.HistoryValid = false; // #130
 			}
 		}
 
@@ -338,10 +339,11 @@ namespace Snowstorm
 		// Dataset export (#46) also needs the velocity buffer (an exported channel), so force the velocity
 		// pass on while exporting even without debug-view/TAA. Requires compare (ground truth exists).
 		const bool exporting = CVars::DatasetExport.Get() && comparing;
-		// GI (#125) and reflection (#129) temporal accumulation reproject by motion vectors, so either forces
-		// the velocity pass on whenever its effect runs (mirrors VelocityEffect::ShouldRun so flag + pass agree).
+		// GI (#125), reflection (#129), and AO (#130) temporal accumulation reproject by motion vectors, so any
+		// forces the velocity pass on whenever its effect runs (mirrors VelocityEffect::ShouldRun so flag + pass agree).
 		const bool giTemporal = (CVars::GIRTActive() && CVars::GITemporalActive()) ||
-		                        (CVars::ReflectionsRTActive() && CVars::ReflectionTemporalActive());
+		                        (CVars::ReflectionsRTActive() && CVars::ReflectionTemporalActive()) ||
+		                        (CVars::AoRTActive() && CVars::AOTemporalActive());
 		// velocityNeeded is cached on the context because several effects branch on it: VelocityEffect (whether
 		// to render the buffer), LdrChainEffect (the tonemap debug view samples it), and CompareEffect (dataset
 		// export reads it as a channel).

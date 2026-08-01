@@ -111,6 +111,20 @@ namespace Snowstorm::CVars
 
 	CVar<float> AOIntensity{"render.ao.intensity", 1.0f, "RTAO darkening strength (1 = physical, >1 = artistic boost, 0 = none)", CVarFlags::Persist};
 
+	CVar<bool> AOTemporal{"render.ao.temporal", true, "RTAO temporal accumulation (#130): reproject the previous accumulated AO by the motion vectors and blend with this frame's few-ray trace (depth-disocclusion reject, reusing the shared SVGF temporal pass) — kills the at-rest AO shimmer that previously only TAA hid. Off = the noisy raw trace. Read per-frame; forces the velocity pass on.", CVarFlags::Persist};
+
+	CVar<float> AOTemporalBlend{"render.ao.temporal.blend", 0.9f, "RTAO temporal history weight while moving. Mirrors GI's 0.9 (occlusion is view-independent, like GI — unlike reflections). The velocity-aware blend lerps between this and maxblend by staticness (#130).", CVarFlags::Persist};
+
+	CVar<float> AOTemporalMaxBlend{"render.ao.temporal.maxblend", 0.97f, "RTAO temporal history weight when the pixel is ~static: deeper accumulation to average out the few-ray occlusion noise. Mirrors GI's 0.97 (#130).", CVarFlags::Persist};
+
+	CVar<bool> AODenoise{"render.ao.denoise", true, "RTAO spatial denoiser (#130): the shared edge-avoiding à-trous over the AO factor, guided by the main G-buffer (normal + depth), after the temporal accumulation. Hit-distance guidance (render.ao.denoise.hitdist) keeps near contact shadows from over-blurring. Off = temporal-only. Read per-frame.", CVarFlags::Persist};
+
+	CVar<int> AODenoiseIterations{"render.ao.denoise.iterations", 3, "RTAO denoiser à-trous pass count (#130): each pass doubles the tap stride (1,2,4,…) for a wider edge-aware blur. More = smoother but costlier. Clamped to [0, 5]; 0 disables like render.ao.denoise off.", CVarFlags::Persist};
+
+	CVar<float> AODenoiseVariance{"render.ao.denoise.variance", 4.0f, "SVGF variance-guided à-trous luminance-phi for AO (#130): widens the à-trous in noisy/disoccluded regions, tight where converged. 0 = off. ~2-8 typical.", CVarFlags::Persist};
+
+	CVar<float> AODenoiseHitDist{"render.ao.denoise.hitdist", 8.0f, "RTAO hit-distance edge-stop phi (#130 Inc B, NRD REBLUR-style): weights à-trous taps by |Δ normalized hit distance| so a near contact-shadow gradient isn't blurred into distant AO. 0 = off (the plain depth+normal à-trous). ~4-16 typical.", CVarFlags::Persist};
+
 	CVar<bool> ReflectionsRT{"render.reflections.rt", false, "Ray-traced reflections (#118): trace a reflection ray inline in DefaultLit, shade the reflected hit (albedo + sun + ambient), and blend it into the specular term for smooth surfaces. Requires an RT GPU (ignored otherwise). One ray/pixel — needs TAA (render.aa = TAA) for a clean result.", CVarFlags::Persist};
 
 	CVar<float> ReflectionIntensity{"render.reflections.intensity", 1.0f, "Multiplier on the RT reflection contribution (1 = physical, 0 = none)", CVarFlags::Persist};
@@ -219,6 +233,30 @@ namespace Snowstorm::CVars
 	bool ReflectionDenoiseActive()
 	{
 		return ReflectionDenoise.Get() && ClampedReflectionDenoiseIterations() > 0;
+	}
+
+	int ClampedAODenoiseIterations()
+	{
+		const int n = AODenoiseIterations.Get();
+		if (n < 0)
+		{
+			return 0;
+		}
+		if (n > 5)
+		{
+			return 5;
+		}
+		return n;
+	}
+
+	bool AODenoiseActive()
+	{
+		return AODenoise.Get() && ClampedAODenoiseIterations() > 0;
+	}
+
+	bool AOTemporalActive()
+	{
+		return AOTemporal.Get();
 	}
 
 	bool GITemporalActive()

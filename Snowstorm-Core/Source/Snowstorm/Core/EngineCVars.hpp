@@ -249,6 +249,31 @@ namespace Snowstorm::CVars
 	// + the TLAS build gate. False on a non-RT GPU. (Post-#126 AO no longer traces in the forward shader.)
 	[[nodiscard]] bool AoRTActive();
 
+	// RTAO temporal accumulation (#130): reproject the previous accumulated AO factor by the motion vectors
+	// and blend with this frame's few-ray trace (depth-disocclusion reject) — reuses the shared SVGF temporal
+	// pass. AO is the last RT signal to get a denoiser (#132 extracted the shared machinery for exactly this).
+	// Kills the at-rest AO shimmer that previously only TAA hid. Off => the raw few-ray trace. Forces the
+	// velocity pass on. Blend/MaxBlend mirror GI (occlusion is view-independent, like GI, unlike reflections).
+	extern CVar<bool> AOTemporal;
+	extern CVar<float> AOTemporalBlend;
+	extern CVar<float> AOTemporalMaxBlend;
+	[[nodiscard]] bool AOTemporalActive();
+
+	// RTAO spatial denoiser (#130): the shared edge-avoiding à-trous over the AO factor, guided by the main
+	// G-buffer (normal + depth), run after the AO temporal accumulation. Hit-distance guidance (#130 Inc B,
+	// render.ao.denoise.hitdist) additionally keeps near contact-shadow gradients from over-blurring like
+	// distant AO. Iterations = à-trous pass count (stride doubles); clamp with ClampedAODenoiseIterations().
+	extern CVar<bool> AODenoise;
+	extern CVar<int> AODenoiseIterations;
+	[[nodiscard]] int ClampedAODenoiseIterations();
+	[[nodiscard]] bool AODenoiseActive();
+	// SVGF variance-guided luminance-phi for the AO denoiser (#130). 0 = off.
+	extern CVar<float> AODenoiseVariance;
+	// Hit-distance edge-stop phi for the AO à-trous (#130 Inc B, NRD REBLUR-style): weights taps by |Δ hit
+	// distance| so a near occlusion gradient isn't blurred into distant AO. 0 = off. AO-only (GI/reflections
+	// pass 0 => the term is a no-op, keeping the shared à-trous bit-identical for them).
+	extern CVar<float> AODenoiseHitDist;
+
 	// Ray-traced reflections (#118): trace a reflection ray inline in DefaultLit, shade the reflected hit,
 	// blend into the specular term for smooth surfaces. Prefer ReflectionsRTActive() over reading the bool.
 	// ReflectionIntensity scales the contribution; ReflectionMaxRoughness is the roughness cutoff (smoother
