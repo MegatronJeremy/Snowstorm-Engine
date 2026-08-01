@@ -312,6 +312,25 @@ namespace Snowstorm
 		return Texture::Create(td);
 	}
 
+	void AllocateDenoiser(DenoiserInstance& inst, const uint32_t w, const uint32_t h, const char* debugPrefix)
+	{
+		// All six ping-pong buffers share the CreateGITarget shape (Sampled|Storage RGBA16F UAV). One helper
+		// so the two alloc systems touch a signal's denoiser in ONE place instead of ~18 repeated lines (#132).
+		const std::string prefix(debugPrefix);
+		for (uint32_t i = 0; i < 2; ++i)
+		{
+			inst.History[i] = CreateGITarget(w, h, (prefix + "_History" + std::to_string(i)).c_str());
+			inst.HistoryView[i] = inst.History[i]->GetDefaultView();
+			inst.Moments[i] = CreateGITarget(w, h, (prefix + "_Moments" + std::to_string(i)).c_str());
+			inst.MomentsView[i] = inst.Moments[i]->GetDefaultView();
+			inst.Scratch[i] = CreateGITarget(w, h, (prefix + "_Scratch" + std::to_string(i)).c_str());
+			inst.ScratchView[i] = inst.Scratch[i]->GetDefaultView();
+		}
+		inst.Width = w;
+		inst.Height = h;
+		inst.HistoryValid = false; // fresh buffers: no accumulated history to reproject against
+	}
+
 	Ref<Texture> CreateAOTarget(uint32_t w, uint32_t h, const char* debugPrefix)
 	{
 		// Half-res AO factor (#126): compute writes it (Storage/UAV), the bilateral upsample samples it. Scalar

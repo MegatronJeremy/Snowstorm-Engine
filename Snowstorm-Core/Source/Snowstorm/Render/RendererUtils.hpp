@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "RenderTarget.hpp"
+#include "Snowstorm/Components/DenoiserInstance.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Texture.hpp"
 
@@ -84,6 +85,13 @@ namespace Snowstorm
 	// compute pass writes it as a UAV, and the bilateral upsample samples it). Sized to the GI internal
 	// resolution (viewport * render.gi.scale). Returns the texture; take GetDefaultView() for binding.
 	Ref<Texture> CreateGITarget(uint32_t w, uint32_t h, const char* debugPrefix);
+
+	// Allocate (or reallocate) one signal's SVGF denoiser buffers (#132): the History/Moments/Scratch
+	// ping-pongs (all CreateGITarget-shaped RGBA16F UAVs) + their views, and records w/h on the instance so
+	// the resize guard can detect its own extent change. Resets HistoryValid = false (fresh buffers have no
+	// accumulated history). One call replaces the ~18 flat lines the two alloc systems used to repeat per
+	// signal. `debugPrefix` names the textures (e.g. "ViewportGI" -> "ViewportGI_History0", …).
+	void AllocateDenoiser(DenoiserInstance& inst, uint32_t w, uint32_t h, const char* debugPrefix);
 
 	// Half-res AO factor target (#126): same shape as CreateGITarget (Sampled|Storage RGBA16F Texture2D UAV,
 	// sized to viewport * render.ao.scale). Stores a scalar occlusion factor in .r — the RHI has no

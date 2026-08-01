@@ -20,9 +20,8 @@
 #include "Snowstorm/Render/Passes/DepthNormalPass.hpp"
 #include "Snowstorm/Render/Passes/FxaaPass.hpp"
 #include "Snowstorm/Render/Passes/AOPass.hpp"
-#include "Snowstorm/Render/Passes/GIDenoisePass.hpp"
+#include "Snowstorm/Render/Denoiser.hpp" // #132: shared SVGF processor (owns the GITemporal/GIDenoise passes)
 #include "Snowstorm/Render/Passes/GIPass.hpp"
-#include "Snowstorm/Render/Passes/GITemporalPass.hpp"
 #include "Snowstorm/Render/Passes/ReflectionPass.hpp"
 #include "Snowstorm/Render/Passes/AOUpsamplePass.hpp"
 #include "Snowstorm/Render/Passes/GIUpsamplePass.hpp"
@@ -184,78 +183,36 @@ namespace Snowstorm
 
 			[[nodiscard]] const char* Name() const override { return "GITemporal"; }
 
-			void OnSceneCut() override { m_HistoryValid.clear(); }
-
 			// Runs whenever the GI sub-chain is live (not just when temporal is on) so it can OWN clearing the
 			// history-valid flag when temporal is toggled off — otherwise re-enabling would reproject against
 			// stale history and ghost. Mirrors TemporalEffect (#44). The actual accumulation is gated inside.
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				return v.GBufferNeeded && CVars::GIRTActive() && v.GIView && v.RT.GIHistory[0] && v.RT.GIHistory[1] &&
+				return v.GBufferNeeded && CVars::GIRTActive() && v.GIView && v.RT.GIDenoiser.Allocated() &&
 				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
 			}
 
 			void Contribute(ViewportRenderContext& v) override
 			{
 				FrameContext& fc = v.Frame;
-
-				// Temporal off (or no velocity buffer this frame): drop the valid flag so re-enabling starts
-				// clean, and leave v.GIView as the raw trace (the à-trous filters it directly — spatial-only).
-				if (!CVars::GITemporalActive() || !v.Velocity)
-				{
-					m_HistoryValid.erase(v.ViewportEntity);
-					return;
-				}
-
-				const uint32_t curIdx = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
-				const Ref<TextureView> curHistView = v.RT.GIHistoryView[curIdx];
-				const Ref<TextureView> prevHistView = v.RT.GIHistoryView[curIdx ^ 1u];
-				const Ref<TextureView> curMomView = v.RT.GIMomentsView[curIdx];       // #129 Inc 3c: same parity
-				const Ref<TextureView> prevMomView = v.RT.GIMomentsView[curIdx ^ 1u]; // as the history ping-pong
-				const Ref<TextureView> currentView = v.GIView; // this frame's raw GI trace
-				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
-				const Ref<TextureView> velView = v.Velocity;
-
+				auto& inst = fc.Reg.Write<RenderTargetComponent>(v.ViewportEntity).GIDenoiser;
 				const auto& giDesc = v.RT.GITarget->GetDesc();
-				const uint32_t giW = giDesc.Width;
-				const uint32_t giH = giDesc.Height;
+				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
 
-				// History invalid on the first temporal frame (prev slot never written) or after a resize; our
-				// per-viewport "has this pair resolved before" flag is the simplest robust signal (mirrors TAA).
-				const bool historyValid = m_HistoryValid.contains(v.ViewportEntity);
-				m_HistoryValid.insert(v.ViewportEntity);
+				DenoiserConfig cfg{};
+				cfg.TemporalActive = CVars::GITemporalActive();
+				cfg.TemporalBlend = CVars::GITemporalBlend.Get();
+				cfg.TemporalMaxBlend = CVars::GITemporalMaxBlend.Get();
+				cfg.NamePrefix = "GI";
 
-				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
-				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
-				const float depthReject = CVars::TaaDepthReject.Get(); // share the TAA disocclusion threshold
-
-				fc.Graph.AddPass({.Name = "GITemporal" + v.Suffix,
-				                  .IsCompute = true,
-				                  .Reads = {{currentView->GetTexture(), RenderGraph::AccessState::Sampled},
-				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
-				                            {velView->GetTexture(), RenderGraph::AccessState::Sampled},
-				                            {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled},
-				                            {prevMomView->GetTexture(), RenderGraph::AccessState::Sampled}},
-				                  .Writes = {{curHistView->GetTexture(), RenderGraph::AccessState::Storage},
-				                             {curMomView->GetTexture(), RenderGraph::AccessState::Storage}},
-				                  .Execute = [this, &fc, currentView, gbufView, velView, prevHistView, curHistView, prevMomView, curMomView, giW, giH, historyValid, nearPlane, farPlane, depthReject](CommandContext& c)
-				                  {
-					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, currentView, gbufView, velView, prevHistView,
-					                                  prevMomView, curMomView, curHistView, giW, giH, historyValid,
-					                                  CVars::GITemporalBlend.Get(), CVars::GITemporalMaxBlend.Get(),
-					                                  nearPlane, farPlane, depthReject);
-				                  }});
-
-				v.GIView = curHistView; // the accumulated buffer is now the live GI
+				// The accumulated (or passthrough) buffer becomes the live GI (#132: shared Denoiser logic).
+				v.GIView = m_Denoiser.Temporal(fc, inst, cfg, v.GIView, gbufView, v.Velocity, v.Cam,
+				                               giDesc.Width, giDesc.Height, v.Suffix);
 			}
 
 		private:
 			RenderSystem& m_Owner;
-			GITemporalPass m_Pass; // owned here: the GI temporal pass is exclusive to this effect
-			// Per-viewport temporal history validity (#125): valid once accumulated at least once; erased when
-			// temporal turns off (below) / resizes, and cleared wholesale on a scene cut (OnSceneCut) so the
-			// first frame after a cut warps against zeros, not the old scene.
-			std::unordered_set<entt::entity> m_HistoryValid;
+			Denoiser m_Denoiser; // owned here: the shared SVGF processor (its own pass instances) for GI (#132)
 		};
 
 		// Spatial denoiser for the half-res RT GI (#125): an edge-avoiding à-trous wavelet run between GIEffect
@@ -279,51 +236,29 @@ namespace Snowstorm
 				// Same GI-active gate as GIUpsampleEffect, plus the denoiser toggle. Needs both scratch buffers
 				// and a live GI buffer (v.GIView — the raw trace, or the temporally-accumulated buffer if that ran).
 				return v.GBufferNeeded && CVars::GIRTActive() && CVars::GIDenoiseActive() && v.GIView &&
-				       v.RT.GIDenoiseScratch[0] && v.RT.GIDenoiseScratch[1] &&
+				       v.RT.GIDenoiser.Allocated() &&
 				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
 			}
 
 			void Contribute(ViewportRenderContext& v) override
 			{
 				FrameContext& fc = v.Frame;
-
 				const auto& giDesc = v.RT.GITarget->GetDesc();
-				const uint32_t giW = giDesc.Width;
-				const uint32_t giH = giDesc.Height;
 				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
-				const int iterations = CVars::ClampedGIDenoiseIterations();
 
-				// Ping-pong so the LAST write always lands in scratch[0], for any iteration count: iteration 0
-				// reads the live GI (v.GIView — raw trace or accumulated) and writes scratch[(N-1)&1]; each later
-				// iteration alternates. N=1 -> [0]; N=2 -> [1],[0]; N=3 -> [0],[1],[0]. Upsample/debug read scratch[0].
-				int dst = (iterations - 1) & 1;
-				for (int i = 0; i < iterations; ++i)
-				{
-					const Ref<TextureView> srcView = (i == 0) ? v.GIView : v.RT.GIDenoiseScratchView[dst ^ 1];
-					const Ref<TextureView> dstView = v.RT.GIDenoiseScratchView[dst];
-					const int step = 1 << i;
-					const auto slot = static_cast<uint32_t>(i);
+				DenoiserConfig cfg{};
+				cfg.DenoiseIterations = CVars::ClampedGIDenoiseIterations();
+				cfg.VariancePhi = CVars::GIDenoiseVariance.Get();
+				cfg.NamePrefix = "GI";
 
-					const float lumaPhi = CVars::GIDenoiseVariance.Get();
-					fc.Graph.AddPass({.Name = "GIDenoise" + std::to_string(i) + v.Suffix,
-					                  .IsCompute = true,
-					                  .Reads = {{srcView->GetTexture(), RenderGraph::AccessState::Sampled},
-					                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
-					                  .Writes = {{dstView->GetTexture(), RenderGraph::AccessState::Storage}},
-					                  .Execute = [this, &fc, slot, step, srcView, gbufView, dstView, giW, giH, lumaPhi](CommandContext& c)
-					                  {
-						                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, slot, step, srcView, gbufView, dstView, giW, giH, lumaPhi);
-					                  }});
-
-					dst ^= 1;
-				}
-
-				v.GIView = v.RT.GIDenoiseScratchView[0]; // the denoised buffer is now the live GI
+				// The filtered buffer (Scratch[0]) becomes the live GI (#132: shared Denoiser logic).
+				v.GIView = m_Denoiser.Atrous(fc, v.RT.GIDenoiser, cfg, v.GIView, gbufView,
+				                             giDesc.Width, giDesc.Height, v.Suffix);
 			}
 
 		private:
 			RenderSystem& m_Owner;
-			GIDenoisePass m_Pass; // owned here: the denoiser compute pass is exclusive to this effect
+			Denoiser m_Denoiser; // owned here: the shared SVGF processor for GI's à-trous (#132)
 		};
 
 		// Depth+normal-aware bilateral upsample of the half-res GI to full res (#124). Runs after GIEffect,
@@ -553,71 +488,34 @@ namespace Snowstorm
 
 			[[nodiscard]] const char* Name() const override { return "ReflectionTemporal"; }
 
-			void OnSceneCut() override { m_HistoryValid.clear(); }
-
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
 				return v.GBufferNeeded && CVars::ReflectionsRTActive() && v.ReflectionView &&
-				       v.RT.ReflHistory[0] && v.RT.ReflHistory[1] &&
+				       v.RT.ReflectionDenoiser.Allocated() &&
 				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
 			}
 
 			void Contribute(ViewportRenderContext& v) override
 			{
 				FrameContext& fc = v.Frame;
-
-				// Temporal off (or no velocity this frame): drop the valid flag so re-enabling starts clean, and
-				// leave v.ReflectionView as the raw trace (the forward samples it directly — the shimmery path).
-				if (!CVars::ReflectionTemporalActive() || !v.Velocity)
-				{
-					m_HistoryValid.erase(v.ViewportEntity);
-					return;
-				}
-
-				const uint32_t curIdx = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
-				const Ref<TextureView> curHistView = v.RT.ReflHistoryView[curIdx];
-				const Ref<TextureView> prevHistView = v.RT.ReflHistoryView[curIdx ^ 1u];
-				const Ref<TextureView> curMomView = v.RT.ReflMomentsView[curIdx];       // #129 Inc 3c: same parity
-				const Ref<TextureView> prevMomView = v.RT.ReflMomentsView[curIdx ^ 1u]; // as the history ping-pong
-				const Ref<TextureView> currentView = v.ReflectionView; // this frame's raw reflection trace
-				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
-				const Ref<TextureView> velView = v.Velocity;
-
+				auto& inst = fc.Reg.Write<RenderTargetComponent>(v.ViewportEntity).ReflectionDenoiser;
 				const auto& reflDesc = v.RT.ReflectionTarget->GetDesc();
-				const uint32_t reflW = reflDesc.Width;
-				const uint32_t reflH = reflDesc.Height;
+				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
 
-				const bool historyValid = m_HistoryValid.contains(v.ViewportEntity);
-				m_HistoryValid.insert(v.ViewportEntity);
+				DenoiserConfig cfg{};
+				cfg.TemporalActive = CVars::ReflectionTemporalActive();
+				cfg.TemporalBlend = CVars::ReflectionTemporalBlend.Get();
+				cfg.TemporalMaxBlend = CVars::ReflectionTemporalMaxBlend.Get();
+				cfg.NamePrefix = "Reflection";
 
-				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
-				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
-				const float depthReject = CVars::TaaDepthReject.Get();
-
-				fc.Graph.AddPass({.Name = "ReflectionTemporal" + v.Suffix,
-				                  .IsCompute = true,
-				                  .Reads = {{currentView->GetTexture(), RenderGraph::AccessState::Sampled},
-				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
-				                            {velView->GetTexture(), RenderGraph::AccessState::Sampled},
-				                            {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled},
-				                            {prevMomView->GetTexture(), RenderGraph::AccessState::Sampled}},
-				                  .Writes = {{curHistView->GetTexture(), RenderGraph::AccessState::Storage},
-				                             {curMomView->GetTexture(), RenderGraph::AccessState::Storage}},
-				                  .Execute = [this, &fc, currentView, gbufView, velView, prevHistView, curHistView, prevMomView, curMomView, reflW, reflH, historyValid, nearPlane, farPlane, depthReject](CommandContext& c)
-				                  {
-					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, currentView, gbufView, velView, prevHistView,
-					                                  prevMomView, curMomView, curHistView, reflW, reflH, historyValid,
-					                                  CVars::ReflectionTemporalBlend.Get(), CVars::ReflectionTemporalMaxBlend.Get(),
-					                                  nearPlane, farPlane, depthReject);
-				                  }});
-
-				v.ReflectionView = curHistView; // the accumulated buffer is now the live reflection
+				// The accumulated (or passthrough) buffer becomes the live reflection (#132: shared Denoiser).
+				v.ReflectionView = m_Denoiser.Temporal(fc, inst, cfg, v.ReflectionView, gbufView, v.Velocity,
+				                                       v.Cam, reflDesc.Width, reflDesc.Height, v.Suffix);
 			}
 
 		private:
 			RenderSystem& m_Owner;
-			GITemporalPass m_Pass; // reused verbatim (#129 Inc 2); its own instance so it doesn't collide with GI's
-			std::unordered_set<entt::entity> m_HistoryValid;
+			Denoiser m_Denoiser; // owned here: the shared SVGF processor for reflections (#132)
 		};
 
 		// RT reflection spatial denoiser (#129 Inc 3a) — the reflection twin of GIDenoiseEffect, reusing
@@ -640,51 +538,29 @@ namespace Snowstorm
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
 				return v.GBufferNeeded && CVars::ReflectionsRTActive() && CVars::ReflectionDenoiseActive() && v.ReflectionView &&
-				       v.RT.ReflDenoiseScratch[0] && v.RT.ReflDenoiseScratch[1] &&
+				       v.RT.ReflectionDenoiser.Allocated() &&
 				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
 			}
 
 			void Contribute(ViewportRenderContext& v) override
 			{
 				FrameContext& fc = v.Frame;
-
 				const auto& reflDesc = v.RT.ReflectionTarget->GetDesc();
-				const uint32_t reflW = reflDesc.Width;
-				const uint32_t reflH = reflDesc.Height;
 				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
-				const int iterations = CVars::ClampedReflectionDenoiseIterations();
 
-				// Ping-pong so the LAST write lands in scratch[0] for any iteration count (same parity trick as
-				// GIDenoiseEffect): iteration 0 reads the live reflection (v.ReflectionView — the temporal buffer)
-				// and writes scratch[(N-1)&1]; each later iteration alternates. Forward reads scratch[0].
-				int dst = (iterations - 1) & 1;
-				for (int i = 0; i < iterations; ++i)
-				{
-					const Ref<TextureView> srcView = (i == 0) ? v.ReflectionView : v.RT.ReflDenoiseScratchView[dst ^ 1];
-					const Ref<TextureView> dstView = v.RT.ReflDenoiseScratchView[dst];
-					const int step = 1 << i;
-					const auto slot = static_cast<uint32_t>(i);
+				DenoiserConfig cfg{};
+				cfg.DenoiseIterations = CVars::ClampedReflectionDenoiseIterations();
+				cfg.VariancePhi = CVars::ReflectionDenoiseVariance.Get();
+				cfg.NamePrefix = "Reflection";
 
-					const float lumaPhi = CVars::ReflectionDenoiseVariance.Get();
-					fc.Graph.AddPass({.Name = "ReflectionDenoise" + std::to_string(i) + v.Suffix,
-					                  .IsCompute = true,
-					                  .Reads = {{srcView->GetTexture(), RenderGraph::AccessState::Sampled},
-					                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
-					                  .Writes = {{dstView->GetTexture(), RenderGraph::AccessState::Storage}},
-					                  .Execute = [this, &fc, slot, step, srcView, gbufView, dstView, reflW, reflH, lumaPhi](CommandContext& c)
-					                  {
-						                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, slot, step, srcView, gbufView, dstView, reflW, reflH, lumaPhi);
-					                  }});
-
-					dst ^= 1;
-				}
-
-				v.ReflectionView = v.RT.ReflDenoiseScratchView[0]; // the denoised buffer is now the live reflection
+				// The à-trous-filtered buffer becomes the live reflection (#132: shared Denoiser).
+				v.ReflectionView = m_Denoiser.Atrous(fc, v.RT.ReflectionDenoiser, cfg, v.ReflectionView, gbufView,
+				                                     reflDesc.Width, reflDesc.Height, v.Suffix);
 			}
 
 		private:
 			RenderSystem& m_Owner;
-			GIDenoisePass m_Pass; // reused verbatim (#129 Inc 3a); own instance so its per-frame sets don't collide with GI's
+			Denoiser m_Denoiser; // owned here: the shared SVGF processor for reflections' à-trous (#132)
 		};
 
 		// Motion-vector pass (#44): re-renders visible meshes into the velocity target, projecting each vertex

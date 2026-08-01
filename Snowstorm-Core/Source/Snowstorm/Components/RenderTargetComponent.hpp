@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include "Snowstorm/Components/DenoiserInstance.hpp"
 #include "Snowstorm/Render/RenderTarget.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
@@ -65,34 +66,10 @@ namespace Snowstorm
 		Ref<Texture> GITarget;
 		Ref<TextureView> GITargetView;
 
-		// Half-res GI temporal-accumulation history ping-pong (#125): SVGF's temporal half. Each frame the GI
-		// temporal pass reprojects the PREVIOUS slot by the motion vectors, depth-disocclusion-rejects it
-		// (reusing the TAA/#127 logic), blends it with this frame's raw GITarget trace, and writes the CURRENT
-		// slot — which both feeds the à-trous denoiser AND becomes next frame's history. Indexed by frame-counter
-		// parity (frame&1). .rgb = accumulated irradiance, .a = the half-res NDC depth (from the G-buffer) so
-		// next frame's disocclusion test has a previous depth to compare. Same half-res shape as GITarget, but a
-		// bare Texture+view (compute UAV). Only written when GITemporalActive(). Null until allocated.
-		Ref<Texture> GIHistory[2];
-		Ref<TextureView> GIHistoryView[2];
-
-		// Half-res GI temporal MOMENTS ping-pong (#129 Inc 3c): textbook SVGF variance. Parallel to GIHistory,
-		// reprojected + reset identically (SAME motion vector, SAME disocclusion reject) so it can't desync from
-		// the color. RGBA16F: .r = μ1 (E[luminance]), .g = μ2 (E[luminance²]), .b = history length (frames
-		// accumulated, capped; reset to 1 on reject). Variance = max(μ2 − μ1², 0); the temporal pass writes it
-		// into the accumulated-GI output's .a for the à-trous to consume + filter. Only written when
-		// GITemporalActive(). Null until allocated.
-		Ref<Texture> GIMoments[2];
-		Ref<TextureView> GIMomentsView[2];
-
-		// Half-res GI denoiser ping-pong scratch pair (#125): the edge-aware à-trous denoiser keeps its INPUT
-		// (the temporally-accumulated GI, or the raw GITarget when temporal is off) untouched and ping-pongs
-		// between these two, so iteration 0 reads the input and every later iteration alternates [0]<->[1]. The
-		// dispatch order is chosen so the final filtered result ALWAYS lands in [0] regardless of iteration-count
-		// parity, which the bilateral upsample (and debug view 7) then read. Same shape as GITarget (Sampled|
-		// Storage RGBA16F at render.gi.scale). Only written when the denoiser runs (GIDenoiseActive()). Null
-		// until allocated.
-		Ref<Texture> GIDenoiseScratch[2];
-		Ref<TextureView> GIDenoiseScratchView[2];
+		// Half-res GI SVGF denoiser state (#132): history + moments + à-trous scratch ping-pongs + the
+		// history-valid flag, bundled into one reusable instance (was flat GIHistory/GIMoments/GIDenoiseScratch
+		// fields). Half-res (render.gi.scale). See DenoiserInstance for the per-buffer semantics.
+		DenoiserInstance GIDenoiser;
 
 		// Full-res GI irradiance (#124): the depth+normal-aware bilateral upsample renders the half-res
 		// GITarget into this full-viewport color-only HDR target, which the forward pass then samples (by
@@ -121,28 +98,10 @@ namespace Snowstorm
 		Ref<Texture> ReflectionTarget;
 		Ref<TextureView> ReflectionTargetView;
 
-		// Full-res RT reflection temporal history ping-pong (#129): the reflection twin of GIHistory. Each
-		// frame the reflection temporal pass reprojects the previous slot by the motion vectors, depth-reject,
-		// blends with this frame's trace, and writes the current slot — feeding the forward pass AND becoming
-		// next frame's history. Indexed by frame-counter parity. .rgb accumulated radiance, .a hit distance.
-		// Same full-res shape as ReflectionTarget. Only written when ReflectionTemporalActive(). Null until
-		// allocated.
-		Ref<Texture> ReflHistory[2];
-		Ref<TextureView> ReflHistoryView[2];
-
-		// Full-res RT reflection temporal MOMENTS ping-pong (#129 Inc 3c): the reflection twin of GIMoments.
-		// Same RGBA16F layout (.r μ1, .g μ2, .b history length) reprojected/reset with the reflection history.
-		// Only written when ReflectionTemporalActive(). Null until allocated.
-		Ref<Texture> ReflMoments[2];
-		Ref<TextureView> ReflMomentsView[2];
-
-		// Full-res RT reflection spatial-denoiser ping-pong (#129 Inc 3a): the reflection twin of
-		// GIDenoiseScratch. The edge-avoiding à-trous (reusing GIDenoisePass) ping-pongs between these two,
-		// reading the temporally-accumulated reflection and landing the filtered result in [0] (parity-seeded),
-		// which the forward pass then samples. Same full-res shape as ReflectionTarget. Only written when
-		// ReflectionDenoiseActive(). Null until allocated.
-		Ref<Texture> ReflDenoiseScratch[2];
-		Ref<TextureView> ReflDenoiseScratchView[2];
+		// Full-res RT reflection SVGF denoiser state (#132): the reflection twin of GIDenoiser — history +
+		// moments + à-trous scratch ping-pongs + history-valid flag (was flat ReflHistory/ReflMoments/
+		// ReflDenoiseScratch fields). Full-res (reflections are high-frequency). See DenoiserInstance.
+		DenoiserInstance ReflectionDenoiser;
 
 		// Temporal-resolve history ping-pong (#44 TAA). Two full-res HDR (color-only) targets: each frame
 		// the resolve reads the PREVIOUS one as history, reprojects it by the velocity buffer, blends with

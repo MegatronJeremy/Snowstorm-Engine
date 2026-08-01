@@ -92,12 +92,9 @@ namespace Snowstorm
 				const auto& rt = reg.Read<RenderTargetComponent>(vpEntity);
 				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget ||
 				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget || !rt.VelocityTarget ||
-				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIHistory[0] || !rt.GIHistory[1] ||
-				                     !rt.GIMoments[0] || !rt.GIMoments[1] || !rt.ReflMoments[0] || !rt.ReflMoments[1] ||
-				                     !rt.GIDenoiseScratch[0] || !rt.GIDenoiseScratch[1] || !rt.GIUpscaleTarget ||
+				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIDenoiser.Allocated() || !rt.GIUpscaleTarget ||
 				                     !rt.AOTarget || !rt.AOUpscaleTarget ||
-				                     !rt.ReflectionTarget || !rt.ReflHistory[0] || !rt.ReflHistory[1] ||
-				                     !rt.ReflDenoiseScratch[0] || !rt.ReflDenoiseScratch[1] ||
+				                     !rt.ReflectionTarget || !rt.ReflectionDenoiser.Allocated() ||
 				                     !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
 				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Compare each
 				// against its own expected extent so a scale change (Target only) still triggers a rebuild.
@@ -147,22 +144,8 @@ namespace Snowstorm
 					// dispatched into when GI is active. Rebuilt on viewport OR gi.scale change.
 					rtW.GITarget = CreateGITarget(giW, giH, "Viewport");
 					rtW.GITargetView = rtW.GITarget->GetDefaultView();
-					// GI temporal history ping-pong (#125): same half-res shape as GITarget. Always allocated;
-					// only written when temporal accumulation runs. Rebuilt on viewport OR gi.scale change.
-					rtW.GIHistory[0] = CreateGITarget(giW, giH, "ViewportGIHistory0");
-					rtW.GIHistoryView[0] = rtW.GIHistory[0]->GetDefaultView();
-					rtW.GIHistory[1] = CreateGITarget(giW, giH, "ViewportGIHistory1");
-					rtW.GIHistoryView[1] = rtW.GIHistory[1]->GetDefaultView();
-					rtW.GIMoments[0] = CreateGITarget(giW, giH, "ViewportGIMoments0"); // SVGF moments (#129 Inc 3c)
-					rtW.GIMomentsView[0] = rtW.GIMoments[0]->GetDefaultView();
-					rtW.GIMoments[1] = CreateGITarget(giW, giH, "ViewportGIMoments1");
-					rtW.GIMomentsView[1] = rtW.GIMoments[1]->GetDefaultView();
-					// GI denoiser ping-pong scratch pair (#125): same half-res shape as GITarget. Always allocated;
-					// only written when the denoiser runs. Rebuilt on viewport OR gi.scale change (tracks GITarget).
-					rtW.GIDenoiseScratch[0] = CreateGITarget(giW, giH, "ViewportGIDenoise0");
-					rtW.GIDenoiseScratchView[0] = rtW.GIDenoiseScratch[0]->GetDefaultView();
-					rtW.GIDenoiseScratch[1] = CreateGITarget(giW, giH, "ViewportGIDenoise1");
-					rtW.GIDenoiseScratchView[1] = rtW.GIDenoiseScratch[1]->GetDefaultView();
+					// GI SVGF denoiser buffers (#132): half-res, rebuilt on viewport OR gi.scale change (tracks GITarget).
+					AllocateDenoiser(rtW.GIDenoiser, giW, giH, "ViewportGI");
 					// Full-res GI target (#124): the bilateral upsample renders the half-res GI into this, and the
 					// forward pass samples it (by screen UV) as the diffuse GI. Full viewport res.
 					rtW.GIUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale");
@@ -173,23 +156,12 @@ namespace Snowstorm
 					// Full-res AO target (#126): the bilateral upsample renders the half-res AO into this; the
 					// forward pass samples it (by screen UV) and folds it into `ao`. Full viewport res.
 					rtW.AOUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportAOUpscale");
-					// Full-res RT reflection + temporal history (#129): full viewport res (reflections are
-					// high-frequency). Always allocated; only dispatched when reflections are active. Rebuilt on
-					// viewport resize (not gi.scale — these are full-res).
+					// Full-res RT reflection (#129): full viewport res (reflections are high-frequency). Always
+					// allocated; only dispatched when reflections are active. Rebuilt on viewport resize.
 					rtW.ReflectionTarget = CreateGITarget(w, h, "ViewportReflection");
 					rtW.ReflectionTargetView = rtW.ReflectionTarget->GetDefaultView();
-					rtW.ReflHistory[0] = CreateGITarget(w, h, "ViewportReflHistory0");
-					rtW.ReflHistoryView[0] = rtW.ReflHistory[0]->GetDefaultView();
-					rtW.ReflHistory[1] = CreateGITarget(w, h, "ViewportReflHistory1");
-					rtW.ReflHistoryView[1] = rtW.ReflHistory[1]->GetDefaultView();
-					rtW.ReflMoments[0] = CreateGITarget(w, h, "ViewportReflMoments0"); // SVGF moments (#129 Inc 3c)
-					rtW.ReflMomentsView[0] = rtW.ReflMoments[0]->GetDefaultView();
-					rtW.ReflMoments[1] = CreateGITarget(w, h, "ViewportReflMoments1");
-					rtW.ReflMomentsView[1] = rtW.ReflMoments[1]->GetDefaultView();
-					rtW.ReflDenoiseScratch[0] = CreateGITarget(w, h, "ViewportReflDenoise0");
-					rtW.ReflDenoiseScratchView[0] = rtW.ReflDenoiseScratch[0]->GetDefaultView();
-					rtW.ReflDenoiseScratch[1] = CreateGITarget(w, h, "ViewportReflDenoise1");
-					rtW.ReflDenoiseScratchView[1] = rtW.ReflDenoiseScratch[1]->GetDefaultView();
+					// Reflection SVGF denoiser buffers (#132): full-res, rebuilt on viewport resize.
+					AllocateDenoiser(rtW.ReflectionDenoiser, w, h, "ViewportRefl");
 					// TAA history ping-pong (#44): two full-res color-only HDR targets. Always allocated;
 					// only rendered into when render.aa == TAA. Recreated on resize so history matches size.
 					rtW.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0");

@@ -105,6 +105,15 @@ namespace Snowstorm
 			{
 				effect->OnSceneCut();
 			}
+			// #132: the GI/reflection denoiser history-valid flags live in the component (not an effect
+			// side-set), so reset them here where the registry is reachable — every viewport, so a multi-view
+			// setup can't ghost the old scene on one side. Textures survive; only the "converged" flag resets.
+			for (const auto vpEnt : View<RenderTargetComponent>())
+			{
+				auto& rtc = reg.Write<RenderTargetComponent>(vpEnt);
+				rtc.GIDenoiser.HistoryValid = false;
+				rtc.ReflectionDenoiser.HistoryValid = false;
+			}
 		}
 
 		const auto viewportView = View<const ViewportComponent, const RenderTargetComponent>();
@@ -400,17 +409,17 @@ namespace Snowstorm
 			// Denoised/accumulated half-res GI (#125): the LIVE GI buffer after the temporal + à-trous stages,
 			// vs view 6's RAW trace — the A/B that shows what the denoiser did. Point at whichever buffer the GI
 			// sub-chain last wrote this frame, mirroring the v.GIView moving pointer: denoiser on => the à-trous
-			// landed in GIDenoiseScratch[0]; else temporal on => GIHistory[cur]; else the raw GITarget. Same
-			// half-res point-fetch readout as view 6 (DebugMode 3, gi/present size ratio as DebugScale).
+			// landed in Scratch[0]; else temporal on => History[cur]; else the raw GITarget. Same half-res
+			// point-fetch readout as view 6 (DebugMode 3, gi/present size ratio as DebugScale). #132: buffers via GIDenoiser.
 			Ref<TextureView> liveGI = vpRT.GITargetView;
-			if (CVars::GIDenoiseActive() && vpRT.GIDenoiseScratchView[0])
+			if (CVars::GIDenoiseActive() && vpRT.GIDenoiser.ScratchView[0])
 			{
-				liveGI = vpRT.GIDenoiseScratchView[0];
+				liveGI = vpRT.GIDenoiser.ScratchView[0];
 			}
-			else if (CVars::GITemporalActive() && vpRT.GIHistory[0] && vpRT.GIHistory[1])
+			else if (CVars::GITemporalActive() && vpRT.GIDenoiser.Allocated())
 			{
 				const uint32_t curIdx = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
-				liveGI = vpRT.GIHistoryView[curIdx];
+				liveGI = vpRT.GIDenoiser.HistoryView[curIdx];
 			}
 			primaryTonemap.DebugMode = 3;
 			primaryTonemap.DebugTexIndex = liveGI->GetGlobalBindlessIndex();
