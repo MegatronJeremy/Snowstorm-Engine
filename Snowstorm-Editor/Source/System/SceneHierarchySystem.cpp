@@ -395,6 +395,14 @@ namespace Snowstorm
 						{
 							ImGui::SetTooltip("SVGF variance guidance: higher = blur noisy/disoccluded regions wider; 0 = plain depth+normal à-trous.");
 						}
+						if (float hd = CVars::AODenoiseHitDist.Get(); ImGui::SliderFloat("Hit Distance φ##AOD", &hd, 0.0f, 16.0f, "%.1f", ImGuiSliderFlags_AlwaysClamp))
+						{
+							CVars::AODenoiseHitDist.Set(hd);
+						}
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::SetTooltip("NRD REBLUR-style hit-distance guidance: keeps near contact shadows sharp while blurring distant AO wider; 0 = off.");
+						}
 						ImGui::EndDisabled();
 						ImGui::EndDisabled();
 					}

@@ -18,8 +18,11 @@
 Texture2D<float4> GIIn : register(t0, space0);          // half-res incoming irradiance (rgb) to filter
 Texture2D<float4> GBufferNormal : register(t1, space0); // full-res guide: .xyz world normal, .w NDC depth
 [[vk::image_format("rgba16f")]] RWTexture2D<float4> GIOut : register(u2, space0); // filtered half-res irradiance
-// #129 Inc 2c: no sampler — both the GI input and the G-buffer guide are POINT-fetched via Load (never
-// bilinear, to avoid cross-edge blend). Nothing in this pass samples, so no SamplerState is declared.
+// #130 Inc B: hit-distance guide (AO's normalized mean occluder distance in .a, same res + grid as GIIn) for
+// the REBLUR-style edge-stop. Binding 3 was the #129 Inc 2c freed sampler slot — reusing it means no binding
+// re-index. ALWAYS Load'd (below) so dxc can't strip it; GI/reflections bind their G-buffer here + pass
+// HitDistPhi == 0 so the term is a no-op (their output stays bit-identical). AO binds the raw AO trace.
+Texture2D<float4> HitDistGuide : register(t3, space0);
 
 cbuffer GIDenoiseCB : register(b4, space0)
 {
@@ -29,7 +32,8 @@ cbuffer GIDenoiseCB : register(b4, space0)
 
 	float KDepthScale;  // depth edge-stop scale in NDC space (higher = tighter silhouette cut)
 	float LumaPhi;      // SVGF luminance edge-stop scale (#129 Inc 3b); 0 => luminance term OFF (pre-3b behaviour)
-	float2 _Pad;
+	float HitDistPhi;   // #130 Inc B: hit-distance edge-stop scale (AO only); 0 => hit-distance term OFF (GI/refl)
+	float _Pad;
 };
 
 #include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky (#129 Inc 1b)
@@ -71,6 +75,8 @@ void main(uint3 id : SV_DispatchThreadID)
 	const float3 centerGI = centerIn.rgb;
 	const float centerVar = max(centerIn.a, 0.0); // #129 Inc 3c: SVGF variance rides .a (from the temporal pass)
 	const float lumaCenter = Luma(centerGI);
+	// #130 Inc B: center hit distance for the REBLUR-style edge-stop (AO only; HitDistPhi == 0 => unused).
+	const float hitCenter = HitDistGuide.Load(int3(centerPx, 0)).a;
 
 	// SVGF luminance edge-stop (#129 Inc 3c, textbook temporal-moment variant). The denominator uses the
 	// temporally-accumulated variance (not a per-pass spatial estimate as in Inc 3b), pre-blurred by a 3x3
@@ -126,8 +132,18 @@ void main(uint3 id : SV_DispatchThreadID)
 			{
 				wL = exp(-abs(lumaCenter - Luma(gi)) / lumaDenom);
 			}
+			// #130 Inc B: hit-distance term (REBLUR-style). Rejects taps whose occluder distance differs from
+			// the center's, so a near contact-shadow gradient (small hit distance) isn't blurred into distant
+			// AO. AO-only: GI/reflections pass HitDistPhi == 0 => wH == 1 => identical output. Always Load the
+			// guide (above) so the binding is never stripped even when the term is off.
+			float wH = 1.0;
+			if (HitDistPhi > 0.0)
+			{
+				const float hitTap = HitDistGuide.Load(int3(tapC, 0)).a;
+				wH = exp(-abs(hitCenter - hitTap) * HitDistPhi);
+			}
 			const float wK = kKernel[dx + 2] * kKernel[dy + 2];
-			const float w = wK * wN * wD * wL;
+			const float w = wK * wN * wD * wL * wH;
 
 			accum += gi * w;
 			wsum += w;

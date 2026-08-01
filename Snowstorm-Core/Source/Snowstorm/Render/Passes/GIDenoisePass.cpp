@@ -22,15 +22,18 @@ namespace Snowstorm
 			float KNormalPow = 8.0f;
 
 			float KDepthScale = 2000.0f;
-			float LumaPhi = 0.0f; // SVGF luminance edge-stop scale (#129 Inc 3b); 0 = off
-			glm::vec2 _Pad{0.0f};
+			float LumaPhi = 0.0f;    // SVGF luminance edge-stop scale (#129 Inc 3b); 0 = off
+			float HitDistPhi = 0.0f; // #130 Inc B: hit-distance edge-stop scale (AO only); 0 = off
+			float _Pad{0.0f};
 		};
 
-		// Binding indices in GIDenoise.comp.hlsl set 0. Binding 3 (former sampler) is intentionally unused
-		// (#129 Inc 2c: the pass point-fetches everything via Load); params stays at 4 to match the shader.
+		// Binding indices in GIDenoise.comp.hlsl set 0. Binding 3 (the #129 Inc 2c freed sampler slot) now holds
+		// the #130 Inc B hit-distance guide (still no SamplerState — the pass point-fetches via Load); params
+		// stays at 4 to match the shader.
 		constexpr uint32_t kGIInBinding = 0;
 		constexpr uint32_t kGBufferBinding = 1;
 		constexpr uint32_t kOutputBinding = 2;
+		constexpr uint32_t kHitGuideBinding = 3; // #130 Inc B
 		constexpr uint32_t kParamsBinding = 4;
 
 		// Max à-trous iterations per frame = ClampedGIDenoiseIterations() ceiling. Sizes the per-frame set/UBO
@@ -78,9 +81,9 @@ namespace Snowstorm
 	void GIDenoisePass::Dispatch(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const uint32_t slot,
 	                             const int step, const Ref<TextureView>& input, const Ref<TextureView>& gbuffer,
 	                             const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH,
-	                             const float lumaPhi)
+	                             const float lumaPhi, const Ref<TextureView>& hitGuide, const float hitDistPhi)
 	{
-		if (!ctx || !input || !gbuffer || !output || outW == 0 || outH == 0)
+		if (!ctx || !input || !gbuffer || !output || !hitGuide || outW == 0 || outH == 0)
 		{
 			return;
 		}
@@ -99,7 +102,8 @@ namespace Snowstorm
 		cb.Step = step;
 		cb.KNormalPow = kNormalPow;
 		cb.KDepthScale = kDepthScale;
-		cb.LumaPhi = lumaPhi; // #129 Inc 3b: 0 disables the variance-guided luminance term
+		cb.LumaPhi = lumaPhi;       // #129 Inc 3b: 0 disables the variance-guided luminance term
+		cb.HitDistPhi = hitDistPhi; // #130 Inc B: 0 disables the hit-distance term (GI/reflections)
 		m_ParamBuffers[idx]->SetData(&cb, sizeof(GIDenoiseCB), 0);
 
 		const auto& layouts = m_Pipeline->GetSetLayouts();
@@ -110,9 +114,10 @@ namespace Snowstorm
 			dsd.DebugName = "GIDenoiseSet";
 			m_Sets[idx] = DescriptorSet::Create(layouts[0], dsd);
 		}
-		m_Sets[idx]->SetTexture(kGIInBinding, input);      // half-res GI to filter
-		m_Sets[idx]->SetTexture(kGBufferBinding, gbuffer); // .xyz normal, .w depth guide
-		m_Sets[idx]->SetTexture(kOutputBinding, output);   // storage image (UAV)
+		m_Sets[idx]->SetTexture(kGIInBinding, input);        // half-res GI to filter
+		m_Sets[idx]->SetTexture(kGBufferBinding, gbuffer);   // .xyz normal, .w depth guide
+		m_Sets[idx]->SetTexture(kOutputBinding, output);     // storage image (UAV)
+		m_Sets[idx]->SetTexture(kHitGuideBinding, hitGuide); // #130 Inc B: hit-distance guide (.a); ignored when phi=0
 		const BufferBinding cbBB{.Buffer = m_ParamBuffers[idx], .Offset = 0, .Range = sizeof(GIDenoiseCB)};
 		m_Sets[idx]->SetBuffer(kParamsBinding, cbBB);
 		m_Sets[idx]->Commit();

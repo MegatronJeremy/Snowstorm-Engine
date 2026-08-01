@@ -85,6 +85,11 @@ void main(uint3 id : SV_DispatchThreadID)
 	const float3 origin = positionWS + Ng * 0.02;
 
 	float occlusion = 0.0;
+	// #130 Inc B: accumulate mean occluder hit distance for the denoiser's hit-distance-guided à-trous. A miss
+	// contributes AORadius (the max), so a fully-open pixel -> meanHitT == AORadius -> normalized .a == 1. This
+	// lets the à-trous keep near contact-shadow gradients (small .a) sharp while blurring distant AO wider,
+	// the NRD REBLUR trick — the signal is discarded when render.ao.denoise.hitdist == 0.
+	float hitTSum = 0.0;
 	[unroll] for (int s = 0; s < AO_RAY_COUNT; ++s)
 	{
 		const float u1 = frac((float(s) + ign) / float(AO_RAY_COUNT));
@@ -108,12 +113,21 @@ void main(uint3 id : SV_DispatchThreadID)
 		if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
 		{
 			// Distance falloff: a near hit occludes more than a far one.
-			occlusion += 1.0 - saturate(q.CommittedRayT() / AORadius);
+			const float t = q.CommittedRayT();
+			occlusion += 1.0 - saturate(t / AORadius);
+			hitTSum += t;
+		}
+		else
+		{
+			hitTSum += AORadius; // a miss = no occluder within range = the far end of the guidance signal
 		}
 	}
 
 	// Occlusion factor in [0,1] (1 = fully open), pre-scaled by AOIntensity. Averaged over the rays; the
-	// forward pass multiplies this into `ao` at full res after the bilateral upsample.
+	// forward pass multiplies this into `ao` at full res after the bilateral upsample. The mean hit distance
+	// (normalized to [0,1]) rides .a for the denoiser; the color path derives luma from .rgb so .a is free.
 	occlusion = (occlusion / float(AO_RAY_COUNT)) * AOIntensity;
-	AOOut[id.xy] = saturate(1.0 - occlusion);
+	const float ao = saturate(1.0 - occlusion);
+	const float meanHitT = saturate((hitTSum / float(AO_RAY_COUNT)) / AORadius);
+	AOOut[id.xy] = float4(ao, ao, ao, meanHitT);
 }

@@ -63,7 +63,8 @@ namespace Snowstorm
 
 	Ref<TextureView> Denoiser::Atrous(FrameContext& fc, const DenoiserInstance& inst, const DenoiserConfig& cfg,
 	                                  const Ref<TextureView>& input, const Ref<TextureView>& gbuffer,
-	                                  const uint32_t w, const uint32_t h, const std::string& suffix)
+	                                  const Ref<TextureView>& hitGuide, const uint32_t w, const uint32_t h,
+	                                  const std::string& suffix)
 	{
 		const int iterations = cfg.DenoiseIterations;
 		if (iterations <= 0)
@@ -82,15 +83,17 @@ namespace Snowstorm
 			const int step = 1 << i;
 			const auto slot = static_cast<uint32_t>(i);
 			const float lumaPhi = cfg.VariancePhi;
+			const float hitPhi = cfg.HitDistPhi; // #130 Inc B: 0 for GI/reflections (no-op)
 
 			fc.Graph.AddPass({.Name = std::string(cfg.NamePrefix) + "Denoise" + std::to_string(i) + suffix,
 			                  .IsCompute = true,
 			                  .Reads = {{srcView->GetTexture(), RenderGraph::AccessState::Sampled},
-			                            {gbuffer->GetTexture(), RenderGraph::AccessState::Sampled}},
+			                            {gbuffer->GetTexture(), RenderGraph::AccessState::Sampled},
+			                            {hitGuide->GetTexture(), RenderGraph::AccessState::Sampled}},
 			                  .Writes = {{dstView->GetTexture(), RenderGraph::AccessState::Storage}},
-			                  .Execute = [this, &fc, slot, step, srcView, gbuffer, dstView, w, h, lumaPhi](CommandContext& c)
+			                  .Execute = [this, &fc, slot, step, srcView, gbuffer, dstView, hitGuide, w, h, lumaPhi, hitPhi](CommandContext& c)
 			                  {
-				                  m_Atrous.Dispatch(fc.Ctx, fc.FrameIndex, slot, step, srcView, gbuffer, dstView, w, h, lumaPhi);
+				                  m_Atrous.Dispatch(fc.Ctx, fc.FrameIndex, slot, step, srcView, gbuffer, dstView, w, h, lumaPhi, hitGuide, hitPhi);
 			                  }});
 
 			dst ^= 1;

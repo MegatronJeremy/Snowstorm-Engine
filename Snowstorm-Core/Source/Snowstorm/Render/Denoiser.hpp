@@ -23,6 +23,7 @@ namespace Snowstorm
 		float TemporalMaxBlend = 0.97f; // render.<sig>.temporal.maxblend -> α_min
 		int DenoiseIterations = 0;      // clamped render.<sig>.denoise.iterations (0 = à-trous off)
 		float VariancePhi = 0.0f;       // render.<sig>.denoise.variance (SVGF luminance φ; 0 = off)
+		float HitDistPhi = 0.0f;        // #130 Inc B: à-trous hit-distance φ (AO only; 0 = off for GI/reflections)
 		const char* NamePrefix = "";    // graph pass-name prefix, e.g. "GI" / "Reflection"
 	};
 
@@ -48,10 +49,14 @@ namespace Snowstorm
 		// Edge-avoiding à-trous over `input`, guided by `gbuffer`, ping-ponging inst.Scratch[0/1] with a
 		// doubling stride; parity-seeded so the final filtered result lands in Scratch[0], which is returned.
 		// Variance (in the input's .a, from Temporal) drives the SVGF luminance weight. cfg.DenoiseIterations
-		// iterations; returns `input` unchanged when iterations == 0. Caller guarantees inst.Allocated().
+		// iterations; returns `input` unchanged when iterations == 0. `hitGuide` (#130 Inc B) is a FIXED
+		// same-grid texture whose .a is the AO hit distance — read every iteration (the ping-pong input's .a is
+		// variance, not hitT, so the guide can't be the input). GI/reflections pass `gbuffer` + cfg.HitDistPhi 0
+		// (the shader binds but ignores it, output bit-identical); AO passes its raw trace + phi > 0. Caller
+		// guarantees inst.Allocated().
 		Ref<TextureView> Atrous(FrameContext& fc, const DenoiserInstance& inst, const DenoiserConfig& cfg,
 		                        const Ref<TextureView>& input, const Ref<TextureView>& gbuffer,
-		                        uint32_t w, uint32_t h, const std::string& suffix);
+		                        const Ref<TextureView>& hitGuide, uint32_t w, uint32_t h, const std::string& suffix);
 
 	private:
 		GITemporalPass m_Temporal; // own instance: per-frame descriptor pool is not shareable across signals

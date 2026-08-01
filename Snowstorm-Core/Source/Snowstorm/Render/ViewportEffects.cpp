@@ -251,8 +251,9 @@ namespace Snowstorm
 				cfg.VariancePhi = CVars::GIDenoiseVariance.Get();
 				cfg.NamePrefix = "GI";
 
-				// The filtered buffer (Scratch[0]) becomes the live GI (#132: shared Denoiser logic).
-				v.GIView = m_Denoiser.Atrous(fc, v.RT.GIDenoiser, cfg, v.GIView, gbufView,
+				// The filtered buffer (Scratch[0]) becomes the live GI (#132: shared Denoiser logic). GI passes
+				// gbufView as the (ignored) hit guide + HitDistPhi 0 (#130 Inc B) so its output is bit-identical.
+				v.GIView = m_Denoiser.Atrous(fc, v.RT.GIDenoiser, cfg, v.GIView, gbufView, gbufView,
 				                             giDesc.Width, giDesc.Height, v.Suffix);
 			}
 
@@ -441,10 +442,13 @@ namespace Snowstorm
 				DenoiserConfig cfg{};
 				cfg.DenoiseIterations = CVars::ClampedAODenoiseIterations();
 				cfg.VariancePhi = CVars::AODenoiseVariance.Get();
+				cfg.HitDistPhi = CVars::AODenoiseHitDist.Get(); // #130 Inc B: REBLUR-style hit-distance guidance
 				cfg.NamePrefix = "AO";
 
-				// The à-trous-filtered buffer (Scratch[0]) becomes the live AO (#130: shared Denoiser).
-				v.AOView = m_Denoiser.Atrous(fc, v.RT.AODenoiser, cfg, v.AOView, gbufView,
+				// The à-trous-filtered buffer (Scratch[0]) becomes the live AO (#130: shared Denoiser). The raw
+				// AO trace (AOTargetView, .a = normalized hit distance) is the fixed hit guide — NOT v.AOView,
+				// whose .a is variance after the temporal pass. Same half-res grid as the à-trous input.
+				v.AOView = m_Denoiser.Atrous(fc, v.RT.AODenoiser, cfg, v.AOView, gbufView, v.RT.AOTargetView,
 				                             aoDesc.Width, aoDesc.Height, v.Suffix);
 			}
 
@@ -639,8 +643,9 @@ namespace Snowstorm
 				cfg.VariancePhi = CVars::ReflectionDenoiseVariance.Get();
 				cfg.NamePrefix = "Reflection";
 
-				// The à-trous-filtered buffer becomes the live reflection (#132: shared Denoiser).
-				v.ReflectionView = m_Denoiser.Atrous(fc, v.RT.ReflectionDenoiser, cfg, v.ReflectionView, gbufView,
+				// The à-trous-filtered buffer becomes the live reflection (#132: shared Denoiser). Reflections
+				// pass gbufView as the (ignored) hit guide + HitDistPhi 0 (#130 Inc B) so output is bit-identical.
+				v.ReflectionView = m_Denoiser.Atrous(fc, v.RT.ReflectionDenoiser, cfg, v.ReflectionView, gbufView, gbufView,
 				                                     reflDesc.Width, reflDesc.Height, v.Suffix);
 			}
 
