@@ -415,6 +415,44 @@ namespace Snowstorm
 			{
 				ImGui::SetTooltip("Max reflection ray distance (perf cap): nearer surfaces reflect real geometry; past this the ray sees the sky.");
 			}
+
+			// Denoiser (#129): temporal accumulation + SVGF variance-guided à-trous over the few-ray reflection.
+			// Temporal reprojects the previous frame (kills static shimmer); the à-trous smooths the edge/
+			// disocclusion noise temporal can't reach. Sub-sliders enabled only when their stage is on.
+			ImGui::Spacing();
+			if (bool reflTemporal = CVars::ReflectionTemporal.Get(); ImGui::Checkbox("Temporal Accumulation##Refl", &reflTemporal))
+			{
+				CVars::ReflectionTemporal.Set(reflTemporal);
+			}
+			ImGui::BeginDisabled(!CVars::ReflectionTemporal.Get());
+			if (float b = CVars::ReflectionTemporalBlend.Get(); ImGui::SliderFloat("History (moving)##ReflT", &b, 0.0f, 0.98f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::ReflectionTemporalBlend.Set(b);
+			}
+			if (float mb = CVars::ReflectionTemporalMaxBlend.Get(); ImGui::SliderFloat("History (static)##ReflT", &mb, 0.0f, 0.99f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::ReflectionTemporalMaxBlend.Set(mb);
+			}
+			ImGui::EndDisabled();
+
+			if (bool reflDenoise = CVars::ReflectionDenoise.Get(); ImGui::Checkbox("Spatial Denoise (à-trous)##Refl", &reflDenoise))
+			{
+				CVars::ReflectionDenoise.Set(reflDenoise);
+			}
+			ImGui::BeginDisabled(!CVars::ReflectionDenoise.Get());
+			if (int it = CVars::ReflectionDenoiseIterations.Get(); ImGui::SliderInt("Iterations##ReflD", &it, 0, 5, "%d", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::ReflectionDenoiseIterations.Set(it);
+			}
+			if (float vp = CVars::ReflectionDenoiseVariance.Get(); ImGui::SliderFloat("Variance φ##ReflD", &vp, 0.0f, 16.0f, "%.1f", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::ReflectionDenoiseVariance.Set(vp);
+			}
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("SVGF variance guidance: higher = blur noisy/disoccluded regions wider; 0 = plain depth+normal à-trous.");
+			}
+			ImGui::EndDisabled();
 			ImGui::EndDisabled();
 		}
 
@@ -459,6 +497,43 @@ namespace Snowstorm
 				CVars::GIScale.Set(giScale);
 			}
 			ImGui::TextDisabled("(0.5 = quarter-res trace + upsample; 1.0 = full-res)");
+
+			// Denoiser (#125): temporal accumulation + SVGF variance-guided à-trous over the few-ray GI. Mirrors
+			// the reflection denoiser controls above. Sub-sliders enabled only when their stage is on.
+			ImGui::Spacing();
+			if (bool giTemporal = CVars::GITemporal.Get(); ImGui::Checkbox("Temporal Accumulation##GI", &giTemporal))
+			{
+				CVars::GITemporal.Set(giTemporal);
+			}
+			ImGui::BeginDisabled(!CVars::GITemporal.Get());
+			if (float b = CVars::GITemporalBlend.Get(); ImGui::SliderFloat("History (moving)##GIT", &b, 0.0f, 0.98f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::GITemporalBlend.Set(b);
+			}
+			if (float mb = CVars::GITemporalMaxBlend.Get(); ImGui::SliderFloat("History (static)##GIT", &mb, 0.0f, 0.99f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::GITemporalMaxBlend.Set(mb);
+			}
+			ImGui::EndDisabled();
+
+			if (bool giDenoise = CVars::GIDenoise.Get(); ImGui::Checkbox("Spatial Denoise (à-trous)##GI", &giDenoise))
+			{
+				CVars::GIDenoise.Set(giDenoise);
+			}
+			ImGui::BeginDisabled(!CVars::GIDenoise.Get());
+			if (int it = CVars::GIDenoiseIterations.Get(); ImGui::SliderInt("Iterations##GID", &it, 0, 5, "%d", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::GIDenoiseIterations.Set(it);
+			}
+			if (float vp = CVars::GIDenoiseVariance.Get(); ImGui::SliderFloat("Variance φ##GID", &vp, 0.0f, 16.0f, "%.1f", ImGuiSliderFlags_AlwaysClamp))
+			{
+				CVars::GIDenoiseVariance.Set(vp);
+			}
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("SVGF variance guidance: higher = blur noisy/disoccluded regions wider; 0 = plain depth+normal à-trous.");
+			}
+			ImGui::EndDisabled();
 			ImGui::EndDisabled();
 		}
 

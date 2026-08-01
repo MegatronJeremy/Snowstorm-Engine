@@ -169,13 +169,9 @@ void main(uint3 id : SV_DispatchThreadID)
 	const float3 boxMax = mean + gamma * sigma;
 	const float3 clampedHistory = ClipToAABB(historyGI, mean, boxMin, boxMax);
 
-	// Velocity-aware blend: accumulate HARD when static (toward MaxBlend) so many frames' few-ray samples
-	// average out; drop to the lower base weight under motion so nothing ghosts. Mirrors the TAA resolve.
-	float blend = lerp(BlendHistory, MaxBlend, staticness);
-
 	// Depth-disocclusion rejection (#127): if the current surface's linear depth differs from the reprojected
-	// history's beyond a relative threshold, the history is a DIFFERENT surface -> drive its weight to 0 so
-	// the reveal falls back to this frame's trace. Smoothstep so a near-threshold edge attenuates, not pops.
+	// history's beyond a relative threshold, the history is a DIFFERENT surface -> confidence -> 0 so the
+	// reveal falls back to this frame's trace. Smoothstep so a near-threshold edge attenuates, not pops.
 	float depthConfidence = 1.0;
 	if (DepthRejectScale > 0.0)
 	{
@@ -183,20 +179,27 @@ void main(uint3 id : SV_DispatchThreadID)
 		const float linPrev = LinearizeDepth(depthPrev);
 		const float rel = abs(linCurr - linPrev) / max(linCurr, 1e-4);
 		depthConfidence = 1.0 - smoothstep(DepthRejectScale, 2.0 * DepthRejectScale, rel);
-		blend *= depthConfidence;
 	}
 
-	// Accumulate the CLAMPED history (not the raw reprojected history) so a moving edge can't drag a trail.
-	const float3 accumulated = lerp(currentGI, clampedHistory, blend);
-
-	// SVGF temporal moment accumulation (#129 Inc 3c). History length grows by 1 each accepted frame (capped),
-	// and RESETS toward 1 as depthConfidence -> 0 (a disocclusion), so a revealed pixel is treated as young.
-	// Accumulate μ1/μ2 with the SAME blend as the color so the variance tracks the accumulated signal. When
-	// history is thin (young pixel), the temporal variance is unreliable, so fall back to the wide 7x7 spatial
-	// variance until histLen builds up (~the SVGF "spatial estimate for the first few frames" rule).
+	// SVGF history-length-weighted accumulation (#129 Inc 3d). History length grows by 1 each accepted frame
+	// (capped) and RESETS toward 1 as depthConfidence -> 0 (a disocclusion), so a revealed pixel is treated as
+	// young. The current-sample weight is the SVGF α = max(α_min, 1/histLen): a true cumulative average that
+	// deepens automatically as history builds — no velocity-aware hand-tuning. α_min caps the deepest history
+	// weight (from render.*.temporal.maxblend: α_min = 1 - MaxBlend, e.g. 0.97 -> α_min 0.03) so a slowly
+	// changing signal still tracks. Colour AND moments use the SAME α so the variance is consistent with the
+	// accumulated colour. (render.*.temporal.blend / BlendHistory is now unused — 1/histLen replaces it.)
 	const float histLen = min(momentsPrev.b * depthConfidence + 1.0, 32.0);
-	const float mom1 = lerp(lumaCurr, momentsPrev.r, blend);
-	const float mom2 = lerp(lumaCurr * lumaCurr, momentsPrev.g, blend);
+	const float alphaMin = max(1.0 - MaxBlend, 1e-3);
+	const float alpha = max(alphaMin, 1.0 / histLen); // weight of THIS frame's sample
+	const float historyWeight = 1.0 - alpha;
+
+	// Accumulate the CLAMPED history (not the raw reprojected history) so a moving edge can't drag a trail
+	// (#129 Inc 2d neighborhood clamp — kept as the motion safety net, since our accept test is depth-only).
+	const float3 accumulated = lerp(currentGI, clampedHistory, historyWeight);
+	const float mom1 = lerp(lumaCurr, momentsPrev.r, historyWeight);
+	const float mom2 = lerp(lumaCurr * lumaCurr, momentsPrev.g, historyWeight);
+	// Young pixels (thin history) have unreliable temporal variance -> fall back to the wide 7x7 spatial
+	// estimate until histLen builds (the SVGF "spatial estimate for the first frames" rule).
 	const float temporalVar = max(mom2 - mom1 * mom1, 0.0);
 	const float variance = (histLen < 4.0) ? max(temporalVar, spatialVar) : temporalVar;
 

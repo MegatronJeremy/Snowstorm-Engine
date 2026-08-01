@@ -131,17 +131,11 @@ namespace Snowstorm
 		m_Sets[frameIndex]->SetBuffer(kParamsBinding, cbBB);
 		m_Sets[frameIndex]->Commit();
 
-		// Output + moments must be GENERAL for the UAV write; the inputs are already SHADER_READ (the graph
-		// declared them Sampled). Transition both to Sampled after so the à-trous denoiser / next frame's
-		// reproject reads them.
-		ctx->TransitionToStorage(output->GetTexture());
-		ctx->TransitionToStorage(momentsOut->GetTexture());
-
+		// Layout transitions are graph-managed (#129 Inc 4): the effect declares both outputs (accumulated GI +
+		// moments) in the pass's .Writes (-> Storage before the dispatch); the read-back to Sampled comes from
+		// the à-trous denoiser's .Reads (color) and NEXT frame's temporal .Reads (moments). No hand transitions.
 		ctx->BindPipeline(m_Pipeline);
 		ctx->BindDescriptorSet(m_Sets[frameIndex], 0);
 		ctx->Dispatch((outW + 7) / 8, (outH + 7) / 8, 1);
-
-		ctx->TransitionToSampled(output->GetTexture());
-		ctx->TransitionToSampled(momentsOut->GetTexture());
 	}
 }

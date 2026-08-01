@@ -154,15 +154,12 @@ namespace Snowstorm
 		m_Sets[frameIndex]->SetBuffer(kParamsBinding, cbBB);
 		m_Sets[frameIndex]->Commit();
 
-		// Output must be GENERAL for the UAV write; the G-buffer inputs are already SHADER_READ (the graph
-		// declared them Sampled). Transition to Sampled after so the bilateral upsample (Inc 3) reads it.
-		ctx->TransitionToStorage(output->GetTexture());
-
+		// Layout transitions are graph-managed (#129 Inc 4): the effect declares this output in the pass's
+		// .Writes (-> Storage/GENERAL before the dispatch), and the next consumer declares it in .Reads
+		// (-> Sampled). No hand-called transitions here.
 		ctx->BindPipeline(m_Pipeline);
 		ctx->BindDescriptorSet(m_Sets[frameIndex], 0);
 		ctx->BindGlobalResources(); // set 3 = bindless textures/cubemaps + SceneTLAS (written by TlasBuildSystem)
 		ctx->Dispatch((outW + 7) / 8, (outH + 7) / 8, 1);
-
-		ctx->TransitionToSampled(output->GetTexture());
 	}
 }

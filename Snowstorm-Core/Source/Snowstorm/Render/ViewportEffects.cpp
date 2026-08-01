@@ -146,11 +146,13 @@ namespace Snowstorm
 				const FrameData& frameData = fc.Renderer.GetFrameData();
 				const auto frameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
 
-				// Compute pass: reads the G-buffer (Sampled), writes GITarget (Storage — the pass transitions it
-				// to GENERAL for the UAV write, then back to Sampled for Inc 3's upsample).
+				// Compute pass: reads the G-buffer (Sampled), writes GITarget (Storage). The graph applies both
+				// layout transitions from these declarations (#129 Inc 4); the read-back to Sampled is handled by
+				// the next consumer's .Reads (the temporal/denoise pass, or the debug tonemap's extraRead).
 				fc.Graph.AddPass({.Name = "GI" + v.Suffix,
 				                  .IsCompute = true,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Writes = {{giView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, giView, giW, giH](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, frameData, tableAddr, frameCounter,
@@ -234,6 +236,8 @@ namespace Snowstorm
 				                            {velView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {prevMomView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Writes = {{curHistView->GetTexture(), RenderGraph::AccessState::Storage},
+				                             {curMomView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, currentView, gbufView, velView, prevHistView, curHistView, prevMomView, curMomView, giW, giH, historyValid, nearPlane, farPlane, depthReject](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, currentView, gbufView, velView, prevHistView,
@@ -305,6 +309,7 @@ namespace Snowstorm
 					                  .IsCompute = true,
 					                  .Reads = {{srcView->GetTexture(), RenderGraph::AccessState::Sampled},
 					                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
+					                  .Writes = {{dstView->GetTexture(), RenderGraph::AccessState::Storage}},
 					                  .Execute = [this, &fc, slot, step, srcView, gbufView, dstView, giW, giH, lumaPhi](CommandContext& c)
 					                  {
 						                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, slot, step, srcView, gbufView, dstView, giW, giH, lumaPhi);
@@ -414,6 +419,7 @@ namespace Snowstorm
 				fc.Graph.AddPass({.Name = "AO" + v.Suffix,
 				                  .IsCompute = true,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Writes = {{aoView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, invViewProj, radius, intensity, frameCounter, gbufView, aoView, aoW, aoH](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, radius, intensity, frameCounter,
@@ -515,6 +521,7 @@ namespace Snowstorm
 				                  .IsCompute = true,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {shadingView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Writes = {{reflView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, shadingView, reflView, reflW, reflH](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, frameData, tableAddr, frameCounter,
@@ -594,6 +601,8 @@ namespace Snowstorm
 				                            {velView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {prevMomView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Writes = {{curHistView->GetTexture(), RenderGraph::AccessState::Storage},
+				                             {curMomView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, currentView, gbufView, velView, prevHistView, curHistView, prevMomView, curMomView, reflW, reflH, historyValid, nearPlane, farPlane, depthReject](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, currentView, gbufView, velView, prevHistView,
@@ -661,6 +670,7 @@ namespace Snowstorm
 					                  .IsCompute = true,
 					                  .Reads = {{srcView->GetTexture(), RenderGraph::AccessState::Sampled},
 					                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
+					                  .Writes = {{dstView->GetTexture(), RenderGraph::AccessState::Storage}},
 					                  .Execute = [this, &fc, slot, step, srcView, gbufView, dstView, reflW, reflH, lumaPhi](CommandContext& c)
 					                  {
 						                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, slot, step, srcView, gbufView, dstView, reflW, reflH, lumaPhi);
