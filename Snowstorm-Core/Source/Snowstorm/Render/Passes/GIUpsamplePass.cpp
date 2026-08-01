@@ -27,6 +27,11 @@ namespace Snowstorm
 		{
 			glm::uvec2 GISize{0, 0};
 			glm::uvec2 FullSize{0, 0};
+
+			float Near = 0.1f;
+			float Far = 500.0f;
+			float DepthSigma = 50.0f; // relative view-depth edge-stop tightness (render.rt.depthsigma)
+			float _Pad = 0.0f;
 		};
 	}
 
@@ -83,7 +88,8 @@ namespace Snowstorm
 	}
 
 	void GIUpsamplePass::Draw(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const Ref<TextureView>& gi,
-	                          const Ref<TextureView>& gbuffer, const uint32_t giW, const uint32_t giH, const PixelFormat colorFormat)
+	                          const Ref<TextureView>& gbuffer, const uint32_t giW, const uint32_t giH, const float nearPlane,
+	                          const float farPlane, const float depthSigma, const PixelFormat colorFormat)
 	{
 		if (!ctx || !gi || !gbuffer)
 		{
@@ -119,6 +125,9 @@ namespace Snowstorm
 		GIUpsampleCB cb{};
 		cb.GISize = {giW, giH};
 		cb.FullSize = {0, 0}; // resolution-independent (UV-based); kept for parity with the shader layout
+		cb.Near = nearPlane;
+		cb.Far = farPlane;
+		cb.DepthSigma = depthSigma;
 		m_ParamBuffers[frameIndex]->SetData(&cb, sizeof(GIUpsampleCB), 0);
 
 		m_Sets[frameIndex]->SetTexture(kGIBinding, gi);

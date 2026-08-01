@@ -18,6 +18,11 @@ cbuffer AOUpsampleCB : register(b7, space1)
 {
 	uint2 AOSize;   // half-res AO dimensions
 	uint2 FullSize; // full-res output dimensions (unused directly; UV is resolution-independent)
+
+	float Near;         // camera near/far to linearize the packed NDC depth for the edge-stop
+	float Far;
+	float DepthSigma;   // RELATIVE view-depth edge-stop scale (render.ao.upsample.depthsigma); higher = tighter
+	float _Pad;
 };
 
 struct FullscreenVSOut
@@ -43,6 +48,9 @@ float main(FullscreenVSOut input) : SV_Target
 		return 1.0;
 	}
 
+	// Linearize the center depth ONCE for the relative view-space edge-stop below (raw NDC over-rejects).
+	const float linCenter = LinearizeViewDepth(Dc, Near, Far);
+
 	// Half-res texel footprint around uv: base texel + bilinear fraction.
 	const float2 hf = uv * float2(AOSize) - 0.5;
 	const float2 baseTexel = floor(hf);
@@ -56,9 +64,9 @@ float main(FullscreenVSOut input) : SV_Target
 	};
 	const int2 off[4] = {int2(0, 0), int2(1, 0), int2(0, 1), int2(1, 1)};
 
-	// Bilateral sigmas (match GIUpsample): sharp normal rejection across creases, NDC-space depth cut.
+	// Bilateral normal sigma (match GIUpsample): sharp rejection across creases. Depth uses a RELATIVE
+	// view-space test below (DepthSigma), NOT the old raw-NDC * fixed-scale which over-rejected near surfaces.
 	const float kNormalPow = 8.0;
-	const float kDepthScale = 2000.0;
 
 	float accum = 0.0;
 	float wsum = 0.0;
@@ -76,7 +84,10 @@ float main(FullscreenVSOut input) : SV_Target
 		const float4 gt = GBufferTex.SampleLevel(PointClamp, tapUV, 0);
 
 		const float wN = pow(saturate(dot(Nc, DecodeNormalOct(gt.xy))), kNormalPow);
-		const float wD = exp(-abs(Dc - gt.w) * kDepthScale);
+		// RELATIVE view-depth edge-stop (same fix as GIUpsample): |Δlinear| / centerLinear works near AND far.
+		const float linTap = LinearizeViewDepth(gt.w, Near, Far);
+		const float dRel = abs(linCenter - linTap) / max(linCenter, 1e-4);
+		const float wD = exp(-dRel * DepthSigma);
 		const float w = bw[t] * wN * wD;
 
 		accum += ao * w;

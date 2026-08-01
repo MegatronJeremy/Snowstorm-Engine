@@ -24,10 +24,12 @@ namespace Snowstorm
 	{
 	public:
 		// Upsample `gi` (half-res, giW x giH) into the bound full-res target, guided by `gbuffer` (full-res
-		// .xyz normal, .w depth). colorFormat is the destination's color format (for the pipeline). Lazily
-		// builds the pipeline (async shader); no-op until ready.
+		// .xyz normal, .w depth). colorFormat is the destination's color format (for the pipeline). near/far
+		// linearize the guide's NDC depth for the relative edge-stop; depthSigma is its tightness
+		// (render.rt.depthsigma). Lazily builds the pipeline (async shader); no-op until ready.
 		void Draw(const Ref<CommandContext>& ctx, uint32_t frameIndex, const Ref<TextureView>& gi,
-		          const Ref<TextureView>& gbuffer, uint32_t giW, uint32_t giH, PixelFormat colorFormat);
+		          const Ref<TextureView>& gbuffer, uint32_t giW, uint32_t giH, float nearPlane, float farPlane,
+		          float depthSigma, PixelFormat colorFormat);
 
 	private:
 		void EnsurePipeline(PixelFormat colorFormat);

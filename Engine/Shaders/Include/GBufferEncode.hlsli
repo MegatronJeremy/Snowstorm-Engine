@@ -54,6 +54,19 @@ bool IsSky(float depth)
 	return depth >= 1.0;
 }
 
+// Linearize an NDC depth (perspective RH, ZO clip [0,1]) to view-space distance. NDC depth is HIGHLY
+// non-linear (a tiny world step near the camera is a large NDC jump; far away it's tiny), so any edge-stop
+// weight built on RAW NDC depth with a fixed scale over-rejects near-camera / grazing surfaces and
+// under-rejects distant ones — every bilateral tap gets rejected on the floor you're standing on, which
+// collapses the upsample to nearest-neighbour (blocky) and makes the à-trous a no-op. Edge-stopping must
+// compare LINEAR view-space depth with a RELATIVE threshold instead. Matches GITemporal's disocclusion
+// linearization so the temporal + spatial stages agree on what a depth discontinuity is. Guards the
+// denominator so a far/sky texel (d == 1) can't divide by zero.
+float LinearizeViewDepth(float ndcDepth, float nearPlane, float farPlane)
+{
+	return (nearPlane * farPlane) / max(farPlane - ndcDepth * (farPlane - nearPlane), 1e-6);
+}
+
 // Convenience packers so producer + debug reads agree on channel order.
 float4 PackGBuffer(float3 normalWS, float roughness, float ndcDepth)
 {

@@ -30,10 +30,14 @@ cbuffer GIDenoiseCB : register(b4, space0)
 	int Step;           // à-trous tap stride in texels for this iteration (1,2,4,…)
 	float KNormalPow;   // normal edge-stop exponent (higher = sharper crease rejection)
 
-	float KDepthScale;  // depth edge-stop scale in NDC space (higher = tighter silhouette cut)
+	float KDepthScale;  // RELATIVE view-depth edge-stop scale (higher = tighter silhouette cut). Applied to a
+	                    // LINEARIZED, relative depth diff — NOT raw NDC (which over-rejected near/grazing surfaces).
 	float LumaPhi;      // SVGF luminance edge-stop scale (#129 Inc 3b); 0 => luminance term OFF (pre-3b behaviour)
 	float HitDistPhi;   // #130 Inc B: hit-distance edge-stop scale (AO only); 0 => hit-distance term OFF (GI/refl)
-	float _Pad;
+	float Near;         // camera near/far to linearize the packed NDC depth for the edge-stop
+
+	float Far;
+	float3 _Pad;
 };
 
 #include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky (#129 Inc 1b)
@@ -62,6 +66,7 @@ void main(uint3 id : SV_DispatchThreadID)
 	const float4 gc = GBufferNormal.Load(int3(centerTexel, 0));
 	const float3 Nc = DecodeNormalOct(gc.xy); // #129 Inc 1b: .xy octahedral normal
 	const float Dc = gc.w;
+	const float linCenter = LinearizeViewDepth(Dc, Near, Far); // relative view-depth edge-stop (not raw NDC)
 
 	// Sky / no geometry (far plane / cleared depth): pass the GI through untouched, matching the trace +
 	// upsample guards. Filtering across a sky edge would bleed black into lit pixels.
@@ -125,7 +130,11 @@ void main(uint3 id : SV_DispatchThreadID)
 			// Edge-stopping: reject taps across normal creases / depth discontinuities. A sky tap has depth ~1,
 			// so its large depth diff (wD -> 0) drops it — no explicit sky guard needed on taps.
 			const float wN = pow(saturate(dot(Nc, DecodeNormalOct(gt.xy))), KNormalPow);
-			const float wD = exp(-abs(Dc - gt.w) * KDepthScale);
+			// RELATIVE view-depth edge-stop: |Δlinear| / centerLinear, so one KDepthScale works near AND far.
+			// Raw NDC * fixed scale over-rejected near/grazing surfaces -> every tap dropped -> à-trous no-op.
+			const float linTap = LinearizeViewDepth(gt.w, Near, Far);
+			const float dRel = abs(linCenter - linTap) / max(linCenter, 1e-4);
+			const float wD = exp(-dRel * KDepthScale);
 			// SVGF luminance term: variance-scaled, so noisy regions blur through it. 1.0 when off.
 			float wL = 1.0;
 			if (LumaPhi > 0.0)

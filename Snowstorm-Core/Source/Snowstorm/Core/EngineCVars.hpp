@@ -334,6 +334,14 @@ namespace Snowstorm::CVars
 	// render.gi.scale clamped to [0.25, 1.0]. Use everywhere the value is consumed.
 	[[nodiscard]] float ClampedGIScale();
 
+	// RELATIVE view-depth edge-stop sigma for the depth-aware GI/AO passes (upsample + à-trous). The bilateral
+	// weight is exp(-(|Δlinear_view_depth| / center_depth) * sigma): higher = tighter (cuts at smaller depth
+	// steps = sharper silhouettes but more tap rejection); lower = looser (more neighbours pass = smoother but
+	// risks bleeding across edges). Replaces the old raw-NDC * fixed-2000 formulation, which over-rejected
+	// near/grazing surfaces (every tap dropped -> nearest-neighbour blocking + à-trous no-op). Shared by GI +
+	// AO so their upsample and denoise agree on what a depth edge is; exposed for the visual A/B.
+	extern CVar<float> DepthEdgeSigma;
+
 	// Spatial denoiser for the half-res RT GI (#125): an edge-aware à-trous wavelet blur run on the half-res
 	// GITarget (between the GI trace and the bilateral upsample), so each ray "looks like" several — cleaner
 	// GI at the same GI_RAY_COUNT. Depth+normal edge-stopping (reuses the G-buffer guide), no variance term

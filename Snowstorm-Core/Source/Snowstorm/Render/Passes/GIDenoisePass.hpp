@@ -30,12 +30,14 @@ namespace Snowstorm
 		// `slot` disambiguates the descriptor set WITHIN a frame (multiple iterations run per frame, each needs
 		// its own set). `hitGuide` (#130 Inc B) is the AO hit-distance guide (its .a); the shader always binds it
 		// but only reads it when `hitDistPhi > 0` — GI/reflections pass their `gbuffer` here + phi 0 (no-op, so
-		// their output is bit-identical). AO passes its raw trace + phi > 0. Lazily builds the pipeline; no-op
-		// until ready.
+		// their output is bit-identical). AO passes its raw trace + phi > 0. near/far linearize the guide's NDC
+		// depth for the relative view-depth edge-stop; depthSigma is its tightness (render.rt.depthsigma).
+		// Lazily builds the pipeline; no-op until ready.
 		void Dispatch(const Ref<CommandContext>& ctx, uint32_t frameIndex, uint32_t slot, int step,
 		              const Ref<TextureView>& input, const Ref<TextureView>& gbuffer,
 		              const Ref<TextureView>& output, uint32_t outW, uint32_t outH, float lumaPhi,
-		              const Ref<TextureView>& hitGuide, float hitDistPhi = 0.0f);
+		              const Ref<TextureView>& hitGuide, float hitDistPhi, float nearPlane, float farPlane,
+		              float depthSigma);
 
 	private:
 		void EnsureResources();

@@ -24,7 +24,10 @@ namespace Snowstorm
 		int DenoiseIterations = 0;      // clamped render.<sig>.denoise.iterations (0 = à-trous off)
 		float VariancePhi = 0.0f;       // render.<sig>.denoise.variance (SVGF luminance φ; 0 = off)
 		float HitDistPhi = 0.0f;        // #130 Inc B: à-trous hit-distance φ (AO only; 0 = off for GI/reflections)
-		const char* NamePrefix = "";    // graph pass-name prefix, e.g. "GI" / "Reflection"
+		float NearPlane = 0.1f;         // camera near/far to linearize the à-trous depth edge-stop (Fix B)
+		float FarPlane = 500.0f;
+		float DepthSigma = 50.0f;    // relative view-depth edge-stop sigma (render.rt.depthsigma)
+		const char* NamePrefix = ""; // graph pass-name prefix, e.g. "GI" / "Reflection"
 	};
 
 	// Reusable SVGF denoiser (#132): the shared temporal-accumulation + edge-avoiding à-trous logic that GI

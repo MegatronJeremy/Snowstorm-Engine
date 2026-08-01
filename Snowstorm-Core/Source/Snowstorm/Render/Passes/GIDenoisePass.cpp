@@ -21,10 +21,13 @@ namespace Snowstorm
 			int Step = 1;
 			float KNormalPow = 8.0f;
 
-			float KDepthScale = 2000.0f;
-			float LumaPhi = 0.0f;    // SVGF luminance edge-stop scale (#129 Inc 3b); 0 = off
-			float HitDistPhi = 0.0f; // #130 Inc B: hit-distance edge-stop scale (AO only); 0 = off
-			float _Pad{0.0f};
+			float KDepthScale = 50.0f; // RELATIVE view-depth edge-stop sigma (render.rt.depthsigma), NOT raw NDC
+			float LumaPhi = 0.0f;      // SVGF luminance edge-stop scale (#129 Inc 3b); 0 = off
+			float HitDistPhi = 0.0f;   // #130 Inc B: hit-distance edge-stop scale (AO only); 0 = off
+			float Near = 0.1f;         // camera near/far to linearize the packed NDC depth for the edge-stop
+
+			float Far = 500.0f;
+			glm::vec3 _Pad{0.0f};
 		};
 
 		// Binding indices in GIDenoise.comp.hlsl set 0. Binding 3 (the #129 Inc 2c freed sampler slot) now holds
@@ -40,10 +43,9 @@ namespace Snowstorm
 		// pool (one set per iteration, since each iteration binds a different input/output + Step).
 		constexpr uint32_t kMaxSlots = 5;
 
-		// Edge-stop sigmas — same values GIUpsample.frag.hlsl uses, so the denoiser and the upsample agree on
-		// what an edge is. Normal: high power = sharp crease rejection. Depth: NDC-space, cuts at silhouettes.
+		// Normal edge-stop exponent — matches GIUpsample.frag.hlsl so the denoiser and upsample agree on a crease.
+		// The depth sigma is now the render.rt.depthsigma CVar (relative view-space), passed per-Dispatch.
 		constexpr float kNormalPow = 8.0f;
-		constexpr float kDepthScale = 2000.0f;
 	}
 
 	void GIDenoisePass::EnsureResources()
@@ -81,7 +83,8 @@ namespace Snowstorm
 	void GIDenoisePass::Dispatch(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const uint32_t slot,
 	                             const int step, const Ref<TextureView>& input, const Ref<TextureView>& gbuffer,
 	                             const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH,
-	                             const float lumaPhi, const Ref<TextureView>& hitGuide, const float hitDistPhi)
+	                             const float lumaPhi, const Ref<TextureView>& hitGuide, const float hitDistPhi,
+	                             const float nearPlane, const float farPlane, const float depthSigma)
 	{
 		if (!ctx || !input || !gbuffer || !output || !hitGuide || outW == 0 || outH == 0)
 		{
@@ -101,9 +104,11 @@ namespace Snowstorm
 		cb.OutSize = {outW, outH};
 		cb.Step = step;
 		cb.KNormalPow = kNormalPow;
-		cb.KDepthScale = kDepthScale;
-		cb.LumaPhi = lumaPhi;       // #129 Inc 3b: 0 disables the variance-guided luminance term
-		cb.HitDistPhi = hitDistPhi; // #130 Inc B: 0 disables the hit-distance term (GI/reflections)
+		cb.KDepthScale = depthSigma; // Fix B: relative view-depth sigma (render.rt.depthsigma), not raw NDC
+		cb.LumaPhi = lumaPhi;        // #129 Inc 3b: 0 disables the variance-guided luminance term
+		cb.HitDistPhi = hitDistPhi;  // #130 Inc B: 0 disables the hit-distance term (GI/reflections)
+		cb.Near = nearPlane;
+		cb.Far = farPlane;
 		m_ParamBuffers[idx]->SetData(&cb, sizeof(GIDenoiseCB), 0);
 
 		const auto& layouts = m_Pipeline->GetSetLayouts();

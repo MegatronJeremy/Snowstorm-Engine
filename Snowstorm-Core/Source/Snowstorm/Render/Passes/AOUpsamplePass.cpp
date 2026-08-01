@@ -27,6 +27,11 @@ namespace Snowstorm
 		{
 			glm::uvec2 AOSize{0, 0};
 			glm::uvec2 FullSize{0, 0};
+
+			float Near = 0.1f;
+			float Far = 500.0f;
+			float DepthSigma = 50.0f; // relative view-depth edge-stop tightness (render.rt.depthsigma)
+			float _Pad = 0.0f;
 		};
 	}
 
@@ -82,7 +87,8 @@ namespace Snowstorm
 	}
 
 	void AOUpsamplePass::Draw(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const Ref<TextureView>& ao,
-	                          const Ref<TextureView>& gbuffer, const uint32_t aoW, const uint32_t aoH, const PixelFormat colorFormat)
+	                          const Ref<TextureView>& gbuffer, const uint32_t aoW, const uint32_t aoH, const float nearPlane,
+	                          const float farPlane, const float depthSigma, const PixelFormat colorFormat)
 	{
 		if (!ctx || !ao || !gbuffer)
 		{
@@ -118,6 +124,9 @@ namespace Snowstorm
 		AOUpsampleCB cb{};
 		cb.AOSize = {aoW, aoH};
 		cb.FullSize = {0, 0}; // resolution-independent (UV-based); kept for parity with the shader layout
+		cb.Near = nearPlane;
+		cb.Far = farPlane;
+		cb.DepthSigma = depthSigma;
 		m_ParamBuffers[frameIndex]->SetData(&cb, sizeof(AOUpsampleCB), 0);
 
 		m_Sets[frameIndex]->SetTexture(kAOBinding, ao);

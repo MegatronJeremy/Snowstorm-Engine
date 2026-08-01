@@ -84,6 +84,9 @@ namespace Snowstorm
 			const auto slot = static_cast<uint32_t>(i);
 			const float lumaPhi = cfg.VariancePhi;
 			const float hitPhi = cfg.HitDistPhi; // #130 Inc B: 0 for GI/reflections (no-op)
+			const float nearPlane = cfg.NearPlane;
+			const float farPlane = cfg.FarPlane;
+			const float depthSigma = cfg.DepthSigma; // Fix B: relative view-depth edge-stop
 
 			fc.Graph.AddPass({.Name = std::string(cfg.NamePrefix) + "Denoise" + std::to_string(i) + suffix,
 			                  .IsCompute = true,
@@ -91,9 +94,9 @@ namespace Snowstorm
 			                            {gbuffer->GetTexture(), RenderGraph::AccessState::Sampled},
 			                            {hitGuide->GetTexture(), RenderGraph::AccessState::Sampled}},
 			                  .Writes = {{dstView->GetTexture(), RenderGraph::AccessState::Storage}},
-			                  .Execute = [this, &fc, slot, step, srcView, gbuffer, dstView, hitGuide, w, h, lumaPhi, hitPhi](CommandContext& c)
+			                  .Execute = [this, &fc, slot, step, srcView, gbuffer, dstView, hitGuide, w, h, lumaPhi, hitPhi, nearPlane, farPlane, depthSigma](CommandContext& c)
 			                  {
-				                  m_Atrous.Dispatch(fc.Ctx, fc.FrameIndex, slot, step, srcView, gbuffer, dstView, w, h, lumaPhi, hitGuide, hitPhi);
+				                  m_Atrous.Dispatch(fc.Ctx, fc.FrameIndex, slot, step, srcView, gbuffer, dstView, w, h, lumaPhi, hitGuide, hitPhi, nearPlane, farPlane, depthSigma);
 			                  }});
 
 			dst ^= 1;

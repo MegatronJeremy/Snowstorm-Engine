@@ -256,6 +256,9 @@ namespace Snowstorm
 				DenoiserConfig cfg{};
 				cfg.DenoiseIterations = CVars::ClampedGIDenoiseIterations();
 				cfg.VariancePhi = CVars::GIDenoiseVariance.Get();
+				cfg.NearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f; // Fix B: linearize the depth edge-stop
+				cfg.FarPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+				cfg.DepthSigma = CVars::DepthEdgeSigma.Get();
 				cfg.NamePrefix = "GI";
 
 				// The filtered buffer (Scratch[0]) becomes the live GI (#132: shared Denoiser logic). GI passes
@@ -305,14 +308,17 @@ namespace Snowstorm
 				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
 				const Ref<RenderTarget>& dst = v.RT.GIUpscaleTarget;
 				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
+				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+				const float depthSigma = CVars::DepthEdgeSigma.Get(); // relative view-depth edge-stop (Fix B)
 
 				fc.Graph.AddPass({.Name = "GIUpsample" + v.Suffix,
 				                  .Target = dst,
 				                  .Reads = {{giView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
-				                  .Execute = [this, &fc, giView, gbufView, giW, giH, dstFmt](CommandContext& c)
+				                  .Execute = [this, &fc, giView, gbufView, giW, giH, nearPlane, farPlane, depthSigma, dstFmt](CommandContext& c)
 				                  {
-					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, giView, gbufView, giW, giH, dstFmt);
+					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, giView, gbufView, giW, giH, nearPlane, farPlane, depthSigma, dstFmt);
 				                  }});
 			}
 
@@ -455,7 +461,10 @@ namespace Snowstorm
 				DenoiserConfig cfg{};
 				cfg.DenoiseIterations = CVars::ClampedAODenoiseIterations();
 				cfg.VariancePhi = CVars::AODenoiseVariance.Get();
-				cfg.HitDistPhi = CVars::AODenoiseHitDist.Get(); // #130 Inc B: REBLUR-style hit-distance guidance
+				cfg.HitDistPhi = CVars::AODenoiseHitDist.Get();                // #130 Inc B: REBLUR-style hit-distance guidance
+				cfg.NearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f; // Fix B: linearize the depth edge-stop
+				cfg.FarPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+				cfg.DepthSigma = CVars::DepthEdgeSigma.Get();
 				cfg.NamePrefix = "AO";
 
 				// The à-trous-filtered buffer (Scratch[0]) becomes the live AO (#130: shared Denoiser). The raw
@@ -502,14 +511,17 @@ namespace Snowstorm
 				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
 				const Ref<RenderTarget>& dst = v.RT.AOUpscaleTarget;
 				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
+				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+				const float depthSigma = CVars::DepthEdgeSigma.Get(); // relative view-depth edge-stop (Fix B)
 
 				fc.Graph.AddPass({.Name = "AOUpsample" + v.Suffix,
 				                  .Target = dst,
 				                  .Reads = {{aoView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
-				                  .Execute = [this, &fc, aoView, gbufView, aoW, aoH, dstFmt](CommandContext& c)
+				                  .Execute = [this, &fc, aoView, gbufView, aoW, aoH, nearPlane, farPlane, depthSigma, dstFmt](CommandContext& c)
 				                  {
-					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, aoView, gbufView, aoW, aoH, dstFmt);
+					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, aoView, gbufView, aoW, aoH, nearPlane, farPlane, depthSigma, dstFmt);
 				                  }});
 			}
 
@@ -660,6 +672,9 @@ namespace Snowstorm
 				DenoiserConfig cfg{};
 				cfg.DenoiseIterations = CVars::ClampedReflectionDenoiseIterations();
 				cfg.VariancePhi = CVars::ReflectionDenoiseVariance.Get();
+				cfg.NearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f; // Fix B: linearize the depth edge-stop
+				cfg.FarPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+				cfg.DepthSigma = CVars::DepthEdgeSigma.Get();
 				cfg.NamePrefix = "Reflection";
 
 				// The à-trous-filtered buffer becomes the live reflection (#132: shared Denoiser). Reflections

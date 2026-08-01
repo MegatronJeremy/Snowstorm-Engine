@@ -34,18 +34,32 @@ namespace Snowstorm
 		const Application& app = Application::Get();
 		const bool isImGuiEnabled = app.GetServiceManager().ServiceRegistered<ImGuiService>();
 
+		// An internal-scale CVar (render.scale / render.gi.scale / render.ao.scale) is GLOBAL state, not a
+		// viewport-size change, so the size-change gates below would skip the rebuild and the sliders would
+		// silently no-op. Detect a change once per frame and treat it like a viewport change so the per-scale
+		// target rebuild (scaleChanged/giScaleChanged/aoScaleChanged) is actually reached.
+		const float curRenderScale = CVars::ClampedRenderScale();
+		const float curGIScale = CVars::ClampedGIScale();
+		const float curAOScale = CVars::ClampedAOScale();
+		const bool scaleChangedGlobal = curRenderScale != m_LastRenderScale ||
+		                                curGIScale != m_LastGIScale ||
+		                                curAOScale != m_LastAOScale;
+		m_LastRenderScale = curRenderScale;
+		m_LastGIScale = curGIScale;
+		m_LastAOScale = curAOScale;
+
 		// If you want: when no viewport changed, you can still init new cameras and early-out.
 		const bool anyViewportChanged = !changedViewports.empty();
-		if (!anyViewportChanged && cameraInit.empty())
+		if (!anyViewportChanged && cameraInit.empty() && !scaleChangedGlobal)
 		{
 			return;
 		}
 
 		for (const entt::entity vpEntity : viewportView)
 		{
-			// If ImGui is enabled, we resize only when the viewport size changed.
-			// If ImGui is disabled, the viewport matches the window each frame (so treat as changed).
-			if (isImGuiEnabled && !changedViewports.contains(vpEntity) && cameraInit.empty())
+			// If ImGui is enabled, we resize only when the viewport size changed (or an internal scale changed,
+			// or a camera is initializing). If ImGui is disabled, the viewport matches the window each frame.
+			if (isImGuiEnabled && !changedViewports.contains(vpEntity) && cameraInit.empty() && !scaleChangedGlobal)
 			{
 				continue;
 			}

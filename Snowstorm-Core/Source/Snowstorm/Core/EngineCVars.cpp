@@ -125,7 +125,7 @@ namespace Snowstorm::CVars
 
 	CVar<float> AODenoiseVariance{"render.ao.denoise.variance", 4.0f, "SVGF variance-guided à-trous luminance-phi for AO (#130): widens the à-trous in noisy/disoccluded regions, tight where converged. 0 = off. ~2-8 typical.", CVarFlags::Persist};
 
-	CVar<float> AODenoiseHitDist{"render.ao.denoise.hitdist", 8.0f, "RTAO hit-distance edge-stop phi (#130 Inc B, NRD REBLUR-style): weights à-trous taps by |Δ normalized hit distance| so a near contact-shadow gradient isn't blurred into distant AO. 0 = off (the plain depth+normal à-trous). ~4-16 typical.", CVarFlags::Persist};
+	CVar<float> AODenoiseHitDist{"render.ao.denoise.hitdist", 0.0f, "RTAO hit-distance edge-stop phi (#130 Inc B, NRD REBLUR-style): weights à-trous taps by |Δ normalized hit distance| so a near contact-shadow gradient isn't blurred into distant AO. DEFAULT 0 (OFF): the hit distance rides the RAW few-ray trace's .a, which is far too noisy between neighbours at ~2 rays/pixel — a non-zero phi then rejects every tap and the à-trous becomes a no-op. Only useful once the hit distance is temporally accumulated / denoised (see follow-up). ~4-16 once a clean hitT exists.", CVarFlags::Persist};
 
 	CVar<bool> ReflectionsRT{"render.reflections.rt", false, "Ray-traced reflections (#118): trace a reflection ray inline in DefaultLit, shade the reflected hit (albedo + sun + ambient), and blend it into the specular term for smooth surfaces. Requires an RT GPU (ignored otherwise). One ray/pixel — needs TAA (render.aa = TAA) for a clean result.", CVarFlags::Persist};
 
@@ -160,6 +160,8 @@ namespace Snowstorm::CVars
 	CVar<int> GIRayCount{"render.gi.rays", 2, "RT GI hemisphere-gather rays per pixel per frame (was the compile-time GI_RAY_COUNT). More rays = less per-frame noise (less reliance on temporal accumulation, so less shimmer under motion) at a ~linear trace cost. Clamped to [1, 16]. Temporal (#125) + the à-trous still average on top.", CVarFlags::Persist};
 
 	CVar<float> GIScale{"render.gi.scale", 0.5f, "RT GI internal resolution: the GI hemisphere gather runs at this fraction of viewport res (0.5 = quarter the pixels = ~4x cheaper), then a depth-aware bilateral upsample restores full res (#124). 1.0 = full-res reference for the A/B. Clamped to [0.25, 1.0].", CVarFlags::Persist};
+
+	CVar<float> DepthEdgeSigma{"render.rt.depthsigma", 50.0f, "Relative view-depth edge-stop sigma for the GI/AO bilateral upsample + a-trous denoise. Weight = exp(-(|delta linear view depth| / center depth) * sigma): higher = tighter (sharper silhouettes, more tap rejection), lower = looser (smoother, risks edge bleed). Replaces the old raw-NDC * fixed 2000 that over-rejected near/grazing surfaces (nearest-neighbour blocking + denoise no-op). ~20-100 typical.", CVarFlags::Persist};
 
 	CVar<bool> GITemporal{"render.gi.temporal", true, "GI temporal accumulation (#125), SVGF's temporal half: reproject the previous accumulated GI by the motion vectors and blend with this frame's few-ray trace before the à-trous filter, so each pixel integrates many frames — fixes the static/slow-motion shimmer a spatial-only denoiser leaves. Depth-disocclusion reject (reused from TAA #127) prevents ghosting. Off = à-trous filters the raw trace. Read per-frame; forces the velocity pass on.", CVarFlags::Persist};
 
