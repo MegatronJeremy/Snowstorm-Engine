@@ -351,6 +351,11 @@ namespace Snowstorm
 						{
 							CVars::AOIntensity.Set(aoIntensity);
 						}
+						// Rays/pixel/frame: more = less noise (esp. under motion, where temporal reuse weakens), ~linear cost.
+						if (int aoRays = CVars::AORayCount.Get(); ImGui::SliderInt("Rays/pixel##AO", &aoRays, 1, 16, "%d", ImGuiSliderFlags_AlwaysClamp))
+						{
+							CVars::AORayCount.Set(aoRays);
+						}
 						// Internal resolution (#126): AO traces at this fraction of viewport res, then a bilateral upsample
 						// restores full res — mirrors the GI Resolution slider. 0.5 = quarter the rays; 1.0 = full-res.
 						if (float aoScale = CVars::AOScale.Get(); ImGui::SliderFloat("Resolution##AO", &aoScale, 0.25f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
@@ -451,6 +456,12 @@ namespace Snowstorm
 						{
 							CVars::ReflectionRange.Set(reflRange);
 						}
+						// Rays/pixel/frame: on GLOSSY surfaces more rays average the cone in-frame (less shimmer under
+						// motion); a perfect mirror is one deterministic ray regardless. ~linear cost.
+						if (int reflRays = CVars::ReflectionRayCount.Get(); ImGui::SliderInt("Rays/pixel##Refl", &reflRays, 1, 16, "%d", ImGuiSliderFlags_AlwaysClamp))
+						{
+							CVars::ReflectionRayCount.Set(reflRays);
+						}
 						if (ImGui::IsItemHovered())
 						{
 							ImGui::SetTooltip("Max reflection ray distance (perf cap): nearer surfaces reflect real geometry; past this the ray sees the sky.");
@@ -532,6 +543,11 @@ namespace Snowstorm
 						if (float giRange = CVars::GIRange.Get(); ImGui::SliderFloat("Range##GI", &giRange, 0.5f, 30.0f, "%.1f m", ImGuiSliderFlags_AlwaysClamp))
 						{
 							CVars::GIRange.Set(giRange);
+						}
+						// Rays/pixel/frame: more = less noise (esp. under motion, where temporal reuse weakens), ~linear cost.
+						if (int giRays = CVars::GIRayCount.Get(); ImGui::SliderInt("Rays/pixel##GI", &giRays, 1, 16, "%d", ImGuiSliderFlags_AlwaysClamp))
+						{
+							CVars::GIRayCount.Set(giRays);
 						}
 						// Internal resolution (#124): GI traces at this fraction of viewport res, then a bilateral upsample
 						// restores full res. 0.5 = quarter the rays (~4x cheaper); 1.0 = full-res reference for the A/B.

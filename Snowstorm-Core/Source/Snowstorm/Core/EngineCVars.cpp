@@ -111,6 +111,8 @@ namespace Snowstorm::CVars
 
 	CVar<float> AOIntensity{"render.ao.intensity", 1.0f, "RTAO darkening strength (1 = physical, >1 = artistic boost, 0 = none)", CVarFlags::Persist};
 
+	CVar<int> AORayCount{"render.ao.rays", 2, "RTAO occlusion rays per pixel per frame (was the compile-time AO_RAY_COUNT). More rays = less per-frame noise (less reliance on temporal accumulation, so less shimmer under motion) at a ~linear trace cost. Clamped to [1, 16]. Temporal + the denoiser (#130) still average across frames on top.", CVarFlags::Persist};
+
 	CVar<bool> AOTemporal{"render.ao.temporal", true, "RTAO temporal accumulation (#130): reproject the previous accumulated AO by the motion vectors and blend with this frame's few-ray trace (depth-disocclusion reject, reusing the shared SVGF temporal pass) — kills the at-rest AO shimmer that previously only TAA hid. Off = the noisy raw trace. Read per-frame; forces the velocity pass on.", CVarFlags::Persist};
 
 	CVar<float> AOTemporalBlend{"render.ao.temporal.blend", 0.9f, "RTAO temporal history weight while moving. Mirrors GI's 0.9 (occlusion is view-independent, like GI — unlike reflections). The velocity-aware blend lerps between this and maxblend by staticness (#130).", CVarFlags::Persist};
@@ -135,6 +137,8 @@ namespace Snowstorm::CVars
 
 	CVar<float> ReflectionRange{"render.reflections.range", 40.0f, "RT reflection ray max distance in world units. A ray finding no geometry within this range falls back to the sky cube; bounding it lets the BVH traversal early-out instead of walking the whole scene on every sky-bound ray (perf). Larger = reflect farther geometry, more cost.", CVarFlags::Persist};
 
+	CVar<int> ReflectionRayCount{"render.reflections.rays", 1, "RT reflection rays per pixel per frame (was a single hard-coded ray + glossy jitter). On GLOSSY surfaces more rays average the roughness cone per-frame (less shimmer under motion, less temporal reliance); a perfect mirror (roughness 0) collapses to one deterministic ray regardless. ~linear cost. Clamped to [1, 16].", CVarFlags::Persist};
+
 	CVar<bool> ReflectionTemporal{"render.reflections.temporal", true, "RT reflection temporal accumulation (#129): reproject the previous reflection by the motion vectors and blend with this frame's trace (depth-disocclusion reject, reusing the GI temporal pass) — kills the static reflection shimmer the raw few-ray trace leaves. Off = the shimmery raw trace. Read per-frame; forces the velocity pass on.", CVarFlags::Persist};
 
 	CVar<float> ReflectionTemporalBlend{"render.reflections.temporal.blend", 0.8f, "RT reflection temporal history weight while moving. LOWER than GI's (0.9) because reflections are view-dependent — a moving camera changes a mirror's reflected content even on a static surface, so heavy history ghosts. The velocity-aware blend lerps between this and maxblend by staticness (#129).", CVarFlags::Persist};
@@ -152,6 +156,8 @@ namespace Snowstorm::CVars
 	CVar<float> GIIntensity{"render.gi.intensity", 1.0f, "Multiplier on the RT GI indirect contribution (1 = physical, 0 = none)", CVarFlags::Persist};
 
 	CVar<float> GIRange{"render.gi.range", 8.0f, "RT GI gather ray max distance in world units — how far a bounce can come from (larger = broader indirect, more cost)", CVarFlags::Persist};
+
+	CVar<int> GIRayCount{"render.gi.rays", 2, "RT GI hemisphere-gather rays per pixel per frame (was the compile-time GI_RAY_COUNT). More rays = less per-frame noise (less reliance on temporal accumulation, so less shimmer under motion) at a ~linear trace cost. Clamped to [1, 16]. Temporal (#125) + the à-trous still average on top.", CVarFlags::Persist};
 
 	CVar<float> GIScale{"render.gi.scale", 0.5f, "RT GI internal resolution: the GI hemisphere gather runs at this fraction of viewport res (0.5 = quarter the pixels = ~4x cheaper), then a depth-aware bilateral upsample restores full res (#124). 1.0 = full-res reference for the A/B. Clamped to [0.25, 1.0].", CVarFlags::Persist};
 
@@ -252,6 +258,39 @@ namespace Snowstorm::CVars
 	bool AODenoiseActive()
 	{
 		return AODenoise.Get() && ClampedAODenoiseIterations() > 0;
+	}
+
+	namespace
+	{
+		// Shared clamp for the per-pixel ray-count CVars: at least 1 ray (0 would trace nothing), capped at 16
+		// (the shader loop bound + a sane cost ceiling; matches the light-array caps).
+		int ClampRayCount(const int n)
+		{
+			if (n < 1)
+			{
+				return 1;
+			}
+			if (n > 16)
+			{
+				return 16;
+			}
+			return n;
+		}
+	}
+
+	int ClampedAORayCount()
+	{
+		return ClampRayCount(AORayCount.Get());
+	}
+
+	int ClampedGIRayCount()
+	{
+		return ClampRayCount(GIRayCount.Get());
+	}
+
+	int ClampedReflectionRayCount()
+	{
+		return ClampRayCount(ReflectionRayCount.Get());
 	}
 
 	bool AOTemporalActive()

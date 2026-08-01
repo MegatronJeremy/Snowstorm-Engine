@@ -55,7 +55,8 @@ cbuffer ReflCB : register(b4, space0)
 
 	uint ReflGeoTableAddrLo; // device address of the GeometryRecord table (lo/hi)
 	uint ReflGeoTableAddrHi;
-	uint2 _Pad1;
+	uint RayCount;           // reflection rays per pixel this frame (render.reflections.rays, clamped [1,16])
+	uint _Pad1;
 };
 
 // Set 3 bindless + geometry-table read + one-bounce hit shading, shared with the GI compute pass (#129).
@@ -109,53 +110,66 @@ void main(uint3 id : SV_DispatchThreadID)
 	const float3 V = normalize(CameraPosition - positionWS);
 	const float3 R = reflect(-V, N); // mirror reflection vector
 
-	// Glossy cone jitter (#129 Inc 2b): a SHARP one-ray-per-pixel mirror trace ALIASES the reflected scene into
-	// a pixelated grid (the "blocky" raw buffer). Perturb the ray within a roughness-scaled disk around R, with
-	// a per-frame IGN rotation, so the reflection temporal pass averages the jittered samples into a smooth
-	// reflection over frames — exactly what the old inline reflection + TAA did. roughness == 0 (a perfect
-	// mirror) => zero cone => the exact sharp ray, so true mirrors stay crisp. Same disk-sample math as GI/RTAO.
-	float3 dir = R;
-	if (roughness > 0.0)
-	{
-		const float3 up = abs(R.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
-		const float3 tangent = normalize(cross(up, R));
-		const float3 bitangent = cross(R, tangent);
-		const float2 px = float2(id.xy) + float2(FrameCounter * 5.588238, FrameCounter * 3.539418);
-		const float ign = frac(52.9829189 * frac(dot(px, float2(0.06711056, 0.00583715))));
-		const float coneRadius = roughness * ReflConeScale;
-		const float rr = coneRadius * sqrt(ign);
-		const float phi = 2.0 * PI * frac(ign + 0.61803398875); // golden-ratio decorrelation of angle vs radius
-		dir = normalize(R + (rr * cos(phi)) * tangent + (rr * sin(phi)) * bitangent);
-	}
-
 	const uint64_t tableAddr = GeoTableAddress();
 
-	RayDesc ray;
-	ray.Origin = positionWS + N * 0.02 + dir * 0.01; // normal-offset to dodge self-hit
-	ray.Direction = dir;
-	ray.TMin = 0.0;
-	ray.TMax = ReflRange;
+	// Glossy cone jitter (#129 Inc 2b): a SHARP one-ray-per-pixel mirror trace ALIASES the reflected scene into
+	// a pixelated grid (the "blocky" raw buffer). Perturb each ray within a roughness-scaled disk around R,
+	// with a per-frame + per-sample IGN rotation, and AVERAGE render.reflections.rays samples this frame — more
+	// rays converge the glossy cone in-frame (less shimmer under motion, less temporal reliance) at ~linear
+	// cost. roughness == 0 (a perfect mirror) => zero cone => every sample is the exact sharp ray, so the loop
+	// collapses to one deterministic result (averaging identical samples is a no-op) and true mirrors stay crisp.
+	const uint rayCount = max(RayCount, 1u); // >= 1 by the C++ clamp; guards the /rayCount below
+	const float3 up = abs(R.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
+	const float3 tangent = normalize(cross(up, R));
+	const float3 bitangent = cross(R, tangent);
+	const float coneRadius = roughness * ReflConeScale;
 
-	// Closest hit (no ACCEPT_FIRST_HIT): a reflection needs the FRONT-MOST surface along the ray.
-	RayQuery<RAY_FLAG_CULL_NON_OPAQUE> q;
-	q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
-	q.Proceed();
-
-	if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT && tableAddr != 0)
+	float3 radianceSum = float3(0, 0, 0);
+	float hitTSum = 0.0;
+	[loop] for (uint s = 0; s < rayCount; ++s)
 	{
-		const float hitT = q.CommittedRayT();
-		const float3 hitPos = ray.Origin + dir * hitT;
-		const float3 radiance = ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos);
-		ReflOut[id.xy] = float4(radiance, hitT);
-		return;
+		float3 dir = R;
+		if (roughness > 0.0)
+		{
+			// Decorrelate per sample AND per frame so the temporal pass keeps averaging fresh directions.
+			const float2 px = float2(id.xy) + float2((FrameCounter * rayCount + s) * 5.588238, (FrameCounter * rayCount + s) * 3.539418);
+			const float ign = frac(52.9829189 * frac(dot(px, float2(0.06711056, 0.00583715))));
+			const float rr = coneRadius * sqrt(ign);
+			const float phi = 2.0 * PI * frac(ign + 0.61803398875); // golden-ratio decorrelation of angle vs radius
+			dir = normalize(R + (rr * cos(phi)) * tangent + (rr * sin(phi)) * bitangent);
+		}
+
+		RayDesc ray;
+		ray.Origin = positionWS + N * 0.02 + dir * 0.01; // normal-offset to dodge self-hit
+		ray.Direction = dir;
+		ray.TMin = 0.0;
+		ray.TMax = ReflRange;
+
+		// Closest hit (no ACCEPT_FIRST_HIT): a reflection needs the FRONT-MOST surface along the ray.
+		RayQuery<RAY_FLAG_CULL_NON_OPAQUE> q;
+		q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
+		q.Proceed();
+
+		if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT && tableAddr != 0)
+		{
+			const float hitT = q.CommittedRayT();
+			const float3 hitPos = ray.Origin + dir * hitT;
+			radianceSum += ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos);
+			hitTSum += hitT;
+		}
+		else
+		{
+			// Miss (or no geometry table): reflect the distant sky along the (jittered) direction. Large hit
+			// distance = "miss" for temporal.
+			float3 sky = float3(0, 0, 0);
+			if (PrefilteredCubeIndex != 0)
+			{
+				sky = Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, dir, 0).rgb;
+			}
+			radianceSum += sky;
+			hitTSum += ReflRange;
+		}
 	}
 
-	// Miss (or no geometry table): reflect the distant sky along the (jittered) direction. Large hit distance
-	// = "miss" for temporal.
-	float3 sky = float3(0, 0, 0);
-	if (PrefilteredCubeIndex != 0)
-	{
-		sky = Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, dir, 0).rgb;
-	}
-	ReflOut[id.xy] = float4(sky, ReflRange);
+	ReflOut[id.xy] = float4(radianceSum / float(rayCount), hitTSum / float(rayCount));
 }

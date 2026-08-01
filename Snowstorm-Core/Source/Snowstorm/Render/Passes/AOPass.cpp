@@ -24,7 +24,8 @@ namespace Snowstorm
 			float AORadius = 0.5f;
 			float AOIntensity = 1.0f;
 			uint32_t FrameCounter = 0;
-			glm::uvec3 _Pad{0, 0, 0};
+			uint32_t RayCount = 2; // render.ao.rays (clamped) — occlusion rays/pixel this frame
+			glm::uvec2 _Pad{0, 0};
 		};
 
 		// Binding indices in AO.comp.hlsl set 0.
@@ -68,7 +69,7 @@ namespace Snowstorm
 
 	void AOPass::Dispatch(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const glm::mat4& invViewProj,
 	                      const float radius, const float intensity, const uint32_t frameCounter,
-	                      const Ref<TextureView>& gbuffer,
+	                      const uint32_t rayCount, const Ref<TextureView>& gbuffer,
 	                      const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH)
 	{
 		if (!ctx || !gbuffer || !output || outW == 0 || outH == 0)
@@ -88,6 +89,7 @@ namespace Snowstorm
 		cb.AORadius = radius;
 		cb.AOIntensity = intensity;
 		cb.FrameCounter = frameCounter;
+		cb.RayCount = rayCount;
 		m_ParamBuffers[frameIndex]->SetData(&cb, sizeof(AOCB), 0);
 
 		const auto& layouts = m_Pipeline->GetSetLayouts();

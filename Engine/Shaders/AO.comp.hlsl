@@ -12,8 +12,6 @@
 
 static const float PI = 3.14159265359;
 
-#define AO_RAY_COUNT 2
-
 // ---- Set 0: this pass's own resources ----
 // One G-buffer color image carries BOTH the world normal (.xyz) and the NDC depth (.w) — see
 // DepthNormal.frag. Sampling one plain color image (not the depth-stencil attachment) sidesteps the
@@ -32,7 +30,8 @@ cbuffer AOCB : register(b3, space0)
 	float AORadius;       // occlusion ray max distance (world units)
 	float AOIntensity;    // scales the darkening (1 = physical, >1 = artistic boost)
 	uint FrameCounter;    // per-frame sample rotation (TAA converges the few rays)
-	uint3 _Pad;
+	uint RayCount;        // occlusion rays per pixel this frame (render.ao.rays, clamped [1,16])
+	uint2 _Pad;
 };
 
 // ---- Set 3: engine bindless pool (gap-filled by the compute pipeline builder) ----
@@ -90,9 +89,11 @@ void main(uint3 id : SV_DispatchThreadID)
 	// lets the à-trous keep near contact-shadow gradients (small .a) sharp while blurring distant AO wider,
 	// the NRD REBLUR trick — the signal is discarded when render.ao.denoise.hitdist == 0.
 	float hitTSum = 0.0;
-	[unroll] for (int s = 0; s < AO_RAY_COUNT; ++s)
+	// Runtime ray count (render.ao.rays): dynamic loop bound, so [loop] not [unroll]. >= 1 by the C++ clamp.
+	const uint rayCount = max(RayCount, 1u);
+	[loop] for (uint s = 0; s < rayCount; ++s)
 	{
-		const float u1 = frac((float(s) + ign) / float(AO_RAY_COUNT));
+		const float u1 = frac((float(s) + ign) / float(rayCount));
 		const float u2 = frac(ign + float(s) * 0.61803398875);
 		const float r = sqrt(u1);
 		const float phi = 2.0 * PI * u2;
@@ -126,8 +127,8 @@ void main(uint3 id : SV_DispatchThreadID)
 	// Occlusion factor in [0,1] (1 = fully open), pre-scaled by AOIntensity. Averaged over the rays; the
 	// forward pass multiplies this into `ao` at full res after the bilateral upsample. The mean hit distance
 	// (normalized to [0,1]) rides .a for the denoiser; the color path derives luma from .rgb so .a is free.
-	occlusion = (occlusion / float(AO_RAY_COUNT)) * AOIntensity;
+	occlusion = (occlusion / float(rayCount)) * AOIntensity;
 	const float ao = saturate(1.0 - occlusion);
-	const float meanHitT = saturate((hitTSum / float(AO_RAY_COUNT)) / AORadius);
+	const float meanHitT = saturate((hitTSum / float(rayCount)) / AORadius);
 	AOOut[id.xy] = float4(ao, ao, ao, meanHitT);
 }

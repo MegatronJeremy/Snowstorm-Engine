@@ -363,15 +363,16 @@ namespace Snowstorm
 				const float radius = CVars::AORadius.Get();
 				const float intensity = CVars::AOIntensity.Get();
 				const auto frameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
+				const auto rayCount = static_cast<uint32_t>(CVars::ClampedAORayCount());
 
 				fc.Graph.AddPass({.Name = "AO" + v.Suffix,
 				                  .IsCompute = true,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Writes = {{aoView->GetTexture(), RenderGraph::AccessState::Storage}},
-				                  .Execute = [this, &fc, invViewProj, radius, intensity, frameCounter, gbufView, aoView, aoW, aoH](CommandContext& c)
+				                  .Execute = [this, &fc, invViewProj, radius, intensity, frameCounter, rayCount, gbufView, aoView, aoW, aoH](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, radius, intensity, frameCounter,
-					                                  gbufView, aoView, aoW, aoH);
+					                                  rayCount, gbufView, aoView, aoW, aoH);
 				                  }});
 
 				v.AOView = aoView; // the raw trace is the live AO buffer; temporal/denoise republish downstream (#130)

@@ -42,7 +42,8 @@ namespace Snowstorm
 
 			uint32_t ReflGeoTableAddrLo = 0;
 			uint32_t ReflGeoTableAddrHi = 0;
-			glm::uvec2 _Pad1{0, 0};
+			uint32_t RayCount = 1; // render.reflections.rays (clamped) — reflection rays/pixel this frame
+			uint32_t _Pad1 = 0;
 		};
 
 		// Binding indices in Reflection.comp.hlsl set 0 (#129 Inc 1c added the shading-normal SRV at 1).
@@ -133,6 +134,7 @@ namespace Snowstorm
 
 		cb.ReflGeoTableAddrLo = static_cast<uint32_t>(tableAddr & 0xFFFFFFFFull);
 		cb.ReflGeoTableAddrHi = static_cast<uint32_t>(tableAddr >> 32);
+		cb.RayCount = static_cast<uint32_t>(CVars::ClampedReflectionRayCount());
 
 		m_ParamBuffers[frameIndex]->SetData(&cb, sizeof(ReflCB), 0);
 

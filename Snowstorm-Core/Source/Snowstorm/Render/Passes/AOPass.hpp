@@ -26,10 +26,11 @@ namespace Snowstorm
 	public:
 		// Dispatch the half-res AO trace into `output` (a Sampled|Storage R16F view sized outW x outH).
 		// `gbuffer` is the full-res depth+normal G-buffer color view (.xyz = world normal, .w = NDC depth);
-		// the shader samples it by UV. `invViewProj` reconstructs world pos; `radius`/`intensity`/`frameCounter`
-		// drive the trace. Lazily builds the pipeline (async shader); no-op until ready.
+		// the shader samples it by UV. `invViewProj` reconstructs world pos; `radius`/`intensity`/`frameCounter`/
+		// `rayCount` drive the trace (rayCount = render.ao.rays, clamped >= 1). Lazily builds the pipeline
+		// (async shader); no-op until ready.
 		void Dispatch(const Ref<CommandContext>& ctx, uint32_t frameIndex, const glm::mat4& invViewProj,
-		              float radius, float intensity, uint32_t frameCounter,
+		              float radius, float intensity, uint32_t frameCounter, uint32_t rayCount,
 		              const Ref<TextureView>& gbuffer,
 		              const Ref<TextureView>& output, uint32_t outW, uint32_t outH);
 

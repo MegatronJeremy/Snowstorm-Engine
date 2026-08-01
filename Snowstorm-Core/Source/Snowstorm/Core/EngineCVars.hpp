@@ -238,6 +238,11 @@ namespace Snowstorm::CVars
 	extern CVar<bool> AoRT;
 	extern CVar<float> AORadius;
 	extern CVar<float> AOIntensity;
+	// RTAO rays per pixel per frame (was the compile-time AO_RAY_COUNT). More rays = less per-frame noise
+	// (less reliance on temporal accumulation, so less noise under motion) at a ~linear trace cost. Clamp with
+	// ClampedAORayCount(). Temporal + the denoiser (#130) still average across frames on top.
+	extern CVar<int> AORayCount;
+	[[nodiscard]] int ClampedAORayCount();
 	// RT AO internal resolution fraction (#126): the RTAO occlusion trace runs at this fraction of viewport
 	// res, then a depth-aware bilateral upsample restores full res. 0.5 = quarter the pixels. Clamp with
 	// ClampedAOScale(). Independent of render.gi.scale — AO and GI are separate passes.
@@ -283,6 +288,12 @@ namespace Snowstorm::CVars
 	extern CVar<float> ReflectionMaxRoughness;
 	extern CVar<float> ReflectionConeScale;
 	extern CVar<float> ReflectionRange;
+	// RT reflection rays per pixel per frame (was a single hard-coded ray + glossy jitter). On GLOSSY surfaces
+	// more rays average the roughness cone per-frame (less shimmer under motion, less temporal reliance); a
+	// perfect mirror (roughness 0) is one deterministic ray regardless. ~linear cost. Clamp with
+	// ClampedReflectionRayCount().
+	extern CVar<int> ReflectionRayCount;
+	[[nodiscard]] int ClampedReflectionRayCount();
 
 	// RT reflection temporal accumulation (#129): reproject the previous reflection by the motion vectors and
 	// blend with this frame's trace (depth-disocclusion reject) — reuses the GI temporal pass to kill the
@@ -312,6 +323,11 @@ namespace Snowstorm::CVars
 	extern CVar<bool> GIRT;
 	extern CVar<float> GIIntensity;
 	extern CVar<float> GIRange;
+	// RT GI hemisphere-gather rays per pixel per frame (was the compile-time GI_RAY_COUNT). More rays = less
+	// per-frame noise (less reliance on temporal accumulation -> less noise under motion) at ~linear cost.
+	// Clamp with ClampedGIRayCount(). Temporal (#125) + the à-trous still average on top.
+	extern CVar<int> GIRayCount;
+	[[nodiscard]] int ClampedGIRayCount();
 	// RT GI internal resolution fraction (#124): the GI gather runs at this fraction of viewport res, then a
 	// depth-aware bilateral upsample restores full res. 0.5 = quarter the pixels. Clamp with ClampedGIScale().
 	extern CVar<float> GIScale;

@@ -17,8 +17,6 @@
 
 static const float PI = 3.14159265359;
 
-#define GI_RAY_COUNT 2
-
 // ---- Set 0: this pass's own resources ----
 // One G-buffer color image carries BOTH the world normal (.xyz) and the NDC depth (.w) — see
 // DepthNormal.frag. Sampling one plain color image (not the depth-stencil attachment) sidesteps the
@@ -52,7 +50,8 @@ cbuffer GICB : register(b3, space0)
 
 	uint ReflGeoTableAddrLo; // device address of the GeometryRecord table (lo/hi)
 	uint ReflGeoTableAddrHi;
-	uint2 _Pad;
+	uint RayCount;           // hemisphere-gather rays per pixel this frame (render.gi.rays, clamped [1,16])
+	uint _Pad;
 };
 
 // Set 3 bindless (Textures/Cubemaps/SceneTLAS) + the geometry-table read + one-bounce hit shading
@@ -124,10 +123,13 @@ void main(uint3 id : SV_DispatchThreadID)
 
 	const float3 origin = positionWS + Ng * 0.02;
 
+	// Runtime ray count (render.gi.rays): dynamic loop bound, so [loop] not [unroll]. Guaranteed >= 1 by the
+	// C++ clamp, so the /rayCount normalization below never divides by zero.
+	const uint rayCount = max(RayCount, 1u);
 	float3 incoming = float3(0, 0, 0);
-	[unroll] for (int s = 0; s < GI_RAY_COUNT; ++s)
+	[loop] for (uint s = 0; s < rayCount; ++s)
 	{
-		const float u1 = frac((float(s) + ign) / float(GI_RAY_COUNT));
+		const float u1 = frac((float(s) + ign) / float(rayCount));
 		const float u2 = frac(ign + float(s) * 0.61803398875);
 		const float r = sqrt(u1);
 		const float phi = 2.0 * PI * u2;
@@ -158,6 +160,6 @@ void main(uint3 id : SV_DispatchThreadID)
 	// Incoming irradiance, intensity-scaled. NO receiver albedo — that's multiplied at full res in the
 	// forward pass after the bilateral upsample, so half-res GI never blurs albedo edges. GIIntensity is a
 	// linear scalar (no effect on edges), applied here so the debug view shows the tuned signal.
-	const float3 irradiance = (incoming / float(GI_RAY_COUNT)) * GIIntensity;
+	const float3 irradiance = (incoming / float(rayCount)) * GIIntensity;
 	GIOut[id.xy] = float4(irradiance, 1.0);
 }
