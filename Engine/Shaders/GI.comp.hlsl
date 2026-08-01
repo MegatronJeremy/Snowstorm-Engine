@@ -21,9 +21,10 @@ static const float PI = 3.14159265359;
 // One G-buffer color image carries BOTH the world normal (.xyz) and the NDC depth (.w) — see
 // DepthNormal.frag. Sampling one plain color image (not the depth-stencil attachment) sidesteps the
 // DEPTH_STENCIL_READ_ONLY-vs-SHADER_READ_ONLY layout mismatch a compute sampled-image descriptor rejects.
-Texture2D<float4> GBufferNormal : register(t0, space0); // .xy = oct GEOMETRIC normal, .z = roughness, .w = NDC depth (#129 Inc 1c)
+Texture2D<float4> GBufferNormal : register(t0, space0); // .xy = oct GEOMETRIC normal, .z = roughness, .w = UNUSED (#129 Inc 1c)
 [[vk::image_format("rgba16f")]] RWTexture2D<float4> GIOut : register(u1, space0); // half-res irradiance (rgb)
 SamplerState LinearSampler : register(s2, space0);       // bindless albedo / cubemap sampling
+Texture2D<float> GBufferDepth : register(t4, space0);    // fp32 NDC depth (D32 attachment), sampled directly
 
 cbuffer GICB : register(b3, space0)
 {
@@ -90,7 +91,7 @@ void main(uint3 id : SV_DispatchThreadID)
 	GBufferNormal.GetDimensions(gbDims.x, gbDims.y);
 	const int2 gbTexel = clamp(int2(uv * float2(gbDims)), int2(0, 0), int2(gbDims) - 1);
 	const float4 gbuf = GBufferNormal.Load(int3(gbTexel, 0));
-	const float depth = gbuf.w; // NDC depth packed into .w by the prepass
+	const float depth = GBufferDepth.Load(int3(gbTexel, 0)).r; // fp32 depth from the D32 attachment (was gbuf.w)
 	// Sky / no geometry: the prepass clears depth to 1.0 and a real far-plane fragment is also ~1.0, so
 	// depth >= 1 means "nothing here" (#129 Inc 1b — the old zero-normal test is invalid now that .xy is an
 	// octahedral encoding where (0,0) is a valid normal).

@@ -21,6 +21,7 @@ namespace Snowstorm
 		constexpr uint32_t kGBufferBinding = 5;
 		constexpr uint32_t kSamplerBinding = 6;
 		constexpr uint32_t kParamsBinding = 7;
+		constexpr uint32_t kDepthBinding = 8; // fp32 D32 depth SRV (was packed in the G-buffer .w)
 
 		// Mirrors GIUpsampleCB in GIUpsample.frag.hlsl.
 		struct GIUpsampleCB
@@ -88,10 +89,10 @@ namespace Snowstorm
 	}
 
 	void GIUpsamplePass::Draw(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const Ref<TextureView>& gi,
-	                          const Ref<TextureView>& gbuffer, const uint32_t giW, const uint32_t giH, const float nearPlane,
-	                          const float farPlane, const float depthSigma, const PixelFormat colorFormat)
+	                          const Ref<TextureView>& gbuffer, const Ref<TextureView>& depth, const uint32_t giW, const uint32_t giH,
+	                          const float nearPlane, const float farPlane, const float depthSigma, const PixelFormat colorFormat)
 	{
-		if (!ctx || !gi || !gbuffer)
+		if (!ctx || !gi || !gbuffer || !depth)
 		{
 			return;
 		}
@@ -132,6 +133,7 @@ namespace Snowstorm
 
 		m_Sets[frameIndex]->SetTexture(kGIBinding, gi);
 		m_Sets[frameIndex]->SetTexture(kGBufferBinding, gbuffer);
+		m_Sets[frameIndex]->SetTexture(kDepthBinding, depth); // fp32 D32 depth SRV
 		m_Sets[frameIndex]->SetSampler(kSamplerBinding, m_Sampler);
 		const BufferBinding cbBB{.Buffer = m_ParamBuffers[frameIndex], .Offset = 0, .Range = sizeof(GIUpsampleCB)};
 		m_Sets[frameIndex]->SetBuffer(kParamsBinding, cbBB);

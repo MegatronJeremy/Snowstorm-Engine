@@ -27,13 +27,13 @@ namespace Snowstorm
 	{
 	public:
 		// Dispatch the half-res GI trace into `output` (a Sampled|Storage RGBA16F view sized outW x outH).
-		// `gbuffer` is the full-res depth+normal G-buffer color view (.xyz = world normal, .w = NDC depth);
-		// the shader samples it by UV. `frame` supplies the camera/sun/IBL params. `tableAddr` is the
-		// reflection geometry table device address (0 => hits fall back to sky). Lazily builds the pipeline
-		// (async shader); no-op until ready.
+		// `gbuffer` is the full-res G-buffer color view (.xy = oct normal, .z = roughness); `depth` is the
+		// full-res fp32 D32 depth attachment view (world position reconstructed from it) — depth is no longer
+		// packed in the G-buffer .w. `frame` supplies the camera/sun/IBL params. `tableAddr` is the reflection
+		// geometry table device address (0 => hits fall back to sky). Lazily builds the pipeline; no-op until ready.
 		void Dispatch(const Ref<CommandContext>& ctx, uint32_t frameIndex, const FrameData& frame,
 		              uint64_t tableAddr, uint32_t frameCounter,
-		              const Ref<TextureView>& gbuffer,
+		              const Ref<TextureView>& gbuffer, const Ref<TextureView>& depth,
 		              const Ref<TextureView>& output, uint32_t outW, uint32_t outH);
 
 	private:

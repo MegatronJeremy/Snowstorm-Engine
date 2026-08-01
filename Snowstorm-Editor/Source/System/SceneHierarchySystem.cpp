@@ -406,7 +406,7 @@ namespace Snowstorm
 						}
 						if (ImGui::IsItemHovered())
 						{
-							ImGui::SetTooltip("NRD REBLUR-style hit-distance guidance: keeps near contact shadows sharp while blurring distant AO wider; 0 = off.");
+							ImGui::SetTooltip("NRD REBLUR-style hit-distance guidance. DEFAULT 0 (off): the hit distance rides the raw ~2-ray trace, too noisy between neighbours, so a non-zero value rejects every a-trous tap and the denoise stops working. Only raise once hit distance is temporally accumulated.");
 						}
 						ImGui::EndDisabled();
 						ImGui::EndDisabled();

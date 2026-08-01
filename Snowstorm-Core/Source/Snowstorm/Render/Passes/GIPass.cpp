@@ -47,11 +47,12 @@ namespace Snowstorm
 			uint32_t _Pad = 0;
 		};
 
-		// Binding indices in GI.comp.hlsl set 0 (one packed G-buffer color: .xyz normal, .w depth).
+		// Binding indices in GI.comp.hlsl set 0 (G-buffer color: .xy normal, .z roughness; depth is a separate SRV).
 		constexpr uint32_t kGBufferBinding = 0;
 		constexpr uint32_t kOutputBinding = 1;
 		constexpr uint32_t kSamplerBinding = 2;
 		constexpr uint32_t kParamsBinding = 3;
+		constexpr uint32_t kDepthBinding = 4; // fp32 D32 depth SRV (was packed in the G-buffer .w)
 	}
 
 	void GIPass::EnsureResources()
@@ -98,10 +99,10 @@ namespace Snowstorm
 
 	void GIPass::Dispatch(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const FrameData& frame,
 	                      const uint64_t tableAddr, const uint32_t frameCounter,
-	                      const Ref<TextureView>& gbuffer,
+	                      const Ref<TextureView>& gbuffer, const Ref<TextureView>& depth,
 	                      const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH)
 	{
-		if (!ctx || !gbuffer || !output || outW == 0 || outH == 0)
+		if (!ctx || !gbuffer || !depth || !output || outW == 0 || outH == 0)
 		{
 			return;
 		}
@@ -149,7 +150,8 @@ namespace Snowstorm
 			dsd.DebugName = "GISet";
 			m_Sets[frameIndex] = DescriptorSet::Create(layouts[0], dsd);
 		}
-		m_Sets[frameIndex]->SetTexture(kGBufferBinding, gbuffer); // .xyz normal, .w depth
+		m_Sets[frameIndex]->SetTexture(kGBufferBinding, gbuffer); // .xy normal, .z roughness
+		m_Sets[frameIndex]->SetTexture(kDepthBinding, depth);     // fp32 D32 depth SRV
 		m_Sets[frameIndex]->SetTexture(kOutputBinding, output);   // storage image (UAV)
 		m_Sets[frameIndex]->SetSampler(kSamplerBinding, m_Sampler);
 		const BufferBinding cbBB{.Buffer = m_ParamBuffers[frameIndex], .Offset = 0, .Range = sizeof(GICB)};

@@ -26,7 +26,7 @@ namespace Snowstorm
 	}
 
 	VulkanDescriptorSet::VulkanDescriptorSet(const Ref<DescriptorSetLayout>& layout, DescriptorSetDesc desc)
-		: m_Layout(layout), m_Desc(std::move(desc))
+	    : m_Layout(layout), m_Desc(std::move(desc))
 	{
 		SS_CORE_ASSERT(m_Layout, "VulkanDescriptorSet created with null layout");
 		m_Device = GetVulkanDevice();
@@ -117,8 +117,8 @@ namespace Snowstorm
 
 		const VkDescriptorType vkType = ToVkDescriptorType(b->Type);
 		SS_CORE_ASSERT(vkType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
-		               vkType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ||
-		               vkType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+		                   vkType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ||
+		                   vkType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 		               "SetBuffer: binding type is not a buffer descriptor");
 
 		SS_CORE_ASSERT(buffer.Buffer, "SetBuffer: buffer is null");
@@ -147,8 +147,8 @@ namespace Snowstorm
 
 		const VkDescriptorType vkType = ToVkDescriptorType(b->Type);
 		SS_CORE_ASSERT(vkType == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE ||
-		               vkType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE ||
-		               vkType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		                   vkType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE ||
+		                   vkType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 		               "SetTexture: binding type is not an image descriptor");
 
 		const auto vkView = std::static_pointer_cast<VulkanTextureView>(textureView);
@@ -156,7 +156,7 @@ namespace Snowstorm
 		VkDescriptorImageInfo info{};
 		info.imageView = vkView->GetImageView();
 
-		// Layout must match how the shader uses the image.
+		// Layout must match how the shader uses the image AND the image's actual transitioned layout.
 		// If you build a proper layout tracker later, you can derive this.
 		if (vkType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
 		{
@@ -164,7 +164,12 @@ namespace Snowstorm
 		}
 		else
 		{
-			info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			// A DEPTH-aspect view sampled in a shader lives in DEPTH_STENCIL_READ_ONLY_OPTIMAL (TransitionLayout
+			// redirects depth textures there), NOT plain SHADER_READ_ONLY — the descriptor's layout must match
+			// the image's, or validation errors on every dispatch/draw that samples the depth (e.g. the RT GI/AO
+			// passes sampling the D32 G-buffer depth). Colour views stay SHADER_READ_ONLY.
+			const bool isDepth = (vkView->GetAspectMask() & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0;
+			info.imageLayout = isDepth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		}
 
 		// For COMBINED_IMAGE_SAMPLER, the sampler may be set via SetSampler(); leaving it null is valid

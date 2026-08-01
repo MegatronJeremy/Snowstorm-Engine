@@ -28,8 +28,8 @@ namespace Snowstorm
 		// linearize the guide's NDC depth for the relative edge-stop; depthSigma is its tightness
 		// (render.rt.depthsigma). Lazily builds the pipeline (async shader); no-op until ready.
 		void Draw(const Ref<CommandContext>& ctx, uint32_t frameIndex, const Ref<TextureView>& ao,
-		          const Ref<TextureView>& gbuffer, uint32_t aoW, uint32_t aoH, float nearPlane, float farPlane,
-		          float depthSigma, PixelFormat colorFormat);
+		          const Ref<TextureView>& gbuffer, const Ref<TextureView>& depth, uint32_t aoW, uint32_t aoH,
+		          float nearPlane, float farPlane, float depthSigma, PixelFormat colorFormat);
 
 	private:
 		void EnsurePipeline(PixelFormat colorFormat);

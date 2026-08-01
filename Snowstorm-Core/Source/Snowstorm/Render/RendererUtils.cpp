@@ -234,7 +234,10 @@ namespace Snowstorm
 		// depth (DepthStencil-only, write-only) precisely because those can't be sampled.
 		TextureDesc colorDesc{};
 		colorDesc.Dimension = TextureDimension::Texture2D;
-		colorDesc.Format = PixelFormat::RGBA16_SFloat; // main G-buffer: .xy oct GEOMETRIC normal, .z roughness, .w depth
+		// fp16 is ample for the normal (oct round-trips <0.5 deg) + roughness. Depth is NO LONGER packed here —
+		// the RT consumers sample the fp32 D32 depth attachment below directly (packing NDC depth into fp16 .w
+		// quantized it and banded GI/AO; NDC is non-linear). .w is now unused.
+		colorDesc.Format = PixelFormat::RGBA16_SFloat; // main G-buffer: .xy oct GEOMETRIC normal, .z roughness, .w unused
 		colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled;
 		colorDesc.Width = w;
 		colorDesc.Height = h;

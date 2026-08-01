@@ -52,6 +52,7 @@ namespace Snowstorm
 		constexpr uint32_t kOutputBinding = 2;
 		constexpr uint32_t kSamplerBinding = 3;
 		constexpr uint32_t kParamsBinding = 4;
+		constexpr uint32_t kDepthBinding = 5; // fp32 D32 depth SRV (was packed in the G-buffer .w)
 	}
 
 	void ReflectionPass::EnsureResources()
@@ -98,9 +99,10 @@ namespace Snowstorm
 	void ReflectionPass::Dispatch(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const FrameData& frame,
 	                              const uint64_t tableAddr, const uint32_t frameCounter,
 	                              const Ref<TextureView>& gbuffer, const Ref<TextureView>& shadingNormal,
+	                              const Ref<TextureView>& depth,
 	                              const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH)
 	{
-		if (!ctx || !gbuffer || !shadingNormal || !output || outW == 0 || outH == 0)
+		if (!ctx || !gbuffer || !shadingNormal || !depth || !output || outW == 0 || outH == 0)
 		{
 			return;
 		}
@@ -146,8 +148,9 @@ namespace Snowstorm
 			dsd.DebugName = "ReflectionSet";
 			m_Sets[frameIndex] = DescriptorSet::Create(layouts[0], dsd);
 		}
-		m_Sets[frameIndex]->SetTexture(kGBufferBinding, gbuffer);       // main: geometric normal + roughness + depth
+		m_Sets[frameIndex]->SetTexture(kGBufferBinding, gbuffer);       // main: geometric normal + roughness
 		m_Sets[frameIndex]->SetTexture(kShadingBinding, shadingNormal); // .xy oct shading normal (#129 Inc 1c)
+		m_Sets[frameIndex]->SetTexture(kDepthBinding, depth);           // fp32 D32 depth SRV
 		m_Sets[frameIndex]->SetTexture(kOutputBinding, output);         // storage image (UAV)
 		m_Sets[frameIndex]->SetSampler(kSamplerBinding, m_Sampler);
 		const BufferBinding cbBB{.Buffer = m_ParamBuffers[frameIndex], .Offset = 0, .Range = sizeof(ReflCB)};

@@ -26,6 +26,7 @@ Texture2D<float4> GIHistoryPrev : register(t3, space0); // previous accumulated 
 SamplerState LinearSampler : register(s5, space0);      // clamp-linear for reprojected history / velocity
 Texture2D<float4> MomentsPrev : register(t7, space0);   // #129 Inc 3c: prev SVGF moments .r=μ1 .g=μ2 .b=histLen
 [[vk::image_format("rgba16f")]] RWTexture2D<float4> MomentsOut : register(u8, space0); // this frame's moments out
+Texture2D<float> GBufferDepth : register(t9, space0);  // fp32 NDC depth (D32 attachment), sampled directly
 
 cbuffer GITemporalCB : register(b6, space0)
 {
@@ -83,7 +84,11 @@ void main(uint3 id : SV_DispatchThreadID)
 	uint2 gbDims;
 	GBufferNormal.GetDimensions(gbDims.x, gbDims.y);
 	const int2 gbTexel = clamp(int2(uv * float2(gbDims)), int2(0, 0), int2(gbDims) - 1);
-	const float depthCurr = GBufferNormal.Load(int3(gbTexel, 0)).w;
+	const float depthCurr = GBufferDepth.Load(int3(gbTexel, 0)).r; // fp32 depth from the D32 attachment (was .w)
+	// Store LINEARIZED view-depth in the moments .a (fp16 is fine for linear depth, unlike raw NDC which
+	// quantizes near the far range). depthPrev is then already linear next frame — the disocclusion reject
+	// compares linear-to-linear directly (Inc 4: removes the last fp16-NDC-depth footgun).
+	const float linCurr = LinearizeDepth(depthCurr);
 
 	// 7x7 SPATIAL luminance moments of this frame's raw trace — the SVGF fallback variance used on a RESET
 	// (first frame / disocclusion / off-screen), where there's no temporal history to estimate variance from.
@@ -109,7 +114,7 @@ void main(uint3 id : SV_DispatchThreadID)
 	if (HistoryValid < 0.5)
 	{
 		GIOut[px] = float4(currentGI, spatialVar);
-		MomentsOut[px] = float4(lumaCurr, lumaCurr * lumaCurr, 1.0, depthCurr);
+		MomentsOut[px] = float4(lumaCurr, lumaCurr * lumaCurr, 1.0, linCurr);
 		return;
 	}
 
@@ -122,7 +127,7 @@ void main(uint3 id : SV_DispatchThreadID)
 	if (histUv.x < 0.0 || histUv.x > 1.0 || histUv.y < 0.0 || histUv.y > 1.0)
 	{
 		GIOut[px] = float4(currentGI, spatialVar);
-		MomentsOut[px] = float4(lumaCurr, lumaCurr * lumaCurr, 1.0, depthCurr);
+		MomentsOut[px] = float4(lumaCurr, lumaCurr * lumaCurr, 1.0, linCurr);
 		return;
 	}
 
@@ -134,7 +139,7 @@ void main(uint3 id : SV_DispatchThreadID)
 	// Prev moments + depth reproject with the SAME motion vector as the color, so they can't desync (#129 Inc
 	// 3c). .r=μ1 .g=μ2 .b=histLen .a=prev NDC depth (moved here from the color .a, which now carries variance).
 	const float4 momentsPrev = MomentsPrev.SampleLevel(LinearSampler, histUv, 0);
-	const float depthPrev = momentsPrev.a;
+	const float linPrev = momentsPrev.a; // Inc 4: prev LINEAR view depth (stored linearized; fp16-safe)
 
 	// Staticness: 1 at rest, 0 by ~2 px/frame of motion (velocity in UV; * OutSize -> half-res pixels).
 	const float speedPixels = length(velocity * float2(OutSize));
@@ -175,8 +180,7 @@ void main(uint3 id : SV_DispatchThreadID)
 	float depthConfidence = 1.0;
 	if (DepthRejectScale > 0.0)
 	{
-		const float linCurr = LinearizeDepth(depthCurr);
-		const float linPrev = LinearizeDepth(depthPrev);
+		// linCurr computed at top; linPrev is already linear (stored linearized, Inc 4) — compare directly.
 		const float rel = abs(linCurr - linPrev) / max(linCurr, 1e-4);
 		depthConfidence = 1.0 - smoothstep(DepthRejectScale, 2.0 * DepthRejectScale, rel);
 	}
@@ -204,5 +208,5 @@ void main(uint3 id : SV_DispatchThreadID)
 	const float variance = (histLen < 4.0) ? max(temporalVar, spatialVar) : temporalVar;
 
 	GIOut[px] = float4(max(accumulated, 0.0), variance);           // .a = variance for the à-trous (#129 Inc 3c)
-	MomentsOut[px] = float4(mom1, mom2, histLen, depthCurr);       // persist moments + depth for next frame
+	MomentsOut[px] = float4(mom1, mom2, histLen, linCurr);         // persist moments + LINEAR depth for next frame (Inc 4)
 }

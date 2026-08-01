@@ -26,10 +26,11 @@
 // #129 Inc 1c: reflections reflect off the NORMAL-MAPPED (shading) normal, in a SEPARATE target from the
 // main G-buffer (whose .xy is the GEOMETRIC normal that AO/GI want). This pass reads depth + roughness from
 // the main G-buffer and the shading normal from GBufferShading.
-Texture2D<float4> GBufferNormal : register(t0, space0);  // main: .xy oct GEOMETRIC normal, .z roughness, .w depth
+Texture2D<float4> GBufferNormal : register(t0, space0);  // main: .xy oct GEOMETRIC normal, .z roughness, .w UNUSED
 Texture2D<float4> GBufferShading : register(t1, space0); // .xy oct NORMAL-MAPPED shading normal
 [[vk::image_format("rgba16f")]] RWTexture2D<float4> ReflOut : register(u2, space0); // .rgb radiance, .a hitT
 SamplerState LinearSampler : register(s3, space0);       // bindless albedo / cubemap sampling
+Texture2D<float> GBufferDepth : register(t5, space0);    // fp32 NDC depth (D32 attachment), sampled directly
 
 cbuffer ReflCB : register(b4, space0)
 {
@@ -86,9 +87,9 @@ void main(uint3 id : SV_DispatchThreadID)
 	// reconstructed world position in mid-air -> a garbage reflection that bleeds a pixel past the edge). This
 	// was the "edge bleeding" on reflections + GI (#129 Inc 2c). The bindless albedo/cubemap fetches in the hit
 	// shading still use LinearSampler; only the G-buffer reconstruction must be point-sampled.
-	const float4 mainGB = GBufferNormal.Load(int3(id.xy, 0)); // .z roughness, .w depth
-	const float depth = mainGB.w;                             // NDC depth from the main G-buffer
-	const float roughness = mainGB.z;                         // perceptual roughness (#129 Inc 1c)
+	const float4 mainGB = GBufferNormal.Load(int3(id.xy, 0));   // .z roughness, .w unused
+	const float depth = GBufferDepth.Load(int3(id.xy, 0)).r;   // fp32 depth from the D32 attachment (was mainGB.w)
+	const float roughness = mainGB.z;                          // perceptual roughness (#129 Inc 1c)
 
 	// Sky / no geometry (prepass clears depth to 1.0; far plane also ~1.0) -> no reflection. Write 0 radiance
 	// + a large hit distance (a "miss" for the temporal depth reject). Depth-based sky test (#129 Inc 1b).

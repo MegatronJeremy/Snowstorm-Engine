@@ -11,8 +11,9 @@
 #include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky (#129 Inc 1b)
 
 Texture2D<float4> AOTex : register(t4, space1);      // half-res AO factor in .r
-Texture2D<float4> GBufferTex : register(t5, space1); // full-res guide: .xy oct normal, .z roughness, .w NDC depth
+Texture2D<float4> GBufferTex : register(t5, space1); // full-res guide: .xy oct normal, .z roughness, .w unused
 SamplerState PointClamp : register(s6, space1); // #129 Inc 2c: NEAREST filter (AOUpsamplePass) — point-fetch the guide, never bilinear across edges
+Texture2D<float> GBufferDepth : register(t8, space1); // fp32 NDC depth (D32 attachment), sampled directly (was .w)
 
 cbuffer AOUpsampleCB : register(b7, space1)
 {
@@ -40,7 +41,7 @@ float main(FullscreenVSOut input) : SV_Target
 	// smears across the edge, #129 Inc 2c). .xy oct normal, .w depth.
 	const float4 gc = GBufferTex.SampleLevel(PointClamp, uv, 0);
 	const float3 Nc = DecodeNormalOct(gc.xy);
-	const float Dc = gc.w;
+	const float Dc = GBufferDepth.SampleLevel(PointClamp, uv, 0).r; // fp32 depth from the D32 attachment (was gc.w)
 
 	// Sky / no geometry (far-plane / cleared depth): fully open (AO = 1).
 	if (IsSky(Dc))
@@ -82,10 +83,11 @@ float main(FullscreenVSOut input) : SV_Target
 		// Point-sampled guide (PointClamp) at the half-res tap-center UV — never bilinear, as above.
 		const float2 tapUV = (float2(tapC) + 0.5) / float2(AOSize);
 		const float4 gt = GBufferTex.SampleLevel(PointClamp, tapUV, 0);
+		const float tapDepth = GBufferDepth.SampleLevel(PointClamp, tapUV, 0).r; // fp32 depth (was gt.w)
 
 		const float wN = pow(saturate(dot(Nc, DecodeNormalOct(gt.xy))), kNormalPow);
 		// RELATIVE view-depth edge-stop (same fix as GIUpsample): |Δlinear| / centerLinear works near AND far.
-		const float linTap = LinearizeViewDepth(gt.w, Near, Far);
+		const float linTap = LinearizeViewDepth(tapDepth, Near, Far);
 		const float dRel = abs(linCenter - linTap) / max(linCenter, 1e-4);
 		const float wD = exp(-dRel * DepthSigma);
 		const float w = bw[t] * wN * wD;

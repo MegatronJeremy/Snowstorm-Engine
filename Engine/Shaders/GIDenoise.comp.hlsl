@@ -23,6 +23,7 @@ Texture2D<float4> GBufferNormal : register(t1, space0); // full-res guide: .xyz 
 // re-index. ALWAYS Load'd (below) so dxc can't strip it; GI/reflections bind their G-buffer here + pass
 // HitDistPhi == 0 so the term is a no-op (their output stays bit-identical). AO binds the raw AO trace.
 Texture2D<float4> HitDistGuide : register(t3, space0);
+Texture2D<float> GBufferDepth : register(t5, space0); // fp32 NDC depth (D32 attachment), sampled directly
 
 cbuffer GIDenoiseCB : register(b4, space0)
 {
@@ -65,7 +66,7 @@ void main(uint3 id : SV_DispatchThreadID)
 	const int2 centerTexel = clamp(int2(centerUV * float2(gbDims)), int2(0, 0), int2(gbDims) - 1);
 	const float4 gc = GBufferNormal.Load(int3(centerTexel, 0));
 	const float3 Nc = DecodeNormalOct(gc.xy); // #129 Inc 1b: .xy octahedral normal
-	const float Dc = gc.w;
+	const float Dc = GBufferDepth.Load(int3(centerTexel, 0)).r; // fp32 depth from the D32 attachment (was gc.w)
 	const float linCenter = LinearizeViewDepth(Dc, Near, Far); // relative view-depth edge-stop (not raw NDC)
 
 	// Sky / no geometry (far plane / cleared depth): pass the GI through untouched, matching the trace +
@@ -126,13 +127,14 @@ void main(uint3 id : SV_DispatchThreadID)
 			const float2 tapUV = (float2(tapC) + 0.5) / float2(OutSize);
 			const int2 tapTexel = clamp(int2(tapUV * float2(gbDims)), int2(0, 0), int2(gbDims) - 1);
 			const float4 gt = GBufferNormal.Load(int3(tapTexel, 0));
+			const float tapDepth = GBufferDepth.Load(int3(tapTexel, 0)).r; // fp32 depth (was gt.w)
 
 			// Edge-stopping: reject taps across normal creases / depth discontinuities. A sky tap has depth ~1,
 			// so its large depth diff (wD -> 0) drops it — no explicit sky guard needed on taps.
 			const float wN = pow(saturate(dot(Nc, DecodeNormalOct(gt.xy))), KNormalPow);
 			// RELATIVE view-depth edge-stop: |Δlinear| / centerLinear, so one KDepthScale works near AND far.
 			// Raw NDC * fixed scale over-rejected near/grazing surfaces -> every tap dropped -> à-trous no-op.
-			const float linTap = LinearizeViewDepth(gt.w, Near, Far);
+			const float linTap = LinearizeViewDepth(tapDepth, Near, Far);
 			const float dRel = abs(linCenter - linTap) / max(linCenter, 1e-4);
 			const float wD = exp(-dRel * KDepthScale);
 			// SVGF luminance term: variance-scaled, so noisy regions blur through it. 1.0 when off.

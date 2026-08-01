@@ -33,6 +33,7 @@ namespace Snowstorm
 		constexpr uint32_t kOutputBinding = 1;
 		// binding 2 (former sampler) intentionally unused (#129 Inc 2c); params stays at 3 to match the shader.
 		constexpr uint32_t kParamsBinding = 3;
+		constexpr uint32_t kDepthBinding = 4; // fp32 D32 depth SRV (was packed in the G-buffer .w)
 	}
 
 	void AOPass::EnsureResources()
@@ -69,10 +70,10 @@ namespace Snowstorm
 
 	void AOPass::Dispatch(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const glm::mat4& invViewProj,
 	                      const float radius, const float intensity, const uint32_t frameCounter,
-	                      const uint32_t rayCount, const Ref<TextureView>& gbuffer,
+	                      const uint32_t rayCount, const Ref<TextureView>& gbuffer, const Ref<TextureView>& depth,
 	                      const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH)
 	{
-		if (!ctx || !gbuffer || !output || outW == 0 || outH == 0)
+		if (!ctx || !gbuffer || !depth || !output || outW == 0 || outH == 0)
 		{
 			return;
 		}
@@ -100,7 +101,8 @@ namespace Snowstorm
 			dsd.DebugName = "AOSet";
 			m_Sets[frameIndex] = DescriptorSet::Create(layouts[0], dsd);
 		}
-		m_Sets[frameIndex]->SetTexture(kGBufferBinding, gbuffer); // .xyz normal, .w depth
+		m_Sets[frameIndex]->SetTexture(kGBufferBinding, gbuffer); // .xy normal, .z roughness
+		m_Sets[frameIndex]->SetTexture(kDepthBinding, depth);     // fp32 D32 depth SRV
 		m_Sets[frameIndex]->SetTexture(kOutputBinding, output);   // storage image (UAV)
 		const BufferBinding cbBB{.Buffer = m_ParamBuffers[frameIndex], .Offset = 0, .Range = sizeof(AOCB)};
 		m_Sets[frameIndex]->SetBuffer(kParamsBinding, cbBB);

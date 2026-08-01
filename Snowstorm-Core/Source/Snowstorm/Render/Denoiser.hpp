@@ -46,7 +46,7 @@ namespace Snowstorm
 		// Sets inst.HistoryValid. `w`/`h` are the signal's resolution. Caller guarantees inst.Allocated().
 		Ref<TextureView> Temporal(FrameContext& fc, DenoiserInstance& inst, const DenoiserConfig& cfg,
 		                          const Ref<TextureView>& raw, const Ref<TextureView>& gbuffer,
-		                          const Ref<TextureView>& velocity, const CameraPick& cam,
+		                          const Ref<TextureView>& depth, const Ref<TextureView>& velocity, const CameraPick& cam,
 		                          uint32_t w, uint32_t h, const std::string& suffix);
 
 		// Edge-avoiding à-trous over `input`, guided by `gbuffer`, ping-ponging inst.Scratch[0/1] with a
@@ -59,7 +59,8 @@ namespace Snowstorm
 		// guarantees inst.Allocated().
 		Ref<TextureView> Atrous(FrameContext& fc, const DenoiserInstance& inst, const DenoiserConfig& cfg,
 		                        const Ref<TextureView>& input, const Ref<TextureView>& gbuffer,
-		                        const Ref<TextureView>& hitGuide, uint32_t w, uint32_t h, const std::string& suffix);
+		                        const Ref<TextureView>& depth, const Ref<TextureView>& hitGuide, uint32_t w, uint32_t h,
+		                        const std::string& suffix);
 
 	private:
 		GITemporalPass m_Temporal; // own instance: per-frame descriptor pool is not shareable across signals

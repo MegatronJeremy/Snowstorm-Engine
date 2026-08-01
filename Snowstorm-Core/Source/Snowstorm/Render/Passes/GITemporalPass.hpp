@@ -31,6 +31,7 @@ namespace Snowstorm
 		// (0 = off). #129 Inc 3c added the moments in/out for textbook SVGF variance. Lazy pipeline build.
 		void Dispatch(const Ref<CommandContext>& ctx, uint32_t frameIndex,
 		              const Ref<TextureView>& current, const Ref<TextureView>& gbuffer,
+		              const Ref<TextureView>& depth,
 		              const Ref<TextureView>& velocity, const Ref<TextureView>& historyPrev,
 		              const Ref<TextureView>& momentsPrev, const Ref<TextureView>& momentsOut,
 		              const Ref<TextureView>& output, uint32_t outW, uint32_t outH,

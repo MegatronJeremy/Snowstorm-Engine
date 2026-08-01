@@ -140,6 +140,7 @@ namespace Snowstorm
 				// one plain color image — not the depth-stencil attachment (which a compute sampled-image
 				// descriptor rejects for its DEPTH_STENCIL_READ_ONLY layout).
 				const Ref<TextureView> gbufView = gbufDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbufDesc.DepthAttachment->View; // fp32 D32 depth (was packed in .w)
 				const Ref<TextureView> giView = v.RT.GITargetView;
 				const uint64_t tableAddr = fc.Renderer.GetReflectionGeometryAddress();
 				// Copy the frame block, then overwrite the camera VP/position with THIS frame's unjittered camera
@@ -152,17 +153,18 @@ namespace Snowstorm
 				frameData.CameraPosition = v.Cam.Transform->Position;
 				const auto frameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
 
-				// Compute pass: reads the G-buffer (Sampled), writes GITarget (Storage). The graph applies both
-				// layout transitions from these declarations (#129 Inc 4); the read-back to Sampled is handled by
-				// the next consumer's .Reads (the temporal/denoise pass, or the debug tonemap's extraRead).
+				// Compute pass: reads the G-buffer + depth (Sampled), writes GITarget (Storage). The graph applies
+				// the layout transitions from these declarations (#129 Inc 4) — including the depth attachment's
+				// DepthStencil -> read-only redirect (handled in TransitionLayout).
 				fc.Graph.AddPass({.Name = "GI" + v.Suffix,
 				                  .IsCompute = true,
-				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Writes = {{giView->GetTexture(), RenderGraph::AccessState::Storage}},
-				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, giView, giW, giH](CommandContext& c)
+				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, depthView, giView, giW, giH](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, frameData, tableAddr, frameCounter,
-					                                  gbufView, giView, giW, giH);
+					                                  gbufView, depthView, giView, giW, giH);
 				                  }});
 
 				v.GBufferNormal = gbufView; // republish (DepthNormalEffect already set it; harmless, keeps intent local)
@@ -204,7 +206,9 @@ namespace Snowstorm
 				FrameContext& fc = v.Frame;
 				auto& inst = fc.Reg.Write<RenderTargetComponent>(v.ViewportEntity).GIDenoiser;
 				const auto& giDesc = v.RT.GITarget->GetDesc();
-				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
 
 				DenoiserConfig cfg{};
 				cfg.TemporalActive = CVars::GITemporalActive();
@@ -213,7 +217,7 @@ namespace Snowstorm
 				cfg.NamePrefix = "GI";
 
 				// The accumulated (or passthrough) buffer becomes the live GI (#132: shared Denoiser logic).
-				v.GIView = m_Denoiser.Temporal(fc, inst, cfg, v.GIView, gbufView, v.Velocity, v.Cam,
+				v.GIView = m_Denoiser.Temporal(fc, inst, cfg, v.GIView, gbufView, depthView, v.Velocity, v.Cam,
 				                               giDesc.Width, giDesc.Height, v.Suffix);
 			}
 
@@ -251,7 +255,9 @@ namespace Snowstorm
 			{
 				FrameContext& fc = v.Frame;
 				const auto& giDesc = v.RT.GITarget->GetDesc();
-				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
 
 				DenoiserConfig cfg{};
 				cfg.DenoiseIterations = CVars::ClampedGIDenoiseIterations();
@@ -263,7 +269,7 @@ namespace Snowstorm
 
 				// The filtered buffer (Scratch[0]) becomes the live GI (#132: shared Denoiser logic). GI passes
 				// gbufView as the (ignored) hit guide + HitDistPhi 0 (#130 Inc B) so its output is bit-identical.
-				v.GIView = m_Denoiser.Atrous(fc, v.RT.GIDenoiser, cfg, v.GIView, gbufView, gbufView,
+				v.GIView = m_Denoiser.Atrous(fc, v.RT.GIDenoiser, cfg, v.GIView, gbufView, depthView, gbufView,
 				                             giDesc.Width, giDesc.Height, v.Suffix);
 			}
 
@@ -305,7 +311,9 @@ namespace Snowstorm
 				// Reading the moving pointer means the upsample never samples a stale buffer regardless of which
 				// optional stages ran this frame.
 				const Ref<TextureView> giView = v.GIView;
-				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
 				const Ref<RenderTarget>& dst = v.RT.GIUpscaleTarget;
 				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
@@ -315,10 +323,11 @@ namespace Snowstorm
 				fc.Graph.AddPass({.Name = "GIUpsample" + v.Suffix,
 				                  .Target = dst,
 				                  .Reads = {{giView->GetTexture(), RenderGraph::AccessState::Sampled},
-				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
-				                  .Execute = [this, &fc, giView, gbufView, giW, giH, nearPlane, farPlane, depthSigma, dstFmt](CommandContext& c)
+				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, giView, gbufView, depthView, giW, giH, nearPlane, farPlane, depthSigma, dstFmt](CommandContext& c)
 				                  {
-					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, giView, gbufView, giW, giH, nearPlane, farPlane, depthSigma, dstFmt);
+					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, giView, gbufView, depthView, giW, giH, nearPlane, farPlane, depthSigma, dstFmt);
 				                  }});
 			}
 
@@ -359,6 +368,7 @@ namespace Snowstorm
 				const uint32_t aoH = ScaledExtent(fullH, scale);
 
 				const Ref<TextureView> gbufView = gbufDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbufDesc.DepthAttachment->View; // fp32 D32 depth (was packed in .w)
 				const Ref<TextureView> aoView = v.RT.AOTargetView;
 				// Reconstruct from THIS frame's unjittered camera VP (same matrix the DepthNormal prepass wrote
 				// the depth with) — NOT GetFrameData().ViewProjection, which at graph-build time still holds the
@@ -373,12 +383,13 @@ namespace Snowstorm
 
 				fc.Graph.AddPass({.Name = "AO" + v.Suffix,
 				                  .IsCompute = true,
-				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Writes = {{aoView->GetTexture(), RenderGraph::AccessState::Storage}},
-				                  .Execute = [this, &fc, invViewProj, radius, intensity, frameCounter, rayCount, gbufView, aoView, aoW, aoH](CommandContext& c)
+				                  .Execute = [this, &fc, invViewProj, radius, intensity, frameCounter, rayCount, gbufView, depthView, aoView, aoW, aoH](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, radius, intensity, frameCounter,
-					                                  rayCount, gbufView, aoView, aoW, aoH);
+					                                  rayCount, gbufView, depthView, aoView, aoW, aoH);
 				                  }});
 
 				v.AOView = aoView; // the raw trace is the live AO buffer; temporal/denoise republish downstream (#130)
@@ -414,7 +425,9 @@ namespace Snowstorm
 				FrameContext& fc = v.Frame;
 				auto& inst = fc.Reg.Write<RenderTargetComponent>(v.ViewportEntity).AODenoiser;
 				const auto& aoDesc = v.RT.AOTarget->GetDesc();
-				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
 
 				DenoiserConfig cfg{};
 				cfg.TemporalActive = CVars::AOTemporalActive();
@@ -423,7 +436,7 @@ namespace Snowstorm
 				cfg.NamePrefix = "AO";
 
 				// The accumulated (or passthrough) buffer becomes the live AO (#130: shared Denoiser).
-				v.AOView = m_Denoiser.Temporal(fc, inst, cfg, v.AOView, gbufView, v.Velocity, v.Cam,
+				v.AOView = m_Denoiser.Temporal(fc, inst, cfg, v.AOView, gbufView, depthView, v.Velocity, v.Cam,
 				                               aoDesc.Width, aoDesc.Height, v.Suffix);
 			}
 
@@ -456,7 +469,9 @@ namespace Snowstorm
 			{
 				FrameContext& fc = v.Frame;
 				const auto& aoDesc = v.RT.AOTarget->GetDesc();
-				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
 
 				DenoiserConfig cfg{};
 				cfg.DenoiseIterations = CVars::ClampedAODenoiseIterations();
@@ -470,7 +485,7 @@ namespace Snowstorm
 				// The à-trous-filtered buffer (Scratch[0]) becomes the live AO (#130: shared Denoiser). The raw
 				// AO trace (AOTargetView, .a = normalized hit distance) is the fixed hit guide — NOT v.AOView,
 				// whose .a is variance after the temporal pass. Same half-res grid as the à-trous input.
-				v.AOView = m_Denoiser.Atrous(fc, v.RT.AODenoiser, cfg, v.AOView, gbufView, v.RT.AOTargetView,
+				v.AOView = m_Denoiser.Atrous(fc, v.RT.AODenoiser, cfg, v.AOView, gbufView, depthView, v.RT.AOTargetView,
 				                             aoDesc.Width, aoDesc.Height, v.Suffix);
 			}
 
@@ -508,7 +523,9 @@ namespace Snowstorm
 				const uint32_t aoW = aoDesc.Width;
 				const uint32_t aoH = aoDesc.Height;
 				const Ref<TextureView> aoView = v.AOView; // live AO after temporal/denoise (#130), was v.RT.AOTargetView
-				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
 				const Ref<RenderTarget>& dst = v.RT.AOUpscaleTarget;
 				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
@@ -518,10 +535,11 @@ namespace Snowstorm
 				fc.Graph.AddPass({.Name = "AOUpsample" + v.Suffix,
 				                  .Target = dst,
 				                  .Reads = {{aoView->GetTexture(), RenderGraph::AccessState::Sampled},
-				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled}},
-				                  .Execute = [this, &fc, aoView, gbufView, aoW, aoH, nearPlane, farPlane, depthSigma, dstFmt](CommandContext& c)
+				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, aoView, gbufView, depthView, aoW, aoH, nearPlane, farPlane, depthSigma, dstFmt](CommandContext& c)
 				                  {
-					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, aoView, gbufView, aoW, aoH, nearPlane, farPlane, depthSigma, dstFmt);
+					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, aoView, gbufView, depthView, aoW, aoH, nearPlane, farPlane, depthSigma, dstFmt);
 				                  }});
 			}
 
@@ -559,9 +577,11 @@ namespace Snowstorm
 				const auto& reflDesc = v.RT.ReflectionTarget->GetDesc();
 				const uint32_t reflW = reflDesc.Width;
 				const uint32_t reflH = reflDesc.Height;
-				const auto& gbufAtts = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments;
-				const Ref<TextureView> gbufView = gbufAtts[0].View;    // main: geometric normal + roughness + depth
-				const Ref<TextureView> shadingView = gbufAtts[1].View; // #129 Inc 1c: normal-mapped shading normal
+				const auto& gbufDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const auto& gbufAtts = gbufDesc.ColorAttachments;
+				const Ref<TextureView> gbufView = gbufAtts[0].View;                // main: geometric normal + roughness
+				const Ref<TextureView> shadingView = gbufAtts[1].View;             // #129 Inc 1c: normal-mapped shading normal
+				const Ref<TextureView> depthView = gbufDesc.DepthAttachment->View; // fp32 D32 depth (was packed in .w)
 				const Ref<TextureView> reflView = v.RT.ReflectionTargetView;
 				const uint64_t tableAddr = fc.Renderer.GetReflectionGeometryAddress();
 				// This frame's unjittered camera VP/position, not the stale GetFrameData() (previous frame's
@@ -576,12 +596,13 @@ namespace Snowstorm
 				fc.Graph.AddPass({.Name = "Reflection" + v.Suffix,
 				                  .IsCompute = true,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
-				                            {shadingView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                            {shadingView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Writes = {{reflView->GetTexture(), RenderGraph::AccessState::Storage}},
-				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, shadingView, reflView, reflW, reflH](CommandContext& c)
+				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, shadingView, depthView, reflView, reflW, reflH](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, frameData, tableAddr, frameCounter,
-					                                  gbufView, shadingView, reflView, reflW, reflH);
+					                                  gbufView, shadingView, depthView, reflView, reflW, reflH);
 				                  }});
 
 				v.ReflectionView = reflView; // the raw trace is the live reflection buffer; temporal republishes downstream
@@ -621,7 +642,9 @@ namespace Snowstorm
 				FrameContext& fc = v.Frame;
 				auto& inst = fc.Reg.Write<RenderTargetComponent>(v.ViewportEntity).ReflectionDenoiser;
 				const auto& reflDesc = v.RT.ReflectionTarget->GetDesc();
-				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
 
 				DenoiserConfig cfg{};
 				cfg.TemporalActive = CVars::ReflectionTemporalActive();
@@ -630,7 +653,7 @@ namespace Snowstorm
 				cfg.NamePrefix = "Reflection";
 
 				// The accumulated (or passthrough) buffer becomes the live reflection (#132: shared Denoiser).
-				v.ReflectionView = m_Denoiser.Temporal(fc, inst, cfg, v.ReflectionView, gbufView, v.Velocity,
+				v.ReflectionView = m_Denoiser.Temporal(fc, inst, cfg, v.ReflectionView, gbufView, depthView, v.Velocity,
 				                                       v.Cam, reflDesc.Width, reflDesc.Height, v.Suffix);
 			}
 
@@ -667,7 +690,9 @@ namespace Snowstorm
 			{
 				FrameContext& fc = v.Frame;
 				const auto& reflDesc = v.RT.ReflectionTarget->GetDesc();
-				const Ref<TextureView> gbufView = v.RT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
+				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
 
 				DenoiserConfig cfg{};
 				cfg.DenoiseIterations = CVars::ClampedReflectionDenoiseIterations();
@@ -679,7 +704,7 @@ namespace Snowstorm
 
 				// The à-trous-filtered buffer becomes the live reflection (#132: shared Denoiser). Reflections
 				// pass gbufView as the (ignored) hit guide + HitDistPhi 0 (#130 Inc B) so output is bit-identical.
-				v.ReflectionView = m_Denoiser.Atrous(fc, v.RT.ReflectionDenoiser, cfg, v.ReflectionView, gbufView, gbufView,
+				v.ReflectionView = m_Denoiser.Atrous(fc, v.RT.ReflectionDenoiser, cfg, v.ReflectionView, gbufView, depthView, gbufView,
 				                                     reflDesc.Width, reflDesc.Height, v.Suffix);
 			}
 

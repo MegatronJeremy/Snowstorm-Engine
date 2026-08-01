@@ -96,7 +96,7 @@ DepthNormalOut main(DepthNormalVSOut input)
 	roughness = clamp(roughness, 0.04, 1.0);
 
 	DepthNormalOut o;
-	o.Main = PackGBuffer(nGeom, roughness, input.PositionCS.z); // .xy geometric, .z roughness, .w depth
+	o.Main = PackGBuffer(nGeom, roughness); // .xy geometric, .z roughness, .w unused (depth via D32 attachment)
 	o.Shading = float4(EncodeNormalOct(nShade), 0.0, 0.0);      // .xy shading normal (reflection pass)
 	return o;
 }

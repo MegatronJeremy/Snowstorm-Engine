@@ -5,12 +5,12 @@
 // Layout (one RGBA16F color image, sampled as a plain color — NOT the depth-stencil attachment):
 //   .xy = octahedral-encoded world-space SHADING normal (normal-mapped, matching DefaultLit) in [-1,1]
 //   .z  = perceptual roughness [0,1] (for the reflection trace-skip / future glossy blur)
-//   .w  = NDC depth (SV_Position.z, ZO clip [0,1]); 1.0 = far plane / sky
+//   .w  = UNUSED (was NDC depth). Depth now comes from the fp32 D32 depth attachment, sampled directly by
+//         the RT consumers — packing NDC depth into fp16 .w quantized it (NDC is non-linear) and banded GI/AO.
 //
-// Sky/no-geometry detection keys off DEPTH, not the normal: the target is cleared to depth = 1.0, and a
-// real far-plane fragment is also ~1.0, so `depth >= 1.0` means "nothing here". This replaced the old
-// zero-length-normal test, which octahedral encoding breaks (oct(0,0) decodes to a VALID +Z normal, so a
-// zero .xy no longer means "sky"). Every consumer must use IsSky(depth), never dot(N,N).
+// Sky/no-geometry detection keys off DEPTH (from the depth attachment now), not the normal: cleared/far-plane
+// depth is 1.0, so `depth >= 1.0` means "nothing here". This replaced the old zero-length-normal test, which
+// octahedral encoding breaks (oct(0,0) decodes to a VALID +Z normal). Every consumer must use IsSky(depth).
 
 #ifndef SNOWSTORM_GBUFFER_ENCODE_HLSLI
 #define SNOWSTORM_GBUFFER_ENCODE_HLSLI
@@ -67,10 +67,12 @@ float LinearizeViewDepth(float ndcDepth, float nearPlane, float farPlane)
 	return (nearPlane * farPlane) / max(farPlane - ndcDepth * (farPlane - nearPlane), 1e-6);
 }
 
-// Convenience packers so producer + debug reads agree on channel order.
-float4 PackGBuffer(float3 normalWS, float roughness, float ndcDepth)
+// Convenience packer so producer + debug reads agree on channel order. Depth is NO LONGER packed here —
+// consumers sample the fp32 D32 depth attachment directly (fp16 .w quantized NDC depth and banded GI/AO).
+// .w is left 0 (unused).
+float4 PackGBuffer(float3 normalWS, float roughness)
 {
-	return float4(EncodeNormalOct(normalWS), roughness, ndcDepth);
+	return float4(EncodeNormalOct(normalWS), roughness, 0.0);
 }
 
 #endif // SNOWSTORM_GBUFFER_ENCODE_HLSLI

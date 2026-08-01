@@ -31,7 +31,7 @@ namespace Snowstorm
 		// (async shader); no-op until ready.
 		void Dispatch(const Ref<CommandContext>& ctx, uint32_t frameIndex, const glm::mat4& invViewProj,
 		              float radius, float intensity, uint32_t frameCounter, uint32_t rayCount,
-		              const Ref<TextureView>& gbuffer,
+		              const Ref<TextureView>& gbuffer, const Ref<TextureView>& depth,
 		              const Ref<TextureView>& output, uint32_t outW, uint32_t outH);
 
 	private:

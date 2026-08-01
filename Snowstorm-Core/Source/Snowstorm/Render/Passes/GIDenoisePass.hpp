@@ -35,6 +35,7 @@ namespace Snowstorm
 		// Lazily builds the pipeline; no-op until ready.
 		void Dispatch(const Ref<CommandContext>& ctx, uint32_t frameIndex, uint32_t slot, int step,
 		              const Ref<TextureView>& input, const Ref<TextureView>& gbuffer,
+		              const Ref<TextureView>& depth,
 		              const Ref<TextureView>& output, uint32_t outW, uint32_t outH, float lumaPhi,
 		              const Ref<TextureView>& hitGuide, float hitDistPhi, float nearPlane, float farPlane,
 		              float depthSigma);

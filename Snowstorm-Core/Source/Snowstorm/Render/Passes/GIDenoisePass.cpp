@@ -37,6 +37,7 @@ namespace Snowstorm
 		constexpr uint32_t kGBufferBinding = 1;
 		constexpr uint32_t kOutputBinding = 2;
 		constexpr uint32_t kHitGuideBinding = 3; // #130 Inc B
+		constexpr uint32_t kDepthBinding = 5;    // fp32 D32 depth SRV (was packed in the G-buffer .w)
 		constexpr uint32_t kParamsBinding = 4;
 
 		// Max à-trous iterations per frame = ClampedGIDenoiseIterations() ceiling. Sizes the per-frame set/UBO
@@ -82,11 +83,12 @@ namespace Snowstorm
 
 	void GIDenoisePass::Dispatch(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const uint32_t slot,
 	                             const int step, const Ref<TextureView>& input, const Ref<TextureView>& gbuffer,
+	                             const Ref<TextureView>& depth,
 	                             const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH,
 	                             const float lumaPhi, const Ref<TextureView>& hitGuide, const float hitDistPhi,
 	                             const float nearPlane, const float farPlane, const float depthSigma)
 	{
-		if (!ctx || !input || !gbuffer || !output || !hitGuide || outW == 0 || outH == 0)
+		if (!ctx || !input || !gbuffer || !depth || !output || !hitGuide || outW == 0 || outH == 0)
 		{
 			return;
 		}
@@ -120,7 +122,8 @@ namespace Snowstorm
 			m_Sets[idx] = DescriptorSet::Create(layouts[0], dsd);
 		}
 		m_Sets[idx]->SetTexture(kGIInBinding, input);        // half-res GI to filter
-		m_Sets[idx]->SetTexture(kGBufferBinding, gbuffer);   // .xyz normal, .w depth guide
+		m_Sets[idx]->SetTexture(kGBufferBinding, gbuffer);   // .xy normal guide
+		m_Sets[idx]->SetTexture(kDepthBinding, depth);       // fp32 D32 depth guide
 		m_Sets[idx]->SetTexture(kOutputBinding, output);     // storage image (UAV)
 		m_Sets[idx]->SetTexture(kHitGuideBinding, hitGuide); // #130 Inc B: hit-distance guide (.a); ignored when phi=0
 		const BufferBinding cbBB{.Buffer = m_ParamBuffers[idx], .Offset = 0, .Range = sizeof(GIDenoiseCB)};

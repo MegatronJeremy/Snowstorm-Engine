@@ -14,7 +14,7 @@ namespace Snowstorm
 {
 	Ref<TextureView> Denoiser::Temporal(FrameContext& fc, DenoiserInstance& inst, const DenoiserConfig& cfg,
 	                                    const Ref<TextureView>& raw, const Ref<TextureView>& gbuffer,
-	                                    const Ref<TextureView>& velocity, const CameraPick& cam,
+	                                    const Ref<TextureView>& depth, const Ref<TextureView>& velocity, const CameraPick& cam,
 	                                    const uint32_t w, const uint32_t h, const std::string& suffix)
 	{
 		// Temporal off (or no velocity buffer this frame): drop the valid flag so re-enabling starts clean, and
@@ -46,14 +46,15 @@ namespace Snowstorm
 		                  .IsCompute = true,
 		                  .Reads = {{raw->GetTexture(), RenderGraph::AccessState::Sampled},
 		                            {gbuffer->GetTexture(), RenderGraph::AccessState::Sampled},
+		                            {depth->GetTexture(), RenderGraph::AccessState::Sampled},
 		                            {velocity->GetTexture(), RenderGraph::AccessState::Sampled},
 		                            {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled},
 		                            {prevMomView->GetTexture(), RenderGraph::AccessState::Sampled}},
 		                  .Writes = {{curHistView->GetTexture(), RenderGraph::AccessState::Storage},
 		                             {curMomView->GetTexture(), RenderGraph::AccessState::Storage}},
-		                  .Execute = [this, &fc, raw, gbuffer, velocity, prevHistView, curHistView, prevMomView, curMomView, w, h, historyValid, blend, maxBlend, nearPlane, farPlane, depthReject](CommandContext& c)
+		                  .Execute = [this, &fc, raw, gbuffer, depth, velocity, prevHistView, curHistView, prevMomView, curMomView, w, h, historyValid, blend, maxBlend, nearPlane, farPlane, depthReject](CommandContext& c)
 		                  {
-			                  m_Temporal.Dispatch(fc.Ctx, fc.FrameIndex, raw, gbuffer, velocity, prevHistView,
+			                  m_Temporal.Dispatch(fc.Ctx, fc.FrameIndex, raw, gbuffer, depth, velocity, prevHistView,
 			                                      prevMomView, curMomView, curHistView, w, h, historyValid,
 			                                      blend, maxBlend, nearPlane, farPlane, depthReject);
 		                  }});
@@ -63,8 +64,8 @@ namespace Snowstorm
 
 	Ref<TextureView> Denoiser::Atrous(FrameContext& fc, const DenoiserInstance& inst, const DenoiserConfig& cfg,
 	                                  const Ref<TextureView>& input, const Ref<TextureView>& gbuffer,
-	                                  const Ref<TextureView>& hitGuide, const uint32_t w, const uint32_t h,
-	                                  const std::string& suffix)
+	                                  const Ref<TextureView>& depth, const Ref<TextureView>& hitGuide,
+	                                  const uint32_t w, const uint32_t h, const std::string& suffix)
 	{
 		const int iterations = cfg.DenoiseIterations;
 		if (iterations <= 0)
@@ -92,11 +93,12 @@ namespace Snowstorm
 			                  .IsCompute = true,
 			                  .Reads = {{srcView->GetTexture(), RenderGraph::AccessState::Sampled},
 			                            {gbuffer->GetTexture(), RenderGraph::AccessState::Sampled},
+			                            {depth->GetTexture(), RenderGraph::AccessState::Sampled},
 			                            {hitGuide->GetTexture(), RenderGraph::AccessState::Sampled}},
 			                  .Writes = {{dstView->GetTexture(), RenderGraph::AccessState::Storage}},
-			                  .Execute = [this, &fc, slot, step, srcView, gbuffer, dstView, hitGuide, w, h, lumaPhi, hitPhi, nearPlane, farPlane, depthSigma](CommandContext& c)
+			                  .Execute = [this, &fc, slot, step, srcView, gbuffer, depth, dstView, hitGuide, w, h, lumaPhi, hitPhi, nearPlane, farPlane, depthSigma](CommandContext& c)
 			                  {
-				                  m_Atrous.Dispatch(fc.Ctx, fc.FrameIndex, slot, step, srcView, gbuffer, dstView, w, h, lumaPhi, hitGuide, hitPhi, nearPlane, farPlane, depthSigma);
+				                  m_Atrous.Dispatch(fc.Ctx, fc.FrameIndex, slot, step, srcView, gbuffer, depth, dstView, w, h, lumaPhi, hitGuide, hitPhi, nearPlane, farPlane, depthSigma);
 			                  }});
 
 			dst ^= 1;

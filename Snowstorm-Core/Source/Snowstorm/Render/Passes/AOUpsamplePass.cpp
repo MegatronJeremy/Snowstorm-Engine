@@ -21,6 +21,7 @@ namespace Snowstorm
 		constexpr uint32_t kGBufferBinding = 5;
 		constexpr uint32_t kSamplerBinding = 6;
 		constexpr uint32_t kParamsBinding = 7;
+		constexpr uint32_t kDepthBinding = 8; // fp32 D32 depth SRV (was packed in the G-buffer .w)
 
 		// Mirrors AOUpsampleCB in AOUpsample.frag.hlsl.
 		struct AOUpsampleCB
@@ -87,10 +88,10 @@ namespace Snowstorm
 	}
 
 	void AOUpsamplePass::Draw(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const Ref<TextureView>& ao,
-	                          const Ref<TextureView>& gbuffer, const uint32_t aoW, const uint32_t aoH, const float nearPlane,
-	                          const float farPlane, const float depthSigma, const PixelFormat colorFormat)
+	                          const Ref<TextureView>& gbuffer, const Ref<TextureView>& depth, const uint32_t aoW, const uint32_t aoH,
+	                          const float nearPlane, const float farPlane, const float depthSigma, const PixelFormat colorFormat)
 	{
-		if (!ctx || !ao || !gbuffer)
+		if (!ctx || !ao || !gbuffer || !depth)
 		{
 			return;
 		}
@@ -131,6 +132,7 @@ namespace Snowstorm
 
 		m_Sets[frameIndex]->SetTexture(kAOBinding, ao);
 		m_Sets[frameIndex]->SetTexture(kGBufferBinding, gbuffer);
+		m_Sets[frameIndex]->SetTexture(kDepthBinding, depth); // fp32 D32 depth SRV
 		m_Sets[frameIndex]->SetSampler(kSamplerBinding, m_Sampler);
 		const BufferBinding cbBB{.Buffer = m_ParamBuffers[frameIndex], .Offset = 0, .Range = sizeof(AOUpsampleCB)};
 		m_Sets[frameIndex]->SetBuffer(kParamsBinding, cbBB);
