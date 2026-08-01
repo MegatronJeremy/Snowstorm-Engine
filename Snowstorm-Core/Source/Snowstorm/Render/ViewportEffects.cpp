@@ -142,7 +142,14 @@ namespace Snowstorm
 				const Ref<TextureView> gbufView = gbufDesc.ColorAttachments[0].View;
 				const Ref<TextureView> giView = v.RT.GITargetView;
 				const uint64_t tableAddr = fc.Renderer.GetReflectionGeometryAddress();
-				const FrameData& frameData = fc.Renderer.GetFrameData();
+				// Copy the frame block, then overwrite the camera VP/position with THIS frame's unjittered camera
+				// runtime (the matrix the DepthNormal prepass wrote the depth with). GetFrameData() at graph-build
+				// time still holds the PREVIOUS frame's forward-pass matrix (BeginScene runs at execute, after
+				// this), so reconstructing world position from it mismatches this frame's depth and warps the
+				// hemisphere origins — banded self-occlusion / "black stripes", worst moving backward (#133 f/u).
+				FrameData frameData = fc.Renderer.GetFrameData();
+				frameData.ViewProjection = v.Cam.Rt->ViewProjection;
+				frameData.CameraPosition = v.Cam.Transform->Position;
 				const auto frameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
 
 				// Compute pass: reads the G-buffer (Sampled), writes GITarget (Storage). The graph applies both
@@ -347,7 +354,12 @@ namespace Snowstorm
 
 				const Ref<TextureView> gbufView = gbufDesc.ColorAttachments[0].View;
 				const Ref<TextureView> aoView = v.RT.AOTargetView;
-				const glm::mat4 invViewProj = glm::inverse(fc.Renderer.GetFrameData().ViewProjection);
+				// Reconstruct from THIS frame's unjittered camera VP (same matrix the DepthNormal prepass wrote
+				// the depth with) — NOT GetFrameData().ViewProjection, which at graph-build time still holds the
+				// PREVIOUS frame's forward-pass matrix (BeginScene runs at execute, after this). The stale matrix
+				// mismatches this frame's depth and warps reconstructed world positions (banded self-occlusion /
+				// "black stripes", worst moving backward). Fixes AO/GI/reflection alike (#133 follow-up).
+				const glm::mat4 invViewProj = glm::inverse(v.Cam.Rt->ViewProjection);
 				const float radius = CVars::AORadius.Get();
 				const float intensity = CVars::AOIntensity.Get();
 				const auto frameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
@@ -539,7 +551,13 @@ namespace Snowstorm
 				const Ref<TextureView> shadingView = gbufAtts[1].View; // #129 Inc 1c: normal-mapped shading normal
 				const Ref<TextureView> reflView = v.RT.ReflectionTargetView;
 				const uint64_t tableAddr = fc.Renderer.GetReflectionGeometryAddress();
-				const FrameData& frameData = fc.Renderer.GetFrameData();
+				// This frame's unjittered camera VP/position, not the stale GetFrameData() (previous frame's
+				// forward matrix at graph-build time — BeginScene runs at execute, after this). Same fix as GI/AO:
+				// reconstructing from the stale matrix warps world positions -> banded self-occlusion / "black
+				// stripes" (worst moving backward). See the GI effect above (#133 follow-up).
+				FrameData frameData = fc.Renderer.GetFrameData();
+				frameData.ViewProjection = v.Cam.Rt->ViewProjection;
+				frameData.CameraPosition = v.Cam.Transform->Position;
 				const auto frameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
 
 				fc.Graph.AddPass({.Name = "Reflection" + v.Suffix,
