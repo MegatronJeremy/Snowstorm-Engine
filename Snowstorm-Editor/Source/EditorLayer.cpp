@@ -97,7 +97,7 @@ namespace Snowstorm
 		}
 
 		const std::filesystem::path ssproj = explicitProject ? std::filesystem::path(CVars::StartupProject.Get())
-		                                                        : EditorPreferences::RecentProjects().front().Path;
+		                                                     : EditorPreferences::RecentProjects().front().Path;
 		Ref<Project> project = CreateRef<Project>();
 		if (!std::filesystem::is_regular_file(ssproj) || !ProjectSerializer::Deserialize(*project, ssproj))
 		{
@@ -456,7 +456,7 @@ namespace Snowstorm
 		}
 
 		const std::filesystem::path destinationRelative = project->GetConfig().AssetDirectory /
-		                                                          destinationFolder / sourcePath.filename();
+		                                                  destinationFolder / sourcePath.filename();
 		const std::filesystem::path destinationAbsolute = project->GetProjectDirectory() / destinationRelative;
 		std::error_code ec;
 		std::filesystem::create_directories(destinationAbsolute.parent_path(), ec);
@@ -1312,7 +1312,7 @@ namespace Snowstorm
 			if (ImGui::Button("Create", ImVec2(120.0f, 0.0f)))
 			{
 				const std::filesystem::path directory = std::filesystem::path(m_StartProjectLocation) /
-				                                            m_StartProjectName;
+				                                        m_StartProjectName;
 				if (CreateProject(directory, m_StartProjectName))
 				{
 					m_StartProjectName[0] = '\0';

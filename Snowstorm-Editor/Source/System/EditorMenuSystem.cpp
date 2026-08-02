@@ -485,8 +485,11 @@ namespace Snowstorm
 			{
 				if (const std::filesystem::path picked = FileDialog::OpenFile(
 				        {{"Supported Assets", "obj;fbx;gltf;glb;png;jpg;jpeg;tga;dds;bmp;ssmat;hlsl;world"},
-				         {"Model", "obj;fbx;gltf;glb"}, {"Texture", "png;jpg;jpeg;tga;dds;bmp"},
-				         {"Material", "ssmat"}, {"Shader", "hlsl"}, {"Scene", "world"}});
+				         {"Model", "obj;fbx;gltf;glb"},
+				         {"Texture", "png;jpg;jpeg;tga;dds;bmp"},
+				         {"Material", "ssmat"},
+				         {"Shader", "hlsl"},
+				         {"Scene", "world"}});
 				    !picked.empty())
 				{
 					const std::string pickedStr = picked.string();
