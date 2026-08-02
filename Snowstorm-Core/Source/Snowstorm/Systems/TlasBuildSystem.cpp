@@ -4,6 +4,7 @@
 #include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/MaterialInstance.hpp"
 #include "Snowstorm/Render/Mesh.hpp"
@@ -28,6 +29,17 @@ namespace Snowstorm
 		if (!InitView<MeshComponent>().empty() || !InitView<TransformComponent>().empty())
 			return true;
 		if (!FiniView<MeshComponent>().empty() || !FiniView<TransformComponent>().empty())
+			return true;
+
+		// A MaterialComponent change must also rebuild: the geometry table caches each instance's material
+		// constants (albedo texture index, base color) for the RT reflection/GI shade. Materials resolve
+		// ASYNC and INDEPENDENTLY of meshes (MaterialResolveSystem sets MaterialInstance only once the
+		// pipeline's shader has compiled), so on a cold cache a mesh resolves + builds the table BEFORE its
+		// material is ready — the record captures the white/BaseColor fallback (see the try_get_const path
+		// below) and, without this check, never refreshes when the material lands, leaving GI/reflections lit
+		// with wrong albedo until something else re-dirties the scene (the "toggle GI/refl off+on fixes it"
+		// bug). Optimized shaders (slower cold compile) made this window reliably straddle the first build.
+		if (!ChangedView<MaterialComponent>().empty())
 			return true;
 
 		// Placement change is the PER-FRAME hot path: only a changed transform that belongs to a mesh entity
