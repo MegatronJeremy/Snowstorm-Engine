@@ -369,7 +369,7 @@ float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness,
 	// term's OWN brightness dial (decoupled from IBLIntensity — real scene light, not baked ambient).
 	if (ReflectionTextureIndex != 0 && roughness < ReflMaxRoughness)
 	{
-		const float2 reflUv = pixelPos / max(RenderTargetSize, float2(1.0, 1.0));
+		const float2 reflUv = pixelPos / max(RenderTargetSize, float2(1.0, 1.0)) - JitterUv; // jitter-matched (see AO)
 		const float3 rt = Textures[NonUniformResourceIndex(ReflectionTextureIndex)].SampleLevel(LinearSampler, reflUv, 0).rgb;
 		const float reflWeight = saturate(1.0 - roughness / max(ReflMaxRoughness, 1e-3));
 		const float3 specularRT = rt * specWeight * ReflIntensity;
@@ -461,7 +461,9 @@ float4 main(PSInput i) : SV_Target0
 	// -> `ao` keeps just the material AO map. Replaces the old inline per-pixel RayTraceAO (deleted).
 	if (RTAOTextureIndex != 0)
 	{
-		const float2 aoUv = i.PositionCS.xy / max(RenderTargetSize, float2(1.0, 1.0));
+		// Subtract the TAA jitter (UV units) so the AO is sampled at the SAME sub-pixel spot the jittered
+		// geometry occupies — gives TAA sub-pixel variation to average, so half-res AO edges anti-alias.
+		const float2 aoUv = i.PositionCS.xy / max(RenderTargetSize, float2(1.0, 1.0)) - JitterUv;
 		ao *= Textures[NonUniformResourceIndex(RTAOTextureIndex)].SampleLevel(LinearSampler, aoUv, 0).r;
 	}
 
@@ -492,7 +494,7 @@ float4 main(PSInput i) : SV_Target0
 	float3 giIndirect = float3(0, 0, 0);
 	if (GITextureIndex != 0)
 	{
-		const float2 giUv = i.PositionCS.xy / max(RenderTargetSize, float2(1.0, 1.0));
+		const float2 giUv = i.PositionCS.xy / max(RenderTargetSize, float2(1.0, 1.0)) - JitterUv; // jitter-matched (see AO)
 		const float3 giIrradiance = Textures[NonUniformResourceIndex(GITextureIndex)].SampleLevel(LinearSampler, giUv, 0).rgb;
 		giIndirect = giIrradiance * albedo; // irradiance * receiver albedo = diffuse indirect response
 	}

@@ -74,8 +74,12 @@ float4 main(FullscreenVSOut input) : SV_Target
 
 	float3 accum = float3(0, 0, 0);
 	float wsum = 0.0;
+	// Fallback for when every tap is edge-rejected (a silhouette): the half-res tap whose LINEARIZED depth is
+	// closest to THIS full-res pixel's depth — i.e. the sample on the SAME surface. Anchoring the fallback to
+	// the full-res depth (now fp32) instead of the nearest half-res TEXEL is what stops the edge quantizing to
+	// the coarse trace grid, killing the static silhouette jaggies TAA can't touch.
 	float3 nearestGI = float3(0, 0, 0);
-	float nearestW = -1.0;
+	float bestDepthDiff = 1e30;
 
 	[unroll] for (int t = 0; t < 4; ++t)
 	{
@@ -100,15 +104,17 @@ float4 main(FullscreenVSOut input) : SV_Target
 		accum += gi * w;
 		wsum += w;
 
-		// Track the highest bilinear-weight tap as the fallback (nearest-ish) if all are rejected.
-		if (bw[t] > nearestW)
+		// Nearest-DEPTH fallback tap (min |Δlinear| to the full-res center) — the same-surface sample.
+		const float depthDiff = abs(linCenter - linTap);
+		if (depthDiff < bestDepthDiff)
 		{
-			nearestW = bw[t];
+			bestDepthDiff = depthDiff;
 			nearestGI = gi;
 		}
 	}
 
-	// All taps rejected (thin geometry / a lone pixel between edges) -> nearest, so we never divide by ~0.
+	// All taps rejected (a silhouette / thin feature) -> the nearest-DEPTH tap (same surface as this full-res
+	// pixel), so the edge follows the full-res depth buffer, not the half-res grid. Never divides by ~0.
 	const float3 result = (wsum > 1e-4) ? (accum / wsum) : nearestGI;
 	return float4(result, 1.0);
 }

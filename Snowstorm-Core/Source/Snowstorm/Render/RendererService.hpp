@@ -406,6 +406,7 @@ namespace Snowstorm
 
 		uint64_t m_FrameCounter = 0;      // monotonic; ++ per NewFrame() (temporal jitter index, #44)
 		float m_MipBias = 0.0f;           // texture mip-LOD bias for the current scene pass (TAA, #44)
+		glm::vec2 m_JitterUv{0.0f, 0.0f}; // TAA jitter (UV units) for the current pass; 0 unless jittered
 		bool m_ForceRasterShadow = false; // this pass forces raster shadows (compare GT render, #118)
 
 		RenderStats m_Stats{};

@@ -128,8 +128,10 @@ namespace Snowstorm
 			// matches Engine.hlsli FrameCB tail field-for-field.
 			uint32_t ReflectionTextureIndex = 0;
 			uint32_t _ReflTexPad0 = 0;
-			uint32_t _ReflTexPad1 = 0;
-			uint32_t _ReflTexPad2 = 0;
+			// TAA sub-pixel jitter in UV units (JitterNdc * 0.5), 0 on unjittered passes. The forward pass
+			// subtracts it from the GI/AO/reflection screen-UV samples so they're fetched at the jittered
+			// geometry's sub-pixel spot -> TAA can average their half-res edges. Matches Engine.hlsli FrameCB.
+			glm::vec2 JitterUv{0.0f, 0.0f};
 		};
 	}
 
@@ -172,6 +174,13 @@ namespace Snowstorm
 		// safer end of the standard TAA mip bias (DLSS/FSR guidance: log2(renderRes/displayRes) - 0.5, ~-0.5
 		// at native) — less motion noise than -1.0. Non-jittered passes (shadow/velocity/GT) sample normally.
 		m_MipBias = useJitteredProjection ? -0.5f : 0.0f;
+
+		// TAA jitter for the GI/AO/reflection screen-UV samples (#): the jittered forward raster shifts geometry
+		// by JitterNdc, so those unjittered full-res buffers must be sampled at uv - JitterUv to hit the SAME
+		// sub-pixel spot — giving TAA sub-pixel variation to average (else their half-res edges stay pixel-grid-
+		// frozen and never anti-alias). NDC spans 2 units across the screen, UV spans 1, so UV = NDC * 0.5.
+		// Only the jittered color pass gets a non-zero offset; shadow/velocity/GT stay unjittered (0).
+		m_JitterUv = useJitteredProjection ? cameraRt.JitterNdc * 0.5f : glm::vec2(0.0f);
 
 		m_Batches.clear();
 		m_BatchIndex.clear();
@@ -280,6 +289,7 @@ namespace Snowstorm
 		frame.InvViewProj = glm::inverse(fd.ViewProjection);
 		frame.PrevViewProj = fd.PrevViewProjection; // motion vectors (#44)
 		frame.MipBias = m_MipBias;                  // TAA mip-LOD bias (#44); 0 unless the pass is jittered
+		frame.JitterUv = m_JitterUv;                // TAA jitter (UV) for GI/AO/refl screen-UV samples; 0 unless jittered
 		frame.CameraPosition = fd.CameraPosition;
 		frame.Exposure = CVars::Exposure.Get();
 		frame.Lights = fd.Lights;

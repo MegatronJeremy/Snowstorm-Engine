@@ -220,8 +220,12 @@ cbuffer FrameCB : register(b0, space0)
 	// RendererService.cpp field-for-field.
 	uint ReflectionTextureIndex;
 	uint _ReflTexPad0;
-	uint _ReflTexPad1;
-	uint _ReflTexPad2;
+	// TAA sub-pixel jitter in UV units (#: = JitterNdc * 0.5), or (0,0) on unjittered passes. The GI/AO/
+	// reflection screen-UV samples subtract this so the effect is fetched at the SAME sub-pixel location the
+	// jittered geometry is — without it those buffers are sampled at fixed integer pixel centers (jitter-
+	// independent) and their silhouettes stay frozen to the pixel grid, so TAA has no sub-pixel variation to
+	// average and half-res GI/AO edges never anti-alias (jaggies persist with TAA on).
+	float2 JitterUv;
 };
 
 // --- SPACE 1: Material Data ---
