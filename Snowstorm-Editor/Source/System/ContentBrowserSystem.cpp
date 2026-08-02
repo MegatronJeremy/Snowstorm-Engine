@@ -4,6 +4,7 @@
 #include "Snowstorm/Assets/MaterialAsset.hpp"
 #include "Snowstorm/Assets/MaterialAssetIO.hpp"
 #include "Snowstorm/Project/Project.hpp"
+#include "Snowstorm/Input/DroppedFiles.hpp"
 #include "Singletons/EditorCommandsSingleton.hpp"
 #include "Singletons/EditorSelectionSingleton.hpp"
 #include "Service/EditorTheme.hpp"
@@ -158,12 +159,37 @@ namespace Snowstorm
 
 	void ContentBrowserSystem::Execute(Timestep)
 	{
-		if (!m_Scanned)
+		if (!m_Scanned || std::exchange(s_RescanRequested, false))
 		{
 			Rescan();
 		}
 
 		ImGui::Begin("Content Browser");
+
+		const bool acceptsDrop = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+		const std::vector<std::filesystem::path> dropped = DroppedFiles::TakeAll();
+		if (acceptsDrop && !dropped.empty())
+		{
+			auto& cmds = SingletonView<EditorCommandsSingleton>();
+			auto& notify = SingletonView<EditorNotificationsSingleton>();
+			uint32_t imported = 0;
+			for (const std::filesystem::path& path : dropped)
+			{
+				if (cmds.ImportAsset && cmds.ImportAsset(path))
+				{
+					++imported;
+				}
+				else
+				{
+					notify.Push("Could not import " + path.filename().string(), EditorToastType::Error);
+				}
+			}
+			if (imported > 0)
+			{
+				notify.Push("Imported " + std::to_string(imported) + " asset(s)", EditorToastType::Success);
+				Rescan();
+			}
+		}
 
 		// Files under assets/ are auto-imported on scan, so this panel just lists them. Use Rescan
 		// after dropping in new files (until a file watcher makes even that unnecessary).

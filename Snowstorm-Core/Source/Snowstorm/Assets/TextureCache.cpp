@@ -1,6 +1,7 @@
 #include "TextureCache.hpp"
 
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Core/EnginePaths.hpp"
 
 #include <fstream>
 
@@ -26,7 +27,7 @@ namespace Snowstorm
 
 	std::filesystem::path TextureCacheIO::GetCachePath(const AssetHandle handle)
 	{
-		std::filesystem::path p = "Engine/cache/texture";
+		std::filesystem::path p = EnginePaths::CacheDirectory() / "texture";
 		p /= handle.ToString();
 		p += ".sstex";
 		return p;

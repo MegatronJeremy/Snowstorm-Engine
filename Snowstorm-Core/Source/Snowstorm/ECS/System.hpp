@@ -2,6 +2,7 @@
 
 #include <entt/entt.hpp>
 
+#include <atomic>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -9,6 +10,7 @@
 #include <Snowstorm/Core/Application.hpp>
 #include <Snowstorm/Core/EngineCVars.hpp>
 #include <Snowstorm/Core/JobSystem.hpp>
+#include <Snowstorm/Core/Log.hpp>
 #include <Snowstorm/Core/Timestep.hpp>
 #include <Snowstorm/ECS/TrackedRegistry.hpp>
 #include <Snowstorm/Utility/NonCopyable.hpp>
@@ -113,12 +115,29 @@ namespace Snowstorm
 			static_assert((Detail::IsAccessTag<Access>::value && ...),
 			              "ParallelForEach type arguments must be Read<T> or Write<T> tags, not bare component types.");
 
+			// One reusable snapshot belongs to each System instance. Concurrent or nested calls on the SAME
+			// instance would overwrite it while the outer loop is still using it, so reject them explicitly.
+			if (m_ParallelForEachActive.test_and_set(std::memory_order_acquire))
+			{
+				SS_CORE_VERIFY(false, "System::ParallelForEach is not reentrant on the same System instance");
+				return;
+			}
+			struct ActiveGuard
+			{
+				std::atomic_flag& Flag;
+				~ActiveGuard() { Flag.clear(std::memory_order_release); }
+			} activeGuard{m_ParallelForEachActive};
+
 			auto& reg = m_World->GetRegistry();
 			auto view = reg.view<typename Access::Component...>();
 
 			// Snapshot the matching entities into a contiguous array so ParallelFor can slice by index
-			// (an EnTT view isn't random-access across multiple component pools). Cheap vs. the per-entity work.
-			std::vector<entt::entity> entities(view.begin(), view.end());
+			// (an EnTT view isn't random-access across multiple component pools). Reuse the System-owned
+			// storage so steady-state frames do not allocate or copy into a newly allocated vector.
+			std::vector<entt::entity>& entities = m_ParallelEntities;
+			entities.clear();
+			entities.reserve(view.size_hint());
+			entities.insert(entities.end(), view.begin(), view.end());
 			const size_t count = entities.size();
 			if (count == 0)
 			{
@@ -190,6 +209,10 @@ namespace Snowstorm
 			return Application::Get().GetServiceManager().GetService<T>();
 		}
 
+		// Exposed to derived benchmarks/tests so the no-allocation-after-warmup contract can be verified
+		// without making the scratch buffer itself mutable from outside System.
+		[[nodiscard]] size_t ParallelEntityScratchCapacity() const { return m_ParallelEntities.capacity(); }
+
 		WorldRef m_World;
 
 	private:
@@ -233,5 +256,8 @@ namespace Snowstorm
 				reg.template MarkChanged<typename A::Component>(e);
 			}
 		}
+
+		mutable std::vector<entt::entity> m_ParallelEntities;
+		mutable std::atomic_flag m_ParallelForEachActive = ATOMIC_FLAG_INIT;
 	};
 }

@@ -14,7 +14,7 @@ namespace Snowstorm
 
 	// PSNR + SSIM image-quality metrics (#45): a compute pass that reduces the upscaled and ground-truth LDR
 	// present images into a handful of running sums (a GPU reduction, model on IBLBakePass), which the CPU
-	// maps back to finalize PSNR (dB) and a global SSIM. Only added to the graph when render.metrics AND
+	// maps back to finalize PSNR (dB) and canonical 11x11 Gaussian mean SSIM. Only added to the graph when
 	// render.compare are on (both images must exist). Owns the compute pipeline, a host-visible storage buffer
 	// (written by the shader, mapped by the CPU — no separate readback copy), and a per-frame descriptor set.
 	class MetricsPass final
@@ -44,12 +44,15 @@ namespace Snowstorm
 
 		Ref<Pipeline> m_Pipeline;
 
-		// Per-frame-in-flight: the storage buffer of 6 uint accumulators (host-visible) + the descriptor set +
+		// Per-frame-in-flight: the storage buffer of 2 uint accumulators (host-visible) + the descriptor set +
 		// the params UBO. Double-buffered so the CPU finalizes frame N-1's sums while the GPU writes frame N.
 		std::vector<Ref<Buffer>> m_SumBuffers;
 		std::vector<Ref<Buffer>> m_ParamBuffers;
 		std::vector<Ref<DescriptorSet>> m_Sets;
 		std::vector<bool> m_Written; // this slot has been dispatched at least once (its sums are readable)
+		std::vector<uint32_t> m_Widths;
+		std::vector<uint32_t> m_Heights;
+		std::vector<float> m_FixedScales;
 
 		Result m_Result;
 	};

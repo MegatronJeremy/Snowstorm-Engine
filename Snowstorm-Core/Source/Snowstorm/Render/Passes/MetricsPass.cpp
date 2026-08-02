@@ -10,21 +10,31 @@
 
 #include <cmath>
 #include <cstring>
+#include <limits>
 
 namespace Snowstorm
 {
 	namespace
 	{
-		// Only slots [0] (SSE for PSNR) and [1] (summed per-window SSIM, #96) are used now; the buffer stays
-		// 6-wide so its size/allocation is unchanged (harmless slack). The SSIM stabilization constants moved
-		// into Metrics.comp.hlsl (the per-window SSIM is now computed on the GPU, not from CPU-side moments).
-		constexpr uint32_t kSlots = 6;
-		constexpr float kFixedScale = 1024.0f; // [0,1] term -> fixed-point; sums stay in uint range
+		// Only slots [0] (SSE for PSNR) and [1] (summed per-window SSIM, #96) are used: the per-window SSIM is
+		// computed on the GPU (Metrics.comp.hlsl), so no CPU-side moments are accumulated any more.
+		constexpr uint32_t kSlots = 2; // SSE + sum(encoded local SSIM)
+
+		float CalculateFixedScale(const uint32_t width, const uint32_t height)
+		{
+			const double pixelCount = static_cast<double>(width) * static_cast<double>(height);
+			// Each rounded contribution is at most scale + 0.5. Leave enough headroom for every
+			// pixel so the uint atomic accumulator cannot overflow, including at 4K and above.
+			const double safeScale = std::floor(static_cast<double>(std::numeric_limits<uint32_t>::max()) /
+			                                        pixelCount -
+			                                    0.5);
+			return static_cast<float>(std::max(safeScale, 1.0));
+		}
 
 		struct MetricsCB
 		{
 			glm::uvec2 Resolution{0, 0};
-			float FixedScale = kFixedScale;
+			float FixedScale = 1.0f;
 			float _Pad = 0.0f;
 		};
 	}
@@ -56,6 +66,9 @@ namespace Snowstorm
 		m_ParamBuffers.resize(frames);
 		m_Sets.resize(frames);
 		m_Written.assign(frames, false);
+		m_Widths.assign(frames, 0);
+		m_Heights.assign(frames, 0);
+		m_FixedScales.assign(frames, 1.0f);
 		for (uint32_t i = 0; i < frames; ++i)
 		{
 			// Host-visible storage: the shader writes it (InterlockedAdd) and the CPU maps it back next frame.
@@ -68,7 +81,7 @@ namespace Snowstorm
 	                          const Ref<TextureView>& upscaled, const Ref<TextureView>& groundTruth,
 	                          const uint32_t width, const uint32_t height)
 	{
-		if (!ctx || !upscaled || !groundTruth || width == 0 || height == 0)
+		if (!ctx || !upscaled || !groundTruth || width <= 10 || height <= 10)
 		{
 			return;
 		}
@@ -86,19 +99,22 @@ namespace Snowstorm
 		if (m_Written[frameIndex])
 		{
 			const auto* sums = static_cast<const uint32_t*>(m_SumBuffers[frameIndex]->Map());
-			// Recover the doubles: fixed-point / scale, and divide by pixel count for the per-pixel means.
-			const double n = static_cast<double>(width) * static_cast<double>(height);
-			const double inv = 1.0 / (kFixedScale * n);
-			const double sse = static_cast<double>(sums[0]) * inv;      // mean squared error (a-b)^2
-			const double meanSsim = static_cast<double>(sums[1]) * inv; // mean of the per-window SSIM (#96)
+			// Recover the fixed-point means. The shader computes one canonical 11x11 Gaussian local
+			// SSIM per pixel; averaging those values gives the publication-comparable mean SSIM.
+			const double n = static_cast<double>(m_Widths[frameIndex]) * static_cast<double>(m_Heights[frameIndex]);
+			const double scale = static_cast<double>(m_FixedScales[frameIndex]);
+			const double sse = static_cast<double>(sums[0]) / (scale * n); // mean squared error (a-b)^2
+			const double ssimPixels = static_cast<double>(m_Widths[frameIndex] - 10) *
+			                          static_cast<double>(m_Heights[frameIndex] - 10);
+			const double meanEncodedSsim = static_cast<double>(sums[1]) / (scale * ssimPixels);
 			m_SumBuffers[frameIndex]->Unmap();
 
 			// PSNR (dB). MSE==0 => identical => cap at 100 dB instead of +inf.
 			m_Result.Psnr = (sse <= 1e-12) ? 100.0f : static_cast<float>(10.0 * std::log10(1.0 / sse));
 
-			// Mean windowed SSIM (#96): the shader computed a local (2R+1)^2 SSIM per pixel and summed it;
-			// the mean over all pixels is the standard Wang et al. MSSIM (vs the old whole-image global stat).
-			m_Result.Ssim = static_cast<float>(meanSsim);
+			// Mean windowed SSIM (#96): the shader computed one 11x11 Gaussian local SSIM per pixel and summed
+			// it encoded to [0,1]; decoding the mean back to [-1,1] gives the standard Wang et al. MSSIM.
+			m_Result.Ssim = static_cast<float>(meanEncodedSsim * 2.0 - 1.0);
 			m_Result.Valid = true;
 		}
 
@@ -111,7 +127,7 @@ namespace Snowstorm
 
 		MetricsCB cb{};
 		cb.Resolution = {width, height};
-		cb.FixedScale = kFixedScale;
+		cb.FixedScale = CalculateFixedScale(width, height);
 		m_ParamBuffers[frameIndex]->SetData(&cb, sizeof(MetricsCB), 0);
 
 		const auto& layouts = m_Pipeline->GetSetLayouts();
@@ -134,5 +150,8 @@ namespace Snowstorm
 		ctx->BindDescriptorSet(m_Sets[frameIndex], 0);
 		ctx->Dispatch((width + 7) / 8, (height + 7) / 8, 1);
 		m_Written[frameIndex] = true;
+		m_Widths[frameIndex] = width;
+		m_Heights[frameIndex] = height;
+		m_FixedScales[frameIndex] = cb.FixedScale;
 	}
 }

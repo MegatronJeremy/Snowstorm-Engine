@@ -6,6 +6,7 @@
 #include "Snowstorm/Components/ComponentRegistry.hpp" // AssetPickerCombo
 #include "Snowstorm/Components/MaterialComponent.hpp"
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Core/EnginePaths.hpp"
 #include "Snowstorm/Project/Project.hpp"
 #include "Snowstorm/World/World.hpp"
 #include "Service/EditorTheme.hpp"
@@ -67,17 +68,24 @@ namespace Snowstorm
 		};
 		MaterialShaderCache g_MaterialShaderCache;
 
-		bool RefreshMaterialShaders(std::string& error)
+		enum class MaterialShaderRefreshResult
+		{
+			Changed,
+			Unchanged,
+			Failed
+		};
+
+		MaterialShaderRefreshResult RefreshMaterialShaders(std::string& error)
 		{
 			error.clear();
 			std::vector<std::string> shaders;
-			const std::filesystem::path dir = "Engine/Shaders";
+			const std::filesystem::path dir = EnginePaths::ShadersDirectory();
 			std::error_code ec;
 			std::filesystem::directory_iterator it(dir, ec);
 			if (ec)
 			{
 				error = "Cannot scan " + dir.string() + ": " + ec.message();
-				return false;
+				return MaterialShaderRefreshResult::Failed;
 			}
 
 			const std::filesystem::directory_iterator end;
@@ -91,7 +99,7 @@ namespace Snowstorm
 					if (ec)
 					{
 						error = "Cannot inspect " + path.string() + ": " + ec.message();
-						return false;
+						return MaterialShaderRefreshResult::Failed;
 					}
 					if (regularFile)
 					{
@@ -99,14 +107,14 @@ namespace Snowstorm
 						if (!in)
 						{
 							error = "Cannot read " + path.string();
-							return false;
+							return MaterialShaderRefreshResult::Failed;
 						}
 						const std::string text((std::istreambuf_iterator<char>(in)),
 						                       std::istreambuf_iterator<char>());
 						if (in.bad())
 						{
 							error = "Failed while reading " + path.string();
-							return false;
+							return MaterialShaderRefreshResult::Failed;
 						}
 						// Mesh-surface signature: the fragment entry takes PSInput (mesh vertex output).
 						if (text.find("main(PSInput") != std::string::npos)
@@ -120,15 +128,15 @@ namespace Snowstorm
 				if (ec)
 				{
 					error = "Cannot continue scanning " + dir.string() + ": " + ec.message();
-					return false;
+					return MaterialShaderRefreshResult::Failed;
 				}
 			}
 
 			std::ranges::sort(shaders);
-			shaders.erase(std::unique(shaders.begin(), shaders.end()), shaders.end());
+			const bool changed = shaders != g_MaterialShaderCache.Items;
 			g_MaterialShaderCache.Items.swap(shaders);
 			g_MaterialShaderCache.Initialized = true;
-			return true;
+			return changed ? MaterialShaderRefreshResult::Changed : MaterialShaderRefreshResult::Unchanged;
 		}
 
 		const std::vector<std::string>& MaterialShaders()
@@ -138,7 +146,7 @@ namespace Snowstorm
 				// Do not retry every frame after an initial failure. Rescan is the explicit retry path.
 				g_MaterialShaderCache.Initialized = true;
 				std::string error;
-				if (!RefreshMaterialShaders(error))
+				if (RefreshMaterialShaders(error) == MaterialShaderRefreshResult::Failed)
 				{
 					SS_CORE_WARN("Material shader scan failed: {}", error);
 				}
@@ -204,10 +212,17 @@ namespace Snowstorm
 		{
 			auto& notify = world.GetSingleton<EditorNotificationsSingleton>();
 			std::string error;
-			if (RefreshMaterialShaders(error))
+			const MaterialShaderRefreshResult result = RefreshMaterialShaders(error);
+			if (result == MaterialShaderRefreshResult::Changed)
 			{
-				notify.Push("Found " + std::to_string(g_MaterialShaderCache.Items.size()) + " material shaders",
+				notify.Push("Shader list updated (" + std::to_string(g_MaterialShaderCache.Items.size()) + " shaders)",
 				            EditorToastType::Success);
+			}
+			else if (result == MaterialShaderRefreshResult::Unchanged)
+			{
+				notify.Push("Shader list unchanged (" + std::to_string(g_MaterialShaderCache.Items.size()) +
+				                " shaders)",
+				            EditorToastType::Info);
 			}
 			else
 			{

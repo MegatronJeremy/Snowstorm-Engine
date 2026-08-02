@@ -20,6 +20,27 @@ namespace Snowstorm::FileDialog
 			return result;
 		}
 
+		std::wstring ToFilterPattern(const std::string& extensions)
+		{
+			std::wstring pattern;
+			std::size_t begin = 0;
+			while (begin <= extensions.size())
+			{
+				const std::size_t end = extensions.find(';', begin);
+				const std::string extension = extensions.substr(begin, end - begin);
+				if (!extension.empty())
+				{
+					if (!pattern.empty())
+						pattern += L';';
+					pattern += L"*." + ToWide(extension);
+				}
+				if (end == std::string::npos)
+					break;
+				begin = end + 1;
+			}
+			return pattern;
+		}
+
 		// SHCreateItemFromParsingName requires an ABSOLUTE, native (backslash) path; a relative one (e.g. the
 		// active project's "Projects/Sandbox/assets/scenes") silently fails to parse, so the dialog ignores the
 		// default folder. Make it absolute against the CWD and native-separator'd. Returns empty on error so the
@@ -72,7 +93,7 @@ namespace Snowstorm::FileDialog
 			for (const FileDialogFilter& filter : filters)
 			{
 				names.push_back(ToWide(filter.Name));
-				patterns.push_back(L"*." + ToWide(filter.Extension));
+				patterns.push_back(ToFilterPattern(filter.Extension));
 			}
 			for (size_t i = 0; i < filters.size(); ++i)
 				specs.push_back({names[i].c_str(), patterns[i].c_str()});
@@ -188,7 +209,7 @@ namespace Snowstorm::FileDialog
 			for (const FileDialogFilter& filter : filters)
 			{
 				names.push_back(ToWide(filter.Name));
-				patterns.push_back(L"*." + ToWide(filter.Extension));
+				patterns.push_back(ToFilterPattern(filter.Extension));
 			}
 
 			for (std::size_t i = 0; i < filters.size(); ++i)

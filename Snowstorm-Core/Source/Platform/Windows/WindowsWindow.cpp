@@ -4,6 +4,7 @@
 #include "Snowstorm/Events/ApplicationEvent.hpp"
 #include "Snowstorm/Events/KeyEvent.hpp"
 #include "Snowstorm/Events/MouseEvent.hpp"
+#include "Snowstorm/Input/DroppedFiles.hpp"
 
 #include "Snowstorm/Render/RendererAPI.hpp"
 
@@ -215,6 +216,16 @@ namespace Snowstorm
 
 			MouseMovedEvent event(static_cast<float>(xPos), static_cast<float>(yPos));
 			data.EventCallback(event);
+		});
+
+		// GLFW normalizes the native OS file-drop mechanism on every supported desktop platform.
+		// Queue paths here; editor UI decides whether the Content Browser was the intended target.
+		glfwSetDropCallback(m_Window, [](GLFWwindow*, const int count, const char** paths)
+		{
+			for (int i = 0; i < count; ++i)
+			{
+				DroppedFiles::Push(std::filesystem::u8path(paths[i]));
+			}
 		});
 	}
 

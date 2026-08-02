@@ -11,7 +11,7 @@ namespace Snowstorm
 	struct FileDialogFilter
 	{
 		std::string Name;
-		std::string Extension; // no leading dot
+		std::string Extension; // no leading dot; separate multiple extensions with ';'
 	};
 
 	// Native OS file/folder pickers. Implemented per-platform (see Platform/Windows/WindowsFileDialog.cpp).

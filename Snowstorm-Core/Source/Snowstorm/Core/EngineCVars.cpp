@@ -50,7 +50,9 @@ namespace Snowstorm::CVars
 
 	// startup.* select what boots — read once during application startup (before the editor exists), so they're
 	// ReadOnly: change them in SnowstormStartup.cfg / CLI and relaunch.
-	CVar<std::string> StartupProject{"startup.project", "Projects/Sandbox/Sandbox.ssproj", "Path to the .ssproj loaded at startup (relative to the working directory = repo root). The engine boots this real project instead of synthesizing an implicit one at the CWD. If the file is missing/unreadable, falls back to an implicit CWD-rooted project so the engine still runs. Point --startup.project elsewhere to boot a different project.", CVarFlags::ReadOnly};
+	CVar<std::string> StartupProject{"startup.project", "Projects/Sandbox/Sandbox.ssproj", "Explicit .ssproj startup override. The editor otherwise opens its most recent project; Runtime uses this project directly.", CVarFlags::ReadOnly};
+
+	CVar<bool> ForceProjectPicker{"startup.project_picker", false, "Show the project picker at editor startup instead of auto-opening the most recent project.", CVarFlags::ReadOnly};
 
 	CVar<std::string> StartupScene{"startup.scene", "", "Path to a .world to load at startup (empty = the active project's StartScene); e.g. Projects/Sandbox/assets/scenes/Sponza.world", CVarFlags::ReadOnly};
 
