@@ -156,6 +156,30 @@ namespace Snowstorm
 		{
 			m_MaxChannels = std::max(m_MaxChannels, std::max(l.InChannels, l.OutChannels));
 		}
+
+		// NeuralConv.comp.hlsl caches the input halo tile for every INPUT channel in groupshared, capped at
+		// MAX_TILE_CHANNELS (32). A layer with more input channels than that would be silently truncated by the
+		// shader (wrong output). Fail loud + fall back to the identity refiner rather than render garbage; raise
+		// MAX_TILE_CHANNELS (and re-check the shared-memory budget) in lockstep if a wider model is ever needed.
+		constexpr uint32_t kMaxTileChannels = 64; // MUST match MAX_TILE_CHANNELS in NeuralConv.comp.hlsl
+		uint32_t maxInChannels = inChannels;
+		for (const Neural::ConvLayer& l : m_Model.Layers)
+		{
+			maxInChannels = std::max(maxInChannels, l.InChannels);
+		}
+		if (maxInChannels > kMaxTileChannels)
+		{
+			SS_CORE_ERROR("[Neural] model '{}' has a layer with {} input channels; the tiled conv caps at {} "
+			              "(MAX_TILE_CHANNELS). Using identity refiner. Raise the shader cap for wider models.",
+			              m_WeightsPath, maxInChannels, kMaxTileChannels);
+			m_Model = Neural::MakeIdentityRefiner(inChannels);
+			m_MaxChannels = inChannels;
+			for (const Neural::ConvLayer& l : m_Model.Layers)
+			{
+				m_MaxChannels = std::max(m_MaxChannels, std::max(l.InChannels, l.OutChannels));
+			}
+		}
+
 		m_Width = 0; // force feature-buffer reallocation (channel count may have changed)
 	}
 
