@@ -1,6 +1,8 @@
 #include "ContentBrowserSystem.hpp"
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
+#include "Snowstorm/Assets/MaterialAsset.hpp"
+#include "Snowstorm/Assets/MaterialAssetIO.hpp"
 #include "Snowstorm/Project/Project.hpp"
 #include "Singletons/EditorCommandsSingleton.hpp"
 #include "Singletons/EditorSelectionSingleton.hpp"
@@ -168,6 +170,40 @@ namespace Snowstorm
 		if (ImGui::Button("Rescan"))
 		{
 			Rescan();
+		}
+		ImGui::SameLine();
+
+		// New Material (#114): write a default .ssmat into the project's asset root, then rescan — the scan
+		// auto-imports and registers it like any dropped-in file, so it appears in the Materials tab and the
+		// inspector's picker with no further wiring. A fresh MaterialAsset{} is already a valid material
+		// (DefaultLit shader, white base color, no textures); the user edits it via the material inspector.
+		if (ImGui::Button("New Material"))
+		{
+			auto& notify = SingletonView<EditorNotificationsSingleton>();
+			const std::filesystem::path root = Project::GetActive()->GetAssetDirectory();
+			std::error_code ec;
+			if (std::filesystem::exists(root, ec) || std::filesystem::create_directories(root, ec))
+			{
+				// Pick a non-clobbering name: NewMaterial.ssmat, then NewMaterial_1.ssmat, ...
+				std::filesystem::path target = root / "NewMaterial.ssmat";
+				for (int i = 1; std::filesystem::exists(target, ec); ++i)
+				{
+					target = root / ("NewMaterial_" + std::to_string(i) + ".ssmat");
+				}
+				if (MaterialAssetIO::Save(target, MaterialAsset{}))
+				{
+					Rescan(); // auto-imports + registers the new .ssmat
+					notify.Push("Created " + target.filename().string(), EditorToastType::Success);
+				}
+				else
+				{
+					notify.Push("Failed to write " + target.filename().string(), EditorToastType::Error);
+				}
+			}
+			else
+			{
+				notify.Push("Asset directory missing; can't create material", EditorToastType::Error);
+			}
 		}
 		ImGui::SameLine();
 		ImGui::TextDisabled("%zu files", m_Entries.size());
