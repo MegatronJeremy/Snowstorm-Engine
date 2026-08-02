@@ -173,4 +173,15 @@ namespace Snowstorm
 			}
 		}
 	}
+
+	void ShaderLibrary::ForceRecompileAll()
+	{
+		// Synchronous, unconditional: the compile inputs changed without a file edit (render.shaders.debug
+		// flips the opt level, which re-keys the .spv cache), so mtimes are unchanged and ReloadAll would
+		// no-op. Warm caches make each Recompile a fs::exists check; the first flip to a mode compiles fresh.
+		for (auto& [key, shader] : m_Shaders)
+		{
+			shader->Recompile();
+		}
+	}
 }

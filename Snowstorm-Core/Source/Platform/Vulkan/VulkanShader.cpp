@@ -292,6 +292,16 @@ namespace Snowstorm
 			// fp32 (correct but no perf win). SPV_KHR_16bit_storage is in dxc's known set (probe-verified).
 			cmd += L" -enable-16bit-types";
 
+			// Preserve every declared descriptor binding even if unused, so the REFLECTED pipeline layout is
+			// stable regardless of optimization. Without it, dxc dead-strips unused bindings ONLY when
+			// optimizing (-Od keeps them), so an optimized shader and its -Od twin reflect different descriptor
+			// layouts (e.g. Sky.frag: 1 binding optimized vs 8 with -Od). Live-flipping render.shaders.debug
+			// then changes the layout, which the pipeline hot-reload can't hot-swap (cached descriptor sets are
+			// keyed to the old layout) -> stale-binding warnings + corrupted output. Preserving bindings makes
+			// both modes reflect the SAME layout, so the flip is a pure code swap. Also more correct in general:
+			// the reflected layout matches the shader's authored interface, not an opt-level-dependent subset.
+			cmd += L" -fspv-preserve-bindings";
+
 			// Variant defines: one `-D` per entry. The list is the generic permutation mechanism — a shader
 			// wraps optional features in `#ifdef NAME` and the caller resolves which NAMEs to enable, so no
 			// per-feature branch lives here. The same list keys the .spv cache (see CompileStageFileToSpirvCache)
@@ -551,8 +561,8 @@ namespace Snowstorm
 			std::string vert, frag;
 			// SM 6.5 (was 6.0): the fragment stage may use inline ray query for RT sun shadows (#118); it's a
 			// strict superset so vertex/fragment shaders that don't use it compile identically.
-			if (!CompileStageFileToSpirvCache(m_VertPath, L"vs_6_5", "v3_vulkan1.2_dxlayout_Zpr_vs65", defines, debug, vert) ||
-			    !CompileStageFileToSpirvCache(m_FragPath, L"ps_6_5", "v3_vulkan1.2_dxlayout_Zpr_ps65", defines, debug, frag))
+			if (!CompileStageFileToSpirvCache(m_VertPath, L"vs_6_5", "v4_vulkan1.2_dxlayout_Zpr_preservebind_vs65", defines, debug, vert) ||
+			    !CompileStageFileToSpirvCache(m_FragPath, L"ps_6_5", "v4_vulkan1.2_dxlayout_Zpr_preservebind_ps65", defines, debug, frag))
 			{
 				SS_CORE_ERROR("VulkanShader: failed to compile graphics shader {}", m_Filepath);
 				return; // leaves m_Ready false: the pipeline never builds, rather than building from garbage
@@ -579,7 +589,7 @@ namespace Snowstorm
 		}
 
 		std::string comp;
-		if (!CompileStageFileToSpirvCache(m_VertPath, L"cs_6_5", "v3_vulkan1.2_dxlayout_Zpr_cs65", defines, debug, comp))
+		if (!CompileStageFileToSpirvCache(m_VertPath, L"cs_6_5", "v4_vulkan1.2_dxlayout_Zpr_preservebind_cs65", defines, debug, comp))
 		{
 			SS_CORE_ERROR("VulkanShader: failed to compile compute shader {}", m_VertPath);
 			return;

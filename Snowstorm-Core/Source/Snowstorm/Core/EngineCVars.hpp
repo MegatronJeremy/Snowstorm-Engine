@@ -75,9 +75,11 @@ namespace Snowstorm::CVars
 	// Shader optimization escape hatch (Unreal r.Shaders.Optimize model). Off (default, ship behavior) =
 	// dxc-optimized SPIR-V in EVERY C++ config; on = unoptimized (-Od) + debug info (-Zi/-fspv-debug) so a
 	// dev can source-step a shader in RenderDoc/PIX. Read at compile time (VulkanShader), keys the .spv
-	// cache so opt/debug variants never collide, and flipping it live force-recompiles all shaders. Not
-	// persisted — a transient dev switch, like validation.extra. RT permutations still drop -fspv-debug
-	// even here (dxc 1.9 crash on -fspv-debug + inline ray query).
+	// cache so opt/debug variants never collide, and flipping it live force-recompiles all shaders.
+	// Persisted (it's exposed in the Settings panel like the other quality toggles, so it should survive a
+	// restart and reset with "Reset Settings to Defaults"); the label warns it slows every shader, so a
+	// left-on state is visible rather than silent. RT permutations still drop -fspv-debug even here (dxc 1.9
+	// crash on -fspv-debug + inline ray query).
 	extern CVar<bool> ShadersDebug;
 
 	// One-shot bake tool: populate a fresh scene, serialize it to a .world under Assets/Scenes/, then
