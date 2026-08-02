@@ -72,6 +72,14 @@ namespace Snowstorm::CVars
 	// Enable deeper Vulkan validation (synchronization + best-practices) at instance creation.
 	extern CVar<bool> ValidationExtra;
 
+	// Shader optimization escape hatch (Unreal r.Shaders.Optimize model). Off (default, ship behavior) =
+	// dxc-optimized SPIR-V in EVERY C++ config; on = unoptimized (-Od) + debug info (-Zi/-fspv-debug) so a
+	// dev can source-step a shader in RenderDoc/PIX. Read at compile time (VulkanShader), keys the .spv
+	// cache so opt/debug variants never collide, and flipping it live force-recompiles all shaders. Not
+	// persisted — a transient dev switch, like validation.extra. RT permutations still drop -fspv-debug
+	// even here (dxc 1.9 crash on -fspv-debug + inline ray query).
+	extern CVar<bool> ShadersDebug;
+
 	// One-shot bake tool: populate a fresh scene, serialize it to a .world under Assets/Scenes/, then
 	// exit. Afterwards the scene is opened from the Content Browser like any other .world. Empty
 	// (default) = no bake. The value selects what to bake:

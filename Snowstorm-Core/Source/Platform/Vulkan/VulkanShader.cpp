@@ -1,5 +1,6 @@
 #include "VulkanShader.hpp"
 
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 
@@ -266,7 +267,8 @@ namespace Snowstorm
 		                         const fs::path& inputHlsl,
 		                         const fs::path& outputSpv,
 		                         const wchar_t* profile,
-		                         const ShaderDefines& defines)
+		                         const ShaderDefines& defines,
+		                         bool debug)
 		{
 			const std::wstring exe = dxcExe.wstring();
 			const std::wstring in = inputHlsl.wstring();
@@ -305,17 +307,27 @@ namespace Snowstorm
 				}
 			}
 
-			// --- DEBUG FLAGS ---
-			// -Zi: Include debug information
-			// -Od: Disable optimizations (makes debugging MUCH easier)
-			// -fspv-debug=vulkan-with-source: rich SPIR-V debug info (source lines). OMITTED for the RT
-			// permutation: dxc 1.9 crashes with an access violation when this NonSemantic-source debug info is
-			// combined with inline ray query (a known dxc bug). -Zi/-Od still give usable debug info; only the
-			// embedded-source detail is dropped, and only when SS_RAYTRACING is defined.
-			cmd += L" -Zi -Od";
-			if (!rayTracing)
+			// --- OPTIMIZATION / DEBUG FLAGS (Unreal r.Shaders.Optimize model, render.shaders.debug CVar) ---
+			// Default (debug == false): ship optimized. Emit NO -Od/-Zi/-fspv-debug and let dxc optimize (its
+			// default is ~-O3). This is decoupled from the C++ build config on purpose — a Debug-C++ editor still
+			// runs optimized shaders (unoptimized is unusable even for gameplay). -Od used to be unconditional,
+			// which shipped fully unoptimized SPIR-V everywhere (e.g. the neural conv's acc[] register array
+			// spilled to global memory under -Od — the whole reason for this change).
+			//
+			// debug == true: the old behavior, now opt-in for source-stepping in RenderDoc/PIX.
+			//   -Zi: include debug information.
+			//   -Od: disable optimizations (makes debugging MUCH easier).
+			//   -fspv-debug=vulkan-with-source: rich SPIR-V debug info (source lines). OMITTED for the RT
+			//   permutation: dxc 1.9 crashes with an access violation when this NonSemantic-source debug info is
+			//   combined with inline ray query (a known dxc bug). -Zi/-Od still give usable debug info; only the
+			//   embedded-source detail is dropped, and only when SS_RAYTRACING is defined.
+			if (debug)
 			{
-				cmd += L" -fspv-debug=vulkan-with-source";
+				cmd += L" -Zi -Od";
+				if (!rayTracing)
+				{
+					cmd += L" -fspv-debug=vulkan-with-source";
+				}
 			}
 
 			cmd += L" -I ";
@@ -363,7 +375,8 @@ namespace Snowstorm
 		// stage profiles in the cache key so a vert and frag of the same content don't collide. Returns
 		// false (outSpv empty) on failure.
 		bool CompileStageFileToSpirvCache(const std::string& sourcePath, const wchar_t* profile,
-		                                  const char* flagsTag, const ShaderDefines& defines, std::string& outSpv)
+		                                  const char* flagsTag, const ShaderDefines& defines, bool debug,
+		                                  std::string& outSpv)
 		{
 			// Shader load paths are engine-relative (e.g. "Engine/Shaders/Foo.hlsl"). Resolve against the
 			// engine root (exe-relative) so a moved/packaged exe still finds them; an absolute path (rare)
@@ -403,6 +416,14 @@ namespace Snowstorm
 			for (const std::string& def : defines)
 			{
 				h ^= Hash64(def.data(), def.size());
+			}
+			// Opt level keys the cache too (render.shaders.debug): the optimized and -Od SPIR-V for the same
+			// source+defines differ, so without this the two variants would collide on one .spv and a flip of
+			// the CVar would silently serve the stale one. (Optimized = default => no extra hash, so existing
+			// caches from before this change are re-keyed exactly once, on the debug side.)
+			if (debug)
+			{
+				h ^= Hash64("Od", 2);
 			}
 
 			const std::string key = ToHex64(h);
@@ -445,7 +466,7 @@ namespace Snowstorm
 			}
 
 			// Compile the real source file directly (DXC resolves #include via -I; the file is unmodified).
-			if (!CompileStageWithDxc(dxcExe, srcPath, outSpvPath, profile, defines))
+			if (!CompileStageWithDxc(dxcExe, srcPath, outSpvPath, profile, defines, debug))
 			{
 				return false;
 			}
@@ -518,6 +539,11 @@ namespace Snowstorm
 			defines.emplace_back("SS_FP16=1");
 		}
 
+		// Shader optimization mode (render.shaders.debug, Unreal r.Shaders.Optimize model). Read once here so
+		// both stages of a graphics shader + the cache key agree. NOT a define (that list also feeds -D args);
+		// it's a separate compile flag that keys the cache on its own.
+		const bool debug = CVars::ShadersDebug.Get();
+
 		// Two-path graphics: separate vertex + fragment files, each a plain single-`main` HLSL file
 		// compiled directly (no #type split). The preferred form.
 		if (!m_FragPath.empty())
@@ -525,8 +551,8 @@ namespace Snowstorm
 			std::string vert, frag;
 			// SM 6.5 (was 6.0): the fragment stage may use inline ray query for RT sun shadows (#118); it's a
 			// strict superset so vertex/fragment shaders that don't use it compile identically.
-			if (!CompileStageFileToSpirvCache(m_VertPath, L"vs_6_5", "v3_vulkan1.2_dxlayout_Zpr_vs65", defines, vert) ||
-			    !CompileStageFileToSpirvCache(m_FragPath, L"ps_6_5", "v3_vulkan1.2_dxlayout_Zpr_ps65", defines, frag))
+			if (!CompileStageFileToSpirvCache(m_VertPath, L"vs_6_5", "v3_vulkan1.2_dxlayout_Zpr_vs65", defines, debug, vert) ||
+			    !CompileStageFileToSpirvCache(m_FragPath, L"ps_6_5", "v3_vulkan1.2_dxlayout_Zpr_ps65", defines, debug, frag))
 			{
 				SS_CORE_ERROR("VulkanShader: failed to compile graphics shader {}", m_Filepath);
 				return; // leaves m_Ready false: the pipeline never builds, rather than building from garbage
@@ -553,7 +579,7 @@ namespace Snowstorm
 		}
 
 		std::string comp;
-		if (!CompileStageFileToSpirvCache(m_VertPath, L"cs_6_5", "v3_vulkan1.2_dxlayout_Zpr_cs65", defines, comp))
+		if (!CompileStageFileToSpirvCache(m_VertPath, L"cs_6_5", "v3_vulkan1.2_dxlayout_Zpr_cs65", defines, debug, comp))
 		{
 			SS_CORE_ERROR("VulkanShader: failed to compile compute shader {}", m_VertPath);
 			return;
