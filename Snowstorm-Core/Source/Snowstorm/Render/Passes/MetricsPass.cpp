@@ -15,10 +15,11 @@ namespace Snowstorm
 {
 	namespace
 	{
-		constexpr uint32_t kSlots = 6;          // 6 uint accumulators
-		constexpr float kFixedScale = 1024.0f;  // [0,1] term -> fixed-point; sums stay in uint range
-		constexpr float kSsimL = 0.01f * 0.01f; // (K1*L)^2 with L=1 (LDR luma), K1=0.01
-		constexpr float kSsimC = 0.03f * 0.03f; // (K2*L)^2, K2=0.03
+		// Only slots [0] (SSE for PSNR) and [1] (summed per-window SSIM, #96) are used now; the buffer stays
+		// 6-wide so its size/allocation is unchanged (harmless slack). The SSIM stabilization constants moved
+		// into Metrics.comp.hlsl (the per-window SSIM is now computed on the GPU, not from CPU-side moments).
+		constexpr uint32_t kSlots = 6;
+		constexpr float kFixedScale = 1024.0f; // [0,1] term -> fixed-point; sums stay in uint range
 
 		struct MetricsCB
 		{
@@ -85,27 +86,19 @@ namespace Snowstorm
 		if (m_Written[frameIndex])
 		{
 			const auto* sums = static_cast<const uint32_t*>(m_SumBuffers[frameIndex]->Map());
-			// Recover the doubles: fixed-point / scale, and divide by pixel count for means.
+			// Recover the doubles: fixed-point / scale, and divide by pixel count for the per-pixel means.
 			const double n = static_cast<double>(width) * static_cast<double>(height);
 			const double inv = 1.0 / (kFixedScale * n);
-			const double sse = static_cast<double>(sums[0]) * inv; // mean squared error (a-b)^2
-			const double ma = static_cast<double>(sums[1]) * inv;  // mean(a)
-			const double mb = static_cast<double>(sums[2]) * inv;  // mean(b)
-			const double maa = static_cast<double>(sums[3]) * inv; // mean(a^2)
-			const double mbb = static_cast<double>(sums[4]) * inv; // mean(b^2)
-			const double mab = static_cast<double>(sums[5]) * inv; // mean(a*b)
+			const double sse = static_cast<double>(sums[0]) * inv;      // mean squared error (a-b)^2
+			const double meanSsim = static_cast<double>(sums[1]) * inv; // mean of the per-window SSIM (#96)
 			m_SumBuffers[frameIndex]->Unmap();
 
 			// PSNR (dB). MSE==0 => identical => cap at 100 dB instead of +inf.
 			m_Result.Psnr = (sse <= 1e-12) ? 100.0f : static_cast<float>(10.0 * std::log10(1.0 / sse));
 
-			// Global SSIM from the accumulated moments (Wang et al.), luma in [0,1].
-			const double varA = std::max(maa - ma * ma, 0.0);
-			const double varB = std::max(mbb - mb * mb, 0.0);
-			const double covAB = mab - ma * mb;
-			const double num = (2.0 * ma * mb + kSsimL) * (2.0 * covAB + kSsimC);
-			const double den = (ma * ma + mb * mb + kSsimL) * (varA + varB + kSsimC);
-			m_Result.Ssim = static_cast<float>(num / den);
+			// Mean windowed SSIM (#96): the shader computed a local (2R+1)^2 SSIM per pixel and summed it;
+			// the mean over all pixels is the standard Wang et al. MSSIM (vs the old whole-image global stat).
+			m_Result.Ssim = static_cast<float>(meanSsim);
 			m_Result.Valid = true;
 		}
 
