@@ -10,16 +10,25 @@
 // Weights are [outC][inC][kH][kW] row-major (PyTorch), bias [outC], both in one buffer with the bias block
 // appended after the weights (BiasOffset).
 //
-// PERF (#): the naive version re-read the input from global memory for every output channel AND every kernel
-// tap — each input texel fetched ~(OutC * K*K) times, the dominant cost on this memory-bound conv. This
-// version caches ONE input channel's halo tile in groupshared at a time (tiny LDS -> full occupancy, unlike a
-// whole-tile-all-channels cache which collapses occupancy and measured SLOWER than naive), loops input
-// channels accumulating into per-thread OUTPUT-channel registers, so each input texel hits global memory once
-// per group per channel. The inner (oc, k) MAC over the LDS window is the register-GEMM row that a
-// cooperative-matrix (tensor-core) rewrite later swaps in (#137). fp32 for now; fp16 is the next increment.
+// TWO PATHS, gated on SS_FP16 (device shaderFloat16 + 16-bit storage) — this is deliberate, backed by
+// measurement (Debug -Od shaders, temporal upscaler @0.5, 48-ch model, NeuralUpscale GPU ms):
+//   * SS_FP16 -> TILED: cache one input channel's halo tile in groupshared, loop input channels accumulating
+//     into a per-thread OUTPUT-channel register array (acc[]), so each input texel is read from global memory
+//     once per group per channel (not once per output channel). fp16 weights halve the dominant weight load
+//     AND keep acc[] in registers. Measured 195ms (naive) -> 84ms.
+//   * else -> NAIVE: the simple per-pixel loop nest. On the fp32 fallback the acc[] register array SPILLS to
+//     global memory under -Od (measured 392ms, 2x SLOWER than naive), so fp32 devices keep the naive path
+//     (195ms) instead. fp16 alone on the naive shader does nothing (196ms — it's input-read-bound, not
+//     weight-bound), which is why the tiling is what unlocks the win.
+// The tiled inner (oc,k) MAC over the LDS window is the register-GEMM row a cooperative-matrix (tensor-core)
+// rewrite swaps in later (#137).
 
+#ifdef SS_FP16
+StructuredBuffer<float16_t> Weights : register(t1, space0); // [outC*inC*k*k] then [outC] bias at BiasOffset (fp16)
+#else
+StructuredBuffer<float> Weights : register(t1, space0);     // [outC*inC*k*k] then [outC] bias at BiasOffset
+#endif
 StructuredBuffer<float> InMap : register(t0, space0);   // CHW, InChannels*H*W floats
-StructuredBuffer<float> Weights : register(t1, space0); // [outC*inC*k*k] then [outC] bias at BiasOffset
 RWStructuredBuffer<float> OutMap : register(u2, space0); // CHW, OutChannels*H*W floats
 
 cbuffer ConvCB : register(b3, space0)
@@ -33,19 +42,7 @@ cbuffer ConvCB : register(b3, space0)
 	uint BiasOffset;   // global float index where this layer's bias begins
 };
 
-// 8x8 output tile per group, 1-texel halo (max KernelSize is 3 -> radius 1) -> 10x10 cached tile. ONE input
-// channel cached at a time: 100 floats = 400 B LDS, negligible -> full occupancy (a whole-tile-all-channels
-// cache was ~25 KB and collapsed occupancy, measured SLOWER than naive). MAX_OUT_CHANNELS caps the per-thread
-// output accumulator register array; 64 covers the trained models (the "big" temporal one is 48-wide) with
-// headroom. MUST match kMaxTileChannels in NeuralUpscalePass::EnsureModel (which falls back to identity past it).
-#define TILE 8
-#define HALO 1
-#define TILE_DIM (TILE + 2 * HALO) // 10
-#define MAX_OUT_CHANNELS 64
-
-groupshared float gTile[TILE_DIM * TILE_DIM]; // current input channel's halo tile
-
-// Global input at (x,y) channel c; zero outside the image (same-padding border).
+// Read input channel c at (x,y); zero outside the image (same-padding border).
 float ReadInClamped(int x, int y, uint c)
 {
 	if (x < 0 || y < 0 || x >= (int)Size.x || y >= (int)Size.y)
@@ -54,6 +51,20 @@ float ReadInClamped(int x, int y, uint c)
 	}
 	return InMap[(c * Size.y + (uint)y) * Size.x + (uint)x];
 }
+
+#ifdef SS_FP16
+
+// 8x8 output tile per group, 1-texel halo (max KernelSize is 3 -> radius 1) -> 10x10 cached tile. ONE input
+// channel cached at a time: 100 floats = 400 B LDS, negligible -> full occupancy (caching all channels at once
+// was ~25 KB and collapsed occupancy, measured slower). MAX_OUT_CHANNELS caps the per-thread output-accumulator
+// register array; 64 covers the trained models (the "big" temporal one is 48-wide) with headroom. MUST match
+// kMaxTileChannels in NeuralUpscalePass::EnsureModel (which falls back to identity past it).
+#define TILE 8
+#define HALO 1
+#define TILE_DIM (TILE + 2 * HALO) // 10
+#define MAX_OUT_CHANNELS 64
+
+groupshared float gTile[TILE_DIM * TILE_DIM]; // current input channel's halo tile
 
 [numthreads(TILE, TILE, 1)]
 void main(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID, uint3 id : SV_DispatchThreadID)
@@ -70,7 +81,7 @@ void main(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID, uint3 id : SV_D
 	float acc[MAX_OUT_CHANNELS];
 	for (uint oc = 0; oc < outC; ++oc)
 	{
-		acc[oc] = Weights[BiasOffset + oc];
+		acc[oc] = (float)Weights[BiasOffset + oc];
 	}
 
 	const uint tileTexels = TILE_DIM * TILE_DIM;
@@ -85,8 +96,8 @@ void main(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID, uint3 id : SV_D
 		}
 		GroupMemoryBarrierWithGroupSync(); // tile for channel ic is visible to all threads
 
-		// MAC this channel's window into every output accumulator. All threads hit the barrier below, so gate
-		// the math (not the loop) on being an in-range output pixel.
+		// MAC this channel's window into every output accumulator. All threads hit the barriers, so gate the
+		// math (not the loop) on being an in-range output pixel.
 		if (id.x < Size.x && id.y < Size.y)
 		{
 			for (uint oc = 0; oc < outC; ++oc)
@@ -97,7 +108,7 @@ void main(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID, uint3 id : SV_D
 				{
 					[unroll] for (uint kx = 0; kx < KernelSize; ++kx)
 					{
-						s += gTile[(winY + ky) * TILE_DIM + (winX + kx)] * Weights[wBase + ky * KernelSize + kx];
+						s += gTile[(winY + ky) * TILE_DIM + (winX + kx)] * (float)Weights[wBase + ky * KernelSize + kx];
 					}
 				}
 				acc[oc] += s;
@@ -121,3 +132,43 @@ void main(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID, uint3 id : SV_D
 		OutMap[(oc * Size.y + id.y) * Size.x + id.x] = v;
 	}
 }
+
+#else // fp32 fallback: the naive per-pixel loop. The tiled acc[] path above spills its register array under
+      // -Od at fp32 (measured 2x slower than naive), so non-fp16 devices use this simpler, faster-at-fp32 path.
+
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= Size.x || id.y >= Size.y)
+	{
+		return;
+	}
+
+	const int x = (int)id.x;
+	const int y = (int)id.y;
+	const int kR = (int)(KernelSize / 2);
+
+	for (uint oc = 0; oc < OutChannels; ++oc)
+	{
+		float acc = Weights[BiasOffset + oc]; // bias
+		for (uint ic = 0; ic < InChannels; ++ic)
+		{
+			for (uint ky = 0; ky < KernelSize; ++ky)
+			{
+				for (uint kx = 0; kx < KernelSize; ++kx)
+				{
+					const float iv = ReadInClamped(x + (int)kx - kR, y + (int)ky - kR, ic);
+					const uint wIdx = WeightOffset + ((oc * InChannels + ic) * KernelSize + ky) * KernelSize + kx;
+					acc += iv * Weights[wIdx];
+				}
+			}
+		}
+		if (Activation == 1 && acc < 0.0f)
+		{
+			acc = 0.0f;
+		}
+		OutMap[(oc * Size.y + (uint)y) * Size.x + (uint)x] = acc;
+	}
+}
+
+#endif

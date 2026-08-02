@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <glm/glm.hpp>
+#include <glm/gtc/packing.hpp> // packHalf1x16 for fp16 weight packing
 
 namespace Snowstorm
 {
@@ -147,7 +148,24 @@ namespace Snowstorm
 
 		const std::vector<float> packed = m_Model.PackWeights();
 		m_LayerOffsets = m_Model.LayerFloatOffsets();
-		m_Weights = Buffer::Create(packed.size() * sizeof(float), BufferUsage::Storage, packed.data(), false, "NeuralWeights");
+		// fp16 weights (# fp16 inference): when the device supports it, pack the weight buffer to half precision
+		// so the conv's element type (StructuredBuffer<float16_t> under SS_FP16) matches AND the dominant global
+		// load (weights, read OutC*InC*K*K times/pixel) is halved. Offsets are ELEMENT indices, unchanged. Accum
+		// stays fp32 in-shader, so accuracy holds. Non-fp16 devices keep the fp32 buffer + fp32 shader path.
+		m_Fp16Weights = Renderer::IsFloat16Supported();
+		if (m_Fp16Weights)
+		{
+			std::vector<uint16_t> half(packed.size());
+			for (size_t i = 0; i < packed.size(); ++i)
+			{
+				half[i] = glm::packHalf1x16(packed[i]);
+			}
+			m_Weights = Buffer::Create(half.size() * sizeof(uint16_t), BufferUsage::Storage, half.data(), false, "NeuralWeights");
+		}
+		else
+		{
+			m_Weights = Buffer::Create(packed.size() * sizeof(float), BufferUsage::Storage, packed.data(), false, "NeuralWeights");
+		}
 
 		// Widest layer's channel count sizes the feature buffers (both ping-pong halves must hold any layer's
 		// output). Include the input feature width (3 or 8) too.

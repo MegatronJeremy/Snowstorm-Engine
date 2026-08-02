@@ -422,6 +422,11 @@ namespace Snowstorm
 		return VulkanContext::Get().SupportsRayTracing();
 	}
 
+	bool VulkanRendererAPI::IsFloat16Supported() const
+	{
+		return VulkanContext::Get().SupportsFloat16();
+	}
+
 	Ref<CommandContext> VulkanRendererAPI::GetGraphicsCommandContext()
 	{
 		return m_GraphicsContexts[m_CurrentFrameIndex];

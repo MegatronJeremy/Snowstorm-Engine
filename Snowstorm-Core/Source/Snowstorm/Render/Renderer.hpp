@@ -47,6 +47,10 @@ namespace Snowstorm
 		// path (#118); false => raster fallback. Forwards to the backend capability query.
 		static bool IsRayTracingSupported();
 
+		// True when the device supports + enabled fp16 shader math + 16-bit storage. Gates the neural conv's
+		// fp16 permutation (# fp16 inference); false => fp32 fallback. Forwards to the backend capability query.
+		static bool IsFloat16Supported();
+
 		static Ref<CommandContext> GetGraphicsCommandContext();
 
 		static Ref<DescriptorSetLayout> GetUITextureLayout();

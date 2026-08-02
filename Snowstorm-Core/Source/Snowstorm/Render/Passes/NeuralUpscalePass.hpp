@@ -95,6 +95,7 @@ namespace Snowstorm
 		std::vector<size_t> m_LayerOffsets;
 		std::string m_WeightsPath; // empty => identity refiner
 		bool m_ModelDirty = true;
+		bool m_Fp16Weights = false; // m_Weights packed fp16 (device supports it) -> conv takes the SS_FP16 path
 
 		// Feature maps as flat CHW float storage buffers (maxChannels*W*H each). Buffers (not texture arrays)
 		// because that's the CPU reference's layout and the engine has no 2D-array texture views; chained conv

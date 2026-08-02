@@ -284,6 +284,11 @@ namespace Snowstorm
 			cmd += L" -spirv -E main -T ";
 			cmd += profile;
 			cmd += L" -fspv-target-env=vulkan1.2 -fvk-use-dx-layout -Zpr";
+			// Make 16-bit types (float16_t) available (SM6.2+, all our profiles are 6.5). Harmless for shaders
+			// that don't use them — it only enables the type, emits no code — so it's added unconditionally. The
+			// neural conv's fp16 permutation (SS_FP16) needs it; without the flag float16_t silently widens to
+			// fp32 (correct but no perf win). SPV_KHR_16bit_storage is in dxc's known set (probe-verified).
+			cmd += L" -enable-16bit-types";
 
 			// Variant defines: one `-D` per entry. The list is the generic permutation mechanism — a shader
 			// wraps optional features in `#ifdef NAME` and the caller resolves which NAMEs to enable, so no
@@ -502,6 +507,15 @@ namespace Snowstorm
 		    m_Permutation.load(std::memory_order_relaxed) != ShaderPermutation::ForceNonRT)
 		{
 			defines.emplace_back("SS_RAYTRACING=1");
+		}
+
+		// fp16 capability axis (# fp16 inference): emit SS_FP16 when the device supports fp16 shader math +
+		// 16-bit storage. Only NeuralConv.comp wraps its Weights buffer in #ifdef SS_FP16; every other shader
+		// ignores the define (no #ifdef), so this is a no-op for them but keeps the .spv cache key correct
+		// (an fp16-capable machine caches distinct SPIR-V). A non-fp16 device never emits it -> the fp32 path.
+		if (Renderer::IsFloat16Supported())
+		{
+			defines.emplace_back("SS_FP16=1");
 		}
 
 		// Two-path graphics: separate vertex + fragment files, each a plain single-`main` HLSL file

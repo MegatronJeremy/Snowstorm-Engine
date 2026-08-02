@@ -365,7 +365,39 @@ namespace Snowstorm
 		// feature + the NonUniformResourceIndex wrap, such reads are undefined (garbage/flicker).
 		features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
 
+		// fp16 shader math + 16-bit storage for the neural inference conv (#): halves the weight traffic and
+		// doubles ALU on GPUs that support it. The bits live in TWO promoted structs: shaderFloat16 is in
+		// VkPhysicalDeviceVulkan12Features (set on features12 directly — a separate ShaderFloat16Int8Features
+		// alongside it is a validation error), while the 16-bit STORAGE bits are in VkPhysicalDeviceVulkan11Features
+		// (spliced onto the chain). Query both the same way. Gated: only enable + let the shader take the fp16
+		// permutation when all three are supported, else the conv stays fp32. Mirrors the RT-support gate.
+		{
+			VkPhysicalDeviceVulkan11Features q11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
+			VkPhysicalDeviceVulkan12Features q12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+			q11.pNext = &q12;
+			VkPhysicalDeviceFeatures2 q{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+			q.pNext = &q11;
+			vkGetPhysicalDeviceFeatures2(m_PhysicalDevice, &q);
+			m_Float16Supported = q12.shaderFloat16 == VK_TRUE && q11.storageBuffer16BitAccess == VK_TRUE &&
+			                     q11.uniformAndStorageBuffer16BitAccess == VK_TRUE;
+		}
+		if (m_Float16Supported)
+		{
+			features12.shaderFloat16 = VK_TRUE; // shaderFloat16 lives in the 1.2 struct
+		}
+
 		features12.pNext = &features13;
+
+		// 16-bit STORAGE access lives in the 1.1 features struct (not 1.2). Splice it on when supported; storage
+		// outside the if so it outlives vkCreateDevice, tail preserves the existing chain (features13 + RT below).
+		VkPhysicalDeviceVulkan11Features features11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
+		if (m_Float16Supported)
+		{
+			features11.storageBuffer16BitAccess = VK_TRUE;
+			features11.uniformAndStorageBuffer16BitAccess = VK_TRUE;
+			features11.pNext = features12.pNext; // = features13
+			features12.pNext = &features11;
+		}
 
 		devInfo.pNext = &features12;
 
@@ -395,6 +427,8 @@ namespace Snowstorm
 		             HasDedicatedTransferQueue() ? " (dedicated)" : " (shared with graphics)");
 		SS_CORE_INFO("Ray tracing (VK_KHR_ray_query): {}.",
 		             m_RayTracingSupported ? "supported (enabled)" : "not supported (raster fallback)");
+		SS_CORE_INFO("fp16 shader math (shaderFloat16 + 16-bit storage): {}.",
+		             m_Float16Supported ? "supported (neural fp16 path enabled)" : "not supported (fp32 fallback)");
 
 		// 5. Graphics command pool (for transient command buffers)
 		VkCommandPoolCreateInfo poolInfo{};
