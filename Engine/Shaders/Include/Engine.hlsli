@@ -123,7 +123,7 @@ cbuffer FrameCB : register(b0, space0)
 	uint ShadowSoft;            // 1 = 3x3 PCF, 0 = hard single tap
 	uint SpotShadowAtlasIndex;  // bindless index of the spot shadow atlas (0 = spots unshadowed)
 	uint PointShadowAtlasIndex; // bindless index of the point shadow atlas (0 = points unshadowed)
-	float _ShadowPad2;
+	float ShadowNormalOffset;   // #59: normal-offset bias, world units (see RendererService FrameCB)
 
 	// IBL: bindless indices of the baked maps (irradiance + prefiltered in Cubemaps[], BRDF LUT in
 	// Textures[]); 0 = IBL off (analytic hemisphere ambient). PrefilteredMipCount maps roughness->lod.
@@ -251,6 +251,12 @@ SamplerState LinearSampler : register(s1, space1);
 // Clamp-to-edge linear sampler for lookup textures that must not wrap (e.g. the BRDF LUT). Bound at the
 // fixed material binding 2; engine-global (every material binds the same one).
 SamplerState ClampSampler : register(s2, space1);
+// NOTE: material binding 3 (s3, space1) is the depth-comparison sampler for hardware PCF shadows (#60),
+// but it is declared in DefaultLit.frag.hlsl, NOT here. The full-screen post passes (Fxaa/Sharpen/
+// TemporalResolve) pair their frag with Fullscreen.vert, which includes THIS header — and they park their
+// own cbuffer at b3, space1. Declaring the sampler here would (with -fspv-preserve-bindings) emit an s3
+// into Fullscreen.vert that collides with their b3 in the same pipeline. Only the lit shader needs the
+// comparison sampler, so it owns the s3 declaration locally. The C++ still binds it via the material set.
 
 // SPACE 2 (per-instance object data: InstanceData + Instances) lives in MeshInput.hlsli, included above.
 

@@ -6,6 +6,14 @@
 
 static const float PI = 3.14159265359;
 
+// Depth-comparison sampler for hardware PCF shadows (#60): linear-filters the 0/1 pass/fail results of a
+// depth compare (SampleCmpLevelZero), giving smooth 2x2 (or wider) PCF in ONE bilinear-cost tap instead of
+// manual N-tap Sample()+compare loops. Clamp-to-edge + LessOrEqual (matches the manual currentDepth <=
+// storedDepth). Material binding 3 (s3, space1); the C++ material set binds it engine-globally. Declared
+// HERE and not in Engine.hlsli on purpose — the full-screen post passes pair with Fullscreen.vert (which
+// includes Engine.hlsli) and park their own cbuffer at b3, space1, so a shared-header s3 would collide.
+SamplerComparisonState ShadowCmpSampler : register(s3, space1);
+
 // Sample a bindless texture by a (potentially per-instance, non-uniform) index. Every dynamic index
 // into the Textures[] array must go through NonUniformResourceIndex() or instanced draws sample
 // garbage (the #46 flicker lesson) — centralize it here so no call site forgets.
@@ -22,8 +30,16 @@ float4 SampleBindless(uint index, float2 uv)
 // map (the sun), or a tile rect for a spot in the shared atlas. PCF taps are CLAMPED to the rect so a
 // tap near a tile edge can't bleed into a neighbour tile. Manual PCF keeps the bindless SAMPLED_IMAGE
 // model (no comparison-sampler descriptor). NdotL drives a slope-scaled bias; ShadowStrength lightens.
-float SampleShadowFactor(uint texIndex, float4x4 lightViewProj, float4 atlasRect, float3 positionWS, float NdotL)
+float SampleShadowFactor(uint texIndex, float4x4 lightViewProj, float4 atlasRect, float3 positionWS, float3 Ng, float NdotL)
 {
+	// Normal-offset bias (#59): shift the sample point along the geometric normal before projecting into
+	// light space, in WORLD units, scaled by the grazing angle (most acne is on surfaces near-parallel to
+	// the light, where a depth bias would need to be huge). Moving the comparison point off the
+	// self-occluding plane ALONG the surface removes acne without the depth-push peter-panning a larger
+	// ShadowBias causes. ShadowNormalOffset is a world-space distance; (1 - NdotL) makes it vanish on
+	// light-facing surfaces (which don't self-shadow) and peak at grazing.
+	positionWS += Ng * (ShadowNormalOffset * saturate(1.0 - NdotL));
+
 	float4 lightClip = mul(float4(positionWS, 1.0), lightViewProj);
 	float3 ndc = lightClip.xyz / lightClip.w;
 
@@ -52,6 +68,10 @@ float SampleShadowFactor(uint texIndex, float4x4 lightViewProj, float4 atlasRect
 	const float2 rectMin = atlasRect.xy;
 	const float2 rectMax = atlasRect.xy + atlasRect.zw;
 
+	// Hardware PCF (#60): SampleCmpLevelZero does the depth compare + bilinear filtering of the 0/1 results
+	// in ONE texture op (a 2x2 comparison-filtered tap), replacing the manual Sample()+compare. The soft
+	// path takes a 3x3 grid of these (so 9 HW taps => an effectively wider, smoother 4x4-ish kernel); the
+	// hard path is a single tap (still HW-bilinear, so smoother than the old nearest single-sample).
 	float visibility;
 	if (ShadowSoft != 0)
 	{
@@ -62,8 +82,7 @@ float SampleShadowFactor(uint texIndex, float4x4 lightViewProj, float4 atlasRect
 			{
 				const float2 tap = lightUV + float2(dx, dy) * ShadowTexelSize;
 				const float2 atlasUV = clamp(atlasRect.xy + tap * atlasRect.zw, rectMin, rectMax);
-				const float storedDepth = SampleBindless(texIndex, atlasUV).r;
-				sum += (currentDepth <= storedDepth) ? 1.0 : 0.0;
+				sum += Textures[NonUniformResourceIndex(texIndex)].SampleCmpLevelZero(ShadowCmpSampler, atlasUV, currentDepth);
 			}
 		}
 		visibility = sum / 9.0;
@@ -71,8 +90,7 @@ float SampleShadowFactor(uint texIndex, float4x4 lightViewProj, float4 atlasRect
 	else
 	{
 		const float2 atlasUV = clamp(atlasRect.xy + lightUV * atlasRect.zw, rectMin, rectMax);
-		const float storedDepth = SampleBindless(texIndex, atlasUV).r;
-		visibility = (currentDepth <= storedDepth) ? 1.0 : 0.0;
+		visibility = Textures[NonUniformResourceIndex(texIndex)].SampleCmpLevelZero(ShadowCmpSampler, atlasUV, currentDepth);
 	}
 
 	return lerp(1.0, visibility, ShadowStrength);
@@ -187,7 +205,7 @@ float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL, float
 	{
 		return 1.0;
 	}
-	return SampleShadowFactor(ShadowMapIndex, LightViewProj, float4(0, 0, 1, 1), positionWS, NdotL);
+	return SampleShadowFactor(ShadowMapIndex, LightViewProj, float4(0, 0, 1, 1), positionWS, Ng, NdotL);
 }
 
 // Spot shadow: RT ray query (when RTShadowEnabled and this spot casts) or the shared raster atlas at the
@@ -218,7 +236,7 @@ float SampleSpotShadow(SpotLight spot, float3 positionWS, float3 Ng, float3 L, f
 	{
 		return 1.0;
 	}
-	return SampleShadowFactor(SpotShadowAtlasIndex, spot.ShadowViewProj, spot.ShadowAtlasRect, positionWS, NdotL);
+	return SampleShadowFactor(SpotShadowAtlasIndex, spot.ShadowViewProj, spot.ShadowAtlasRect, positionWS, Ng, NdotL);
 }
 
 // Pick which of a point light's 6 cube faces a world-space direction belongs to. Faces are indexed
@@ -266,7 +284,7 @@ float SamplePointShadow(PointLight light, float3 positionWS, float3 Ng, float3 L
 	}
 	const int face = PointShadowFace(positionWS - light.Position);
 	const PointShadow payload = PointShadows[light.ShadowSlot];
-	return SampleShadowFactor(PointShadowAtlasIndex, payload.Face[face], payload.Rect[face], positionWS, NdotL);
+	return SampleShadowFactor(PointShadowAtlasIndex, payload.Face[face], payload.Rect[face], positionWS, Ng, NdotL);
 }
 
 // Tonemap + sRGB encode moved to the post-process pass (Tonemap.frag.hlsl, #53). This shader outputs

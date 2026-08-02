@@ -39,6 +39,25 @@ namespace Snowstorm
 
 		m_ClampSampler = Sampler::Create(clamp);
 		SS_CORE_ASSERT(m_ClampSampler, "Failed to create clamp material sampler");
+
+		// Depth-comparison sampler for hardware PCF shadows (#60): EnableCompare + LessOrEqual runs the depth
+		// test inside the sampler and bilinearly filters the 0/1 results, so one SampleCmp tap = a 2x2 PCF.
+		// Clamp-to-edge (shadow UVs are already clamped to the atlas tile) and linear filtering (the whole
+		// point — nearest would defeat the hardware filtering). Matches the manual currentDepth <= storedDepth.
+		SamplerDesc shadowCmp{};
+		shadowCmp.MinFilter = Filter::Linear;
+		shadowCmp.MagFilter = Filter::Linear;
+		shadowCmp.MipmapMode = SamplerMipmapMode::Nearest;
+		shadowCmp.AddressU = SamplerAddressMode::ClampToEdge;
+		shadowCmp.AddressV = SamplerAddressMode::ClampToEdge;
+		shadowCmp.AddressW = SamplerAddressMode::ClampToEdge;
+		shadowCmp.EnableAnisotropy = false;
+		shadowCmp.EnableCompare = true;
+		shadowCmp.Compare = CompareOp::LessOrEqual;
+		shadowCmp.DebugName = "MaterialShadowCmpSampler";
+
+		m_ShadowCmpSampler = Sampler::Create(shadowCmp);
+		SS_CORE_ASSERT(m_ShadowCmpSampler, "Failed to create shadow comparison sampler");
 	}
 
 	void Material::SetAlbedoTexture(const Ref<TextureView>& view)

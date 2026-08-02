@@ -68,6 +68,9 @@ namespace Snowstorm
 	private:
 		Ref<Material> m_Base;
 		Ref<DescriptorSetLayout> m_SetLayout; // set=1 layout
+		// Whether this material's set-1 layout declares the shadow comparison sampler (binding 3, #60). Only
+		// DefaultLit.frag does; custom shaders (Mandelbrot) don't, so we skip binding it for them.
+		bool m_HasShadowCmpBinding = false;
 
 		// CPU-side constants for set=1 UBO
 		Material::Constants m_Constants{};

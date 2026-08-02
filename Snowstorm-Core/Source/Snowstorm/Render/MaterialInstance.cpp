@@ -5,6 +5,7 @@
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/CommandContext.hpp"
+#include "Snowstorm/Render/DescriptorSetLayout.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 
 namespace Snowstorm
@@ -14,6 +15,7 @@ namespace Snowstorm
 		constexpr uint32_t kMaterialConstantsBinding = 0;
 		constexpr uint32_t kMaterialSamplerBinding = 1;      // LinearSampler (wrapping, per-instance)
 		constexpr uint32_t kMaterialClampSamplerBinding = 2; // ClampSampler (engine-global, for LUTs)
+		constexpr uint32_t kMaterialShadowCmpSamplerBinding = 3; // ShadowCmpSampler (engine-global, HW PCF #60)
 	}
 
 	MaterialInstance::MaterialInstance(const Ref<Material>& baseMaterial)
@@ -29,6 +31,20 @@ namespace Snowstorm
 		// 2. Setup layout
 		const auto& setLayouts = m_Base->GetPipeline()->GetSetLayouts();
 		m_SetLayout = setLayouts[1];
+
+		// The shadow comparison sampler (binding 3, #60) is declared only by DefaultLit.frag, so a custom
+		// material shader (e.g. Mandelbrot) that includes Engine.hlsli but does NOT declare it reflects a
+		// set-1 layout without binding 3. Bind it only when the layout actually has it — SetSampler asserts
+		// on a missing binding. Computed once from the reflected layout.
+		m_HasShadowCmpBinding = false;
+		for (const auto& b : m_SetLayout->GetDesc().Bindings)
+		{
+			if (b.Binding == kMaterialShadowCmpSamplerBinding)
+			{
+				m_HasShadowCmpBinding = true;
+				break;
+			}
+		}
 
 		MarkDirty();
 	}
@@ -107,6 +123,10 @@ namespace Snowstorm
 			m_MaterialDataSets[frameIndex]->SetBuffer(kMaterialConstantsBinding, bb);
 			m_MaterialDataSets[frameIndex]->SetSampler(kMaterialSamplerBinding, m_Sampler);
 			m_MaterialDataSets[frameIndex]->SetSampler(kMaterialClampSamplerBinding, m_Base->GetClampSampler());
+			if (m_HasShadowCmpBinding)
+			{
+				m_MaterialDataSets[frameIndex]->SetSampler(kMaterialShadowCmpSamplerBinding, m_Base->GetShadowCmpSampler());
+			}
 		}
 	}
 
@@ -129,6 +149,10 @@ namespace Snowstorm
 			m_MaterialDataSets[frameIndex]->SetBuffer(kMaterialConstantsBinding, bb);
 			m_MaterialDataSets[frameIndex]->SetSampler(kMaterialSamplerBinding, m_Sampler);
 			m_MaterialDataSets[frameIndex]->SetSampler(kMaterialClampSamplerBinding, m_Base->GetClampSampler());
+			if (m_HasShadowCmpBinding)
+			{
+				m_MaterialDataSets[frameIndex]->SetSampler(kMaterialShadowCmpSamplerBinding, m_Base->GetShadowCmpSampler());
+			}
 
 			m_MaterialDataSets[frameIndex]->Commit();
 

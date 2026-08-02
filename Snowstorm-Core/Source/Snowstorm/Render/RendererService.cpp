@@ -48,7 +48,11 @@ namespace Snowstorm
 			uint32_t ShadowSoft = 1;            // 1 = 3x3 PCF, 0 = hard single tap
 			uint32_t SpotShadowAtlasIndex = 0;  // bindless index of the spot shadow atlas (0 = spots unshadowed)
 			uint32_t PointShadowAtlasIndex = 0; // bindless index of the point shadow atlas (0 = points unshadowed)
-			float _ShadowPad2 = 0.0f;
+			// Normal-offset shadow bias (#59, cf. UE r.Shadow.NormalBias): push the sample position along the
+			// geometric normal (in WORLD units, grazing-angle scaled) before the light-space projection. Attacks
+			// self-shadow acne along the surface plane, where a pure depth bias can't help without peter-panning,
+			// so it complements the depth ShadowBias above. Small world distance tuned for the Sponza scale.
+			float ShadowNormalOffset = 0.03f;
 
 			// IBL (Phase 6). Bindless indices of the baked maps: irradiance + prefiltered into the cube
 			// array (Cubemaps[]), BRDF LUT into the 2D array (Textures[]). 0 = IBL disabled (use the

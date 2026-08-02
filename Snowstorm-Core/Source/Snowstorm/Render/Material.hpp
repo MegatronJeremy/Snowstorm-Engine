@@ -71,6 +71,10 @@ namespace Snowstorm
 		// uses the same one, so it's not overridable like the default (wrapping) sampler above.
 		[[nodiscard]] const Ref<Sampler>& GetClampSampler() const { return m_ClampSampler; }
 
+		// Depth-comparison sampler for hardware PCF shadows (#60). Engine-global like the clamp sampler;
+		// bound at material binding 3 and used by SampleShadowFactor's SampleCmpLevelZero taps.
+		[[nodiscard]] const Ref<Sampler>& GetShadowCmpSampler() const { return m_ShadowCmpSampler; }
+
 		[[nodiscard]] const Constants& GetDefaultConstants() const { return m_DefaultConstants; }
 
 	private:
@@ -84,5 +88,6 @@ namespace Snowstorm
 		Ref<TextureView> m_EmissiveTexture;
 		Ref<Sampler> m_DefaultSampler;
 		Ref<Sampler> m_ClampSampler;
+		Ref<Sampler> m_ShadowCmpSampler;
 	};
 }
