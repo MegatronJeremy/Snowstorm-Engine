@@ -82,12 +82,9 @@ namespace Snowstorm
 			              m_ScenePath);
 		}
 
-		// NOTE (known gap): the scene renders into an offscreen RenderTarget, but the only
-		// swapchain-composing pass today is the editor's ImGui pass. With no ImGui the window
-		// will be blank until a present path (blit primary camera RT -> swapchain) is added.
-		// See docs/RUNTIME_REFACTOR.md.
-		SS_CORE_WARN("Snowstorm-Runtime: rendering to screen is not wired yet (no present path "
-		             "without ImGui). The system pipeline runs, but the window will be blank.");
+		// The scene renders into an offscreen RenderTarget; with no ImGui backend, RenderSystem's
+		// PresentPass blits the primary viewport onto the swapchain (#4). The viewport is fixed-size for
+		// now, so a resized window shows a scaled image until #146 makes the target track the window.
 	}
 
 	void RuntimeLayer::CreateRuntimeCameraAndViewport() const

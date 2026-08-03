@@ -193,6 +193,12 @@ namespace Snowstorm
 		const bool multipleViewports = std::distance(viewportView.begin(), viewportView.end()) > 1;
 		uint32_t forwardPassIndex = 0;
 
+		// Track which viewport to present to the swapchain in the non-ImGui (runtime) path below: the first
+		// rendered viewport, upgraded to the one a Primary camera targets if such a viewport renders. The
+		// runtime is single-viewport today, so this is just robust, not complex. (The editor composes via
+		// its ImGui pass and ignores this.)
+		entt::entity presentViewport = entt::null;
+
 		for (const auto vpEntity : viewportView)
 		{
 			// Skip a viewport with no target here (cheap) so the pass-name index only advances for viewports
@@ -204,15 +210,38 @@ namespace Snowstorm
 			const std::string passSuffix = multipleViewports ? "[" + std::to_string(forwardPassIndex) + "]" : std::string();
 			++forwardPassIndex;
 			RenderViewport(fc, vpEntity, passSuffix);
+
+			if (presentViewport == entt::null)
+			{
+				presentViewport = vpEntity; // fallback: first viewport that actually renders
+			}
 		}
 
-		// ImGui pass to swapchain. This is the ONLY pass that composes the swapchain today,
-		// so it only runs when an ImGui backend is up (i.e. the editor). A packaged runtime
-		// has no ImGui and currently presents nothing — it needs a dedicated present path
-		// (blit the primary camera's render target to the swapchain). See docs/RUNTIME_REFACTOR.md.
-		if (Renderer::IsImGuiBackendInitialized())
+		// Prefer the viewport a Primary camera targets (if it's one that rendered above).
+		for (const auto camEntity : cameraView)
 		{
-			if (const Ref<RenderTarget> swapchain = Renderer::GetSwapchainTarget())
+			if (!reg.Read<CameraComponent>(camEntity).Primary)
+			{
+				continue;
+			}
+			const entt::entity target = reg.Read<CameraTargetComponent>(camEntity).TargetViewportEntity;
+			if (target != entt::null && viewportView.contains(target) && reg.Read<RenderTargetComponent>(target).Target)
+			{
+				presentViewport = target;
+				break;
+			}
+		}
+
+		// Compose the swapchain. Two mutually exclusive paths:
+		//  - Editor: the ImGui pass draws the dockspace (with the viewport image embedded). Runs only when an
+		//    ImGui backend is up.
+		//  - Runtime (#4): no ImGui, so blit the primary viewport's final LDR image (PresentSampleView)
+		//    straight to the swapchain with a fullscreen triangle (PresentPass). Without this the runtime
+		//    presents a blank window. NOTE: the runtime's present target is currently fixed-size, so a resized
+		//    window shows a scaled image until #146 makes the target track the window.
+		if (const Ref<RenderTarget> swapchain = Renderer::GetSwapchainTarget())
+		{
+			if (Renderer::IsImGuiBackendInitialized())
 			{
 				graph.AddPass({.Name = "Editor",
 				               .Target = swapchain,
@@ -220,6 +249,22 @@ namespace Snowstorm
 				               {
 					               Renderer::RenderImGuiDrawData(c);
 				               }});
+			}
+			else if (presentViewport != entt::null)
+			{
+				const auto& presentRtc = reg.Read<RenderTargetComponent>(presentViewport);
+				if (presentRtc.PresentSampleView)
+				{
+					const Ref<TextureView> src = presentRtc.PresentSampleView;
+					const PixelFormat swapFormat = swapchain->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+					graph.AddPass({.Name = "Present",
+					               .Target = swapchain,
+					               .Reads = {{src->GetTexture(), RenderGraph::AccessState::Sampled}},
+					               .Execute = [this, src, swapFormat, frameIndex](CommandContext& c)
+					               {
+						               m_PresentPass.Draw(Renderer::GetGraphicsCommandContext(), frameIndex, src, swapFormat);
+					               }});
+				}
 			}
 		}
 

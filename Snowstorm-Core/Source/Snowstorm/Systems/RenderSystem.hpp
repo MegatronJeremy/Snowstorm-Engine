@@ -7,6 +7,7 @@
 // included by ViewportEffects.cpp, where its effect lives — not pulled through this header.
 #include "Snowstorm/Render/Passes/IBLBakePass.hpp"
 #include "Snowstorm/Render/Passes/PostProcessPass.hpp"
+#include "Snowstorm/Render/Passes/PresentPass.hpp"
 #include "Snowstorm/Render/Passes/SkyPass.hpp"
 #include "Snowstorm/Render/RenderPhaseContext.hpp"
 #include "Snowstorm/Render/RendererService.hpp" // TonemapParams (used in the effect-chain helper signatures)
@@ -114,6 +115,11 @@ namespace Snowstorm
 		IBLBakePass m_IBLBakePass;
 		SkyPass m_SkyPass;
 		PostProcessPass m_PostProcessPass;
+
+		// Runtime present pass (#4): composes the primary viewport's final image onto the swapchain when
+		// there's no ImGui backend (the editor composes via its ImGui pass instead). Owned here like the
+		// other shared passes; unused in the editor.
+		PresentPass m_PresentPass;
 
 		// The ordered per-viewport effect chain (#120). Built once (BuildViewportEffects); RenderViewport runs
 		// it: for each effect, if ShouldRun, Contribute. Effects are migrated into this list one increment at a
