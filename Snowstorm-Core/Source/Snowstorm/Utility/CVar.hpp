@@ -134,9 +134,17 @@ namespace Snowstorm
 	class CVarRegistry
 	{
 	public:
-		// Default config-file path (working-dir relative, like assets/AssetRegistry.json). Shared by the
-		// startup load (Initialize) and the editor's shutdown save so both agree on the location.
+		// Auto-managed user-settings file (working-dir relative). The editor WRITES this on shutdown
+		// (SaveConfig) and reads it at startup (Initialize). Persistent CVars only, so one-shot/dev flags
+		// can't leak into it. This is a saved snapshot, not a place to author dev flags.
 		static constexpr const char* kConfigPath = "SnowstormConfig.cfg";
+
+		// Optional hand-authored startup overrides (working-dir relative). READ at startup, NEVER written by
+		// the app — so it's the safe home for dev/machine toggles the editor's auto-save would otherwise
+		// clobber (e.g. validation.extra=true to debug with validation every launch, no rebuild). Honors ANY
+		// CVar (not just persistent ones), like env/CLI, since you authored it deliberately. Gitignored.
+		// Precedence: below env/CLI (a one-off --flag or SS_* still wins), above the saved settings file.
+		static constexpr const char* kStartupConfigPath = "SnowstormStartup.cfg";
 
 		static CVarRegistry& Get();
 
@@ -152,12 +160,16 @@ namespace Snowstorm
 
 		void PrintAll() const;
 
-		// Config-file source (lowest priority, below env/CLI). LoadConfig reads `key=value` lines and applies
-		// them to persistent CVars only; a missing file is a silent no-op. SaveConfig writes only persistent
-		// CVars that DIFFER from their default, so the file holds real overrides (not a full snapshot) and a
-		// changed code default reaches anyone who hadn't explicitly overridden it. Called by Initialize (load)
-		// and the editor on shutdown (save).
-		void LoadConfig(const std::string& path);
+		// Config-file source (lowest priority, below env/CLI). LoadConfig reads `key=value` lines; a missing
+		// file is a silent no-op. `persistentOnly` gates whether non-persistent CVars are applied (see below).
+		// SaveConfig writes only persistent CVars that DIFFER from their default, so the file holds real
+		// overrides (not a full snapshot) and a changed code default reaches anyone who hadn't explicitly
+		// overridden it. Called by Initialize (load, both files) and the editor on shutdown (save, kConfigPath).
+		// `persistentOnly` = true (the auto-saved settings file): apply only persistent CVars, so a
+		// hand-edited settings file can't flip one-shot/destructive flags (smoke.frames, scene.bake) that
+		// must stay CLI/env-driven. false (the read-only startup file): apply ANY CVar — it's authored on
+		// purpose and never auto-written, so there's no clobber footgun.
+		void LoadConfig(const std::string& path, bool persistentOnly = true);
 		void SaveConfig(const std::string& path) const;
 
 		// Reset every persistent CVar to its constructed default (the "Reset to Defaults" action). Dev/one-shot

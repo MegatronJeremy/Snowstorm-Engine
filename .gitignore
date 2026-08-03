@@ -43,6 +43,9 @@ Makefile
 # Local user settings written by the editor on shutdown (persistent CVars). Machine-local
 # state, not project data — must not be committed.
 SnowstormConfig.cfg
+# Hand-authored startup CVar overrides (dev/machine toggles like validation.extra); read at startup,
+# never written by the app. Machine-local, must not be committed.
+SnowstormStartup.cfg
 
 # Neural training harness (#99): generated artifacts. Scripts under Tools/neural/ are tracked; the
 # captured datasets, trained weights, and Python caches are large/generated and must not be committed.

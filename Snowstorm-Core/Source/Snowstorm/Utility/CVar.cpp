@@ -273,9 +273,13 @@ namespace Snowstorm
 
 	void CVarRegistry::Initialize(const int argc, char** argv)
 	{
-		// 0. Config file (lowest priority). Loaded first so environment and CLI below can override it,
-		// giving the resolution order: default -> config -> env -> CLI.
-		LoadConfig(kConfigPath);
+		// Config sources (lowest priority; env + CLI below override them). Resolution order:
+		//   default -> saved settings -> startup overrides -> env -> CLI
+		// 0a. Auto-saved user settings (persistent CVars only). The editor writes this on shutdown.
+		LoadConfig(kConfigPath, /*persistentOnly=*/true);
+		// 0b. Hand-authored startup overrides (any CVar; never written by the app). The safe place to keep
+		// dev/machine toggles (e.g. validation.extra=true) so the editor's auto-save can't clobber them.
+		LoadConfig(kStartupConfigPath, /*persistentOnly=*/false);
 
 		// 1. Environment (lower priority).
 		for (ICVar* cvar : m_Ordered)
@@ -330,10 +334,10 @@ namespace Snowstorm
 		}
 	}
 
-	void CVarRegistry::LoadConfig(const std::string& path)
+	void CVarRegistry::LoadConfig(const std::string& path, const bool persistentOnly)
 	{
 		std::ifstream file(path);
-		if (!file) // missing file (e.g. first run) is a normal no-op, not an error
+		if (!file) // missing file (e.g. first run, or no startup-override file) is a normal no-op, not an error
 		{
 			return;
 		}
@@ -381,11 +385,13 @@ namespace Snowstorm
 				SS_CORE_WARN("CVar config: unknown key '{0}' in {1} (ignored)", key, path);
 				continue;
 			}
-			// Only persistent CVars are honoured from config, so a hand-edited file can't flip dev/one-shot
-			// flags (validation, smoke, bake, ...) that must stay CLI/env-driven.
-			if (!cvar->IsPersistent())
+			// The auto-saved settings file (persistentOnly) honors only persistent CVars, so a hand-edited
+			// settings file can't flip one-shot/destructive flags (smoke.frames, scene.bake) that must stay
+			// CLI/env-driven. The startup-override file (persistentOnly=false) is authored on purpose and never
+			// auto-written, so it honors ANY CVar — like env/CLI.
+			if (persistentOnly && !cvar->IsPersistent())
 			{
-				SS_CORE_WARN("CVar config: '{0}' is not a persistent setting (ignored)", key);
+				SS_CORE_WARN("CVar config: '{0}' is not a persistent setting (ignored in {1})", key, path);
 				continue;
 			}
 			cvar->SetFromString(value);
