@@ -31,6 +31,14 @@ namespace Snowstorm
 		if (!FiniView<MeshComponent>().empty() || !FiniView<TransformComponent>().empty())
 			return true;
 
+		// A whole-entity DESTROY (editor delete, despawn) is tracked separately from component removal —
+		// FiniView/RemovedView only sees explicit Remove<T>(), not registry.destroy(), so a deleted mesh
+		// would otherwise stay in the TLAS and keep casting an RT shadow/reflection/GI ghost after it's gone.
+		// Destroys are rare one-shot events, so rebuilding on any destroy is cheap (matches the add/remove
+		// "over-trigger is fine" stance above).
+		if (m_World->GetRegistry().AnyDestroyedThisFrame())
+			return true;
+
 		// A MaterialComponent change must also rebuild: the geometry table caches each instance's material
 		// constants (albedo texture index, base color) for the RT reflection/GI shade. Materials resolve
 		// ASYNC and INDEPENDENTLY of meshes (MaterialResolveSystem sets MaterialInstance only once the

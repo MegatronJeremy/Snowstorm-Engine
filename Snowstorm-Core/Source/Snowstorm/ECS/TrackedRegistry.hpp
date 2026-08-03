@@ -338,6 +338,16 @@ namespace Snowstorm
 			return m_DestroyedEntities.contains(entity);
 		}
 
+		/// Was ANY entity destroyed this frame? Whole-entity destruction is tracked separately from component
+		/// removal (RemovedView/FiniView only sees explicit Remove<T>()), so a system that must react to a
+		/// deleted entity — e.g. TlasBuildSystem rebuilding the acceleration structure — checks this. The
+		/// destroyed entity's components are already gone, so there's no per-type view; destroys are rare
+		/// one-shot events, so an any-destroyed trigger is cheap.
+		[[nodiscard]] bool AnyDestroyedThisFrame() const
+		{
+			return !m_DestroyedEntities.empty();
+		}
+
 		// ---------------------------------------------------------------------
 		// Frame / scene lifetime
 		// ---------------------------------------------------------------------
