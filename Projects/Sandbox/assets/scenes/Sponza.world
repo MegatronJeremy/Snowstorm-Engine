@@ -1187,6 +1187,36 @@
       },
       "Name": "Window Shaft (cool)",
       "UUID": "6001001000000000005"
+    },
+    {
+      "Name": "Game Camera",
+      "UUID": "7001001000000000001",
+      "Components": {
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            9.384324073791504,
+            1.2104078531265259,
+            -0.24745261669158936
+          ],
+          "Rotation": [
+            0.01674955151975155,
+            1.586508870124817,
+            0.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Snowstorm::CameraComponent": {
+          "Projection": "Perspective",
+          "PerspectiveFOV": 0.785398,
+          "PerspectiveNear": 0.1,
+          "PerspectiveFar": 1000.0,
+          "Primary": true
+        }
+      }
     }
   ],
   "Scene": {

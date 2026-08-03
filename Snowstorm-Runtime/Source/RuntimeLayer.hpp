@@ -18,9 +18,17 @@ namespace Snowstorm
 		void OnUpdate(Timestep ts) override;
 
 	private:
-		// Host-owned game camera + viewport, created before the scene loads (scenes no longer author a
-		// camera/viewport — see EditorLayer for the editor's equivalent persistent Scene-view camera).
-		void CreateRuntimeCameraAndViewport() const;
+		// The viewport is host-owned (window-sized; a scene can't author viewport size). Returns its UUID so
+		// a camera can target it. Created before the scene loads.
+		UUID CreateRuntimeViewport() const;
+
+		// After the scene loads, bind the runtime viewport to a camera (#147): if the scene authored a
+		// CameraComponent entity (prefer Primary), use it — retarget it at `viewportId` and ensure it has the
+		// controller/visibility/target it needs to be driven + cull the Game layer. Otherwise create the
+		// default fallback camera at a fixed pose (the pre-#147 behavior), so scenes with no authored camera
+		// still render.
+		void ConfigureSceneCamera(UUID viewportId) const;
+		void CreateFallbackCamera(UUID viewportId) const;
 
 		Ref<World> m_World;
 		std::string m_ScenePath;
