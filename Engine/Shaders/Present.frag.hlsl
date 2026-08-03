@@ -24,6 +24,9 @@ struct FullscreenVSOut
 
 float4 main(FullscreenVSOut input) : SV_Target
 {
-	const float2 uv = float2(input.NDC.x * 0.5 + 0.5, input.NDC.y * 0.5 + 0.5);
+	// Flip Y: the offscreen present target is authored top-left origin (the editor draws it upright via
+	// ImGui::Image, UV 0,0 = top). Blitting it to the swapchain with the fullscreen triangle's raw
+	// NDC->UV mapping lands it vertically flipped, so invert V here to match the editor's orientation.
+	const float2 uv = float2(input.NDC.x * 0.5 + 0.5, 0.5 - input.NDC.y * 0.5);
 	return float4(SceneTex.Sample(SceneSampler, uv).rgb, 1.0);
 }

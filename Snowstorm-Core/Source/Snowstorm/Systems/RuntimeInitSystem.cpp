@@ -50,11 +50,17 @@ namespace Snowstorm
 		}
 
 		// ---------------------------------------------------------------------
-		// Ensure runtime/editor-only viewport interaction exists
+		// Ensure viewport interaction exists AND mark it focused+hovered. CameraControllerSystem gates all
+		// input on ViewportInteractionComponent.Focused; in the editor ViewportDisplaySystem sets it from
+		// ImGui window focus, but the Runtime has no ImGui, so nothing would ever set it -> a dead, static
+		// camera. The Runtime is a single fullscreen window with no other panel to steal focus, so it's
+		// always focused+hovered. Set it here so free-look/WASD work.
 		// ---------------------------------------------------------------------
 		for (const entt::entity e : reg.view<ViewportComponent>())
 		{
-			reg.Ensure<ViewportInteractionComponent>(e);
+			auto& vi = reg.Ensure<ViewportInteractionComponent>(e);
+			vi.Focused = true;
+			vi.Hovered = true;
 		}
 
 		// ---------------------------------------------------------------------
