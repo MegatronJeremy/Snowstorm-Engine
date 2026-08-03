@@ -3,9 +3,9 @@ name: shaders
 on:
   push:
     branches: [ master ]
-    paths: [ 'Assets/Shaders/**', 'Scripts/check_shaders.py' ]
+    paths: [ 'Engine/Shaders/**', 'Scripts/check_shaders.py' ]
   pull_request:
-    paths: [ 'Assets/Shaders/**', 'Scripts/check_shaders.py' ]
+    paths: [ 'Engine/Shaders/**', 'Scripts/check_shaders.py' ]
 
 concurrency:
   group: shaders-${{ github.ref }}
