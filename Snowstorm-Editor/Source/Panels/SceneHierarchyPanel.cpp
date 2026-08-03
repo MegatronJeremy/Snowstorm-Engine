@@ -10,6 +10,7 @@
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Components/CameraRuntimeComponent.hpp"
 #include "Snowstorm/Components/ComponentRegistry.hpp"
+#include "Snowstorm/Components/DoNotSerializeComponent.hpp"
 #include "Snowstorm/Components/IDComponent.hpp"
 #include "Snowstorm/Components/MaterialComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
@@ -41,14 +42,17 @@ namespace Snowstorm
 {
 	namespace
 	{
-		// Structural entities must not be deleted from the editor: the viewport/render-target and the
-		// cameras are required infrastructure (deleting the main viewport left RenderSystem dereferencing
-		// a destroyed target → crash). Everything else is ordinary, deletable scene content.
+		// Structural entities must not be deleted from the editor: the viewport/render-target and the editor's
+		// own Scene-view camera are required infrastructure (deleting the main viewport left RenderSystem
+		// dereferencing a destroyed target → crash). Those are exactly the entities tagged DoNotSerialize
+		// (the editor recreates them; they never live in the scene). An AUTHORED gameplay camera (#147), by
+		// contrast, is ordinary scene content and MUST be deletable — so gate on DoNotSerialize, not on
+		// CameraComponent (which would also lock authored cameras).
 		bool IsDeletable(const Entity entity)
 		{
 			return !entity.HasComponent<ViewportComponent>() &&
 			       !entity.HasComponent<RenderTargetComponent>() &&
-			       !entity.HasComponent<CameraComponent>();
+			       !entity.HasComponent<DoNotSerializeComponent>();
 		}
 
 		// Stable asset handles for the "3D Object" presets (from Assets/AssetRegistry.json). Handles are the
@@ -108,7 +112,8 @@ namespace Snowstorm
 			Directional,
 			Point,
 			Spot,
-			Cube
+			Cube,
+			Camera
 		};
 
 		// Draw a small draw-list glyph for a Create-menu row and advance the ImGui cursor past it, so a
@@ -150,6 +155,12 @@ namespace Snowstorm
 				dl->AddLine(ImVec2(c.x - r, c.y - r), ImVec2(c.x - r * 0.4f, c.y - r * 1.5f), color, 1.0f);
 				dl->AddLine(ImVec2(c.x + r, c.y - r), ImVec2(c.x + r * 1.6f, c.y - r * 1.5f), color, 1.0f);
 				dl->AddLine(ImVec2(c.x - r * 0.4f, c.y - r * 1.5f), ImVec2(c.x + r * 1.6f, c.y - r * 1.5f), color, 1.0f);
+				break;
+			case CreateIcon::Camera:
+				// A little movie camera: body box + a lens triangle pointing right.
+				dl->AddRect(ImVec2(c.x - r, c.y - r * 0.6f), ImVec2(c.x + r * 0.4f, c.y + r * 0.6f), color, 0.0f, 0, 1.5f);
+				dl->AddTriangleFilled(ImVec2(c.x + r * 0.4f, c.y - r * 0.5f), ImVec2(c.x + r * 0.4f, c.y + r * 0.5f),
+				                      ImVec2(c.x + r, c.y), color);
 				break;
 			}
 			ImGui::Dummy(ImVec2(h, h)); // reserve the icon cell so the label lays out to its right
@@ -284,6 +295,22 @@ namespace Snowstorm
 				e.AddComponent<VisibilityComponent>();
 			};
 		};
+		// Gameplay camera (#147 Inc 2): a serialized CameraComponent the Runtime picks up as its view
+		// (ConfigureSceneCamera prefers a Primary one and wires the controller/viewport/Game-visibility it
+		// needs). Spawns facing where the editor camera looks, so "create camera" frames the current view.
+		// CameraVisibilityComponent(Game) so it belongs to the runtime's Game layer. This is distinct from
+		// the editor's own DoNotSerialize Scene-view camera — this one lives in the scene.
+		const auto addCamera = [](Entity e, const glm::vec3& fwd)
+		{
+			e.GetComponentMutable_Untracked<TransformComponent>().Rotation = EulerFromForward(fwd);
+			auto& cc = e.AddComponent<CameraComponent>();
+			cc.Projection = CameraComponent::ProjectionType::Perspective;
+			cc.PerspectiveFOV = 0.785398f;
+			cc.PerspectiveNear = 0.1f;
+			cc.PerspectiveFar = 1000.0f;
+			cc.Primary = true;
+			e.AddComponent<CameraVisibilityComponent>().Mask = Visibility::Game;
+		};
 
 		// One flat, icon-prefixed row. Returns true if clicked (so the caller closes its popup).
 		const ImU32 accent = EditorTheme::AccentColor();
@@ -309,6 +336,8 @@ namespace Snowstorm
 				createPreset("Cube", addMesh(kCubeMeshHandle));
 			if (row(CreateIcon::Cube, "Plane"))
 				createPreset("Plane", addMesh(kQuadMeshHandle));
+			if (row(CreateIcon::Camera, "Camera"))
+				createPreset("Game Camera", addCamera);
 		};
 
 		// Primary amber command-console action + its dropdown.
