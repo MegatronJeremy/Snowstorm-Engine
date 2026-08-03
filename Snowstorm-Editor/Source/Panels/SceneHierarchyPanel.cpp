@@ -71,9 +71,13 @@ namespace Snowstorm
 			outPos = glm::vec3(0.0f);
 			outForward = glm::vec3(0.0f, -1.0f, 0.0f); // default: aim down
 
-			// Prefer the primary camera's runtime transform (the editor fly-camera).
+			// Use the EDITOR's Scene-view camera (the fly-camera), identified by DoNotSerializeComponent — NOT
+			// "any Primary camera". A scene can now author its own Primary gameplay camera (#147); spawning
+			// relative to that would drop new entities wherever the game camera points, not where the user is
+			// looking. The DoNotSerialize marker is the editor camera's identity (same filter as FindEditorCamera).
 			auto& reg = world.GetRegistry();
-			for (auto view = reg.view<const CameraComponent, const CameraRuntimeComponent, const TransformComponent>();
+			for (auto view = reg.view<const CameraComponent, const CameraRuntimeComponent, const TransformComponent,
+			                          const DoNotSerializeComponent>();
 			     const entt::entity e : view)
 			{
 				const auto& cam = reg.Read<CameraComponent>(e);

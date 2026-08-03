@@ -3,6 +3,7 @@
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Components/CameraControllerRuntimeComponent.hpp"
+#include "Snowstorm/Components/DoNotSerializeComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Math/CameraFraming.hpp"
@@ -73,8 +74,13 @@ namespace Snowstorm
 
 	void FramePrimaryCameraOnAABB(World& world, const AABB& bounds, const bool adjustClipPlanes)
 	{
+		// Frame the EDITOR's Scene-view camera (the fly-camera), identified by DoNotSerializeComponent — NOT
+		// "any Primary camera". Focus (F/Ctrl+F) and the initial whole-scene fit are editor-view actions; a
+		// scene can now author its own Primary gameplay camera (#147), and framing THAT would move the game
+		// camera while the editor view sits still (so focus appears to do nothing). Same identity filter as
+		// EditorLayer::FindEditorCamera.
 		auto& reg = world.GetRegistry();
-		for (const auto view = reg.view<CameraComponent, TransformComponent>(); const entt::entity e : view)
+		for (const auto view = reg.view<CameraComponent, TransformComponent, DoNotSerializeComponent>(); const entt::entity e : view)
 		{
 			auto& cam = reg.Write<CameraComponent>(e);
 			if (!cam.Primary)
