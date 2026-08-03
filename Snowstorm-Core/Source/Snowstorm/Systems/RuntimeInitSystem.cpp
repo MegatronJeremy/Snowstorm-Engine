@@ -18,6 +18,7 @@
 #include "Snowstorm/Components/CameraControllerRuntimeComponent.hpp"
 
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererUtils.hpp"
 
 namespace Snowstorm
@@ -50,17 +51,22 @@ namespace Snowstorm
 		}
 
 		// ---------------------------------------------------------------------
-		// Ensure viewport interaction exists AND mark it focused+hovered. CameraControllerSystem gates all
-		// input on ViewportInteractionComponent.Focused; in the editor ViewportDisplaySystem sets it from
-		// ImGui window focus, but the Runtime has no ImGui, so nothing would ever set it -> a dead, static
-		// camera. The Runtime is a single fullscreen window with no other panel to steal focus, so it's
-		// always focused+hovered. Set it here so free-look/WASD work.
+		// Ensure viewport interaction exists. In the RUNTIME (no ImGui) also force focused+hovered:
+		// CameraControllerSystem gates input on those flags, and nothing else sets them without ImGui, so the
+		// camera would be dead. The runtime is a single fullscreen window with no panel to steal focus, so
+		// it's always focused+hovered. In the EDITOR this must NOT run — ViewportDisplaySystem owns these
+		// flags (from real ImGui window focus/hover); forcing them here would make viewport input (e.g.
+		// scroll-zoom) fire even when the cursor is over another panel. Gate on the ImGui backend.
 		// ---------------------------------------------------------------------
+		const bool runtimeNoImGui = !Renderer::IsImGuiBackendInitialized();
 		for (const entt::entity e : reg.view<ViewportComponent>())
 		{
 			auto& vi = reg.Ensure<ViewportInteractionComponent>(e);
-			vi.Focused = true;
-			vi.Hovered = true;
+			if (runtimeNoImGui)
+			{
+				vi.Focused = true;
+				vi.Hovered = true;
+			}
 		}
 
 		// ---------------------------------------------------------------------
