@@ -17,5 +17,9 @@ namespace Snowstorm
 
 		// Smoothed world-space move velocity (units/sec) for accel/decel.
 		glm::vec3 MoveVelocity{0.0f};
+
+		// Scroll-dolly glide velocity (units/sec along forward). Each scroll notch adds an impulse; the
+		// system integrates it and decays it to zero, so zoom coasts instead of teleporting per notch.
+		float ZoomVelocity = 0.0f;
 	};
 }

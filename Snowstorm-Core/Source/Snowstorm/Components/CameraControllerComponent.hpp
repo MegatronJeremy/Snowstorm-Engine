@@ -5,7 +5,7 @@ namespace Snowstorm
 	struct CameraControllerComponent
 	{
 		bool RotationEnabled = true;
-		float ZoomSpeed = 5.0f;
+		float ZoomSpeed = 2.5f; //-- world units dollied per scroll notch (perspective); eased via ZoomSmoothing
 		float MoveSpeed = 5.0f;
 		float LookSensitivity = 0.1f; //-- degrees per pixel moved (1:1 mouse look)
 
@@ -23,5 +23,9 @@ namespace Snowstorm
 		//-- Zero disables smoothing on that channel.
 		float LookSmoothing = 30.0f;
 		float MoveSmoothing = 15.0f;
+		//-- Scroll-zoom glide decay (1/sec). Each scroll notch adds an impulse to a zoom velocity that
+		//-- coasts and decays at this rate, so dollying feels smooth instead of stepping per notch.
+		//-- Higher = snappier/shorter glide, lower = floatier. Zero = instant (old per-notch behavior).
+		float ZoomSmoothing = 12.0f;
 	};
 }

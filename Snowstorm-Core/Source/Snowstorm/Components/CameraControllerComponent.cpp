@@ -25,7 +25,8 @@ namespace Snowstorm
 		    .property("MaxMoveSpeed", &CameraControllerComponent::MaxMoveSpeed)(metadata("Min", 0.0f))
 		    // Exponential smoothing rates (1/sec); 0 disables smoothing on that channel, negative is invalid.
 		    .property("LookSmoothing", &CameraControllerComponent::LookSmoothing)(metadata("Min", 0.0f))
-		    .property("MoveSmoothing", &CameraControllerComponent::MoveSmoothing)(metadata("Min", 0.0f));
+		    .property("MoveSmoothing", &CameraControllerComponent::MoveSmoothing)(metadata("Min", 0.0f))
+		    .property("ZoomSmoothing", &CameraControllerComponent::ZoomSmoothing)(metadata("Min", 0.0f));
 	}
 
 	AUTO_REGISTER_COMPONENT(CameraControllerComponent);

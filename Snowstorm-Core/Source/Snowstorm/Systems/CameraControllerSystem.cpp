@@ -238,13 +238,39 @@ namespace Snowstorm
 				}
 				else if (isPerspective)
 				{
-					tr.Position += forward * scrollY * ctrl.ZoomSpeed;
+					// Perspective dolly: add an impulse to a zoom-glide velocity instead of teleporting the
+					// whole notch this frame (the old code did the full move instantly -> choppy, steppy zoom,
+					// the one camera channel with no smoothing). With exponential decay at rate ZoomSmoothing,
+					// a velocity impulse of (distance * rate) integrates to exactly `distance` of total travel,
+					// so each notch still dollies scrollY * ZoomSpeed units — just eased over ~1/rate seconds.
+					// ZoomSmoothing <= 0 -> snap (the original per-notch behavior, kept as an escape hatch).
+					const float notchDistance = scrollY * ctrl.ZoomSpeed;
+					if (ctrl.ZoomSmoothing > 0.0f)
+					{
+						rtState.ZoomVelocity += notchDistance * ctrl.ZoomSmoothing;
+					}
+					else
+					{
+						tr.Position += forward * notchDistance;
+					}
 				}
 				else
 				{
 					const float zoomFactor = 1.0f - (scrollY * ctrl.ZoomSpeed * 0.1f);
 					cam.OrthographicSize = glm::clamp(cam.OrthographicSize * zoomFactor, 0.25f, 100.0f);
 				}
+			}
+		}
+
+		// Integrate + decay the zoom glide every frame (independent of hover, so an in-flight dolly finishes
+		// smoothly even if the cursor leaves the viewport mid-coast). Move by the current velocity, then decay.
+		if (rtState.ZoomVelocity != 0.0f)
+		{
+			tr.Position += forward * rtState.ZoomVelocity * dt;
+			rtState.ZoomVelocity *= std::exp(-ctrl.ZoomSmoothing * dt);
+			if (std::abs(rtState.ZoomVelocity) < 1e-4f)
+			{
+				rtState.ZoomVelocity = 0.0f; // stop coasting once negligible (avoid endless tiny easing)
 			}
 		}
 
