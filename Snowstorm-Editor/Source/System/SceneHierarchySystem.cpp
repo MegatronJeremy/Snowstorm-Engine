@@ -618,21 +618,10 @@ namespace Snowstorm
 					}
 				} // Image-Based Lighting
 
-				// Developer/diagnostic toggles, not user-facing quality knobs — collapsed by default so they
-				// don't clutter the tuning surface. (#shader-opt) The shader debug switch is the Unreal
-				// r.Shaders.Optimize escape hatch.
-				if (ImGui::CollapsingHeader("Developer"))
-				{
-					// render.shaders.debug: off (default) = optimized SPIR-V; on = unoptimized (-Od) + debug info
-					// so a shader can be source-stepped in RenderDoc/PIX. Flipping it live re-keys the .spv cache
-					// and ShaderReloadSystem force-recompiles every shader next frame (brief hitch on the flip).
-					// Not a quality/perf knob you leave on — it makes every shader slower.
-					if (bool shadersDebug = CVars::ShadersDebug.Get(); ImGui::Checkbox("Shader Debug Info (-Od, for RenderDoc)", &shadersDebug))
-					{
-						CVars::ShadersDebug.Set(shadersDebug);
-					}
-					ImGui::TextDisabled("(recompiles all shaders; slower — turn off when done debugging)");
-				} // Developer
+				// render.shaders.debug used to live here as a live checkbox, but flipping it re-keys the .spv
+				// cache and synchronously recompiles every shader — a multi-second freeze. It's now startup-only
+				// (CVarFlags::ReadOnly, Unreal's r.Shaders.Optimize model): set it in SnowstormStartup.cfg / CLI
+				// and relaunch. The Debug > Console Variables panel shows it (disabled) for discoverability.
 
 				ImGui::Spacing();
 

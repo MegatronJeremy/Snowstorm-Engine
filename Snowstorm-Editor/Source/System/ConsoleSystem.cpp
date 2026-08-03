@@ -319,8 +319,18 @@ namespace Snowstorm
 
 		if (ICVar* cvar = CVarRegistry::Get().Find(verb))
 		{
-			cvar->SetFromString(rest);
-			SS_INFO("{0} = {1}", cvar->GetName(), cvar->GetValueString());
+			// Startup-only (ReadOnly) CVars are resolved once at launch; setting them at runtime has no effect,
+			// so reject rather than silently no-op (Unreal's ECVF_ReadOnly console behaviour).
+			if (cvar->IsReadOnly())
+			{
+				SS_WARN("{0} is startup-only — set it in SnowstormStartup.cfg / CLI and relaunch (current: {1})",
+				        cvar->GetName(), cvar->GetValueString());
+			}
+			else
+			{
+				cvar->SetFromString(rest);
+				SS_INFO("{0} = {1}", cvar->GetName(), cvar->GetValueString());
+			}
 		}
 		else
 		{

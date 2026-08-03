@@ -83,7 +83,14 @@ namespace Snowstorm
 
 		if (enableValidationLayers && !layersFound)
 		{
+			// In Debug the layer path is baked in (SS_VULKAN_LAYER_PATH) and set in-process by EntryPoint, so a
+			// missing layer here is a real misconfig worth a warning. In Release validation is deliberately not
+			// compiled in and the layers aren't shipped, so this is by-design, not a problem — log it at info.
+#ifdef SS_DEBUG
 			SS_CORE_WARN("Validation layers requested, but not available! Disabling...");
+#else
+			SS_CORE_INFO("Validation not compiled into this build (Release); skipping.");
+#endif
 			enableValidationLayers = false;
 		}
 
@@ -140,23 +147,34 @@ namespace Snowstorm
 			createInfo.enabledLayerCount = 0;
 		}
 
-		// Opt-in deeper validation when SS_VALIDATION_EXTRA is set (off by default - these add
-		// overhead and best-practices is noisy). Enables synchronization validation (barrier/
-		// semaphore/fence hazards) and best-practices (perf/usage foot-guns). GPU-assisted
-		// validation is intentionally left out here - it's much heavier; add it when needed.
-		const VkValidationFeatureEnableEXT enabledValidationFeatures[] = {
-		    VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
-		    VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
-		};
-		VkValidationFeaturesEXT validationFeatures{VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT};
-		validationFeatures.enabledValidationFeatureCount = static_cast<uint32_t>(std::size(enabledValidationFeatures));
-		validationFeatures.pEnabledValidationFeatures = enabledValidationFeatures;
-
+		// Opt-in deeper validation, built up from two independent tiers (both off by default — they add
+		// overhead and best-practices is noisy):
+		//   validation.extra -> synchronization (barrier/semaphore/fence hazards) + best-practices (foot-guns).
+		//   validation.gpu   -> GPU-assisted validation: instruments shaders/AS builds on the device to catch
+		//                       OOB descriptor / buffer-device-address access (a stale geometry-table read, a bad
+		//                       BLAS reference) that CPU-side validation can't see. Much heavier; separate tier.
+		std::vector<VkValidationFeatureEnableEXT> enabledValidationFeatures;
 		if (enableValidationLayers && CVars::ValidationExtra.Get())
+		{
+			enabledValidationFeatures.push_back(VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
+			enabledValidationFeatures.push_back(VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
+		}
+		if (enableValidationLayers && CVars::ValidationGpu.Get())
+		{
+			enabledValidationFeatures.push_back(VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT);
+			enabledValidationFeatures.push_back(VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT);
+		}
+
+		VkValidationFeaturesEXT validationFeatures{VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT};
+		validationFeatures.enabledValidationFeatureCount = static_cast<uint32_t>(enabledValidationFeatures.size());
+		validationFeatures.pEnabledValidationFeatures = enabledValidationFeatures.data();
+
+		if (!enabledValidationFeatures.empty())
 		{
 			validationFeatures.pNext = createInfo.pNext;
 			createInfo.pNext = &validationFeatures;
-			SS_CORE_INFO("Vulkan: extra validation enabled (synchronization + best-practices).");
+			SS_CORE_INFO("Vulkan: extra validation enabled (extra={}, gpu-assisted={}).",
+			             CVars::ValidationExtra.Get(), CVars::ValidationGpu.Get());
 		}
 
 		VK_CHECK(vkCreateInstance(&createInfo, nullptr, &m_Instance));

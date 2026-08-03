@@ -53,6 +53,15 @@ namespace Snowstorm
 				ImGui::PushID(name.c_str());
 				ImGui::SetNextItemWidth(160.0f);
 
+				// Startup-only (ReadOnly) CVars are shown but disabled — editing them at runtime has no effect
+				// (they're resolved once at launch), so a live widget would be misleading. Mirrors Unreal's
+				// ECVF_ReadOnly. The tooltip below tells the user to set it in the startup config + relaunch.
+				const bool readOnly = cvar->IsReadOnly();
+				if (readOnly)
+				{
+					ImGui::BeginDisabled();
+				}
+
 				switch (cvar->GetKind())
 				{
 				case CVarKind::Bool:
@@ -91,11 +100,20 @@ namespace Snowstorm
 				}
 				}
 
+				if (readOnly)
+				{
+					ImGui::EndDisabled();
+				}
+
 				ImGui::SameLine();
 				ImGui::TextUnformatted(name.c_str());
 				if (ImGui::IsItemHovered() && !cvar->GetDescription().empty())
 				{
-					ImGui::SetTooltip("%s", cvar->GetDescription().c_str());
+					// Append a startup-only note so the disabled widget's reason is discoverable on hover.
+					const std::string tip = readOnly
+					    ? cvar->GetDescription() + "\n\n[startup-only: set in SnowstormStartup.cfg / CLI and relaunch]"
+					    : cvar->GetDescription();
+					ImGui::SetTooltip("%s", tip.c_str());
 				}
 
 				ImGui::PopID();

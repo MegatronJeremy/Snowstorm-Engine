@@ -72,14 +72,22 @@ namespace Snowstorm::CVars
 	// Enable deeper Vulkan validation (synchronization + best-practices) at instance creation.
 	extern CVar<bool> ValidationExtra;
 
+	// Enable GPU-assisted validation (GPU-AV) at instance creation. Instruments shaders/AS builds on the
+	// device to catch out-of-bounds descriptor/buffer-device-address access that CPU-side validation can't
+	// see (e.g. a ray-query hit reading a stale geometry-table record, a bad BLAS reference). MUCH heavier
+	// than validation.extra (per-draw shader instrumentation + a reserved descriptor slot), so it's a
+	// separate opt-in tier — turn it on only when hunting an on-device fault (a DEVICE_LOST with no CPU-side
+	// validation message above it). Independent of validation.extra.
+	extern CVar<bool> ValidationGpu;
+
 	// Shader optimization escape hatch (Unreal r.Shaders.Optimize model). Off (default, ship behavior) =
 	// dxc-optimized SPIR-V in EVERY C++ config; on = unoptimized (-Od) + debug info (-Zi/-fspv-debug) so a
-	// dev can source-step a shader in RenderDoc/PIX. Read at compile time (VulkanShader), keys the .spv
-	// cache so opt/debug variants never collide, and flipping it live force-recompiles all shaders.
-	// Persisted (it's exposed in the Settings panel like the other quality toggles, so it should survive a
-	// restart and reset with "Reset Settings to Defaults"); the label warns it slows every shader, so a
-	// left-on state is visible rather than silent. RT permutations still drop -fspv-debug even here (dxc 1.9
-	// crash on -fspv-debug + inline ray query).
+	// dev can source-step a shader in RenderDoc/PIX. Read at compile time (VulkanShader), keys the .spv cache
+	// so opt/debug variants never collide. STARTUP-ONLY (CVarFlags::ReadOnly), like UE's r.Shaders.Optimize:
+	// resolved once at launch from SnowstormStartup.cfg / CLI, NOT live-toggled — flipping it re-keys the cache
+	// and recompiling every shader is a multi-second synchronous stall (the old live checkbox froze the editor).
+	// Not Persist: it's a dev flag, not a saved user setting. RT permutations still drop -fspv-debug even here
+	// (dxc 1.9 crash on -fspv-debug + inline ray query).
 	extern CVar<bool> ShadersDebug;
 
 	// One-shot bake tool: populate a fresh scene, serialize it to a .world under Assets/Scenes/, then

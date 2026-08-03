@@ -40,26 +40,10 @@ namespace Snowstorm
 			}
 		}
 
-		// render.shaders.debug live toggle (Unreal r.Shaders.Optimize): flipping it re-keys the .spv cache
-		// (optimized vs -Od SPIR-V), but that's NOT a source mtime change, so ReloadAll below won't catch it —
-		// force it explicitly, like the RT-permutation swap above. Cheap per-frame CVar read; seed the first
-		// frame from the current value so no spurious recompile happens at startup.
-		{
-			const bool wantDebug = CVars::ShadersDebug.Get();
-			if (!m_ShaderDebugInitialized)
-			{
-				m_LastShaderDebug = wantDebug;
-				m_ShaderDebugInitialized = true;
-			}
-			else if (wantDebug != m_LastShaderDebug)
-			{
-				SS_CORE_INFO("render.shaders.debug -> {}; recompiling all shaders ({})", wantDebug,
-				             wantDebug ? "unoptimized + debug info" : "optimized");
-				shaderLibrary.ForceRecompileAll();
-				needPipelineRebuild = true;
-				m_LastShaderDebug = wantDebug;
-			}
-		}
+		// render.shaders.debug is startup-only (CVarFlags::ReadOnly): resolved once at launch and keyed into the
+		// .spv cache at first compile, so there's no live flip to detect here. Recompiling every shader is a
+		// multi-second synchronous stall we deliberately don't do mid-session (Unreal's r.Shaders.Optimize
+		// model — the old live checkbox froze the editor). Change it in SnowstormStartup.cfg / CLI and relaunch.
 
 		static float timeSinceLastCheck = 0.0f;
 		timeSinceLastCheck += ts.GetSeconds();

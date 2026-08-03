@@ -4,11 +4,11 @@
 
 namespace Snowstorm::CVars
 {
-	CVar<int> SmokeFrames{"smoke.frames", 0, "Run N frames then exit cleanly (0 = until window closed)"};
+	CVar<int> SmokeFrames{"smoke.frames", 0, "Run N frames then exit cleanly (0 = until window closed)", CVarFlags::ReadOnly};
 
-	CVar<int> PerfBenchFrames{"perf.bench.frames", 0, "Headless GPU perf benchmark: run N frames accumulating per-pass GPU timings (past warmup), write averaged JSON to perf.bench.path, then exit (0 = off). Driven by Scripts/perf-bench.py."};
+	CVar<int> PerfBenchFrames{"perf.bench.frames", 0, "Headless GPU perf benchmark: run N frames accumulating per-pass GPU timings (past warmup), write averaged JSON to perf.bench.path, then exit (0 = off). Driven by Scripts/perf-bench.py.", CVarFlags::ReadOnly};
 
-	CVar<std::string> PerfBenchPath{"perf.bench.path", "perf-bench.json", "Output path for the perf.bench.frames JSON dump."};
+	CVar<std::string> PerfBenchPath{"perf.bench.path", "perf-bench.json", "Output path for the perf.bench.frames JSON dump.", CVarFlags::ReadOnly};
 
 	CVar<int> VSyncStress{"debug.vsync_stress", 0, "Toggle VSync every N frames (0 = off) to exercise swapchain recreation under validation — surfaces present-semaphore reuse bugs the steady-state smoke misses"};
 
@@ -18,34 +18,41 @@ namespace Snowstorm::CVars
 
 	CVar<bool> EcsParallel{"ecs.parallel", true, "Run data-parallel systems (System::ParallelForEach) across JobSystem workers (off = serial)"};
 
-	CVar<int> StressRotators{"stress.rotators", 0, "Bare Transform+Rotator entities the stress bake spawns (heavy data-parallel ECS workload for the #85 benchmark)"};
+	CVar<int> StressRotators{"stress.rotators", 0, "Bare Transform+Rotator entities the stress bake spawns (heavy data-parallel ECS workload for the #85 benchmark)", CVarFlags::ReadOnly};
 
-	CVar<int> StressUniqueDraws{"stress.uniquedraws", 0, "Unique-material cubes the stress bake spawns (each its own vkCmdDrawIndexed; measures whether draw submission bottlenecks)"};
+	CVar<int> StressUniqueDraws{"stress.uniquedraws", 0, "Unique-material cubes the stress bake spawns (each its own vkCmdDrawIndexed; measures whether draw submission bottlenecks)", CVarFlags::ReadOnly};
 
-	CVar<bool> EcsBenchmark{"ecs.benchmark", false, "Run the headless RotatorSystem serial-vs-parallel benchmark at startup, log a table, then exit (#85)"};
+	CVar<bool> EcsBenchmark{"ecs.benchmark", false, "Run the headless RotatorSystem serial-vs-parallel benchmark at startup, log a table, then exit (#85)", CVarFlags::ReadOnly};
 
-	CVar<int> ProfileCaptureFrames{"profile.capture_frames", 0, "Capture N frames of the chrome-tracing profile at startup then keep running (0 = editor-only)"};
+	CVar<int> ProfileCaptureFrames{"profile.capture_frames", 0, "Capture N frames of the chrome-tracing profile at startup then keep running (0 = editor-only)", CVarFlags::ReadOnly};
 
-	CVar<std::string> ProfileCapturePath{"profile.capture_path", "SnowstormCapture.json", "Output path for profile.capture_frames"};
+	CVar<std::string> ProfileCapturePath{"profile.capture_path", "SnowstormCapture.json", "Output path for profile.capture_frames", CVarFlags::ReadOnly};
 
-	CVar<bool> ValidationNonFatal{"validation.nonfatal", false, "Log Vulkan validation errors instead of asserting on the first"};
+	CVar<bool> ValidationNonFatal{"validation.nonfatal", false, "Log Vulkan validation errors instead of asserting on the first", CVarFlags::ReadOnly};
 
-	CVar<bool> ValidationExtra{"validation.extra", false, "Enable synchronization + best-practices Vulkan validation"};
+	CVar<bool> ValidationExtra{"validation.extra", false, "Enable synchronization + best-practices Vulkan validation", CVarFlags::ReadOnly};
 
-	CVar<bool> ShadersDebug{"render.shaders.debug", false, "Compile shaders unoptimized (-Od) with debug info for RenderDoc/PIX source-stepping (off = optimized, the ship default)", CVarFlags::Persist};
+	CVar<bool> ValidationGpu{"validation.gpu", false, "Enable GPU-assisted validation (instruments shaders/AS builds to catch on-device OOB descriptor/buffer-address access; much heavier than validation.extra)", CVarFlags::ReadOnly};
 
-	CVar<std::string> BakeScene{"scene.bake", "", "Bake a scene to Assets/Scenes/<name>.world then exit. Value: 'stress' (procedural) or a model path (.gltf/.glb/.obj/.fbx)"};
+	// render.shaders.debug is ReadOnly (startup-only), NOT Persist: it re-keys the .spv cache and recompiling
+	// every shader is a multi-second synchronous stall — so it's resolved once at launch (SnowstormStartup.cfg /
+	// CLI) like Unreal's r.Shaders.Optimize, not live-toggled from a settings checkbox mid-session.
+	CVar<bool> ShadersDebug{"render.shaders.debug", false, "Compile shaders unoptimized (-Od) with debug info for RenderDoc/PIX source-stepping (off = optimized, the ship default). Startup-only: set it in SnowstormStartup.cfg / CLI and relaunch.", CVarFlags::ReadOnly};
 
-	CVar<std::string> DumpMeshTangents{"debug.dump_mesh_tangents", "", "Analyze a model's UV/tangent structure across seams (#74) then exit. Value: model path"};
+	CVar<std::string> BakeScene{"scene.bake", "", "Bake a scene to Assets/Scenes/<name>.world then exit. Value: 'stress' (procedural) or a model path (.gltf/.glb/.obj/.fbx)", CVarFlags::ReadOnly};
+
+	CVar<std::string> DumpMeshTangents{"debug.dump_mesh_tangents", "", "Analyze a model's UV/tangent structure across seams (#74) then exit. Value: model path", CVarFlags::ReadOnly};
 
 	// User settings below are tagged CVarFlags::Persist: saved to / restored from the config file so they
-	// survive an editor restart. One-shot/dev CVars above (smoke/bake/validation/benchmark/startup) stay
-	// unflagged — they must remain CLI/env-driven and never leak into user config.
+	// survive an editor restart. One-shot/dev CVars above (smoke/bake/validation/benchmark) are tagged
+	// CVarFlags::ReadOnly — CLI/env/startup-config-driven, resolved once at launch, never runtime-editable.
 	CVar<bool> VSync{"display.vsync", true, "VSync on (FIFO, locked to refresh) or off (uncapped present)", CVarFlags::Persist};
 
-	CVar<std::string> StartupProject{"startup.project", "Projects/Sandbox/Sandbox.ssproj", "Path to the .ssproj loaded at startup (relative to the working directory = repo root). The engine boots this real project instead of synthesizing an implicit one at the CWD. If the file is missing/unreadable, falls back to an implicit CWD-rooted project so the engine still runs. Point --startup.project elsewhere to boot a different project."};
+	// startup.* select what boots — read once during application startup (before the editor exists), so they're
+	// ReadOnly: change them in SnowstormStartup.cfg / CLI and relaunch.
+	CVar<std::string> StartupProject{"startup.project", "Projects/Sandbox/Sandbox.ssproj", "Path to the .ssproj loaded at startup (relative to the working directory = repo root). The engine boots this real project instead of synthesizing an implicit one at the CWD. If the file is missing/unreadable, falls back to an implicit CWD-rooted project so the engine still runs. Point --startup.project elsewhere to boot a different project.", CVarFlags::ReadOnly};
 
-	CVar<std::string> StartupScene{"startup.scene", "", "Path to a .world to load at startup (empty = the active project's StartScene); e.g. Projects/Sandbox/assets/scenes/Sponza.world"};
+	CVar<std::string> StartupScene{"startup.scene", "", "Path to a .world to load at startup (empty = the active project's StartScene); e.g. Projects/Sandbox/assets/scenes/Sponza.world", CVarFlags::ReadOnly};
 
 	CVar<float> Exposure{"render.exposure", 1.0f, "Linear exposure multiplier applied before tonemapping (1.0 = neutral)", CVarFlags::Persist};
 

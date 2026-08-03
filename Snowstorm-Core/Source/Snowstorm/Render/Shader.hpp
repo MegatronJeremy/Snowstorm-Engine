@@ -102,12 +102,6 @@ namespace Snowstorm
 
 		void ReloadAll();
 
-		// Unconditionally recompile every loaded shader, ignoring mtimes (unlike ReloadAll, which self-skips
-		// unchanged sources). For a compile-input change that ISN'T a file edit — e.g. flipping
-		// render.shaders.debug, which re-keys the .spv cache — so ReloadAll would see no newer mtime and do
-		// nothing. Each Recompile() bumps the shader's version; the caller then rebuilds live pipelines.
-		void ForceRecompileAll();
-
 		// Async-compile progress for a loading bar (same idiom as AssetManagerSingleton's
 		// PendingLoadCount/Total). PendingCompileCount = shaders still compiling right now; PendingCompileTotal
 		// = high-water mark since the queue was last empty, so a bar reads "compiled = total - pending".

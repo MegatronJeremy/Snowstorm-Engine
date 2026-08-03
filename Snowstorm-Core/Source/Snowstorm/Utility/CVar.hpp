@@ -36,10 +36,19 @@ namespace Snowstorm
 	// Behaviour flags for a CVar. Persist = save/restore this CVar through the config file
 	// (CVarRegistry::Save/LoadConfig). Opt-in: user-facing settings (render.*, display.*) set it; one-shot
 	// dev flags (smoke.frames, scene.bake, validation.*) leave it off so they never leak into user config.
+	//
+	// ReadOnly = resolved once at STARTUP (config/env/CLI) and NOT editable at runtime — the editor's console
+	// + CVar panel refuse to change it (they show it disabled with a "set it in SnowstormStartup.cfg / CLI and
+	// relaunch" hint). Mirrors Unreal's ECVF_ReadOnly. Orthogonal to Persist: startup-only flags whose live
+	// value would have no effect (validation.*, render.shaders.debug, smoke.*, startup.*, scene.bake, ...) —
+	// changing them mid-session is misleading, so we reject it instead of silently no-op'ing. This gates only
+	// the two runtime editors; the startup path (LoadConfig/env/CLI) still sets read-only CVars, exactly like
+	// UE lets config/cmdline set an ECVF_ReadOnly cvar at load time.
 	enum class CVarFlags : uint8_t
 	{
 		None = 0,
 		Persist = 1 << 0,
+		ReadOnly = 1 << 1,
 	};
 
 	inline CVarFlags operator&(CVarFlags a, CVarFlags b)
@@ -65,6 +74,10 @@ namespace Snowstorm
 
 		// True if this CVar is saved to / restored from the config file (CVarFlags::Persist).
 		[[nodiscard]] bool IsPersistent() const { return (m_Flags & CVarFlags::Persist) == CVarFlags::Persist; }
+
+		// True if this CVar is startup-only (CVarFlags::ReadOnly): resolved at launch, not editable at runtime.
+		// The console + CVar panel honor this; the startup path (LoadConfig/env/CLI) ignores it and still sets.
+		[[nodiscard]] bool IsReadOnly() const { return (m_Flags & CVarFlags::ReadOnly) == CVarFlags::ReadOnly; }
 
 		virtual std::string GetValueString() const = 0;
 		virtual std::string GetTypeName() const = 0;
