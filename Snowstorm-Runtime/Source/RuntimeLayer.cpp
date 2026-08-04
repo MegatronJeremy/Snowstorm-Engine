@@ -3,6 +3,7 @@
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Core/EnginePaths.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Project/Project.hpp"
 #include "Snowstorm/Project/ProjectSerializer.hpp"
@@ -31,12 +32,15 @@ namespace Snowstorm
 	{
 		m_World = CreateRef<World>();
 
-		// Boot the real startup project (startup.project, default Projects/Sandbox/Sandbox.ssproj), same as
-		// the editor. Content resolves under the project dir; engine assets (shaders/caches) stay CWD-relative.
-		// Fall back to a CWD-rooted implicit project if the .ssproj is missing (fail-soft).
+		// Boot the real startup project, same as the editor. Runtime has no picker and no recent-project list,
+		// so an empty startup.project resolves to the default Sandbox project rather than nothing. Content
+		// resolves under the project dir; engine assets (shaders/caches) stay CWD-relative. Fall back to a
+		// CWD-rooted implicit project if the .ssproj is missing (fail-soft).
 		if (!Project::GetActive())
 		{
-			const std::filesystem::path ssproj = CVars::StartupProject.Get();
+			const std::filesystem::path ssproj = CVars::StartupProject.Get().empty()
+			                                         ? EnginePaths::DefaultProjectFile()
+			                                         : std::filesystem::path(CVars::StartupProject.Get());
 			Ref<Project> project = CreateRef<Project>();
 			if (!ssproj.empty() && std::filesystem::exists(ssproj) && ProjectSerializer::Deserialize(*project, ssproj))
 			{

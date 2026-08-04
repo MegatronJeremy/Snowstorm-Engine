@@ -15,6 +15,7 @@
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/JobSystem.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Core/EnginePaths.hpp"
 #include "Snowstorm/Utility/CVar.hpp"
 #include "Snowstorm/Core/MeshDiagnostics.hpp"
 #include "Snowstorm/Render/Neural/NeuralWeights.hpp"
@@ -85,9 +86,16 @@ namespace Snowstorm
 		// Apply the startup VSync preference (backend defaults to FIFO/on).
 		Renderer::SetVSync(CVars::VSync.Get());
 
-		const bool explicitProject = !CVars::StartupProject.IsAtDefault();
-		m_ShowProjectStartScreen = CVars::ForceProjectPicker.Get() ||
-		                           (!explicitProject && EditorPreferences::RecentProjects().empty());
+		// The project picker is INTERACTIVE-only. In an unattended run (smoke, perf-bench, dataset export, …)
+		// nobody can click it, so showing it boots an empty world that renders nothing — and a harness that
+		// only checks "did it crash?" reports PASS while measuring nothing. Suppress it and resolve a project
+		// deterministically instead, the way Unreal (-unattended) and Unity (-batchmode) suppress modal UI.
+		const bool interactive = !CVars::IsUnattended();
+		const bool explicitProject = !CVars::StartupProject.Get().empty();
+		const bool hasRecentProject = !EditorPreferences::RecentProjects().empty();
+
+		m_ShowProjectStartScreen =
+		    interactive && (CVars::ForceProjectPicker.Get() || (!explicitProject && !hasRecentProject));
 		if (m_ShowProjectStartScreen)
 		{
 			Project::SetActive(nullptr);
@@ -96,11 +104,43 @@ namespace Snowstorm
 			return;
 		}
 
-		const std::filesystem::path ssproj = explicitProject ? std::filesystem::path(CVars::StartupProject.Get())
-		                                                     : EditorPreferences::RecentProjects().front().Path;
+		// Resolution order: explicit startup.project -> the most recent project (interactive only; an
+		// unattended run must not depend on this machine's editor preferences) -> the default Sandbox project,
+		// which is what keeps the headless harnesses zero-config.
+		std::filesystem::path ssproj;
+		if (explicitProject)
+		{
+			ssproj = CVars::StartupProject.Get();
+		}
+		else if (interactive && hasRecentProject)
+		{
+			ssproj = EditorPreferences::RecentProjects().front().Path;
+		}
+		else
+		{
+			// INFO, not WARN: for an unattended run this is the documented zero-config path, so warning here
+			// would make every clean smoke/perf-bench run trip --warnings-fail. It is still never silent.
+			ssproj = EnginePaths::DefaultProjectFile();
+			SS_CORE_INFO("No startup.project set; using the default project '{}'.", ssproj.string());
+		}
+
 		Ref<Project> project = CreateRef<Project>();
 		if (!std::filesystem::is_regular_file(ssproj) || !ProjectSerializer::Deserialize(*project, ssproj))
 		{
+			// Unattended: there is no picker to fall back to, and an empty world would let the run "pass"
+			// having rendered nothing. Fail loud (the harnesses gate on [error]) and stop instead.
+			if (!interactive)
+			{
+				SS_CORE_ERROR("Could not open project '{}', and the project picker is unavailable in an "
+				              "unattended run; aborting. Point --startup.project at a valid .ssproj.",
+				              ssproj.string());
+				Project::SetActive(nullptr);
+				m_ActiveWorld = CreateRef<World>();
+				RegisterCoreSystems(*m_ActiveWorld);
+				Application::Get().Close();
+				return;
+			}
+
 			SS_CORE_WARN("Could not auto-open project '{}'; showing the project picker.", ssproj.string());
 			Project::SetActive(nullptr);
 			m_ShowProjectStartScreen = true;
@@ -110,6 +150,10 @@ namespace Snowstorm
 		}
 
 		Project::SetActive(project);
+		// Positive confirmation of what actually booted, on every path (explicit / recent / default). A
+		// headless run's log has no other way to say WHICH project it measured — Runtime logs the same line.
+		SS_CORE_INFO("Loaded startup project '{}' (dir '{}')", ssproj.string(),
+		             project->GetProjectDirectory().string());
 		EditorPreferences::RecordProject(project->GetName(), ssproj);
 		m_ActiveWorld = CreateRef<World>();
 
@@ -707,12 +751,26 @@ namespace Snowstorm
 		//
 		// Optional startup-scene override (CVar startup.scene / env SS_STARTUP_SCENE): boot a chosen scene
 		// headlessly (e.g. Sponza for the smoke harness). Existence is checked now; the load happens in
-		// the frame loop. If the override is missing we fall through to the default.
-		if (const std::string& overridePath = CVars::StartupScene.Get();
-		    !overridePath.empty() && std::filesystem::exists(overridePath))
+		// the frame loop. If the override is missing we fall through to the default — but never silently:
+		// an unattended run that measures the WRONG scene is a corrupt measurement, not a soft failure.
+		if (const std::string& overridePath = CVars::StartupScene.Get(); !overridePath.empty())
 		{
-			RequestSceneLoad(overridePath);
-			return;
+			if (std::filesystem::exists(overridePath))
+			{
+				RequestSceneLoad(overridePath);
+				return;
+			}
+
+			if (CVars::IsUnattended())
+			{
+				SS_CORE_ERROR("startup.scene '{}' does not exist; refusing to silently measure a different "
+				              "scene in an unattended run.",
+				              overridePath);
+				Application::Get().Close();
+				return;
+			}
+			SS_CORE_WARN("startup.scene '{}' does not exist; falling back to the project's start scene.",
+			             overridePath);
 		}
 
 		const std::string startupScenePath = Project::GetActive()->GetStartScenePath().string();

@@ -45,3 +45,15 @@ TEST_CASE("EnginePaths returns empty when no engine marker exists", "[core][path
 
 	REQUIRE(Snowstorm::EnginePaths::FindRootFrom(start).empty());
 }
+
+TEST_CASE("EnginePaths::DefaultProjectFile is a root-relative .ssproj", "[core][paths]")
+{
+	// The fallback Runtime and unattended editor runs boot when startup.project is empty. It must be a real
+	// root-anchored .ssproj, never a CWD-relative guess (the implicit-project behaviour #105 retired).
+	const std::filesystem::path defaultProject = Snowstorm::EnginePaths::DefaultProjectFile();
+
+	REQUIRE(defaultProject.extension() == ".ssproj");
+	REQUIRE(defaultProject.is_absolute());
+	REQUIRE(defaultProject.lexically_relative(Snowstorm::EnginePaths::Root()) ==
+	        std::filesystem::path("Projects") / "Sandbox" / "Sandbox.ssproj");
+}
