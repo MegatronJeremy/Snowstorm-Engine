@@ -16,6 +16,7 @@
 #include "Snowstorm/Utility/FileDialog.hpp"
 #include "Singletons/EditorNotificationsSingleton.hpp"
 #include "Singletons/EditorStatusBarSingleton.hpp"
+#include "Preferences/EditorPreferences.hpp"
 
 #include <imgui.h>
 
@@ -145,6 +146,18 @@ namespace Snowstorm
 					}
 				}
 
+				if (ImGui::BeginMenu("Recent Projects", !EditorPreferences::RecentProjects().empty()))
+				{
+					for (const RecentProject& recent : EditorPreferences::RecentProjects())
+					{
+						if (ImGui::MenuItem(recent.Name.c_str(), recent.Path.string().c_str()) && cmds.OpenProject)
+						{
+							cmds.OpenProject(recent.Path);
+						}
+					}
+					ImGui::EndMenu();
+				}
+
 				if (ImGui::MenuItem("Save Project", nullptr, false, static_cast<bool>(cmds.SaveProject)))
 				{
 					if (cmds.SaveProject)
@@ -192,7 +205,7 @@ namespace Snowstorm
 
 				ImGui::Separator();
 
-				if (ImGui::MenuItem("Import Model..."))
+				if (ImGui::MenuItem("Import Asset..."))
 				{
 					m_ShowImportPopup = true;
 				}
@@ -453,7 +466,7 @@ namespace Snowstorm
 		// Opening must happen outside the menu (the menu closes on click); flag-then-open here.
 		if (m_ShowImportPopup)
 		{
-			ImGui::OpenPopup("Import Model");
+			ImGui::OpenPopup("Import Asset");
 			m_ShowImportPopup = false;
 		}
 
@@ -461,9 +474,9 @@ namespace Snowstorm
 		const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
 		ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 
-		if (ImGui::BeginPopupModal("Import Model", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+		if (ImGui::BeginPopupModal("Import Asset", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
 		{
-			ImGui::TextUnformatted("Model file to import into the project:");
+			ImGui::TextUnformatted("Asset file to import into the project:");
 			ImGui::SetNextItemWidth(420.0f);
 			ImGui::InputText("##importpath", m_ImportPathBuffer, sizeof(m_ImportPathBuffer));
 
@@ -471,7 +484,12 @@ namespace Snowstorm
 			if (ImGui::Button("..."))
 			{
 				if (const std::filesystem::path picked = FileDialog::OpenFile(
-				        {{"Wavefront OBJ", "obj"}, {"FBX", "fbx"}, {"glTF", "gltf"}, {"glTF Binary", "glb"}});
+				        {{"Supported Assets", "obj;fbx;gltf;glb;png;jpg;jpeg;tga;dds;bmp;ssmat;hlsl;world"},
+				         {"Model", "obj;fbx;gltf;glb"},
+				         {"Texture", "png;jpg;jpeg;tga;dds;bmp"},
+				         {"Material", "ssmat"},
+				         {"Shader", "hlsl"},
+				         {"Scene", "world"}});
 				    !picked.empty())
 				{
 					const std::string pickedStr = picked.string();
@@ -479,7 +497,7 @@ namespace Snowstorm
 				}
 			}
 
-			ImGui::TextDisabled("The model and its textures are copied into the project's assets/meshes/ folder.");
+			ImGui::TextDisabled("The file is copied into the matching project asset folder and registered.");
 
 			ImGui::Separator();
 
@@ -488,11 +506,10 @@ namespace Snowstorm
 				ImGui::BeginDisabled();
 			if (ImGui::Button("Import", ImVec2(120.0f, 0.0f)))
 			{
-				auto& assets = SingletonView<AssetManagerSingleton>();
-				const std::vector<Entity> created = assets.ImportModel(m_ImportPathBuffer);
-				if (!created.empty())
+				auto& cmds = SingletonView<EditorCommandsSingleton>();
+				if (cmds.ImportAsset && cmds.ImportAsset(m_ImportPathBuffer))
 				{
-					notify.Push("Imported " + std::to_string(created.size()) + " parts", EditorToastType::Success);
+					notify.Push("Asset imported", EditorToastType::Success);
 					m_ImportPathBuffer[0] = '\0';
 					ImGui::CloseCurrentPopup();
 				}

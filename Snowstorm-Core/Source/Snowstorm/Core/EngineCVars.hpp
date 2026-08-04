@@ -108,10 +108,21 @@ namespace Snowstorm::CVars
 	// (MAILBOX/IMMEDIATE). Runtime-toggleable from the editor's Settings panel.
 	extern CVar<bool> VSync;
 
-	// The .ssproj loaded at startup (default Projects/Sandbox/Sandbox.ssproj) — the engine boots this real
-	// project instead of synthesizing an implicit one at the CWD. Falls back to a CWD-rooted implicit
-	// project if the file is missing, so the engine still runs. Editor + Runtime both honor it.
+	// True when the process is running WITHOUT a human: any one-shot/automated mode is active (smoke,
+	// perf-bench, dataset export, the ECS benchmark, a bake/dump tool). The single predicate every path that
+	// would otherwise BLOCK ON A HUMAN must check, so an automated run can never stall on — or silently no-op
+	// into — a dialog, prompt, or picker. Mirrors Unreal's FApp::IsUnattended() (-unattended) and Unity's
+	// Application.isBatchMode (-batchmode); like those, it suppresses interactive UI, not rendering.
+	[[nodiscard]] bool IsUnattended();
+
+	// Explicit .ssproj to boot. EMPTY (default) is the "none requested" sentinel, matching StartupScene below —
+	// only then may the editor fall back to its recent-project list / the picker. Anything that needs a project
+	// when this is empty (Runtime, unattended editor runs) resolves EnginePaths::DefaultProjectFile().
 	extern CVar<std::string> StartupProject;
+
+	// Force the editor's project picker instead of auto-opening the most recent project. Interactive-only:
+	// IsUnattended() runs ignore it (a picker nobody can click is a hang, not a prompt).
+	extern CVar<bool> ForceProjectPicker;
 
 	// Override the scene loaded at startup (path to a .world). Empty (default) uses the active project's
 	// StartScene. Lets the smoke harness boot any scene headlessly — e.g. load Sponza to exercise

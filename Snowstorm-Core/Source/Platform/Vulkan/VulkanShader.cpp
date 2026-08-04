@@ -1,6 +1,7 @@
 #include "VulkanShader.hpp"
 
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Core/EnginePaths.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 
@@ -53,48 +54,9 @@ namespace Snowstorm
 			return {buf};
 		}
 
-		// Directory of the running executable (…/build/<target>/<config>/Foo.exe → that folder).
-		fs::path GetExeDir()
-		{
-			wchar_t buf[MAX_PATH]{};
-			const DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
-			if (n == 0 || n == MAX_PATH)
-			{
-				return fs::current_path(); // fall back to CWD if the query fails/truncates
-			}
-			return fs::path(buf).parent_path();
-		}
-
-		// Root that holds the engine's own assets (Engine/Shaders, Engine/cache) and Tools/dxc. Engine
-		// assets are NOT project content (that lives under Projects/*/assets, resolved via Project) — they
-		// ship with the engine, so they resolve relative to the EXECUTABLE, not the working directory: a
-		// moved/packaged exe still finds its shaders. Walk up from the exe dir until an "Engine" folder is
-		// found (repo root in dev: …/build/<t>/<cfg>/exe → repo root; a shipped layout puts Engine/ next to
-		// the exe). Falls back to the CWD if no marker is found (the old behavior), so nothing hard-breaks.
-		const fs::path& GetEngineRoot()
-		{
-			static const fs::path root = []
-			{
-				std::error_code ec;
-				for (fs::path dir = GetExeDir(); !dir.empty(); dir = dir.parent_path())
-				{
-					if (fs::exists(dir / "Engine" / "Shaders", ec))
-					{
-						return dir;
-					}
-					if (dir == dir.root_path())
-					{
-						break;
-					}
-				}
-				return fs::current_path();
-			}();
-			return root;
-		}
-
 		fs::path GetDxcExePath()
 		{
-			return GetEngineRoot() / "Tools" / "dxc" / "dxc.exe";
+			return EnginePaths::Root() / "Tools" / "dxc" / "dxc.exe";
 		}
 
 		// Fold every shared .hlsli header into the cache key. The cache key otherwise hashes only the
@@ -106,7 +68,7 @@ namespace Snowstorm
 		// smaller version that catches any header edit. Headers are sorted so the hash is order-stable.
 		uint64_t HashIncludeHeaders()
 		{
-			const fs::path includeDir = GetEngineRoot() / "Engine" / "Shaders" / "Include";
+			const fs::path includeDir = EnginePaths::ShadersDirectory() / "Include";
 			std::error_code ec;
 			if (!fs::exists(includeDir, ec))
 			{
@@ -134,7 +96,7 @@ namespace Snowstorm
 
 		fs::path GetShaderCacheDir()
 		{
-			return GetEngineRoot() / "Engine" / "cache" / "shaders";
+			return EnginePaths::CacheDirectory() / "shaders";
 		}
 
 		std::wstring QuoteArg(const std::wstring& s)
@@ -278,7 +240,7 @@ namespace Snowstorm
 			// (relative-to-file, so the IDE resolves them too — a bare "Foo.hlsli" needs the -I flag the IDE
 			// doesn't see). DXC also resolves quote-includes relative to the including file, so this -I is a
 			// belt-and-suspenders fallback.
-			const fs::path includePath = GetEngineRoot() / "Engine" / "Shaders";
+			const fs::path includePath = EnginePaths::ShadersDirectory();
 			const std::wstring includePathW = includePath.wstring();
 
 			std::wstring cmd;
@@ -394,7 +356,7 @@ namespace Snowstorm
 			fs::path srcPath(sourcePath);
 			if (srcPath.is_relative())
 			{
-				srcPath = GetEngineRoot() / srcPath;
+				srcPath = EnginePaths::Root() / srcPath;
 			}
 			const fs::path dxcExe = GetDxcExePath();
 			const fs::path cacheDir = GetShaderCacheDir();

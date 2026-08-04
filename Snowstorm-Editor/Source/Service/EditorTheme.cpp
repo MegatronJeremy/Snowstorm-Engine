@@ -1,4 +1,5 @@
 #include "EditorTheme.hpp"
+#include "Snowstorm/Core/EnginePaths.hpp"
 
 #include "Snowstorm/Core/Log.hpp"
 
@@ -139,23 +140,24 @@ namespace Snowstorm::EditorTheme
 	{
 		// Try a few common names so dropping any one of them into Engine/Fonts just works.
 		static constexpr std::array candidates = {
-		    "Engine/Fonts/ShareTechMono-Regular.ttf",
-		    "Engine/Fonts/JetBrainsMono-Regular.ttf",
-		    "Engine/Fonts/IBMPlexMono-Regular.ttf",
-		    "Engine/Fonts/Hack-Regular.ttf",
+		    "ShareTechMono-Regular.ttf",
+		    "JetBrainsMono-Regular.ttf",
+		    "IBMPlexMono-Regular.ttf",
+		    "Hack-Regular.ttf",
 		};
 
-		for (const char* path : candidates)
+		for (const char* fileName : candidates)
 		{
+			const std::filesystem::path path = EnginePaths::FontsDirectory() / fileName;
 			if (std::filesystem::exists(path))
 			{
 				ImGuiIO& io = ImGui::GetIO();
-				if (io.Fonts->AddFontFromFileTTF(path, 16.0f) != nullptr)
+				if (io.Fonts->AddFontFromFileTTF(path.string().c_str(), 16.0f) != nullptr)
 				{
-					SS_CORE_INFO("Editor theme: loaded monospace font '{}'.", path);
+					SS_CORE_INFO("Editor theme: loaded monospace font '{}'.", path.string());
 					return;
 				}
-				SS_CORE_WARN("Editor theme: failed to load font '{}'.", path);
+				SS_CORE_WARN("Editor theme: failed to load font '{}'.", path.string());
 			}
 		}
 

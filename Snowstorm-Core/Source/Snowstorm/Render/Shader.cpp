@@ -5,6 +5,7 @@
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/JobSystem.hpp"
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Core/EnginePaths.hpp"
 
 #include "RendererAPI.hpp"
 
@@ -13,6 +14,19 @@
 
 namespace Snowstorm
 {
+	namespace
+	{
+		std::filesystem::file_time_type ShaderTimestamp(const std::string& sourcePath)
+		{
+			std::filesystem::path path = sourcePath;
+			if (path.is_relative())
+				path = EnginePaths::Root() / path;
+			std::error_code ec;
+			const auto timestamp = std::filesystem::last_write_time(path, ec);
+			return ec ? std::filesystem::file_time_type{} : timestamp;
+		}
+	}
+
 	Ref<Shader> Shader::Create(const std::string& filepath)
 	{
 		switch (RendererAPI::GetAPI())
@@ -78,7 +92,7 @@ namespace Snowstorm
 		Add(shader, filepath);
 		SubmitAsyncCompile(shader);
 
-		m_LastModifications[filepath] = std::filesystem::last_write_time(filepath);
+		m_LastModifications[filepath] = ShaderTimestamp(filepath);
 
 		return shader;
 	}
@@ -97,8 +111,7 @@ namespace Snowstorm
 		Add(shader, key);
 		SubmitAsyncCompile(shader);
 
-		m_LastModifications[key] = std::max(std::filesystem::last_write_time(vertPath),
-		                                    std::filesystem::last_write_time(fragPath));
+		m_LastModifications[key] = std::max(ShaderTimestamp(vertPath), ShaderTimestamp(fragPath));
 
 		return shader;
 	}
@@ -158,12 +171,11 @@ namespace Snowstorm
 			const size_t sep = key.find('|');
 			if (sep == std::string::npos)
 			{
-				newest = std::filesystem::last_write_time(key);
+				newest = ShaderTimestamp(key);
 			}
 			else
 			{
-				newest = std::max(std::filesystem::last_write_time(key.substr(0, sep)),
-				                  std::filesystem::last_write_time(key.substr(sep + 1)));
+				newest = std::max(ShaderTimestamp(key.substr(0, sep)), ShaderTimestamp(key.substr(sep + 1)));
 			}
 
 			if (newest > lastModified)

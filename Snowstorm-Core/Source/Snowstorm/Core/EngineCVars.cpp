@@ -50,7 +50,13 @@ namespace Snowstorm::CVars
 
 	// startup.* select what boots — read once during application startup (before the editor exists), so they're
 	// ReadOnly: change them in SnowstormStartup.cfg / CLI and relaunch.
-	CVar<std::string> StartupProject{"startup.project", "Projects/Sandbox/Sandbox.ssproj", "Path to the .ssproj loaded at startup (relative to the working directory = repo root). The engine boots this real project instead of synthesizing an implicit one at the CWD. If the file is missing/unreadable, falls back to an implicit CWD-rooted project so the engine still runs. Point --startup.project elsewhere to boot a different project.", CVarFlags::ReadOnly};
+	// Empty default is a SENTINEL meaning "no project explicitly requested" (the same convention startup.scene
+	// already uses), NOT a missing default. A real path as the default made "explicitly set to the Sandbox
+	// project" indistinguishable from "unset" — IsAtDefault() reported true either way, so SS_STARTUP_PROJECT
+	// was silently ignored. The fallback when it IS empty lives in EnginePaths::DefaultProjectFile().
+	CVar<std::string> StartupProject{"startup.project", "", "Explicit .ssproj startup override, e.g. Projects/Sandbox/Sandbox.ssproj. Empty = none requested: the editor reopens its most recent project (picker on a fresh install), Runtime and unattended runs fall back to the default Sandbox project.", CVarFlags::ReadOnly};
+
+	CVar<bool> ForceProjectPicker{"startup.project_picker", false, "Show the project picker at editor startup instead of auto-opening the most recent project. Ignored in unattended runs (smoke/perf-bench/dataset export), which have nobody to click it.", CVarFlags::ReadOnly};
 
 	CVar<std::string> StartupScene{"startup.scene", "", "Path to a .world to load at startup (empty = the active project's StartScene); e.g. Projects/Sandbox/assets/scenes/Sponza.world", CVarFlags::ReadOnly};
 
@@ -185,6 +191,14 @@ namespace Snowstorm::CVars
 	CVar<float> GIDenoiseVariance{"render.gi.denoise.variance", 4.0f, "SVGF variance-guided à-trous luminance-phi for GI (#129 Inc 3b): scales the luminance edge-stop by local noise so the filter widens in noisy/disoccluded regions, tight where converged. 0 = off (fixed depth+normal kernel). ~2-8 typical; higher = more adaptive blur.", CVarFlags::Persist};
 
 	CVar<float> AOScale{"render.ao.scale", 0.5f, "RT AO internal resolution: the RTAO occlusion trace runs at this fraction of viewport res (0.5 = quarter the pixels = ~4x cheaper), then a depth-aware bilateral upsample restores full res (#126). 1.0 = full-res reference. Clamped to [0.25, 1.0].", CVarFlags::Persist};
+
+	bool IsUnattended()
+	{
+		// Every mode below is startup-only (CVarFlags::ReadOnly), so this predicate is constant for the
+		// process lifetime and safe to call from any bootstrap path.
+		return SmokeFrames.Get() > 0 || PerfBenchFrames.Get() > 0 || DatasetExport.Get() || EcsBenchmark.Get() ||
+		       !BakeScene.Get().empty() || !DumpMeshTangents.Get().empty() || !NeuralDumpIdentity.Get().empty();
+	}
 
 	float ClampedRenderScale()
 	{

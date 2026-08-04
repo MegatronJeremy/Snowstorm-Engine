@@ -22,13 +22,15 @@ namespace Snowstorm
 		bool CreateProject(const std::filesystem::path& directory, const std::string& name);
 
 		// Load a .ssproj, make it the active Project, and replace the active World/scene/asset registry
-		// with the newly-opened project's. Mirrors OnAttach's bootstrap, just for an explicit project
-		// instead of the implicit working-directory one. Returns false on a bad/missing .ssproj.
+		// with the newly-opened project's. Used by both the project start screen and in-editor switching.
+		// Returns false on a bad/missing .ssproj.
 		bool OpenProject(const std::filesystem::path& ssprojPath);
 
 		// Serialize the active Project's ProjectConfig back to its .ssproj. Does NOT save the active
 		// scene (call SaveActiveScene separately, or see CloseProject which does both).
 		bool SaveProject() const;
+		bool ImportAsset(const std::filesystem::path& sourcePath) const;
+		void DrawProjectStartScreen();
 
 		// Save the project file (NOT the scene — unsaved scene edits are the user's call to keep or
 		// discard via Ctrl+S), then release the active World/Project. Called by OpenProject to tear
@@ -45,7 +47,7 @@ namespace Snowstorm
 		// asset registry, inspector resolver hooks (SetAssetNameResolver/SetAssetListProvider — these
 		// capture the World by raw pointer, so they must be re-bound whenever m_ActiveWorld changes),
 		// editor commands, engine+editor systems, persistent camera/viewport. Called from OnAttach
-		// (implicit bootstrap project) — OpenProject should call it too after swapping m_ActiveWorld,
+		// (auto-opened project) — OpenProject should call it too after swapping m_ActiveWorld,
 		// so there is exactly one place that knows how to wire up a World.
 		void InitializeActiveWorld();
 
@@ -132,5 +134,10 @@ namespace Snowstorm
 		// last frame's mode so OnUpdate can detect the edge.
 		bool m_WasPlaying = false;
 		std::string m_PlaySnapshot;
+
+		bool m_ShowProjectStartScreen = false;
+		bool m_OpenStartScreenNewProject = false;
+		char m_StartProjectName[128] = {};
+		char m_StartProjectLocation[512] = {};
 	};
 }

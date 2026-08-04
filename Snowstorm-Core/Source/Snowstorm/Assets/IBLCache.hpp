@@ -37,7 +37,7 @@ namespace Snowstorm
 	class IBLCacheIO
 	{
 	public:
-		// Engine/cache/ibl/<envHash>.ssibl (CWD-relative, gitignored — same convention as the texture/mesh caches).
+		// Engine/cache/ibl/<envHash>.ssibl (engine-root-relative, gitignored — same convention as texture/mesh).
 		static std::filesystem::path GetCachePath(uint64_t envHash);
 
 		// Returns the cooked maps if a fresh, valid, matching-dimensions blob exists for envHash; else nullopt

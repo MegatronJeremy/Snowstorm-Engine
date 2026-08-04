@@ -4,6 +4,7 @@
 #include "Snowstorm/Events/ApplicationEvent.hpp"
 #include "Snowstorm/Events/KeyEvent.hpp"
 #include "Snowstorm/Events/MouseEvent.hpp"
+#include "Snowstorm/Input/DroppedFiles.hpp"
 
 #include "Snowstorm/Render/RendererAPI.hpp"
 
@@ -124,26 +125,24 @@ namespace Snowstorm
 
 		// Set GLFW callbacks
 		glfwSetWindowSizeCallback(m_Window, [](GLFWwindow* window, const int width, const int height)
-		{
+		                          {
 			WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
 			data.Width = width;
 			data.Height = height;
 
 			WindowResizeEvent event(width, height);
-			data.EventCallback(event);
-		});
+			data.EventCallback(event); });
 
 		glfwSetWindowCloseCallback(m_Window, [](GLFWwindow* window)
-		{
+		                           {
 			const WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
 			WindowCloseEvent event;
 
-			data.EventCallback(event);
-		});
+			data.EventCallback(event); });
 
 		glfwSetKeyCallback(m_Window, [](GLFWwindow* window, const int key, const int scanCode, const int action,
 		                                const int mods)
-		{
+		                   {
 			const WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
 
 			switch (action)
@@ -168,18 +167,16 @@ namespace Snowstorm
 				}
 			default:
 				SS_CORE_WARN("Unrecognized key action.");
-			}
-		});
+			} });
 
 		glfwSetCharCallback(m_Window, [](GLFWwindow* window, const unsigned int keycode)
-		{
+		                    {
 			const WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
 			KeyTypedEvent event(keycode);
-			data.EventCallback(event);
-		});
+			data.EventCallback(event); });
 
 		glfwSetMouseButtonCallback(m_Window, [](GLFWwindow* window, const int button, const int action, const int mods)
-		{
+		                           {
 			const WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
 
 			switch (action)
@@ -198,24 +195,30 @@ namespace Snowstorm
 				}
 			default:
 				SS_CORE_WARN("Unrecognized mouse action.");
-			}
-		});
+			} });
 
 		glfwSetScrollCallback(m_Window, [](GLFWwindow* window, const double xOffset, const double yOffset)
-		{
+		                      {
 			const WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
 
 			MouseScrolledEvent event(static_cast<float>(xOffset), static_cast<float>(yOffset));
-			data.EventCallback(event);
-		});
+			data.EventCallback(event); });
 
 		glfwSetCursorPosCallback(m_Window, [](GLFWwindow* window, const double xPos, const double yPos)
-		{
+		                         {
 			const WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
 
 			MouseMovedEvent event(static_cast<float>(xPos), static_cast<float>(yPos));
-			data.EventCallback(event);
-		});
+			data.EventCallback(event); });
+
+		// GLFW normalizes the native OS file-drop mechanism on every supported desktop platform.
+		// Queue paths here; editor UI decides whether the Content Browser was the intended target.
+		glfwSetDropCallback(m_Window, [](GLFWwindow*, const int count, const char** paths)
+		                    {
+			for (int i = 0; i < count; ++i)
+			{
+				DroppedFiles::Push(std::filesystem::u8path(paths[i]));
+			} });
 	}
 
 	void WindowsWindow::Shutdown() const

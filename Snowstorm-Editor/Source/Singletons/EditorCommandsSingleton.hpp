@@ -44,6 +44,10 @@ namespace Snowstorm
 		std::function<bool(const std::filesystem::path& /*ssprojPath*/)> OpenProject;
 		std::function<bool()> SaveProject;
 
+		// Copy/register any supported external asset into the active project. Models additionally create
+		// their imported scene entities. Returns false for unsupported files or failed copies/imports.
+		std::function<bool(const std::filesystem::path&)> ImportAsset;
+
 		// Create a fresh, empty entity (Tag + ID only) and return it. Bound by the editor layer.
 		std::function<Entity()> CreateEntity;
 

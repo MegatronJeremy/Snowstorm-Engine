@@ -264,7 +264,7 @@ namespace Snowstorm
 		{
 			bool Valid = false; // false until the first metric frame completes
 			float Psnr = 0.0f;  // dB (higher = closer; capped at 100 for identical)
-			float Ssim = 0.0f;  // [0,1] (1 = identical)
+			float Ssim = 0.0f;  // [-1,1] (1 = identical)
 		};
 		void SetMetrics(const MetricsResult& m) { m_Metrics = m; }
 		[[nodiscard]] const MetricsResult& GetMetrics() const { return m_Metrics; }

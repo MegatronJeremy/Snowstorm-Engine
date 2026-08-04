@@ -19,6 +19,7 @@ namespace Snowstorm
 		}
 
 		void Execute(Timestep ts) override;
+		static void RequestRescan() { s_RescanRequested = true; }
 
 	private:
 		struct Entry
@@ -36,5 +37,6 @@ namespace Snowstorm
 		// Active type filter. AssetType::None means "All". Drives the tab bar at the top of the panel.
 		AssetType m_Filter = AssetType::None;
 		char m_Search[128] = {};
+		inline static bool s_RescanRequested = false;
 	};
 }

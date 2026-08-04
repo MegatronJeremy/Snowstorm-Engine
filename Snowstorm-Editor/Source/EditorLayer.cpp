@@ -15,6 +15,7 @@
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/JobSystem.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Core/EnginePaths.hpp"
 #include "Snowstorm/Utility/CVar.hpp"
 #include "Snowstorm/Core/MeshDiagnostics.hpp"
 #include "Snowstorm/Render/Neural/NeuralWeights.hpp"
@@ -51,6 +52,7 @@
 #include "Snowstorm/World/SceneSerializer.hpp"
 #include "Snowstorm/Project/Project.hpp"
 #include "Snowstorm/Project/ProjectSerializer.hpp"
+#include "Snowstorm/Utility/FileDialog.hpp"
 
 #include "StressScene.hpp"
 
@@ -64,6 +66,7 @@
 #include "System/StatusBarSystem.hpp"
 #include "System/EditorMenuSystem.hpp"
 #include "System/EditorNotificationSystem.hpp"
+#include "Preferences/EditorPreferences.hpp"
 #include "System/SceneHierarchySystem.hpp"
 #include "System/ViewportDisplaySystem.hpp"
 #include "System/ViewportResizeSystem.hpp"
@@ -79,42 +82,80 @@ namespace Snowstorm
 	{
 		SS_PROFILE_FUNCTION();
 
-		m_ActiveWorld = CreateRef<World>();
+		EditorPreferences::Load();
+		// Apply the startup VSync preference (backend defaults to FIFO/on).
+		Renderer::SetVSync(CVars::VSync.Get());
 
-		// Boot the real startup project (a .ssproj, default Projects/Sandbox/Sandbox.ssproj) instead of
-		// synthesizing an implicit one. Its ProjectDirectory becomes the .ssproj's folder, so all content
-		// (registry, scenes, meshes, ...) resolves under Projects/Sandbox/ — while engine assets (shaders,
-		// fonts, caches) stay CWD-relative at the repo root. If the .ssproj is missing/unreadable, fall
-		// back to a CWD-rooted implicit project so a stripped checkout still runs (fail-soft).
-		if (!Project::GetActive())
-		{
-			const std::filesystem::path ssproj = CVars::StartupProject.Get();
-			Ref<Project> project = CreateRef<Project>();
-			if (!ssproj.empty() && std::filesystem::exists(ssproj) && ProjectSerializer::Deserialize(*project, ssproj))
-			{
-				SS_CORE_INFO("Loaded startup project '{}' (dir '{}')", ssproj.string(), project->GetProjectDirectory().string());
-			}
-			else
-			{
-				SS_CORE_WARN("Startup project '{}' not found; using an implicit project at the working directory", ssproj.string());
-				project = CreateRef<Project>();
-				project->SetProjectDirectory(std::filesystem::current_path());
-			}
-			Project::SetActive(project);
-		}
+		// The project picker is INTERACTIVE-only. In an unattended run (smoke, perf-bench, dataset export, …)
+		// nobody can click it, so showing it boots an empty world that renders nothing — and a harness that
+		// only checks "did it crash?" reports PASS while measuring nothing. Suppress it and resolve a project
+		// deterministically instead, the way Unreal (-unattended) and Unity (-batchmode) suppress modal UI.
+		const bool interactive = !CVars::IsUnattended();
+		const bool explicitProject = !CVars::StartupProject.Get().empty();
+		const bool hasRecentProject = !EditorPreferences::RecentProjects().empty();
 
-		// From this boundary onward every editor World/system may rely on an active project. Keep the
-		// lifecycle failure explicit in Release too instead of allowing a later null dereference.
-		const Ref<Project> activeProject = Project::GetActive();
-		SS_CORE_VERIFY(activeProject, "Editor bootstrap completed without an active project");
-		if (!activeProject)
+		m_ShowProjectStartScreen =
+		    interactive && (CVars::ForceProjectPicker.Get() || (!explicitProject && !hasRecentProject));
+		if (m_ShowProjectStartScreen)
 		{
-			Application::Get().Close();
+			Project::SetActive(nullptr);
+			m_ActiveWorld = CreateRef<World>();
+			RegisterCoreSystems(*m_ActiveWorld);
 			return;
 		}
 
-		// Apply the startup VSync preference (backend defaults to FIFO/on).
-		Renderer::SetVSync(CVars::VSync.Get());
+		// Resolution order: explicit startup.project -> the most recent project (interactive only; an
+		// unattended run must not depend on this machine's editor preferences) -> the default Sandbox project,
+		// which is what keeps the headless harnesses zero-config.
+		std::filesystem::path ssproj;
+		if (explicitProject)
+		{
+			ssproj = CVars::StartupProject.Get();
+		}
+		else if (interactive && hasRecentProject)
+		{
+			ssproj = EditorPreferences::RecentProjects().front().Path;
+		}
+		else
+		{
+			// INFO, not WARN: for an unattended run this is the documented zero-config path, so warning here
+			// would make every clean smoke/perf-bench run trip --warnings-fail. It is still never silent.
+			ssproj = EnginePaths::DefaultProjectFile();
+			SS_CORE_INFO("No startup.project set; using the default project '{}'.", ssproj.string());
+		}
+
+		Ref<Project> project = CreateRef<Project>();
+		if (!std::filesystem::is_regular_file(ssproj) || !ProjectSerializer::Deserialize(*project, ssproj))
+		{
+			// Unattended: there is no picker to fall back to, and an empty world would let the run "pass"
+			// having rendered nothing. Fail loud (the harnesses gate on [error]) and stop instead.
+			if (!interactive)
+			{
+				SS_CORE_ERROR("Could not open project '{}', and the project picker is unavailable in an "
+				              "unattended run; aborting. Point --startup.project at a valid .ssproj.",
+				              ssproj.string());
+				Project::SetActive(nullptr);
+				m_ActiveWorld = CreateRef<World>();
+				RegisterCoreSystems(*m_ActiveWorld);
+				Application::Get().Close();
+				return;
+			}
+
+			SS_CORE_WARN("Could not auto-open project '{}'; showing the project picker.", ssproj.string());
+			Project::SetActive(nullptr);
+			m_ShowProjectStartScreen = true;
+			m_ActiveWorld = CreateRef<World>();
+			RegisterCoreSystems(*m_ActiveWorld);
+			return;
+		}
+
+		Project::SetActive(project);
+		// Positive confirmation of what actually booted, on every path (explicit / recent / default). A
+		// headless run's log has no other way to say WHICH project it measured — Runtime logs the same line.
+		SS_CORE_INFO("Loaded startup project '{}' (dir '{}')", ssproj.string(),
+		             project->GetProjectDirectory().string());
+		EditorPreferences::RecordProject(project->GetName(), ssproj);
+		m_ActiveWorld = CreateRef<World>();
 
 		InitializeActiveWorld();
 
@@ -282,6 +323,11 @@ namespace Snowstorm
 				return SaveProject();
 			};
 
+			cmds.ImportAsset = [this](const std::filesystem::path& sourcePath) -> bool
+			{
+				return ImportAsset(sourcePath);
+			};
+
 			cmds.CreateEntity = [world]() -> Entity
 			{
 				return world->CreateEntity("Entity");
@@ -369,6 +415,7 @@ namespace Snowstorm
 		// user-selected .ssproj must leave the working project and its World intact.
 		CloseProject();
 		Project::SetActive(project);
+		EditorPreferences::RecordProject(project->GetName(), ssprojPath);
 
 		// CloseProject already drained the GPU and dropped the old World (if there was one) — build
 		// the new project's World fresh and wire it up the same way OnAttach does.
@@ -400,17 +447,99 @@ namespace Snowstorm
 		return ProjectSerializer::Serialize(*project, project->GetProjectDirectory() / project->GetProjectFileName());
 	}
 
-	void EditorLayer::CloseProject()
+	bool EditorLayer::ImportAsset(const std::filesystem::path& sourcePath) const
 	{
-		if (!Project::GetActive())
+		const Ref<Project> project = Project::GetActive();
+		if (!project || !std::filesystem::is_regular_file(sourcePath))
 		{
-			return;
+			return false;
 		}
 
+		std::string extension = sourcePath.extension().string();
+		std::ranges::transform(extension, extension.begin(), [](const unsigned char c)
+		                       { return static_cast<char>(std::tolower(c)); });
+
+		auto& assets = m_ActiveWorld->GetSingleton<AssetManagerSingleton>();
+		if (extension == ".obj" || extension == ".fbx" || extension == ".gltf" || extension == ".glb")
+		{
+			const bool imported = !assets.ImportModel(sourcePath).empty();
+			if (imported)
+			{
+				assets.SaveRegistry(project->GetAssetRegistryPath());
+				ContentBrowserSystem::RequestRescan();
+			}
+			return imported;
+		}
+
+		AssetType type = AssetType::None;
+		std::filesystem::path destinationFolder;
+		if (extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".tga" ||
+		    extension == ".dds" || extension == ".bmp")
+		{
+			type = AssetType::Texture;
+			destinationFolder = "textures";
+		}
+		else if (extension == ".ssmat")
+		{
+			type = AssetType::Material;
+			destinationFolder = "materials";
+		}
+		else if (extension == ".hlsl")
+		{
+			type = AssetType::Shader;
+			destinationFolder = "shaders";
+		}
+		else if (extension == ".world")
+		{
+			type = AssetType::Scene;
+			destinationFolder = "scenes";
+		}
+		else
+		{
+			return false;
+		}
+
+		const std::filesystem::path destinationRelative = project->GetConfig().AssetDirectory /
+		                                                  destinationFolder / sourcePath.filename();
+		const std::filesystem::path destinationAbsolute = project->GetProjectDirectory() / destinationRelative;
+		std::error_code ec;
+		std::filesystem::create_directories(destinationAbsolute.parent_path(), ec);
+		if (ec)
+		{
+			return false;
+		}
+		if (!std::filesystem::equivalent(sourcePath, destinationAbsolute, ec))
+		{
+			ec.clear();
+			std::filesystem::copy_file(sourcePath, destinationAbsolute,
+			                           std::filesystem::copy_options::overwrite_existing, ec);
+			if (ec)
+			{
+				SS_CORE_ERROR("Failed to copy imported asset '{}' to '{}': {}", sourcePath.string(),
+				              destinationAbsolute.string(), ec.message());
+				return false;
+			}
+		}
+
+		if (type != AssetType::Scene)
+		{
+			assets.Import(destinationRelative.generic_string(), type);
+			if (!assets.SaveRegistry(project->GetAssetRegistryPath()))
+			{
+				return false;
+			}
+		}
+		ContentBrowserSystem::RequestRescan();
+		return true;
+	}
+
+	void EditorLayer::CloseProject()
+	{
 		// Save the project file only — deliberately NOT the scene. Whether unsaved scene edits
 		// should survive a project switch is the user's call (Ctrl+S before switching); silently
 		// writing the scene here would overwrite the file with edits they may have wanted to discard.
-		SaveProject();
+		if (Project::GetActive())
+			SaveProject();
 
 		// Drain in-flight CPU asset jobs BEFORE destroying the World. AssetManagerSingleton is
 		// World-scoped, but its async mesh/texture loads run on the app-scoped JobSystem and capture
@@ -427,7 +556,7 @@ namespace Snowstorm
 		// Every external Ref<World> must be dropped before this, or the World (and its GPU resources)
 		// outlives the project switch — mirrors Hazel's CloseProject assert ("Scene will not be
 		// destroyed... something is still holding scene refs!").
-		SS_CORE_ASSERT(m_ActiveWorld.use_count() == 1,
+		SS_CORE_ASSERT(!m_ActiveWorld || m_ActiveWorld.use_count() == 1,
 		               "CloseProject: something besides m_ActiveWorld still holds a Ref<World>");
 
 		m_ActiveWorld = nullptr;
@@ -622,12 +751,26 @@ namespace Snowstorm
 		//
 		// Optional startup-scene override (CVar startup.scene / env SS_STARTUP_SCENE): boot a chosen scene
 		// headlessly (e.g. Sponza for the smoke harness). Existence is checked now; the load happens in
-		// the frame loop. If the override is missing we fall through to the default.
-		if (const std::string& overridePath = CVars::StartupScene.Get();
-		    !overridePath.empty() && std::filesystem::exists(overridePath))
+		// the frame loop. If the override is missing we fall through to the default — but never silently:
+		// an unattended run that measures the WRONG scene is a corrupt measurement, not a soft failure.
+		if (const std::string& overridePath = CVars::StartupScene.Get(); !overridePath.empty())
 		{
-			RequestSceneLoad(overridePath);
-			return;
+			if (std::filesystem::exists(overridePath))
+			{
+				RequestSceneLoad(overridePath);
+				return;
+			}
+
+			if (CVars::IsUnattended())
+			{
+				SS_CORE_ERROR("startup.scene '{}' does not exist; refusing to silently measure a different "
+				              "scene in an unattended run.",
+				              overridePath);
+				Application::Get().Close();
+				return;
+			}
+			SS_CORE_WARN("startup.scene '{}' does not exist; falling back to the project's start scene.",
+			             overridePath);
 		}
 
 		const std::string startupScenePath = Project::GetActive()->GetStartScenePath().string();
@@ -1162,9 +1305,109 @@ namespace Snowstorm
 		}
 	}
 
+	void EditorLayer::DrawProjectStartScreen()
+	{
+		const ImGuiViewport* viewport = ImGui::GetMainViewport();
+		ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+		ImGui::SetNextWindowSize(ImVec2(700.0f, 420.0f), ImGuiCond_Always);
+		constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
+		                                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
+		if (ImGui::Begin("Snowstorm Project Manager", nullptr, flags))
+		{
+			ImGui::TextUnformatted("Recent Projects");
+			ImGui::Separator();
+			for (const RecentProject& recent : EditorPreferences::RecentProjects())
+			{
+				ImGui::PushID(recent.Path.string().c_str());
+				if (ImGui::Selectable(recent.Name.c_str(), false, 0, ImVec2(0.0f, 34.0f)))
+				{
+					RequestProjectOpen(recent.Path);
+				}
+				ImGui::SameLine(230.0f);
+				ImGui::TextDisabled("%s", recent.Path.string().c_str());
+				ImGui::PopID();
+			}
+
+			if (EditorPreferences::RecentProjects().empty())
+				ImGui::TextDisabled("No recent projects yet.");
+
+			ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 52.0f);
+			if (ImGui::Button("New Project...", ImVec2(150.0f, 0.0f)))
+				m_OpenStartScreenNewProject = true;
+			ImGui::SameLine();
+			if (ImGui::Button("Open Project...", ImVec2(150.0f, 0.0f)))
+			{
+				const std::filesystem::path path = FileDialog::OpenFile({{"Snowstorm Project", "ssproj"}});
+				if (!path.empty())
+					RequestProjectOpen(path);
+			}
+		}
+		ImGui::End();
+
+		if (m_OpenStartScreenNewProject)
+		{
+			ImGui::OpenPopup("New Project");
+			m_OpenStartScreenNewProject = false;
+		}
+		ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+		if (ImGui::BeginPopupModal("New Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+		{
+			ImGui::InputTextWithHint("##start_project_name", "Project Name", m_StartProjectName,
+			                         sizeof(m_StartProjectName));
+			ImGui::InputTextWithHint("##start_project_location", "Project Location", m_StartProjectLocation,
+			                         sizeof(m_StartProjectLocation));
+			ImGui::SameLine();
+			if (ImGui::Button("..."))
+			{
+				const std::filesystem::path location = FileDialog::OpenFolder();
+				if (!location.empty())
+					strncpy_s(m_StartProjectLocation, location.string().c_str(), sizeof(m_StartProjectLocation) - 1);
+			}
+
+			const bool valid = m_StartProjectName[0] != '\0' && m_StartProjectLocation[0] != '\0';
+			if (!valid)
+				ImGui::BeginDisabled();
+			if (ImGui::Button("Create", ImVec2(120.0f, 0.0f)))
+			{
+				const std::filesystem::path directory = std::filesystem::path(m_StartProjectLocation) /
+				                                        m_StartProjectName;
+				if (CreateProject(directory, m_StartProjectName))
+				{
+					m_StartProjectName[0] = '\0';
+					m_StartProjectLocation[0] = '\0';
+					ImGui::CloseCurrentPopup();
+				}
+			}
+			if (!valid)
+				ImGui::EndDisabled();
+			ImGui::SameLine();
+			if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+				ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
+		}
+	}
+
 	void EditorLayer::OnUpdate(const Timestep ts)
 	{
 		SS_PROFILE_FUNCTION();
+
+		if (m_ShowProjectStartScreen)
+		{
+			if (m_HasPendingProject)
+			{
+				m_HasPendingProject = false;
+				const std::filesystem::path path = std::move(m_PendingProjectPath);
+				m_PendingProjectPath.clear();
+				if (OpenProject(path))
+				{
+					m_ShowProjectStartScreen = false;
+					return;
+				}
+			}
+			DrawProjectStartScreen();
+			m_ActiveWorld->OnUpdate(ts);
+			return;
+		}
 
 		// Publish ImGui's input-capture state into the shared InputStateSingleton BEFORE the world runs its
 		// systems this frame. Editor shortcuts (F/framing, gizmo keys, Ctrl+S, console toggle) and the
