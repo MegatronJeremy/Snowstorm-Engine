@@ -16,6 +16,7 @@
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/Core/Application.hpp" // for cursor mode via window (see note)
 #include "Snowstorm/Core/Input.hpp"
+#include "Snowstorm/Render/SceneBounds.hpp" // ResolveViewportCamera (shared prefer-Primary-else-first pick)
 
 namespace Snowstorm
 {
@@ -72,9 +73,6 @@ namespace Snowstorm
 
 		const float dt = ts.GetSeconds();
 
-		const auto camCtrlView =
-		    View<CameraComponent, TransformComponent, CameraControllerComponent, CameraTargetComponent>();
-
 		const auto vpInteractView = View<ViewportInteractionComponent>();
 
 		// Ensure runtime state for newly created controller cameras
@@ -86,40 +84,25 @@ namespace Snowstorm
 			}
 		}
 
-		// Pick one active camera: focused viewport; prefer Primary
+		// (The single-Primary invariant is enforced by PrimaryCameraSystem, which runs earlier this phase — so
+		// by here at most one authored camera is Primary and the resolver's pick is unambiguous.)
+
+		// Pick the one camera that receives input this frame: on a FOCUSED viewport, the camera that viewport
+		// renders — resolved by the shared ResolveViewportCamera (prefer-Primary-else-first) so input goes to
+		// exactly the camera the user sees, never a different one. Only a drivable camera (has a controller)
+		// qualifies; the first focused viewport with a controllable resolved camera wins.
 		entt::entity activeCam = entt::null;
-		bool foundPrimary = false;
-
-		for (const auto e : camCtrlView)
+		for (const entt::entity vp : vpInteractView)
 		{
-			const auto& cam = reg.Read<CameraComponent>(e);
-			const auto& ct = reg.Read<CameraTargetComponent>(e);
-
-			if (ct.TargetViewportEntity == entt::null || !reg.valid(ct.TargetViewportEntity))
+			if (!reg.Read<ViewportInteractionComponent>(vp).Focused)
 			{
 				continue;
 			}
-
-			if (!vpInteractView.contains(ct.TargetViewportEntity))
+			const entt::entity resolved = ResolveViewportCamera(reg, vp);
+			if (resolved != entt::null && reg.all_of<CameraControllerComponent>(resolved))
 			{
-				continue;
-			}
-
-			const auto& vpI = reg.Read<ViewportInteractionComponent>(ct.TargetViewportEntity);
-			if (!vpI.Focused)
-			{
-				continue;
-			}
-
-			if (activeCam == entt::null)
-			{
-				activeCam = e;
-				foundPrimary = cam.Primary;
-			}
-			else if (!foundPrimary && cam.Primary)
-			{
-				activeCam = e;
-				foundPrimary = true;
+				activeCam = resolved;
+				break;
 			}
 		}
 

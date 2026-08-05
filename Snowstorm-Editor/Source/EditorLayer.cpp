@@ -955,11 +955,12 @@ namespace Snowstorm
 		// The viewport we want to target
 		const UUID viewportId = m_RenderTargetEntity.GetComponent<IDComponent>().Id;
 
-		// --- Main camera (Scene camera)
+		// --- Editor Scene-view camera
 		{
-			auto cameraEntity = m_ActiveWorld->CreateEntity("Camera Entity");
+			auto cameraEntity = m_ActiveWorld->CreateEntity("Editor Camera");
 			// Editor-owned Scene-view camera: persists across scene loads, never serialized (cf. Unity's
-			// editor Scene camera, Unreal's viewport-client camera). It renders the editor viewport.
+			// editor Scene camera, Unreal's viewport-client camera). It renders the editor viewport. Name is
+			// display-only — its identity is DoNotSerializeComponent, not the tag.
 			cameraEntity.AddComponent<DoNotSerializeComponent>();
 			cameraEntity.AddComponent<TransformComponent>();
 
@@ -970,7 +971,11 @@ namespace Snowstorm
 				cc.PerspectiveFOV = 0.785398f;
 				cc.PerspectiveNear = 0.1f; // larger near = far better depth precision (avoids z-fighting)
 				cc.PerspectiveFar = 1000.0f;
-				cc.Primary = true;
+				// Primary is a GAMEPLAY-only concept (the authored main camera, Unity MainCamera / Unreal). The
+				// editor Scene-view camera is identified by DoNotSerializeComponent and renders its viewport by
+				// that identity (ResolveViewportCamera's else-first pick), so it must NOT claim Primary — else it
+				// competes with the scene's authored main camera. Explicitly false.
+				cc.Primary = false;
 				cc.FixedAspectRatio = false;
 			}
 
@@ -991,44 +996,20 @@ namespace Snowstorm
 
 			cameraEntity.WriteComponent<TransformComponent>().Position.z = 15.0f;
 		}
-
-		// --- Second camera (example: Game camera or “clip space”)
-		{
-			auto secondCamera = m_ActiveWorld->CreateEntity("Clip-Space Entity");
-			secondCamera.AddComponent<DoNotSerializeComponent>();
-			secondCamera.AddComponent<TransformComponent>();
-
-			{
-				auto& cc = secondCamera.AddComponent<CameraComponent>();
-				cc.Projection = CameraComponent::ProjectionType::Perspective;
-				cc.PerspectiveFar = 1000.0f;
-				cc.Primary = false;
-			}
-
-			secondCamera.AddComponent<CameraControllerComponent>();
-
-			{
-				auto& ct = secondCamera.AddComponent<CameraTargetComponent>();
-				ct.TargetViewportUUID = viewportId;
-			}
-
-			{
-				auto& cv = secondCamera.AddComponent<CameraVisibilityComponent>();
-				cv.Mask = Visibility::Game; // e.g. “Game” viewport would use this
-			}
-		}
 	}
 
 	Entity EditorLayer::FindEditorCamera() const
 	{
+		// The editor's Scene-view camera is identified by DoNotSerializeComponent, NOT by Primary. It's the only
+		// DoNotSerialize camera the editor creates (CreateCameraEntities), so the tag is an unambiguous identity.
+		// Primary is a separate, user-facing concept (Unity's MainCamera tag / the authored gameplay camera) that
+		// the user can toggle off on the editor camera — so keying editor-camera identity on Primary meant the
+		// editor "lost" its own camera the moment its Primary flag was cleared. Decoupled: identity = the tag.
 		auto& reg = m_ActiveWorld->GetRegistry();
 		for (const auto view = reg.view<CameraComponent, TransformComponent, DoNotSerializeComponent>();
 		     const entt::entity e : view)
 		{
-			if (reg.Read<CameraComponent>(e).Primary)
-			{
-				return Entity{e, m_ActiveWorld.get()};
-			}
+			return Entity{e, m_ActiveWorld.get()};
 		}
 		return {};
 	}

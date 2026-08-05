@@ -384,6 +384,16 @@ namespace Snowstorm
 
 	bool RenderProperty(const rttr::property& prop, const rttr::instance& instance)
 	{
+		// Properties tagged metadata("Hidden", true) are still serialized/reflected but NOT drawn by the
+		// generic inspector — for fields edited through a dedicated widget instead of a raw checkbox/drag
+		// (e.g. CameraComponent::Primary, which must be exclusive, so it's set via a "Set as Primary" action
+		// rather than a bare bool the user could tick on several cameras at once). Reusable inspector metadata
+		// alongside Min/Max/Color/AssetType.
+		if (const rttr::variant hidden = prop.get_metadata("Hidden"); hidden.is_valid() && hidden.can_convert<bool>() && hidden.to_bool())
+		{
+			return false;
+		}
+
 		const rttr::type type = prop.get_type();
 		const std::string name = prop.get_name().to_string();
 		const std::string hidden = "##" + name; // hidden widget label (we draw our own on the left)

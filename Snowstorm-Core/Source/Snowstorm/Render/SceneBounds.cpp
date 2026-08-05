@@ -3,6 +3,7 @@
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Components/CameraControllerRuntimeComponent.hpp"
+#include "Snowstorm/Components/CameraTargetComponent.hpp"
 #include "Snowstorm/Components/DoNotSerializeComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
@@ -82,11 +83,11 @@ namespace Snowstorm
 		auto& reg = world.GetRegistry();
 		for (const auto view = reg.view<CameraComponent, TransformComponent, DoNotSerializeComponent>(); const entt::entity e : view)
 		{
+			// The editor Scene-view camera is identified by DoNotSerialize alone (the only such camera), NOT by
+			// Primary — matching EditorLayer::FindEditorCamera. Framing must work even when the user has cleared
+			// the editor camera's Primary flag (Primary is the authored-gameplay-camera concept, user-toggleable);
+			// gating on it here would make F/Ctrl+F silently do nothing in that state.
 			auto& cam = reg.Write<CameraComponent>(e);
-			if (!cam.Primary)
-			{
-				continue;
-			}
 
 			const FramingPose pose = ComputeFramingPose(bounds, cam.PerspectiveFOV);
 
@@ -124,5 +125,36 @@ namespace Snowstorm
 		}
 		FramePrimaryCameraOnAABB(world, bounds);
 		return true;
+	}
+
+	entt::entity ResolveViewportCamera(const TrackedRegistry& reg, const entt::entity viewport)
+	{
+		if (viewport == entt::null)
+		{
+			return entt::null;
+		}
+
+		// Two-pass over cameras targeting this viewport: a Primary wins outright; otherwise remember the first
+		// candidate and return it once we've confirmed no Primary exists. Single loop with a saved fallback so
+		// iteration order is the only tiebreak (deterministic), matching what the three former hand-rolled
+		// finders each did — now in one place so render / gizmo / controller can't disagree.
+		entt::entity fallback = entt::null;
+		for (const auto view = reg.view<const CameraComponent, const CameraTargetComponent>();
+		     const entt::entity e : view)
+		{
+			if (reg.Read<CameraTargetComponent>(e).TargetViewportEntity != viewport)
+			{
+				continue;
+			}
+			if (reg.Read<CameraComponent>(e).Primary)
+			{
+				return e; // Primary targeting this viewport — the definitive answer
+			}
+			if (fallback == entt::null)
+			{
+				fallback = e; // first non-Primary candidate; used only if no Primary shows up
+			}
+		}
+		return fallback;
 	}
 }
