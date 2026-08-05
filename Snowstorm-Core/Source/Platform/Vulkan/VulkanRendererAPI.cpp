@@ -340,7 +340,14 @@ namespace Snowstorm
 		submitInfo.signalSemaphoreInfoCount = 1;
 		submitInfo.pSignalSemaphoreInfos = &signalInfo;
 
-		vkQueueSubmit2(context.GetGraphicsQueue(), 1, &submitInfo, m_InFlightFences[m_CurrentFrameIndex]);
+		if (vkQueueSubmit2(context.GetGraphicsQueue(), 1, &submitInfo, m_InFlightFences[m_CurrentFrameIndex]) == VK_ERROR_DEVICE_LOST)
+		{
+			// The frame submit faulted the GPU. Dump VK_EXT_device_fault detail (faulting addresses / vendor
+			// description) before anything downstream turns the sticky device-lost into a bare -4 at the next
+			// acquire/submit. No-op unless the extension is enabled (Debug). This is the graphics-work submit,
+			// so a shader OOB (e.g. an out-of-range geometry-table read) surfaces here first.
+			context.LogDeviceFaultInfo();
+		}
 
 		VkSemaphore signalSemaphores[] = {m_RenderFinishedSemaphores[m_ImageIndex]};
 

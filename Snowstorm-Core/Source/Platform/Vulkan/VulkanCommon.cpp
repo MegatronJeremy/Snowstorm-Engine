@@ -145,6 +145,13 @@ namespace Snowstorm
 		submitInfo.pCommandBuffers = &cmd;
 
 		result = vkQueueSubmit(queue, 1, &submitInfo, fence);
+		if (result == VK_ERROR_DEVICE_LOST)
+		{
+			// The GPU died on THIS submit (or an earlier one — device-lost is sticky). Dump VK_EXT_device_fault
+			// info (faulting addresses / vendor description) before the assert kills the process, so a headless
+			// run gets a structured "where" instead of a bare -4. No-op unless the extension is enabled (Debug).
+			ctx.LogDeviceFaultInfo();
+		}
 		assert(result == VK_SUCCESS && "Failed to submit immediate command buffer");
 
 		// Wait only for this submission, not the whole queue.
