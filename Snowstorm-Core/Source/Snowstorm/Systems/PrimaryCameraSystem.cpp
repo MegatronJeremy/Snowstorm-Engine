@@ -38,7 +38,8 @@ namespace Snowstorm
 		{
 			if (e != winner && !reg.any_of<DoNotSerializeComponent>(e) && reg.Read<CameraComponent>(e).Primary)
 			{
-				reg.patch<CameraComponent>(e, [](CameraComponent& c) { c.Primary = false; });
+				reg.patch<CameraComponent>(e, [](CameraComponent& c)
+				                           { c.Primary = false; });
 			}
 		}
 	}

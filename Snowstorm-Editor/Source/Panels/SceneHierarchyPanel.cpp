@@ -551,7 +551,8 @@ namespace Snowstorm
 					const bool wantPrimary = (e == entity.Handle());
 					if (reg.Read<CameraComponent>(e).Primary != wantPrimary)
 					{
-						reg.patch<CameraComponent>(e, [wantPrimary](CameraComponent& c) { c.Primary = wantPrimary; });
+						reg.patch<CameraComponent>(e, [wantPrimary](CameraComponent& c)
+						                           { c.Primary = wantPrimary; });
 					}
 				}
 			}

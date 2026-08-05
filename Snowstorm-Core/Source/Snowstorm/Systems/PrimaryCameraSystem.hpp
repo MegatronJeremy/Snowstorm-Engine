@@ -14,7 +14,7 @@ namespace Snowstorm
 	{
 	public:
 		explicit PrimaryCameraSystem(const WorldRef world)
-			: System(world)
+		    : System(world)
 		{
 		}
 
