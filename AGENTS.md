@@ -186,7 +186,12 @@ see, so treat it as part of the feature, not an afterthought.
   files changed by a push/PR and **fails if any touched file isn't fully clang-format-clean**, so the
   codebase formats gradually as files are edited. Pinned to **`clang-format==22.1.5`** (match it
   locally — version drift changes output). Run `clang-format -i <files>` (or enable format-on-save
-  against the repo config) before committing.
+  against the repo config) before committing. `Scripts/check-format.py` predicts this gate locally:
+  default mode checks the files changed vs `master` + uncommitted (the same set CI gates on), `--all`
+  scans the whole project (surfaces the legacy backlog CI does *not* gate on), `--fix` reformats in
+  place. A tracked `pre-push` hook (`.githooks/pre-push`) runs the default mode so a lint-failing push
+  is blocked before it leaves the machine — **enable it once per clone** with
+  `git config core.hooksPath .githooks` (bypass a single push with `git push --no-verify`).
 - **Shared-header shader bindings are global — mind `space1` collisions (learned from #60).** A
   resource declared in `Engine/Shaders/Include/Engine.hlsli` is emitted into *every* shader that
   includes it, and with `-fspv-preserve-bindings` (always on) it survives even when unused — so it

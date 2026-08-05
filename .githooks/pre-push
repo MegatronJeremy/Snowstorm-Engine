@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Pre-push gate: block a push that CI's `lint` workflow would fail on.
+#
+# Runs Scripts/check-format.py in its default (format-on-touch) mode, which
+# checks the C++ files this branch changes vs master plus any uncommitted edits
+# -- the same set CI's clang-format check gates on. A dirty file aborts the push.
+#
+# Enable (once per clone):   git config core.hooksPath .githooks
+# Bypass for one push:       git push --no-verify   (or SKIP_FORMAT_HOOK=1 git push)
+set -euo pipefail
+
+if [ "${SKIP_FORMAT_HOOK:-}" = "1" ]; then
+    echo "pre-push: format check skipped (SKIP_FORMAT_HOOK=1)."
+    exit 0
+fi
+
+# Resolve the repo root from this hook's location so it works regardless of CWD.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+PY=py
+command -v "$PY" >/dev/null 2>&1 || PY=python
+
+if ! "$PY" "$ROOT/Scripts/check-format.py"; then
+    echo
+    echo "pre-push: clang-format check failed -- CI lint would reject this push." >&2
+    echo "  Fix:    py Scripts/check-format.py --fix   (then re-stage/commit)" >&2
+    echo "  Bypass: git push --no-verify" >&2
+    exit 1
+fi
