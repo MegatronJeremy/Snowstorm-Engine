@@ -8,7 +8,7 @@ namespace Snowstorm
 	{
 	public:
 		explicit CameraControllerSystem(const WorldRef world)
-			: System(world)
+		    : System(world)
 		{
 		}
 

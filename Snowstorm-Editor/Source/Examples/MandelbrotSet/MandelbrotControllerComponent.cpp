@@ -11,10 +11,10 @@ namespace Snowstorm
 	RTTR_REGISTRATION
 	{
 		registration::class_<MandelbrotControllerComponent>("MandelbrotControllerComponent")
-			.property("Material", &MandelbrotControllerComponent::Material)
-			.property("Center", &MandelbrotControllerComponent::Center)
-			.property("Zoom", &MandelbrotControllerComponent::Zoom)
-			.property("MaxIterations", &MandelbrotControllerComponent::MaxIterations);
+		    .property("Material", &MandelbrotControllerComponent::Material)
+		    .property("Center", &MandelbrotControllerComponent::Center)
+		    .property("Zoom", &MandelbrotControllerComponent::Zoom)
+		    .property("MaxIterations", &MandelbrotControllerComponent::MaxIterations);
 	}
 
 	AUTO_REGISTER_COMPONENT(MandelbrotControllerComponent);

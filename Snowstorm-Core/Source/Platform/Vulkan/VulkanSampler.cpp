@@ -5,7 +5,7 @@
 namespace Snowstorm
 {
 	VulkanSampler::VulkanSampler(SamplerDesc desc)
-		: m_Desc(std::move(desc))
+	    : m_Desc(std::move(desc))
 	{
 		m_Device = GetVulkanDevice();
 

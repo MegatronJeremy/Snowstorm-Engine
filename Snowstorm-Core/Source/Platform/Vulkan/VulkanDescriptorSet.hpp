@@ -62,6 +62,6 @@ namespace Snowstorm
 		};
 
 		std::unordered_map<uint64_t, PendingBuffer> m_PendingBuffers;
-		std::unordered_map<uint64_t, PendingImage>  m_PendingImages;
+		std::unordered_map<uint64_t, PendingImage> m_PendingImages;
 	};
 }

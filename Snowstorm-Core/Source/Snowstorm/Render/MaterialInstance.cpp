@@ -13,8 +13,8 @@ namespace Snowstorm
 	namespace
 	{
 		constexpr uint32_t kMaterialConstantsBinding = 0;
-		constexpr uint32_t kMaterialSamplerBinding = 1;      // LinearSampler (wrapping, per-instance)
-		constexpr uint32_t kMaterialClampSamplerBinding = 2; // ClampSampler (engine-global, for LUTs)
+		constexpr uint32_t kMaterialSamplerBinding = 1;          // LinearSampler (wrapping, per-instance)
+		constexpr uint32_t kMaterialClampSamplerBinding = 2;     // ClampSampler (engine-global, for LUTs)
 		constexpr uint32_t kMaterialShadowCmpSamplerBinding = 3; // ShadowCmpSampler (engine-global, HW PCF #60)
 	}
 

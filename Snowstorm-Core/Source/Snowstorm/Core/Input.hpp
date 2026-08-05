@@ -10,7 +10,7 @@ namespace Snowstorm
 	enum class CursorMode
 	{
 		Normal, // Visible and free
-		Locked // Hidden and locked in place
+		Locked  // Hidden and locked in place
 	};
 
 	class Input

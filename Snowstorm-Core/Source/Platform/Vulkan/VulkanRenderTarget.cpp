@@ -53,7 +53,7 @@ namespace Snowstorm
 	}
 
 	VulkanRenderTarget::VulkanRenderTarget(RenderTargetDesc desc)
-		: m_Desc(std::move(desc))
+	    : m_Desc(std::move(desc))
 	{
 		Invalidate();
 	}
@@ -92,7 +92,7 @@ namespace Snowstorm
 		}
 
 		// Re-run the internal setup for VkRenderingAttachmentInfo
-		Invalidate(); 
+		Invalidate();
 	}
 
 	void VulkanRenderTarget::Invalidate()
@@ -154,8 +154,8 @@ namespace Snowstorm
 			//-- Stencil (only if requested)
 			{
 				const bool wantsStencilOps =
-				(d.StencilLoadOp != RenderTargetLoadOp::DontCare) ||
-				(d.StencilStoreOp != RenderTargetStoreOp::DontCare);
+				    (d.StencilLoadOp != RenderTargetLoadOp::DontCare) ||
+				    (d.StencilStoreOp != RenderTargetStoreOp::DontCare);
 
 				if (wantsStencilOps)
 				{

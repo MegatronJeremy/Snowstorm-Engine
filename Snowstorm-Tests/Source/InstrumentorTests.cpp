@@ -58,12 +58,11 @@ TEST_CASE("Instrumentor: concurrent recording produces valid, complete output", 
 	for (int t = 0; t < kThreads; ++t)
 	{
 		workers.emplace_back([kScopesPerThread]
-		{
+		                     {
 			for (int i = 0; i < kScopesPerThread; ++i)
 			{
 				SS_PROFILE_SCOPE("worker-scope");
-			}
-		});
+			} });
 	}
 	for (std::thread& w : workers)
 	{

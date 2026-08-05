@@ -12,4 +12,3 @@ namespace Snowstorm
 		AssetHandle MeshHandle{0};
 	};
 }
-

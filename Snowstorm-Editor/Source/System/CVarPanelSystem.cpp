@@ -111,8 +111,8 @@ namespace Snowstorm
 				{
 					// Append a startup-only note so the disabled widget's reason is discoverable on hover.
 					const std::string tip = readOnly
-					    ? cvar->GetDescription() + "\n\n[startup-only: set in SnowstormStartup.cfg / CLI and relaunch]"
-					    : cvar->GetDescription();
+					                            ? cvar->GetDescription() + "\n\n[startup-only: set in SnowstormStartup.cfg / CLI and relaunch]"
+					                            : cvar->GetDescription();
 					ImGui::SetTooltip("%s", tip.c_str());
 				}
 

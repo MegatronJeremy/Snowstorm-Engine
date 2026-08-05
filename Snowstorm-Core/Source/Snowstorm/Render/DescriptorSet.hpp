@@ -28,7 +28,7 @@ namespace Snowstorm
 	};
 
 	// Descriptor set abstraction (maps to VkDescriptorSet / D3D12 descriptor tables).
-	class DescriptorSet 
+	class DescriptorSet
 	{
 	public:
 		virtual ~DescriptorSet() = default;

@@ -305,8 +305,8 @@ namespace Snowstorm
 // `if`. Every current call site does this.
 #define SS_PROFILE_CONCAT_INNER(a, b) a##b
 #define SS_PROFILE_CONCAT(a, b) SS_PROFILE_CONCAT_INNER(a, b)
-#define SS_PROFILE_SCOPE(name)   \
-	SS_TRACY_SCOPE(name);        \
+#define SS_PROFILE_SCOPE(name) \
+	SS_TRACY_SCOPE(name);      \
 	SS_PROFILE_JSON_SCOPE(name)
 #define SS_PROFILE_FUNCTION() SS_PROFILE_SCOPE(__FUNCSIG__)
 // Mark a frame boundary (Tracy uses this to segment the timeline per frame). No-op for the JSON tracer.

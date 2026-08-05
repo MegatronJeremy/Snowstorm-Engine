@@ -8,7 +8,7 @@ namespace Snowstorm
 	{
 	public:
 		explicit LightingSystem(const WorldRef& world)
-			: System(world)
+		    : System(world)
 		{
 		}
 

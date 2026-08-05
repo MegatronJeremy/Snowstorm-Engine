@@ -33,7 +33,7 @@ namespace Snowstorm
 		// Clear color used when LoadOp == Clear
 		glm::vec4 ClearColor{0.0f, 0.0f, 0.0f, 1.0f};
 
-		RenderTargetLoadOp  LoadOp  = RenderTargetLoadOp::Clear;
+		RenderTargetLoadOp LoadOp = RenderTargetLoadOp::Clear;
 		RenderTargetStoreOp StoreOp = RenderTargetStoreOp::Store;
 	};
 
@@ -42,18 +42,18 @@ namespace Snowstorm
 		// View to render into (DSV-like)
 		Ref<TextureView> View;
 
-		float    ClearDepth   = 1.0f;
+		float ClearDepth = 1.0f;
 		uint32_t ClearStencil = 0;
 
-		RenderTargetLoadOp  DepthLoadOp    = RenderTargetLoadOp::Clear;
-		RenderTargetStoreOp DepthStoreOp   = RenderTargetStoreOp::Store;
-		RenderTargetLoadOp  StencilLoadOp  = RenderTargetLoadOp::DontCare;
+		RenderTargetLoadOp DepthLoadOp = RenderTargetLoadOp::Clear;
+		RenderTargetStoreOp DepthStoreOp = RenderTargetStoreOp::Store;
+		RenderTargetLoadOp StencilLoadOp = RenderTargetLoadOp::DontCare;
 		RenderTargetStoreOp StencilStoreOp = RenderTargetStoreOp::DontCare;
 	};
 
 	struct RenderTargetDesc
 	{
-		uint32_t Width  = 0;
+		uint32_t Width = 0;
 		uint32_t Height = 0;
 
 		std::vector<RenderTargetAttachment> ColorAttachments;
@@ -71,7 +71,7 @@ namespace Snowstorm
 		virtual const RenderTargetDesc& GetDesc() const = 0;
 		virtual void Resize(uint32_t width, uint32_t height) = 0;
 
-		uint32_t GetWidth() const  { return GetDesc().Width; }
+		uint32_t GetWidth() const { return GetDesc().Width; }
 		uint32_t GetHeight() const { return GetDesc().Height; }
 
 		bool IsSwapchainTarget() const { return GetDesc().IsSwapchainTarget; }

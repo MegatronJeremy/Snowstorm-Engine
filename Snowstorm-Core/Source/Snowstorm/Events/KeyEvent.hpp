@@ -12,7 +12,7 @@ namespace Snowstorm
 
 	protected:
 		explicit KeyEvent(const int keycode)
-			: m_KeyCode(keycode)
+		    : m_KeyCode(keycode)
 		{
 		}
 	};
@@ -20,7 +20,7 @@ namespace Snowstorm
 	struct KeyPressedEvent final : KeyEvent
 	{
 		KeyPressedEvent(const int keycode, const int repeatCount)
-			: KeyEvent(keycode), m_RepeatCount(repeatCount)
+		    : KeyEvent(keycode), m_RepeatCount(repeatCount)
 		{
 		}
 
@@ -38,8 +38,7 @@ namespace Snowstorm
 
 	struct KeyReleasedEvent final : KeyEvent
 	{
-		explicit KeyReleasedEvent(const int keycode):
-			KeyEvent(keycode)
+		explicit KeyReleasedEvent(const int keycode) : KeyEvent(keycode)
 		{
 		}
 
@@ -56,7 +55,7 @@ namespace Snowstorm
 	struct KeyTypedEvent final : KeyEvent
 	{
 		explicit KeyTypedEvent(const int keycode)
-			: KeyEvent(keycode)
+		    : KeyEvent(keycode)
 		{
 		}
 

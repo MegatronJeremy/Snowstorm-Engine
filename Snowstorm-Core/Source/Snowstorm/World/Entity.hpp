@@ -15,7 +15,7 @@ namespace Snowstorm
 		~Entity() = default;
 
 		Entity(const entt::entity handle, World* world)
-			: m_EntityHandle(handle), m_World(world)
+		    : m_EntityHandle(handle), m_World(world)
 		{
 		}
 
