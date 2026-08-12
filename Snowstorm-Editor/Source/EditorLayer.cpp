@@ -4,6 +4,7 @@
 #include <imgui.h>
 #include <nlohmann/json.hpp>
 #include <cstddef> // offsetof
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -82,7 +83,12 @@ namespace Snowstorm
 	{
 		SS_PROFILE_FUNCTION();
 
-		EditorPreferences::Load();
+		const bool interactive = !CVars::IsUnattended();
+		if (interactive)
+		{
+			EditorPreferences::Load();
+		}
+
 		// Apply the startup VSync preference (backend defaults to FIFO/on).
 		Renderer::SetVSync(CVars::VSync.Get());
 
@@ -90,9 +96,8 @@ namespace Snowstorm
 		// nobody can click it, so showing it boots an empty world that renders nothing — and a harness that
 		// only checks "did it crash?" reports PASS while measuring nothing. Suppress it and resolve a project
 		// deterministically instead, the way Unreal (-unattended) and Unity (-batchmode) suppress modal UI.
-		const bool interactive = !CVars::IsUnattended();
 		const bool explicitProject = !CVars::StartupProject.Get().empty();
-		const bool hasRecentProject = !EditorPreferences::RecentProjects().empty();
+		const bool hasRecentProject = interactive && !EditorPreferences::RecentProjects().empty();
 
 		m_ShowProjectStartScreen =
 		    interactive && (CVars::ForceProjectPicker.Get() || (!explicitProject && !hasRecentProject));
@@ -137,7 +142,7 @@ namespace Snowstorm
 				Project::SetActive(nullptr);
 				m_ActiveWorld = CreateRef<World>();
 				RegisterCoreSystems(*m_ActiveWorld);
-				Application::Get().Close();
+				Application::Get().Close(EXIT_FAILURE);
 				return;
 			}
 
@@ -154,7 +159,12 @@ namespace Snowstorm
 		// headless run's log has no other way to say WHICH project it measured — Runtime logs the same line.
 		SS_CORE_INFO("Loaded startup project '{}' (dir '{}')", ssproj.string(),
 		             project->GetProjectDirectory().string());
-		EditorPreferences::RecordProject(project->GetName(), ssproj);
+		// Automated runs must not mutate the interactive MRU list: doing so would turn the user's next real
+		// first boot into an automatic Sandbox reopen instead of the intended project picker.
+		if (interactive)
+		{
+			EditorPreferences::RecordProject(project->GetName(), ssproj);
+		}
 		m_ActiveWorld = CreateRef<World>();
 
 		InitializeActiveWorld();
@@ -766,7 +776,7 @@ namespace Snowstorm
 				SS_CORE_ERROR("startup.scene '{}' does not exist; refusing to silently measure a different "
 				              "scene in an unattended run.",
 				              overridePath);
-				Application::Get().Close();
+				Application::Get().Close(EXIT_FAILURE);
 				return;
 			}
 			SS_CORE_WARN("startup.scene '{}' does not exist; falling back to the project's start scene.",
@@ -1277,10 +1287,10 @@ namespace Snowstorm
 	{
 		SS_PROFILE_FUNCTION();
 
-		// Persist user settings (render.*, display.*) so they survive a restart. Skipped in smoke/headless
-		// runs (smoke.frames > 0) so automated runs stay side-effect-free and reproducible — they tear down
-		// the layer stack too, so without this guard they'd overwrite the config with test state.
-		if (CVars::SmokeFrames.Get() == 0)
+		// Persist user settings (render.*, display.*) so they survive a restart. Skip every unattended mode so
+		// automated runs stay side-effect-free and reproducible — they tear down the layer stack too, so without
+		// this guard perf/dataset/tool runs could overwrite the config with test state.
+		if (!CVars::IsUnattended())
 		{
 			CVarRegistry::Get().SaveConfig(CVarRegistry::kConfigPath);
 		}

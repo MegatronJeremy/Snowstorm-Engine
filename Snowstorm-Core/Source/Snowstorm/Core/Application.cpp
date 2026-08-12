@@ -66,7 +66,7 @@ namespace Snowstorm
 		Renderer::Shutdown();
 	}
 
-	void Application::Run()
+	int Application::Run()
 	{
 		SS_PROFILE_FUNCTION();
 
@@ -264,6 +264,8 @@ namespace Snowstorm
 			// per-frame view / frame-time graph). No-op for the JSON tracer.
 			SS_PROFILE_FRAME_MARK();
 		}
+
+		return m_ExitCode;
 	}
 
 	void Application::OnEvent(Event& e)
@@ -314,8 +316,12 @@ namespace Snowstorm
 		layer->OnAttach();
 	}
 
-	void Application::Close()
+	void Application::Close(const int exitCode)
 	{
+		if (exitCode != 0)
+		{
+			m_ExitCode = exitCode;
+		}
 		m_Running = false;
 	}
 }

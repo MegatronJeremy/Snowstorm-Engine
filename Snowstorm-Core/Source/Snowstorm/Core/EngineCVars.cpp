@@ -194,9 +194,11 @@ namespace Snowstorm::CVars
 
 	bool IsUnattended()
 	{
-		// Every mode below is startup-only (CVarFlags::ReadOnly), so this predicate is constant for the
-		// process lifetime and safe to call from any bootstrap path.
-		return SmokeFrames.Get() > 0 || PerfBenchFrames.Get() > 0 || DatasetExport.Get() || EcsBenchmark.Get() ||
+		// Include only modes that terminate without user input. Dataset export remains an interactive editor
+		// feature when no frame budget is set, so merely toggling it in the UI must not make the process
+		// unattended or suppress persistence on shutdown.
+		const bool boundedDatasetExport = DatasetExport.Get() && DatasetExportFrames.Get() > 0;
+		return SmokeFrames.Get() > 0 || PerfBenchFrames.Get() > 0 || boundedDatasetExport || EcsBenchmark.Get() ||
 		       !BakeScene.Get().empty() || !DumpMeshTangents.Get().empty() || !NeuralDumpIdentity.Get().empty();
 	}
 

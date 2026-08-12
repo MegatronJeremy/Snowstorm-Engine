@@ -15,7 +15,9 @@ namespace Snowstorm
 		explicit Application(const std::string& name = "Snowstorm App");
 		~Application() override;
 
-		void Run();
+		// Run until a window/user request or an automated mode stops the application. Returning the stored
+		// process status lets unattended startup failures propagate to scripts instead of looking successful.
+		[[nodiscard]] int Run();
 
 		void OnEvent(Event& e);
 
@@ -23,7 +25,8 @@ namespace Snowstorm
 
 		Window& GetWindow() const { return *m_Window; }
 
-		void Close();
+		// Request a clean shutdown. A non-zero status is sticky so a later normal close cannot hide a failure.
+		void Close(int exitCode = 0);
 
 		static Application& Get() { return *s_Instance; }
 
@@ -42,6 +45,7 @@ namespace Snowstorm
 		Scope<Window> m_Window;
 		Scope<EventBus> m_EventBus;
 		bool m_Running = true;
+		int m_ExitCode = 0;
 		bool m_Minimized = false;
 		Scope<LayerStack> m_LayerStack;
 		float m_LastFrameTime = 0.0f;

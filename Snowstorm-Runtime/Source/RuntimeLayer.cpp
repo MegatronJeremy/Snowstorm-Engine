@@ -34,7 +34,7 @@ namespace Snowstorm
 
 		// Boot the real startup project, same as the editor. Runtime has no picker and no recent-project list,
 		// so an empty startup.project resolves to the default Sandbox project rather than nothing. Content
-		// resolves under the project dir; engine assets (shaders/caches) stay CWD-relative. Fall back to a
+		// resolves under the project dir; engine assets (shaders/caches) stay engine-root-relative. Fall back to a
 		// CWD-rooted implicit project if the .ssproj is missing (fail-soft).
 		if (!Project::GetActive())
 		{

@@ -54,9 +54,10 @@ inline int main(int argc, char** argv)
 	const auto app = Snowstorm::CreateApplication();
 	SS_PROFILE_END_SESSION();
 
-	app->Run();
+	const int exitCode = app->Run();
 
 	delete app;
+	return exitCode;
 }
 
 #else

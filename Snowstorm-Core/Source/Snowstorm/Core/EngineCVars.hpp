@@ -108,10 +108,10 @@ namespace Snowstorm::CVars
 	// (MAILBOX/IMMEDIATE). Runtime-toggleable from the editor's Settings panel.
 	extern CVar<bool> VSync;
 
-	// True when the process is running WITHOUT a human: any one-shot/automated mode is active (smoke,
-	// perf-bench, dataset export, the ECS benchmark, a bake/dump tool). The single predicate every path that
-	// would otherwise BLOCK ON A HUMAN must check, so an automated run can never stall on — or silently no-op
-	// into — a dialog, prompt, or picker. Mirrors Unreal's FApp::IsUnattended() (-unattended) and Unity's
+	// True when the process is running WITHOUT a human: a self-terminating automated mode is active (smoke,
+	// perf-bench, bounded dataset export, the ECS benchmark, a bake/dump tool). The single predicate every path
+	// that would otherwise BLOCK ON A HUMAN must check, so an automated run can never stall on — or silently
+	// no-op into — a dialog, prompt, or picker. Mirrors Unreal's FApp::IsUnattended() (-unattended) and Unity's
 	// Application.isBatchMode (-batchmode); like those, it suppresses interactive UI, not rendering.
 	[[nodiscard]] bool IsUnattended();
 
