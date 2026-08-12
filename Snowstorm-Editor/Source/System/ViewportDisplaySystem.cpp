@@ -48,29 +48,13 @@ namespace Snowstorm
 		// (Unreal/Unity icon picking). Drawing and PickEntity share this constant so they never drift.
 		constexpr float kLightIconRadiusPx = 9.0f;
 
-		// Find the camera entity rendering into the given viewport (prefer Primary), so the gizmo and
-		// picking use the same view/projection the scene was rendered with. Mirrors RenderSystem's
-		// FindCameraForViewport but only needs the runtime matrices.
-		entt::entity FindViewportCamera(TrackedRegistry& reg, const entt::entity viewportEntity)
+		// Find the camera entity rendering into the given viewport, so the gizmo and picking use the same
+		// view/projection the scene was rendered with. Delegates to the shared ResolveViewportCamera so it
+		// CANNOT disagree with RenderSystem's pick (the two used to hand-roll the same loop separately — a
+		// gizmo-vs-render camera desync waiting to happen).
+		entt::entity FindViewportCamera(const TrackedRegistry& reg, const entt::entity viewportEntity)
 		{
-			auto camView = reg.view<const CameraComponent, const CameraTargetComponent, const CameraRuntimeComponent>();
-			entt::entity fallback = entt::null;
-			for (const entt::entity e : camView)
-			{
-				if (reg.Read<CameraTargetComponent>(e).TargetViewportEntity != viewportEntity)
-				{
-					continue;
-				}
-				if (reg.Read<CameraComponent>(e).Primary)
-				{
-					return e; // primary wins
-				}
-				if (fallback == entt::null)
-				{
-					fallback = e;
-				}
-			}
-			return fallback;
+			return ResolveViewportCamera(reg, viewportEntity);
 		}
 
 		// Pick the light whose billboard ICON is under (px,py): a hit if the click lands within the icon's

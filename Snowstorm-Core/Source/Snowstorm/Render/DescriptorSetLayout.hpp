@@ -15,9 +15,9 @@ namespace Snowstorm
 		UniformBuffer = 0,
 		UniformBufferDynamic, // dynamic offset at bind time
 		StorageBuffer,
-		SampledImage,     // SRV
-		StorageImage,     // UAV
-		Sampler,          // separate sampler (optional)
+		SampledImage,        // SRV
+		StorageImage,        // UAV
+		Sampler,             // separate sampler (optional)
 		CombinedImageSampler // for APIs/backends that prefer combined bindings
 	};
 
@@ -25,7 +25,7 @@ namespace Snowstorm
 	{
 		uint32_t Binding = 0;
 		DescriptorType Type = DescriptorType::UniformBuffer;
-		uint32_t Count = 1;               // arrays: e.g. 32 textures
+		uint32_t Count = 1; // arrays: e.g. 32 textures
 		ShaderStage Visibility = ShaderStage::AllGraphics;
 		bool IsBindless = false;
 		std::string DebugName;

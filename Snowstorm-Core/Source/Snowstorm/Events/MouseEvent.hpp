@@ -7,7 +7,7 @@ namespace Snowstorm
 	struct MouseMovedEvent final : Event
 	{
 		MouseMovedEvent(const float x, const float y)
-			: mouseX(x), mouseY(y)
+		    : mouseX(x), mouseY(y)
 		{
 		}
 
@@ -28,7 +28,7 @@ namespace Snowstorm
 	{
 	public:
 		MouseScrolledEvent(const float xOffset, const float yOffset)
-			: xOffset(xOffset), yOffset(yOffset)
+		    : xOffset(xOffset), yOffset(yOffset)
 		{
 		}
 
@@ -53,7 +53,7 @@ namespace Snowstorm
 
 	protected:
 		explicit MouseButtonEvent(const int button)
-			: m_Button(button)
+		    : m_Button(button)
 		{
 		}
 	};
@@ -61,7 +61,7 @@ namespace Snowstorm
 	struct MouseButtonPressedEvent final : MouseButtonEvent
 	{
 		explicit MouseButtonPressedEvent(const int button)
-			: MouseButtonEvent(button)
+		    : MouseButtonEvent(button)
 		{
 		}
 
@@ -78,7 +78,7 @@ namespace Snowstorm
 	struct MouseButtonReleasedEvent final : MouseButtonEvent
 	{
 		explicit MouseButtonReleasedEvent(const int button)
-			: MouseButtonEvent(button)
+		    : MouseButtonEvent(button)
 		{
 		}
 

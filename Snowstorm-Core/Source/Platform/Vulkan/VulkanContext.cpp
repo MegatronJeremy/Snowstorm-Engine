@@ -357,6 +357,28 @@ namespace Snowstorm
 			deviceExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
 		}
 
+#ifdef SS_DEBUG
+		// VK_EXT_device_fault (Debug only): lets us query WHERE the GPU died on a VK_ERROR_DEVICE_LOST — vendor
+		// fault addresses + a description — instead of a bare "-4". A pure diagnostic, so it's Debug-gated and
+		// only enabled when the device advertises it (many drivers don't). Checked against the device's
+		// extension list so vkCreateDevice can't fail on an unsupported extension.
+		{
+			uint32_t extCount = 0;
+			vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extCount, nullptr);
+			std::vector<VkExtensionProperties> avail(extCount);
+			vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extCount, avail.data());
+			for (const auto& e : avail)
+			{
+				if (std::strcmp(e.extensionName, VK_EXT_DEVICE_FAULT_EXTENSION_NAME) == 0)
+				{
+					m_DeviceFaultSupported = true;
+					deviceExtensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
+					break;
+				}
+			}
+		}
+#endif
+
 		VkDeviceCreateInfo devInfo{};
 		devInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 		devInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreates.size());
@@ -435,6 +457,17 @@ namespace Snowstorm
 			features13.pNext = &asFeatures;
 		}
 
+		// VK_EXT_device_fault feature (Debug diagnostic). Its deviceFault bit must be enabled for the fault-info
+		// query to work; splice it onto the chain when the extension was added above. Storage outside the if so
+		// it outlives vkCreateDevice; tail preserves whatever the chain already had.
+		VkPhysicalDeviceFaultFeaturesEXT faultFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT};
+		if (m_DeviceFaultSupported)
+		{
+			faultFeatures.deviceFault = VK_TRUE;
+			faultFeatures.pNext = features13.pNext;
+			features13.pNext = &faultFeatures;
+		}
+
 		VK_CHECK(vkCreateDevice(m_PhysicalDevice, &devInfo, nullptr, &m_Device));
 		volkLoadDevice(m_Device);
 		vkGetDeviceQueue(m_Device, m_GraphicsQueueFamily, 0, &m_GraphicsQueue);
@@ -447,6 +480,10 @@ namespace Snowstorm
 		             m_RayTracingSupported ? "supported (enabled)" : "not supported (raster fallback)");
 		SS_CORE_INFO("fp16 shader math (shaderFloat16 + 16-bit storage): {}.",
 		             m_Float16Supported ? "supported (neural fp16 path enabled)" : "not supported (fp32 fallback)");
+#ifdef SS_DEBUG
+		SS_CORE_INFO("Device fault diagnostics (VK_EXT_device_fault): {}.",
+		             m_DeviceFaultSupported ? "supported (enabled)" : "not supported");
+#endif
 
 		// 5. Graphics command pool (for transient command buffers)
 		VkCommandPoolCreateInfo poolInfo{};
@@ -727,5 +764,50 @@ namespace Snowstorm
 		vkDestroyDevice(m_Device, nullptr);
 
 		vkDestroyInstance(m_Instance, nullptr);
+	}
+
+	void VulkanContext::LogDeviceFaultInfo() const
+	{
+		if (!m_DeviceFaultSupported || vkGetDeviceFaultInfoEXT == nullptr)
+		{
+			SS_CORE_ERROR("Device lost, but VK_EXT_device_fault is unavailable — no GPU fault detail. "
+			              "(Run a Debug build on a device that supports it to get faulting addresses.)");
+			return;
+		}
+
+		// Two-call idiom: first get the counts, then allocate + fetch. The address-info records name each
+		// faulting GPU virtual address + its type (read/write/instruction-pointer/etc.), which for an OOB
+		// buffer-device-address read (the geometry-table-index theory) points straight at the bad access.
+		VkDeviceFaultCountsEXT counts{VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT};
+		if (vkGetDeviceFaultInfoEXT(m_Device, &counts, nullptr) != VK_SUCCESS)
+		{
+			SS_CORE_ERROR("vkGetDeviceFaultInfoEXT (counts) failed after device loss.");
+			return;
+		}
+
+		std::vector<VkDeviceFaultAddressInfoEXT> addresses(counts.addressInfoCount);
+		std::vector<VkDeviceFaultVendorInfoEXT> vendorInfos(counts.vendorInfoCount);
+		VkDeviceFaultInfoEXT info{VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT};
+		info.pAddressInfos = addresses.empty() ? nullptr : addresses.data();
+		info.pVendorInfos = vendorInfos.empty() ? nullptr : vendorInfos.data();
+		if (vkGetDeviceFaultInfoEXT(m_Device, &counts, &info) != VK_SUCCESS)
+		{
+			SS_CORE_ERROR("vkGetDeviceFaultInfoEXT (fetch) failed after device loss.");
+			return;
+		}
+
+		SS_CORE_ERROR("=== GPU DEVICE FAULT: {} === ({} address record(s), {} vendor record(s))",
+		              info.description, counts.addressInfoCount, counts.vendorInfoCount);
+		for (uint32_t i = 0; i < counts.addressInfoCount; ++i)
+		{
+			const VkDeviceFaultAddressInfoEXT& a = addresses[i];
+			SS_CORE_ERROR("  fault addr[{}]: type={} reportedAddress=0x{:x} precision(addressMask)=0x{:x}",
+			              i, static_cast<int>(a.addressType), a.reportedAddress, a.addressPrecision);
+		}
+		for (uint32_t i = 0; i < counts.vendorInfoCount; ++i)
+		{
+			const VkDeviceFaultVendorInfoEXT& v = vendorInfos[i];
+			SS_CORE_ERROR("  vendor[{}]: '{}' code=0x{:x} data=0x{:x}", i, v.description, v.vendorFaultCode, v.vendorFaultData);
+		}
 	}
 }

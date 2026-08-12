@@ -58,7 +58,7 @@ namespace Snowstorm
 		PipelineDesc p{};
 		p.Type = PipelineType::Graphics;
 		p.Shader = shader;
-		p.ColorFormats = {colorFormat}; // the SWAPCHAIN format, not the sRGB present format
+		p.ColorFormats = {colorFormat};       // the SWAPCHAIN format, not the sRGB present format
 		p.DepthFormat = PixelFormat::Unknown; // no depth on the swapchain
 		p.Raster.Cull = CullMode::None;
 		p.DepthStencil.EnableDepthTest = false;

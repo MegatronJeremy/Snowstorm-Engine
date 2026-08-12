@@ -11,7 +11,7 @@ namespace Snowstorm
 	{
 	public:
 		SnowstormEditor()
-			: Application("Snowstorm-Editor")
+		    : Application("Snowstorm-Editor")
 		{
 			m_ServiceManager->RegisterService<ImGuiService>();
 

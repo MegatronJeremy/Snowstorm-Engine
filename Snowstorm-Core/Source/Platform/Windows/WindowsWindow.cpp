@@ -210,7 +210,6 @@ namespace Snowstorm
 
 			MouseMovedEvent event(static_cast<float>(xPos), static_cast<float>(yPos));
 			data.EventCallback(event); });
-
 		// GLFW normalizes the native OS file-drop mechanism on every supported desktop platform.
 		// Queue paths here; editor UI decides whether the Content Browser was the intended target.
 		glfwSetDropCallback(m_Window, [](GLFWwindow*, const int count, const char** paths)

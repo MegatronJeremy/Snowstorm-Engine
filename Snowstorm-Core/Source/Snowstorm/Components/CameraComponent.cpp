@@ -26,7 +26,10 @@ namespace Snowstorm
 		    .property("OrthographicSize", &CameraComponent::OrthographicSize)(metadata("Min", 0.001f))
 		    .property("OrthographicNear", &CameraComponent::OrthographicNear)
 		    .property("OrthographicFar", &CameraComponent::OrthographicFar)
-		    .property("Primary", &CameraComponent::Primary)
+		    // Primary is reflected (so it serializes) but Hidden from the generic inspector: it must be
+		    // EXCLUSIVE across cameras (one main camera, like Unity's MainCamera tag), which a raw checkbox
+		    // can't guarantee — set it via the inspector's "Set as Primary" action, which demotes the others.
+		    .property("Primary", &CameraComponent::Primary)(metadata("Hidden", true))
 		    .property("FixedAspectRatio", &CameraComponent::FixedAspectRatio)
 		    .property("AspectRatio", &CameraComponent::AspectRatio)(metadata("Min", 0.01f));
 	}

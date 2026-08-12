@@ -26,4 +26,12 @@ namespace Snowstorm
 	// Frame the primary camera on a single entity's renderable bounds (interactive focus — never touches
 	// clip planes). Returns false if the entity has no mesh to frame.
 	bool FrameCameraOnEntity(World& world, entt::entity entity);
+
+	// The one place that answers "which camera drives this viewport" — prefer a Primary camera targeting
+	// it, else the first camera targeting it (deterministic entt iteration order), else entt::null. Every
+	// camera-vs-viewport consumer (render, gizmo/picking, the controller) routes through this so they can't
+	// disagree about the active camera (they used to hand-roll the same prefer-Primary-else-any loop three
+	// different ways). "TargetViewportEntity" is the resolved link CameraTargetComponent carries; a camera
+	// with no target, or targeting a different viewport, is not a candidate. Read-only; no side effects.
+	[[nodiscard]] entt::entity ResolveViewportCamera(const TrackedRegistry& reg, entt::entity viewport);
 }

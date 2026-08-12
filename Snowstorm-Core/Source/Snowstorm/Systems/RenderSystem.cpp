@@ -21,67 +21,34 @@
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/RenderTarget.hpp"
+#include "Snowstorm/Render/SceneBounds.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
 namespace Snowstorm
 {
 	namespace
 	{
-		// Resolve which camera drives a viewport: prefer a Primary camera targeting it, else any camera
-		// targeting it, else a null pick. File-local (the entt view type stays out of the header).
-		CameraPick FindCameraForViewport(
-		    const TrackedRegistry& reg,
-		    const entt::entity viewportEntity,
-		    const entt::view<
-		        entt::get_t<
-		            const TransformComponent,
-		            const CameraComponent,
-		            const CameraTargetComponent,
-		            const CameraRuntimeComponent,
-		            const CameraVisibilityComponent>>& camView)
+		// Resolve which camera drives a viewport into a CameraPick (the render path's bundle of component
+		// pointers). The prefer-Primary-else-first choice lives in ResolveViewportCamera (SceneBounds) so the
+		// render / gizmo / controller paths all agree; here we just materialize the pick, guarding that the
+		// chosen camera actually carries the runtime/transform/visibility a render needs (a hand-authored
+		// camera might be mid-construction). Null pick if nothing resolves or the pieces aren't ready.
+		CameraPick FindCameraForViewport(const TrackedRegistry& reg, const entt::entity viewportEntity)
 		{
 			CameraPick pick{};
 
-			// 1) Prefer Primary camera targeting this viewport
-			for (const auto e : camView)
+			const entt::entity e = ResolveViewportCamera(reg, viewportEntity);
+			if (e == entt::null ||
+			    !reg.all_of<CameraComponent, CameraRuntimeComponent, TransformComponent, CameraVisibilityComponent>(e))
 			{
-				const auto& cc = reg.Read<CameraComponent>(e);
-				if (!cc.Primary)
-				{
-					continue;
-				}
-
-				const auto& ct = reg.Read<CameraTargetComponent>(e);
-				if (ct.TargetViewportEntity != viewportEntity)
-				{
-					continue;
-				}
-
-				pick.Entity = e;
-				pick.Cam = &cc;
-				pick.Rt = &reg.Read<CameraRuntimeComponent>(e);
-				pick.Transform = &reg.Read<TransformComponent>(e);
-				pick.Visibility = &reg.Read<CameraVisibilityComponent>(e);
 				return pick;
 			}
 
-			// 2) Fallback: any camera targeting this viewport
-			for (const auto e : camView)
-			{
-				const auto& ct = reg.Read<CameraTargetComponent>(e);
-				if (ct.TargetViewportEntity != viewportEntity)
-				{
-					continue;
-				}
-
-				pick.Entity = e;
-				pick.Cam = &reg.Read<CameraComponent>(e);
-				pick.Rt = &reg.Read<CameraRuntimeComponent>(e);
-				pick.Transform = &reg.Read<TransformComponent>(e);
-				pick.Visibility = &reg.Read<CameraVisibilityComponent>(e);
-				return pick;
-			}
-
+			pick.Entity = e;
+			pick.Cam = &reg.Read<CameraComponent>(e);
+			pick.Rt = &reg.Read<CameraRuntimeComponent>(e);
+			pick.Transform = &reg.Read<TransformComponent>(e);
+			pick.Visibility = &reg.Read<CameraVisibilityComponent>(e);
 			return pick;
 		}
 	}
@@ -339,8 +306,7 @@ namespace Snowstorm
 			return;
 		}
 
-		const auto cameraView = View<const TransformComponent, const CameraComponent, const CameraTargetComponent, const CameraRuntimeComponent, const CameraVisibilityComponent>();
-		const CameraPick cam = FindCameraForViewport(fc.Reg, vpEntity, cameraView);
+		const CameraPick cam = FindCameraForViewport(fc.Reg, vpEntity);
 		if (cam.Entity == entt::null || !cam.Rt || !cam.Transform || !cam.Visibility)
 		{
 			return;

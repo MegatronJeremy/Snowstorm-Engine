@@ -8,7 +8,7 @@ namespace Snowstorm
 	{
 	public:
 		explicit CameraRuntimeUpdateSystem(const WorldRef world)
-			: System(world)
+		    : System(world)
 		{
 		}
 

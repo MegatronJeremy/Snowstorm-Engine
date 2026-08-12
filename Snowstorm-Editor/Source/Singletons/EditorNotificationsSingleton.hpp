@@ -7,7 +7,13 @@
 
 namespace Snowstorm
 {
-	enum class EditorToastType : uint8_t { Info, Success, Warning, Error };
+	enum class EditorToastType : uint8_t
+	{
+		Info,
+		Success,
+		Warning,
+		Error
+	};
 
 	struct EditorToast
 	{

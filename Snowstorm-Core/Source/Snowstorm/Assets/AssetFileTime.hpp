@@ -9,7 +9,8 @@ namespace Snowstorm
 	{
 		std::error_code ec;
 		const auto ft = std::filesystem::last_write_time(p, ec);
-		if (ec) return 0;
+		if (ec)
+			return 0;
 
 		// Convert file_time_type to a count. This is implementation-defined but stable enough per machine.
 		// Good for cache invalidation. If you later want cross-machine stability, switch to hashing file contents.

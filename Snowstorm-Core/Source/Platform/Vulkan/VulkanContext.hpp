@@ -73,6 +73,16 @@ namespace Snowstorm
 		// fp16 permutation; false => the fp32 path runs. Set in Init from a capability query.
 		[[nodiscard]] bool SupportsFloat16() const { return m_Float16Supported; }
 
+		// True when VK_EXT_device_fault is enabled: on a VK_ERROR_DEVICE_LOST we can query vendor fault info
+		// (faulting addresses + vendor description) via LogDeviceFaultInfo. Debug-only diagnostic.
+		[[nodiscard]] bool SupportsDeviceFault() const { return m_DeviceFaultSupported; }
+
+		// On a VK_ERROR_DEVICE_LOST, dump whatever VK_EXT_device_fault can tell us about the GPU fault (address
+		// records + a vendor-specific binary/description) at [error] level. No-op if the extension isn't
+		// enabled. Call this right where a submit/present returns DEVICE_LOST, before the process dies — it's
+		// the only structured signal a headless run gets about *where* the GPU died (see VulkanCommon submit).
+		void LogDeviceFaultInfo() const;
+
 		VkExtent2D GetSwapchainExtent() const { return m_SwapchainExtent; }
 
 		std::vector<VkImage> GetSwapchainImages() const { return m_SwapchainImages; }
@@ -115,6 +125,10 @@ namespace Snowstorm
 		// True when shaderFloat16 + 16-bit storage are supported and were enabled. Gates the neural conv's fp16
 		// permutation (# fp16 inference); false => fp32 fallback.
 		bool m_Float16Supported = false;
+
+		// True when VK_EXT_device_fault is supported on the picked device and was enabled at device creation.
+		// Debug-only (a diagnostic, not a runtime feature). Gates LogDeviceFaultInfo.
+		bool m_DeviceFaultSupported = false;
 
 		// Query the picked physical device for inline ray-tracing support: the rayQuery + accelerationStructure
 		// feature bits AND the three device extensions (acceleration_structure, ray_query, deferred_host_operations).

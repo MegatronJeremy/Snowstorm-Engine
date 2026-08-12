@@ -21,7 +21,7 @@ namespace Snowstorm
 			Connection() = default;
 
 			Connection(EventBus* bus, const EventType type, const HandlerId id)
-				: Bus(bus), Type(type), Id(id)
+			    : Bus(bus), Type(type), Id(id)
 			{
 			}
 
@@ -40,7 +40,8 @@ namespace Snowstorm
 
 			Connection& operator=(Connection&& other) noexcept
 			{
-				if (this == &other) return *this;
+				if (this == &other)
+					return *this;
 				Disconnect();
 				Bus = other.Bus;
 				Type = other.Type;
@@ -94,9 +95,7 @@ namespace Snowstorm
 			vec.push_back(std::move(h));
 
 			std::ranges::sort(vec, [](const Handler& a, const Handler& b)
-			{
-				return a.Priority > b.Priority;
-			});
+			                  { return a.Priority > b.Priority; });
 
 			return {this, type, id};
 		}
@@ -110,7 +109,8 @@ namespace Snowstorm
 
 			for (auto& h : it->second)
 			{
-				if (e.Handled) return;
+				if (e.Handled)
+					return;
 
 				if (h.Func(e))
 					e.Handled = true;
@@ -135,7 +135,8 @@ namespace Snowstorm
 				return;
 
 			auto& vec = it->second;
-			std::erase_if(vec, [&](const Handler& h) { return h.Id == id; });
+			std::erase_if(vec, [&](const Handler& h)
+			              { return h.Id == id; });
 
 			if (vec.empty())
 				m_Handlers.erase(it);

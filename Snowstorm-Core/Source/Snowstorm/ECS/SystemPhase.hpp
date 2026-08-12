@@ -26,14 +26,22 @@ namespace Snowstorm
 	{
 		switch (phase)
 		{
-		case SystemPhase::Init:      return "Init";
-		case SystemPhase::Logic:     return "Logic";
-		case SystemPhase::AssetSync: return "AssetSync";
-		case SystemPhase::UI:        return "UI";
-		case SystemPhase::Resolve:   return "Resolve";
-		case SystemPhase::PreRender: return "PreRender";
-		case SystemPhase::Render:    return "Render";
-		default:                     return "Phase?";
+		case SystemPhase::Init:
+			return "Init";
+		case SystemPhase::Logic:
+			return "Logic";
+		case SystemPhase::AssetSync:
+			return "AssetSync";
+		case SystemPhase::UI:
+			return "UI";
+		case SystemPhase::Resolve:
+			return "Resolve";
+		case SystemPhase::PreRender:
+			return "PreRender";
+		case SystemPhase::Render:
+			return "Render";
+		default:
+			return "Phase?";
 		}
 	}
 }

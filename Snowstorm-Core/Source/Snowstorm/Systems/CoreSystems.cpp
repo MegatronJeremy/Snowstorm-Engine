@@ -14,6 +14,7 @@
 #include "Snowstorm/Systems/MaterialResolveSystem.hpp"
 #include "Snowstorm/Systems/MeshResolveSystem.hpp"
 #include "Snowstorm/Systems/PrevTransformSnapshotSystem.hpp"
+#include "Snowstorm/Systems/PrimaryCameraSystem.hpp"
 #include "Snowstorm/Systems/RenderSystem.hpp"
 #include "Snowstorm/Systems/RotatorSystem.hpp"
 #include "Snowstorm/Systems/RuntimeInitSystem.hpp"
@@ -31,6 +32,9 @@ namespace Snowstorm
 		sm.RegisterSystem<RuntimeInitSystem>(SystemPhase::Init);
 
 		sm.RegisterSystem<ScriptSystem>(SystemPhase::Logic);
+		// Enforce the single-Primary-camera invariant BEFORE the controller + render camera resolution read it,
+		// so every downstream consumer sees an at-most-one-Primary state (Unity MainCamera / Unreal semantics).
+		sm.RegisterSystem<PrimaryCameraSystem>(SystemPhase::Logic);
 		sm.RegisterSystem<CameraControllerSystem>(SystemPhase::Logic);
 		// After the controller so the scripted benchmark path overrides free-fly input when camera.path is on.
 		sm.RegisterSystem<CameraPathSystem>(SystemPhase::Logic);

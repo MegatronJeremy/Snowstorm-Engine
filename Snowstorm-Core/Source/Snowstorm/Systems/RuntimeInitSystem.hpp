@@ -7,7 +7,7 @@ namespace Snowstorm
 	{
 	public:
 		explicit RuntimeInitSystem(const WorldRef world)
-			: System(world)
+		    : System(world)
 		{
 		}
 

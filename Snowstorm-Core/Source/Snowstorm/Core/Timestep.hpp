@@ -6,7 +6,7 @@ namespace Snowstorm
 	{
 	public:
 		Timestep(const float time = 0.0f)
-			: m_Time(time)
+		    : m_Time(time)
 		{
 		}
 

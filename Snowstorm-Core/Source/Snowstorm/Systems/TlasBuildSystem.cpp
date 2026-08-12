@@ -8,6 +8,7 @@
 #include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/MaterialInstance.hpp"
 #include "Snowstorm/Render/Mesh.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Systems/ReflectionGeometrySingleton.hpp"
 #include "Snowstorm/Systems/TlasInstanceMapSingleton.hpp"
 #include "Snowstorm/World/World.hpp"
@@ -160,9 +161,25 @@ namespace Snowstorm
 			if (!reflGeo.Table || reflGeo.Capacity < needed)
 			{
 				reflGeo.Capacity = needed;
+				// DEVICE-LOCAL (hostVisible=false): the table is read on the GPU hot path — every reflection/GI
+				// ray that hits geometry does several RawBufferLoads here plus vertex/index fetches — but written
+				// only on a rare rebuild (scene edit). A host-visible allocation lands in system RAM on a discrete
+				// GPU, so those hot reads would cross PCIe; device-local keeps them in VRAM. SetData takes the
+				// staging-upload path for a device-local buffer (one copy on the rare write), the right tradeoff
+				// for hot-read/rare-write data (mirrors how meshes' own vertex/index buffers are stored).
 				reflGeo.Table = Buffer::Create(static_cast<size_t>(needed) * sizeof(GeometryRecord),
-				                               BufferUsage::Storage, nullptr, true, "ReflectionGeometryTable");
+				                               BufferUsage::Storage, nullptr, false, "ReflectionGeometryTable");
 			}
+			// Drain before overwriting the table. The reflection/GI shaders read it by device address, and up to
+			// framesInFlight prior frames may still be reading LAST rebuild's contents on the GPU. Rewriting it
+			// without a drain tore a record mid-read on a rebuild (e.g. deleting a mesh while RT reflections are
+			// on) → the shader RawBufferLoad'd a half-written VertexAddress → GPU READ_INVALID →
+			// VK_ERROR_DEVICE_LOST. Confirmed via VK_EXT_device_fault (READ_INVALID at a garbage address). Sync
+			// validation can't see it (it's a raw-device-address read, not a tracked VkBuffer hazard). The drain
+			// is needed for EITHER allocation type: even the device-local staging copy writes m_Buffer on the
+			// graphics queue and can overlap a prior frame's read without a cross-submit barrier. Rebuilds are
+			// rare, so a full wait is cheap and matches how VulkanTlas::Build / the AS destructors serialize.
+			Renderer::WaitIdle();
 			reflGeo.Table->SetData(geoRecords.data(), needed * sizeof(GeometryRecord), 0);
 			// Publish the address EVERY time the table is populated, not only when the buffer is (re)created.
 			// The buffer survives an RT-off cycle (it's cached, not freed), while the else-branch below zeroes

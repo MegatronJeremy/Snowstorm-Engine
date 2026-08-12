@@ -21,7 +21,7 @@ namespace Snowstorm
 
 		UnderlyingType Value() const noexcept { return m_Value; }
 
-		std::string ToString() const; 
+		std::string ToString() const;
 		static UUID FromString(const std::string& s);
 
 	private:
@@ -30,7 +30,7 @@ namespace Snowstorm
 }
 
 // Enables UUID to be used as a hash key
-template<>
+template <>
 struct std::hash<Snowstorm::UUID>
 {
 	size_t operator()(const Snowstorm::UUID& uuid) const noexcept

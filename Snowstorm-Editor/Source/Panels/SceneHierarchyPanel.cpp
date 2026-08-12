@@ -525,6 +525,40 @@ namespace Snowstorm
 			info.DrawFn(entity);
 		}
 
+		// Camera "main camera" action. CameraComponent::Primary is Hidden from the generic inspector because
+		// it must be EXCLUSIVE (one main gameplay camera, like Unity's MainCamera tag) — a raw checkbox lets
+		// the user tick it on several. This action makes THIS camera Primary and demotes every other authored
+		// camera. Editor Scene-view cameras (DoNotSerialize) are excluded entirely: Primary is a gameplay-only
+		// concept, and the editor camera renders its viewport by identity, not by this flag.
+		if (entity.HasComponent<CameraComponent>() && !entity.HasComponent<DoNotSerializeComponent>())
+		{
+			auto& reg = entity.GetWorld()->GetRegistry();
+			const bool isPrimary = entity.GetComponent<CameraComponent>().Primary;
+
+			ImGui::Spacing();
+			ImGui::BeginDisabled(isPrimary);
+			if (ImGui::Button(isPrimary ? "Primary Camera (main)" : "Set as Primary Camera", ImVec2(-FLT_MIN, 0.0f)))
+			{
+				// Exclusive set: demote every other authored camera, promote this one. Tracked writes (patch/
+				// replace) so ChangedView sees it — the central invariant reconcile (CameraControllerSystem)
+				// then also holds for non-button paths (console/undo/deserialize).
+				for (const auto view = reg.view<CameraComponent>(); const entt::entity e : view)
+				{
+					if (reg.any_of<DoNotSerializeComponent>(e))
+					{
+						continue; // editor cameras never participate in Primary
+					}
+					const bool wantPrimary = (e == entity.Handle());
+					if (reg.Read<CameraComponent>(e).Primary != wantPrimary)
+					{
+						reg.patch<CameraComponent>(e, [wantPrimary](CameraComponent& c)
+						                           { c.Primary = wantPrimary; });
+					}
+				}
+			}
+			ImGui::EndDisabled();
+		}
+
 		ImGui::Spacing();
 		if (ImGui::Button("Add Component", ImVec2(-FLT_MIN, 0.0f)))
 		{

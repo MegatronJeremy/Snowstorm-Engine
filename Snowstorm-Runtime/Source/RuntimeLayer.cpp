@@ -111,25 +111,29 @@ namespace Snowstorm
 	{
 		auto& reg = m_World->GetRegistry();
 
-		// Find an authored camera in the loaded scene: prefer Primary, else the first CameraComponent. (The
-		// editor's Scene-view camera is DoNotSerialize + editor-only, so it never appears in the runtime.)
+		// Find the scene's MAIN camera: the one authored camera flagged Primary (Unity Camera.main / Unreal
+		// model). Primary is the deliberate "this is the game view" mark — the runtime does NOT invent a main
+		// camera by grabbing an arbitrary non-Primary one, so which camera you see is always the authored
+		// choice, never entt iteration order. (The editor's Scene-view camera is DoNotSerialize + editor-only,
+		// so it never appears in the runtime.)
 		entt::entity authored = entt::null;
 		for (const entt::entity e : reg.view<CameraComponent>())
 		{
-			if (authored == entt::null)
-			{
-				authored = e; // fallback: first camera
-			}
 			if (reg.Read<CameraComponent>(e).Primary)
 			{
-				authored = e; // prefer a Primary camera
+				authored = e;
 				break;
 			}
 		}
 
 		if (authored == entt::null)
 		{
-			CreateFallbackCamera(viewportId); // no authored camera -> keep the scene renderable
+			// No Primary camera → a defined, safe no-camera state: nothing renders to the swapchain, so the
+			// window shows the clear color (RenderSystem adds no Present pass when no viewport resolves a
+			// camera). Deleting the Primary camera lands here rather than hijacking to a random camera or
+			// crashing. Warn once so the empty view is diagnosable, not silent. Set a Primary camera to fix.
+			SS_CORE_WARN("Runtime: scene has no Primary camera; nothing to render (clear color). "
+			             "Mark a camera Primary in the editor to give the runtime a view.");
 			return;
 		}
 
@@ -151,27 +155,6 @@ namespace Snowstorm
 
 		SS_CORE_INFO("Runtime: using authored scene camera '{}'.",
 		             reg.any_of<TagComponent>(authored) ? reg.Read<TagComponent>(authored).Tag : std::string("<camera>"));
-	}
-
-	void RuntimeLayer::CreateFallbackCamera(const UUID viewportId) const
-	{
-		// No authored camera in the scene: create a default game camera at a fixed pose so the scene still
-		// renders (the pre-#147 behavior). A real project authors a camera in the scene instead.
-		auto camera = m_World->CreateEntity("Runtime Camera");
-		camera.AddComponent<TransformComponent>().Position.z = 15.0f;
-		{
-			auto& cc = camera.AddComponent<CameraComponent>();
-			cc.Projection = CameraComponent::ProjectionType::Perspective;
-			cc.PerspectiveFOV = 0.785398f;
-			cc.PerspectiveNear = 0.1f;
-			cc.PerspectiveFar = 1000.0f;
-			cc.Primary = true;
-		}
-		camera.AddComponent<CameraControllerComponent>();
-		camera.AddComponent<CameraTargetComponent>().TargetViewportUUID = viewportId;
-		camera.AddComponent<CameraVisibilityComponent>().Mask = Visibility::Game;
-
-		SS_CORE_INFO("Runtime: scene has no authored camera; created a default camera.");
 	}
 
 	void RuntimeLayer::OnUpdate(const Timestep ts)

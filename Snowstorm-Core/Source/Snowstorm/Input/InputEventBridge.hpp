@@ -15,11 +15,11 @@ namespace Snowstorm
 	{
 	public:
 		InputEventBridge(EventBus& bus, InputStateSingleton& input)
-			: m_Input(&input)
+		    : m_Input(&input)
 		{
 			// Keyboard
 			m_KeyDown = bus.Subscribe<KeyPressedEvent>([this](const KeyPressedEvent& e)
-			{
+			                                           {
 				if (const int key = e.m_KeyCode; key >= 0 && std::cmp_less(key, InputStateSingleton::MaxKeys))
 				{
 					if (!m_Input->Down.test(key))
@@ -27,38 +27,34 @@ namespace Snowstorm
 
 					m_Input->Down.set(key);
 				}
-				return false;
-			}, 0);
+				return false; }, 0);
 
 			m_KeyUp = bus.Subscribe<KeyReleasedEvent>([this](const KeyReleasedEvent& e)
-			{
+			                                          {
 				if (const int key = e.m_KeyCode; key >= 0 && std::cmp_less(key, InputStateSingleton::MaxKeys))
 				{
 					m_Input->Down.reset(key);
 					m_Input->ReleasedThisFrame.set(key);
 				}
-				return false;
-			}, 0);
+				return false; }, 0);
 
 			// Mouse move
 			m_MouseMove = bus.Subscribe<MouseMovedEvent>([this](const MouseMovedEvent& e)
-			{
+			                                             {
 				const glm::vec2 newPos{e.mouseX, e.mouseY};
 				m_Input->MouseDelta += (newPos - m_Input->MousePos);
 				m_Input->MousePos = newPos;
-				return false;
-			}, 0);
+				return false; }, 0);
 
 			// Scroll
 			m_Scroll = bus.Subscribe<MouseScrolledEvent>([this](const MouseScrolledEvent& e)
-			{
+			                                             {
 				m_Input->ScrollDelta += glm::vec2{e.xOffset, e.yOffset};
-				return false;
-			}, 0);
+				return false; }, 0);
 
 			// Mouse buttons
 			m_MouseDown = bus.Subscribe<MouseButtonPressedEvent>([this](const MouseButtonPressedEvent& e)
-			{
+			                                                     {
 				if (const int b = e.m_Button; b >= 0 && std::cmp_less(b, InputStateSingleton::MaxMouseButtons))
 				{
 					if (!m_Input->MouseDown.test(b))
@@ -68,18 +64,16 @@ namespace Snowstorm
 
 					m_Input->MouseDown.set(b);
 				}
-				return false;
-			}, 0);
+				return false; }, 0);
 
 			m_MouseUp = bus.Subscribe<MouseButtonReleasedEvent>([this](const MouseButtonReleasedEvent& e)
-			{
+			                                                    {
 				if (const int b = e.m_Button; b >= 0 && std::cmp_less(b, InputStateSingleton::MaxMouseButtons))
 				{
 					m_Input->MouseDown.reset(b);
 					m_Input->MouseReleasedThisFrame.set(b);
 				}
-				return false;
-			}, 0);
+				return false; }, 0);
 
 			// Window focus (optional)
 			// If you add WindowFocusEvent/WindowLostFocusEvent later, subscribe here.

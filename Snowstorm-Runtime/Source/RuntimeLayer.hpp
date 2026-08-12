@@ -22,13 +22,11 @@ namespace Snowstorm
 		// a camera can target it. Created before the scene loads.
 		UUID CreateRuntimeViewport() const;
 
-		// After the scene loads, bind the runtime viewport to a camera (#147): if the scene authored a
-		// CameraComponent entity (prefer Primary), use it — retarget it at `viewportId` and ensure it has the
-		// controller/visibility/target it needs to be driven + cull the Game layer. Otherwise create the
-		// default fallback camera at a fixed pose (the pre-#147 behavior), so scenes with no authored camera
-		// still render.
+		// After the scene loads, bind the runtime viewport to the scene's Primary camera (#147): retarget it at
+		// `viewportId` and ensure it has the controller/visibility/target it needs to be driven + cull the Game
+		// layer. No Primary camera → a defined no-render state (clear color + one warn); the runtime never
+		// invents a main camera by grabbing an arbitrary one (Unity Camera.main / Unreal model).
 		void ConfigureSceneCamera(UUID viewportId) const;
-		void CreateFallbackCamera(UUID viewportId) const;
 
 		Ref<World> m_World;
 		std::string m_ScenePath;

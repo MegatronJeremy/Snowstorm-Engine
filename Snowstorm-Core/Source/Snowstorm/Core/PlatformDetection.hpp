@@ -7,7 +7,7 @@
 /* Windows x64  */
 #define SS_PLATFORM_WINDOWS
 #else
-	/* Windows x86 */
+/* Windows x86 */
 #error "x86 Builds are not supported!"
 #endif
 #elif defined(__APPLE__) || defined(__MACH__)
@@ -37,6 +37,6 @@
 #define SS_PLATFORM_LINUX
 #error "Linux is not supported!"
 #else
-	/* Unknown compiler/platform */
+/* Unknown compiler/platform */
 #error "Unknown platform!"
 #endif // End of platform detection
