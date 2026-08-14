@@ -201,6 +201,30 @@ namespace Snowstorm
 		}
 	}
 
+	void VulkanCommandContext::BarrierDepthWriteToRead(const Ref<Texture>& depth)
+	{
+		// Depth prepass (LATE_FRAGMENT_TESTS write) -> forward pass (EARLY/LATE_FRAGMENT_TESTS test+write) on
+		// the same D32 texture. Layout is unchanged (DEPTH_ATTACHMENT_OPTIMAL both sides) so this is a pure
+		// execution+memory dependency, not a transition. Emitted between the two passes, outside any rendering.
+		auto vkTex = std::static_pointer_cast<VulkanTexture>(depth);
+		const VkImageLayout layout = vkTex->GetCurrentLayout();
+
+		VkImageMemoryBarrier2 barrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+		barrier.srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+		barrier.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		barrier.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+		barrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		barrier.oldLayout = layout;
+		barrier.newLayout = layout;
+		barrier.image = vkTex->GetImage();
+		barrier.subresourceRange = {vkTex->GetAspectMask(), 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
+
+		VkDependencyInfo dep{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+		dep.imageMemoryBarrierCount = 1;
+		dep.pImageMemoryBarriers = &barrier;
+		vkCmdPipelineBarrier2(m_CommandBuffer, &dep);
+	}
+
 	void VulkanCommandContext::BeginRenderPass(const RenderTarget& target)
 	{
 		SS_CORE_ASSERT(!m_IsRendering, "BeginRenderPass called while already rendering");

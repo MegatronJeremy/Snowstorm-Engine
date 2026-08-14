@@ -30,6 +30,12 @@ namespace Snowstorm
 		virtual void BeginRenderPass(const RenderTarget& target) = 0;
 		virtual void EndRenderPass() = 0;
 
+		// Early-Z: execution+memory barrier making a depth prepass's writes visible to the next pass's depth
+		// test/write on the SAME depth texture. Needed because the layout is unchanged (DEPTH_ATTACHMENT_OPTIMAL
+		// both sides), so the auto attachment transition emits no barrier. Call OUTSIDE any render pass (from a
+		// compute-style graph pass inserted between the prepass and the forward pass).
+		virtual void BarrierDepthWriteToRead(const Ref<Texture>& depth) = 0;
+
 		// Viewport / Scissor
 		virtual void SetViewport(float x, float y, float width, float height,
 		                         float minDepth = 0.0f, float maxDepth = 1.0f) = 0;

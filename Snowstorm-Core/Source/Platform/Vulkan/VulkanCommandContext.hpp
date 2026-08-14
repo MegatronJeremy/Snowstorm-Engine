@@ -28,6 +28,8 @@ namespace Snowstorm
 		void BeginRenderPass(const RenderTarget& target) override;
 		void EndRenderPass() override;
 
+		void BarrierDepthWriteToRead(const Ref<Texture>& depth) override;
+
 		void SetViewport(float x, float y, float width, float height,
 		                 float minDepth = 0.0f, float maxDepth = 1.0f) override;
 		void SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height) override;

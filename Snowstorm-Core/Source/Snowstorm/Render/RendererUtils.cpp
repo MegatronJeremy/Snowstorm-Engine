@@ -51,6 +51,56 @@ namespace Snowstorm
 		return RenderTarget::Create(rtDesc);
 	}
 
+	Ref<RenderTarget> CreateSceneDepthPrepassTarget(const Ref<TextureView>& sceneDepthView)
+	{
+		// Depth-only RT wrapping the scene's OWN depth view (no color). The camera depth prepass clears +
+		// writes it; the forward early-Z target below then LOADs it. Same texture -> one shared depth buffer.
+		const auto& dtd = sceneDepthView->GetTexture()->GetDesc();
+		RenderTargetDesc rtDesc{};
+		rtDesc.Width = dtd.Width;
+		rtDesc.Height = dtd.Height;
+		rtDesc.IsSwapchainTarget = false;
+
+		DepthStencilAttachment depthAtt{};
+		depthAtt.View = sceneDepthView;
+		depthAtt.ClearDepth = 1.0f;
+		depthAtt.DepthLoadOp = RenderTargetLoadOp::Clear;
+		depthAtt.DepthStoreOp = RenderTargetStoreOp::Store;
+		rtDesc.DepthAttachment = depthAtt;
+
+		return RenderTarget::Create(rtDesc);
+	}
+
+	Ref<RenderTarget> CreateForwardEarlyZTarget(const Ref<TextureView>& sceneColorView,
+	                                            const Ref<TextureView>& sceneDepthView)
+	{
+		// Forward target for the early-Z path: the scene color view (CLEAR, matching the default scene RT) +
+		// the scene depth view LOADED (the prepass already cleared + wrote it). Depth-write stays on; the
+		// pipeline's LESS_EQUAL compare rejects the occluded fragments the prepass laid depth over.
+		const auto& ctd = sceneColorView->GetTexture()->GetDesc();
+		RenderTargetDesc rtDesc{};
+		rtDesc.Width = ctd.Width;
+		rtDesc.Height = ctd.Height;
+		rtDesc.IsSwapchainTarget = false;
+
+		RenderTargetAttachment colorAtt{};
+		colorAtt.View = sceneColorView;
+		colorAtt.AttachmentIndex = 0;
+		colorAtt.ClearColor = {0.1f, 0.1f, 0.1f, 1.0f}; // match CreateDefaultSceneRenderTarget
+		colorAtt.LoadOp = RenderTargetLoadOp::Clear;
+		colorAtt.StoreOp = RenderTargetStoreOp::Store;
+		rtDesc.ColorAttachments.push_back(colorAtt);
+
+		DepthStencilAttachment depthAtt{};
+		depthAtt.View = sceneDepthView;
+		depthAtt.ClearDepth = 1.0f;
+		depthAtt.DepthLoadOp = RenderTargetLoadOp::Load; // reuse the prepass depth -> early-Z
+		depthAtt.DepthStoreOp = RenderTargetStoreOp::Store;
+		rtDesc.DepthAttachment = depthAtt;
+
+		return RenderTarget::Create(rtDesc);
+	}
+
 	Ref<RenderTarget> CreateVelocityTarget(uint32_t w, uint32_t h, const char* debugPrefix)
 	{
 		// Motion vectors (#44): RGBA16F color (.xy = velocity, cleared to 0) + its own D32 depth so the
