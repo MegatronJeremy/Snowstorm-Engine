@@ -29,6 +29,7 @@ namespace Snowstorm
 				ps.MinMs = ps.Count == 0 ? s.Milliseconds : (s.Milliseconds < ps.MinMs ? s.Milliseconds : ps.MinMs);
 				ps.MaxMs = ps.Count == 0 ? s.Milliseconds : (s.Milliseconds > ps.MaxMs ? s.Milliseconds : ps.MaxMs);
 				ps.Depth = s.Depth;
+				ps.SumFrags += static_cast<double>(s.FragInvocations); // per-pass FS invocations (overdraw metric)
 				++ps.Count;
 			}
 			m_TotalGpuSumMs += gpuFrameMs;
@@ -51,6 +52,7 @@ namespace Snowstorm
 			double SumMs = 0.0;
 			float MinMs = 0.0f;
 			float MaxMs = 0.0f;
+			double SumFrags = 0.0; // summed fragment-shader invocations (avg written to JSON)
 			uint32_t Count = 0;
 			uint32_t Depth = 0;
 		};

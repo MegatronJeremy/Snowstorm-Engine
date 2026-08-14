@@ -18,6 +18,7 @@ namespace Snowstorm
 		std::string Name;
 		float Milliseconds = 0.0f;
 		uint32_t Depth = 0;
+		uint64_t FragInvocations = 0; // fragment-shader invocations this pass (0 = unmeasured / compute pass)
 	};
 
 	class CommandContext

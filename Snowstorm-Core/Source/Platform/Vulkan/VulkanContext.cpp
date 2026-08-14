@@ -339,6 +339,14 @@ namespace Snowstorm
 			enabledFeatures.shaderInt64 = VK_TRUE;
 		}
 
+		// Pipeline-statistics queries: per-pass fragment-shader-invocation counts for the headless overdraw
+		// metric (VulkanCommandContext's second query pool, surfaced via perf-bench). Enabled only when
+		// supported; the pool creation fail-soft skips if this is off, so a device without it just reports 0.
+		if (supportedFeatures.pipelineStatisticsQuery)
+		{
+			enabledFeatures.pipelineStatisticsQuery = VK_TRUE;
+		}
+
 		// Common device extensions
 		std::vector<const char*> deviceExtensions = {
 		    VK_KHR_SWAPCHAIN_EXTENSION_NAME,

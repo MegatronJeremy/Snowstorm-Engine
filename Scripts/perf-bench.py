@@ -122,7 +122,11 @@ def compare(name: str, current: dict, baseline: dict, threshold_pct: float) -> b
         if delta > threshold_pct:
             flag = "  REGRESSION"
             ok = False
-        print(f"  {p:<18} {b:>10.3f} {c:>10.3f} {delta:>+8.1f}%{flag}")
+        # FS invocations (overdraw metric, #pipeline-stats). Informational: a graphics pass's fragment-
+        # shader invocations; divide by the pass's pixel count for overdraw. Not gated (it's a diagnostic).
+        fi = cur_passes.get(p, {}).get("fragInvocations", 0)
+        frag = f"  frags={fi / 1e6:.1f}M" if fi else ""
+        print(f"  {p:<18} {b:>10.3f} {c:>10.3f} {delta:>+8.1f}%{flag}{frag}")
 
     bt, ct = baseline.get("totalGpuMs", 0.0), current.get("totalGpuMs", 0.0)
     dt = (ct - bt) / bt * 100.0 if bt > 0 else 0.0
