@@ -116,8 +116,15 @@ py Scripts/rga-occupancy.py --dry-run          # print planned RGA invocations, 
 instruction holding the most live registers, the actionable target for cutting a shader's VGPR count
 (e.g. GIDenoise.comp peaks at 184 live VGPRs around a `v_cndmask` block).
 
-It fails (exit 1) on a register/LDS/ISA rise beyond `--threshold` (default 10%) or a spill appearing
-(0 to >0, a hard fail). Stage per module is read from the SPIR-V `OpEntryPoint` execution model, not
+The **primary gate is VGPR-limited occupancy**: RGA's CLI has no occupancy column, so the script
+derives waves/SIMD from the VGPR count using the RDNA3 (gfx11) model (1536 VGPRs/SIMD, 16 waves max,
+<=96 VGPRs => full 16 waves), verified against AMD's docs. It fails (exit 1) when occupancy drops
+(fewer waves), a spill appears (0 to >0, hard fail), or LDS/ISA rises beyond `--threshold`
+(default 10%). Raw VGPR% is intentionally not gated -- a VGPR rise that doesn't cross a wave boundary
+costs nothing. The occupancy is *theoretical* and VGPR-only (LDS occupancy needs the workgroup size
+RGA offline reports as 0); measure achieved occupancy with RGP. On the current baseline only
+`GIDenoise.comp` (192 VGPR -> 8/16 waves) is occupancy-limited; every other shader hits 16/16.
+Stage per module is read from the SPIR-V `OpEntryPoint` execution model, not
 the filename, so the stage-less `IBL*.hlsl` shaders resolve correctly. RGA is **pinned** to a version
 + SHA-256 in the script (its stats columns and compiler drift between versions, like the clang-format
 pin) and **auto-bootstraps**: if not found via `--rga` / `SS_RGA` / PATH it downloads the pinned

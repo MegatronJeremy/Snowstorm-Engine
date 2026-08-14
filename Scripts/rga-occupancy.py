@@ -4,14 +4,17 @@
 Headless, deterministic, no GPU run. Feeds each compiled SPIR-V module through the
 Radeon GPU Analyzer offline compiler for a target ASIC (default gfx1100, the RX 7900
 XTX / RDNA3), parses RGA's statistics CSV (VGPR/SGPR usage, LDS bytes, scratch + register
-spills, ISA size), then diffs against a committed baseline in Scripts/rga-baseline/ --
-failing (exit 1) on a register/LDS/ISA rise beyond the threshold or a spill appearing.
+spills, ISA size), then diffs against a committed baseline in Scripts/rga-baseline/. It
+fails (exit 1) when VGPR-limited occupancy drops (fewer waves/SIMD), a spill appears, or
+LDS/ISA rises beyond the threshold. Raw VGPR% is deliberately NOT gated: a VGPR rise that
+doesn't cross a wave boundary is harmless.
 
 Unlike perf-bench.py this needs NO GPU: RGA is a static offline compiler. RGA's CLI stats
-have no occupancy column (the GUI computes it), so this gate targets occupancy's
-*determinants* -- register/LDS pressure and spills -- which are what actually cap waves
-per SIMD. It catches the changes that wreck occupancy (VGPR growth, spills) at compile
-time, before they cost frame time. Measure real achieved occupancy / bandwidth with RGP.
+have no occupancy column (the GUI computes it), so we derive VGPR-limited waves/SIMD from
+the VGPR count using the RDNA3 (gfx11) model (1536 VGPRs/SIMD, 16 waves max, <=96 VGPRs =>
+full). This is *theoretical* occupancy, not measured, and VGPR-only (LDS occupancy needs
+the workgroup size RGA offline reports as 0). It catches the changes that wreck occupancy
+at compile time. Measure real achieved occupancy / bandwidth / stalls with RGP.
 
 Input SPIR-V comes from the engine's shader cache (Engine/cache/shaders/*.spv), which is
 populated by any editor build+run. A shader can have several permutation .spv files
@@ -85,10 +88,27 @@ _METRIC_ALIASES = {
     "sgpr_spills": ["SGPR_SPILLS"],
     "isa_size":    ["ISA_SIZE"],
 }
-# Metrics where a HIGHER value is a regression.
-_HIGHER_IS_WORSE = ("vgprs", "sgprs", "lds", "isa_size")
+# Secondary metrics gated on a rise beyond threshold (occupancy, below, is the primary gate).
+_HIGHER_IS_WORSE = ("lds", "isa_size")
 # Metrics that must stay at 0; any 0 -> >0 is a hard fail regardless of threshold.
 _SPILL_METRICS = ("scratch", "vgpr_spills", "sgpr_spills")
+
+# RDNA3 (gfx11) wave32 occupancy model. Constants verified against AMD's RDNA3 docs and RGA's own
+# arch-info output: 1536 VGPRs/SIMD (192KB), 16 waves/SIMD max, <=96 VGPRs => full occupancy.
+# SGPRs never limit on RDNA. LDS can, but RGA offline reports THREADS_PER_WORKGROUP=0, so we compute
+# the VGPR-limited theoretical occupancy only (and gate LDS growth separately). Not measured -- see RGP.
+RDNA3_VGPR_FILE = 1536
+RDNA3_MAX_WAVES = 16
+RDNA3_VGPR_GRANULARITY = 16
+
+
+def vgpr_occupancy(vgprs: float, asic: str) -> int | None:
+    """VGPR-limited theoretical waves/SIMD (wave32) for a gfx11 ASIC, else None."""
+    if not asic.startswith("gfx11") or vgprs <= 0:
+        return None
+    g = RDNA3_VGPR_GRANULARITY
+    allocated = max(g, ((int(vgprs) + g - 1) // g) * g)
+    return min(RDNA3_MAX_WAVES, RDNA3_VGPR_FILE // allocated)
 
 
 def find_repo_root(script_dir: Path) -> Path:
@@ -317,7 +337,12 @@ def collapse_worst(perm_metrics: list[dict]) -> dict:
     return worst
 
 
-def compare(name: str, cur: dict, base: dict, threshold_pct: float) -> bool:
+def _occ_str(vgprs: float, asic: str) -> str:
+    occ = vgpr_occupancy(vgprs, asic)
+    return f"{occ}/{RDNA3_MAX_WAVES}" if occ is not None else "--"
+
+
+def compare(name: str, cur: dict, base: dict, threshold_pct: float, asic: str) -> bool:
     """Print one shader's baseline-vs-current metrics; return True if within threshold."""
     ok = True
     flags = []
@@ -326,7 +351,15 @@ def compare(name: str, cur: dict, base: dict, threshold_pct: float) -> bool:
         if cur.get(k, 0) > 0 and base.get(k, 0) == 0:
             ok = False
             flags.append(f"NEW {k}")
-    # register/LDS/ISA pressure: a rise beyond threshold is a regression.
+    # occupancy (primary gate): fewer VGPR-limited waves/SIMD is a regression. This is why raw VGPR%
+    # is NOT gated -- a VGPR rise that doesn't cross a wave boundary is harmless.
+    base_occ = vgpr_occupancy(base.get("vgprs", 0), asic)
+    cur_occ = vgpr_occupancy(cur.get("vgprs", 0), asic)
+    if base_occ is not None and cur_occ is not None and cur_occ < base_occ:
+        ok = False
+        flags.append(f"occupancy {base_occ}->{cur_occ} waves")
+    # LDS/ISA: a rise beyond threshold is a regression (LDS is a secondary occupancy limiter we
+    # can't model without workgroup size; ISA growth flags code bloat / i-cache pressure).
     for k in _HIGHER_IS_WORSE:
         b, c = base.get(k), cur.get(k)
         if b and c is not None and b > 0:
@@ -337,7 +370,7 @@ def compare(name: str, cur: dict, base: dict, threshold_pct: float) -> bool:
     spill = cur.get("vgpr_spills", 0) + cur.get("sgpr_spills", 0) + cur.get("scratch", 0)
     tag = "  " + ", ".join(flags) if flags else ""
     print(f"  {name:<24} vgpr {base.get('vgprs', 0):>3.0f}->{cur.get('vgprs', 0):<3.0f}  "
-          f"sgpr {base.get('sgprs', 0):>3.0f}->{cur.get('sgprs', 0):<3.0f}  "
+          f"occ {_occ_str(base.get('vgprs', 0), asic):>5}->{_occ_str(cur.get('vgprs', 0), asic):<5}  "
           f"lds {base.get('lds', 0):>5.0f}->{cur.get('lds', 0):<5.0f}  "
           f"spills {spill:<4.0f}{'  REGRESSION' if not ok else ''}{tag}")
     return ok
@@ -452,7 +485,7 @@ def main() -> int:
         print(f"No baseline at {baseline_file.relative_to(repo_root)} -- run with --update-baseline first.")
         for base, m in sorted(current.items()):
             spill = m.get("vgpr_spills", 0) + m.get("sgpr_spills", 0) + m.get("scratch", 0)
-            print(f"  {base:<24} vgpr {m.get('vgprs', 0):>3.0f}  sgpr {m.get('sgprs', 0):>3.0f}  "
+            print(f"  {base:<24} vgpr {m.get('vgprs', 0):>3.0f}  occ {_occ_str(m.get('vgprs', 0), args.asic):>5}  "
                   f"lds {m.get('lds', 0):>5.0f}  spills {spill:.0f}")
         return 0
 
@@ -466,7 +499,7 @@ def main() -> int:
         if c is None:
             print(f"  {base:<24} (gone from cache)")
             continue
-        if not compare(base, c, b, args.threshold):
+        if not compare(base, c, b, args.threshold, args.asic):
             all_ok = False
 
     print("\n=== Summary ===")
