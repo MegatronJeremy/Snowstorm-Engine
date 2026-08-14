@@ -8,6 +8,9 @@ Engine/cache
 # Radeon GPU Analyzer, auto-bootstrapped (pinned version, ~238MB) by Scripts/rga-occupancy.py.
 # Downloaded tool, not source — never commit.
 Tools/rga/
+# Radeon Developer Tool Suite (RGP/RDP/RDS), bootstrapped by Scripts/rgp-capture.py. Downloaded
+# tool, not source — never commit.
+Tools/rdts/
 
 # Files
 *.vcxproj
