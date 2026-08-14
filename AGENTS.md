@@ -108,8 +108,13 @@ shader, not a churning content hash), and diffs against `Scripts/rga-baseline/oc
 py Scripts/rga-occupancy.py                    # analyse cache, diff vs baseline, PASS/FAIL
 py Scripts/rga-occupancy.py --update-baseline  # capture current results as the new baseline
 py Scripts/rga-occupancy.py --only Reflection  # one shader (base-name substring)
+py Scripts/rga-occupancy.py --livereg --only GIDenoise  # pinpoint the peak live-VGPR instruction
 py Scripts/rga-occupancy.py --dry-run          # print planned RGA invocations, don't run RGA
 ```
+
+`--livereg` is an investigation mode (not gated): it runs RGA live-VGPR analysis and prints the
+instruction holding the most live registers, the actionable target for cutting a shader's VGPR count
+(e.g. GIDenoise.comp peaks at 184 live VGPRs around a `v_cndmask` block).
 
 It fails (exit 1) on a register/LDS/ISA rise beyond `--threshold` (default 10%) or a spill appearing
 (0 to >0, a hard fail). Stage per module is read from the SPIR-V `OpEntryPoint` execution model, not

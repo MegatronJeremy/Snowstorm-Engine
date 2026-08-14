@@ -40,6 +40,7 @@ import csv
 import glob
 import hashlib
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -263,6 +264,48 @@ def run_rga(rga: Path, asic: str, stage: str, spv: Path, timeout: int) -> dict |
     return parse_rga_csv(produced[0])
 
 
+_LIVEREG_SUMMARY = re.compile(r"Maximum # VGPR used (\d+), VGPRs allocated by HW: (\d+)")
+
+
+def run_rga_livereg(rga: Path, asic: str, stage: str, spv: Path, timeout: int) -> dict | None:
+    """Run RGA live-VGPR analysis; return {max_used, allocated, peak_line, peak_isa}.
+
+    Pinpoints WHERE register pressure peaks (the instruction holding the most live VGPRs), which
+    is the actionable target for cutting a shader's VGPR count. Investigation only, not gated.
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="rga-lr-"))
+    out = tmp / "lr.txt"
+    cmd = [str(rga), "-s", "vk-spv-offline", "-c", asic, f"--{stage}", str(spv), "--livereg", str(out)]
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    produced = list(tmp.glob("*lr*.txt")) + ([out] if out.exists() else [])
+    if not produced:
+        return None
+    text = produced[0].read_text(errors="replace")
+    max_used = allocated = None
+    peak_live, peak_line, peak_isa = -1, None, ""
+    for line in text.splitlines():
+        m = _LIVEREG_SUMMARY.search(line)
+        if m:
+            max_used, allocated = int(m.group(1)), int(m.group(2))
+            continue
+        # Data rows: "<lineno> | <live> | <liveness map> | <isa>" (isa may itself contain '|').
+        parts = line.split("|", 3)
+        if len(parts) >= 4:
+            try:
+                lineno, live = int(parts[0].strip()), int(parts[1].strip())
+            except ValueError:
+                continue
+            if live > peak_live:
+                peak_live, peak_line, peak_isa = live, lineno, parts[3].strip()
+    if max_used is None and peak_live < 0:
+        return None
+    return {"max_used": max_used if max_used is not None else peak_live,
+            "allocated": allocated, "peak_line": peak_line, "peak_isa": peak_isa}
+
+
 def collapse_worst(perm_metrics: list[dict]) -> dict:
     """Fold a shader's permutations into the worst case (max of every metric: higher register/LDS/
     spill pressure is always the limiting permutation)."""
@@ -312,6 +355,8 @@ def main() -> int:
     ap.add_argument("--timeout", type=int, default=60, help="Per-shader RGA timeout in seconds")
     ap.add_argument("--update-baseline", action="store_true", help="Write current results as baseline")
     ap.add_argument("--dry-run", action="store_true", help="Print planned RGA invocations, don't run")
+    ap.add_argument("--livereg", action="store_true",
+                    help="Investigation mode: report peak live-VGPR location per shader (pair with --only)")
     args = ap.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -363,6 +408,20 @@ def main() -> int:
         print("  Standalone download: https://github.com/GPUOpen-Tools/radeon_gpu_analyzer/releases")
         return 1
     print(f"RGA       : {rga}")
+
+    if args.livereg:
+        print("Mode      : LIVE-VGPR HOTSPOTS (investigation, not gated)\n")
+        for base, files in sorted(groups.items()):
+            for spv, stage in files:
+                r = run_rga_livereg(rga, args.asic, stage, spv, args.timeout)
+                if r is None:
+                    print(f"  {base:<24} livereg produced no output")
+                    continue
+                alloc = f" (HW-allocated {r['allocated']})" if r["allocated"] is not None else ""
+                loc = f" @ ISA line {r['peak_line']}: {r['peak_isa']}" if r["peak_line"] is not None else ""
+                print(f"  {base:<24} peak live VGPR {r['max_used']}{alloc}{loc}")
+        return 0
+
     print(f"Mode      : {'UPDATE BASELINE' if args.update_baseline else 'compare vs baseline'}\n")
 
     import json  # local: only needed past the dry-run path
