@@ -32,10 +32,10 @@ TEST_CASE("PerfBench averages per-pass ms over frames", "[render][perfbench]")
 	CHECK(Contains(json, "\"config\": \"rt-off\""));
 	CHECK(Contains(json, "\"frames\": 2"));
 	CHECK(Contains(json, "\"timestampsSupported\": true"));
-	// Forward avg = 15, min 10, max 20.
-	CHECK(Contains(json, "\"Forward\": { \"avgMs\": 15.0000, \"minMs\": 10.0000, \"maxMs\": 20.0000, \"depth\": 0 }"));
+	// Forward avg = 15, min 10, max 20. fragInvocations 0 (test scopes carry no FS-invocation count).
+	CHECK(Contains(json, "\"Forward\": { \"avgMs\": 15.0000, \"minMs\": 10.0000, \"maxMs\": 20.0000, \"fragInvocations\": 0, \"depth\": 0 }"));
 	// Sky is a nested scope (depth 1), constant 2.
-	CHECK(Contains(json, "\"Sky\": { \"avgMs\": 2.0000, \"minMs\": 2.0000, \"maxMs\": 2.0000, \"depth\": 1 }"));
+	CHECK(Contains(json, "\"Sky\": { \"avgMs\": 2.0000, \"minMs\": 2.0000, \"maxMs\": 2.0000, \"fragInvocations\": 0, \"depth\": 1 }"));
 	// totalGpuMs = (12+22)/2 = 17.
 	CHECK(Contains(json, "\"totalGpuMs\": 17.0000"));
 }
