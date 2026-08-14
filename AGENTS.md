@@ -129,12 +129,25 @@ the filename, so the stage-less `IBL*.hlsl` shaders resolve correctly. RGA is **
 + SHA-256 in the script (its stats columns and compiler drift between versions, like the clang-format
 pin) and **auto-bootstraps**: if not found via `--rga` / `SS_RGA` / PATH it downloads the pinned
 Windows build into `Tools/rga/` (~238MB, one-time, cached, gitignored), so a fresh box is fully
-headless. Two honest limits: RGA's CLI stats have **no occupancy number** (the GUI computes it), so
-this gates the determinants, not achieved occupancy; and the offline compiler can differ slightly
-from the live driver. Measure real achieved occupancy / bandwidth / stalls with RGP (runtime capture,
-headless via `RadeonDeveloperPanelCLI`). Coverage is whatever is in the shader cache, so shaders never
-exercised in a run (e.g. `Metrics.comp`, the `Neural*.comp` passes) are absent until a run compiles
-them. Re-baseline deliberately (with a commit) when a change intends to shift register pressure.
+headless. The one honest limit: this gates *theoretical* register/occupancy, not *achieved* occupancy
+/ bandwidth / stalls (measure those with RGP, runtime capture, headless via `RadeonDeveloperPanelCLI`),
+and the offline compiler can differ slightly from the live driver. Re-baseline deliberately (with a
+commit) when a change intends to shift register pressure.
+
+**Input SPIR-V (two sources, one baseline).** Locally the gate reads `Engine/cache/shaders/`,
+populated by any editor build+run. But a clean checkout / CI has no cache and no GPU, so
+`Scripts/cook-shaders.py` compiles every shader offline with the engine's exact dxc flags
+(VulkanShader.cpp: profiles `vs/ps/cs_6_5`, entry `main`, `SS_RAYTRACING`/`SS_FP16` permutations)
+into `Engine/cache/shaders-cook/`. The cook reproduces the runtime-cache numbers **bit-for-bit**, so
+both paths gate against the same committed baseline; the baseline is generated from the cook so it
+also covers shaders never exercised in a run (`Metrics.comp`, the `Neural*.comp` passes). Keep
+`cook-shaders.py`'s flags in sync with VulkanShader.cpp (it is a deliberate second copy; no shared
+source of truth today). `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
+expected the old `#type` split and silently compiled nothing).
+
+**This gate runs in CI** (`.github/workflows/shaders.yml`): unlike smoke-test and perf-bench, RGA is
+static and needs no GPU, so hosted CI cooks the shaders and runs the occupancy gate on every shader
+change. RGA is cached across runs (actions/cache) so only the first pays the download.
 
 ## Console variables (CVars)
 

@@ -8,7 +8,7 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 2488.0,
+      "isa_size": 2476.0,
       "permutations": 2
     },
     "AOUpsample.frag": {
@@ -23,13 +23,13 @@
     },
     "DefaultLit.frag": {
       "vgprs": 93.0,
-      "sgprs": 106.0,
+      "sgprs": 63.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 21276.0,
-      "permutations": 4
+      "permutations": 2
     },
     "DepthNormal.frag": {
       "vgprs": 16.0,
@@ -69,7 +69,7 @@
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 1048.0,
-      "permutations": 1
+      "permutations": 2
     },
     "GI.comp": {
       "vgprs": 65.0,
@@ -119,7 +119,7 @@
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 760.0,
-      "permutations": 1
+      "permutations": 2
     },
     "IBLCapture": {
       "vgprs": 12.0,
@@ -129,7 +129,7 @@
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 952.0,
-      "permutations": 1
+      "permutations": 2
     },
     "IBLIrradiance": {
       "vgprs": 28.0,
@@ -139,7 +139,7 @@
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 1180.0,
-      "permutations": 1
+      "permutations": 2
     },
     "IBLPrefilter": {
       "vgprs": 26.0,
@@ -149,7 +149,7 @@
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 1340.0,
-      "permutations": 1
+      "permutations": 2
     },
     "Mandelbrot.frag": {
       "vgprs": 9.0,
@@ -159,7 +159,7 @@
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 852.0,
-      "permutations": 1
+      "permutations": 2
     },
     "Mesh.vert": {
       "vgprs": 38.0,
@@ -169,7 +169,57 @@
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 672.0,
-      "permutations": 4
+      "permutations": 2
+    },
+    "Metrics.comp": {
+      "vgprs": 24.0,
+      "sgprs": 29.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 5980.0,
+      "permutations": 2
+    },
+    "NeuralConv.comp": {
+      "vgprs": 13.0,
+      "sgprs": 48.0,
+      "lds": 512.0,
+      "scratch": 272.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 1152.0,
+      "permutations": 2
+    },
+    "NeuralResidualAdd.comp": {
+      "vgprs": 9.0,
+      "sgprs": 22.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 272.0,
+      "permutations": 2
+    },
+    "NeuralUpsampleIn.comp": {
+      "vgprs": 7.0,
+      "sgprs": 30.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 260.0,
+      "permutations": 2
+    },
+    "NeuralWarpHistory.comp": {
+      "vgprs": 10.0,
+      "sgprs": 26.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 460.0,
+      "permutations": 2
     },
     "Pick.comp": {
       "vgprs": 30.0,
@@ -189,7 +239,7 @@
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 160.0,
-      "permutations": 1
+      "permutations": 2
     },
     "Reflection.comp": {
       "vgprs": 71.0,
@@ -229,7 +279,7 @@
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 964.0,
-      "permutations": 1
+      "permutations": 2
     },
     "Sky.frag": {
       "vgprs": 16.0,
@@ -269,7 +319,7 @@
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 160.0,
-      "permutations": 1
+      "permutations": 2
     },
     "Velocity.frag": {
       "vgprs": 12.0,
