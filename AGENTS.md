@@ -94,6 +94,36 @@ per-machine** (GPU differences make ms non-comparable) — re-run `--update-base
 the script warns if the recorded device differs. Re-baseline deliberately (with a commit) when a change
 *intends* to shift perf; never to paper over an unexplained regression.
 
+## Shader occupancy gate (RGA, static)
+
+`Scripts/rga-occupancy.py` is the static analogue of perf-bench: a golden-file gate on shader
+register/LDS pressure and spills, the determinants of GPU occupancy. It needs no GPU run. It feeds
+every compiled SPIR-V module in `Engine/cache/shaders/` through the Radeon GPU Analyzer offline
+compiler for a target ASIC (default `gfx1100`, the RX 7900 XTX), parses the per-shader stats CSV
+(USED_VGPRs/SGPRs, USED_LDS_BYTES, VGPR/SGPR spills, SCRATCH_MEM, ISA_SIZE), collapses each shader's
+permutations to the worst case keyed by base name (so a source edit re-compares the same logical
+shader, not a churning content hash), and diffs against `Scripts/rga-baseline/occupancy-<asic>.json`.
+
+```
+py Scripts/rga-occupancy.py                    # analyse cache, diff vs baseline, PASS/FAIL
+py Scripts/rga-occupancy.py --update-baseline  # capture current results as the new baseline
+py Scripts/rga-occupancy.py --only Reflection  # one shader (base-name substring)
+py Scripts/rga-occupancy.py --dry-run          # print planned RGA invocations, don't run RGA
+```
+
+It fails (exit 1) on a register/LDS/ISA rise beyond `--threshold` (default 10%) or a spill appearing
+(0 to >0, a hard fail). Stage per module is read from the SPIR-V `OpEntryPoint` execution model, not
+the filename, so the stage-less `IBL*.hlsl` shaders resolve correctly. RGA is **pinned** to a version
++ SHA-256 in the script (its stats columns and compiler drift between versions, like the clang-format
+pin) and **auto-bootstraps**: if not found via `--rga` / `SS_RGA` / PATH it downloads the pinned
+Windows build into `Tools/rga/` (~238MB, one-time, cached, gitignored), so a fresh box is fully
+headless. Two honest limits: RGA's CLI stats have **no occupancy number** (the GUI computes it), so
+this gates the determinants, not achieved occupancy; and the offline compiler can differ slightly
+from the live driver. Measure real achieved occupancy / bandwidth / stalls with RGP (runtime capture,
+headless via `RadeonDeveloperPanelCLI`). Coverage is whatever is in the shader cache, so shaders never
+exercised in a run (e.g. `Metrics.comp`, the `Neural*.comp` passes) are absent until a run compiles
+them. Re-baseline deliberately (with a commit) when a change intends to shift register pressure.
+
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc
