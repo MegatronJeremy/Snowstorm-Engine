@@ -13,8 +13,11 @@ Unlike perf-bench.py this needs NO GPU: RGA is a static offline compiler. RGA's 
 have no occupancy column (the GUI computes it), so we derive VGPR-limited waves/SIMD from
 the VGPR count using the RDNA3 (gfx11) model (1536 VGPRs/SIMD, 16 waves max, <=96 VGPRs =>
 full). This is *theoretical* occupancy, not measured, and VGPR-only (LDS occupancy needs
-the workgroup size RGA offline reports as 0). It catches the changes that wreck occupancy
-at compile time. Measure real achieved occupancy / bandwidth / stalls with RGP.
+the workgroup size RGA offline reports as 0). It also assumes wave32: RDNA3 picks wave32/
+wave64 per shader, and RGA offline reports WAVEFRONT_SIZE=0, so a wave64 shader's real
+occupancy would differ -- confirm the actual wave size with RGP. It catches the changes
+that wreck occupancy at compile time. Measure real achieved occupancy / bandwidth / stalls
+with RGP.
 
 Input SPIR-V comes from the engine's shader cache (Engine/cache/shaders/*.spv), which is
 populated by any editor build+run. A shader can have several permutation .spv files

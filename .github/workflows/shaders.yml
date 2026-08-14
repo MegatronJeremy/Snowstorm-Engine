@@ -7,12 +7,14 @@ on:
       - 'Engine/Shaders/**'
       - 'Scripts/cook-shaders.py'
       - 'Scripts/rga-occupancy.py'
+      - 'Scripts/test_rga_occupancy.py'
       - 'Scripts/rga-baseline/**'
   pull_request:
     paths:
       - 'Engine/Shaders/**'
       - 'Scripts/cook-shaders.py'
       - 'Scripts/rga-occupancy.py'
+      - 'Scripts/test_rga_occupancy.py'
       - 'Scripts/rga-baseline/**'
 
 concurrency:
@@ -30,6 +32,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+
+      # Unit-test the gate's pure logic (occupancy model, CSV parse) before spending time on RGA.
+      - name: Unit tests (occupancy model)
+        run: py Scripts/test_rga_occupancy.py
 
       # RGA is ~238MB; cache the pinned version so only the first run downloads it.
       - name: Cache Radeon GPU Analyzer
