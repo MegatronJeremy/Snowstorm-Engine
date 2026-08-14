@@ -81,7 +81,7 @@ resolve. Vulkan validation layers are wired via `VK_ADD_LAYER_PATH`.
 | --- | --- | --- |
 | **Snowstorm-Core** | static library | All engine code: platform-independent under `Source/Snowstorm/`, backend under `Source/Platform/` (Vulkan, Windows). |
 | **Snowstorm-Editor** | executable | The editor (ImGui dockspace, hierarchy, viewport); default startup project. |
-| **Snowstorm-Runtime** | executable | Editor-free player running the same systems without tooling. WIP: the non-ImGui present path is open ([#4](https://github.com/MegatronJeremy/Snowstorm-Engine/issues/4)). |
+| **Snowstorm-Runtime** | executable | Editor-free player: runs the same systems without tooling and blits the primary camera to the swapchain. |
 | **Snowstorm-Tests** | executable | Catch2 unit tests (run via CTest). |
 
 ```
