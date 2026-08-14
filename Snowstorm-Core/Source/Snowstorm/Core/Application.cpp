@@ -89,10 +89,13 @@ namespace Snowstorm
 		const int maxFrameMs = CVars::MaxFrameMs.Get();
 		uint64_t frameNo = 0;
 
-		// Headless profiler capture: if profile.capture_frames > 0, request a capture once a few frames of
-		// warmup have passed (pipeline/asset init on frame 0-2 isn't representative of steady-state). This
-		// makes the profiler driveable without the editor button — e.g. for smoke/offline trace analysis.
+		// Headless profiler capture: if profile.capture_frames > 0, request a capture once profile.capture_delay
+		// frames have passed. The delay must clear STARTUP ASSET STREAMING (in-flight mesh/texture loads run
+		// for ~15-20 frames on a big scene like Sponza) -- capturing during it clobbers the steady-state
+		// per-system averages (AssetLoadSystem alone read ~6ms/frame averaged, but is really ~19ms for the
+		// first ~18 frames then 0). Default 60 clears typical scenes; raise it for larger ones.
 		const int profileCaptureFrames = CVars::ProfileCaptureFrames.Get();
+		const auto profileCaptureDelay = static_cast<uint64_t>(std::max(0, CVars::ProfileCaptureDelay.Get()));
 		bool profileRequested = false;
 
 		// Headless frame-stats accumulation (debug.frame_stats): average the frame / GPU-wait / GPU-frame
@@ -128,7 +131,7 @@ namespace Snowstorm
 				Renderer::SetVSync(!Renderer::IsVSync());
 			}
 
-			if (profileCaptureFrames > 0 && !profileRequested && frameNo == 3)
+			if (profileCaptureFrames > 0 && !profileRequested && frameNo >= profileCaptureDelay)
 			{
 				Instrumentor::Get().RequestCapture(profileCaptureFrames, CVars::ProfileCapturePath.Get());
 				profileRequested = true;

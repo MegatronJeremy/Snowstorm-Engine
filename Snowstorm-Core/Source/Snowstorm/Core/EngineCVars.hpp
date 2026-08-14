@@ -32,6 +32,10 @@ namespace Snowstorm::CVars
 	// Output path for the profile.capture_frames trace (chrome://tracing / Perfetto JSON).
 	extern CVar<std::string> ProfileCapturePath;
 
+	// Frames to skip before the headless capture starts, so startup asset streaming doesn't contaminate
+	// the steady-state per-system averages (streaming is done when AssetLoadSystem's per-frame cost -> 0).
+	extern CVar<int> ProfileCaptureDelay;
+
 	// Data-parallel ECS toggle. When true (default), systems that opt into System::ParallelForEach split
 	// their per-entity loop across JobSystem workers; when false they run the identical loop serially on
 	// the main thread. Same build, one flag — the before/after switch for measuring the parallel win and a

@@ -28,6 +28,8 @@ namespace Snowstorm::CVars
 
 	CVar<std::string> ProfileCapturePath{"profile.capture_path", "SnowstormCapture.json", "Output path for profile.capture_frames", CVarFlags::ReadOnly};
 
+	CVar<int> ProfileCaptureDelay{"profile.capture_delay", 60, "Frames to wait before profile.capture_frames starts, so startup asset streaming (in-flight loads) doesn't clobber the steady-state per-system averages. Raise for large scenes -- streaming is done when AssetLoadSystem's per-frame cost hits 0.", CVarFlags::ReadOnly};
+
 	CVar<bool> ValidationNonFatal{"validation.nonfatal", false, "Log Vulkan validation errors instead of asserting on the first", CVarFlags::ReadOnly};
 
 	CVar<bool> ValidationExtra{"validation.extra", false, "Enable synchronization + best-practices Vulkan validation", CVarFlags::ReadOnly};
