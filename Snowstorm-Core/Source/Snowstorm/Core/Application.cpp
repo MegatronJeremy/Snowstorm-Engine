@@ -223,10 +223,10 @@ namespace Snowstorm
 				if (perfBench.FrameCount() >= static_cast<uint32_t>(perfBenchFrames))
 				{
 					const std::string& path = CVars::PerfBenchPath.Get();
-					// Device name isn't plumbed through the RHI yet; leave empty and let perf-bench.py treat it
-					// as unknown (its baseline-device check is warn-only). timestampsSupported = we actually
-					// captured scopes (false on a device without GPU timestamps -> script skips, no false-fail).
-					const std::string json = perfBench.ToJson(/*device*/ "", CVars::StartupScene.Get(), !perfBench.Empty());
+					// Device name (GPU) tags the JSON so per-machine baselines are self-identifying and the
+					// script's baseline-device mismatch check (warn-only) is meaningful. timestampsSupported =
+					// we actually captured scopes (false on a device without GPU timestamps -> script skips).
+					const std::string json = perfBench.ToJson(Renderer::GetDeviceName(), CVars::StartupScene.Get(), !perfBench.Empty());
 					if (std::ofstream out(path); out)
 					{
 						out << json;

@@ -32,6 +32,8 @@ namespace Snowstorm
 
 		uint32_t GetMinUniformBufferOffsetAlignment() const override;
 
+		std::string GetDeviceName() const override;
+
 		bool IsRayTracingSupported() const override;
 		bool IsFloat16Supported() const override;
 

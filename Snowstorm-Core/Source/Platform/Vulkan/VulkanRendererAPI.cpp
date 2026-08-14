@@ -424,6 +424,15 @@ namespace Snowstorm
 		return static_cast<uint32_t>(a);
 	}
 
+	std::string VulkanRendererAPI::GetDeviceName() const
+	{
+		const VkPhysicalDevice physDevice = VulkanContext::Get().GetPhysicalDevice();
+		SS_CORE_ASSERT(physDevice != VK_NULL_HANDLE, "VulkanRendererAPI: PhysicalDevice is null");
+		VkPhysicalDeviceProperties props{};
+		vkGetPhysicalDeviceProperties(physDevice, &props);
+		return props.deviceName;
+	}
+
 	bool VulkanRendererAPI::IsRayTracingSupported() const
 	{
 		return VulkanContext::Get().SupportsRayTracing();
