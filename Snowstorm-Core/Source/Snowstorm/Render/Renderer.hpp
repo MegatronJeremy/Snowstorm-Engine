@@ -43,6 +43,8 @@ namespace Snowstorm
 
 		static uint32_t GetMinUniformBufferOffsetAlignment();
 
+		static std::string GetDeviceName();
+
 		// True when the device supports + enabled inline ray tracing (VK_KHR_ray_query + AS). Gates the RT
 		// path (#118); false => raster fallback. Forwards to the backend capability query.
 		static bool IsRayTracingSupported();

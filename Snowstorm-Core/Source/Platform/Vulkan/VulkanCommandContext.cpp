@@ -70,6 +70,28 @@ namespace Snowstorm
 				m_TimestampsSupported = false;
 			}
 		}
+
+		// Second pool: fragment-shader-invocation counts (per-pass overdraw metric). Requires the
+		// pipelineStatisticsQuery feature (enabled in VulkanContext when supported) and rides the same
+		// per-frame reuse as the timestamp pool, so gate it on timestamp support too. Fail-soft: on absence
+		// FragInvocations stays 0 and timing is unaffected.
+		VkPhysicalDeviceFeatures feats{};
+		vkGetPhysicalDeviceFeatures(VulkanContext::Get().GetPhysicalDevice(), &feats);
+		if (m_TimestampsSupported && feats.pipelineStatisticsQuery)
+		{
+			VkQueryPoolCreateInfo psInfo{.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+			psInfo.queryType = VK_QUERY_TYPE_PIPELINE_STATISTICS;
+			psInfo.queryCount = kMaxGpuScopes;
+			psInfo.pipelineStatistics = VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT;
+			if (vkCreateQueryPool(device, &psInfo, nullptr, &m_PipelineStatsPool) == VK_SUCCESS)
+			{
+				m_PipelineStatsSupported = true;
+			}
+			else
+			{
+				SS_CORE_WARN("Failed to create pipeline-statistics pool; per-pass overdraw metric disabled.");
+			}
+		}
 	}
 
 	VulkanCommandContext::~VulkanCommandContext()
@@ -81,6 +103,12 @@ namespace Snowstorm
 		{
 			vkDestroyQueryPool(device, m_TimestampPool, nullptr);
 			m_TimestampPool = VK_NULL_HANDLE;
+		}
+
+		if (m_PipelineStatsPool != VK_NULL_HANDLE)
+		{
+			vkDestroyQueryPool(device, m_PipelineStatsPool, nullptr);
+			m_PipelineStatsPool = VK_NULL_HANDLE;
 		}
 
 		if (m_CommandBuffer != VK_NULL_HANDLE)
@@ -173,6 +201,30 @@ namespace Snowstorm
 		}
 	}
 
+	void VulkanCommandContext::BarrierDepthWriteToRead(const Ref<Texture>& depth)
+	{
+		// Depth prepass (LATE_FRAGMENT_TESTS write) -> forward pass (EARLY/LATE_FRAGMENT_TESTS test+write) on
+		// the same D32 texture. Layout is unchanged (DEPTH_ATTACHMENT_OPTIMAL both sides) so this is a pure
+		// execution+memory dependency, not a transition. Emitted between the two passes, outside any rendering.
+		auto vkTex = std::static_pointer_cast<VulkanTexture>(depth);
+		const VkImageLayout layout = vkTex->GetCurrentLayout();
+
+		VkImageMemoryBarrier2 barrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+		barrier.srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+		barrier.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		barrier.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+		barrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		barrier.oldLayout = layout;
+		barrier.newLayout = layout;
+		barrier.image = vkTex->GetImage();
+		barrier.subresourceRange = {vkTex->GetAspectMask(), 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
+
+		VkDependencyInfo dep{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+		dep.imageMemoryBarrierCount = 1;
+		dep.pImageMemoryBarriers = &barrier;
+		vkCmdPipelineBarrier2(m_CommandBuffer, &dep);
+	}
+
 	void VulkanCommandContext::BeginRenderPass(const RenderTarget& target)
 	{
 		SS_CORE_ASSERT(!m_IsRendering, "BeginRenderPass called while already rendering");
@@ -223,6 +275,18 @@ namespace Snowstorm
 		vkCmdBeginRendering(m_CommandBuffer, &renderingInfo);
 		m_IsRendering = true;
 
+		// Overdraw metric: open an FS-invocation query for THIS graphics pass, tied to the currently-open GPU
+		// scope (the RenderGraph opens one BeginGpuScope per pass just before this). Begun inside the rendering
+		// instance and ended in EndRenderPass before vkCmdEndRendering (a query must end in the instance it
+		// began). One per pass: the m_ActiveStatsQuery guard prevents a second begin if a pass nests renders.
+		if (m_PipelineStatsSupported && !m_OpenScopes.empty() && m_ActiveStatsQuery == UINT32_MAX &&
+		    m_StatsQueryCursor < kMaxGpuScopes)
+		{
+			m_ActiveStatsQuery = m_StatsQueryCursor++;
+			m_Scopes[m_OpenScopes.back()].StatsQuery = m_ActiveStatsQuery;
+			vkCmdBeginQuery(m_CommandBuffer, m_PipelineStatsPool, m_ActiveStatsQuery, 0);
+		}
+
 		// Common default: viewport + scissor match target size
 		SetViewport(0.0f, 0.0f,
 		            static_cast<float>(vkTarget.GetWidth()),
@@ -235,6 +299,13 @@ namespace Snowstorm
 	void VulkanCommandContext::EndRenderPass()
 	{
 		SS_CORE_ASSERT(m_IsRendering, "EndRenderPass called but no render pass is active");
+
+		// Close this pass's overdraw query while still inside the rendering instance it was begun in.
+		if (m_ActiveStatsQuery != UINT32_MAX)
+		{
+			vkCmdEndQuery(m_CommandBuffer, m_PipelineStatsPool, m_ActiveStatsQuery);
+			m_ActiveStatsQuery = UINT32_MAX;
+		}
 
 		vkCmdEndRendering(m_CommandBuffer);
 		m_IsRendering = false;
@@ -661,6 +732,15 @@ namespace Snowstorm
 			const uint32_t queryCount = m_ScopeQueryCursor; // pairs written this recording
 			std::vector<uint64_t> stamps(queryCount, 0);
 			const VkDevice device = GetVulkanDevice();
+
+			// FS-invocation results for the stats queries begun this recording (all were ended in
+			// EndRenderPass, so [0, cursor) are complete -- no VK_NOT_READY, no WAIT bit needed).
+			std::vector<uint64_t> frags(m_StatsQueryCursor, 0);
+			const bool statsOk = m_PipelineStatsSupported && m_StatsQueryCursor > 0 &&
+			                     vkGetQueryPoolResults(device, m_PipelineStatsPool, 0, m_StatsQueryCursor,
+			                                           frags.size() * sizeof(uint64_t), frags.data(),
+			                                           sizeof(uint64_t), VK_QUERY_RESULT_64_BIT) == VK_SUCCESS;
+
 			if (vkGetQueryPoolResults(device, m_TimestampPool, 0, queryCount,
 			                          stamps.size() * sizeof(uint64_t), stamps.data(),
 			                          sizeof(uint64_t), VK_QUERY_RESULT_64_BIT) == VK_SUCCESS)
@@ -671,17 +751,24 @@ namespace Snowstorm
 					const uint64_t start = stamps[scope.StartQuery];
 					const uint64_t end = stamps[scope.StartQuery + 1];
 					const float ms = static_cast<float>(end - start) * m_TimestampPeriodNs * 1e-6f;
-					result.push_back({.Name = scope.Name, .Milliseconds = ms, .Depth = scope.Depth});
+					const uint64_t fi = (statsOk && scope.StatsQuery != UINT32_MAX) ? frags[scope.StatsQuery] : 0;
+					result.push_back({.Name = scope.Name, .Milliseconds = ms, .Depth = scope.Depth, .FragInvocations = fi});
 				}
 			}
 		}
 
-		// Reset the pool for this frame's recording (outside any render pass -- called at frame start) and
-		// clear the records; this frame's BeginGpuScope calls will repopulate them.
+		// Reset both pools for this frame's recording (outside any render pass -- called at frame start) and
+		// clear the records; this frame's BeginGpuScope / BeginRenderPass calls will repopulate them.
 		vkCmdResetQueryPool(m_CommandBuffer, m_TimestampPool, 0, kMaxGpuScopes * 2);
+		if (m_PipelineStatsPool != VK_NULL_HANDLE)
+		{
+			vkCmdResetQueryPool(m_CommandBuffer, m_PipelineStatsPool, 0, kMaxGpuScopes);
+		}
 		m_Scopes.clear();
 		m_OpenScopes.clear();
 		m_ScopeQueryCursor = 0;
+		m_StatsQueryCursor = 0;
+		m_ActiveStatsQuery = UINT32_MAX;
 		return result;
 	}
 

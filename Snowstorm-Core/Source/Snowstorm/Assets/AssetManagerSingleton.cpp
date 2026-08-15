@@ -821,7 +821,10 @@ namespace Snowstorm
 		p.DepthFormat = PixelFormat::D32_Float;
 		p.DepthStencil.EnableDepthTest = true; // TODO these shouldn't be enabled always...
 		p.DepthStencil.EnableDepthWrite = true;
-		p.DepthStencil.DepthCompare = CompareOp::Less;
+		// LessOrEqual (was Less) so the forward pass reuses the camera depth prepass's depth for early-Z: a
+		// visible fragment at == prepass depth passes, occluded fragments (>) are rejected before the fat
+		// shader. Image-identical to Less for opaque geometry with no prepass (GT path), so it's shared.
+		p.DepthStencil.DepthCompare = CompareOp::LessOrEqual;
 
 		p.HasStencil = false;
 		// Debug name from the shader's stem (e.g. "DefaultLit" / "Mandelbrot") so RenderDoc/validation stay

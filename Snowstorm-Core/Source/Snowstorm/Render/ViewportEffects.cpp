@@ -17,7 +17,9 @@
 
 // The per-effect-exclusive passes, each owned by the effect that drives it (see the class members below).
 #include "Snowstorm/Render/Passes/DatasetExportPass.hpp"
+#include "Snowstorm/Render/Passes/CameraDepthPrepass.hpp"
 #include "Snowstorm/Render/Passes/DepthNormalPass.hpp"
+#include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Render/Passes/FxaaPass.hpp"
 #include "Snowstorm/Render/Passes/AOPass.hpp"
 #include "Snowstorm/Render/Denoiser.hpp" // #132: shared SVGF processor (owns the GITemporal/GIDenoise passes)
@@ -45,7 +47,7 @@ namespace Snowstorm
 		// color + sampled depth) BEFORE the forward pass, so the half-res RT GI compute pass has a per-pixel
 		// world-position (from depth) + world-normal source, and the bilateral upsample has an edge guide.
 		// Gated by gbufferNeeded (GI active OR the normal debug view). Publishes the normal view onto the
-		// context. Uses the UNJITTERED camera VP so the G-buffer aligns 1:1 with the full-res consumers.
+		// context. Uses the JITTERED camera VP so the G-buffer matches the jittered forward, so effects align with geometry and TAA resolves them.
 		class DepthNormalEffect final : public IViewportEffect
 		{
 		public:
@@ -70,10 +72,13 @@ namespace Snowstorm
 				const auto& gbufDesc = gbuf->GetDesc();
 				const PixelFormat colorFmt = gbufDesc.ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 				const PixelFormat depthFmt = gbufDesc.DepthAttachment->View->GetTexture()->GetDesc().Format;
-				// Unjittered VP (the CameraRuntimeComponent's ViewProjection is the unjittered truth): the
-				// G-buffer feeds full-res consumers (GI reconstruct + bilateral upsample) that reason in stable
-				// screen space — a jittered VP would misalign depth/normal with them.
-				const glm::mat4 viewProj = cam.Rt->ViewProjection;
+				// JITTERED VP — the G-buffer must match the jittered forward color pass that ultimately consumes
+				// the screen-space effects (GI/AO/reflection). Rendering it unjittered put the effect silhouettes at
+				// a different sub-pixel spot than the geometry, so their edges never aligned with the color and TAA
+				// couldn't resolve them (it made edges worse). With both jittered, effects and geometry share
+				// silhouettes and TAA resolves them uniformly (the UE/Frostbite screen-space-effect convention).
+				// Motion vectors are unaffected — the velocity pass computes motion from unjittered VPs separately.
+				const glm::mat4 viewProj = cam.Rt->JitteredViewProjection;
 
 				fc.Graph.AddPass({.Name = "DepthNormal" + v.Suffix,
 				                  .Target = gbuf,
@@ -143,13 +148,13 @@ namespace Snowstorm
 				const Ref<TextureView> depthView = gbufDesc.DepthAttachment->View; // fp32 D32 depth (was packed in .w)
 				const Ref<TextureView> giView = v.RT.GITargetView;
 				const uint64_t tableAddr = fc.Renderer.GetReflectionGeometryAddress();
-				// Copy the frame block, then overwrite the camera VP/position with THIS frame's unjittered camera
+				// Copy the frame block, then overwrite the camera VP/position with THIS frame's jittered camera
 				// runtime (the matrix the DepthNormal prepass wrote the depth with). GetFrameData() at graph-build
 				// time still holds the PREVIOUS frame's forward-pass matrix (BeginScene runs at execute, after
 				// this), so reconstructing world position from it mismatches this frame's depth and warps the
 				// hemisphere origins — banded self-occlusion / "black stripes", worst moving backward (#133 f/u).
 				FrameData frameData = fc.Renderer.GetFrameData();
-				frameData.ViewProjection = v.Cam.Rt->ViewProjection;
+				frameData.ViewProjection = v.Cam.Rt->JitteredViewProjection; // match the jittered DepthNormal G-buffer + forward
 				frameData.CameraPosition = v.Cam.Transform->Position;
 				const auto frameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
 
@@ -370,12 +375,12 @@ namespace Snowstorm
 				const Ref<TextureView> gbufView = gbufDesc.ColorAttachments[0].View;
 				const Ref<TextureView> depthView = gbufDesc.DepthAttachment->View; // fp32 D32 depth (was packed in .w)
 				const Ref<TextureView> aoView = v.RT.AOTargetView;
-				// Reconstruct from THIS frame's unjittered camera VP (same matrix the DepthNormal prepass wrote
+				// Reconstruct from THIS frame's jittered camera VP (same matrix the jittered DepthNormal prepass wrote
 				// the depth with) — NOT GetFrameData().ViewProjection, which at graph-build time still holds the
 				// PREVIOUS frame's forward-pass matrix (BeginScene runs at execute, after this). The stale matrix
 				// mismatches this frame's depth and warps reconstructed world positions (banded self-occlusion /
 				// "black stripes", worst moving backward). Fixes AO/GI/reflection alike (#133 follow-up).
-				const glm::mat4 invViewProj = glm::inverse(v.Cam.Rt->ViewProjection);
+				const glm::mat4 invViewProj = glm::inverse(v.Cam.Rt->JitteredViewProjection); // match the jittered DepthNormal G-buffer + forward
 				const float radius = CVars::AORadius.Get();
 				const float intensity = CVars::AOIntensity.Get();
 				const auto frameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
@@ -584,12 +589,12 @@ namespace Snowstorm
 				const Ref<TextureView> depthView = gbufDesc.DepthAttachment->View; // fp32 D32 depth (was packed in .w)
 				const Ref<TextureView> reflView = v.RT.ReflectionTargetView;
 				const uint64_t tableAddr = fc.Renderer.GetReflectionGeometryAddress();
-				// This frame's unjittered camera VP/position, not the stale GetFrameData() (previous frame's
+				// This frame's jittered camera VP/position, not the stale GetFrameData() (previous frame's
 				// forward matrix at graph-build time — BeginScene runs at execute, after this). Same fix as GI/AO:
 				// reconstructing from the stale matrix warps world positions -> banded self-occlusion / "black
 				// stripes" (worst moving backward). See the GI effect above (#133 follow-up).
 				FrameData frameData = fc.Renderer.GetFrameData();
-				frameData.ViewProjection = v.Cam.Rt->ViewProjection;
+				frameData.ViewProjection = v.Cam.Rt->JitteredViewProjection; // match the jittered DepthNormal G-buffer + forward
 				frameData.CameraPosition = v.Cam.Transform->Position;
 				const auto frameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
 
@@ -839,7 +844,57 @@ namespace Snowstorm
 					reflTexture = v.ReflectionView->GetTexture(); // the live buffer, for the graph barrier
 				}
 
-				m_Owner.AddForwardPass(v.Frame, v.Cam, v.RT.Target, "Forward" + v.Suffix, /*jittered*/ true,
+				// Camera depth prepass for forward early-Z (main path only; the GT/compare forward keeps its own
+				// cleared depth). Renders depth-only with the SAME jittered VP the forward uses, into the scene
+				// depth; the forward then LOADs that depth (LESS_EQUAL) so occluded fragments are z-rejected
+				// before the fat DefaultLit shader runs (the metric measured ~2x overdraw). Falls back to the
+				// plain scene target if it somehow has no depth/color.
+				FrameContext& fc = v.Frame;
+				const CameraPick& cam = v.Cam;
+				const auto& sceneDesc = v.RT.Target->GetDesc();
+				Ref<RenderTarget> forwardTarget = v.RT.Target;
+				if (sceneDesc.DepthAttachment.has_value() && !sceneDesc.ColorAttachments.empty())
+				{
+					const Ref<TextureView> sceneColorView = sceneDesc.ColorAttachments[0].View;
+					const Ref<TextureView> sceneDepthView = sceneDesc.DepthAttachment->View;
+					const Ref<Texture> sceneDepthTex = sceneDepthView->GetTexture();
+					const PixelFormat depthFmt = sceneDepthTex->GetDesc().Format;
+
+					const Ref<RenderTarget> prepassTarget = CreateSceneDepthPrepassTarget(sceneDepthView);
+					forwardTarget = CreateForwardEarlyZTarget(sceneColorView, sceneDepthView);
+
+					fc.Graph.AddPass({.Name = "CameraDepthPrepass" + v.Suffix,
+					                  .Target = prepassTarget,
+					                  .Execute = [this, &fc, cam, depthFmt](CommandContext&)
+					                  {
+						                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, fc.Ctx, fc.FrameIndex, /*jittered*/ true);
+						                  m_Owner.DrawVisibleMeshes(fc, cam,
+						                                            [&](entt::entity, const TransformComponent& tr, const MeshComponent& mesh, const MaterialComponent& mat)
+						                                            {
+							                                            // OPAQUE-ONLY z-prepass: skip alpha-cutout (MASK). Its forward coverage
+							                                            // can disagree with this separate depth pass at cutout edges, so writing
+							                                            // its depth here early-Z-culls what's behind the holes -> grey. Cutout
+							                                            // geometry keeps its normal forward path (no early-Z, but correct); the
+							                                            // opaque bulk still gets the win. BLEND falls through as opaque (#82).
+							                                            if (mat.MaterialInstance && mat.MaterialInstance->GetConstants().AlphaMaskEnabled != 0)
+							                                            {
+								                                            return;
+							                                            }
+							                                            fc.Renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, 0,
+							                                                                 glm::vec4(0.0f), tr.GetTransformMatrix());
+						                                            });
+						                  m_DepthPrepass.RecordDepth(fc.Renderer, fc.FrameIndex, depthFmt, cam.Rt->JitteredViewProjection);
+					                  }});
+
+					// The prepass depth write must be visible to the forward depth test (same texture; the layout
+					// is unchanged so no auto barrier). Compute-style pass => runs outside any render pass.
+					fc.Graph.AddPass({.Name = "DepthPrepassBarrier" + v.Suffix,
+					                  .IsCompute = true,
+					                  .Execute = [sceneDepthTex](CommandContext& c)
+					                  { c.BarrierDepthWriteToRead(sceneDepthTex); }});
+				}
+
+				m_Owner.AddForwardPass(v.Frame, v.Cam, forwardTarget, "Forward" + v.Suffix, /*jittered*/ true,
 				                       /*forceRasterShadow*/ false, giIndex, aoIndex, reflIndex, reflTexture);
 				// Publish the HDR scene color for the downstream chain (upscale/TAA/tonemap).
 				v.SceneColor.Target = v.RT.Target;
@@ -852,6 +907,7 @@ namespace Snowstorm
 
 		private:
 			RenderSystem& m_Owner;
+			CameraDepthPrepass m_DepthPrepass; // owned here: early-Z prepass is exclusive to the main forward path
 		};
 
 		// Internal-res upscale (#43/#47/#98): after forward, when the scene rendered smaller than present,

@@ -5,6 +5,12 @@ build/
 Vendor/Binaries
 vcpkg/
 Engine/cache
+# Radeon GPU Analyzer, auto-bootstrapped (pinned version, ~238MB) by Scripts/rga-occupancy.py.
+# Downloaded tool, not source — never commit.
+Tools/rga/
+# Radeon Developer Tool Suite (RGP/RDP/RDS), bootstrapped by Scripts/rgp-capture.py. Downloaded
+# tool, not source — never commit.
+Tools/rdts/
 
 # Files
 *.vcxproj
@@ -17,6 +23,9 @@ Engine/cache
 # perf-bench regression gate has a tracked reference. See Scripts/perf-bench.py.
 !Scripts/perf-baseline/
 !Scripts/perf-baseline/*.json
+# Committed golden occupancy baselines for the RGA static gate. See Scripts/rga-occupancy.py.
+!Scripts/rga-baseline/
+!Scripts/rga-baseline/*.json
 *.DotSettings
 *.DotSettings.user
 *.ini

@@ -55,6 +55,9 @@ namespace Snowstorm
 
 		// required alignment for dynamic uniform buffer offsets (bytes)
 		virtual uint32_t GetMinUniformBufferOffsetAlignment() const = 0;
+
+		// GPU device name (VkPhysicalDeviceProperties::deviceName), for per-machine perf/occupancy baselines.
+		virtual std::string GetDeviceName() const = 0;
 		// TODO turn this into GetCapabilities
 
 		// True when the device supports (and enabled) inline ray tracing (VK_KHR_ray_query + AS). Gates the

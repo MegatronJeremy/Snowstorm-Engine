@@ -52,8 +52,10 @@ namespace Snowstorm
 			o << (first ? "\n" : ",\n");
 			first = false;
 			const double avg = ps.Count > 0 ? ps.SumMs / ps.Count : 0.0;
+			const uint64_t avgFrags = ps.Count > 0 ? static_cast<uint64_t>(ps.SumFrags / ps.Count) : 0;
 			o << "    \"" << JsonEscape(name) << "\": { \"avgMs\": " << Ms(avg)
 			  << ", \"minMs\": " << Ms(ps.MinMs) << ", \"maxMs\": " << Ms(ps.MaxMs)
+			  << ", \"fragInvocations\": " << avgFrags
 			  << ", \"depth\": " << ps.Depth << " }";
 		}
 		o << (first ? "" : "\n  ") << "}\n";

@@ -231,6 +231,12 @@ namespace Snowstorm
 		return s_API->GetMinUniformBufferOffsetAlignment();
 	}
 
+	std::string Renderer::GetDeviceName()
+	{
+		SS_CORE_ASSERT(s_API, "Renderer not initialized");
+		return s_API->GetDeviceName();
+	}
+
 	bool Renderer::IsRayTracingSupported()
 	{
 		SS_CORE_ASSERT(s_API, "Renderer not initialized");

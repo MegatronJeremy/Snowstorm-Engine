@@ -1,50 +1,64 @@
 {
-  "device": "",
+  "device": "AMD Radeon RX 7900 XTX",
   "config": "Projects/Sandbox/assets/scenes/Sponza.world",
-  "frames": 300,
+  "frames": 200,
   "timestampsSupported": true,
-  "totalGpuMs": 7.4426,
+  "totalGpuMs": 5.9058,
   "passes": {
+    "CameraDepthPrepass": {
+      "avgMs": 0.0553,
+      "minMs": 0.0519,
+      "maxMs": 0.0633,
+      "fragInvocations": 6806434,
+      "depth": 0
+    },
+    "DepthPrepassBarrier": {
+      "avgMs": 0.0002,
+      "minMs": 0.0002,
+      "maxMs": 0.0003,
+      "fragInvocations": 0,
+      "depth": 0
+    },
     "Editor": {
-      "avgMs": 0.0408,
-      "minMs": 0.036,
-      "maxMs": 0.1339,
+      "avgMs": 0.0763,
+      "minMs": 0.0607,
+      "maxMs": 0.5575,
+      "fragInvocations": 9773767,
       "depth": 0
     },
     "Forward": {
-      "avgMs": 7.0121,
-      "minMs": 6.643,
-      "maxMs": 8.345,
+      "avgMs": 5.3704,
+      "minMs": 5.1244,
+      "maxMs": 6.7516,
+      "fragInvocations": 2691353,
       "depth": 0
     },
     "PostProcess": {
-      "avgMs": 0.0288,
-      "minMs": 0.0144,
-      "maxMs": 0.1829,
+      "avgMs": 0.1488,
+      "minMs": 0.0222,
+      "maxMs": 0.5283,
+      "fragInvocations": 2051392,
       "depth": 0
     },
     "Sky": {
       "avgMs": 0.0,
       "minMs": 0.0,
       "maxMs": 0.0,
+      "fragInvocations": 0,
       "depth": 1
     },
     "TemporalResolve": {
-      "avgMs": 0.0703,
-      "minMs": 0.0595,
-      "maxMs": 0.1619,
-      "depth": 0
-    },
-    "Upscale": {
-      "avgMs": 0.1486,
-      "minMs": 0.0792,
-      "maxMs": 0.2237,
+      "avgMs": 0.1349,
+      "minMs": 0.1057,
+      "maxMs": 0.8322,
+      "fragInvocations": 2051392,
       "depth": 0
     },
     "Velocity": {
-      "avgMs": 0.1404,
-      "minMs": 0.133,
-      "maxMs": 0.158,
+      "avgMs": 0.117,
+      "minMs": 0.1112,
+      "maxMs": 0.1325,
+      "fragInvocations": 5003296,
       "depth": 0
     }
   }

@@ -94,6 +94,61 @@ per-machine** (GPU differences make ms non-comparable) — re-run `--update-base
 the script warns if the recorded device differs. Re-baseline deliberately (with a commit) when a change
 *intends* to shift perf; never to paper over an unexplained regression.
 
+## Shader occupancy gate (RGA, static)
+
+`Scripts/rga-occupancy.py` is the static analogue of perf-bench: a golden-file gate on shader
+register/LDS pressure and spills, the determinants of GPU occupancy. It needs no GPU run. It feeds
+every compiled SPIR-V module in `Engine/cache/shaders/` through the Radeon GPU Analyzer offline
+compiler for a target ASIC (default `gfx1100`, the RX 7900 XTX), parses the per-shader stats CSV
+(USED_VGPRs/SGPRs, USED_LDS_BYTES, VGPR/SGPR spills, SCRATCH_MEM, ISA_SIZE), collapses each shader's
+permutations to the worst case keyed by base name (so a source edit re-compares the same logical
+shader, not a churning content hash), and diffs against `Scripts/rga-baseline/occupancy-<asic>.json`.
+
+```
+py Scripts/rga-occupancy.py                    # analyse cache, diff vs baseline, PASS/FAIL
+py Scripts/rga-occupancy.py --update-baseline  # capture current results as the new baseline
+py Scripts/rga-occupancy.py --only Reflection  # one shader (base-name substring)
+py Scripts/rga-occupancy.py --livereg --only GIDenoise  # pinpoint the peak live-VGPR instruction
+py Scripts/rga-occupancy.py --dry-run          # print planned RGA invocations, don't run RGA
+```
+
+`--livereg` is an investigation mode (not gated): it runs RGA live-VGPR analysis and prints the
+instruction holding the most live registers, the actionable target for cutting a shader's VGPR count
+(e.g. GIDenoise.comp peaks at 184 live VGPRs around a `v_cndmask` block).
+
+The **primary gate is VGPR-limited occupancy**: RGA's CLI has no occupancy column, so the script
+derives waves/SIMD from the VGPR count using the RDNA3 (gfx11) model (1536 VGPRs/SIMD, 16 waves max,
+<=96 VGPRs => full 16 waves), verified against AMD's docs. It fails (exit 1) when occupancy drops
+(fewer waves), a spill appears (0 to >0, hard fail), or LDS/ISA rises beyond `--threshold`
+(default 10%). Raw VGPR% is intentionally not gated -- a VGPR rise that doesn't cross a wave boundary
+costs nothing. The occupancy is *theoretical* and VGPR-only (LDS occupancy needs the workgroup size
+RGA offline reports as 0); measure achieved occupancy with RGP. On the current baseline only
+`GIDenoise.comp` (192 VGPR -> 8/16 waves) is occupancy-limited; every other shader hits 16/16.
+Stage per module is read from the SPIR-V `OpEntryPoint` execution model, not
+the filename, so the stage-less `IBL*.hlsl` shaders resolve correctly. RGA is **pinned** to a version
++ SHA-256 in the script (its stats columns and compiler drift between versions, like the clang-format
+pin) and **auto-bootstraps**: if not found via `--rga` / `SS_RGA` / PATH it downloads the pinned
+Windows build into `Tools/rga/` (~238MB, one-time, cached, gitignored), so a fresh box is fully
+headless. The one honest limit: this gates *theoretical* register/occupancy, not *achieved* occupancy
+/ bandwidth / stalls (measure those with RGP, runtime capture, headless via `RadeonDeveloperPanelCLI`),
+and the offline compiler can differ slightly from the live driver. Re-baseline deliberately (with a
+commit) when a change intends to shift register pressure.
+
+**Input SPIR-V (two sources, one baseline).** Locally the gate reads `Engine/cache/shaders/`,
+populated by any editor build+run. But a clean checkout / CI has no cache and no GPU, so
+`Scripts/cook-shaders.py` compiles every shader offline with the engine's exact dxc flags
+(VulkanShader.cpp: profiles `vs/ps/cs_6_5`, entry `main`, `SS_RAYTRACING`/`SS_FP16` permutations)
+into `Engine/cache/shaders-cook/`. The cook reproduces the runtime-cache numbers **bit-for-bit**, so
+both paths gate against the same committed baseline; the baseline is generated from the cook so it
+also covers shaders never exercised in a run (`Metrics.comp`, the `Neural*.comp` passes). Keep
+`cook-shaders.py`'s flags in sync with VulkanShader.cpp (it is a deliberate second copy; no shared
+source of truth today). `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
+expected the old `#type` split and silently compiled nothing).
+
+**This gate runs in CI** (`.github/workflows/shaders.yml`): unlike smoke-test and perf-bench, RGA is
+static and needs no GPU, so hosted CI cooks the shaders and runs the occupancy gate on every shader
+change. RGA is cached across runs (actions/cache) so only the first pays the download.
+
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc

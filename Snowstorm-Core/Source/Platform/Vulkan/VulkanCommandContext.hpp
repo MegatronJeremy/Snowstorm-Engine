@@ -28,6 +28,8 @@ namespace Snowstorm
 		void BeginRenderPass(const RenderTarget& target) override;
 		void EndRenderPass() override;
 
+		void BarrierDepthWriteToRead(const Ref<Texture>& depth) override;
+
 		void SetViewport(float x, float y, float width, float height,
 		                 float minDepth = 0.0f, float maxDepth = 1.0f) override;
 		void SetScissor(uint32_t x, uint32_t y, uint32_t width, uint32_t height) override;
@@ -92,6 +94,16 @@ namespace Snowstorm
 		uint32_t m_ScopeQueryCursor = 0;  // next free query slot in the current recording
 		bool m_ScopesRecorded = false;    // the pool holds a resolvable prior recording
 
+		// --- Per-pass fragment-shader-invocation counts (pipeline-statistics queries) ---
+		// A second pool: one FRAGMENT_SHADER_INVOCATIONS query per GRAPHICS scope (compute passes get none),
+		// begun/ended inside BeginRenderPass/EndRenderPass around the dynamic-rendering draws and tied to the
+		// open scope. Resolved next frame alongside the timestamps (same 1-frame-lag pool reuse). Fail-soft:
+		// disabled if the pipelineStatisticsQuery feature/pool is absent, in which case FragInvocations stays 0.
+		VkQueryPool m_PipelineStatsPool = VK_NULL_HANDLE;
+		bool m_PipelineStatsSupported = false;
+		uint32_t m_StatsQueryCursor = 0;          // next free stats slot this recording
+		uint32_t m_ActiveStatsQuery = UINT32_MAX; // stats query open between Begin/EndRenderPass, else sentinel
+
 		// One record per scope opened this recording, in Begin order. StartQuery is the query slot of its
 		// start stamp (end stamp is StartQuery+1). Depth is the nesting level at Begin time. Kept until the
 		// next CollectGpuScopes, which resolves them against the now-retired pool, then clears for the frame.
@@ -100,6 +112,7 @@ namespace Snowstorm
 			std::string Name;
 			uint32_t StartQuery = 0;
 			uint32_t Depth = 0;
+			uint32_t StatsQuery = UINT32_MAX; // this scope's FS-invocation query slot, or sentinel if none
 		};
 		std::vector<ScopeRecord> m_Scopes;
 		// Stack of indices into m_Scopes for scopes still open (not yet EndGpuScope'd). Its size is the

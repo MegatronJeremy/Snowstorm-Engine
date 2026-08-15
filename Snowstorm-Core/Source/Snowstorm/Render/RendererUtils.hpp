@@ -45,6 +45,14 @@ namespace Snowstorm
 	// sampled by the post-process pass. Sampled usage auto-registers the color view for bindless.
 	Ref<RenderTarget> CreateDefaultSceneRenderTarget(uint32_t w, uint32_t h, const char* debugPrefix);
 
+	// Early-Z pair over the EXISTING scene views (no new textures). The camera depth prepass renders
+	// depth-only into the prepass target (depth CLEAR); the forward pass then renders into the early-Z
+	// target (color CLEAR + depth LOAD) so occluded fragments are z-rejected before the fat forward shader.
+	// Both wrap the scene target's own color/depth views, so they share one depth buffer with the prepass.
+	Ref<RenderTarget> CreateSceneDepthPrepassTarget(const Ref<TextureView>& sceneDepthView);
+	Ref<RenderTarget> CreateForwardEarlyZTarget(const Ref<TextureView>& sceneColorView,
+	                                            const Ref<TextureView>& sceneDepthView);
+
 	// Color-only HDR target (kSceneColorFormat, NO depth), Sampled. For fullscreen HDR post passes that
 	// write color only — e.g. the internal-res UpscalePass destination (#43). Its pipeline declares no
 	// depth format, so the target must not carry a depth attachment or dynamic-rendering validation fails.

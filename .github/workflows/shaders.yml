@@ -3,9 +3,19 @@ name: shaders
 on:
   push:
     branches: [ master ]
-    paths: [ 'Engine/Shaders/**', 'Scripts/check_shaders.py' ]
+    paths:
+      - 'Engine/Shaders/**'
+      - 'Scripts/cook-shaders.py'
+      - 'Scripts/rga-occupancy.py'
+      - 'Scripts/test_rga_occupancy.py'
+      - 'Scripts/rga-baseline/**'
   pull_request:
-    paths: [ 'Engine/Shaders/**', 'Scripts/check_shaders.py' ]
+    paths:
+      - 'Engine/Shaders/**'
+      - 'Scripts/cook-shaders.py'
+      - 'Scripts/rga-occupancy.py'
+      - 'Scripts/test_rga_occupancy.py'
+      - 'Scripts/rga-baseline/**'
 
 concurrency:
   group: shaders-${{ github.ref }}
@@ -23,7 +33,25 @@ jobs:
         with:
           python-version: '3.x'
 
-      # Compiles every Assets/Shaders/*.hlsl to SPIR-V with the bundled dxc,
-      # so a broken shader fails CI instead of the GPU at runtime.
-      - name: Compile shaders with dxc
-        run: py Scripts/check_shaders.py
+      # Unit-test the gate's pure logic (occupancy model, CSV parse) before spending time on RGA.
+      - name: Unit tests (occupancy model)
+        run: py Scripts/test_rga_occupancy.py
+
+      # RGA is ~238MB; cache the pinned version so only the first run downloads it.
+      - name: Cache Radeon GPU Analyzer
+        uses: actions/cache@v4
+        with:
+          path: Tools/rga
+          key: rga-2.14.2
+
+      # Compile every Engine/Shaders/*.hlsl to SPIR-V with the bundled dxc, using the engine's real
+      # flags/profiles (VulkanShader.cpp): the current two-path (.vert/.frag/.comp) shaders. Fails CI
+      # if any shader is broken.
+      - name: Cook shaders (dxc -> SPIR-V)
+        run: py Scripts/cook-shaders.py --variants rt,base
+
+      # Static occupancy / register gate: RGA over the cooked SPIR-V, diffed against the committed
+      # baseline. Static analysis, no GPU needed, so it runs in hosted CI (smoke/perf-bench can't).
+      # Auto-bootstraps RGA into Tools/rga on a cache miss.
+      - name: Shader occupancy gate (RGA)
+        run: py Scripts/rga-occupancy.py --spv-dir Engine/cache/shaders-cook
