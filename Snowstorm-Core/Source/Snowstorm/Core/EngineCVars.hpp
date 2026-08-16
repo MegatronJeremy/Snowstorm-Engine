@@ -157,6 +157,7 @@ namespace Snowstorm::CVars
 	// history is treated as a different surface and rejected (removes ghost trails on disoccluded edges).
 	// 0 = off (pre-#127 behaviour), for a clean A/B.
 	extern CVar<float> TaaDepthReject;
+	extern CVar<bool> TaaDepthRejectSlope;
 
 	// Post-tonemap contrast-adaptive sharpen (AMD CAS) strength, 0..1 (#44). Display-space (runs after
 	// tonemap, like FXAA), so it's hue-safe — a sharpen in linear HDR before ACES turns overshoot into a hue

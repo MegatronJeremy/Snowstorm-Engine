@@ -1093,17 +1093,18 @@ namespace Snowstorm
 				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
 				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
 				const float depthReject = CVars::TaaDepthReject.Get();
+				const bool depthRejectSlope = CVars::TaaDepthRejectSlope.Get();
 
 				fc.Graph.AddPass({.Name = "TemporalResolve" + v.Suffix,
 				                  .Target = curHistory,
 				                  .Reads = {{currentView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {prevHistView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {velView->GetTexture(), RenderGraph::AccessState::Sampled}},
-				                  .Execute = [this, &fc, currentView, prevHistView, velView, rcpFrame, historyValid, nearPlane, farPlane, depthReject, histFmt](CommandContext& c)
+				                  .Execute = [this, &fc, currentView, prevHistView, velView, rcpFrame, historyValid, nearPlane, farPlane, depthReject, depthRejectSlope, histFmt](CommandContext& c)
 				                  {
 					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, currentView, prevHistView, velView,
 					                              rcpFrame, historyValid, CVars::TaaBlend.Get(),
-					                              CVars::TaaMaxBlend.Get(), nearPlane, farPlane, depthReject, histFmt);
+					                              CVars::TaaMaxBlend.Get(), nearPlane, farPlane, depthReject, depthRejectSlope, histFmt);
 				                  }});
 
 				// Tonemap now reads the resolved history slot instead of the raw scene color.

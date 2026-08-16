@@ -45,7 +45,10 @@ namespace Snowstorm
 		// Same monotonic counter the whole frame uses (incremented in RendererService::NewFrame before any
 		// system runs). Deterministic per frame, so all cameras this frame share one Halton index.
 		const uint64_t frame = ServiceView<RendererService>().GetFrameCounter();
-		const glm::vec2 jitterPx = HaltonJitterPixels(frame); // [-0.5, 0.5] px, or unused when off
+		// 16-phase Halton ring (was 8): more sub-pixel samples so thin/sub-pixel edges (railings, wires) are
+		// covered more often and accumulate instead of shimmering. UE uses 8 for TAA, more for TSR-class detail;
+		// 16 is the cheap step for thin-feature convergence. Longer ring = slightly slower to fully converge.
+		const glm::vec2 jitterPx = HaltonJitterPixels(frame, 16); // [-0.5, 0.5] px, or unused when off
 
 		for (const auto camView = reg.view<CameraRuntimeComponent, CameraTargetComponent>(); const auto e : camView)
 		{

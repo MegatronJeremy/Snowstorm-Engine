@@ -24,6 +24,11 @@ namespace Snowstorm
 			float Near = 0.1f;
 			float Far = 500.0f;
 			float DepthRejectScale = 0.0f;
+
+			float DepthRejectSlope = 1.0f; // A/B: 1 = slope-aware disocclusion, 0 = flat relative-depth curve
+			float _Pad0 = 0.0f;
+			float _Pad1 = 0.0f;
+			float _Pad2 = 0.0f;
 		};
 
 		// Set 1 (space1). Bindings parked high to dodge the material bindings (0/1/2) that
@@ -92,7 +97,7 @@ namespace Snowstorm
 	                               const Ref<TextureView>& current, const Ref<TextureView>& history, const Ref<TextureView>& velocity,
 	                               const glm::vec2& rcpFrame, const bool historyValid, const float blend, const float maxBlend,
 	                               const float nearPlane, const float farPlane, const float depthRejectScale,
-	                               const PixelFormat colorFormat)
+	                               const bool depthRejectSlope, const PixelFormat colorFormat)
 	{
 		if (!ctx || !current || !history || !velocity)
 		{
@@ -134,6 +139,7 @@ namespace Snowstorm
 		cb.Near = nearPlane;
 		cb.Far = farPlane;
 		cb.DepthRejectScale = depthRejectScale;
+		cb.DepthRejectSlope = depthRejectSlope ? 1.0f : 0.0f;
 		m_UniformBuffers[frameIndex]->SetData(&cb, sizeof(ResolveCB), 0);
 
 		// Source views change every frame (history ping-pongs, targets resize), so refresh all bindings.

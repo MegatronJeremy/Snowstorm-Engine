@@ -96,7 +96,9 @@ namespace Snowstorm::CVars
 
 	CVar<float> TaaMaxBlend{"render.taa.maxblend", 0.97f, "TAA history weight when the pixel is ~static: deeper accumulation to average out specular shimmer that jitter causes on shiny surfaces (#44)", CVarFlags::Persist};
 
-	CVar<float> TaaDepthReject{"render.taa.depth_reject", 0.02f, "TAA depth-disocclusion rejection threshold: reject reprojected history whose linear depth differs by more than this fraction of view-space depth (kills ghost trails on disoccluded silhouettes). 0 = off (#127)", CVarFlags::Persist};
+	CVar<float> TaaDepthReject{"render.taa.depth_reject", 0.02f, "TAA depth-disocclusion rejection threshold: reject reprojected history whose linear depth differs by more than this fraction of view-space depth (kills ghost trails on disoccluded silhouettes). 0 = off (#127). With render.taa.depth_reject.slope on, this is the small BASE fraction added on top of the surface-slope allowance.", CVarFlags::Persist};
+
+	CVar<bool> TaaDepthRejectSlope{"render.taa.depth_reject.slope", true, "TAA disocclusion test curve (A/B). On (default) = SLOPE-AWARE: the reject threshold accounts for the depth change the surface's own slope predicts over the reprojection distance, so steep/grazing continuous surfaces aren't false-rejected (shimmer) while real disocclusions still reject (no ghost) -- removes the flat threshold's no-middle-ground tradeoff. Off = the flat relative-depth curve (pre-slope). Uses render.taa.depth_reject as the threshold either way.", CVarFlags::Persist};
 
 	CVar<float> Sharpen{"render.sharpen", 0.0f, "Post-tonemap contrast-adaptive sharpen (AMD CAS) strength, 0..1 (0 = off). Display-space + hue-safe; counters TAA/upscale softening, runs after tonemap like FXAA. Guidance: ~0.3 for native+TAA, ~0.5 when upscaling (render.scale<1); >0.7 over-sharpens and re-introduces aliasing TAA removed, so keep it light (#44)", CVarFlags::Persist};
 

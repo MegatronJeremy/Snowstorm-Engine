@@ -110,6 +110,17 @@ namespace Snowstorm
 							ImGui::SetTooltip("TAA disocclusion rejection: reject history whose depth differs by more than "
 							                  "this fraction of view-space depth. 0 = off. ~0.02 is a good start.");
 						}
+						// Slope-aware disocclusion (A/B): accounts for the surface's own slope so steep/grazing
+						// surfaces aren't false-rejected (edge shimmer) while real disocclusions still reject (ghosts).
+						if (bool slope = CVars::TaaDepthRejectSlope.Get(); ImGui::Checkbox("Slope-aware Reject##TAA", &slope))
+						{
+							CVars::TaaDepthRejectSlope.Set(slope);
+						}
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::SetTooltip("On (default): threshold accounts for surface slope over the reprojection "
+							                  "(fixes the flat-threshold no-middle-ground). Off: flat relative-depth curve.");
+						}
 						ImGui::EndDisabled();
 					}
 

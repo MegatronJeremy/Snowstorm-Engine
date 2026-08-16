@@ -23,6 +23,11 @@ cbuffer ResolveCB : register(b3, space1)
 	float Near;
 	float Far;
 	float DepthRejectScale;
+
+	float DepthRejectSlope; // A/B toggle: 1 = slope-aware disocclusion, 0 = flat relative-depth (pre-slope curve)
+	float _Pad0;
+	float _Pad1;
+	float _Pad2;
 };
 
 Texture2D CurrentTex : register(t4, space1);     // current-frame HDR color (jittered)
@@ -154,8 +159,30 @@ float4 main(FullscreenVSOut input) : SV_Target
 		return float4(currentHDR, depthCurr);
 	}
 
+	// VELOCITY DILATION (Karis 2014). At a silhouette, foreground and background have different screen motion,
+	// and sub-pixel jitter flips which fragment wins the depth test frame-to-frame — so reprojecting by the
+	// pixel's OWN velocity makes the edge wobble against its history -> edge shimmer under camera motion.
+	// Reproject using the CLOSEST-depth neighbour's velocity (foreground wins) so silhouette edges reproject
+	// consistently. Depth rides velocity .z (NDC, perspectiveRH_ZO: smaller = nearer). Interior/flat pixels
+	// pick the centre (offset 0) so nothing changes there. The disocclusion test below still uses THIS pixel's
+	// own depth (depthCurr) — only the reprojection VECTOR is dilated.
+	int2 closestOffset = int2(0, 0);
+	float closestDepth = depthCurr;
+	[unroll] for (int vy = -1; vy <= 1; ++vy)
+	{
+		[unroll] for (int vx = -1; vx <= 1; ++vx)
+		{
+			const float d = VelocityTex.Load(int3(texel + int2(vx, vy), 0)).z;
+			if (d < closestDepth)
+			{
+				closestDepth = d;
+				closestOffset = int2(vx, vy);
+			}
+		}
+	}
+
 	// Reproject: where was this pixel last frame? velocity = curr_uv - prev_uv, so prev_uv = uv - velocity.
-	const float2 velocity = VelocityTex.Load(int3(texel, 0)).xy;
+	const float2 velocity = VelocityTex.Load(int3(texel + closestOffset, 0)).xy;
 	const float2 histUv = uv - velocity;
 
 	// Off-screen history can't be trusted (disocclusion at the screen edge) -> fall back to current.
@@ -175,37 +202,47 @@ float4 main(FullscreenVSOut input) : SV_Target
 	const float3 current = TonemapWeight(currentHDR);
 	const float3 currentYCoCg = RgbToYCoCg(current);
 
-	// Weighted-YCoCg first/second moments over the 3x3 CURRENT neighborhood -> the variance clamp box (in
-	// the firefly-suppressing tonemap-weighted space, so a single bright neighbor doesn't inflate it).
-	float3 m1 = 0.0; // sum of weighted-YCoCg
-	float3 m2 = 0.0; // sum of weighted-YCoCg^2
+	// Weighted-YCoCg moments for the variance clamp box, in firefly-suppressing tonemap-weighted space (a
+	// single bright neighbor can't inflate it). Karis' ROUNDED box: accumulate moments over BOTH the full 3x3
+	// AND the 5-tap "plus" cross (center + N/S/E/W), build a variance box from each, and average them. The 3x3
+	// box is loose at a high-contrast edge (it spans both sides -> large variance -> stale history slips in and
+	// out as the edge jitters sub-pixel -> edge shimmer under motion); the cross is tighter, so averaging pulls
+	// the box in and rejects more stale history at edges. The cross is a subset of the 3x3, so both come from
+	// the SAME 9 loads.
+	float3 m1_9 = 0.0, m2_9 = 0.0; // full 3x3 sum + sum of squares
+	float3 m1_5 = 0.0, m2_5 = 0.0; // 5-tap cross
 	[unroll] for (int dy = -1; dy <= 1; ++dy)
 	{
 		[unroll] for (int dx = -1; dx <= 1; ++dx)
 		{
 			const float3 s = RgbToYCoCg(TonemapWeight(CurrentTex.Load(int3(texel + int2(dx, dy), 0)).rgb));
-			m1 += s;
-			m2 += s * s;
+			m1_9 += s;
+			m2_9 += s * s;
+			if (abs(dx) + abs(dy) <= 1) // center + N/S/E/W = the plus cross
+			{
+				m1_5 += s;
+				m2_5 += s * s;
+			}
 		}
 	}
-	const float3 mean = m1 / 9.0;
-	const float3 variance = max(m2 / 9.0 - mean * mean, 0.0);
-	const float3 stddev = sqrt(variance);
+	const float3 mean9 = m1_9 / 9.0;
+	const float3 std9 = sqrt(max(m2_9 / 9.0 - mean9 * mean9, 0.0));
+	const float3 mean5 = m1_5 / 5.0;
+	const float3 std5 = sqrt(max(m2_5 / 5.0 - mean5 * mean5, 0.0));
+	const float3 mean = 0.5 * (mean9 + mean5); // clip toward the rounded-box centre
 
 	// Staticness: 1 at rest, 0 by ~2 px/frame of motion. (velocity is in UV; /RcpFrame -> pixels.)
 	const float speedPixels = length(velocity / RcpFrame);
 	const float staticness = saturate(1.0 - speedPixels * 0.5);
 
-	// VELOCITY-AWARE CLAMP WIDTH — the actual fix for the static specular shimmer. The neighborhood clamp
-	// is what rejected the smooth accumulated history on the shiny curtain trim: with a still camera, jitter
-	// makes each frame sample a different sub-pixel highlight, so the tight box centers on this frame's peak
-	// and clips the (dimmer, averaged) history out every frame. But a static pixel has NO ghosting risk
-	// (nothing moved), so we widen the box toward "accept anything" at rest and only tighten it under motion
-	// (where stale history must be rejected). This is exactly what the diagnostic no-clamp probe did, made
-	// conditional on motion. gamma: 1 std-dev while moving -> ~10 (effectively no clamp) at rest.
+	// VELOCITY-AWARE CLAMP WIDTH — widen toward "accept anything" at rest (a static pixel has no ghosting risk,
+	// and deep accumulation kills specular shimmer on shiny surfaces the still-camera jitter would otherwise
+	// alias) and tighten to ~1 std-dev under motion (reject stale history). gamma: 1 while moving -> ~10 at
+	// rest. Applied to BOTH boxes; the average is Karis' rounded box (tighter at edges than the 3x3 alone).
 	const float gamma = lerp(1.0, 10.0, staticness);
-	const float3 boxMin = mean - gamma * stddev;
-	const float3 boxMax = mean + gamma * stddev;
+
+	const float3 boxMin = 0.5 * ((mean9 - gamma * std9) + (mean5 - gamma * std5));
+	const float3 boxMax = 0.5 * ((mean9 + gamma * std9) + (mean5 + gamma * std5));
 
 	const float3 historyYCoCg = RgbToYCoCg(TonemapWeight(historyHDR));
 	const float3 clipped = ClipToAABB(historyYCoCg, mean, boxMin, boxMax);
@@ -224,12 +261,45 @@ float4 main(FullscreenVSOut input) : SV_Target
 	// DepthRejectScale == 0 disables it (blend unchanged) — the pre-#127 behaviour, for a clean A/B.
 	if (DepthRejectScale > 0.0)
 	{
-		const float depthPrev = HistoryTex.SampleLevel(LinearClamp, histUv, 0).a;
+		// POINT-fetch the reprojected history depth (nearest texel), NOT a bilinear tap. A linear read at the
+		// sub-pixel histUv blends depth across silhouettes -> a phantom depth diff -> false disocclusion reject
+		// under motion (the "low thresholds shimmer when moving" cause). The color path still uses Catmull-Rom;
+		// only the depth compare goes point.
+		const int2 histTexel = clamp(int2(histUv / RcpFrame), int2(0, 0), int2(1.0 / RcpFrame) - 1);
+		const float depthPrev = HistoryTex.Load(int3(histTexel, 0)).a;
 		const float linCurr = LinearizeDepth(depthCurr);
 		const float linPrev = LinearizeDepth(depthPrev);
-		const float rel = abs(linCurr - linPrev) / max(linCurr, 1e-4);
-		// 1 when depths agree, ramping to 0 as the relative gap crosses [scale, 2*scale].
-		const float depthConfidence = 1.0 - smoothstep(DepthRejectScale, 2.0 * DepthRejectScale, rel);
+		const float dev = abs(linCurr - linPrev);
+
+		float depthConfidence;
+		if (DepthRejectSlope > 0.5)
+		{
+			// SLOPE-AWARE disocclusion. A flat relative-depth threshold can't tell a steep/grazing CONTINUOUS
+			// surface (large per-pixel depth change, no disocclusion) from a real disocclusion — so it either
+			// false-rejects steep surfaces (shimmer) or misses reveals (ghosts): no middle ground. Fix: allow the
+			// depth change the CURRENT surface's own slope predicts over the reprojection distance, and reject
+			// only the excess. Estimate the per-pixel linear-depth slope from N/S/E/W taps, taking the MIN of the
+			// one-sided differences per axis so a silhouette neighbour (a huge jump on one side) can't inflate it.
+			const float linR = LinearizeDepth(VelocityTex.Load(int3(texel + int2(1, 0), 0)).z);
+			const float linL = LinearizeDepth(VelocityTex.Load(int3(texel + int2(-1, 0), 0)).z);
+			const float linU = LinearizeDepth(VelocityTex.Load(int3(texel + int2(0, 1), 0)).z);
+			const float linD = LinearizeDepth(VelocityTex.Load(int3(texel + int2(0, -1), 0)).z);
+			const float gx = min(abs(linR - linCurr), abs(linCurr - linL));
+			const float gy = min(abs(linU - linCurr), abs(linCurr - linD));
+			const float2 offsetPx = abs(velocity / RcpFrame);       // reprojection distance in pixels
+			const float slopeAllow = gx * offsetPx.x + gy * offsetPx.y; // depth change the surface slope predicts
+			// Tolerance = a small base fraction (DepthRejectScale) + the surface-slope allowance. Steep continuous
+			// surfaces get a wide tolerance (kept); a real disocclusion (dev >> slopeAllow) still rejects.
+			const float tol = DepthRejectScale * max(linCurr, 1e-4) + slopeAllow;
+			depthConfidence = 1.0 - smoothstep(tol, 2.0 * tol, dev);
+		}
+		else
+		{
+			// FLAT relative-depth curve (pre-slope). Kept behind the A/B toggle. 1 when depths agree, ramping to
+			// 0 as the relative gap crosses [scale, 2*scale].
+			const float rel = dev / max(linCurr, 1e-4);
+			depthConfidence = 1.0 - smoothstep(DepthRejectScale, 2.0 * DepthRejectScale, rel);
+		}
 		blend *= depthConfidence;
 	}
 

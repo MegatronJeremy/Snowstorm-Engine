@@ -33,7 +33,7 @@ namespace Snowstorm
 		void Draw(const Ref<CommandContext>& ctx, uint32_t frameIndex,
 		          const Ref<TextureView>& current, const Ref<TextureView>& history, const Ref<TextureView>& velocity,
 		          const glm::vec2& rcpFrame, bool historyValid, float blend, float maxBlend,
-		          float nearPlane, float farPlane, float depthRejectScale, PixelFormat colorFormat);
+		          float nearPlane, float farPlane, float depthRejectScale, bool depthRejectSlope, PixelFormat colorFormat);
 
 	private:
 		void EnsurePipeline(PixelFormat colorFormat);
