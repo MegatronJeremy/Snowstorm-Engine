@@ -209,35 +209,23 @@ namespace Snowstorm::CVars
 
 	uint32_t MsaaSampleCount()
 	{
-		// Resolved ONCE (Meyers static): the forward MSAA sample count is baked into the render targets and
-		// the forward/sky/depth-prepass pipelines at their creation, so it must be a fixed value for the whole
-		// run — reading render.msaa live would let a viewport resize allocate targets whose sample count no
-		// longer matches the startup-built pipelines (a Vulkan validation error). A live edit thus applies on
-		// the next launch. Snapped to the largest of {1,2,4,8} that is <= the request AND <= the device max.
-		static const uint32_t s_Resolved = []
+		// LIVE: read render.msaa each call, snapped to the largest of {1,2,4,8} that is <= the request AND <=
+		// the device's color+depth max. The MSAA toggle applies live — ViewportResizeSystem reallocates the
+		// scene targets and rebuilds the material/sky pipelines in place when this value changes — so this must
+		// track the CVar, not cache it. Only the device max (constant) is cached, to avoid a per-call
+		// vkGetPhysicalDeviceProperties; cheap enough for the several per-frame consumers.
+		static const uint32_t s_DeviceMax = Renderer::GetMaxSampleCount(); // 1/2/4/8, color+depth intersection
+		const int requested = Msaa.Get();
+		uint32_t resolved = 1;
+		for (const uint32_t c : {8u, 4u, 2u})
 		{
-			const int requested = Msaa.Get();
-			const uint32_t deviceMax = Renderer::GetMaxSampleCount(); // 1/2/4/8, color+depth intersection
-			uint32_t resolved = 1;
-			for (const uint32_t c : {8u, 4u, 2u})
+			if (requested >= static_cast<int>(c) && s_DeviceMax >= c)
 			{
-				if (requested >= static_cast<int>(c) && deviceMax >= c)
-				{
-					resolved = c;
-					break;
-				}
+				resolved = c;
+				break;
 			}
-			if (requested > static_cast<int>(resolved))
-			{
-				SS_CORE_WARN("render.msaa {} unavailable (device max {}x) -> using {}x MSAA", requested, deviceMax, resolved);
-			}
-			else if (resolved > 1)
-			{
-				SS_CORE_INFO("Forward MSAA: {}x (device max {}x)", resolved, deviceMax);
-			}
-			return resolved;
-		}();
-		return s_Resolved;
+		}
+		return resolved;
 	}
 
 	float ClampedGIScale()

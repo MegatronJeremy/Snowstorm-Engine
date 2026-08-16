@@ -25,5 +25,6 @@ namespace Snowstorm
 		Ref<Pipeline> m_Pipeline;
 		PixelFormat m_ColorFormat = PixelFormat::Unknown;
 		PixelFormat m_DepthFormat = PixelFormat::Unknown;
+		uint32_t m_SampleCount = 0; // MSAA of the built pipeline; rebuild when render.msaa changes (live)
 	};
 }

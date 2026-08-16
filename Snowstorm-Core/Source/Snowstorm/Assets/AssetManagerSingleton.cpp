@@ -920,6 +920,21 @@ namespace Snowstorm
 		m_MaterialInstanceCache.erase(handle);
 	}
 
+	void AssetManagerSingleton::RebuildPipelinesForSampleCount(const uint32_t samples)
+	{
+		// In-place rebuild of each cached scene-material pipeline (covers DefaultLit + custom). The pipeline
+		// object no-ops when its sample count already matches, so this is cheap when nothing changed. Only the
+		// scene-target pipelines live here; the sky pipeline self-heals in SkyPass::EnsurePipeline, and post/
+		// G-buffer/velocity pipelines stay single-sample (never in this cache).
+		for (auto& [path, pipeline] : m_PipelineCache)
+		{
+			if (pipeline)
+			{
+				pipeline->SetSampleCount(samples);
+			}
+		}
+	}
+
 	void AssetManagerSingleton::ApplyMaterialAsset(Material& base, const MaterialAsset& matAsset)
 	{
 		base.SetBaseColor(matAsset.BaseColor);

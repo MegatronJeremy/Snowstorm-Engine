@@ -97,9 +97,9 @@ namespace Snowstorm
 						}
 
 						// Forward MSAA (geometric-edge AA), orthogonal to the AA mode above (MSAA + TAA compose).
-						// APPLIES ON RESTART: the sample count is baked into the scene targets + forward/sky
-						// pipelines at startup, so this dropdown persists the choice for the next launch rather than
-						// flipping live. Options are capped at the device's max color+depth sample count.
+						// LIVE: changing it reallocates the scene targets and rebuilds the material/sky pipelines in
+						// place (ViewportResizeSystem), like the render.scale sliders. Options are capped at the
+						// device's max color+depth sample count.
 						{
 							const char* msaaLabels[] = {"Off (1x)", "2x", "4x", "8x"};
 							const uint32_t msaaCounts[] = {1u, 2u, 4u, 8u};
@@ -126,8 +126,8 @@ namespace Snowstorm
 							}
 							if (ImGui::IsItemHovered())
 							{
-								ImGui::SetTooltip("Forward multisample AA for geometric (triangle-edge) aliasing. Applies on "
-								                  "RESTART. Does NOT affect the RT effects (GI/AO/reflections/shadows run on a "
+								ImGui::SetTooltip("Forward multisample AA for geometric (triangle-edge) aliasing. Applies "
+								                  "live. Does NOT affect the RT effects (GI/AO/reflections/shadows run on a "
 								                  "single-sample G-buffer) or shader/specular aliasing. Composes with TAA.");
 							}
 						}

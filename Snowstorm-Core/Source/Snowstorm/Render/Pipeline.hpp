@@ -185,6 +185,12 @@ namespace Snowstorm
 		// descriptor sets, so backends log and refuse rather than corrupt state. See ShaderReloadSystem.
 		virtual void Reload() {}
 
+		// Live MSAA: rebuild the backend pipeline in place at a new rasterization sample count (updates the
+		// desc + swaps the internal handle, like Reload). No-op if unchanged or on pipeline types without
+		// multisample state (compute). Only the scene-target graphics pipelines (material + sky) are switched,
+		// coordinated with the scene target reallocation, when render.msaa changes. Caller ensures GPU idle.
+		virtual void SetSampleCount(uint32_t /*samples*/) {}
+
 		static Ref<Pipeline> Create(const PipelineDesc& desc);
 
 		// Invoke `fn` for every live pipeline (the registry holds weak refs populated by Create). Used by the

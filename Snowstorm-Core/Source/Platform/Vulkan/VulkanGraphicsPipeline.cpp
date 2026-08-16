@@ -679,6 +679,24 @@ namespace Snowstorm
 		}
 	}
 
+	void VulkanGraphicsPipeline::SetSampleCount(const uint32_t samples)
+	{
+		const uint32_t s = samples == 0 ? 1 : samples;
+		if (m_Desc.SampleCount == s)
+		{
+			return;
+		}
+
+		// Rebuild in place at the new sample count. Drain first (any in-flight command buffer may reference the
+		// old VkPipeline). Same swap-the-handle mechanism as Reload, so existing Ref<Pipeline> holders (material
+		// instances) bind the new one next frame — no re-resolution needed.
+		m_Desc.SampleCount = s;
+		vkDeviceWaitIdle(m_Device);
+		Destroy();
+		Build();
+		SS_CORE_INFO("Rebuilt graphics pipeline '{}' at {}x MSAA.", m_Desc.DebugName, s);
+	}
+
 	VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
 	{
 		if (m_Pipeline != VK_NULL_HANDLE || m_PipelineLayout != VK_NULL_HANDLE)

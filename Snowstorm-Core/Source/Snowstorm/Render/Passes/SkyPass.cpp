@@ -15,7 +15,8 @@ namespace Snowstorm
 		// (Re)build the sky pipeline when first used or when the target formats change. Empty vertex
 		// layout (the VS generates a fullscreen triangle from SV_VertexID); depth test LessOrEqual with
 		// NO depth write so the sky sits at the far plane behind already-drawn geometry.
-		if (m_Pipeline && m_ColorFormat == colorFormat && m_DepthFormat == depthFormat)
+		const uint32_t samples = CVars::MsaaSampleCount();
+		if (m_Pipeline && m_ColorFormat == colorFormat && m_DepthFormat == depthFormat && m_SampleCount == samples)
 		{
 			return;
 		}
@@ -39,8 +40,8 @@ namespace Snowstorm
 		p.ColorFormats = {colorFormat};
 		p.DepthFormat = depthFormat;
 		// Sky draws into the (possibly multisampled) scene target after the meshes, so it must match the scene
-		// material pipelines' sample count. Constant for the run (startup-resolved MsaaSampleCount).
-		p.SampleCount = CVars::MsaaSampleCount();
+		// material pipelines' sample count. Live: rebuilt here when render.msaa changes (see m_SampleCount guard).
+		p.SampleCount = samples;
 		p.Raster.Cull = CullMode::None; // fullscreen triangle: don't cull by winding
 		p.DepthStencil.EnableDepthTest = true;
 		p.DepthStencil.EnableDepthWrite = false;
@@ -51,6 +52,7 @@ namespace Snowstorm
 		SS_CORE_ASSERT(m_Pipeline, "Failed to create Sky pipeline");
 		m_ColorFormat = colorFormat;
 		m_DepthFormat = depthFormat;
+		m_SampleCount = samples;
 	}
 
 	void SkyPass::Draw(RendererService& renderer, const PixelFormat colorFormat, const PixelFormat depthFormat)

@@ -91,6 +91,12 @@ namespace Snowstorm
 		// re-pulls the fresh instance. No-op if the handle was never resolved/cached.
 		void ReloadMaterial(AssetHandle handle);
 
+		// Live MSAA: rebuild every cached scene-material pipeline in place at the new sample count. Material
+		// instances hold a Ref to the same Pipeline object, so the in-place swap reaches them with no cache
+		// eviction or re-resolution. Called (with the GPU drained) when render.msaa changes, alongside the scene
+		// target reallocation, so pipelines and targets agree on the sample count. No-op if nothing is cached.
+		void RebuildPipelinesForSampleCount(uint32_t samples);
+
 		const AssetMetadata* GetMetadata(AssetHandle handle) const { return m_Registry.GetMetadata(handle); }
 
 		// Visit every registered asset (editor UI: asset picker, content browser).

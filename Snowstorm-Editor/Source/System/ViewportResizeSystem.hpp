@@ -22,5 +22,9 @@ namespace Snowstorm
 		float m_LastRenderScale = -1.0f;
 		float m_LastGIScale = -1.0f;
 		float m_LastAOScale = -1.0f;
+		// Last-applied forward MSAA sample count (render.msaa). Like the scales above it's a global CVar edit,
+		// not a viewport-size change; a change forces the scene targets to be reallocated at the new sample
+		// count and the scene material/sky pipelines to be rebuilt in place. 0 = force apply on first Execute.
+		uint32_t m_LastMsaa = 0;
 	};
 }

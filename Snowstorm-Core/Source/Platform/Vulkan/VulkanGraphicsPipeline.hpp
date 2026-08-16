@@ -18,6 +18,10 @@ namespace Snowstorm
 		// Ref<Pipeline> holders bind the new one next frame. No-op if the shader version hasn't advanced.
 		void Reload() override;
 
+		// Live MSAA: rebuild in place at a new rasterization sample count (updates m_Desc.SampleCount, swaps the
+		// VkPipeline). No-op if unchanged. Caller ensures GPU idle (ViewportResizeSystem drains before it).
+		void SetSampleCount(uint32_t samples) override;
+
 		// Pipeline interface
 		[[nodiscard]] const std::vector<Ref<DescriptorSetLayout>>& GetSetLayouts() const override { return m_SetLayouts; }
 
