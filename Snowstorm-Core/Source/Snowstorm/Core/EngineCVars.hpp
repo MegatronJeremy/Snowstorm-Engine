@@ -233,6 +233,13 @@ namespace Snowstorm::CVars
 	// upscaler; on = jittered LR for the temporal upscaler (#98).
 	extern CVar<bool> DatasetJitter;
 
+	// Ground-truth supersampling factor (DLAA #98): 1 = off, 2 = render the compare/dataset GT at 2x then
+	// box-downsample = an ANTI-ALIASED native reference. A single native GT frame is aliased and thus not a
+	// valid AA training target; SSAA is. Capture-only (the GT is a 2nd render). Clamp with ClampedGtSsaa().
+	extern CVar<int> GtSsaa;
+	// render.gt.ssaa clamped to {1,2}. Use everywhere the factor is consumed.
+	[[nodiscard]] uint32_t ClampedGtSsaa();
+
 	// Temporal sub-pixel camera jitter (#44): Halton(2,3) offset applied to the color projection each
 	// frame — the substrate a temporal upscaler/TAA accumulates. Motion vectors + frustum culling keep the
 	// unjittered matrices. Read per-frame by CameraJitterSystem; forced off in compare mode. Persist.

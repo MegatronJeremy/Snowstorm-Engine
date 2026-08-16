@@ -32,6 +32,7 @@
 #include "Snowstorm/Render/Passes/SharpenPass.hpp"
 #include "Snowstorm/Render/Passes/TemporalResolvePass.hpp"
 #include "Snowstorm/Render/Passes/UpscalePass.hpp"
+#include "Snowstorm/Render/Renderer.hpp" // Renderer::WaitIdle when recreating the lazy SSAA GT target
 #include "Snowstorm/Render/Passes/VelocityPass.hpp"
 
 // Concrete per-viewport effects (#120) + RenderSystem::BuildViewportEffects. Each effect owns its stage's
@@ -1252,11 +1253,73 @@ namespace Snowstorm
 					return;
 				}
 
+				// SSAA ground truth (DLAA #98): a single native GT frame is still aliased, so for a DLAA dataset
+				// the reference must be ANTI-ALIASED. render.gt.ssaa == 2 renders the (unjittered) GT forward at 2x
+				// into a lazily-allocated supersample target, then box-downsamples it in LINEAR HDR into
+				// GroundTruthTarget before tonemap (resolve-in-linear, per the engine invariant). The downsample is
+				// a bilinear tap at each 2x2 block centre = the exact 2x box average. Capture-only cost; the SSAA
+				// target lives on this effect (not RenderTargetComponent) since only compare/dataset use it.
+				const uint32_t ssaa = CVars::ClampedGtSsaa();
+				const auto& gtDesc = vpRT.GroundTruthTarget->GetDesc();
+				Ref<RenderTarget> gtForwardTarget = vpRT.GroundTruthTarget;
+				if (ssaa > 1)
+				{
+					const uint32_t ssW = gtDesc.Width * ssaa;
+					const uint32_t ssH = gtDesc.Height * ssaa;
+					if (!m_GtSsaaTarget || m_GtSsaaW != ssW || m_GtSsaaH != ssH)
+					{
+						if (m_GtSsaaTarget)
+						{
+							Renderer::WaitIdle(); // drain before dropping a possibly in-flight target (rare: capture is fixed-size)
+						}
+						m_GtSsaaTarget = CreateDefaultSceneRenderTarget(ssW, ssH, "ViewportGTSSAA");
+						m_GtSsaaW = ssW;
+						m_GtSsaaH = ssH;
+					}
+					gtForwardTarget = m_GtSsaaTarget;
+				}
+
 				// Ground-truth 2nd render + its tonemap are the shared builders (also used by the primary path).
 				// forceRasterShadow=true: the GT reference always uses the raster shadow map, so when RT shadows
 				// are on the compare metric measures RT (main) vs raster (GT) — the #118 RT-shadow A/B. When RT
 				// is off both renders are raster, so the metric harmlessly reports the upscaler A/B as before.
-				m_Owner.AddForwardPass(fc, cam, vpRT.GroundTruthTarget, "ForwardGT" + passSuffix, false, /*forceRasterShadow*/ true); // GT: never jittered
+				m_Owner.AddForwardPass(fc, cam, gtForwardTarget, "ForwardGT" + passSuffix, false, /*forceRasterShadow*/ true); // GT: never jittered
+
+				if (ssaa > 1)
+				{
+					// Box-downsample the 2x SSAA GT into GroundTruthTarget's color (linear HDR) via a bilinear
+					// fullscreen tap. The downsample pipeline is COLOR-ONLY (no depth), so it must render into a
+					// color-only render target — GroundTruthTarget itself carries a depth attachment, which would
+					// mismatch the pipeline's undefined depth format. Wrap GT's color image in a depth-less RT
+					// (cached, rebuilt only when the GT color view changes on resize).
+					const Ref<TextureView> gtColor = vpRT.GroundTruthTarget->GetSampleableColorView(0);
+					if (!m_GtDownsampleTarget || m_GtDownsampleColorView != gtColor)
+					{
+						RenderTargetDesc dsDesc{};
+						dsDesc.Width = gtDesc.Width;
+						dsDesc.Height = gtDesc.Height;
+						RenderTargetAttachment ca{};
+						ca.View = gtColor;
+						ca.AttachmentIndex = 0;
+						ca.LoadOp = RenderTargetLoadOp::DontCare; // fully overwritten by the downsample
+						ca.StoreOp = RenderTargetStoreOp::Store;
+						dsDesc.ColorAttachments.push_back(ca);
+						m_GtDownsampleTarget = RenderTarget::Create(dsDesc);
+						m_GtDownsampleColorView = gtColor;
+					}
+					const Ref<RenderTarget> dsTarget = m_GtDownsampleTarget;
+					const Ref<TextureView> ssColor = m_GtSsaaTarget->GetSampleableColorView(0);
+					const PixelFormat gtFmt = gtColor->GetTexture()->GetDesc().Format;
+					fc.Graph.AddPass({.Name = "GTDownsample" + passSuffix,
+					                  .Target = dsTarget,
+					                  .Reads = {{ssColor->GetTexture(), RenderGraph::AccessState::Sampled}},
+					                  .Execute = [this, &fc, ssColor, gtFmt](CommandContext& c)
+					                  {
+						                  const Ref<CommandContext> cref(&c, [](CommandContext*) {});
+						                  m_GtDownsample.Draw(cref, fc.FrameIndex, ssColor, gtFmt);
+					                  }});
+				}
+
 				m_Owner.AddTonemapPass(fc, vpRT.GroundTruthTarget->GetSampleableColorView(0), vpRT.GroundTruthPresentTarget,
 				                       "PostProcessGT" + passSuffix, RendererService::TonemapParams{}); // resolved under MSAA
 
@@ -1340,6 +1403,17 @@ namespace Snowstorm
 			RenderSystem& m_Owner;
 			MetricsPass m_MetricsPass;             // PSNR/SSIM reduction; exclusive to this effect
 			DatasetExportPass m_DatasetExportPass; // readback + .npy serialize; exclusive to this effect
+			// SSAA ground-truth (DLAA #98): lazily-allocated 2x GT render target + a bilinear downsample pass
+			// (2x -> 1x box average) that feeds GroundTruthTarget. Capture-only, so owned here (not on
+			// RenderTargetComponent). m_GtSsaaW/H cache the size for lazy recreate on a viewport resize.
+			Ref<RenderTarget> m_GtSsaaTarget;
+			UpscalePass m_GtDownsample;
+			uint32_t m_GtSsaaW = 0;
+			uint32_t m_GtSsaaH = 0;
+			// Color-only (depth-less) render target wrapping GroundTruthTarget's color image, so the color-only
+			// downsample pipeline's attachment formats match. Rebuilt when the wrapped view changes (GT resize).
+			Ref<RenderTarget> m_GtDownsampleTarget;
+			Ref<TextureView> m_GtDownsampleColorView;
 		};
 	}
 

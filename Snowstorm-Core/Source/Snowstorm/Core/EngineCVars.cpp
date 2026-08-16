@@ -85,6 +85,8 @@ namespace Snowstorm::CVars
 
 	CVar<int> DatasetExportFrames{"dataset.export.frames", 0, "Stop the app after this many dataset tuples have been written to disk (0 = run until the window closes). Lets a headless capture run produce a fixed-size dataset then exit."};
 
+	CVar<int> GtSsaa{"render.gt.ssaa", 1, "Ground-truth supersampling factor for the compare/dataset reference (1 = off, 2 = render the GT at 2x then box-downsample = anti-aliased reference). For a DLAA dataset the GT must be ANTI-ALIASED (a single native GT frame is aliased and not a valid AA target); SSAA is that reference. Capture-only cost (the GT is a 2nd render); clamped to {1,2}.", CVarFlags::Persist};
+
 	CVar<int> Upscaler{"render.upscaler", 0, "Upscale method when render.scale < 1: 0 = Bilinear (baseline), 1 = Neural Spatial (compute CNN residual refiner, single frame, #47), 2 = Neural Temporal (adds MV-warped previous-output + motion vector as extra inputs, DLSS/XeSS-style, #98). Both neural modes run the loaded .ssnn model; with the default identity weights each reproduces bilinear (the correctness baseline). Read per-frame; only active when upscaling (scale < 1). The temporal mode also forces the velocity pass on.", CVarFlags::Persist};
 
 	CVar<std::string> NeuralWeightsPath{"neural.weights", "", "Path to a trained .ssnn weights file for the neural upscaler (#99). Empty = the built-in identity refiner (reproduces bilinear). Loaded lazily when it changes. Used when render.upscaler = 1 (spatial, 3-ch input) or 2 (temporal, 8-ch input) — the model's first-layer width must match the selected mode, or the pass falls back to identity.", CVarFlags::Persist};
@@ -233,6 +235,11 @@ namespace Snowstorm::CVars
 	bool DlaaActive()
 	{
 		return AAMode.Get() == 3;
+	}
+
+	uint32_t ClampedGtSsaa()
+	{
+		return GtSsaa.Get() >= 2 ? 2u : 1u; // {1,2}; only 2x supported for now (a bilinear tap = exact 2x box)
 	}
 
 	float ClampedGIScale()
