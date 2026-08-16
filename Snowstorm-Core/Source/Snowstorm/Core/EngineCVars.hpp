@@ -132,10 +132,14 @@ namespace Snowstorm::CVars
 	// brighten, lower to darken. Runtime-tweakable from the editor's Settings panel.
 	extern CVar<float> Exposure;
 
-	// Anti-aliasing mode: 0 = None, 1 = FXAA (spatial post-process AA, runs after tonemap). A thesis
-	// baseline for the neural upscaler comparison. Runtime-tweakable from the editor's Settings panel;
-	// read per-frame by RenderSystem, so toggling it takes effect live.
+	// Anti-aliasing mode: 0 = None, 1 = FXAA (spatial post-process AA), 2 = TAA (classical temporal resolve),
+	// 3 = DLAA (the #98 neural temporal network run at NATIVE res as the temporal resolve, replacing TAA).
+	// A thesis baseline set for the AA comparison. Runtime-tweakable; read per-frame by RenderSystem.
 	extern CVar<int> AAMode;
+
+	// True when DLAA is the active AA mode (render.aa == 3): run the neural temporal resolve at native res
+	// instead of classical TAA. Single source of the "3" constant (RenderSystem, CameraJitterSystem, editor).
+	[[nodiscard]] bool DlaaActive();
 
 	// Forward-pass MSAA sample count: 1 = off, 2/4/8 = multisample the forward color+depth (geometric edge
 	// AA), resolved to single-sample before post. Does NOT touch the RT effects (they read a single-sample

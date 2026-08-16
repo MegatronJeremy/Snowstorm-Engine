@@ -933,7 +933,10 @@ namespace Snowstorm
 			[[nodiscard]] const char* Name() const override { return "Upscale"; }
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				return v.Upscaling && v.RT.SceneUpscaleTarget;
+				// Runs when actually upscaling (scale < 1) OR when DLAA is on (render.aa == 3): DLAA runs the
+				// neural temporal network at native res as the temporal resolve, so the effect fires even though
+				// there's no upscale. Both need SceneUpscaleTarget (always allocated full-res).
+				return (v.Upscaling || v.Dlaa) && v.RT.SceneUpscaleTarget;
 			}
 
 			void OnSceneCut() override { m_NeuralTemporalValid.clear(); }
@@ -965,10 +968,15 @@ namespace Snowstorm
 				// 2 = neural temporal (LR + MV-warped previous neural output + motion vector). SetTemporal must
 				// precede PrepareResources.
 				const int upscalerMode = CVars::Upscaler.Get();
-				const bool wantTemporal = upscalerMode == 2;
+				// DLAA (render.aa == 3): force the neural TEMPORAL path (8-ch) regardless of render.upscaler — DLAA
+				// IS the neural temporal network run at native res as the AA resolve. At native the LR->out bilinear
+				// stage is an identity copy, so the network runs purely as the temporal resolve. Otherwise (scale<1)
+				// render.upscaler selects the path as before (1 = spatial, 2 = temporal).
+				const bool wantTemporal = v.Dlaa || upscalerMode == 2;
 				m_NeuralPass.SetTemporal(wantTemporal);
 				m_NeuralPass.SetWeightsPath(CVars::NeuralWeightsPath.Get());
-				const bool neural = (upscalerMode == 1 || upscalerMode == 2) && m_NeuralPass.PrepareResources(upW, upH);
+				const bool neuralModeOn = v.Dlaa || upscalerMode == 1 || upscalerMode == 2;
+				const bool neural = neuralModeOn && m_NeuralPass.PrepareResources(upW, upH);
 
 				// Temporal history = the pass's OWN previous-frame output. Its output ring is indexed by frame-in-
 				// flight (2 slots); with 2 frames in flight the OTHER slot holds the prior frame's neural result, so

@@ -85,15 +85,21 @@ namespace Snowstorm
 					// pass that runs after tonemap; a baseline for the upscaler comparison. Read per-frame, so it flips
 					// live.
 					{
-						const char* aaLabels[] = {"None", "FXAA", "TAA"};
+						const char* aaLabels[] = {"None", "FXAA", "TAA", "DLAA (neural)"};
 						int aa = CVars::AAMode.Get();
-						if (aa < 0 || aa > 2)
+						if (aa < 0 || aa > 3)
 						{
 							aa = 0;
 						}
-						if (ImGui::Combo("Anti-Aliasing", &aa, aaLabels, 3))
+						if (ImGui::Combo("Anti-Aliasing", &aa, aaLabels, 4))
 						{
 							CVars::AAMode.Set(aa);
+						}
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::SetTooltip("TAA = classical temporal resolve. DLAA = the neural temporal network run "
+							                  "at native res as the resolve (needs a DLAA-trained neural.weights to look "
+							                  "right; falls back to a plain copy until then).");
 						}
 
 						// Forward MSAA (geometric-edge AA), orthogonal to the AA mode above (MSAA + TAA compose).

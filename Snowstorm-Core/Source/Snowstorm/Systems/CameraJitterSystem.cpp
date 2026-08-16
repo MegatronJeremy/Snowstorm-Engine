@@ -37,7 +37,9 @@ namespace Snowstorm
 		// compare mode (it needs the ground-truth render). So export forces jitter back on — but ONLY when
 		// dataset.jitter is set (a spatial net trains/infers unjittered; that mismatch is what made the
 		// trained spatial net lose to bilinear in-engine, #102). JitterNdc is recorded per frame.
-		const bool taaActive = CVars::AAMode.Get() == 2;
+		// DLAA (render.aa == 3) is a temporal resolve too — it accumulates sub-pixel jitter exactly like TAA,
+		// so treat it the same for the jitter gate (and the negative MipBias that rides the jittered pass).
+		const bool taaActive = CVars::AAMode.Get() == 2 || CVars::DlaaActive();
 		const bool jitterOn = (CVars::DatasetExport.Get() && CVars::DatasetJitter.Get()) ||
 		                      taaActive ||
 		                      (CVars::Jitter.Get() && !CVars::Compare.Get());

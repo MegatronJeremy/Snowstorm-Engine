@@ -91,7 +91,7 @@ namespace Snowstorm::CVars
 
 	CVar<std::string> NeuralDumpIdentity{"neural.dump_identity", "", "One-shot: write the built-in identity refiner to this .ssnn path, then exit (#99). The canonical reference the Python .ssnn writer's byte-parity test compares against. Empty = off."};
 
-	CVar<int> AAMode{"render.aa", 0, "Anti-aliasing: 0 = None, 1 = FXAA (spatial post-process), 2 = TAA (temporal accumulation via jitter + motion vectors, #44)", CVarFlags::Persist};
+	CVar<int> AAMode{"render.aa", 0, "Anti-aliasing: 0 = None, 1 = FXAA (spatial post-process), 2 = TAA (classical temporal accumulation via jitter + motion vectors, #44), 3 = DLAA (the #98 neural temporal network run at native res as the temporal resolve, replacing TAA)", CVarFlags::Persist};
 
 	CVar<int> Msaa{"render.msaa", 1, "Forward MSAA sample count: 1 = off, 2/4/8 = multisample the forward color+depth for geometric-edge AA, resolved before post. Does NOT cover the RT effects (single-sample G-buffer) or shader/specular aliasing. Applies live (targets + pipelines rebuilt on change); clamped to the device max.", CVarFlags::Persist};
 
@@ -228,6 +228,11 @@ namespace Snowstorm::CVars
 			}
 		}
 		return resolved;
+	}
+
+	bool DlaaActive()
+	{
+		return AAMode.Get() == 3;
 	}
 
 	float ClampedGIScale()

@@ -343,6 +343,11 @@ namespace Snowstorm
 		                   vpRT.HistoryTarget[0] && vpRT.HistoryTarget[1] &&
 		                   !vpRT.HistoryTarget[0]->GetDesc().ColorAttachments.empty();
 		v.TaaOn = taaOn;
+		// DLAA (render.aa == 3): the neural temporal network resolves at native res (UpscaleEffect runs it even
+		// at scale==1). Needs jitter (CameraJitterSystem) + motion vectors, exactly like TAA; folded into
+		// velocityNeeded below. Mutually exclusive with taaOn (both keyed off render.aa).
+		const bool dlaa = CVars::DlaaActive();
+		v.Dlaa = dlaa;
 		// Neural TEMPORAL upscaler (#98, render.upscaler == 2): reprojects the previous neural output by
 		// motion vectors, so it needs the velocity buffer too. Only meaningful when actually upscaling
 		// (scale < 1); the upscale block below re-checks that.
@@ -358,7 +363,7 @@ namespace Snowstorm
 		// velocityNeeded is cached on the context because several effects branch on it: VelocityEffect (whether
 		// to render the buffer), LdrChainEffect (the tonemap debug view samples it), and CompareEffect (dataset
 		// export reads it as a channel).
-		const bool velocityNeeded = (debugView == 1 || taaOn || neuralTemporal || exporting || giTemporal) && vpRT.VelocityTarget &&
+		const bool velocityNeeded = (debugView == 1 || taaOn || dlaa || neuralTemporal || exporting || giTemporal) && vpRT.VelocityTarget &&
 		                            !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
 		                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 		v.VelocityNeeded = velocityNeeded;
