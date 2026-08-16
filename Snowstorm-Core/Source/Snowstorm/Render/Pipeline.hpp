@@ -152,6 +152,11 @@ namespace Snowstorm
 		PixelFormat DepthFormat = PixelFormat::Unknown;
 		bool HasStencil = false;
 
+		// MSAA: rasterization sample count (1 = no MSAA). Must equal the sample count of every
+		// attachment in the render pass this pipeline draws into (Vulkan requirement). Only the
+		// forward/sky/depth-prepass pipelines that render into the multisampled scene target set >1.
+		uint32_t SampleCount = 1;
+
 		PipelineRasterState Raster{};
 		PipelineDepthStencilState DepthStencil{};
 		PipelineBlendState Blend{};

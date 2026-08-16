@@ -116,6 +116,16 @@ namespace Snowstorm
 			info.loadOp = ToVkLoadOp(a.LoadOp);
 			info.storeOp = ToVkStoreOp(a.StoreOp);
 
+			// MSAA resolve (dynamic rendering): average this multisampled attachment into the
+			// single-sample ResolveView at store time. Downstream samples the resolved image.
+			if (a.ResolveView)
+			{
+				const auto vkResolve = std::static_pointer_cast<VulkanTextureView>(a.ResolveView);
+				info.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+				info.resolveImageView = vkResolve->GetImageView();
+				info.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			}
+
 			if (a.LoadOp == RenderTargetLoadOp::Clear)
 			{
 				info.clearValue = MakeClearColor(a.ClearColor);

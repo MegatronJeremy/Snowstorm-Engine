@@ -474,8 +474,8 @@ namespace Snowstorm
 		// --- Multisample ---
 		VkPipelineMultisampleStateCreateInfo msaa{};
 		msaa.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-		msaa.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-		msaa.sampleShadingEnable = VK_FALSE;
+		msaa.rasterizationSamples = static_cast<VkSampleCountFlagBits>(m_Desc.SampleCount == 0 ? 1 : m_Desc.SampleCount);
+		msaa.sampleShadingEnable = VK_FALSE; // coverage-only MSAA (no per-sample fragment shading)
 
 		// --- Depth/stencil ---
 		VkPipelineDepthStencilStateCreateInfo depthStencil{};

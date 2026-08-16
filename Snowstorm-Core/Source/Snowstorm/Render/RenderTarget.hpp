@@ -24,8 +24,13 @@ namespace Snowstorm
 
 	struct RenderTargetAttachment
 	{
-		// View to render into (RTV-like)
+		// View to render into (RTV-like). Under MSAA this is the multisampled image.
 		Ref<TextureView> View;
+
+		// Optional MSAA resolve destination (single-sample). When set, the pass averages `View`'s
+		// samples into this image at store time (dynamic-rendering resolveImageView). Downstream reads
+		// the resolved single-sample image, not `View`. Null = no resolve (single-sample rendering).
+		Ref<TextureView> ResolveView;
 
 		// Optional: attachment index for APIs that care (MRT)
 		uint32_t AttachmentIndex = 0;
