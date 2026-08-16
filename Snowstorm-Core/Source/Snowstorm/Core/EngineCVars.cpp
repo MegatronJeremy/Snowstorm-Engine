@@ -31,6 +31,8 @@ namespace Snowstorm::CVars
 
 	CVar<int> ProfileCaptureDelay{"profile.capture_delay", 60, "Frames to wait before profile.capture_frames starts, so startup asset streaming (in-flight loads) doesn't clobber the steady-state per-system averages. Raise for large scenes -- streaming is done when AssetLoadSystem's per-frame cost hits 0.", CVarFlags::ReadOnly};
 
+	CVar<bool> ConfigIgnore{"config.ignore", false, "Skip loading the on-disk config files (SnowstormConfig.cfg + SnowstormStartup.cfg) at startup: run pure code-defaults + env/CLI only. Used by perf-bench for a config-isolated, machine-independent baseline (a persisted setting like render.shadow.resolution otherwise leaks in and skews the diff). Startup-only.", CVarFlags::ReadOnly};
+
 	CVar<bool> ValidationNonFatal{"validation.nonfatal", false, "Log Vulkan validation errors instead of asserting on the first", CVarFlags::ReadOnly};
 
 	CVar<bool> ValidationExtra{"validation.extra", false, "Enable synchronization + best-practices Vulkan validation", CVarFlags::ReadOnly};
@@ -91,7 +93,7 @@ namespace Snowstorm::CVars
 
 	CVar<int> AAMode{"render.aa", 0, "Anti-aliasing: 0 = None, 1 = FXAA (spatial post-process), 2 = TAA (temporal accumulation via jitter + motion vectors, #44)", CVarFlags::Persist};
 
-	CVar<int> Msaa{"render.msaa", 1, "Forward MSAA sample count: 1 = off, 2/4/8 = multisample the forward color+depth for geometric-edge AA, resolved before post. Does NOT cover the RT effects (single-sample G-buffer) or shader/specular aliasing. APPLIES ON RESTART (baked into targets + pipelines at startup); clamped to the device max.", CVarFlags::Persist};
+	CVar<int> Msaa{"render.msaa", 1, "Forward MSAA sample count: 1 = off, 2/4/8 = multisample the forward color+depth for geometric-edge AA, resolved before post. Does NOT cover the RT effects (single-sample G-buffer) or shader/specular aliasing. Applies live (targets + pipelines rebuilt on change); clamped to the device max.", CVarFlags::Persist};
 
 	CVar<int> DebugView{"render.debugview", 0, "Viewport debug overlay: 0 = Normal (tonemapped scene), 1 = Motion Vectors (per-pixel screen-space velocity as color; drives the velocity pass + tonemap debug branch, #44), 2 = Ambient Occlusion (DefaultLit outputs the isolated grayscale AO term for tuning RTAO, #118), 3 = Reflections (raw reflected albedo from the RT reflection trace, for verifying hit resolution, #118), 4 = Global Illumination (raw RT GI indirect term, for tuning intensity/range, #118), 5 = World Normals (the depth+normal prepass G-buffer, [-1,1] normal mapped to RGB, for verifying the half-res GI substrate, #124), 6 = Half-res GI raw (the raw half-res GI irradiance buffer, tonemapped, before the bilateral upsample, #124), 7 = Half-res GI denoised (the same buffer AFTER temporal accumulation + à-trous, the A/B against view 6 that shows what the denoiser did, #125)", CVarFlags::Persist};
 

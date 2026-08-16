@@ -70,6 +70,12 @@ namespace Snowstorm::CVars
 	// reproducible failure. 0 (default) disables it. First frame is exempt (one-time init/pipeline warmup).
 	extern CVar<int> MaxFrameMs;
 
+	// Skip loading the on-disk config files (SnowstormConfig.cfg + SnowstormStartup.cfg) at startup, so the
+	// app runs pure code-defaults + env/CLI only. Resolved specially, before config load (CVarRegistry::
+	// Initialize). perf-bench sets it for a config-isolated, machine-independent baseline — otherwise a
+	// persisted user setting (e.g. render.shadow.resolution) leaks in and skews the current-vs-baseline diff.
+	extern CVar<bool> ConfigIgnore;
+
 	// Log every Vulkan validation error and keep running instead of asserting on the first one.
 	extern CVar<bool> ValidationNonFatal;
 

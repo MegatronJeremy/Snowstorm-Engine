@@ -1,43 +1,43 @@
 {
   "device": "AMD Radeon RX 7900 XTX",
   "config": "Projects/Sandbox/assets/scenes/Sponza.world",
-  "frames": 200,
+  "frames": 300,
   "timestampsSupported": true,
-  "totalGpuMs": 5.9058,
+  "totalGpuMs": 5.0055,
   "passes": {
     "CameraDepthPrepass": {
-      "avgMs": 0.0553,
-      "minMs": 0.0519,
-      "maxMs": 0.0633,
-      "fragInvocations": 6806434,
+      "avgMs": 0.033,
+      "minMs": 0.032,
+      "maxMs": 0.0417,
+      "fragInvocations": 2158092,
       "depth": 0
     },
     "DepthPrepassBarrier": {
-      "avgMs": 0.0002,
-      "minMs": 0.0002,
-      "maxMs": 0.0003,
+      "avgMs": 0.0004,
+      "minMs": 0.0004,
+      "maxMs": 0.0004,
       "fragInvocations": 0,
       "depth": 0
     },
     "Editor": {
-      "avgMs": 0.0763,
-      "minMs": 0.0607,
-      "maxMs": 0.5575,
-      "fragInvocations": 9773767,
+      "avgMs": 0.0714,
+      "minMs": 0.0404,
+      "maxMs": 0.1431,
+      "fragInvocations": 5132472,
       "depth": 0
     },
     "Forward": {
-      "avgMs": 5.3704,
-      "minMs": 5.1244,
-      "maxMs": 6.7516,
-      "fragInvocations": 2691353,
+      "avgMs": 4.7394,
+      "minMs": 4.6497,
+      "maxMs": 4.8102,
+      "fragInvocations": 1275818,
       "depth": 0
     },
     "PostProcess": {
-      "avgMs": 0.1488,
-      "minMs": 0.0222,
-      "maxMs": 0.5283,
-      "fragInvocations": 2051392,
+      "avgMs": 0.0218,
+      "minMs": 0.0134,
+      "maxMs": 0.1131,
+      "fragInvocations": 897600,
       "depth": 0
     },
     "Sky": {
@@ -48,17 +48,17 @@
       "depth": 1
     },
     "TemporalResolve": {
-      "avgMs": 0.1349,
-      "minMs": 0.1057,
-      "maxMs": 0.8322,
-      "fragInvocations": 2051392,
+      "avgMs": 0.066,
+      "minMs": 0.0608,
+      "maxMs": 0.1551,
+      "fragInvocations": 897600,
       "depth": 0
     },
     "Velocity": {
-      "avgMs": 0.117,
-      "minMs": 0.1112,
-      "maxMs": 0.1325,
-      "fragInvocations": 5003296,
+      "avgMs": 0.0687,
+      "minMs": 0.0671,
+      "maxMs": 0.0802,
+      "fragInvocations": 1474577,
       "depth": 0
     }
   }

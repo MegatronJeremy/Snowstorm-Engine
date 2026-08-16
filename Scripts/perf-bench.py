@@ -64,6 +64,10 @@ def run_config(name: str, env_overrides: dict, exe: Path, cwd: Path, frames: int
     env["SS_STARTUP_SCENE"] = scene
     env["SS_RENDER_AA"] = "2"  # TAA: the realistic config the RT effects assume
     env["SS_VALIDATION_NONFATAL"] = "1"
+    # Config isolation: run pure code-defaults + the env overrides below, ignoring this machine's persisted
+    # SnowstormConfig.cfg. Without it a persisted setting (e.g. render.shadow.resolution=4096) leaks into every
+    # config and silently skews the baseline diff -- the benchmark must depend only on code, not local settings.
+    env["SS_CONFIG_IGNORE"] = "1"
     env.update(env_overrides)
     if layer_path and layer_path.is_dir():
         env["VK_ADD_LAYER_PATH"] = str(layer_path)

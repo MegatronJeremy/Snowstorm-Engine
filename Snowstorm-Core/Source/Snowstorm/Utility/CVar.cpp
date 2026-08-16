@@ -273,13 +273,47 @@ namespace Snowstorm
 
 	void CVarRegistry::Initialize(const int argc, char** argv)
 	{
+		// Bootstrap: `config.ignore` decides whether to read the on-disk config files AT ALL, so it must be
+		// resolved from env/CLI BEFORE loading them. With it set, the app runs pure code-defaults + env/CLI,
+		// independent of a machine's persisted SnowstormConfig.cfg — required for a trustworthy perf-bench
+		// baseline (a persisted setting like render.shadow.resolution otherwise leaks in and silently skews the
+		// current-vs-baseline diff, which cost real debugging time). Pre-apply env + CLI to just this one CVar.
+		bool ignoreConfig = false;
+		if (ICVar* ign = Find("config.ignore"))
+		{
+			if (const char* env = std::getenv(ign->GetEnvName().c_str()))
+			{
+				ign->SetFromString(env);
+			}
+			for (int i = 1; i < argc; ++i)
+			{
+				const std::string arg = argv[i];
+				if (arg == "--config.ignore")
+				{
+					ign->SetFromString(""); // bare flag -> true
+				}
+				else if (arg.rfind("--config.ignore=", 0) == 0)
+				{
+					ign->SetFromString(arg.substr(sizeof("--config.ignore=") - 1));
+				}
+			}
+			ignoreConfig = ign->GetBool();
+		}
+
 		// Config sources (lowest priority; env + CLI below override them). Resolution order:
 		//   default -> saved settings -> startup overrides -> env -> CLI
-		// 0a. Auto-saved user settings (persistent CVars only). The editor writes this on shutdown.
-		LoadConfig(kConfigPath, /*persistentOnly=*/true);
-		// 0b. Hand-authored startup overrides (any CVar; never written by the app). The safe place to keep
-		// dev/machine toggles (e.g. validation.extra=true) so the editor's auto-save can't clobber them.
-		LoadConfig(kStartupConfigPath, /*persistentOnly=*/false);
+		if (ignoreConfig)
+		{
+			SS_CORE_INFO("CVar config: ignoring on-disk config (config.ignore) -- code defaults + env/CLI only.");
+		}
+		else
+		{
+			// 0a. Auto-saved user settings (persistent CVars only). The editor writes this on shutdown.
+			LoadConfig(kConfigPath, /*persistentOnly=*/true);
+			// 0b. Hand-authored startup overrides (any CVar; never written by the app). The safe place to keep
+			// dev/machine toggles (e.g. validation.extra=true) so the editor's auto-save can't clobber them.
+			LoadConfig(kStartupConfigPath, /*persistentOnly=*/false);
+		}
 
 		// 1. Environment (lower priority).
 		for (ICVar* cvar : m_Ordered)
