@@ -42,6 +42,11 @@ namespace Snowstorm
 			glm::vec2 JitterNdc{0.0f};
 			float Scale = 1.0f;
 			uint32_t FrameIndex = 0;
+			// Warmup frames to skip before the FIRST tuple is captured. The early frames of a headless capture are
+			// pre-content (asset streaming + TLAS build not finished) and the viewport resolution is still settling,
+			// which would pollute the dataset with blank/wrong-size tuples. Skip N so every written frame is
+			// steady-state and same-size (the on-disk index still starts at 0). Mirrors profile.capture_delay.
+			uint32_t Warmup = 0;
 		};
 
 		// Record the three readback copies for this frame, and serialize the previous occupant of this slot (if
@@ -78,6 +83,7 @@ namespace Snowstorm
 
 		uint64_t m_GlobalFrame = 0;   // ++ each captured frame; used as the on-disk index
 		uint64_t m_FramesWritten = 0; // ++ each serialized frame
+		uint64_t m_ExportCalls = 0;   // ++ each CaptureAndSerialize call; the first `Warmup` are skipped
 		bool m_ManifestInit = false;  // manifest.json header written / dir prepared
 		std::string m_ManifestPath;
 	};

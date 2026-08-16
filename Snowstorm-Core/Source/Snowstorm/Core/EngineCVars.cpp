@@ -85,6 +85,8 @@ namespace Snowstorm::CVars
 
 	CVar<int> DatasetExportFrames{"dataset.export.frames", 0, "Stop the app after this many dataset tuples have been written to disk (0 = run until the window closes). Lets a headless capture run produce a fixed-size dataset then exit."};
 
+	CVar<int> DatasetExportWarmup{"dataset.export.warmup", 60, "Frames to skip before the FIRST dataset tuple is captured. Early headless-capture frames are pre-content (asset streaming + TLAS build unfinished) and the viewport resolution is still settling — capturing them pollutes the set with blank/wrong-size tuples. Skipping N leaves every written frame steady-state + same-size (on-disk index still starts at 0). Mirrors profile.capture_delay."};
+
 	CVar<int> GtSsaa{"render.gt.ssaa", 1, "Ground-truth supersampling factor for the compare/dataset reference (1 = off, 2 = render the GT at 2x then box-downsample = anti-aliased reference). For a DLAA dataset the GT must be ANTI-ALIASED (a single native GT frame is aliased and not a valid AA target); SSAA is that reference. Capture-only cost (the GT is a 2nd render); clamped to {1,2}.", CVarFlags::Persist};
 
 	CVar<int> Upscaler{"render.upscaler", 0, "Upscale method when render.scale < 1: 0 = Bilinear (baseline), 1 = Neural Spatial (compute CNN residual refiner, single frame, #47), 2 = Neural Temporal (adds MV-warped previous-output + motion vector as extra inputs, DLSS/XeSS-style, #98). Both neural modes run the loaded .ssnn model; with the default identity weights each reproduces bilinear (the correctness baseline). Read per-frame; only active when upscaling (scale < 1). The temporal mode also forces the velocity pass on.", CVarFlags::Persist};

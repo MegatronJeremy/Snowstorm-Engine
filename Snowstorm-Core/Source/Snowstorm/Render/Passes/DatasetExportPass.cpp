@@ -143,6 +143,15 @@ namespace Snowstorm
 			return m_FramesWritten;
 		}
 
+		// Warmup: skip the first N frames of the capture entirely (no copy, no serialize, no dir/manifest). The
+		// early frames are pre-content (streaming + TLAS build) and the viewport resolution is still settling, so
+		// capturing them would write blank/wrong-size tuples. Counting starts at the first call, so the written
+		// frames are all steady-state and same-size; the on-disk index (m_GlobalFrame) still starts at 0.
+		if (m_ExportCalls++ < in.Warmup)
+		{
+			return m_FramesWritten;
+		}
+
 		if (!m_ManifestInit)
 		{
 			std::error_code ec;

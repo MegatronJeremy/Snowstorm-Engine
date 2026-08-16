@@ -1371,13 +1371,14 @@ namespace Snowstorm
 					const glm::vec2 jitter = cam.Rt->JitterNdc;
 					const float scale = CVars::ClampedRenderScale();
 					const std::string outDir = CVars::DatasetExportPath.Get();
+					const uint32_t warmup = static_cast<uint32_t>(std::max(0, CVars::DatasetExportWarmup.Get()));
 					fc.Graph.AddPass({.Name = "DatasetExport" + passSuffix,
 					                  .IsCompute = true, // no render target; records readback copies
 					                  .Reads = {{lrImg, RenderGraph::AccessState::Sampled},
 					                            {mvImg, RenderGraph::AccessState::Sampled},
 					                            {gtImg, RenderGraph::AccessState::Sampled},
 					                            {gtLdrImg, RenderGraph::AccessState::Sampled}},
-					                  .Execute = [this, &fc, lrImg, mvImg, gtImg, gtLdrImg, jitter, scale, outDir](CommandContext& c)
+					                  .Execute = [this, &fc, lrImg, mvImg, gtImg, gtLdrImg, jitter, scale, outDir, warmup](CommandContext& c)
 					                  {
 						                  // The GT tonemap pass wrote gtLdrImg and left it in SHADER_READ; the graph now
 						                  // emits the color-write -> compute-read barrier for every .Reads entry of this
@@ -1391,6 +1392,7 @@ namespace Snowstorm
 						                  dsin.JitterNdc = jitter;
 						                  dsin.Scale = scale;
 						                  dsin.FrameIndex = fc.FrameIndex;
+						                  dsin.Warmup = warmup;
 						                  // Non-owning Ref to the graph's context (the pass API takes a Ref; the graph owns it).
 						                  const Ref<CommandContext> cref(&c, [](CommandContext*) {});
 						                  const uint64_t written = m_DatasetExportPass.CaptureAndSerialize(cref, dsin, outDir);

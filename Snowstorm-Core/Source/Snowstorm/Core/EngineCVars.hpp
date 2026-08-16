@@ -228,6 +228,8 @@ namespace Snowstorm::CVars
 	extern CVar<bool> DatasetExport;
 	extern CVar<std::string> DatasetExportPath;
 	extern CVar<int> DatasetExportFrames;
+	// Frames to skip before the first captured tuple (streaming + resolution settle). See the .cpp description.
+	extern CVar<int> DatasetExportWarmup;
 
 	// Apply camera jitter during dataset.export (#102). Off (default) = unjittered LR for the spatial
 	// upscaler; on = jittered LR for the temporal upscaler (#98).
