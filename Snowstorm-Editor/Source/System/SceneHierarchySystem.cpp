@@ -96,6 +96,42 @@ namespace Snowstorm
 							CVars::AAMode.Set(aa);
 						}
 
+						// Forward MSAA (geometric-edge AA), orthogonal to the AA mode above (MSAA + TAA compose).
+						// APPLIES ON RESTART: the sample count is baked into the scene targets + forward/sky
+						// pipelines at startup, so this dropdown persists the choice for the next launch rather than
+						// flipping live. Options are capped at the device's max color+depth sample count.
+						{
+							const char* msaaLabels[] = {"Off (1x)", "2x", "4x", "8x"};
+							const uint32_t msaaCounts[] = {1u, 2u, 4u, 8u};
+							const uint32_t deviceMax = Renderer::GetMaxSampleCount();
+							int optionCount = 1;
+							for (int i = 1; i < 4; ++i)
+							{
+								if (msaaCounts[i] <= deviceMax)
+								{
+									optionCount = i + 1;
+								}
+							}
+							int msaaIdx = 0;
+							for (int i = 0; i < optionCount; ++i)
+							{
+								if (static_cast<int>(msaaCounts[i]) <= CVars::Msaa.Get())
+								{
+									msaaIdx = i;
+								}
+							}
+							if (ImGui::Combo("MSAA", &msaaIdx, msaaLabels, optionCount))
+							{
+								CVars::Msaa.Set(static_cast<int>(msaaCounts[msaaIdx]));
+							}
+							if (ImGui::IsItemHovered())
+							{
+								ImGui::SetTooltip("Forward multisample AA for geometric (triangle-edge) aliasing. Applies on "
+								                  "RESTART. Does NOT affect the RT effects (GI/AO/reflections/shadows run on a "
+								                  "single-sample G-buffer) or shader/specular aliasing. Composes with TAA.");
+							}
+						}
+
 						// TAA depth-disocclusion rejection (#127): rejects reprojected history across a depth
 						// discontinuity, removing the ghost trail on disoccluded silhouettes under motion. Only
 						// meaningful in TAA mode. 0 = off (a clean A/B against the pre-#127 resolve).

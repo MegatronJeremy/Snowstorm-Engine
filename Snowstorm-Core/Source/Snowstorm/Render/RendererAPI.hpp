@@ -68,6 +68,11 @@ namespace Snowstorm
 		// fp16 permutation (# fp16 inference); false => fp32 fallback. A device capability, hence on RendererAPI.
 		virtual bool IsFloat16Supported() const = 0;
 
+		// Max MSAA sample count usable for BOTH color and depth framebuffer attachments (the intersection of
+		// framebufferColorSampleCounts & framebufferDepthSampleCounts), as a count (1/2/4/8/...). render.msaa is
+		// clamped to this. A device capability, hence on RendererAPI.
+		virtual uint32_t GetMaxSampleCount() const = 0;
+
 		//-- acquire a new command context for recording
 		virtual Ref<CommandContext> GetGraphicsCommandContext() = 0;
 

@@ -53,6 +53,9 @@ namespace Snowstorm
 		// fp16 permutation (# fp16 inference); false => fp32 fallback. Forwards to the backend capability query.
 		static bool IsFloat16Supported();
 
+		// Max MSAA sample count usable for both color+depth attachments (1/2/4/8). render.msaa is clamped to it.
+		static uint32_t GetMaxSampleCount();
+
 		static Ref<CommandContext> GetGraphicsCommandContext();
 
 		static Ref<DescriptorSetLayout> GetUITextureLayout();

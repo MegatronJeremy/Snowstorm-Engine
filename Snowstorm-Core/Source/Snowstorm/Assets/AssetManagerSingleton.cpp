@@ -4,6 +4,7 @@
 #include "MeshBoundsBuilder.hpp"
 #include "MeshMetaCache.hpp"
 #include "Snowstorm/Core/Application.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/JobSystem.hpp"
 #include "Snowstorm/Service/ServiceManager.hpp"
 #include "Snowstorm/World/World.hpp"
@@ -817,6 +818,10 @@ namespace Snowstorm
 		// Meshes render into the offscreen scene target (not the swapchain), so the pipeline's color
 		// format must match that target — not Renderer::GetSurfaceFormat() (#62).
 		p.ColorFormats = {kSceneColorFormat};
+		// Scene material pipelines render into the (possibly multisampled) scene target, so their sample count
+		// must match it. Startup-resolved + constant for the run (see MsaaSampleCount), so a single build here is
+		// correct for both the main scene target and the full-res GT target (both allocated at the same count).
+		p.SampleCount = CVars::MsaaSampleCount();
 
 		p.DepthFormat = PixelFormat::D32_Float;
 		p.DepthStencil.EnableDepthTest = true; // TODO these shouldn't be enabled always...

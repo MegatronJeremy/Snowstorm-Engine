@@ -1,26 +1,53 @@
 ﻿#include "RendererUtils.hpp"
 
+#include "Snowstorm/Core/EngineCVars.hpp"
+
 namespace Snowstorm
 {
 	Ref<RenderTarget> CreateDefaultSceneRenderTarget(uint32_t w, uint32_t h, const char* debugPrefix)
 	{
-		TextureDesc colorDesc{};
-		colorDesc.Dimension = TextureDimension::Texture2D;
-		colorDesc.Format = kSceneColorFormat;
+		// Forward MSAA (#, apply-on-restart): when render.msaa > 1 the color+depth are multisampled and the
+		// color resolves into a single-sample sampleable image at store time. samples == 1 => the original
+		// single-sample path (colorTex IS the sampleable image, no resolve). See CVars::MsaaSampleCount().
+		const uint32_t samples = CVars::MsaaSampleCount();
+
+		// The single-sample, sampleable/readback color: what TAA/tonemap/upscale and dataset export read. Under
+		// MSAA this is the resolve destination; without MSAA it's the render target itself.
+		TextureDesc resolveDesc{};
+		resolveDesc.Dimension = TextureDimension::Texture2D;
+		resolveDesc.Format = kSceneColorFormat;
 		// TransferSrc: this HDR scene color can be read back to the CPU for dataset export (#46). Cheap usage
 		// flag; no cost unless a readback copy is actually issued.
-		colorDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled | TextureUsage::TransferSrc;
-		colorDesc.Width = w;
-		colorDesc.Height = h;
-		colorDesc.DebugName = std::string(debugPrefix) + "_Color";
+		resolveDesc.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled | TextureUsage::TransferSrc;
+		resolveDesc.Width = w;
+		resolveDesc.Height = h;
+		resolveDesc.DebugName = std::string(debugPrefix) + "_Color";
 
-		Ref<Texture> colorTex = Texture::Create(colorDesc);
-		Ref<TextureView> colorView = TextureView::Create(colorTex, MakeFullViewDesc(colorDesc));
+		Ref<Texture> resolveTex = Texture::Create(resolveDesc);
+		Ref<TextureView> resolveView = TextureView::Create(resolveTex, MakeFullViewDesc(resolveDesc));
+
+		// The color attachment actually rendered into. samples == 1: the resolve image directly. samples > 1: a
+		// dedicated multisampled image (ColorAttachment only — never sampled/transferred; it's resolved away).
+		Ref<TextureView> colorView = resolveView;
+		if (samples > 1)
+		{
+			TextureDesc msaaColorDesc{};
+			msaaColorDesc.Dimension = TextureDimension::Texture2D;
+			msaaColorDesc.Format = kSceneColorFormat;
+			msaaColorDesc.Usage = TextureUsage::ColorAttachment;
+			msaaColorDesc.SampleCount = samples;
+			msaaColorDesc.Width = w;
+			msaaColorDesc.Height = h;
+			msaaColorDesc.DebugName = std::string(debugPrefix) + "_ColorMS";
+			Ref<Texture> msaaColorTex = Texture::Create(msaaColorDesc);
+			colorView = TextureView::Create(msaaColorTex, MakeFullViewDesc(msaaColorDesc));
+		}
 
 		TextureDesc depthDesc{};
 		depthDesc.Dimension = TextureDimension::Texture2D;
 		depthDesc.Format = PixelFormat::D32_Float;
-		depthDesc.Usage = TextureUsage::DepthStencil;
+		depthDesc.Usage = TextureUsage::DepthStencil; // depth is tested, never resolved/sampled -> plain MSAA depth
+		depthDesc.SampleCount = samples;
 		depthDesc.Width = w;
 		depthDesc.Height = h;
 		depthDesc.DebugName = std::string(debugPrefix) + "_Depth";
@@ -35,6 +62,7 @@ namespace Snowstorm
 
 		RenderTargetAttachment colorAtt{};
 		colorAtt.View = colorView;
+		colorAtt.ResolveView = (samples > 1) ? resolveView : nullptr; // resolve MSAA -> sampleable at store
 		colorAtt.AttachmentIndex = 0;
 		colorAtt.ClearColor = {0.1f, 0.1f, 0.1f, 1.0f};
 		colorAtt.LoadOp = RenderTargetLoadOp::Clear;

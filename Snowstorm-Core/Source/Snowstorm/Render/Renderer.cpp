@@ -249,6 +249,12 @@ namespace Snowstorm
 		return s_API->IsFloat16Supported();
 	}
 
+	uint32_t Renderer::GetMaxSampleCount()
+	{
+		SS_CORE_ASSERT(s_API, "Renderer not initialized");
+		return s_API->GetMaxSampleCount();
+	}
+
 	Ref<CommandContext> Renderer::GetGraphicsCommandContext()
 	{
 		SS_CORE_ASSERT(s_API, "Renderer not initialized");

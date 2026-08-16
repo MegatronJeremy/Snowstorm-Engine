@@ -244,7 +244,20 @@ namespace Snowstorm
 		{
 			const Ref<Texture>& tex = a.View->GetTexture();
 			TransitionLayout(tex, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-			m_CurrentColorTargets.push_back(tex);
+
+			if (a.ResolveView)
+			{
+				// MSAA: `tex` is the multisampled attachment (not sampled, left in COLOR_ATTACHMENT_OPTIMAL);
+				// the resolve image is what downstream samples, so it takes the end-of-pass SHADER_READ
+				// transition. Both must be COLOR_ATTACHMENT_OPTIMAL for the resolve write during store.
+				const Ref<Texture>& resolveTex = a.ResolveView->GetTexture();
+				TransitionLayout(resolveTex, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+				m_CurrentColorTargets.push_back(resolveTex);
+			}
+			else
+			{
+				m_CurrentColorTargets.push_back(tex);
+			}
 		}
 		if (desc.DepthAttachment.has_value())
 		{

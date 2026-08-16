@@ -76,6 +76,19 @@ namespace Snowstorm
 		virtual const RenderTargetDesc& GetDesc() const = 0;
 		virtual void Resize(uint32_t width, uint32_t height) = 0;
 
+		// The single-sample, sampleable view of color attachment `i`: the resolve image when this is an MSAA
+		// target, else the attachment itself. Downstream passes (TAA/tonemap/upscale) sample THIS, never the
+		// multisampled attachment. Null if the index is out of range.
+		Ref<TextureView> GetSampleableColorView(size_t i = 0) const
+		{
+			const auto& atts = GetDesc().ColorAttachments;
+			if (i >= atts.size())
+			{
+				return nullptr;
+			}
+			return atts[i].ResolveView ? atts[i].ResolveView : atts[i].View;
+		}
+
 		uint32_t GetWidth() const { return GetDesc().Width; }
 		uint32_t GetHeight() const { return GetDesc().Height; }
 

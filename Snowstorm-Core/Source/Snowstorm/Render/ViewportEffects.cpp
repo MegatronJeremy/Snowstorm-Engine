@@ -853,7 +853,13 @@ namespace Snowstorm
 				const CameraPick& cam = v.Cam;
 				const auto& sceneDesc = v.RT.Target->GetDesc();
 				Ref<RenderTarget> forwardTarget = v.RT.Target;
-				if (sceneDesc.DepthAttachment.has_value() && !sceneDesc.ColorAttachments.empty())
+				// The early-Z prepass shares the scene depth with the forward. Under MSAA that depth is
+				// multisampled, which would require an MSAA depth-prepass pipeline too; for the first MSAA
+				// landing we instead skip early-Z when MSAA is on and let the forward clear + resolve its own
+				// multisampled target directly (v.RT.Target already carries the resolve). Tradeoff: MSAA loses
+				// the early-Z overdraw win (~2.5ms); restoring it (an MSAA prepass) is a clean later step.
+				const bool earlyZ = (CVars::MsaaSampleCount() == 1);
+				if (earlyZ && sceneDesc.DepthAttachment.has_value() && !sceneDesc.ColorAttachments.empty())
 				{
 					const Ref<TextureView> sceneColorView = sceneDesc.ColorAttachments[0].View;
 					const Ref<TextureView> sceneDepthView = sceneDesc.DepthAttachment->View;
@@ -896,12 +902,13 @@ namespace Snowstorm
 
 				m_Owner.AddForwardPass(v.Frame, v.Cam, forwardTarget, "Forward" + v.Suffix, /*jittered*/ true,
 				                       /*forceRasterShadow*/ false, giIndex, aoIndex, reflIndex, reflTexture);
-				// Publish the HDR scene color for the downstream chain (upscale/TAA/tonemap).
+				// Publish the HDR scene color for the downstream chain (upscale/TAA/tonemap). Under MSAA this is
+				// the resolved single-sample image (GetSampleableColorView), never the multisampled attachment.
 				v.SceneColor.Target = v.RT.Target;
-				if (const auto& desc = v.RT.Target->GetDesc(); !desc.ColorAttachments.empty())
+				if (const Ref<TextureView> sampleable = v.RT.Target->GetSampleableColorView(0))
 				{
-					v.SceneColor.View = desc.ColorAttachments[0].View;
-					v.SceneColor.Texture = desc.ColorAttachments[0].View->GetTexture();
+					v.SceneColor.View = sampleable;
+					v.SceneColor.Texture = sampleable->GetTexture();
 				}
 			}
 
@@ -942,7 +949,7 @@ namespace Snowstorm
 					return;
 				}
 
-				const Ref<TextureView> lowResView = vpRT.Target->GetDesc().ColorAttachments[0].View;
+				const Ref<TextureView> lowResView = vpRT.Target->GetSampleableColorView(0); // resolved under MSAA
 				const Ref<TextureView> upView = upDesc.ColorAttachments[0].View;
 				const PixelFormat upFmt = upView->GetTexture()->GetDesc().Format;
 				const uint32_t upW = v.UpWidth;
@@ -1242,8 +1249,8 @@ namespace Snowstorm
 				// are on the compare metric measures RT (main) vs raster (GT) — the #118 RT-shadow A/B. When RT
 				// is off both renders are raster, so the metric harmlessly reports the upscaler A/B as before.
 				m_Owner.AddForwardPass(fc, cam, vpRT.GroundTruthTarget, "ForwardGT" + passSuffix, false, /*forceRasterShadow*/ true); // GT: never jittered
-				m_Owner.AddTonemapPass(fc, vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View, vpRT.GroundTruthPresentTarget,
-				                       "PostProcessGT" + passSuffix, RendererService::TonemapParams{});
+				m_Owner.AddTonemapPass(fc, vpRT.GroundTruthTarget->GetSampleableColorView(0), vpRT.GroundTruthPresentTarget,
+				                       "PostProcessGT" + passSuffix, RendererService::TonemapParams{}); // resolved under MSAA
 
 				// ---- Metrics (#45): PSNR/SSIM of the upscaled present vs the ground-truth present. Runs after
 				// both were written (a compute reduction reading both, sampled). Gated on render.metrics; both
@@ -1284,9 +1291,9 @@ namespace Snowstorm
 				    !vpRT.GroundTruthTarget->GetDesc().ColorAttachments.empty() && vpRT.GroundTruthPresentTarget &&
 				    !vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments.empty())
 				{
-					const Ref<Texture> lrImg = vpRT.Target->GetDesc().ColorAttachments[0].View->GetTexture();
+					const Ref<Texture> lrImg = vpRT.Target->GetSampleableColorView(0)->GetTexture(); // resolved under MSAA
 					const Ref<Texture> mvImg = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture();
-					const Ref<Texture> gtImg = vpRT.GroundTruthTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+					const Ref<Texture> gtImg = vpRT.GroundTruthTarget->GetSampleableColorView(0)->GetTexture(); // resolved under MSAA
 					// The tonemapped LDR GT present — the engine's ACTUAL output the metric compares, i.e. the
 					// exact target to train against (#102). Written by the GT tonemap pass above.
 					const Ref<Texture> gtLdrImg = vpRT.GroundTruthPresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();

@@ -2,6 +2,7 @@
 
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/Shader.hpp"
@@ -37,6 +38,9 @@ namespace Snowstorm
 		p.Shader = shader;
 		p.ColorFormats = {colorFormat};
 		p.DepthFormat = depthFormat;
+		// Sky draws into the (possibly multisampled) scene target after the meshes, so it must match the scene
+		// material pipelines' sample count. Constant for the run (startup-resolved MsaaSampleCount).
+		p.SampleCount = CVars::MsaaSampleCount();
 		p.Raster.Cull = CullMode::None; // fullscreen triangle: don't cull by winding
 		p.DepthStencil.EnableDepthTest = true;
 		p.DepthStencil.EnableDepthWrite = false;

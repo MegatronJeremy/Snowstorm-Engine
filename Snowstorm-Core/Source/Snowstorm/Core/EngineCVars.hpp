@@ -131,6 +131,19 @@ namespace Snowstorm::CVars
 	// read per-frame by RenderSystem, so toggling it takes effect live.
 	extern CVar<int> AAMode;
 
+	// Forward-pass MSAA sample count: 1 = off, 2/4/8 = multisample the forward color+depth (geometric edge
+	// AA), resolved to single-sample before post. Does NOT touch the RT effects (they read a single-sample
+	// G-buffer) or shader/specular aliasing. APPLIES ON RESTART: the render path reads the cached
+	// MsaaSampleCount(), not this live, because the sample count is baked into targets + pipelines at startup.
+	// Persisted so the editor dropdown survives a relaunch. Orthogonal to render.aa (MSAA + TAA compose).
+	extern CVar<int> Msaa;
+
+	// render.msaa resolved ONCE (first call, after device init) and clamped to the device's max color+depth
+	// sample count and to {1,2,4,8}. Read this everywhere the forward MSAA sample count is consumed (target
+	// allocation + forward/sky/depth-prepass pipelines) so targets and pipelines always agree. Cached: a live
+	// edit to render.msaa takes effect on the next launch, not mid-run (would desync targets from pipelines).
+	[[nodiscard]] uint32_t MsaaSampleCount();
+
 	// Upscale method when render.scale < 1 (#47): 0 = bilinear (the baseline), 1 = neural (compute CNN). The
 	// neural path runs the loaded .ssnn; default identity weights reproduce bilinear. Read per-frame.
 	extern CVar<int> Upscaler;

@@ -36,6 +36,7 @@ namespace Snowstorm
 
 		bool IsRayTracingSupported() const override;
 		bool IsFloat16Supported() const override;
+		uint32_t GetMaxSampleCount() const override;
 
 		Ref<CommandContext> GetGraphicsCommandContext() override;
 

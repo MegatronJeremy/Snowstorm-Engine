@@ -443,6 +443,25 @@ namespace Snowstorm
 		return VulkanContext::Get().SupportsFloat16();
 	}
 
+	uint32_t VulkanRendererAPI::GetMaxSampleCount() const
+	{
+		const VkPhysicalDevice physDevice = VulkanContext::Get().GetPhysicalDevice();
+		SS_CORE_ASSERT(physDevice != VK_NULL_HANDLE, "VulkanRendererAPI: PhysicalDevice is null");
+		VkPhysicalDeviceProperties props{};
+		vkGetPhysicalDeviceProperties(physDevice, &props);
+
+		// Only counts usable for BOTH color and depth (a forward MSAA pass has both attachments).
+		const VkSampleCountFlags counts =
+		    props.limits.framebufferColorSampleCounts & props.limits.framebufferDepthSampleCounts;
+		if (counts & VK_SAMPLE_COUNT_8_BIT)
+			return 8;
+		if (counts & VK_SAMPLE_COUNT_4_BIT)
+			return 4;
+		if (counts & VK_SAMPLE_COUNT_2_BIT)
+			return 2;
+		return 1;
+	}
+
 	Ref<CommandContext> VulkanRendererAPI::GetGraphicsCommandContext()
 	{
 		return m_GraphicsContexts[m_CurrentFrameIndex];

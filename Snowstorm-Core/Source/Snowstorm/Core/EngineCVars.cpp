@@ -1,5 +1,6 @@
 #include "EngineCVars.hpp"
 
+#include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 
 namespace Snowstorm::CVars
@@ -89,6 +90,8 @@ namespace Snowstorm::CVars
 	CVar<std::string> NeuralDumpIdentity{"neural.dump_identity", "", "One-shot: write the built-in identity refiner to this .ssnn path, then exit (#99). The canonical reference the Python .ssnn writer's byte-parity test compares against. Empty = off."};
 
 	CVar<int> AAMode{"render.aa", 0, "Anti-aliasing: 0 = None, 1 = FXAA (spatial post-process), 2 = TAA (temporal accumulation via jitter + motion vectors, #44)", CVarFlags::Persist};
+
+	CVar<int> Msaa{"render.msaa", 1, "Forward MSAA sample count: 1 = off, 2/4/8 = multisample the forward color+depth for geometric-edge AA, resolved before post. Does NOT cover the RT effects (single-sample G-buffer) or shader/specular aliasing. APPLIES ON RESTART (baked into targets + pipelines at startup); clamped to the device max.", CVarFlags::Persist};
 
 	CVar<int> DebugView{"render.debugview", 0, "Viewport debug overlay: 0 = Normal (tonemapped scene), 1 = Motion Vectors (per-pixel screen-space velocity as color; drives the velocity pass + tonemap debug branch, #44), 2 = Ambient Occlusion (DefaultLit outputs the isolated grayscale AO term for tuning RTAO, #118), 3 = Reflections (raw reflected albedo from the RT reflection trace, for verifying hit resolution, #118), 4 = Global Illumination (raw RT GI indirect term, for tuning intensity/range, #118), 5 = World Normals (the depth+normal prepass G-buffer, [-1,1] normal mapped to RGB, for verifying the half-res GI substrate, #124), 6 = Half-res GI raw (the raw half-res GI irradiance buffer, tonemapped, before the bilateral upsample, #124), 7 = Half-res GI denoised (the same buffer AFTER temporal accumulation + à-trous, the A/B against view 6 that shows what the denoiser did, #125)", CVarFlags::Persist};
 
@@ -202,6 +205,39 @@ namespace Snowstorm::CVars
 			return 1.0f;
 		}
 		return s;
+	}
+
+	uint32_t MsaaSampleCount()
+	{
+		// Resolved ONCE (Meyers static): the forward MSAA sample count is baked into the render targets and
+		// the forward/sky/depth-prepass pipelines at their creation, so it must be a fixed value for the whole
+		// run — reading render.msaa live would let a viewport resize allocate targets whose sample count no
+		// longer matches the startup-built pipelines (a Vulkan validation error). A live edit thus applies on
+		// the next launch. Snapped to the largest of {1,2,4,8} that is <= the request AND <= the device max.
+		static const uint32_t s_Resolved = []
+		{
+			const int requested = Msaa.Get();
+			const uint32_t deviceMax = Renderer::GetMaxSampleCount(); // 1/2/4/8, color+depth intersection
+			uint32_t resolved = 1;
+			for (const uint32_t c : {8u, 4u, 2u})
+			{
+				if (requested >= static_cast<int>(c) && deviceMax >= c)
+				{
+					resolved = c;
+					break;
+				}
+			}
+			if (requested > static_cast<int>(resolved))
+			{
+				SS_CORE_WARN("render.msaa {} unavailable (device max {}x) -> using {}x MSAA", requested, deviceMax, resolved);
+			}
+			else if (resolved > 1)
+			{
+				SS_CORE_INFO("Forward MSAA: {}x (device max {}x)", resolved, deviceMax);
+			}
+			return resolved;
+		}();
+		return s_Resolved;
 	}
 
 	float ClampedGIScale()
