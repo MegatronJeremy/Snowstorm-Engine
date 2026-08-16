@@ -64,7 +64,10 @@ namespace Snowstorm
 		// range avoids sharing MaterialInstance's descriptor set (whose set-1 layout differs -> device loss).
 		// Still within the 128-byte guaranteed-minimum Vulkan push size. Mirrors DepthNormalPush field-for-field.
 		p.PushConstants = {{.Offset = 0, .Size = sizeof(glm::mat4) + 8 * sizeof(uint32_t), .Stages = ShaderStage::Vertex | ShaderStage::Fragment}};
-		p.Raster.Cull = CullMode::None; // match the forward/shadow passes (Sponza has single-sided geometry)
+		p.Raster.Cull = CullMode::Back; // MATCH the forward material pipeline (culls Back by default) so the G-buffer
+		                                // reconstructs the SAME surface the forward shades. Rendering both faces (None)
+		                                // z-fought the front/back of thin walls -> flickering normals + RT effects on
+		                                // the wrong face. The forward already culls Back, so this adds no new holes.
 		p.DepthStencil.EnableDepthTest = true;
 		p.DepthStencil.EnableDepthWrite = true;
 		p.DepthStencil.DepthCompare = CompareOp::Less;

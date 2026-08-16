@@ -53,7 +53,8 @@ namespace Snowstorm
 		p.DepthFormat = depthFormat;
 		// Same 96-byte combined push as DepthNormal (VS reads ViewProj; FS reads the alpha-mask scalars).
 		p.PushConstants = {{.Offset = 0, .Size = sizeof(glm::mat4) + 8 * sizeof(uint32_t), .Stages = ShaderStage::Vertex | ShaderStage::Fragment}};
-		p.Raster.Cull = CullMode::None; // match forward/shadow (Sponza is single-sided)
+		p.Raster.Cull = CullMode::Back; // MATCH the forward material pipeline (culls Back): the early-Z depth must
+		                                // agree with the forward's LessOrEqual test, so cull the same faces it does.
 		p.DepthStencil.EnableDepthTest = true;
 		p.DepthStencil.EnableDepthWrite = true;
 		p.DepthStencil.DepthCompare = CompareOp::Less;

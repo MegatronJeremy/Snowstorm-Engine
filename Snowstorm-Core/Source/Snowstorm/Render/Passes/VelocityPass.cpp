@@ -57,7 +57,8 @@ namespace Snowstorm
 		// 128-byte vertex push constant: ViewProj + PrevViewProj (see Velocity.vert.hlsl). Two mat4s = the
 		// guaranteed-minimum Vulkan push-constant size.
 		p.PushConstants = {{.Offset = 0, .Size = 2 * sizeof(glm::mat4), .Stages = ShaderStage::Vertex}};
-		p.Raster.Cull = CullMode::None; // match the forward/shadow passes (Sponza has single-sided geometry)
+		p.Raster.Cull = CullMode::Back; // MATCH the forward material pipeline (culls Back) so motion vectors are
+		                                // written for the SAME faces the forward shades (consistent reprojection).
 		p.DepthStencil.EnableDepthTest = true;
 		p.DepthStencil.EnableDepthWrite = true;
 		p.DepthStencil.DepthCompare = CompareOp::Less;
