@@ -20,18 +20,21 @@ namespace Snowstorm
 	// Layout MUST match the GeoRecord read in DefaultLit.frag.hlsl field-for-field (the shader reads each
 	// field by explicit byte offset via vk::RawBufferLoad, so these offsets are the contract). Rows:
 	//   [0]  0: VertexAddress(u64)  8: IndexAddress(u64)
-	//   [16] 16: AlbedoTextureIndex(u32) + 3 pad u32  (the four uints fill one 16-byte row)
+	//   [16] 16: AlbedoTextureIndex(u32)  20: AlphaMaskEnabled(u32)  24: AlphaCutoff(f32) + 1 pad u32
 	//   [32] BaseColor(vec4)
 	//   [48] Model(mat4, 64B)
-	// Total 112 bytes (a multiple of the 16-byte struct alignment; no trailing pad).
+	// Total 112 bytes (a multiple of the 16-byte struct alignment; no trailing pad). AlphaMaskEnabled/
+	// AlphaCutoff reuse two former pad slots (no size change) so an RT any-hit ray can alpha-test cutout
+	// (glTF MASK) geometry instead of treating it as solid. Masked instances are FORCE_NON_OPAQUE in the
+	// TLAS and the traversal samples the albedo alpha at the candidate UV against AlphaCutoff.
 	struct GeometryRecord
 	{
 		uint64_t VertexAddress = 0; // GPU address of the mesh vertex buffer (stride sizeof(Vertex) = 48)
 		uint64_t IndexAddress = 0;  // GPU address of the mesh index buffer (uint32 indices)
 
 		uint32_t AlbedoTextureIndex = 0; // bindless index into Textures[] (0 = none -> use BaseColor only)
-		uint32_t _Pad0 = 0;
-		uint32_t _Pad1 = 0;
+		uint32_t AlphaMaskEnabled = 0;   // 1 = alpha-cutout (glTF MASK): alpha-test the RT hit vs AlphaCutoff
+		float AlphaCutoff = 0.5f;        // albedo.a threshold for the mask (unused unless AlphaMaskEnabled)
 		uint32_t _Pad2 = 0;
 
 		glm::vec4 BaseColor{1.0f}; // material base-color factor (multiplies the sampled albedo)

@@ -9,9 +9,9 @@ namespace Snowstorm
 	// the RT shadow pass consumes the TLAS. Mirrors VisibilitySystem's dirty-signal pattern: it rebuilds the
 	// TLAS only when the renderable set or any transform changed (Init/Fini/ChangedView on Mesh/Transform),
 	// gathers one instance per (Transform + resolved-Mesh) entity, builds each mesh's BLAS lazily, and points
-	// the bindless TLAS slot at the result. No-op unless RT shadows are actually active (ShadowsRTActive()):
-	// nothing samples the TLAS in Shadow Map / Off mode, so building it there is pure waste (BLAS builds +
-	// a TLAS build per scene change). The first frame after RT shadows turn ON forces a rebuild.
+	// the bindless TLAS slot at the result. No-op unless some RT effect is active (RT shadows/AO/reflections/
+	// GI): nothing samples the TLAS otherwise, so building it there is pure waste (BLAS builds + a TLAS build
+	// per scene change). The first frame after any RT effect turns ON forces a rebuild.
 	class TlasBuildSystem final : public System
 	{
 	public:
@@ -34,9 +34,6 @@ namespace Snowstorm
 		Ref<TLAS> m_TLAS; // created lazily on first RT-enabled build; scene-scoped
 		bool m_BuiltOnce = false;
 		bool m_WasRTActive = false;              // RT-active state last frame — detects the off->on edge to force a rebuild
-		bool m_WasGeoTableNeeded = false;        // geometry-table need last frame — detects the off->on edge when
-		                                         // reflections/GI turn on while the TLAS is already built (shadows/AO
-		                                         // only), so the newly-required per-instance table gets built
 		uint32_t m_LastLoggedCount = UINT32_MAX; // de-dupe the instance-count log across per-frame rebuilds
 	};
 }

@@ -68,31 +68,24 @@ namespace Snowstorm
 
 	void TlasBuildSystem::Execute(Timestep)
 	{
-		// Only maintain the TLAS while something actually samples it — RT shadows, RTAO, or RT reflections. In
-		// every other mode building it is pure waste. Each helper folds in the device-support check (false on a
-		// non-RT GPU). Track the state so the OFF->ON transition can force a rebuild below.
-		// The per-instance geometry/material table is needed by any effect that SHADES a ray hit — RT
-		// reflections and RT GI both resolve hits through it. (Shadows/AO are occupancy-only, no table.)
-		const bool geoTableNeeded = CVars::ReflectionsRTActive() || CVars::GIRTActive();
-		const bool rtActive = CVars::ShadowsRTActive() || CVars::AoRTActive() || geoTableNeeded;
+		// Only maintain the TLAS + its per-instance geometry table while some RT effect actually samples them;
+		// in every other mode building them is pure waste. Each helper folds in the device-support check
+		// (false on a non-RT GPU). Track the state so the OFF->ON transition can force a rebuild below.
+		// The table is needed by EVERY RT effect: reflections/GI shade a ray hit through it, and shadows/AO
+		// alpha-test cutout (glTF MASK) geometry through it (Inc 2: masked instances are FORCE_NON_OPAQUE and
+		// the traversal samples the albedo alpha at the hit UV). So table-need is exactly rt-active.
+		const bool rtActive = CVars::ShadowsRTActive() || CVars::AoRTActive() || CVars::ReflectionsRTActive() ||
+		                      CVars::GIRTActive();
 		const bool justEnabled = rtActive && !m_WasRTActive;
-		// Reflections/GI need the per-instance geometry table; shadows/AO don't. If the TLAS is already being
-		// maintained for shadows/AO and reflections/GI are THEN turned on, geoTableNeeded flips false->true
-		// without rtActive changing — so justEnabled stays false and a static scene's dirty-check skips the
-		// rebuild, leaving TableAddress 0 and the reflection/GI trace falling back to sky (the "toggles don't
-		// work" bug). Force a rebuild on that sub-transition too.
-		const bool geoTableJustNeeded = geoTableNeeded && !m_WasGeoTableNeeded;
 		m_WasRTActive = rtActive;
-		m_WasGeoTableNeeded = geoTableNeeded;
 		if (!rtActive)
 		{
 			return;
 		}
 
-		// Rebuild when the scene changed OR RT just turned on OR the geometry table just became needed (the
-		// scene's per-frame dirty flags were consumed on prior frames, so a plain dirty-check would miss both
-		// enable edges).
-		if (m_BuiltOnce && !justEnabled && !geoTableJustNeeded && !IsSceneDirtyThisFrame())
+		// Rebuild when the scene changed OR RT just turned on (the scene's per-frame dirty flags were consumed
+		// on prior frames, so a plain dirty-check would miss the enable edge).
+		if (m_BuiltOnce && !justEnabled && !IsSceneDirtyThisFrame())
 		{
 			return;
 		}
@@ -106,9 +99,10 @@ namespace Snowstorm
 		// index — so instanceEntities[CommittedInstanceID()] resolves the hit.
 		std::vector<TLASInstance> instances;
 		std::vector<entt::entity> instanceEntities;
-		// RT reflections (#118): a parallel per-instance geometry/material table so a reflected hit resolves to
-		// a shadeable surface. Only gathered when reflections are active (dead weight otherwise). Filled in
-		// lockstep with `instances`, so record[i] describes the instance the GPU stamps instanceCustomIndex = i.
+		// Per-instance geometry/material table (#118), gathered whenever any RT effect is active. A reflected/
+		// GI hit resolves to a shadeable surface through it, and shadow/AO any-hit rays alpha-test cutout
+		// geometry through it (Inc 2). Filled in lockstep with `instances`, so record[i] describes the
+		// instance the GPU stamps instanceCustomIndex = i.
 		std::vector<GeometryRecord> geoRecords;
 		for (auto view = reg.view<TransformComponent, MeshComponent>(); const entt::entity e : view)
 		{
@@ -129,33 +123,34 @@ namespace Snowstorm
 			instances.push_back({model, blas->GetDeviceAddress()});
 			instanceEntities.push_back(e);
 
-			if (geoTableNeeded)
+			GeometryRecord rec{};
+			rec.VertexAddress = mc.MeshInstance->GetVertexBuffer()->GetGPUAddress();
+			rec.IndexAddress = mc.MeshInstance->GetIndexBuffer()->GetGPUAddress();
+			rec.Model = model;
+			// Material may not be resolved yet (async) — a null record still shades as BaseColor white; the
+			// table stays index-aligned regardless, so a missing material never desyncs the mapping.
+			if (const auto* matc = reg.try_get_const<MaterialComponent>(e); matc && matc->MaterialInstance)
 			{
-				GeometryRecord rec{};
-				rec.VertexAddress = mc.MeshInstance->GetVertexBuffer()->GetGPUAddress();
-				rec.IndexAddress = mc.MeshInstance->GetIndexBuffer()->GetGPUAddress();
-				rec.Model = model;
-				// Material may not be resolved yet (async) — a null record still shades as BaseColor white; the
-				// table stays index-aligned regardless, so a missing material never desyncs the mapping.
-				if (const auto* matc = reg.try_get_const<MaterialComponent>(e); matc && matc->MaterialInstance)
-				{
-					const Material::Constants& c = matc->MaterialInstance->GetConstants();
-					rec.AlbedoTextureIndex = c.AlbedoTextureIndex;
-					rec.BaseColor = c.BaseColor;
-				}
-				geoRecords.push_back(rec);
+				const Material::Constants& c = matc->MaterialInstance->GetConstants();
+				rec.AlbedoTextureIndex = c.AlbedoTextureIndex;
+				rec.BaseColor = c.BaseColor;
+				// Alpha-cutout state for the RT any-hit test (Inc 2): masked instances become
+				// FORCE_NON_OPAQUE in the TLAS and the traversal alpha-tests the albedo at the hit UV.
+				rec.AlphaMaskEnabled = c.AlphaMaskEnabled;
+				rec.AlphaCutoff = c.AlphaCutoff;
 			}
+			geoRecords.push_back(rec);
 		}
 
 		// Publish the index->entity table for RT picking (consumed by the editor). Rebuilt every TLAS build
 		// so it never drifts from what the GPU traces.
 		SingletonView<TlasInstanceMapSingleton>().Instances = std::move(instanceEntities);
 
-		// Publish the reflection geometry table (consumed by RendererService -> DefaultLit). Grow the GPU
-		// buffer when the instance count outgrows it (device-address Storage so the shader can RawBufferLoad
-		// records); address 0 when reflections are off so the shader falls back to the sky cube.
+		// Publish the geometry table (consumed by RendererService -> DefaultLit / GI / Reflection). Grow the
+		// GPU buffer when the instance count outgrows it (device-address Storage so the shader can RawBufferLoad
+		// records); address 0 when RT is off or the scene is empty so the shader falls back to the sky cube.
 		auto& reflGeo = SingletonView<ReflectionGeometrySingleton>();
-		if (geoTableNeeded && !geoRecords.empty())
+		if (!geoRecords.empty())
 		{
 			const uint32_t needed = static_cast<uint32_t>(geoRecords.size());
 			if (!reflGeo.Table || reflGeo.Capacity < needed)
