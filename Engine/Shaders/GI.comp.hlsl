@@ -143,9 +143,18 @@ void main(uint3 id : SV_DispatchThreadID)
 		ray.TMin = 0.0;
 		ray.TMax = GIRange;
 
-		RayQuery<RAY_FLAG_CULL_NON_OPAQUE> q;
+		// Alpha-test cutout occluders (masked instances are FORCE_NON_OPAQUE, surfacing as candidates); opaque
+		// hits auto-commit so the loop body only runs for masked geometry.
+		RayQuery<RAY_FLAG_NONE> q;
 		q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
-		q.Proceed();
+		while (q.Proceed())
+		{
+			if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
+			    RTCommitCandidate(tableAddr, q.CandidateInstanceID(), q.CandidatePrimitiveIndex(), q.CandidateTriangleBarycentrics(), LinearSampler))
+			{
+				q.CommitNonOpaqueTriangleHit();
+			}
+		}
 
 		if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT && tableAddr != 0)
 		{

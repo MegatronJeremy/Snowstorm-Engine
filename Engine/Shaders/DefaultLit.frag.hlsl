@@ -97,6 +97,17 @@ float SampleShadowFactor(uint texIndex, float4x4 lightViewProj, float4 atlasRect
 }
 
 #ifdef SS_RAYTRACING
+// Record + any-hit cutout alpha test, shared with the AO/GI/reflection passes. Engine.hlsli already declared
+// Textures[] (t0, space3), satisfying RTGeometry's contract, so this include must follow it.
+#include "Include/RTGeometry.hlsli"
+
+// Reassemble the geometry-table device address from FrameCB's lo/hi halves (0 = table not published yet ->
+// the any-hit test falls back to treating hits as solid).
+uint64_t GeoTableAddress()
+{
+	return (uint64_t(ReflGeoTableAddrHi) << 32) | uint64_t(ReflGeoTableAddrLo);
+}
+
 // Ray-traced shadow (#118): trace an inline ray-query shadow ray from the surface toward a light against
 // the scene TLAS. Any opaque hit before the ray reaches the light (tMax) => shadowed. `L` is the
 // normalized direction TO the light; `Ng` is the geometric normal used to offset the ray origin off the
@@ -116,11 +127,20 @@ float RayTraceShadow(float3 positionWS, float3 Ng, float3 L, float tMax)
 	ray.TMin = 0.0;
 	ray.TMax = tMax;
 
-	// ACCEPT_FIRST_HIT_AND_END_SEARCH: a shadow ray only needs "is anything in the way", so stop at the
-	// first opaque hit. Geometry is built OPAQUE (no any-hit), so CULL_NON_OPAQUE is a no-op safety net.
-	RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_CULL_NON_OPAQUE> q;
+	// ACCEPT_FIRST_HIT_AND_END_SEARCH: a shadow ray only needs "is anything in the way", so stop at the first
+	// committed hit. Opaque geometry auto-commits; masked instances (FORCE_NON_OPAQUE) surface as candidates
+	// and are alpha-tested so a cutout texel lets the ray through instead of casting a solid shadow.
+	const uint64_t tableAddr = GeoTableAddress();
+	RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
 	q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
-	q.Proceed();
+	while (q.Proceed())
+	{
+		if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
+		    RTCommitCandidate(tableAddr, q.CandidateInstanceID(), q.CandidatePrimitiveIndex(), q.CandidateTriangleBarycentrics(), LinearSampler))
+		{
+			q.CommitNonOpaqueTriangleHit();
+		}
+	}
 
 	const float visibility = (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) ? 0.0 : 1.0;
 	return lerp(1.0, visibility, ShadowStrength);
@@ -149,6 +169,7 @@ float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, flo
 	const float ign = frac(52.9829189 * frac(dot(px, float2(0.06711056, 0.00583715))));
 
 	const float3 origin = positionWS + Ng * 0.02 + L * 0.01;
+	const uint64_t tableAddr = GeoTableAddress();
 
 	float visSum = 0.0;
 	[unroll] for (int s = 0; s < SHADOW_RAY_COUNT; ++s)
@@ -166,9 +187,16 @@ float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, flo
 		ray.TMin = 0.0;
 		ray.TMax = tMax;
 
-		RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_CULL_NON_OPAQUE> q;
+		RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
 		q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
-		q.Proceed();
+		while (q.Proceed())
+		{
+			if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
+			    RTCommitCandidate(tableAddr, q.CandidateInstanceID(), q.CandidatePrimitiveIndex(), q.CandidateTriangleBarycentrics(), LinearSampler))
+			{
+				q.CommitNonOpaqueTriangleHit();
+			}
+		}
 
 		visSum += (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) ? 0.0 : 1.0;
 	}

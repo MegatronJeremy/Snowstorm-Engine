@@ -342,11 +342,13 @@ namespace Snowstorm
 			GIUpsamplePass m_Pass; // owned here: exclusive to this effect
 		};
 
-		// Half-res RT AO compute pass (#126) — the AO analogue of GIEffect, a strict subset (occupancy-only,
-		// no geometry table). Traces the occlusion hemisphere at render.ao.scale over the depth+normal
-		// G-buffer, writing a scalar occlusion factor into AOTarget. Runs after the GI sub-chain, before
-		// Forward. Gated on AoRTActive() alone — AO needs no geometry table (unlike GI). Independent of GI:
-		// AO can run with GI off. Debug view 2 shows the raw output.
+		// Half-res RT AO compute pass (#126), the AO analogue of GIEffect. Occupancy-only (no sun/IBL shading),
+		// but it reads the per-instance geometry table to alpha-test cutout occluders in the any-hit path, so
+		// foliage doesn't over-occlude through transparent texels. Traces the occlusion hemisphere at
+		// render.ao.scale over the depth+normal G-buffer, writing a scalar occlusion factor into AOTarget. Runs
+		// after the GI sub-chain, before Forward. Gated on AoRTActive() alone (AO runs even if the table isn't
+		// published yet, falling back to solid occluders). Independent of GI: AO can run with GI off. Debug
+		// view 2 shows the raw output.
 		class AOEffect final : public IViewportEffect
 		{
 		public:
@@ -386,16 +388,19 @@ namespace Snowstorm
 				const float intensity = CVars::AOIntensity.Get();
 				const auto frameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
 				const auto rayCount = static_cast<uint32_t>(CVars::ClampedAORayCount());
+				// Geometry-table address for the cutout any-hit test (0 = not published yet -> occluders solid).
+				// AO still runs regardless, so ShouldRun stays gated on AoRTActive() alone (no table dependency).
+				const uint64_t tableAddr = fc.Renderer.GetReflectionGeometryAddress();
 
 				fc.Graph.AddPass({.Name = "AO" + v.Suffix,
 				                  .IsCompute = true,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Writes = {{aoView->GetTexture(), RenderGraph::AccessState::Storage}},
-				                  .Execute = [this, &fc, invViewProj, radius, intensity, frameCounter, rayCount, gbufView, depthView, aoView, aoW, aoH](CommandContext& c)
+				                  .Execute = [this, &fc, invViewProj, radius, intensity, frameCounter, rayCount, tableAddr, gbufView, depthView, aoView, aoW, aoH](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, radius, intensity, frameCounter,
-					                                  rayCount, gbufView, depthView, aoView, aoW, aoH);
+					                                  rayCount, tableAddr, gbufView, depthView, aoView, aoW, aoH);
 				                  }});
 
 				v.AOView = aoView; // the raw trace is the live AO buffer; temporal/denoise republish downstream (#130)

@@ -21,24 +21,35 @@ Texture2D<float> GBufferDepth : register(t4, space0);                           
 // Occlusion factor in .r (the RHI has no single-channel float format; RGBA16F matches GITarget — a half-res
 // target, so the 4x-vs-R16 memory is negligible). The upsample + forward read only .r.
 [[vk::image_format("rgba16f")]] RWTexture2D<float4> AOOut : register(u1, space0);    // half-res occlusion factor [0,1] in .r
-// #129 Inc 2c: AO no longer declares a sampler — the G-buffer is now POINT-fetched via Load (no bilinear),
-// and AO is occupancy-only (no hit shading, no bindless texture/cubemap sampling), so nothing needs one.
+// The G-buffer is POINT-fetched via Load (no bilinear); this wrapping sampler is used ONLY for the bindless
+// albedo alpha lookup in the cutout any-hit test (foliage textures tile), reusing the former sampler slot.
+SamplerState LinearSampler : register(s2, space0);
 
 cbuffer AOCB : register(b3, space0)
 {
-	float4x4 InvViewProj; // clip -> world, for depth->world-position reconstruction
-	uint2 OutSize;        // half-res dispatch dimensions
-	float AORadius;       // occlusion ray max distance (world units)
-	float AOIntensity;    // scales the darkening (1 = physical, >1 = artistic boost)
-	uint FrameCounter;    // per-frame sample rotation (TAA converges the few rays)
-	uint RayCount;        // occlusion rays per pixel this frame (render.ao.rays, clamped [1,16])
-	uint2 _Pad;
+	float4x4 InvViewProj;    // clip -> world, for depth->world-position reconstruction
+	uint2 OutSize;           // half-res dispatch dimensions
+	float AORadius;          // occlusion ray max distance (world units)
+	float AOIntensity;       // scales the darkening (1 = physical, >1 = artistic boost)
+	uint FrameCounter;       // per-frame sample rotation (TAA converges the few rays)
+	uint RayCount;           // occlusion rays per pixel this frame (render.ao.rays, clamped [1,16])
+	uint ReflGeoTableAddrLo; // device address of the GeometryRecord table (lo/hi) for the cutout alpha test
+	uint ReflGeoTableAddrHi;
 };
 
 // ---- Set 3: engine bindless pool (gap-filled by the compute pipeline builder) ----
+Texture2D Textures[] : register(t0, space3);
 RaytracingAccelerationStructure SceneTLAS : register(t2, space3);
 
+// Record + any-hit cutout alpha test, shared with the shadow/GI/reflection passes. Textures[] above satisfies
+// RTGeometry's contract, so this include must follow it.
+#include "Include/RTGeometry.hlsli"
 #include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky (#129 Inc 1b)
+
+uint64_t GeoTableAddress()
+{
+	return (uint64_t(ReflGeoTableAddrHi) << 32) | uint64_t(ReflGeoTableAddrLo);
+}
 
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
@@ -83,6 +94,7 @@ void main(uint3 id : SV_DispatchThreadID)
 	const float ign = frac(52.9829189 * frac(dot(px, float2(0.06711056, 0.00583715))));
 
 	const float3 origin = positionWS + Ng * 0.02;
+	const uint64_t tableAddr = GeoTableAddress(); // for the cutout any-hit test (0 = table not ready -> solid)
 
 	float occlusion = 0.0;
 	// #130 Inc B: accumulate mean occluder hit distance for the denoiser's hit-distance-guided à-trous. A miss
@@ -107,10 +119,19 @@ void main(uint3 id : SV_DispatchThreadID)
 		ray.TMin = 0.0;
 		ray.TMax = AORadius;
 
-		// Occupancy only: ACCEPT_FIRST_HIT_AND_END_SEARCH — AO just needs "is anything within AORadius".
-		RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_CULL_NON_OPAQUE> q;
+		// Occupancy only (ACCEPT_FIRST_HIT): AO just needs "is anything within AORadius". Opaque hits
+		// auto-commit; masked instances (FORCE_NON_OPAQUE) are alpha-tested so cutout foliage doesn't
+		// over-occlude through its transparent texels.
+		RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
 		q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
-		q.Proceed();
+		while (q.Proceed())
+		{
+			if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
+			    RTCommitCandidate(tableAddr, q.CandidateInstanceID(), q.CandidatePrimitiveIndex(), q.CandidateTriangleBarycentrics(), LinearSampler))
+			{
+				q.CommitNonOpaqueTriangleHit();
+			}
+		}
 
 		if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
 		{

@@ -31,52 +31,10 @@ Texture2D Textures[] : register(t0, space3);
 TextureCube Cubemaps[] : register(t1, space3);
 RaytracingAccelerationStructure SceneTLAS : register(t2, space3);
 
-// One reflection geometry record, matching GeometryRecord (ReflectionGeometrySingleton.hpp) byte-for-byte
-// (dx layout, 112-byte stride). Read field-by-field via vk::RawBufferLoad off the record's base address.
-struct GeoRecord
-{
-	uint64_t VertexAddress;
-	uint64_t IndexAddress;
-	uint AlbedoTextureIndex;
-	float4 BaseColor;
-	float4x4 Model;
-};
-
-GeoRecord LoadGeoRecord(uint64_t tableAddr, uint instanceIndex)
-{
-	const uint64_t base = tableAddr + uint64_t(instanceIndex) * 112ull;
-	GeoRecord r;
-	r.VertexAddress = vk::RawBufferLoad<uint64_t>(base + 0, 8);
-	r.IndexAddress = vk::RawBufferLoad<uint64_t>(base + 8, 8);
-	r.AlbedoTextureIndex = vk::RawBufferLoad<uint>(base + 16, 4);
-	r.BaseColor = float4(vk::RawBufferLoad<float>(base + 32, 4), vk::RawBufferLoad<float>(base + 36, 4),
-	                     vk::RawBufferLoad<float>(base + 40, 4), vk::RawBufferLoad<float>(base + 44, 4));
-	// mat4 is 16 contiguous floats at offset 48 (column-major, matching glm).
-	float4 c0 = float4(vk::RawBufferLoad<float>(base + 48, 4), vk::RawBufferLoad<float>(base + 52, 4),
-	                   vk::RawBufferLoad<float>(base + 56, 4), vk::RawBufferLoad<float>(base + 60, 4));
-	float4 c1 = float4(vk::RawBufferLoad<float>(base + 64, 4), vk::RawBufferLoad<float>(base + 68, 4),
-	                   vk::RawBufferLoad<float>(base + 72, 4), vk::RawBufferLoad<float>(base + 76, 4));
-	float4 c2 = float4(vk::RawBufferLoad<float>(base + 80, 4), vk::RawBufferLoad<float>(base + 84, 4),
-	                   vk::RawBufferLoad<float>(base + 88, 4), vk::RawBufferLoad<float>(base + 92, 4));
-	float4 c3 = float4(vk::RawBufferLoad<float>(base + 96, 4), vk::RawBufferLoad<float>(base + 100, 4),
-	                   vk::RawBufferLoad<float>(base + 104, 4), vk::RawBufferLoad<float>(base + 108, 4));
-	r.Model = float4x4(c0, c1, c2, c3);
-	return r;
-}
-
-// Read a mesh vertex's TexCoord (float2 @ offset 24 in the 48-byte Vertex) by device address.
-float2 LoadVertexUV(uint64_t vertexAddr, uint index)
-{
-	const uint64_t a = vertexAddr + uint64_t(index) * 48ull + 24ull;
-	return float2(vk::RawBufferLoad<float>(a, 4), vk::RawBufferLoad<float>(a + 4, 4));
-}
-
-// Read a mesh vertex's object-space Normal (float3 @ offset 12) by device address.
-float3 LoadVertexNormal(uint64_t vertexAddr, uint index)
-{
-	const uint64_t a = vertexAddr + uint64_t(index) * 48ull + 12ull;
-	return float3(vk::RawBufferLoad<float>(a, 4), vk::RawBufferLoad<float>(a + 4, 4), vk::RawBufferLoad<float>(a + 8, 4));
-}
+// The geometry-table record + attribute reads + the any-hit alpha test now live in RTGeometry.hlsli (shared
+// with the shadow/AO passes, which don't want the sun/IBL shading below). Textures[] is declared just above,
+// satisfying RTGeometry's contract, so this include must follow it.
+#include "RTGeometry.hlsli"
 
 struct HitSurface
 {
@@ -111,8 +69,9 @@ HitSurface ResolveHit(uint64_t tableAddr, uint instanceId, uint prim, float2 bar
 	return s;
 }
 
-// Shadow ray for the one-bounce hit shading (ACCEPT_FIRST_HIT: occlusion only).
-float RTHitShadowRay(float3 positionWS, float3 Ng, float3 L, float tMax)
+// Shadow ray for the one-bounce hit shading (ACCEPT_FIRST_HIT: occlusion only). Alpha-tests cutout occluders
+// via the geometry table (masked instances are FORCE_NON_OPAQUE, so they surface as candidates here).
+float RTHitShadowRay(uint64_t tableAddr, float3 positionWS, float3 Ng, float3 L, float tMax)
 {
 	const float3 origin = positionWS + Ng * 0.02 + L * 0.01;
 	RayDesc ray;
@@ -120,9 +79,16 @@ float RTHitShadowRay(float3 positionWS, float3 Ng, float3 L, float tMax)
 	ray.Direction = L;
 	ray.TMin = 0.0;
 	ray.TMax = tMax;
-	RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_CULL_NON_OPAQUE> q;
+	RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
 	q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
-	q.Proceed();
+	while (q.Proceed())
+	{
+		if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
+		    RTCommitCandidate(tableAddr, q.CandidateInstanceID(), q.CandidatePrimitiveIndex(), q.CandidateTriangleBarycentrics(), LinearSampler))
+		{
+			q.CommitNonOpaqueTriangleHit();
+		}
+	}
 	const float visibility = (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) ? 0.0 : 1.0;
 	return lerp(1.0, visibility, ShadowStrength);
 }
@@ -142,7 +108,7 @@ float3 ShadeSurfaceHit(uint64_t tableAddr, uint instanceId, uint prim, float2 ba
 		const float ndl = saturate(dot(s.Nw, Lsun));
 		if (ndl > 0.0)
 		{
-			const float sh = RTHitShadowRay(hitPos, s.Nw, Lsun, 1e30);
+			const float sh = RTHitShadowRay(tableAddr, hitPos, s.Nw, Lsun, 1e30);
 			direct = SunColor * SunIntensity * ndl * sh;
 		}
 	}
