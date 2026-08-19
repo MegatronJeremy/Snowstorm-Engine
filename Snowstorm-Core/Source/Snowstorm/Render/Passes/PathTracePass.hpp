@@ -46,6 +46,7 @@ namespace Snowstorm
 			float LightSourceRadius = 0.0f; // point/spot physical radius (finite size for NEE; 0 = delta)
 			float FireflyClamp = 16.0f;     // per-sample radiance clamp (0 = unbounded)
 			float MaxBounceWeight = 8.0f;   // path regularization: max per-bounce BSDF weight (0 = off)
+			uint32_t EnvNee = 1;            // 1 = environment (sky) NEE + MIS (render.pathtrace.envnee)
 			uint64_t TableAddress = 0;      // per-instance geometry table (device address)
 		};
 

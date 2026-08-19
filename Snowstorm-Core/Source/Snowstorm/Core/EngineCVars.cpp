@@ -466,6 +466,8 @@ namespace Snowstorm::CVars
 
 	CVar<float> PathTraceWeightClamp{"render.pathtrace.weightclamp", 8.0f, "Reference path tracer path regularization: max per-bounce BSDF sample weight (throughput multiplier). A near-mirror indirect bounce at a grazing/low-pdf direction makes BSDF/pdf blow up into a fixed hot pixel that never converges; clamping the weight bounds it without blurring reflections. Small bias on rare high-weight paths. 0 = off (unbiased ground truth); ~4-16 for a clean interactive preview. Set 0 for final reference captures.", CVarFlags::Persist};
 
+	CVar<bool> PathTraceEnvNee{"render.pathtrace.envnee", true, "Reference path tracer environment (sky) next-event estimation with MIS: each hit samples the analytic sky directly (a shadow ray) and MIS-combines it with the BSDF-continuation sky hit, cutting sky-lit variance (especially on glossy surfaces). Unbiased (the converged image is unchanged; only convergence speed differs). Off = sky arrives only via continuation rays (the pre-NEE integrator). Mainly a dev/A-B knob.", CVarFlags::Persist};
+
 	int ClampedPathTraceSpp()
 	{
 		const int n = PathTraceSpp.Get();

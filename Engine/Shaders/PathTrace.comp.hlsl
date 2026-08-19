@@ -54,6 +54,11 @@ cbuffer PTCB : register(b1, space0)
 	uint PointCount; // # valid point lights below
 	uint SpotCount;  // # valid spot lights below
 
+	uint EnvNee; // 1 = environment (sky) NEE + MIS enabled (render.pathtrace.envnee)
+	uint _ptPad0;
+	uint _ptPad1;
+	uint _ptPad2;
+
 	// Positional lights for NEE, world space, raw-packed into float4 rows (avoids struct cbuffer packing
 	// surprises). Point: [2i] = xyz position, w range; [2i+1] = xyz color, w intensity. Max 16.
 	float4 PointLights[32];
@@ -396,10 +401,51 @@ float3 EvalBsdf(Hit h, float3 V, float3 L)
 	return (diffuse + spec) * NoL;
 }
 
-// Importance-sample the BSDF: pick diffuse or specular lobe, return the new direction and the throughput
-// weight = brdf * NoL / pdf (already divided by the lobe-selection probability). Returns false to terminate.
-bool SampleBsdf(Hit h, float3 V, inout Rng rng, out float3 L, out float3 weight)
+// Solid-angle pdf of the BSDF sampler for an arbitrary L (the mixture pdf over the diffuse + specular lobes).
+// Shared by SampleBsdf (its throughput weight) and the environment-NEE MIS weight so the two never drift: a
+// mismatched pdf across the two strategies would bias the reference. Same lobe-selection logic as SampleBsdf.
+float BsdfPdf(Hit h, float3 V, float3 L)
 {
+	const float NoL = dot(h.N, L);
+	const float NoV = dot(h.N, V);
+	if (NoL <= 0.0 || NoV <= 0.0)
+	{
+		return 0.0;
+	}
+	const float3 f0 = lerp(float3(0.04, 0.04, 0.04), h.albedo, h.metallic);
+	const float3 diffAlbedo = h.albedo * (1.0 - h.metallic);
+	const float wDiff = dot(diffAlbedo, float3(0.2126, 0.7152, 0.0722));
+	const float wSpec = dot(f0, float3(0.2126, 0.7152, 0.0722));
+	float pSpec = clamp(wSpec / max(wDiff + wSpec, 1e-4), 0.1, 0.9);
+	const float pDiff = 1.0 - pSpec;
+	const float a = h.roughness * h.roughness;
+	const float3 H = normalize(V + L);
+	const float NoH = saturate(dot(h.N, H));
+	const float VoH = saturate(dot(V, H));
+	const float pdfDiff = NoL * INV_PI;
+	const float pdfSpec = (VoH > 0.0) ? (D_GGX(NoH, a) * NoH / (4.0 * VoH)) : 0.0;
+	return pDiff * pdfDiff + pSpec * pdfSpec;
+}
+
+// Solid-angle pdf of the environment sampler (cosine-hemisphere about the shading normal): NoL / PI.
+float EnvPdf(float3 N, float3 L)
+{
+	return max(dot(N, L), 0.0) * INV_PI;
+}
+
+float3 SampleCosineHemisphere(float3 n, float u1, float u2)
+{
+	const float r = sqrt(u1);
+	const float phi = 2.0 * PI * u2;
+	const float3 local = float3(r * cos(phi), r * sin(phi), sqrt(max(0.0, 1.0 - u1)));
+	return normalize(ToWorld(local, n));
+}
+
+// Importance-sample the BSDF: pick diffuse or specular lobe, return the new direction, the throughput weight
+// = brdf * NoL / pdf, and the solid-angle pdf (for env-NEE MIS on the next miss). Returns false to terminate.
+bool SampleBsdf(Hit h, float3 V, inout Rng rng, out float3 L, out float3 weight, out float pdf)
+{
+	pdf = 0.0;
 	L = float3(0.0, 0.0, 0.0);
 	weight = float3(0.0, 0.0, 0.0);
 	const float NoV = dot(h.N, V);
@@ -453,16 +499,12 @@ bool SampleBsdf(Hit h, float3 V, inout Rng rng, out float3 L, out float3 weight)
 	// One-sample MIS (balance heuristic) across the two lobes: L may have come from either, so weight the FULL
 	// BSDF by the MIXTURE pdf p(L) = pDiff * pdf_diffuse(L) + pSpec * pdf_specular(L). Dividing by only the
 	// sampled lobe's pdf (the previous version) over-weighted and produced fireflies.
-	const float3 H = normalize(V + L);
-	const float NoH = saturate(dot(h.N, H));
-	const float VoH = saturate(dot(V, H));
-	const float pdfDiff = NoL * INV_PI;
-	const float pdfSpec = (VoH > 0.0) ? (D_GGX(NoH, a) * NoH / (4.0 * VoH)) : 0.0;
-	const float mixPdf = pDiff * pdfDiff + pSpec * pdfSpec;
+	const float mixPdf = BsdfPdf(h, V, L);
 	if (mixPdf <= 1e-8)
 	{
 		return false;
 	}
+	pdf = mixPdf;
 	weight = EvalBsdf(h, V, L) / mixPdf;
 	// Path regularization: bound the per-bounce throughput multiplier so a grazing/low-pdf near-mirror bounce
 	// can't concentrate weight into a fixed hot pixel that never converges. 0 = off (unbiased). Preserves
@@ -506,6 +548,10 @@ void main(uint3 id : SV_DispatchThreadID)
 
 		float3 radiance = float3(0, 0, 0);
 		float3 throughput = float3(1, 1, 1);
+		// For environment-NEE MIS: the pdf + shading normal of the previous BSDF-sampled continuation, so a sky
+		// hit can be weighted against the env-sampling strategy. -1 = no previous BSDF sample (primary ray).
+		float lastBsdfPdf = -1.0;
+		float3 lastNs = float3(0, 0, 0);
 
 		for (uint bounce = 0; bounce < bounces; ++bounce)
 		{
@@ -513,7 +559,17 @@ void main(uint3 id : SV_DispatchThreadID)
 			if (!TraceClosest(origin, dir, 1e30, tableAddr, instId, prim, bary, tHit))
 			{
 				// Miss: analytic sky WITHOUT the sun disk (the sun is NEE'd). This is the environment light.
-				radiance += throughput * EvaluateSky(dir, SkyZenithColor, SkyHorizonColor, GroundColor, float3(0, 0, 0), float3(0, 0, 0));
+				const float3 skyR = EvaluateSky(dir, SkyZenithColor, SkyHorizonColor, GroundColor, float3(0, 0, 0), float3(0, 0, 0));
+				// MIS: if env-NEE is on and this ray came from a BSDF sample, the env-sampling strategy could also
+				// have picked this direction, so weight the BSDF-strategy sky by the balance heuristic (the env-NEE
+				// site added the complementary weight). Primary-ray miss keeps full weight (no competing strategy).
+				float wB = 1.0;
+				if (EnvNee != 0u && lastBsdfPdf >= 0.0)
+				{
+					const float pEnv = EnvPdf(lastNs, dir);
+					wB = lastBsdfPdf / max(lastBsdfPdf + pEnv, 1e-8);
+				}
+				radiance += throughput * skyR * wB;
 				break;
 			}
 
@@ -610,10 +666,30 @@ void main(uint3 id : SV_DispatchThreadID)
 				radiance += throughput * EvalBsdf(h, V, L) * s1.xyz * s1.w * atten * vis * TerminatorG(h.Ng, h.N, L);
 			}
 
+			// Environment (sky) NEE with MIS. Sample a cosine-hemisphere direction about the shading normal,
+			// evaluate the analytic sky, shadow-ray for visibility, and weight against BSDF sampling by the balance
+			// heuristic. Cuts sky-lit variance (esp. on glossy) vs relying only on the continuation ray happening to
+			// point at bright unoccluded sky. Unbiased: the BSDF-continuation sky hit on miss is down-weighted by
+			// the complementary weight, so the two strategies partition the sky contribution (wA + wB = 1).
+			if (EnvNee != 0u)
+			{
+				const float3 Lenv = SampleCosineHemisphere(h.N, NextFloat(rng), NextFloat(rng));
+				const float pEnv = EnvPdf(h.N, Lenv);
+				if (pEnv > 1e-6)
+				{
+					const float pB = BsdfPdf(h, V, Lenv);
+					const float wA = pEnv / max(pEnv + pB, 1e-8);
+					const float vis = RTShadow(h.pos, h.Ng, Lenv, 1e30, tableAddr);
+					const float3 skyR = EvaluateSky(Lenv, SkyZenithColor, SkyHorizonColor, GroundColor, float3(0, 0, 0), float3(0, 0, 0));
+					radiance += throughput * (EvalBsdf(h, V, Lenv) / pEnv) * skyR * vis * wA;
+				}
+			}
+
 			// BSDF-sampled continuation (indirect: GI / reflections / AO all emerge here).
 			float3 newDir;
 			float3 weight;
-			if (!SampleBsdf(h, V, rng, newDir, weight))
+			float bsdfPdf;
+			if (!SampleBsdf(h, V, rng, newDir, weight, bsdfPdf))
 			{
 				break;
 			}
@@ -630,6 +706,8 @@ void main(uint3 id : SV_DispatchThreadID)
 				throughput /= p;
 			}
 
+			lastBsdfPdf = bsdfPdf; // for the next iteration's env-NEE MIS on a sky miss
+			lastNs = h.N;
 			origin = OffsetRay(h.pos, h.Ng); // scale-aware offset (no self-intersection on large scenes)
 			dir = newDir;
 		}

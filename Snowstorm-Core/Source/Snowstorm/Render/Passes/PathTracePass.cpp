@@ -51,6 +51,11 @@ namespace Snowstorm
 			uint32_t PointCount = 0;
 			uint32_t SpotCount = 0;
 
+			uint32_t EnvNee = 1; // 1 = environment (sky) NEE + MIS
+			uint32_t _pad0 = 0;
+			uint32_t _pad1 = 0;
+			uint32_t _pad2 = 0;
+
 			// Raw-packed point/spot lights (mirror the float4 arrays in PathTrace.comp.hlsl exactly). Point:
 			// [2i] = pos.xyz,range; [2i+1] = color.xyz,intensity. Spot: [4i] = pos.xyz,range; [4i+1] =
 			// color.xyz,intensity; [4i+2] = dir.xyz,cosInner; [4i+3].x = cosOuter.
@@ -142,6 +147,7 @@ namespace Snowstorm
 		cb.MaxBounceWeight = pr.MaxBounceWeight;
 		cb.GroundColor = pr.GroundColor;
 		cb.FireflyClamp = pr.FireflyClamp;
+		cb.EnvNee = pr.EnvNee;
 		cb.ReflGeoTableAddrLo = static_cast<uint32_t>(pr.TableAddress & 0xFFFFFFFFull);
 		cb.ReflGeoTableAddrHi = static_cast<uint32_t>(pr.TableAddress >> 32);
 

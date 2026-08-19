@@ -733,6 +733,14 @@ namespace Snowstorm
 					{
 						ImGui::SetTooltip("Max per-bounce BSDF weight: bounds the indirect throughput spikes (near-mirror grazing bounces) that leave fixed hot pixels, without blurring reflections. Lower = cleaner but slightly biases indirect; 0 = off (unbiased ground truth).");
 					}
+					if (bool en = CVars::PathTraceEnvNee.Get(); ImGui::Checkbox("Environment NEE (MIS)##PT", &en))
+					{
+						CVars::PathTraceEnvNee.Set(en);
+					}
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::SetTooltip("Samples the sky directly (a shadow ray) and MIS-combines it with the BSDF continuation, converging sky-lit areas faster (especially glossy). Unbiased: the converged image is the same on or off. Toggling restarts accumulation.");
+					}
 					ImGui::EndDisabled();
 
 				} // Path Tracer

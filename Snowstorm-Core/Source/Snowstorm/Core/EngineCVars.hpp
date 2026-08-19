@@ -485,6 +485,11 @@ namespace Snowstorm::CVars
 	// regularization). Small bias on rare high-weight paths. 0 = off (unbiased ground truth); ~4-16 for a clean
 	// interactive preview. Set 0 for final reference captures.
 	extern CVar<float> PathTraceWeightClamp;
+	// Environment (sky) next-event estimation with MIS. On: each hit also samples the analytic sky directly (a
+	// shadow ray) and MIS-combines it with the BSDF-continuation sky hit, cutting sky-lit variance (esp. glossy).
+	// Off: sky arrives only via continuation rays (the pre-NEE integrator, bit-identical). Unbiased either way;
+	// the converged image is the same, only convergence speed differs. Mostly a dev/A-B knob.
+	extern CVar<bool> PathTraceEnvNee;
 	// True when the reference path tracer should run (render.pathtrace on AND an RT-capable device). Gates the
 	// PT pass AND the skip of the normal scene path (forward/G-buffer/upscale/temporal) so PT owns the frame.
 	[[nodiscard]] bool PathTraceActive();
