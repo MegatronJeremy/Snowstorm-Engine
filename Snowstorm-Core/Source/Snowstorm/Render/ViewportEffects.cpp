@@ -22,7 +22,9 @@
 #include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Render/Passes/FxaaPass.hpp"
 #include "Snowstorm/Render/Passes/AOPass.hpp"
-#include "Snowstorm/Render/Denoiser.hpp" // #132: shared SVGF processor (owns the GITemporal/GIDenoise passes)
+#include "Snowstorm/Render/Passes/SSAOPass.hpp"     // #151: screen-space AO trace
+#include "Snowstorm/Render/Passes/SSAOBlurPass.hpp" // #151: SSAO depth+normal bilateral blur
+#include "Snowstorm/Render/Denoiser.hpp"            // #132: shared SVGF processor (owns the GITemporal/GIDenoise passes)
 #include "Snowstorm/Render/Passes/GIPass.hpp"
 #include "Snowstorm/Render/Passes/ReflectionPass.hpp"
 #include "Snowstorm/Render/Passes/AOUpsamplePass.hpp"
@@ -342,6 +344,92 @@ namespace Snowstorm
 			GIUpsamplePass m_Pass; // owned here: exclusive to this effect
 		};
 
+		// Screen-space AO technique (#151), the raster baseline the thesis compares RT AO against. Runs only in
+		// render.ao.mode == SSAO. Reads the SAME depth+normal G-buffer as the RT path and writes the SAME half-res
+		// AOTarget, then a depth+normal bilateral blur into AOBlurTarget (v.AOView) — so the shared bilateral
+		// upsample + forward consumption downstream are agnostic to which technique produced the AO. NO temporal /
+		// SVGF: SSAO uses a frame-static kernel + this spatial blur, so it's stable without a velocity pass. Debug
+		// view 2 shows the raw AOTarget (the un-blurred trace), same as RT.
+		class SSAOEffect final : public IViewportEffect
+		{
+		public:
+			explicit SSAOEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "SSAO"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::AoSSAOActive() && v.RT.AOTarget && v.RT.AOTargetView &&
+				       v.RT.AOBlurTarget && v.RT.AOBlurTargetView;
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+
+				const auto& gbufDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const uint32_t fullW = gbufDesc.Width;
+				const uint32_t fullH = gbufDesc.Height;
+				const float scale = CVars::ClampedAOScale();
+				const uint32_t aoW = ScaledExtent(fullW, scale);
+				const uint32_t aoH = ScaledExtent(fullH, scale);
+
+				const Ref<TextureView> gbufView = gbufDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbufDesc.DepthAttachment->View; // fp32 D32 depth
+				const Ref<TextureView> aoView = v.RT.AOTargetView;                 // raw SSAO trace (debug view 2)
+				const Ref<TextureView> blurView = v.RT.AOBlurTargetView;           // bilateral-blurred result (v.AOView)
+
+				// Reconstruct from / project with THIS frame's jittered camera VP — the matrix the jittered
+				// DepthNormal prepass wrote the depth with. GetFrameData().ViewProjection at graph-build time still
+				// holds the PREVIOUS frame's forward matrix (BeginScene runs at execute, after this), which would
+				// mismatch this frame's depth and warp reconstructed positions. Same fix as the RT AO/GI/reflection
+				// effects (#133 follow-up).
+				const glm::mat4 viewProj = v.Cam.Rt->JitteredViewProjection;
+				const glm::mat4 invViewProj = glm::inverse(viewProj);
+				const float radius = CVars::AORadius.Get();
+				const float intensity = CVars::AOIntensity.Get();
+				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
+				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+				const float bias = 0.025f; // view-depth self-occlusion bias (world units); fixed baseline
+				const float depthSigma = CVars::DepthEdgeSigma.Get();
+
+				// Trace: reads the G-buffer + depth (Sampled), writes the raw AO (Storage).
+				fc.Graph.AddPass({.Name = "SSAO" + v.Suffix,
+				                  .IsCompute = true,
+				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Writes = {{aoView->GetTexture(), RenderGraph::AccessState::Storage}},
+				                  .Execute = [this, &fc, invViewProj, viewProj, radius, intensity, nearPlane, farPlane, bias, gbufView, depthView, aoView, aoW, aoH](CommandContext& c)
+				                  {
+					                  m_Trace.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, viewProj, radius, intensity,
+					                                   nearPlane, farPlane, bias, gbufView, depthView, aoView, aoW, aoH);
+				                  }});
+
+				// Bilateral blur: reads the raw AO + G-buffer guide (Sampled), writes the blurred AO (Storage).
+				fc.Graph.AddPass({.Name = "SSAOBlur" + v.Suffix,
+				                  .IsCompute = true,
+				                  .Reads = {{aoView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Writes = {{blurView->GetTexture(), RenderGraph::AccessState::Storage}},
+				                  .Execute = [this, &fc, aoView, gbufView, depthView, blurView, aoW, aoH, nearPlane, farPlane, depthSigma](CommandContext& c)
+				                  {
+					                  m_Blur.Dispatch(fc.Ctx, fc.FrameIndex, aoView, gbufView, depthView, blurView, aoW, aoH,
+					                                  nearPlane, farPlane, depthSigma);
+				                  }});
+
+				v.AOView = blurView; // the blurred buffer is the live AO the shared upsample reads
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			SSAOPass m_Trace;    // owned here: the SSAO trace is exclusive to this effect
+			SSAOBlurPass m_Blur; // owned here: the SSAO bilateral blur is exclusive to this effect
+		};
+
 		// Half-res RT AO compute pass (#126), the AO analogue of GIEffect. Occupancy-only (no sun/IBL shading),
 		// but it reads the per-instance geometry table to alpha-test cutout occluders in the any-hit path, so
 		// foliage doesn't over-occlude through transparent texels. Traces the occlusion hemisphere at
@@ -522,7 +610,9 @@ namespace Snowstorm
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				return v.GBufferNeeded && CVars::AoRTActive() && v.RT.AOTarget && v.AOView &&
+				// AoActive(): the shared upsample serves BOTH techniques (SSAO or RT) — v.AOView is whatever the
+				// active AO sub-chain last wrote (SSAO's blur, or the RT trace/temporal/denoise), #151.
+				return v.GBufferNeeded && CVars::AoActive() && v.RT.AOTarget && v.AOView &&
 				       v.RT.AOUpscaleTarget && !v.RT.AOUpscaleTarget->GetDesc().ColorAttachments.empty();
 			}
 
@@ -829,9 +919,10 @@ namespace Snowstorm
 				}
 
 				// Half-res AO consumption (#126): mirror of the GI index above. 0 = no AO -> ao factor unchanged.
-				// Independent of GI (AO can run with GI off), needs no geometry table.
+				// AoActive() so BOTH SSAO and RT AO feed the same forward slot (#151). Independent of GI (AO can run
+				// with GI off), needs no geometry table.
 				uint32_t aoIndex = 0;
-				if (v.GBufferNeeded && CVars::AoRTActive() && v.RT.AOUpscaleTarget &&
+				if (v.GBufferNeeded && CVars::AoActive() && v.RT.AOUpscaleTarget &&
 				    !v.RT.AOUpscaleTarget->GetDesc().ColorAttachments.empty())
 				{
 					aoIndex = v.RT.AOUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
@@ -1437,6 +1528,7 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<GITemporalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<GIDenoiseEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<GIUpsampleEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<SSAOEffect>(*this)); // #151: SSAO (mode 1); RT AO chain below is mode 2
 		m_ViewportEffects.push_back(CreateScope<AOEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<AOTemporalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<AODenoiseEffect>(*this));

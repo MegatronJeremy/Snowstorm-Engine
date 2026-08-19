@@ -84,6 +84,12 @@ namespace Snowstorm
 		Ref<Texture> AOTarget;
 		Ref<TextureView> AOTargetView;
 
+		// Half-res SSAO blur output (#151): the SSAO technique's depth+normal bilateral blur writes AOTarget ->
+		// this, and the shared bilateral upsample reads it (v.AOView). Same Sampled|Storage RGBA16F half-res
+		// shape as AOTarget (CreateAOTarget). Used only by SSAO; the RT path routes through AODenoiser instead.
+		Ref<Texture> AOBlurTarget;
+		Ref<TextureView> AOBlurTargetView;
+
 		// Half-res AO SVGF denoiser state (#130): the third DenoiserInstance (after GI/reflections, #132) —
 		// history + moments + à-trous scratch ping-pongs + history-valid flag. Half-res (render.ao.scale, tracks
 		// AOTarget). The occlusion factor rides .r/.rgb (grey), so the shared color-path denoiser treats it as a

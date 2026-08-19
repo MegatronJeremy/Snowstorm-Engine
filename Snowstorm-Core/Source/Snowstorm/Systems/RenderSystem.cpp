@@ -374,7 +374,7 @@ namespace Snowstorm
 		// additionally check their own gates. Reflections need it because ReflectionPass reconstructs each
 		// pixel's world position + normal from the G-buffer (like GI), so reflections-only must still prepass.
 		const bool giActive = CVars::GIRTActive();
-		const bool aoActive = CVars::AoRTActive();
+		const bool aoActive = CVars::AoActive(); // SSAO or RT AO — both need the depth+normal prepass + debug view 2 (#151)
 		const bool reflActive = CVars::ReflectionsRTActive();
 		const bool gbufferNeeded = (giActive || aoActive || reflActive || debugView == 5 || debugView == 6 || debugView == 7 || debugView == 2 || debugView == 3) &&
 		                           vpRT.GBufferNormalTarget && !vpRT.GBufferNormalTarget->GetDesc().ColorAttachments.empty() &&

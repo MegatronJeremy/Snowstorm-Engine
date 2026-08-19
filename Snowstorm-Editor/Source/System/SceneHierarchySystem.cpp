@@ -374,28 +374,43 @@ namespace Snowstorm
 				if (ImGui::CollapsingHeader("Ambient Occlusion", ImGuiTreeNodeFlags_DefaultOpen))
 				{
 
-					// Ray-traced AO (#118): darkens the ambient term in crevices/contacts that IBL + analytic ambient
-					// miss. Only offered on an RT GPU (the shader's RTAO branch is compiled out otherwise). It traces a
-					// few rays/frame and relies on TAA to average them smooth, so the radius/intensity sliders are only
-					// enabled when RT AO is on.
+					// AO technique (#151): a mode CVar mirroring Shadows. Off / SSAO (screen-space hemisphere kernel +
+					// bilateral blur, any GPU) / Ray Traced (hemisphere occupancy rays, RT GPU only). Both write the
+					// same forward AO slot, so this combo IS the thesis A/B flip. Radius/Intensity/Resolution are shared;
+					// rays + the SVGF temporal/denoise controls are RT-only (SSAO uses a fixed kernel + its own blur).
 					{
 						const bool aoRtSupported = Renderer::IsRayTracingSupported();
-						ImGui::BeginDisabled(!aoRtSupported);
-						if (bool aoRt = CVars::AoRT.Get(); ImGui::Checkbox("Ray-traced (RT)##AO", &aoRt))
+						int mode = CVars::AoMode.Get();
+						if (mode < 0 || mode > 2)
 						{
-							CVars::AoRT.Set(aoRt);
+							mode = 0;
 						}
-						ImGui::EndDisabled();
+						{
+							const char* modeLabels[] = {"Off", "SSAO", "Ray Traced"};
+							const int modeCount = aoRtSupported ? 3 : 2; // hide Ray Traced when the device can't do it
+							if (ImGui::Combo("Technique##AO", &mode, modeLabels, modeCount))
+							{
+								CVars::AoMode.Set(mode);
+							}
+						}
+						const bool ssaoMode = (mode == 1);
+						const bool rtMode = (mode == 2);
+						const bool anyMode = (mode != 0);
 						if (!aoRtSupported)
 						{
-							ImGui::TextDisabled("(requires an RT-capable GPU)");
+							ImGui::TextDisabled("(Ray Traced requires an RT-capable GPU)");
 						}
-						else
+						else if (rtMode)
 						{
-							ImGui::TextDisabled("(needs TAA for a clean result)");
+							ImGui::TextDisabled("(RT needs TAA for a clean result)");
+						}
+						else if (ssaoMode)
+						{
+							ImGui::TextDisabled("(SSAO: screen-space, temporally stable on its own)");
 						}
 
-						ImGui::BeginDisabled(!CVars::AoRT.Get());
+						// Shared by both techniques: occlusion distance, strength, internal trace resolution.
+						ImGui::BeginDisabled(!anyMode);
 						if (float aoRadius = CVars::AORadius.Get(); ImGui::SliderFloat("Radius##AO", &aoRadius, 0.05f, 3.0f, "%.2f m", ImGuiSliderFlags_AlwaysClamp))
 						{
 							CVars::AORadius.Set(aoRadius);
@@ -404,18 +419,23 @@ namespace Snowstorm
 						{
 							CVars::AOIntensity.Set(aoIntensity);
 						}
-						// Rays/pixel/frame: more = less noise (esp. under motion, where temporal reuse weakens), ~linear cost.
-						if (int aoRays = CVars::AORayCount.Get(); ImGui::SliderInt("Rays/pixel##AO", &aoRays, 1, 16, "%d", ImGuiSliderFlags_AlwaysClamp))
-						{
-							CVars::AORayCount.Set(aoRays);
-						}
-						// Internal resolution (#126): AO traces at this fraction of viewport res, then a bilateral upsample
-						// restores full res — mirrors the GI Resolution slider. 0.5 = quarter the rays; 1.0 = full-res.
+						// Internal resolution (#126): AO runs at this fraction of viewport res, then a bilateral upsample
+						// restores full res — shared by SSAO + RT. 0.5 = quarter the pixels; 1.0 = full-res.
 						if (float aoScale = CVars::AOScale.Get(); ImGui::SliderFloat("Resolution##AO", &aoScale, 0.25f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
 						{
 							CVars::AOScale.Set(aoScale);
 						}
 						ImGui::TextDisabled("(0.5 = quarter-res trace + upsample; 1.0 = full-res)");
+						ImGui::EndDisabled();
+
+						// RT-only: rays/pixel + the SVGF temporal/denoise chain. SSAO uses a fixed 16-sample kernel and
+						// its own depth+normal bilateral blur, so these don't apply to it (#151).
+						ImGui::BeginDisabled(!rtMode);
+						// Rays/pixel/frame: more = less noise (esp. under motion, where temporal reuse weakens), ~linear cost.
+						if (int aoRays = CVars::AORayCount.Get(); ImGui::SliderInt("Rays/pixel##AO", &aoRays, 1, 16, "%d", ImGuiSliderFlags_AlwaysClamp))
+						{
+							CVars::AORayCount.Set(aoRays);
+						}
 
 						// AO SVGF denoiser (#130): temporal accumulation + edge-avoiding à-trous over the AO factor —
 						// the shared machinery GI/reflections use (#132). Mirrors the GI denoiser controls; sub-sliders

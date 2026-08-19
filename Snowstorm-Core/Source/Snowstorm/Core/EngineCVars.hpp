@@ -287,10 +287,13 @@ namespace Snowstorm::CVars
 	// is already cosine-convolved (different scale than the analytic hemisphere lerp); tune to taste.
 	extern CVar<float> IBLIntensity;
 
-	// Ray-traced ambient occlusion (#118): trace hemisphere occlusion rays inline in DefaultLit and darken
-	// the ambient term. Prefer AoRTActive() over reading AoRT directly. Needs TAA for a clean result (few
-	// rays/frame, temporally accumulated). AORadius = occlusion distance (world units); AOIntensity = strength.
-	extern CVar<bool> AoRT;
+	// Ambient-occlusion technique (#151), a mode CVar (mirrors render.shadows.mode) for a clean thesis A/B:
+	// 0 = Off, 1 = SSAO (screen-space, any GPU), 2 = RT (hardware ray query, RT GPU only). Both techniques
+	// write the SAME half-res AOTarget the forward pass samples, so the forward shader is agnostic to which
+	// produced it. Prefer the AoActive()/AoSSAOActive()/AoRTActive() helpers over reading the int directly.
+	// Replaces the old render.ao.rt bool (#118). AORadius = occlusion distance (world units); AOIntensity =
+	// strength; AOScale = internal resolution — all shared by both techniques.
+	extern CVar<int> AoMode;
 	extern CVar<float> AORadius;
 	extern CVar<float> AOIntensity;
 	// RTAO rays per pixel per frame (was the compile-time AO_RAY_COUNT). More rays = less per-frame noise
@@ -305,9 +308,18 @@ namespace Snowstorm::CVars
 	// render.ao.scale clamped to [0.25, 1.0]. Use everywhere the value is consumed.
 	[[nodiscard]] float ClampedAOScale();
 
-	// True when RTAO should run (render.ao.rt on AND the device supports RT). Drives the AO compute pass gate
-	// + the TLAS build gate. False on a non-RT GPU. (Post-#126 AO no longer traces in the forward shader.)
+	// True when SSAO should run (render.ao.mode == 1). Screen-space, no RT device needed. Drives the SSAO
+	// compute+blur passes; NOT the RT temporal/denoise/TLAS gates (SSAO has its own bilateral blur, #151).
+	[[nodiscard]] bool AoSSAOActive();
+
+	// True when RTAO should run (render.ao.mode == 2 AND the device supports RT). Drives the RT AO compute
+	// pass + its SVGF temporal/denoise + the TLAS build gate. False on a non-RT GPU (mode 2 degrades to Off).
+	// (Post-#126 AO no longer traces in the forward shader.)
 	[[nodiscard]] bool AoRTActive();
+
+	// True when EITHER AO technique is live (SSAO or RT). The gate the shared tail (bilateral upsample +
+	// forward AO consumption + the G-buffer prepass) uses, so both techniques reach the same forward slot (#151).
+	[[nodiscard]] bool AoActive();
 
 	// RTAO temporal accumulation (#130): reproject the previous accumulated AO factor by the motion vectors
 	// and blend with this frame's few-ray trace (depth-disocclusion reject) — reuses the shared SVGF temporal

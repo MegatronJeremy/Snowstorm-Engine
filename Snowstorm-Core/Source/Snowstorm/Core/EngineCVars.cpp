@@ -127,7 +127,7 @@ namespace Snowstorm::CVars
 
 	CVar<float> IBLIntensity{"render.ibl.intensity", 0.75f, "Multiplier on the IBL ambient contribution", CVarFlags::Persist};
 
-	CVar<bool> AoRT{"render.ao.rt", false, "Ray-traced ambient occlusion (#118): trace hemisphere occlusion rays inline in DefaultLit and darken the ambient term. Requires an RT GPU (ignored otherwise). Few rays/frame + per-frame rotation — needs TAA (render.aa = TAA) for a clean result; noisy without it.", CVarFlags::Persist};
+	CVar<int> AoMode{"render.ao.mode", 0, "Ambient-occlusion technique (#151): 0 = Off, 1 = SSAO (screen-space hemisphere kernel + bilateral blur, any GPU), 2 = RT (hardware ray query, requires an RT GPU; falls back to Off on a non-RT device). Both write the same forward AO slot for a clean same-scene A/B. Replaces the old render.ao.rt bool (#118). RT mode traces a few rays/frame and needs TAA (render.aa = TAA) for a clean result; SSAO is temporally stable on its own.", CVarFlags::Persist};
 
 	CVar<float> AORadius{"render.ao.radius", 0.5f, "RTAO occlusion sample distance in world units (larger = broader, softer occlusion)", CVarFlags::Persist};
 
@@ -401,12 +401,25 @@ namespace Snowstorm::CVars
 		return ShadowsMode.Get() == 2 && Renderer::IsRayTracingSupported();
 	}
 
+	bool AoSSAOActive()
+	{
+		// render.ao.mode == SSAO. Screen-space, so no device-support check — runs on any GPU (#151).
+		return AoMode.Get() == 1;
+	}
+
 	bool AoRTActive()
 	{
-		// render.ao.rt on AND an RT-capable device (where the SS_RAYTRACING permutation exists). Mirrors
+		// render.ao.mode == RT AND an RT-capable device (where the SS_RAYTRACING permutation exists). Mirrors
 		// ShadowsRTActive: on a non-RT GPU the RTAO shader branch is compiled out, so this stays false and
-		// RTAO is a no-op. Also drives the TLAS build gate (TlasBuildSystem).
-		return AoRT.Get() && Renderer::IsRayTracingSupported();
+		// mode 2 degrades to Off. Also drives the TLAS build gate (TlasBuildSystem) + the RT SVGF chain.
+		return AoMode.Get() == 2 && Renderer::IsRayTracingSupported();
+	}
+
+	bool AoActive()
+	{
+		// Either technique is live. The shared tail (bilateral upsample + forward AO consumption + the
+		// depth+normal prepass) gates on this so SSAO and RT AO converge on the same forward slot (#151).
+		return AoSSAOActive() || AoRTActive();
 	}
 
 	bool ReflectionsRTActive()

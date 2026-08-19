@@ -124,7 +124,7 @@ namespace Snowstorm
 			if (!rtc.Target || !rtc.PresentTarget || !rtc.AAIntermediateTarget || !rtc.SceneUpscaleTarget ||
 			    !rtc.GroundTruthTarget || !rtc.GroundTruthPresentTarget || !rtc.VelocityTarget ||
 			    !rtc.GBufferNormalTarget || !rtc.GITarget || !rtc.GIUpscaleTarget ||
-			    !rtc.AOTarget || !rtc.AOUpscaleTarget ||
+			    !rtc.AOTarget || !rtc.AOBlurTarget || !rtc.AOUpscaleTarget ||
 			    !rtc.HistoryTarget[0] || !rtc.HistoryTarget[1])
 			{
 				needsCreate = true;
@@ -163,6 +163,8 @@ namespace Snowstorm
 				wRtc.GIUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale"); // full-res GI (#124)
 				wRtc.AOTarget = CreateAOTarget(aoW, aoH, "Viewport");                       // half-res AO (#126)
 				wRtc.AOTargetView = wRtc.AOTarget->GetDefaultView();
+				wRtc.AOBlurTarget = CreateAOTarget(aoW, aoH, "ViewportAOBlur"); // SSAO bilateral blur output (#151)
+				wRtc.AOBlurTargetView = wRtc.AOBlurTarget->GetDefaultView();
 				AllocateDenoiser(wRtc.AODenoiser, aoW, aoH, "ViewportAO");                  // AO SVGF denoiser buffers (#130)
 				wRtc.AOUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportAOUpscale"); // full-res AO (#126)
 				wRtc.ReflectionTarget = CreateGITarget(w, h, "ViewportReflection");         // full-res RT reflection (#129)

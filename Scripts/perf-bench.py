@@ -37,11 +37,11 @@ from pathlib import Path
 # Env names follow the CVar->env mapping (dots->_, SS_ prefix). All use TAA (render.aa=2) since the
 # RT effects need it for a clean result and that's the realistic configuration.
 CONFIGS = [
-    ("rt-off",   {"SS_RENDER_SHADOWS_MODE": "1", "SS_RENDER_AO_RT": "0", "SS_RENDER_REFLECTIONS_RT": "0", "SS_RENDER_GI_RT": "0"}),
-    ("shadows",  {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_RT": "0", "SS_RENDER_REFLECTIONS_RT": "0", "SS_RENDER_GI_RT": "0"}),
-    ("+ao",      {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_RT": "1", "SS_RENDER_REFLECTIONS_RT": "0", "SS_RENDER_GI_RT": "0"}),
-    ("+refl",    {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_RT": "1", "SS_RENDER_REFLECTIONS_RT": "1", "SS_RENDER_GI_RT": "0"}),
-    ("+gi",      {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_RT": "1", "SS_RENDER_REFLECTIONS_RT": "1", "SS_RENDER_GI_RT": "1"}),
+    ("rt-off",   {"SS_RENDER_SHADOWS_MODE": "1", "SS_RENDER_AO_MODE": "0", "SS_RENDER_REFLECTIONS_RT": "0", "SS_RENDER_GI_RT": "0"}),
+    ("shadows",  {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "0", "SS_RENDER_REFLECTIONS_RT": "0", "SS_RENDER_GI_RT": "0"}),
+    ("+ao",      {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2", "SS_RENDER_REFLECTIONS_RT": "0", "SS_RENDER_GI_RT": "0"}),
+    ("+refl",    {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2", "SS_RENDER_REFLECTIONS_RT": "1", "SS_RENDER_GI_RT": "0"}),
+    ("+gi",      {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2", "SS_RENDER_REFLECTIONS_RT": "1", "SS_RENDER_GI_RT": "1"}),
 ]
 
 DEFAULT_SCENE = "Projects/Sandbox/assets/scenes/Sponza.world"

@@ -114,7 +114,7 @@ namespace Snowstorm
 				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget ||
 				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget || !rt.VelocityTarget ||
 				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIDenoiser.Allocated() || !rt.GIUpscaleTarget ||
-				                     !rt.AOTarget || !rt.AODenoiser.Allocated() || !rt.AOUpscaleTarget ||
+				                     !rt.AOTarget || !rt.AOBlurTarget || !rt.AODenoiser.Allocated() || !rt.AOUpscaleTarget ||
 				                     !rt.ReflectionTarget || !rt.ReflectionDenoiser.Allocated() ||
 				                     !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
 				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Compare each
@@ -179,6 +179,10 @@ namespace Snowstorm
 					// when AO is active. Rebuilt on viewport OR ao.scale change. Independent of GI.
 					rtW.AOTarget = CreateAOTarget(aoW, aoH, "Viewport");
 					rtW.AOTargetView = rtW.AOTarget->GetDefaultView();
+					// SSAO blur output (#151): same half-res shape as AOTarget; the SSAO bilateral blur writes it and
+					// the shared upsample reads it. Always allocated (negligible); only written when SSAO is active.
+					rtW.AOBlurTarget = CreateAOTarget(aoW, aoH, "ViewportAOBlur");
+					rtW.AOBlurTargetView = rtW.AOBlurTarget->GetDefaultView();
 					// AO SVGF denoiser buffers (#130): half-res, rebuilt on viewport OR ao.scale change (tracks AOTarget).
 					AllocateDenoiser(rtW.AODenoiser, aoW, aoH, "ViewportAO");
 					// Full-res AO target (#126): the bilateral upsample renders the half-res AO into this; the
