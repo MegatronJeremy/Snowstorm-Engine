@@ -357,7 +357,10 @@ namespace Snowstorm
 		const bool exporting = CVars::DatasetExport.Get() && comparing;
 		// GI (#125), reflection (#129), and AO (#130) temporal accumulation reproject by motion vectors, so any
 		// forces the velocity pass on whenever its effect runs (mirrors VelocityEffect::ShouldRun so flag + pass agree).
+		// SSR (#151) ALWAYS needs velocity (it reprojects the previous-frame color at the hit), not just when a
+		// temporal stage is on — so it forces the pass on whenever SSR is active, separately from the RT-temporal ORs.
 		const bool giTemporal = (CVars::GIRTActive() && CVars::GITemporalActive()) ||
+		                        CVars::ReflectionsSSRActive() ||
 		                        (CVars::ReflectionsRTActive() && CVars::ReflectionTemporalActive()) ||
 		                        (CVars::AoRTActive() && CVars::AOTemporalActive());
 		// velocityNeeded is cached on the context because several effects branch on it: VelocityEffect (whether
@@ -374,8 +377,8 @@ namespace Snowstorm
 		// additionally check their own gates. Reflections need it because ReflectionPass reconstructs each
 		// pixel's world position + normal from the G-buffer (like GI), so reflections-only must still prepass.
 		const bool giActive = CVars::GIRTActive();
-		const bool aoActive = CVars::AoActive(); // SSAO or RT AO — both need the depth+normal prepass + debug view 2 (#151)
-		const bool reflActive = CVars::ReflectionsRTActive();
+		const bool aoActive = CVars::AoActive();            // SSAO or RT AO — both need the depth+normal prepass + debug view 2 (#151)
+		const bool reflActive = CVars::ReflectionsActive(); // SSR or RT reflections — both need the depth+normal prepass (#151)
 		const bool gbufferNeeded = (giActive || aoActive || reflActive || debugView == 5 || debugView == 6 || debugView == 7 || debugView == 2 || debugView == 3) &&
 		                           vpRT.GBufferNormalTarget && !vpRT.GBufferNormalTarget->GetDesc().ColorAttachments.empty() &&
 		                           vpRT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;

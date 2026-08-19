@@ -149,7 +149,7 @@ namespace Snowstorm::CVars
 
 	CVar<float> AODenoiseHitDist{"render.ao.denoise.hitdist", 0.0f, "RTAO hit-distance edge-stop phi (#130 Inc B, NRD REBLUR-style): weights à-trous taps by |Δ normalized hit distance| so a near contact-shadow gradient isn't blurred into distant AO. DEFAULT 0 (OFF): the hit distance rides the RAW few-ray trace's .a, which is far too noisy between neighbours at ~2 rays/pixel — a non-zero phi then rejects every tap and the à-trous becomes a no-op. Only useful once the hit distance is temporally accumulated / denoised (see follow-up). ~4-16 once a clean hitT exists.", CVarFlags::Persist};
 
-	CVar<bool> ReflectionsRT{"render.reflections.rt", false, "Ray-traced reflections (#118): trace a reflection ray inline in DefaultLit, shade the reflected hit (albedo + sun + ambient), and blend it into the specular term for smooth surfaces. Requires an RT GPU (ignored otherwise). One ray/pixel — needs TAA (render.aa = TAA) for a clean result.", CVarFlags::Persist};
+	CVar<int> ReflectionsMode{"render.reflections.mode", 0, "Reflection technique (#151): 0 = Off, 1 = SSR (screen-space depth-buffer ray march reflecting the previous frame's color, any GPU), 2 = RT (hardware ray query that re-shades the hit, requires an RT GPU; falls back to Off on a non-RT device). Both write the same forward reflection slot for a clean same-scene A/B. Replaces the old render.reflections.rt bool (#118). Needs TAA (render.aa = TAA) for a clean result either way.", CVarFlags::Persist};
 
 	CVar<float> ReflectionIntensity{"render.reflections.intensity", 1.0f, "Multiplier on the RT reflection contribution (1 = physical, 0 = none)", CVarFlags::Persist};
 
@@ -422,12 +422,25 @@ namespace Snowstorm::CVars
 		return AoSSAOActive() || AoRTActive();
 	}
 
+	bool ReflectionsSSRActive()
+	{
+		// render.reflections.mode == SSR. Screen-space, so no device-support check — runs on any GPU (#151).
+		return ReflectionsMode.Get() == 1;
+	}
+
 	bool ReflectionsRTActive()
 	{
-		// render.reflections.rt on AND an RT-capable device. Mirrors AoRTActive; on a non-RT GPU the
-		// reflection shader branch is compiled out so this stays false. Drives the TLAS build gate AND the
-		// per-instance geometry-table build (both only needed when reflections actually trace).
-		return ReflectionsRT.Get() && Renderer::IsRayTracingSupported();
+		// render.reflections.mode == RT AND an RT-capable device. Mirrors AoRTActive; on a non-RT GPU the
+		// reflection shader branch is compiled out so this stays false (mode 2 degrades to Off). Drives the TLAS
+		// build gate AND the per-instance geometry-table build (both only needed when reflections actually trace).
+		return ReflectionsMode.Get() == 2 && Renderer::IsRayTracingSupported();
+	}
+
+	bool ReflectionsActive()
+	{
+		// Either technique is live. The shared tail (reflection temporal + denoise + forward consumption + the
+		// depth+normal prepass) gates on this so SSR and RT converge on the same forward slot (#151).
+		return ReflectionsSSRActive() || ReflectionsRTActive();
 	}
 
 	bool ReflectionTemporalActive()

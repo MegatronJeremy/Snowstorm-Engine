@@ -346,11 +346,14 @@ namespace Snowstorm::CVars
 	// pass 0 => the term is a no-op, keeping the shared à-trous bit-identical for them).
 	extern CVar<float> AODenoiseHitDist;
 
-	// Ray-traced reflections (#118): trace a reflection ray inline in DefaultLit, shade the reflected hit,
-	// blend into the specular term for smooth surfaces. Prefer ReflectionsRTActive() over reading the bool.
-	// ReflectionIntensity scales the contribution; ReflectionMaxRoughness is the roughness cutoff (smoother
-	// = RT, rougher = the cheap prefiltered cube).
-	extern CVar<bool> ReflectionsRT;
+	// Reflection technique (#151), a mode CVar (mirrors render.ao.mode / render.shadows.mode) for a clean
+	// thesis A/B: 0 = Off, 1 = SSR (screen-space depth-buffer march, any GPU), 2 = RT (hardware ray query, RT
+	// GPU only). Both write the SAME forward reflection slot (ReflectionTarget), so DefaultLit is agnostic to
+	// which produced it. Prefer the ReflectionsActive()/ReflectionsSSRActive()/ReflectionsRTActive() helpers
+	// over reading the int. Replaces the old render.reflections.rt bool (#118). ReflectionIntensity scales the
+	// contribution; ReflectionMaxRoughness is the roughness cutoff (smoother = traced, rougher = the cube) —
+	// both shared by SSR and RT.
+	extern CVar<int> ReflectionsMode;
 	extern CVar<float> ReflectionIntensity;
 	extern CVar<float> ReflectionMaxRoughness;
 	extern CVar<float> ReflectionConeScale;
@@ -442,10 +445,19 @@ namespace Snowstorm::CVars
 	// Does NOT fold the GI-active/table gate — the callers already require GI to be running.
 	[[nodiscard]] bool GIDenoiseActive();
 
-	// True when RT reflections should run (render.reflections.rt on AND the device supports RT). Drives
+	// True when SSR should run (render.reflections.mode == 1). Screen-space, no RT device needed. Drives the
+	// SSR compute pass + the previous-frame color snapshot; NOT the TLAS / geometry-table / RTReflEnabled gates
+	// (SSR marches the depth buffer, #151).
+	[[nodiscard]] bool ReflectionsSSRActive();
+
+	// True when RT reflections should run (render.reflections.mode == 2 AND the device supports RT). Drives
 	// FrameCB.RTReflEnabled + the shader branch + the TLAS build gate + the geometry-table build. False on a
-	// non-RT GPU (reflection shader compiled out).
+	// non-RT GPU (mode 2 degrades to Off; reflection shader compiled out).
 	[[nodiscard]] bool ReflectionsRTActive();
+
+	// True when EITHER reflection technique is live (SSR or RT). The gate the shared tail (reflection temporal
+	// + denoise + forward consumption + the G-buffer prepass) uses, so both converge on the same forward slot (#151).
+	[[nodiscard]] bool ReflectionsActive();
 
 	// True when RT GI should run (render.gi.rt on AND the device supports RT). Drives FrameCB.RTGIEnabled +
 	// the shader branch + the TLAS build gate + the geometry-table build. False on a non-RT GPU.

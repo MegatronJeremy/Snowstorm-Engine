@@ -111,6 +111,15 @@ namespace Snowstorm
 		Ref<Texture> ReflectionTarget;
 		Ref<TextureView> ReflectionTargetView;
 
+		// Previous-frame resolved HDR scene color (#151, SSR). A late snapshot pass copies the post-resolve HDR
+		// scene color into this full-res target each frame; next frame's SSR marches the depth buffer and, on a
+		// screen-space hit, samples THIS (reprojected by the velocity buffer) as the reflected radiance — the
+		// classic forward-renderer SSR previous-frame-color source (SSR is consumed before the current forward
+		// runs, so the current color doesn't exist yet). Single-buffered (written late frame N, read early frame
+		// N+1; one graphics queue + the read barrier order it, like the TAA history). Only written when SSR is
+		// active. A RenderTarget (the snapshot is a fullscreen copy). Null until allocated.
+		Ref<RenderTarget> PrevSceneColorTarget;
+
 		// Full-res RT reflection SVGF denoiser state (#132): the reflection twin of GIDenoiser — history +
 		// moments + à-trous scratch ping-pongs + history-valid flag (was flat ReflHistory/ReflMoments/
 		// ReflDenoiseScratch fields). Full-res (reflections are high-frequency). See DenoiserInstance.

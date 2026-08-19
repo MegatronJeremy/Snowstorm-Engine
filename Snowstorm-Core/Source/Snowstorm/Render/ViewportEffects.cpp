@@ -27,6 +27,7 @@
 #include "Snowstorm/Render/Denoiser.hpp"            // #132: shared SVGF processor (owns the GITemporal/GIDenoise passes)
 #include "Snowstorm/Render/Passes/GIPass.hpp"
 #include "Snowstorm/Render/Passes/ReflectionPass.hpp"
+#include "Snowstorm/Render/Passes/SSRPass.hpp" // #151: screen-space reflection trace
 #include "Snowstorm/Render/Passes/AOUpsamplePass.hpp"
 #include "Snowstorm/Render/Passes/GIUpsamplePass.hpp"
 #include "Snowstorm/Render/Passes/MetricsPass.hpp"
@@ -649,6 +650,78 @@ namespace Snowstorm
 			AOUpsamplePass m_Pass; // owned here: exclusive to this effect
 		};
 
+		// Screen-space reflection technique (#151), the raster baseline the thesis compares RT reflections
+		// against. Runs only in render.reflections.mode == SSR. Reads the SAME depth+shading-normal G-buffer and
+		// writes the SAME full-res ReflectionTarget as the RT path, then flows through the SAME reflection
+		// temporal/denoise/forward tail — so the only variable in the A/B is the reflection SOURCE (screen march
+		// vs ray trace). Marches the depth buffer; a hit reflects the PREVIOUS frame's scene color (reprojected by
+		// velocity, snapshotted by PrevColorSnapshotEffect), a miss reflects the prefiltered env cube. Needs the
+		// velocity buffer (reprojection) + the prev-color history, so it forces the velocity pass on (see the
+		// RenderSystem preamble / VelocityEffect gate). Debug view 3 shows the raw ReflectionTarget, same as RT.
+		class SSREffect final : public IViewportEffect
+		{
+		public:
+			explicit SSREffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "SSR"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::ReflectionsSSRActive() && v.RT.ReflectionTarget && v.RT.ReflectionTargetView &&
+				       v.RT.PrevSceneColorTarget && !v.RT.PrevSceneColorTarget->GetDesc().ColorAttachments.empty() &&
+				       v.Velocity && v.RT.GBufferNormalTarget->GetDesc().ColorAttachments.size() > 1;
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+
+				const auto& reflDesc = v.RT.ReflectionTarget->GetDesc();
+				const uint32_t reflW = reflDesc.Width;
+				const uint32_t reflH = reflDesc.Height;
+				const auto& gbufDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const Ref<TextureView> shadingView = gbufDesc.ColorAttachments[1].View; // #129 Inc 1c: shading normal
+				const Ref<TextureView> depthView = gbufDesc.DepthAttachment->View;      // fp32 D32 depth
+				const Ref<TextureView> reflView = v.RT.ReflectionTargetView;
+				const Ref<TextureView> prevColorView = v.RT.PrevSceneColorTarget->GetDesc().ColorAttachments[0].View;
+				const Ref<TextureView> velocityView = v.Velocity;
+
+				// THIS frame's jittered camera VP (matches the jittered DepthNormal G-buffer + forward), not the
+				// stale GetFrameData().ViewProjection — same fix as GI/AO/RT-reflection (#133 follow-up).
+				const glm::mat4 viewProj = v.Cam.Rt->JitteredViewProjection;
+				const glm::vec3 camPos = v.Cam.Transform->Position;
+				const float reflRange = CVars::ReflectionRange.Get();
+				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
+				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+				// Prefiltered env cube for the reflection miss. The bindless index is stable frame-to-frame (unlike
+				// the camera VP), so the graph-build-time GetFrameData() is fine here.
+				const uint32_t prefilteredCubeIndex = fc.Renderer.GetFrameData().IBL.PrefilteredCubeIndex;
+
+				fc.Graph.AddPass({.Name = "SSR" + v.Suffix,
+				                  .IsCompute = true,
+				                  .Reads = {{shadingView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {prevColorView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {velocityView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Writes = {{reflView->GetTexture(), RenderGraph::AccessState::Storage}},
+				                  .Execute = [this, &fc, viewProj, camPos, reflRange, nearPlane, farPlane, prefilteredCubeIndex, shadingView, depthView, prevColorView, velocityView, reflView, reflW, reflH](CommandContext& c)
+				                  {
+					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, viewProj, camPos, reflRange, nearPlane, farPlane,
+					                                  prefilteredCubeIndex, shadingView, depthView, prevColorView, velocityView,
+					                                  reflView, reflW, reflH);
+				                  }});
+
+				v.ReflectionView = reflView; // the raw SSR trace is the live reflection; temporal/denoise republish downstream
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			SSRPass m_Pass; // owned here: the SSR compute pass is exclusive to this effect
+		};
+
 		// Full-res RT reflection compute pass (#129): the reflection analogue of GIEffect, lifting the inline
 		// RayTraceReflection out of DefaultLit into a standalone pass over the depth+normal G-buffer. Traces one
 		// sharp reflection ray per full-res pixel, shades the hit through the geometry table, and writes raw
@@ -733,9 +806,10 @@ namespace Snowstorm
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				return v.GBufferNeeded && CVars::ReflectionsRTActive() && v.ReflectionView &&
-				       v.RT.ReflectionDenoiser.Allocated() &&
-				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
+				// ReflectionsActive(): serves BOTH SSR and RT. v.ReflectionView being set already implies the
+				// source pass ran (SSR, or RT which self-gates on the geometry table), so no table check here (#151).
+				return v.GBufferNeeded && CVars::ReflectionsActive() && v.ReflectionView &&
+				       v.RT.ReflectionDenoiser.Allocated();
 			}
 
 			void Contribute(ViewportRenderContext& v) override
@@ -782,9 +856,8 @@ namespace Snowstorm
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				return v.GBufferNeeded && CVars::ReflectionsRTActive() && CVars::ReflectionDenoiseActive() && v.ReflectionView &&
-				       v.RT.ReflectionDenoiser.Allocated() &&
-				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
+				return v.GBufferNeeded && CVars::ReflectionsActive() && CVars::ReflectionDenoiseActive() && v.ReflectionView &&
+				       v.RT.ReflectionDenoiser.Allocated();
 			}
 
 			void Contribute(ViewportRenderContext& v) override
@@ -840,7 +913,10 @@ namespace Snowstorm
 				// forces the velocity pass on whenever its effect is running — even without TAA / debug / neural.
 				const bool giTemporal = CVars::GIRTActive() && CVars::GITemporalActive();
 				const bool reflTemporal = CVars::ReflectionsRTActive() && CVars::ReflectionTemporalActive();
-				return (debugView == 1 || taaOn || neuralTemporal || exporting || giTemporal || reflTemporal) && v.RT.VelocityTarget &&
+				// SSR (#151) reprojects the previous-frame color by velocity every frame, so it needs the pass on
+				// unconditionally (not only when the reflection temporal stage is enabled).
+				const bool reflSSR = CVars::ReflectionsSSRActive();
+				return (debugView == 1 || taaOn || neuralTemporal || exporting || giTemporal || reflTemporal || reflSSR) && v.RT.VelocityTarget &&
 				       !v.RT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
 				       v.RT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 			}
@@ -934,8 +1010,7 @@ namespace Snowstorm
 				// pointer means this needs no change when the temporal stage is added.
 				uint32_t reflIndex = 0;
 				Ref<Texture> reflTexture;
-				if (v.GBufferNeeded && CVars::ReflectionsRTActive() && v.ReflectionView &&
-				    v.Frame.Renderer.GetReflectionGeometryAddress() != 0)
+				if (v.GBufferNeeded && CVars::ReflectionsActive() && v.ReflectionView)
 				{
 					reflIndex = v.ReflectionView->GetGlobalBindlessIndex();
 					reflTexture = v.ReflectionView->GetTexture(); // the live buffer, for the graph barrier
@@ -1229,6 +1304,48 @@ namespace Snowstorm
 			// Per-viewport TAA history validity (#44): a viewport is valid once resolved at least once; erased
 			// when TAA turns off / resizes, and cleared wholesale on a scene cut (OnSceneCut).
 			std::unordered_set<entt::entity> m_HistoryValid;
+		};
+
+		// Previous-frame scene-color snapshot (#151, SSR): after the temporal resolve, copy the post-resolve HDR
+		// scene color into the persistent PrevSceneColorTarget, so NEXT frame's SSR can sample it as the reflected
+		// radiance on a screen-space hit (SSR is consumed before the current forward runs, so it can only reflect
+		// the previous frame's color — the standard forward-renderer SSR source). Runs only in SSR mode. Single-
+		// buffered: written late this frame, read early next frame; the one graphics queue + the read's barrier
+		// order it (like the TAA history). Reuses UpscalePass as a 1:1 HDR copy (src and dst are both full res).
+		class PrevColorSnapshotEffect final : public IViewportEffect
+		{
+		public:
+			explicit PrevColorSnapshotEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "PrevColorSnapshot"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return CVars::ReflectionsSSRActive() && v.SceneColor.View && v.SceneColor.Texture &&
+				       v.RT.PrevSceneColorTarget && !v.RT.PrevSceneColorTarget->GetDesc().ColorAttachments.empty();
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+				const Ref<RenderTarget>& dst = v.RT.PrevSceneColorTarget;
+				const Ref<TextureView> srcView = v.SceneColor.View;
+				const Ref<Texture> srcTex = v.SceneColor.Texture;
+				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+
+				fc.Graph.AddPass({.Name = "PrevColorSnapshot" + v.Suffix,
+				                  .Target = dst,
+				                  .Reads = {{srcTex, RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, srcView, dstFmt](CommandContext& c)
+				                  { m_Copy.Draw(fc.Ctx, fc.FrameIndex, srcView, dstFmt); }});
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			UpscalePass m_Copy; // reused as a 1:1 HDR fullscreen copy (#151); exclusive to this effect
 		};
 
 		// Tonemap + LDR post filters (#44): the tail of the primary path. Tonemaps the resolved scene color into
@@ -1533,12 +1650,14 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<AOTemporalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<AODenoiseEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<AOUpsampleEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<SSREffect>(*this)); // #151: SSR (mode 1); RT reflection chain below is mode 2
 		m_ViewportEffects.push_back(CreateScope<ReflectionEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ReflectionTemporalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ReflectionDenoiseEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ForwardEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<UpscaleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<TemporalEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<PrevColorSnapshotEffect>(*this)); // #151: snapshot HDR color for next frame's SSR
 		m_ViewportEffects.push_back(CreateScope<LdrChainEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<CompareEffect>(*this));
 	}

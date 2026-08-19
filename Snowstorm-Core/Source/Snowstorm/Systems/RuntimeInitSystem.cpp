@@ -169,8 +169,9 @@ namespace Snowstorm
 				wRtc.AOUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportAOUpscale"); // full-res AO (#126)
 				wRtc.ReflectionTarget = CreateGITarget(w, h, "ViewportReflection");         // full-res RT reflection (#129)
 				wRtc.ReflectionTargetView = wRtc.ReflectionTarget->GetDefaultView();
-				AllocateDenoiser(wRtc.ReflectionDenoiser, w, h, "ViewportRefl");            // reflection SVGF denoiser buffers (#132)
-				wRtc.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0"); // TAA history (#44)
+				AllocateDenoiser(wRtc.ReflectionDenoiser, w, h, "ViewportRefl");                 // reflection SVGF denoiser buffers (#132)
+				wRtc.PrevSceneColorTarget = CreateColorOnlyHDRTarget(w, h, "ViewportPrevColor"); // prev-frame color for SSR (#151)
+				wRtc.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0");      // TAA history (#44)
 				wRtc.HistoryTarget[1] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory1");
 			}
 		}

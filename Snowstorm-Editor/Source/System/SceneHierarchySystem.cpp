@@ -491,28 +491,44 @@ namespace Snowstorm
 				if (ImGui::CollapsingHeader("Reflections", ImGuiTreeNodeFlags_DefaultOpen))
 				{
 
-					// Ray-traced reflections (#118): trace a reflection ray, shade the hit, blend into the specular for
-					// smooth surfaces (blurry for rough ones via the roughness-driven cone). RT-only; the shader branch is
-					// compiled out on a non-RT GPU. Like RTAO it's one ray/frame + TAA, so it needs TAA for a clean result;
-					// the sliders are only enabled when RT reflections are on.
+					// Reflection technique (#151): a mode CVar mirroring AO/Shadows. Off / SSR (screen-space depth
+					// march reflecting the previous frame's color, any GPU) / Ray Traced (traced + re-shaded hit, RT
+					// GPU only). Both write the same forward slot, so this combo IS the thesis A/B. Intensity / Max
+					// Roughness / Range are shared; Cone Scale + Rays/pixel are RT-only (SSR is a single sharp march);
+					// the temporal + denoise tail is shared (both techniques flow through it).
 					{
 						const bool reflRtSupported = Renderer::IsRayTracingSupported();
-						ImGui::BeginDisabled(!reflRtSupported);
-						if (bool reflRt = CVars::ReflectionsRT.Get(); ImGui::Checkbox("Ray-traced (RT)##Refl", &reflRt))
+						int mode = CVars::ReflectionsMode.Get();
+						if (mode < 0 || mode > 2)
 						{
-							CVars::ReflectionsRT.Set(reflRt);
+							mode = 0;
 						}
-						ImGui::EndDisabled();
+						{
+							const char* modeLabels[] = {"Off", "SSR", "Ray Traced"};
+							const int modeCount = reflRtSupported ? 3 : 2; // hide Ray Traced when the device can't do it
+							if (ImGui::Combo("Technique##Refl", &mode, modeLabels, modeCount))
+							{
+								CVars::ReflectionsMode.Set(mode);
+							}
+						}
+						const bool ssrMode = (mode == 1);
+						const bool rtMode = (mode == 2);
+						const bool anyMode = (mode != 0);
 						if (!reflRtSupported)
 						{
-							ImGui::TextDisabled("(requires an RT-capable GPU)");
+							ImGui::TextDisabled("(Ray Traced requires an RT-capable GPU)");
 						}
-						else
+						else if (rtMode)
 						{
-							ImGui::TextDisabled("(needs TAA for a clean result)");
+							ImGui::TextDisabled("(RT needs TAA for a clean result)");
+						}
+						else if (ssrMode)
+						{
+							ImGui::TextDisabled("(SSR reflects on-screen geometry; edges fade to the env cube)");
 						}
 
-						ImGui::BeginDisabled(!CVars::ReflectionsRT.Get());
+						// Shared by both techniques: contribution, roughness cutoff, ray/march distance.
+						ImGui::BeginDisabled(!anyMode);
 						if (float reflIntensity = CVars::ReflectionIntensity.Get(); ImGui::SliderFloat("Intensity##Refl", &reflIntensity, 0.0f, 2.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
 						{
 							CVars::ReflectionIntensity.Set(reflIntensity);
@@ -521,28 +537,27 @@ namespace Snowstorm
 						{
 							CVars::ReflectionMaxRoughness.Set(reflMaxRough);
 						}
-						if (float reflCone = CVars::ReflectionConeScale.Get(); ImGui::SliderFloat("Cone Scale##Refl", &reflCone, 0.0f, 3.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
-						{
-							CVars::ReflectionConeScale.Set(reflCone);
-						}
 						if (float reflRange = CVars::ReflectionRange.Get(); ImGui::SliderFloat("Range (m)##Refl", &reflRange, 0.5f, 60.0f, "%.1f", ImGuiSliderFlags_AlwaysClamp))
 						{
 							CVars::ReflectionRange.Set(reflRange);
 						}
-						// Rays/pixel/frame: on GLOSSY surfaces more rays average the cone in-frame (less shimmer under
-						// motion); a perfect mirror is one deterministic ray regardless. ~linear cost.
+						ImGui::EndDisabled();
+
+						// RT-only: the glossy cone + in-frame multi-ray averaging. SSR is a single sharp screen march.
+						ImGui::BeginDisabled(!rtMode);
+						if (float reflCone = CVars::ReflectionConeScale.Get(); ImGui::SliderFloat("Cone Scale##Refl", &reflCone, 0.0f, 3.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+						{
+							CVars::ReflectionConeScale.Set(reflCone);
+						}
 						if (int reflRays = CVars::ReflectionRayCount.Get(); ImGui::SliderInt("Rays/pixel##Refl", &reflRays, 1, 16, "%d", ImGuiSliderFlags_AlwaysClamp))
 						{
 							CVars::ReflectionRayCount.Set(reflRays);
 						}
-						if (ImGui::IsItemHovered())
-						{
-							ImGui::SetTooltip("Max reflection ray distance (perf cap): nearer surfaces reflect real geometry; past this the ray sees the sky.");
-						}
+						ImGui::EndDisabled();
 
-						// Denoiser (#129): temporal accumulation + SVGF variance-guided à-trous over the few-ray reflection.
-						// Temporal reprojects the previous frame (kills static shimmer); the à-trous smooths the edge/
-						// disocclusion noise temporal can't reach. Sub-sliders enabled only when their stage is on.
+						// Denoiser tail (#129), shared by SSR + RT: temporal accumulation + SVGF variance-guided
+						// à-trous. Sub-sliders enabled only when their stage is on.
+						ImGui::BeginDisabled(!anyMode);
 						ImGui::Spacing();
 						if (bool reflTemporal = CVars::ReflectionTemporal.Get(); ImGui::Checkbox("Temporal Accumulation##Refl", &reflTemporal))
 						{

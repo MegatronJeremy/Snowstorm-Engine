@@ -115,7 +115,7 @@ namespace Snowstorm
 				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget || !rt.VelocityTarget ||
 				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIDenoiser.Allocated() || !rt.GIUpscaleTarget ||
 				                     !rt.AOTarget || !rt.AOBlurTarget || !rt.AODenoiser.Allocated() || !rt.AOUpscaleTarget ||
-				                     !rt.ReflectionTarget || !rt.ReflectionDenoiser.Allocated() ||
+				                     !rt.ReflectionTarget || !rt.ReflectionDenoiser.Allocated() || !rt.PrevSceneColorTarget ||
 				                     !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
 				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Compare each
 				// against its own expected extent so a scale change (Target only) still triggers a rebuild.
@@ -194,6 +194,9 @@ namespace Snowstorm
 					rtW.ReflectionTargetView = rtW.ReflectionTarget->GetDefaultView();
 					// Reflection SVGF denoiser buffers (#132): full-res, rebuilt on viewport resize.
 					AllocateDenoiser(rtW.ReflectionDenoiser, w, h, "ViewportRefl");
+					// Previous-frame HDR scene color (#151, SSR): full-res, always allocated (negligible); only
+					// snapshotted + read when SSR is active. Rebuilt on viewport resize like the history targets.
+					rtW.PrevSceneColorTarget = CreateColorOnlyHDRTarget(w, h, "ViewportPrevColor");
 					// TAA history ping-pong (#44): two full-res color-only HDR targets. Always allocated;
 					// only rendered into when render.aa == TAA. Recreated on resize so history matches size.
 					rtW.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0");
