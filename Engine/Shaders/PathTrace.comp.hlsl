@@ -327,8 +327,22 @@ Hit ResolvePbrHit(uint64_t tableAddr, uint instId, uint prim, float2 bary, float
 		}
 	}
 
+	// Robust shading-normal adaptation. A grazing interpolated/normal-mapped shading normal can tilt past the
+	// silhouette so it faces AWAY from the viewer (dot(Ns, V) <= 0), which makes the microfacet BSDF undefined:
+	// EvalBsdf/SampleBsdf then return black, producing a dark rim on every silhouette (foliage worst, since the
+	// normal map pushes Ns furthest off the geometric normal). Bend Ns just into the view hemisphere so NoV > 0.
+	// This is the load-bearing part of Cycles' ensure_valid_reflection / Schussler 2017 (which additionally keep
+	// the specular reflection above the surface); it removes the rim. V = -rayDir (points back toward the camera
+	// / previous path vertex).
+	const float3 V = -rayDir;
+	const float NoVs = dot(Ns, V);
+	if (NoVs < 1e-3)
+	{
+		Ns = normalize(Ns + V * (1e-3 - NoVs)); // dot(Ns + V*(eps - NoVs), V) = eps > 0
+	}
+
 	h.Ng = Ng; // flat: ray offsets + shadow-ray origin + terminator reference
-	h.N = Ns;  // shading normal (normal-mapped): BRDF shading
+	h.N = Ns;  // shading normal (normal-mapped, view-hemisphere-adapted): BRDF shading
 
 	float3 albedo = rec.BaseColor.rgb;
 	if (rec.AlbedoTextureIndex != 0)
