@@ -1,4 +1,6 @@
 {
+  "AlphaCutoff": 0.5,
+  "AlphaMask": false,
   "BaseColor": [
     1.0,
     1.0,
@@ -11,8 +13,8 @@
     0.0
   ],
   "Metallic": 1.0,
-  "PipelinePreset": "DefaultLit",
   "Roughness": 1.0,
+  "Shader": "Engine/Shaders/DefaultLit.frag.hlsl",
   "Type": "SnowstormMaterial",
-  "Version": 2
+  "Version": 3
 }

@@ -16,8 +16,8 @@
   "Metallic": 1.0,
   "MetallicRoughnessTexture": "3840352612902975418",
   "NormalTexture": "10358244681419475223",
-  "PipelinePreset": "DefaultLit",
   "Roughness": 1.0,
+  "Shader": "Engine/Shaders/DefaultLit.frag.hlsl",
   "Type": "SnowstormMaterial",
-  "Version": 2
+  "Version": 3
 }

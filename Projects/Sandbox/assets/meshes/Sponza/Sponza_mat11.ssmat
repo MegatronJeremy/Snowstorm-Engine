@@ -1,5 +1,7 @@
 {
   "AlbedoTexture": "16615583751872810620",
+  "AlphaCutoff": 0.5,
+  "AlphaMask": false,
   "BaseColor": [
     0.5879999995231628,
     0.5879999995231628,
@@ -14,8 +16,8 @@
   "Metallic": 1.0,
   "MetallicRoughnessTexture": "7780229093317190753",
   "NormalTexture": "9561774715274042092",
-  "PipelinePreset": "DefaultLit",
   "Roughness": 1.0,
+  "Shader": "Engine/Shaders/DefaultLit.frag.hlsl",
   "Type": "SnowstormMaterial",
-  "Version": 2
+  "Version": 3
 }
