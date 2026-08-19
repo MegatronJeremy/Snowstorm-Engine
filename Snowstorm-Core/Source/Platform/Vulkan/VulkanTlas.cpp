@@ -128,6 +128,13 @@ namespace Snowstorm
 				inst.instanceCustomIndex = i;
 				inst.mask = 0xFF;
 				inst.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+				// Masked (glTF MASK) instances must be non-opaque so RayQuery surfaces their triangles as
+				// candidates for the any-hit alpha test; this instance bit overrides the geometry's OPAQUE bit
+				// below. Without it cutout foliage renders solid in every RT pass (#151).
+				if (instances[i].ForceNonOpaque)
+				{
+					inst.flags |= VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
+				}
 				inst.accelerationStructureReference = instances[i].BlasAddress;
 				dst[i] = inst;
 			}

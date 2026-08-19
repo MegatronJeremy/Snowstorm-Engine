@@ -39,6 +39,8 @@ namespace Snowstorm
 		// Color (HDR float) — needed for IBL env/irradiance/prefilter maps and an HDR scene target (#54)
 		RGBA16_SFloat,
 		R11G11B10_UFloat,
+		RGBA32_SFloat, // full fp32 — the path-tracer accumulation buffer (#153): an fp16 running mean stalls
+		               // past a few hundred samples (mean += (x-mean)/n underflows), so a converging reference needs fp32
 
 		// Depth
 		D32_Float,

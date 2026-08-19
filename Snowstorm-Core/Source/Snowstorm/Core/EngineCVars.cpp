@@ -456,6 +456,51 @@ namespace Snowstorm::CVars
 		return GIRT.Get() && Renderer::IsRayTracingSupported();
 	}
 
+	CVar<bool> PathTrace{"render.pathtrace", false, "Reference path tracer (#153): a brute-force ground-truth render mode (GGX+Lambert BSDF, sun next-event estimation, sky environment, multi-bounce, Russian roulette) that progressively accumulates while the camera is static. NOT real-time — the correctness anchor for the thesis A/B. When on it replaces the raster/RT scene path. Requires an RT GPU.", CVarFlags::Persist};
+
+	CVar<int> PathTraceSpp{"render.pathtrace.spp", 2, "Reference path tracer paths per pixel PER FRAME (progressive: total = this x frames since the camera last moved). Higher = faster convergence, lower interactivity. Clamped to [1, 64].", CVarFlags::Persist};
+
+	CVar<int> PathTraceBounces{"render.pathtrace.bounces", 8, "Reference path tracer max path length (bounces). Russian roulette terminates paths after bounce 3 regardless. Clamped to [1, 32].", CVarFlags::Persist};
+
+	CVar<float> PathTraceClamp{"render.pathtrace.clamp", 16.0f, "Reference path tracer per-sample radiance firefly clamp (world units): caps each path sample so a rare very-bright path (specular NEE / caustic-ish indirect spike) can't leave a slow-to-average dot. Trades a little bias in genuine bright highlights for far cleaner convergence. 0 = unbounded (unbiased but noisy). ~8-32 typical.", CVarFlags::Persist};
+
+	CVar<float> PathTraceWeightClamp{"render.pathtrace.weightclamp", 8.0f, "Reference path tracer path regularization: max per-bounce BSDF sample weight (throughput multiplier). A near-mirror indirect bounce at a grazing/low-pdf direction makes BSDF/pdf blow up into a fixed hot pixel that never converges; clamping the weight bounds it without blurring reflections. Small bias on rare high-weight paths. 0 = off (unbiased ground truth); ~4-16 for a clean interactive preview. Set 0 for final reference captures.", CVarFlags::Persist};
+
+	int ClampedPathTraceSpp()
+	{
+		const int n = PathTraceSpp.Get();
+		if (n < 1)
+		{
+			return 1;
+		}
+		if (n > 64)
+		{
+			return 64;
+		}
+		return n;
+	}
+
+	int ClampedPathTraceBounces()
+	{
+		const int n = PathTraceBounces.Get();
+		if (n < 1)
+		{
+			return 1;
+		}
+		if (n > 32)
+		{
+			return 32;
+		}
+		return n;
+	}
+
+	bool PathTraceActive()
+	{
+		// render.pathtrace on AND an RT-capable device (RayQuery). On a non-RT GPU the PT shader permutation
+		// doesn't exist, so this stays false and the mode is a no-op (falls back to the normal scene path).
+		return PathTrace.Get() && Renderer::IsRayTracingSupported();
+	}
+
 	bool AnyRTEffectActive()
 	{
 		// OR of the inline-RT effects that STILL trace inside DefaultLit (shadows, reflections). Drives the

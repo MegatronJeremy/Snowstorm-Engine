@@ -113,6 +113,11 @@ namespace Snowstorm
 		// DepthNormalEffect renders the G-buffer when set; the GI pass + bilateral upsample consume it.
 		bool GBufferNeeded = false;
 
+		// Assets still streaming this frame (#153): while true the path tracer keeps RESETTING its accumulation,
+		// so the magenta placeholder frames (unresolved textures/meshes) never bake into the converged mean. Set
+		// in the RenderSystem preamble from AssetManagerSingleton::PendingLoadCount().
+		bool PathTraceSceneSettling = false;
+
 		// Whether TAA (render.aa == 2) is active with valid history targets. TemporalEffect resolves when
 		// set, and clears the per-viewport history-valid flag when NOT set (so re-enabling starts clean).
 		bool TaaOn = false;

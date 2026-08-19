@@ -379,10 +379,17 @@ namespace Snowstorm
 		const bool giActive = CVars::GIRTActive();
 		const bool aoActive = CVars::AoActive();            // SSAO or RT AO — both need the depth+normal prepass + debug view 2 (#151)
 		const bool reflActive = CVars::ReflectionsActive(); // SSR or RT reflections — both need the depth+normal prepass (#151)
-		const bool gbufferNeeded = (giActive || aoActive || reflActive || debugView == 5 || debugView == 6 || debugView == 7 || debugView == 2 || debugView == 3) &&
+		// Path-trace mode (#153) owns the frame: the reference PT produces the whole image, so skip the entire
+		// G-buffer substrate (DepthNormal/GI/AO/SSR/RT-reflection) — forward/upscale/TAA are gated off too.
+		const bool gbufferNeeded = !CVars::PathTraceActive() &&
+		                           (giActive || aoActive || reflActive || debugView == 5 || debugView == 6 || debugView == 7 || debugView == 2 || debugView == 3) &&
 		                           vpRT.GBufferNormalTarget && !vpRT.GBufferNormalTarget->GetDesc().ColorAttachments.empty() &&
 		                           vpRT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
 		v.GBufferNeeded = gbufferNeeded;
+
+		// While assets stream in, meshes/textures show the magenta placeholder; keep the path tracer resetting so
+		// those frames never bake into the converged accumulation (#153).
+		v.PathTraceSceneSettling = SingletonView<AssetManagerSingleton>().PendingLoadCount() > 0;
 
 		// Tonemap debug params (#44/#124): visualize an aux buffer ONLY when its debug view is explicitly
 		// selected — NOT merely when the buffer is being rendered (TAA/GI render their buffers but must show

@@ -463,6 +463,32 @@ namespace Snowstorm::CVars
 	// the shader branch + the TLAS build gate + the geometry-table build. False on a non-RT GPU.
 	[[nodiscard]] bool GIRTActive();
 
+	// Reference path tracer (#153): a brute-force ground-truth render mode (GGX+Lambert BSDF, sun NEE, sky
+	// environment, multi-bounce, Russian roulette) that progressively accumulates while the camera is static.
+	// NOT real-time — the correctness anchor the thesis measures the real-time techniques against. When on, it
+	// replaces the raster/RT scene path entirely. Requires an RT GPU (RayQuery); prefer PathTraceActive().
+	extern CVar<bool> PathTrace;
+	// Paths per pixel PER FRAME (progressive: total = this x frames-since-reset). Higher = faster convergence,
+	// lower interactivity. Clamp with ClampedPathTraceSpp().
+	extern CVar<int> PathTraceSpp;
+	// Max path length (bounces) before termination. Russian roulette kicks in after bounce 3 regardless.
+	extern CVar<int> PathTraceBounces;
+	[[nodiscard]] int ClampedPathTraceSpp();
+	[[nodiscard]] int ClampedPathTraceBounces();
+	// Per-sample radiance firefly clamp (world radiance units): caps each path sample so a rare very-bright
+	// path (specular NEE / caustic-ish indirect spike) can't leave a slow-to-average dot. Trades a little bias
+	// in genuine bright highlights for far cleaner convergence. 0 = unbounded (unbiased but noisy). ~8-32 typical.
+	extern CVar<float> PathTraceClamp;
+	// Path regularization: max per-bounce BSDF sample weight (throughput multiplier). A near-mirror indirect
+	// bounce at a grazing/low-pdf direction makes BSDF/pdf blow up, concentrating path weight into a fixed hot
+	// pixel that never converges; clamping the weight bounds that WITHOUT blurring reflections (unlike roughness
+	// regularization). Small bias on rare high-weight paths. 0 = off (unbiased ground truth); ~4-16 for a clean
+	// interactive preview. Set 0 for final reference captures.
+	extern CVar<float> PathTraceWeightClamp;
+	// True when the reference path tracer should run (render.pathtrace on AND an RT-capable device). Gates the
+	// PT pass AND the skip of the normal scene path (forward/G-buffer/upscale/temporal) so PT owns the frame.
+	[[nodiscard]] bool PathTraceActive();
+
 	// True when ANY inline-RT effect is active (shadows/AO/reflections/GI). Drives the DefaultLit shader
 	// permutation swap (#118 perf): when false, DefaultLit compiles the cheap non-RT variant so a scene with
 	// RT off doesn't pay the RT permutation's occupancy tax. Folds device support via the four helpers, so

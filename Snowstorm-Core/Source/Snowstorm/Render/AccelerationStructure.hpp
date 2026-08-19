@@ -36,6 +36,10 @@ namespace Snowstorm
 	{
 		glm::mat4 Transform{1.0f};
 		uint64_t BlasAddress = 0;
+		// Alpha-cutout (glTF MASK): when true the TLAS flags this instance FORCE_NON_OPAQUE so RayQuery surfaces
+		// its triangles as candidates and the any-hit alpha test (RTCommitCandidate) runs. Without it the global
+		// OPAQUE geometry bit auto-commits every hit and cutout foliage renders solid across ALL RT passes (#151).
+		bool ForceNonOpaque = false;
 	};
 
 	// Top-level acceleration structure (#118): the scene's set of instanced BLASes that ray-query shaders

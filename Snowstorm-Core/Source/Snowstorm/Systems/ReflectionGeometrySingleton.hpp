@@ -40,8 +40,21 @@ namespace Snowstorm
 		glm::vec4 BaseColor{1.0f}; // material base-color factor (multiplies the sampled albedo)
 
 		glm::mat4 Model{1.0f}; // object->world, for transforming the interpolated hit normal
+
+		// PBR block (#153), APPENDED after Model so every prior offset is byte-identical: the existing RT
+		// readers (GI/Reflection/AO/shadow) stop at Model and are unaffected; only the reference path tracer
+		// reads this. Emissive is three explicit floats (not glm::vec3) so the layout can't shift with glm's
+		// vec3 alignment mode. Keep in lockstep with GeoRecord in RTGeometry.hlsli (144-byte stride).
+		uint32_t MetallicRoughnessTextureIndex = 0; // [112] glTF MR: .b metallic, .g roughness (0 = none)
+		uint32_t NormalTextureIndex = 0;            // [116] tangent-space normal map (0 = geometric normal)
+		uint32_t EmissiveTextureIndex = 0;          // [120] emissive map (0 = EmissiveColor factor only)
+		float Metallic = 0.0f;                      // [124] metallic factor (multiplies MR texture .b)
+		float Roughness = 1.0f;                     // [128] perceptual roughness factor (multiplies MR texture .g)
+		float EmissiveR = 0.0f;                     // [132] emissive color factor, per channel
+		float EmissiveG = 0.0f;                     // [136]
+		float EmissiveB = 0.0f;                     // [140]
 	};
-	static_assert(sizeof(GeometryRecord) == 112, "GeometryRecord must be 112 bytes to match the HLSL RawBufferLoad offsets");
+	static_assert(sizeof(GeometryRecord) == 144, "GeometryRecord must be 144 bytes to match the HLSL RawBufferLoad offsets");
 
 	// Holds the GPU buffer of per-instance GeometryRecords + its device address. Written by TlasBuildSystem
 	// (in the same gather loop that builds the TLAS), read by RendererService which pushes the address into

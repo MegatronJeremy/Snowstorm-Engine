@@ -106,6 +106,11 @@ namespace Snowstorm
 	// single-channel float format, and a half-res RGBA16F's extra memory is negligible.
 	Ref<Texture> CreateAOTarget(uint32_t w, uint32_t h, const char* debugPrefix);
 
+	// Path-tracer accumulation buffer (#153): full-res fp32 (RGBA32_SFloat) Sampled|Storage Texture2D UAV. The
+	// running-mean radiance a converging reference needs (fp16 stalls past a few hundred samples). Bare
+	// Texture + view, like CreateGITarget; compute writes it, the tonemap samples it.
+	Ref<Texture> CreatePathTraceTarget(uint32_t w, uint32_t h, const char* debugPrefix);
+
 	// HDR cubemap for IBL (env / irradiance / prefiltered). 6 faces, `mips` mip levels, sampled +
 	// storage (compute writes it) usage. Its full-cube view auto-registers in the cube bindless array.
 	Ref<Texture> CreateCubeTexture(uint32_t size, uint32_t mips, PixelFormat format, const char* debugName);

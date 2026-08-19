@@ -80,6 +80,8 @@ namespace Snowstorm
 			return PixelFormat::BGRA8_sRGB;
 		case VK_FORMAT_R16G16B16A16_SFLOAT:
 			return PixelFormat::RGBA16_SFloat;
+		case VK_FORMAT_R32G32B32A32_SFLOAT:
+			return PixelFormat::RGBA32_SFloat;
 		case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
 			return PixelFormat::R11G11B10_UFloat;
 		case VK_FORMAT_D32_SFLOAT:
@@ -105,6 +107,8 @@ namespace Snowstorm
 			return VK_FORMAT_B8G8R8A8_SRGB;
 		case PixelFormat::RGBA16_SFloat:
 			return VK_FORMAT_R16G16B16A16_SFLOAT;
+		case PixelFormat::RGBA32_SFloat:
+			return VK_FORMAT_R32G32B32A32_SFLOAT;
 		case PixelFormat::R11G11B10_UFloat:
 			return VK_FORMAT_B10G11R11_UFLOAT_PACK32;
 		case PixelFormat::D32_Float:
@@ -133,6 +137,8 @@ namespace Snowstorm
 			return 4;
 		case PixelFormat::RGBA16_SFloat:
 			return 8;
+		case PixelFormat::RGBA32_SFloat:
+			return 16;
 		case PixelFormat::Unknown:
 			break;
 		}

@@ -124,7 +124,7 @@ namespace Snowstorm
 			if (!rtc.Target || !rtc.PresentTarget || !rtc.AAIntermediateTarget || !rtc.SceneUpscaleTarget ||
 			    !rtc.GroundTruthTarget || !rtc.GroundTruthPresentTarget || !rtc.VelocityTarget ||
 			    !rtc.GBufferNormalTarget || !rtc.GITarget || !rtc.GIUpscaleTarget ||
-			    !rtc.AOTarget || !rtc.AOBlurTarget || !rtc.AOUpscaleTarget ||
+			    !rtc.AOTarget || !rtc.AOBlurTarget || !rtc.AOUpscaleTarget || !rtc.PathTraceAccumTarget ||
 			    !rtc.HistoryTarget[0] || !rtc.HistoryTarget[1])
 			{
 				needsCreate = true;
@@ -171,7 +171,9 @@ namespace Snowstorm
 				wRtc.ReflectionTargetView = wRtc.ReflectionTarget->GetDefaultView();
 				AllocateDenoiser(wRtc.ReflectionDenoiser, w, h, "ViewportRefl");                 // reflection SVGF denoiser buffers (#132)
 				wRtc.PrevSceneColorTarget = CreateColorOnlyHDRTarget(w, h, "ViewportPrevColor"); // prev-frame color for SSR (#151)
-				wRtc.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0");      // TAA history (#44)
+				wRtc.PathTraceAccumTarget = CreatePathTraceTarget(w, h, "Viewport");             // reference PT accumulation (#153)
+				wRtc.PathTraceAccumView = wRtc.PathTraceAccumTarget->GetDefaultView();
+				wRtc.HistoryTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory0"); // TAA history (#44)
 				wRtc.HistoryTarget[1] = CreateColorOnlyHDRTarget(w, h, "ViewportHistory1");
 			}
 		}

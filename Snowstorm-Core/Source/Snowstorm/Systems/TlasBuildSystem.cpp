@@ -75,7 +75,7 @@ namespace Snowstorm
 		// alpha-test cutout (glTF MASK) geometry through it (Inc 2: masked instances are FORCE_NON_OPAQUE and
 		// the traversal samples the albedo alpha at the hit UV). So table-need is exactly rt-active.
 		const bool rtActive = CVars::ShadowsRTActive() || CVars::AoRTActive() || CVars::ReflectionsRTActive() ||
-		                      CVars::GIRTActive();
+		                      CVars::GIRTActive() || CVars::PathTraceActive();
 		const bool justEnabled = rtActive && !m_WasRTActive;
 		m_WasRTActive = rtActive;
 		if (!rtActive)
@@ -138,6 +138,19 @@ namespace Snowstorm
 				// FORCE_NON_OPAQUE in the TLAS and the traversal alpha-tests the albedo at the hit UV.
 				rec.AlphaMaskEnabled = c.AlphaMaskEnabled;
 				rec.AlphaCutoff = c.AlphaCutoff;
+				// PBR block (#153) for the reference path tracer: the full material so PT hits shade with the
+				// real BRDF (metallic/roughness/emissive + normal/MR maps), not just albedo.
+				rec.MetallicRoughnessTextureIndex = c.MetallicRoughnessTextureIndex;
+				rec.NormalTextureIndex = c.NormalTextureIndex;
+				rec.EmissiveTextureIndex = c.EmissiveTextureIndex;
+				rec.Metallic = c.Metallic;
+				rec.Roughness = c.Roughness;
+				rec.EmissiveR = c.EmissiveColor.r;
+				rec.EmissiveG = c.EmissiveColor.g;
+				rec.EmissiveB = c.EmissiveColor.b;
+				// Flag masked instances FORCE_NON_OPAQUE in the TLAS so the any-hit alpha test actually runs
+				// (the shader-side cutout is otherwise dead — every hit auto-commits as opaque, #151).
+				instances.back().ForceNonOpaque = (c.AlphaMaskEnabled != 0);
 			}
 			geoRecords.push_back(rec);
 		}

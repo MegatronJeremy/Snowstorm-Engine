@@ -9,8 +9,9 @@
 // for GI/Reflection). The alpha-test entry point takes its SamplerState as a parameter, so the includer only
 // needs some wrapping/linear sampler to pass in — no fixed sampler name is assumed here.
 //
-// Record layout MUST match GeometryRecord (ReflectionGeometrySingleton.hpp) byte-for-byte (112-byte stride);
-// the offsets below are the contract (see that header). This is the ONE place the layout is decoded.
+// Record layout MUST match GeometryRecord (ReflectionGeometrySingleton.hpp) byte-for-byte (144-byte stride);
+// the offsets below are the contract (see that header). This is the ONE place the layout is decoded. The PBR
+// block ([112]..) is appended after Model (#153) so existing readers that stop at Model are byte-unaffected.
 
 #ifndef SNOWSTORM_RT_GEOMETRY_HLSLI
 #define SNOWSTORM_RT_GEOMETRY_HLSLI
@@ -24,11 +25,18 @@ struct GeoRecord
 	float AlphaCutoff;        // [24] albedo.a threshold when masked
 	float4 BaseColor;         // [32] base-color factor (its .a scales the mask alpha)
 	float4x4 Model;           // [48] object->world
+	// PBR block (#153), appended after Model. Read only by the reference path tracer; other RT passes ignore it.
+	uint MetallicRoughnessTextureIndex; // [112] glTF MR (.b metallic, .g roughness)
+	uint NormalTextureIndex;            // [116] tangent-space normal map
+	uint EmissiveTextureIndex;          // [120] emissive map
+	float Metallic;                     // [124]
+	float Roughness;                    // [128]
+	float3 Emissive;                    // [132] emissive color factor (3 floats)
 };
 
 GeoRecord LoadGeoRecord(uint64_t tableAddr, uint instanceIndex)
 {
-	const uint64_t base = tableAddr + uint64_t(instanceIndex) * 112ull;
+	const uint64_t base = tableAddr + uint64_t(instanceIndex) * 144ull;
 	GeoRecord r;
 	r.VertexAddress = vk::RawBufferLoad<uint64_t>(base + 0, 8);
 	r.IndexAddress = vk::RawBufferLoad<uint64_t>(base + 8, 8);
@@ -47,6 +55,14 @@ GeoRecord LoadGeoRecord(uint64_t tableAddr, uint instanceIndex)
 	float4 c3 = float4(vk::RawBufferLoad<float>(base + 96, 4), vk::RawBufferLoad<float>(base + 100, 4),
 	                   vk::RawBufferLoad<float>(base + 104, 4), vk::RawBufferLoad<float>(base + 108, 4));
 	r.Model = float4x4(c0, c1, c2, c3);
+	// PBR block (#153) at [112]. Cheap trailing loads; unused by the non-PT readers (dead-code-eliminated there).
+	r.MetallicRoughnessTextureIndex = vk::RawBufferLoad<uint>(base + 112, 4);
+	r.NormalTextureIndex = vk::RawBufferLoad<uint>(base + 116, 4);
+	r.EmissiveTextureIndex = vk::RawBufferLoad<uint>(base + 120, 4);
+	r.Metallic = vk::RawBufferLoad<float>(base + 124, 4);
+	r.Roughness = vk::RawBufferLoad<float>(base + 128, 4);
+	r.Emissive = float3(vk::RawBufferLoad<float>(base + 132, 4), vk::RawBufferLoad<float>(base + 136, 4),
+	                    vk::RawBufferLoad<float>(base + 140, 4));
 	return r;
 }
 

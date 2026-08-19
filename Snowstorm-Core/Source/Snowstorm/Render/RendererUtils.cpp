@@ -426,6 +426,21 @@ namespace Snowstorm
 		return Texture::Create(td);
 	}
 
+	Ref<Texture> CreatePathTraceTarget(uint32_t w, uint32_t h, const char* debugPrefix)
+	{
+		// Path-tracer accumulation buffer (#153): full-res, fp32 (a converging running mean needs the precision;
+		// fp16 stalls past a few hundred samples). Compute writes it (Storage/UAV); the tonemap samples it. A bare
+		// Texture + view, like GITarget/AOTarget.
+		TextureDesc td{};
+		td.Dimension = TextureDimension::Texture2D;
+		td.Format = PixelFormat::RGBA32_SFloat;
+		td.Usage = TextureUsage::Sampled | TextureUsage::Storage;
+		td.Width = w;
+		td.Height = h;
+		td.DebugName = std::string(debugPrefix) + "_PathTraceAccum";
+		return Texture::Create(td);
+	}
+
 	Ref<Texture> CreateCubeTexture(const uint32_t size, const uint32_t mips, const PixelFormat format, const char* debugName)
 	{
 		TextureDesc td{};

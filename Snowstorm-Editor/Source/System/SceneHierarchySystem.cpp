@@ -687,6 +687,57 @@ namespace Snowstorm
 				} // Global Illumination
 
 				ImGui::Spacing();
+				if (ImGui::CollapsingHeader("Path Tracer (Reference)", ImGuiTreeNodeFlags_DefaultOpen))
+				{
+					// Reference path tracer (#153): a brute-force ground-truth MODE (not real-time). When on it
+					// replaces the scene render and progressively accumulates while the camera is still — the
+					// correctness anchor the screen-space/RT techniques are measured against. RT-GPU only.
+					const bool ptSupported = Renderer::IsRayTracingSupported();
+					ImGui::BeginDisabled(!ptSupported);
+					if (bool pt = CVars::PathTrace.Get(); ImGui::Checkbox("Enable (replaces scene render)##PT", &pt))
+					{
+						CVars::PathTrace.Set(pt);
+					}
+					ImGui::EndDisabled();
+					if (!ptSupported)
+					{
+						ImGui::TextDisabled("(requires an RT-capable GPU)");
+					}
+					else
+					{
+						ImGui::TextDisabled("(accumulates while the camera is still; moving resets it)");
+					}
+
+					ImGui::BeginDisabled(!CVars::PathTrace.Get());
+					if (int spp = CVars::PathTraceSpp.Get(); ImGui::SliderInt("Samples/frame##PT", &spp, 1, 64, "%d", ImGuiSliderFlags_AlwaysClamp))
+					{
+						CVars::PathTraceSpp.Set(spp);
+					}
+					if (int b = CVars::PathTraceBounces.Get(); ImGui::SliderInt("Max bounces##PT", &b, 1, 32, "%d", ImGuiSliderFlags_AlwaysClamp))
+					{
+						CVars::PathTraceBounces.Set(b);
+					}
+					if (float fc = CVars::PathTraceClamp.Get(); ImGui::SliderFloat("Firefly clamp##PT", &fc, 0.0f, 64.0f, "%.1f", ImGuiSliderFlags_AlwaysClamp))
+					{
+						CVars::PathTraceClamp.Set(fc);
+					}
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::SetTooltip("Caps each path sample's radiance to kill slow-to-converge fireflies. Lower = cleaner but slightly biases bright highlights; 0 = unbounded (unbiased, noisy).");
+					}
+					if (float wc = CVars::PathTraceWeightClamp.Get(); ImGui::SliderFloat("Path regularization##PT", &wc, 0.0f, 32.0f, "%.1f", ImGuiSliderFlags_AlwaysClamp))
+					{
+						CVars::PathTraceWeightClamp.Set(wc);
+					}
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::SetTooltip("Max per-bounce BSDF weight: bounds the indirect throughput spikes (near-mirror grazing bounces) that leave fixed hot pixels, without blurring reflections. Lower = cleaner but slightly biases indirect; 0 = off (unbiased ground truth).");
+					}
+					ImGui::EndDisabled();
+
+				} // Path Tracer
+
+				ImGui::Spacing();
 				if (ImGui::CollapsingHeader("Image-Based Lighting", ImGuiTreeNodeFlags_DefaultOpen))
 				{
 

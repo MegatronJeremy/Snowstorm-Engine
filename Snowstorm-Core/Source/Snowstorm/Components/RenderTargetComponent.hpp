@@ -125,6 +125,13 @@ namespace Snowstorm
 		// ReflDenoiseScratch fields). Full-res (reflections are high-frequency). See DenoiserInstance.
 		DenoiserInstance ReflectionDenoiser;
 
+		// Reference path-tracer accumulation buffer (#153): full-res fp32 (RGBA32_SFloat). The PT compute writes
+		// a progressive running-mean radiance here while the camera is static (reset on camera/scene move); the
+		// tonemap samples it directly as the scene color when render.pathtrace is on. Bare Texture + view (compute
+		// UAV), like GITarget. Always allocated (only written in path-trace mode). Null until allocated.
+		Ref<Texture> PathTraceAccumTarget;
+		Ref<TextureView> PathTraceAccumView;
+
 		// Temporal-resolve history ping-pong (#44 TAA). Two full-res HDR (color-only) targets: each frame
 		// the resolve reads the PREVIOUS one as history, reprojects it by the velocity buffer, blends with
 		// the current frame, and writes the result into the CURRENT one — which both feeds tonemap and

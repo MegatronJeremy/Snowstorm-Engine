@@ -19,7 +19,10 @@
 #include "Snowstorm/Render/Passes/DatasetExportPass.hpp"
 #include "Snowstorm/Render/Passes/CameraDepthPrepass.hpp"
 #include "Snowstorm/Render/Passes/DepthNormalPass.hpp"
+#include "Snowstorm/Render/Passes/PathTracePass.hpp" // #153: reference path tracer
 #include "Snowstorm/Render/RendererUtils.hpp"
+
+#include <unordered_map> // #153: per-viewport path-trace accumulation state
 #include "Snowstorm/Render/Passes/FxaaPass.hpp"
 #include "Snowstorm/Render/Passes/AOPass.hpp"
 #include "Snowstorm/Render/Passes/SSAOPass.hpp"     // #151: screen-space AO trace
@@ -47,6 +50,107 @@ namespace Snowstorm
 {
 	namespace
 	{
+		// Reference path tracer (#153): the ground-truth render MODE. When render.pathtrace is on it runs FIRST
+		// and OWNS the frame — path-traces into the persistent fp32 accumulation buffer (progressive running
+		// mean, reset when the camera or scene moves) and publishes that buffer as the scene color; the normal
+		// scene path (G-buffer/GI/AO/reflections/forward/upscale/TAA) is skipped (their gates fold in
+		// !PathTraceActive()). The LDR chain then tonemaps the accumulated HDR result. Uses the UNJITTERED camera
+		// VP (its own per-sample sub-pixel jitter is the AA), so TAA-style jitter can't reset accumulation every
+		// frame. Needs the TLAS + geometry table (TlasBuildSystem gates PT in).
+		class PathTraceEffect final : public IViewportEffect
+		{
+		public:
+			explicit PathTraceEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "PathTrace"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return CVars::PathTraceActive() && v.RT.PathTraceAccumTarget && v.RT.PathTraceAccumView;
+			}
+
+			// A scene wipe invalidates the accumulated radiance (new geometry) — drop it so the next frame restarts.
+			void OnSceneCut() override { m_State.clear(); }
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+				const Ref<TextureView> accumView = v.RT.PathTraceAccumView;
+				const auto& accumDesc = v.RT.PathTraceAccumTarget->GetDesc();
+				const uint32_t w = accumDesc.Width;
+				const uint32_t h = accumDesc.Height;
+
+				// UNJITTERED VP for both primary-ray reconstruction and reset detection: the PT owns AA via its
+				// own per-sample jitter, so using the jittered VP would (a) double-jitter and (b) change the VP
+				// every frame -> reset accumulation every frame -> it would never converge.
+				const glm::mat4 vp = v.Cam.Rt->ViewProjection;
+				State& st = m_State[v.ViewportEntity];
+				// Restart the running mean on any camera change, OR while assets are still streaming (so the
+				// magenta placeholder frames don't contaminate the converged image, #153).
+				const bool moved = (st.LastVP != vp) || v.PathTraceSceneSettling;
+				const uint32_t spp = static_cast<uint32_t>(CVars::ClampedPathTraceSpp());
+				const uint32_t base = moved ? 0u : st.Samples;
+
+				const FrameData& fd = fc.Renderer.GetFrameData();
+				PathTracePass::Params p{};
+				p.InvViewProj = glm::inverse(vp);
+				p.CameraPosition = v.Cam.Transform->Position;
+				// Sun as a finite disk: cos of its angular RADIUS (render.shadow.sun_angle_deg is the DIAMETER),
+				// so the reflected sun on smooth floors converges to a soft highlight instead of a hot delta dot.
+				p.SunCosThetaMax = glm::cos(glm::radians(0.5f * CVars::ShadowSunAngleDeg.Get()));
+				p.OutSize = {w, h};
+				p.BaseSampleCount = base;
+				p.SamplesPerFrame = spp;
+				p.MaxBounces = static_cast<uint32_t>(CVars::ClampedPathTraceBounces());
+				p.Reset = moved ? 1u : 0u;
+				p.LightCount = static_cast<uint32_t>(fd.Lights.LightCount);
+				if (fd.Lights.LightCount > 0)
+				{
+					p.SunDirection = fd.Lights.Lights[0].Direction;
+					p.SunIntensity = fd.Lights.Lights[0].Intensity;
+					p.SunColor = fd.Lights.Lights[0].Color;
+				}
+				p.ShadowStrength = CVars::ShadowStrength.Get();
+				p.LightSourceRadius = CVars::ShadowSourceRadius.Get(); // finite point/spot size (soft highlights, no delta dots)
+				p.FireflyClamp = CVars::PathTraceClamp.Get();
+				p.MaxBounceWeight = CVars::PathTraceWeightClamp.Get(); // path regularization (kills indirect throughput spikes)
+				p.SkyZenithColor = fd.Environment.SkyZenithColor;
+				p.SkyHorizonColor = fd.Environment.SkyHorizonColor;
+				p.GroundColor = fd.Environment.GroundColor;
+				p.TableAddress = fc.Renderer.GetReflectionGeometryAddress();
+				p.FrameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
+
+				fc.Graph.AddPass({.Name = "PathTrace" + v.Suffix,
+				                  .IsCompute = true,
+				                  .Writes = {{accumView->GetTexture(), RenderGraph::AccessState::Storage}},
+				                  .Execute = [this, &fc, p, accumView](CommandContext&)
+				                  { m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, p, fc.Renderer.GetFrameData().Lights, accumView); }});
+
+				st.LastVP = vp;
+				st.Samples = base + spp;
+
+				// Publish the accumulated HDR buffer as THE scene color; the LDR chain tonemaps it (the tonemap
+				// declares it as a Sampled read, so the graph inserts the Storage -> Sampled barrier). Target is
+				// null (a compute output, like the neural upscaler's).
+				v.SceneColor.Target = nullptr;
+				v.SceneColor.View = accumView;
+				v.SceneColor.Texture = accumView->GetTexture();
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			PathTracePass m_Pass; // owned here: the PT compute pass is exclusive to this effect
+			struct State
+			{
+				glm::mat4 LastVP{0.0f};
+				uint32_t Samples = 0;
+			};
+			std::unordered_map<entt::entity, State> m_State; // per-viewport accumulated sample count + last VP
+		};
+
 		// Depth+normal prepass (#124): re-renders visible meshes into the partial G-buffer (world normal
 		// color + sampled depth) BEFORE the forward pass, so the half-res RT GI compute pass has a per-pixel
 		// world-position (from depth) + world-normal source, and the bilateral upsample has an edge guide.
@@ -976,7 +1080,9 @@ namespace Snowstorm
 			}
 
 			[[nodiscard]] const char* Name() const override { return "Forward"; }
-			[[nodiscard]] bool ShouldRun(const ViewportRenderContext&) const override { return true; }
+			// Skipped in path-trace mode: the reference PT produces the whole image, so the raster forward
+			// (and the G-buffer/GI/AO/reflection substrate, gated in the RenderSystem preamble) don't run (#153).
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext&) const override { return !CVars::PathTraceActive(); }
 
 			void Contribute(ViewportRenderContext& v) override
 			{
@@ -1107,8 +1213,9 @@ namespace Snowstorm
 			{
 				// Runs when actually upscaling (scale < 1) OR when DLAA is on (render.aa == 3): DLAA runs the
 				// neural temporal network at native res as the temporal resolve, so the effect fires even though
-				// there's no upscale. Both need SceneUpscaleTarget (always allocated full-res).
-				return (v.Upscaling || v.Dlaa) && v.RT.SceneUpscaleTarget;
+				// there's no upscale. Both need SceneUpscaleTarget (always allocated full-res). Skipped in
+				// path-trace mode: PT is full-res and already resolved (#153).
+				return (v.Upscaling || v.Dlaa) && v.RT.SceneUpscaleTarget && !CVars::PathTraceActive();
 			}
 
 			void OnSceneCut() override { m_NeuralTemporalValid.clear(); }
@@ -1235,7 +1342,8 @@ namespace Snowstorm
 			[[nodiscard]] const char* Name() const override { return "TemporalResolve"; }
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				return v.TonemapTarget != nullptr; // the primary post-chain is active
+				// Skipped in path-trace mode: the PT image is already resolved (reprojecting it would be wrong).
+				return v.TonemapTarget != nullptr && !CVars::PathTraceActive();
 			}
 
 			void OnSceneCut() override { m_HistoryValid.clear(); }
@@ -1639,6 +1747,7 @@ namespace Snowstorm
 		// sub-chain / TAA / neural-temporal / the debug tonemaps). Velocity runs right after DepthNormal (both
 		// prepasses) so v.Velocity is published BEFORE GITemporalEffect, which reprojects the GI by it (#125).
 		m_ViewportEffects.clear();
+		m_ViewportEffects.push_back(CreateScope<PathTraceEffect>(*this)); // #153: reference mode, runs first + owns the frame when active
 		m_ViewportEffects.push_back(CreateScope<DepthNormalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<VelocityEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<GIEffect>(*this));
