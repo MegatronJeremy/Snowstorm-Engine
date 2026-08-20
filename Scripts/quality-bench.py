@@ -48,10 +48,21 @@ except ImportError:
 
 DEFAULT_SCENE = "Projects/Sandbox/assets/scenes/Sponza.world"
 
-# Viewpoint name -> pose (None = use the committed <scene>.world.editor sidecar, i.e. the authored
-# editor camera). Multi-viewpoint via sidecar write/restore is a follow-up; today the single default
-# viewpoint is used, which is enough to establish the gate.
-VIEWPOINTS = {"default": None}
+# Viewpoints (#158). The editor viewport renders the editor fly camera whose pose lives in the
+# <scene>.world.editor sidecar; the harness writes that sidecar per viewpoint (and restores it after,
+# see main). pose = {pos:[x,y,z], rot:[pitch,yaw,roll] radians}. All share the known-good committed
+# position and vary orientation so none point into the void, while covering different content (atrium,
+# floor, upper gallery, side columns) that stresses AO/GI/reflections differently. Averaging FLIP
+# across these is what the auto-tuner (#161) should minimize, to avoid single-view overfit.
+_SPONZA_POS = [8.519126892089844, 1.4949023723602295, -0.4308139383792877]
+VIEWPOINTS = {
+    "atrium":  {"pos": _SPONZA_POS, "rot": [0.027, 1.496, 0.0]},  # committed default: sunlit atrium down the nave
+    "floor":   {"pos": _SPONZA_POS, "rot": [0.55, 1.496, 0.0]},   # tilt down: floor (AO/GI on the ground)
+    "gallery": {"pos": _SPONZA_POS, "rot": [-0.5, 1.496, 0.0]},   # tilt up: upper gallery + sky (reflections/GI)
+}
+# Dropped two candidate orientations that rendered degenerate content from this spot (validated via the
+# capture stats): yaw+pi faced a near-black wall (99.7% dark), and the side yaw was 78.7% dark / 0% bright.
+# More/better viewpoints (from other positions) can be added later; the sidecar mechanism makes it trivial.
 
 # The path-traced reference: unbiased (clamps off), progressive -- --ref-frames controls convergence.
 REF_ENV = {
@@ -191,6 +202,16 @@ def baseline_path(repo_root: Path, viewpoint: str, technique: str) -> Path:
     return repo_root / "Scripts" / "quality-baseline" / f"{viewpoint}__{technique}.json"
 
 
+def sidecar_path(scene: str) -> Path:
+    # The editor camera pose lives beside the scene as "<scene>.editor" (EditorLayer::EditorSidecarPath).
+    return Path(scene + ".editor")
+
+
+def write_sidecar(path: Path, pose: dict) -> None:
+    # Pin the editor fly camera to this viewpoint; the editor loads it on scene open (LoadEditorCameraSidecar).
+    path.write_text(json.dumps({"Camera": {"Position": pose["pos"], "Rotation": pose["rot"]}, "Version": 1}, indent=2))
+
+
 def regressed(metric: str, base: float, cur: float, threshold_pct: float) -> bool:
     """FLIP: higher is worse. PSNR/SSIM: lower is worse. Small dead-zone to swallow capture noise."""
     if base is None or cur is None:
@@ -241,8 +262,16 @@ def main() -> int:
     print(f"Scene     : {args.scene}   Ref frames: {args.ref_frames}   Threshold: {args.threshold}%")
     print(f"Mode      : {'UPDATE BASELINE' if args.update_baseline else 'compare vs baseline'}\n")
 
+    # Pin the editor camera per viewpoint by writing the scene's .editor sidecar, and restore the committed
+    # one afterwards (try/finally) so a bench run never leaves the tracked sidecar modified, even on crash.
+    sidecar = sidecar_path(args.scene)
+    orig_sidecar = sidecar.read_bytes() if sidecar.exists() else None
+
     all_ok = True
-    for vp in VIEWPOINTS:
+    try:
+      for vp, pose in VIEWPOINTS.items():
+        if pose is not None:
+            write_sidecar(sidecar, pose)
         print(f"=== viewpoint '{vp}': capturing path-traced reference ({args.ref_frames} frames) ===")
         ref_img, ref_dev = run_capture(REF_ENV, tmp / f"{vp}_ref", args.ref_frames, exe, repo_root,
                                        max(args.timeout, args.ref_frames // 2 + 60), layer_path, args.scene)
@@ -284,6 +313,12 @@ def main() -> int:
                         all_ok = False
             else:
                 print(f"  no baseline at {bp.relative_to(repo_root)} -- run with --update-baseline first.")
+    finally:
+        # Restore the committed sidecar (or remove one we created) so the tracked file is never left modified.
+        if orig_sidecar is not None:
+            sidecar.write_bytes(orig_sidecar)
+        elif sidecar.exists():
+            sidecar.unlink()
 
     print("\n=== Summary ===")
     print("PASS" if all_ok else "FAIL (regression or run failure)")
