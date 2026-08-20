@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+"""Image-quality gate: real-time techniques vs the path-traced reference (#153 increment 2).
+
+The GPU perf-bench (Scripts/perf-bench.py) answers "how fast"; this answers "how correct".
+For each viewpoint it captures the CONVERGED path tracer as ground truth, then each real-time
+technique, and reports perceptual + numerical image-quality metrics (FLIP, PSNR, SSIM) of the
+technique vs the reference, diffing against a committed baseline in Scripts/quality-baseline/
+-- failing (exit 1) on a quality regression. This is how real-time GI/denoiser work is measured
+in practice (NVIDIA FLIP; SVGF/ReSTIR papers report FLIP/SSIM vs a path-traced reference).
+
+Both modes tonemap through the same LDR chain, so toggling render.pathtrace is an apples-to-apples
+A/B: the engine's headless quality-capture (quality.capture.frames, phase A) dumps the final
+present of each run to <path>_ldr.npy; this script loads the pair and computes the metrics offline.
+
+Needs a real GPU (Vulkan + the path tracer), so it's a LOCAL gate like perf-bench.py, not CI.
+Baselines are per-machine: the PT reference differs slightly across GPUs -- re-baseline on a new box.
+
+Usage (from repo root or anywhere):
+    py Scripts/quality-bench.py                    # capture ref + techniques, diff vs baseline
+    py Scripts/quality-bench.py --update-baseline  # capture current metrics as the new baseline
+    py Scripts/quality-bench.py --only ssao        # a single technique
+    py Scripts/quality-bench.py --ref-frames 400   # PT accumulation frames for the reference (convergence)
+    py Scripts/quality-bench.py --threshold 10     # regression tolerance %% (default 10)
+
+FLIP is optional: if the `flip-evaluator` package isn't importable the run still gates on PSNR/SSIM
+(install with `pip install flip-evaluator` to enable it). numpy is required.
+
+Exit code: 0 if every technique is within threshold (or --update-baseline), 1 on a regression/failure.
+"""
+import argparse
+import json
+import math
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+# Pinned FLIP version: the perceptual metric must not drift between machines/runs or a committed baseline
+# becomes meaningless (same reasoning as the clang-format / RGA pins).
+FLIP_PIN = "flip-evaluator==1.7"
+
+try:
+    import numpy as np
+except ImportError:
+    print("FAIL: numpy is required (pip install numpy).")
+    sys.exit(1)
+
+DEFAULT_SCENE = "Projects/Sandbox/assets/scenes/Sponza.world"
+
+# Viewpoint name -> pose (None = use the committed <scene>.world.editor sidecar, i.e. the authored
+# editor camera). Multi-viewpoint via sidecar write/restore is a follow-up; today the single default
+# viewpoint is used, which is enough to establish the gate.
+VIEWPOINTS = {"default": None}
+
+# The path-traced reference: unbiased (clamps off), progressive -- --ref-frames controls convergence.
+REF_ENV = {
+    "SS_RENDER_PATHTRACE": "1",
+    "SS_RENDER_PATHTRACE_CLAMP": "0",
+    "SS_RENDER_PATHTRACE_WEIGHTCLAMP": "0",
+}
+
+# Technique name -> render-mode env overrides (SS_RENDER_*). Each is a full real-time render with that
+# technique on; all use TAA (the realistic config the RT effects assume). Compared against the PT reference.
+TECHNIQUES = {
+    "raster": {"SS_RENDER_AA": "2"},  # baseline: shadow map, no AO/refl/GI
+    "ssao": {"SS_RENDER_AO_MODE": "1", "SS_RENDER_AA": "2"},
+    "rtao": {"SS_RENDER_AO_MODE": "2", "SS_RENDER_AA": "2"},
+    "ssr": {"SS_RENDER_REFLECTIONS_MODE": "1", "SS_RENDER_AA": "2"},
+    "rtrefl": {"SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_AA": "2"},
+    "rtgi": {"SS_RENDER_GI_RT": "1", "SS_RENDER_AA": "2"},
+    "all-rt": {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2",
+               "SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_GI_RT": "1", "SS_RENDER_AA": "2"},
+}
+
+
+# ---- metrics (offline, numpy) ------------------------------------------------------------------
+
+def _luminance(rgb: "np.ndarray") -> "np.ndarray":
+    return rgb[..., 0] * 0.299 + rgb[..., 1] * 0.587 + rgb[..., 2] * 0.114
+
+
+def psnr(a: "np.ndarray", b: "np.ndarray") -> float:
+    """PSNR over RGB, inputs in [0,255]. inf-clamped to 100 dB for identical images."""
+    mse = float(np.mean((a[..., :3] - b[..., :3]) ** 2))
+    if mse <= 1e-10:
+        return 100.0
+    return 10.0 * math.log10(255.0 * 255.0 / mse)
+
+
+def _box_mean(x: "np.ndarray", w: int) -> "np.ndarray":
+    """Mean over a w x w window via an integral image (O(n), 'valid' shrink by w-1)."""
+    c = np.cumsum(np.cumsum(x, 0), 1)
+    c = np.pad(c, ((1, 0), (1, 0)))
+    s = c[w:, w:] - c[:-w, w:] - c[w:, :-w] + c[:-w, :-w]
+    return s / float(w * w)
+
+
+def ssim(a: "np.ndarray", b: "np.ndarray", w: int = 11) -> float:
+    """Uniform-window SSIM on luminance (Wang et al.), inputs in [0,255]. skimage if available."""
+    try:
+        from skimage.metrics import structural_similarity
+        return float(structural_similarity(a[..., :3], b[..., :3], channel_axis=2, data_range=255.0))
+    except Exception:
+        pass
+    x = _luminance(a).astype(np.float64)
+    y = _luminance(b).astype(np.float64)
+    c1 = (0.01 * 255.0) ** 2
+    c2 = (0.03 * 255.0) ** 2
+    mux, muy = _box_mean(x, w), _box_mean(y, w)
+    mux2, muy2, muxy = _box_mean(x * x, w), _box_mean(y * y, w), _box_mean(x * y, w)
+    vx, vy, cxy = mux2 - mux * mux, muy2 - muy * muy, muxy - mux * muy
+    smap = ((2 * mux * muy + c1) * (2 * cxy + c2)) / ((mux * mux + muy * muy + c1) * (vx + vy + c2))
+    return float(np.mean(smap))
+
+
+_FLIP_STATE = {"tried": False, "fn": None}
+
+
+def flip(a: "np.ndarray", b: "np.ndarray"):
+    """Mean FLIP (LDR), lower = closer. Returns None if the flip-evaluator package isn't available."""
+    if not _FLIP_STATE["tried"]:
+        _FLIP_STATE["tried"] = True
+        try:
+            import flip_evaluator as fe
+            _FLIP_STATE["fn"] = fe
+        except Exception:
+            # Auto-bootstrap the pinned FLIP (like rga-occupancy.py fetches RGA): install once, then retry.
+            try:
+                subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", FLIP_PIN], check=True)
+                import flip_evaluator as fe
+                _FLIP_STATE["fn"] = fe
+            except Exception:
+                print(f"  note: FLIP unavailable (pip install {FLIP_PIN} to enable) -- gating on PSNR/SSIM only.")
+    fe = _FLIP_STATE["fn"]
+    if fe is None:
+        return None
+    try:
+        ref = np.ascontiguousarray(a[..., :3] / 255.0, dtype=np.float32)
+        test = np.ascontiguousarray(b[..., :3] / 255.0, dtype=np.float32)
+        _, mean_flip, _ = fe.evaluate(ref, test, "LDR")
+        return float(mean_flip)
+    except Exception as e:
+        print(f"  note: FLIP evaluate failed ({e}) -- skipping FLIP.")
+        _FLIP_STATE["fn"] = None
+        return None
+
+
+# ---- capture -----------------------------------------------------------------------------------
+
+def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd: Path,
+                timeout: int, layer_path: Path, scene: str):
+    """Run one headless capture; return (rgb_image[H,W,4] float, device_str) or (None, '')."""
+    ldr = out_base.with_name(out_base.name + "_ldr.npy")
+    if ldr.exists():
+        ldr.unlink()
+
+    env = os.environ.copy()
+    env["SS_QUALITY_CAPTURE_FRAMES"] = str(frames)
+    env["SS_QUALITY_CAPTURE_PATH"] = str(out_base)
+    env["SS_STARTUP_SCENE"] = scene
+    env["SS_VALIDATION_NONFATAL"] = "1"
+    env["SS_CONFIG_IGNORE"] = "1"  # code defaults + these overrides only (baseline isolation)
+    env.update(env_overrides)
+    if layer_path and layer_path.is_dir():
+        env["VK_ADD_LAYER_PATH"] = str(layer_path)
+
+    try:
+        proc = subprocess.run([str(exe)], cwd=str(cwd), env=env, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        print(f"  FAIL (timed out after {timeout}s)")
+        return None, ""
+    if proc.returncode != 0:
+        print(f"  FAIL (exit code {proc.returncode})")
+        return None, ""
+    if not ldr.exists():
+        print(f"  FAIL (no capture written to {ldr})")
+        return None, ""
+
+    device = ""
+    for line in proc.stdout.splitlines():
+        low = line.lower()
+        if any(v in low for v in ("radeon", "geforce", "nvidia", "intel(r)", "arc ", " gpu ")):
+            device = line.split("SNOWSTORM:")[-1].strip()[:64]
+            break
+    img = np.load(ldr).astype(np.float64)
+    return img, device
+
+
+def baseline_path(repo_root: Path, viewpoint: str, technique: str) -> Path:
+    return repo_root / "Scripts" / "quality-baseline" / f"{viewpoint}__{technique}.json"
+
+
+def regressed(metric: str, base: float, cur: float, threshold_pct: float) -> bool:
+    """FLIP: higher is worse. PSNR/SSIM: lower is worse. Small dead-zone to swallow capture noise."""
+    if base is None or cur is None:
+        return False
+    if metric == "flip":
+        if base < 0.005 and cur < 0.005:
+            return False
+        return cur > base * (1.0 + threshold_pct / 100.0) + 1e-4
+    # psnr / ssim: regression when the value DROPS by more than threshold%.
+    return cur < base * (1.0 - threshold_pct / 100.0) - 1e-4
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Image-quality gate vs the path-traced reference.")
+    ap.add_argument("--frames", type=int, default=90, help="Frames per real-time technique capture (default 90)")
+    ap.add_argument("--ref-frames", type=int, default=400, help="PT accumulation frames for the reference (default 400)")
+    ap.add_argument("--timeout", type=int, default=300, help="Per-capture wall-clock timeout in seconds")
+    ap.add_argument("--config", default="Debug", help="Build config dir under build/ (default Debug)")
+    ap.add_argument("--build-dir", default="build", help="Build directory (default build)")
+    ap.add_argument("--triplet", default="x64-windows", help="vcpkg triplet for the validation-layer path")
+    ap.add_argument("--only", default=None, help="Run only this technique (e.g. ssao, all-rt)")
+    ap.add_argument("--threshold", type=float, default=10.0, help="Regression tolerance %% (default 10)")
+    ap.add_argument("--scene", default=DEFAULT_SCENE, help="Scene to benchmark")
+    ap.add_argument("--update-baseline", action="store_true", help="Write current metrics as the new baseline")
+    args = ap.parse_args()
+
+    repo_root = Path(__file__).resolve().parent.parent
+    build_dir = (repo_root / args.build_dir).resolve()
+    layer_path = (repo_root / "vcpkg" / "installed" / args.triplet / "bin").resolve()
+    exe = build_dir / f"Snowstorm-Editor/{args.config}/Snowstorm-Editor.exe"
+    if not exe.exists():
+        print(f"FAIL: executable not found at {exe} (build first, or check --config)")
+        return 1
+
+    techniques = TECHNIQUES
+    if args.only:
+        if args.only not in TECHNIQUES:
+            print(f"No technique named '{args.only}'. Known: {list(TECHNIQUES)}")
+            return 1
+        techniques = {args.only: TECHNIQUES[args.only]}
+
+    tmp = Path(tempfile.gettempdir()) / "snowstorm-quality-bench"
+    tmp.mkdir(parents=True, exist_ok=True)
+    (repo_root / "Scripts" / "quality-baseline").mkdir(parents=True, exist_ok=True)
+
+    print(f"Repo root : {repo_root}")
+    print(f"Build dir : {build_dir}  (config: {args.config})")
+    print(f"Scene     : {args.scene}   Ref frames: {args.ref_frames}   Threshold: {args.threshold}%")
+    print(f"Mode      : {'UPDATE BASELINE' if args.update_baseline else 'compare vs baseline'}\n")
+
+    all_ok = True
+    for vp in VIEWPOINTS:
+        print(f"=== viewpoint '{vp}': capturing path-traced reference ({args.ref_frames} frames) ===")
+        ref_img, ref_dev = run_capture(REF_ENV, tmp / f"{vp}_ref", args.ref_frames, exe, repo_root,
+                                       max(args.timeout, args.ref_frames // 2 + 60), layer_path, args.scene)
+        if ref_img is None:
+            print("  reference capture FAILED; skipping viewpoint.\n")
+            all_ok = False
+            continue
+
+        for tech, env in techniques.items():
+            print(f"--- {vp} / {tech} ---")
+            img, dev = run_capture(env, tmp / f"{vp}_{tech}", args.frames, exe, repo_root,
+                                   args.timeout, layer_path, args.scene)
+            if img is None:
+                all_ok = False
+                continue
+            if img.shape != ref_img.shape:
+                print(f"  FAIL (size {img.shape} != reference {ref_img.shape})")
+                all_ok = False
+                continue
+
+            cur = {"device": dev or ref_dev, "viewpoint": vp, "technique": tech,
+                   "flip": flip(ref_img, img), "psnr": psnr(ref_img, img), "ssim": ssim(ref_img, img)}
+            fl = f"{cur['flip']:.4f}" if cur["flip"] is not None else "n/a"
+            print(f"  FLIP={fl}  PSNR={cur['psnr']:.2f}dB  SSIM={cur['ssim']:.4f}")
+
+            bp = baseline_path(repo_root, vp, tech)
+            if args.update_baseline:
+                bp.write_text(json.dumps(cur, indent=2))
+                print(f"  updated baseline: {bp.relative_to(repo_root)}")
+            elif bp.exists():
+                base = json.loads(bp.read_text())
+                if base.get("device") and cur["device"] and base["device"] != cur["device"]:
+                    print(f"  note: device differs (baseline '{base['device']}' vs current '{cur['device']}') "
+                          f"-- the PT reference isn't comparable across GPUs; consider --update-baseline.")
+                for m in ("flip", "psnr", "ssim"):
+                    b, c = base.get(m), cur.get(m)
+                    if regressed(m, b, c, args.threshold):
+                        print(f"  REGRESSION [{m}]: baseline {b} -> current {c}")
+                        all_ok = False
+            else:
+                print(f"  no baseline at {bp.relative_to(repo_root)} -- run with --update-baseline first.")
+
+    print("\n=== Summary ===")
+    print("PASS" if all_ok else "FAIL (regression or run failure)")
+    return 0 if all_ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
