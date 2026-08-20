@@ -26,6 +26,9 @@ Tools/rdts/
 # Committed golden occupancy baselines for the RGA static gate. See Scripts/rga-occupancy.py.
 !Scripts/rga-baseline/
 !Scripts/rga-baseline/*.json
+# Committed golden image-quality baselines for the FLIP/PSNR/SSIM gate. See Scripts/quality-bench.py.
+!Scripts/quality-baseline/
+!Scripts/quality-baseline/*.json
 *.DotSettings
 *.DotSettings.user
 *.ini
