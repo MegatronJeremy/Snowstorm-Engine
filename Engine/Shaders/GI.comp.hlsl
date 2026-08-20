@@ -52,7 +52,7 @@ cbuffer GICB : register(b3, space0)
 	uint ReflGeoTableAddrLo; // device address of the GeometryRecord table (lo/hi)
 	uint ReflGeoTableAddrHi;
 	uint RayCount;           // hemisphere-gather rays per pixel this frame (render.gi.rays, clamped [1,16])
-	uint _Pad;
+	float GIBounceAmbient;   // #39: scale on the un-occluded IBL ambient at GI secondary hits (render.gi.bounce_ambient)
 };
 
 // Set 3 bindless (Textures/Cubemaps/SceneTLAS) + the geometry-table read + one-bounce hit shading
@@ -159,7 +159,7 @@ void main(uint3 id : SV_DispatchThreadID)
 		if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT && tableAddr != 0)
 		{
 			const float3 hitPos = origin + dir * q.CommittedRayT();
-			incoming += ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos);
+			incoming += ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos, GIBounceAmbient);
 		}
 		else if (PrefilteredCubeIndex != 0)
 		{

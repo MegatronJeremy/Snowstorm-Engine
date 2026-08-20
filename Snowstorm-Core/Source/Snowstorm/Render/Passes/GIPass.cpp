@@ -44,7 +44,7 @@ namespace Snowstorm
 			uint32_t ReflGeoTableAddrLo = 0;
 			uint32_t ReflGeoTableAddrHi = 0;
 			uint32_t RayCount = 2; // render.gi.rays (clamped) — hemisphere-gather rays/pixel this frame
-			uint32_t _Pad = 0;
+			float GIBounceAmbient = 1.0f; // #39: scale on un-occluded IBL ambient at GI secondary hits
 		};
 
 		// Binding indices in GI.comp.hlsl set 0 (G-buffer color: .xy normal, .z roughness; depth is a separate SRV).
@@ -139,6 +139,7 @@ namespace Snowstorm
 		cb.ReflGeoTableAddrLo = static_cast<uint32_t>(tableAddr & 0xFFFFFFFFull);
 		cb.ReflGeoTableAddrHi = static_cast<uint32_t>(tableAddr >> 32);
 		cb.RayCount = static_cast<uint32_t>(CVars::ClampedGIRayCount());
+		cb.GIBounceAmbient = CVars::GIBounceAmbient.Get();
 
 		m_ParamBuffers[frameIndex]->SetData(&cb, sizeof(GICB), 0);
 

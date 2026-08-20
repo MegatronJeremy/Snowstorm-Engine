@@ -164,7 +164,7 @@ void main(uint3 id : SV_DispatchThreadID)
 		{
 			const float hitT = q.CommittedRayT();
 			const float3 hitPos = ray.Origin + dir * hitT;
-			radianceSum += ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos);
+			radianceSum += ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos, 1.0);
 			hitTSum += hitT;
 		}
 		else

@@ -139,6 +139,8 @@ namespace Snowstorm::CVars
 
 	CVar<float> GISpecAmbientFade{"render.gi.spec_ambient_fade", 1.0f, "#163: when RT GI is active, fade the un-occluded env-cube SPECULAR ambient by roughness (0 = off/old behavior, 1 = full linear roughness fade). Rough surfaces' wide env-specular lobe otherwise acts as a second un-occluded ambient overlapping the occluded diffuse GI, over-filling shadows vs the path-traced reference.", CVarFlags::Persist};
 
+	CVar<float> GIBounceAmbient{"render.gi.bounce_ambient", 0.5f, "#39: scale on the un-occluded IBL ambient added at each RT-GI secondary hit (0..1; 1 = old behavior). The GI gather is itself the indirect-diffuse estimator, so a full un-occluded ambient at every bounce double-counts the sky and floods shadowed nooks (residual over-brightness vs the path-traced reference after #163). Default 0.5 measured to improve FLIP AND SSIM on all viewpoints vs the reference; the path tracer injects no free ambient per bounce.", CVarFlags::Persist};
+
 	CVar<int> AoMode{"render.ao.mode", 0, "Ambient-occlusion technique (#151): 0 = Off, 1 = SSAO (screen-space hemisphere kernel + bilateral blur, any GPU), 2 = RT (hardware ray query, requires an RT GPU; falls back to Off on a non-RT device). Both write the same forward AO slot for a clean same-scene A/B. Replaces the old render.ao.rt bool (#118). RT mode traces a few rays/frame and needs TAA (render.aa = TAA) for a clean result; SSAO is temporally stable on its own.", CVarFlags::Persist};
 
 	CVar<float> AORadius{"render.ao.radius", 0.5f, "RTAO occlusion sample distance in world units (larger = broader, softer occlusion)", CVarFlags::Persist};

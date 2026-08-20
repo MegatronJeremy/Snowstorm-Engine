@@ -97,7 +97,14 @@ float RTHitShadowRay(uint64_t tableAddr, float3 positionWS, float3 Ng, float3 L,
 // includer's CB) with a shadow ray + an IBL/flat ambient fill (so a hit on a shadowed surface still
 // contributes its ambient, not black). ONE bounce: the shaded hit does NOT itself trace. `hitPos` =
 // world hit position (caller: rayOrigin + rayDir * CommittedRayT).
-float3 ShadeSurfaceHit(uint64_t tableAddr, uint instanceId, uint prim, float2 bary, float3 hitPos)
+//
+// ambientScale (#39) attenuates the un-occluded IBL ambient at THIS hit. Reflections pass 1.0 (a reflected
+// surface should look fully lit). The GI gather passes render.gi.bounce_ambient (< 1): the GI is itself the
+// indirect-diffuse estimator, so a full un-occluded ambient injected at every secondary hit double-counts
+// the sky and floods shadowed nooks with second-hand un-occluded ambient (the residual over-brightness the
+// path-traced reference exposed after #163; the PT injects no free ambient per bounce). Sun direct is
+// unaffected (it carries its own shadow ray).
+float3 ShadeSurfaceHit(uint64_t tableAddr, uint instanceId, uint prim, float2 bary, float3 hitPos, float ambientScale)
 {
 	const HitSurface s = ResolveHit(tableAddr, instanceId, prim, bary);
 
@@ -123,7 +130,7 @@ float3 ShadeSurfaceHit(uint64_t tableAddr, uint instanceId, uint prim, float2 ba
 		ambient = float3(0.03, 0.03, 0.03); // faint fill so shadowed/indirect areas aren't crushed to black
 	}
 
-	return s.Albedo * (direct + ambient);
+	return s.Albedo * (direct + ambient * ambientScale);
 }
 
 #endif // SNOWSTORM_RT_HIT_SHADING_HLSLI

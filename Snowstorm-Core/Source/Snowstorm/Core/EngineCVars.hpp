@@ -305,6 +305,10 @@ namespace Snowstorm::CVars
 	// full). Corrects the RT-GI-on shadow over-fill that the path-traced reference exposed.
 	extern CVar<float> GISpecAmbientFade;
 
+	// #39: scale on the un-occluded IBL ambient injected at each RT-GI secondary hit (0..1). Full ambient
+	// per bounce double-counts the sky and over-fills shadows vs the path-traced reference; lower = closer.
+	extern CVar<float> GIBounceAmbient;
+
 	// Ambient-occlusion technique (#151), a mode CVar (mirrors render.shadows.mode) for a clean thesis A/B:
 	// 0 = Off, 1 = SSAO (screen-space, any GPU), 2 = RT (hardware ray query, RT GPU only). Both techniques
 	// write the SAME half-res AOTarget the forward pass samples, so the forward shader is agnostic to which
