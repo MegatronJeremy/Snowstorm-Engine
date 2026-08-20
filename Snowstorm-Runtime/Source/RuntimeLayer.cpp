@@ -18,6 +18,8 @@
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Components/VisibilityComponents.hpp"
+
+#include <cstdio> // std::sscanf for camera.override parsing
 #include "Snowstorm/Render/RendererUtils.hpp"
 
 namespace Snowstorm
@@ -72,8 +74,14 @@ namespace Snowstorm
 		const UUID viewportId = CreateRuntimeViewport();
 
 		// A runtime has no authoring tools, so it loads a pre-authored scene. The editor
-		// writes this file on first run (EditorLayer::LoadOrCreateStartupWorld).
+		// writes this file on first run (EditorLayer::LoadOrCreateStartupWorld). A startup.scene override
+		// (SS_STARTUP_SCENE) boots a chosen scene instead -- parity with the editor, so a headless harness
+		// (quality-bench, #153) can target any scene without editing the project.
 		m_ScenePath = activeProject->GetStartScenePath().string();
+		if (const std::string& sceneOverride = CVars::StartupScene.Get(); !sceneOverride.empty())
+		{
+			m_ScenePath = sceneOverride;
+		}
 		if (!SceneSerializer::Deserialize(*m_World, m_ScenePath))
 		{
 			SS_CORE_ERROR("Runtime: failed to load startup scene '{}'. "
@@ -148,6 +156,27 @@ namespace Snowstorm
 		// The runtime renders the Game layer; make sure the authored camera sees it.
 		reg.Ensure<CameraVisibilityComponent>(authored);
 		reg.Write<CameraVisibilityComponent>(authored).Mask = Visibility::Game;
+
+		// Headless viewpoint override (#158): pin the camera pose from camera.override = "px,py,pz,rx,ry,rz"
+		// (world position + Euler rotation, radians). Set before the first update so CameraControllerSystem
+		// seeds its look target from this pose (and, with no headless input, holds it). Lets the quality-bench
+		// harness capture arbitrary viewpoints in the runtime without editing the scene.
+		if (const std::string& ov = CVars::CameraOverride.Get(); !ov.empty())
+		{
+			float p[6] = {0, 0, 0, 0, 0, 0};
+			if (std::sscanf(ov.c_str(), "%f,%f,%f,%f,%f,%f", &p[0], &p[1], &p[2], &p[3], &p[4], &p[5]) == 6)
+			{
+				auto& tr = reg.Write<TransformComponent>(authored);
+				tr.Position = {p[0], p[1], p[2]};
+				tr.Rotation = {p[3], p[4], p[5]};
+				SS_CORE_INFO("Runtime: camera.override pos=({:.3f},{:.3f},{:.3f}) rot=({:.3f},{:.3f},{:.3f}).",
+				             p[0], p[1], p[2], p[3], p[4], p[5]);
+			}
+			else
+			{
+				SS_CORE_WARN("Runtime: camera.override '{}' is not 6 comma-separated floats; ignored.", ov);
+			}
+		}
 
 		SS_CORE_INFO("Runtime: using authored scene camera '{}'.",
 		             reg.any_of<TagComponent>(authored) ? reg.Read<TagComponent>(authored).Tag : std::string("<camera>"));

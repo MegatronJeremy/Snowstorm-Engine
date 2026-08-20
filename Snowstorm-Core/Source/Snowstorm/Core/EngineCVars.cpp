@@ -11,6 +11,8 @@ namespace Snowstorm::CVars
 
 	CVar<std::string> PerfBenchPath{"perf.bench.path", "perf-bench.json", "Output path for the perf.bench.frames JSON dump.", CVarFlags::ReadOnly};
 
+	CVar<std::string> CameraOverride{"camera.override", "", "Override the viewport camera pose at startup: \"px,py,pz,rx,ry,rz\" (world position + Euler rotation in radians), empty = off. Headless harness hook (#158) to pin a deterministic viewpoint in the runtime without editing the scene.", CVarFlags::ReadOnly};
+
 	CVar<int> QualityCaptureFrames{"quality.capture.frames", 0, "Headless image-quality capture (#153): when > 0, dump the final present (LDR sRGB) to disk as .npy and exit. This is the SETTLE WINDOW -- the number of frames to keep rendering AFTER asset streaming completes (PendingLoadCount hits 0), so the path tracer has accumulated / the real-time denoisers have converged from a steady-state scene rather than a fixed frame-from-zero that could capture half-loaded content (#160). Driven by Scripts/quality-bench.py.", CVarFlags::ReadOnly};
 
 	CVar<int> QualityCaptureMaxFrames{"quality.capture.maxframes", 3000, "Hard safety cap for quality.capture (#160): if streaming never finishes / convergence never triggers within this many total frames, capture anyway and log a warning, so a broken scene can't hang the headless run. Must exceed the streaming warmup + quality.capture.frames.", CVarFlags::ReadOnly};

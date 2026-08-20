@@ -23,6 +23,11 @@ namespace Snowstorm::CVars
 	// this many times (so a static camera accumulates the reference path tracer / warms the real-time path),
 	// then copy the final present (LDR sRGB) + HDR scene color to disk as .npy and exit. Scripts/quality-bench.py
 	// drives (viewpoint x technique) runs and diffs FLIP/PSNR/SSIM against a committed baseline. CLI/env-only.
+	// Override the resolved viewport camera pose at startup: "px,py,pz,rx,ry,rz" (world position + Euler
+	// rotation in radians), empty = off. Lets a headless harness (quality-bench, #158) pin a deterministic
+	// viewpoint in the runtime without editing the scene. Applied in RuntimeLayer::ConfigureSceneCamera.
+	extern CVar<std::string> CameraOverride;
+
 	extern CVar<int> QualityCaptureFrames;       // settle window: converge this many frames AFTER streaming completes
 	extern CVar<int> QualityCaptureMaxFrames;    // hard safety cap on total frames (capture anyway + warn if hit)
 	extern CVar<std::string> QualityCapturePath; // output basename; writes <path>_ldr.npy + <path>_hdr.npy
