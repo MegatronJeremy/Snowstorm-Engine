@@ -186,14 +186,21 @@ def flip(a: "np.ndarray", b: "np.ndarray"):
 # ---- capture -----------------------------------------------------------------------------------
 
 def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd: Path,
-                timeout: int, layer_path: Path, scene: str):
-    """Run one headless capture; return (rgb_image[H,W,4] float, device_str) or (None, '')."""
+                timeout: int, layer_path: Path, scene: str, max_frames: int = 0):
+    """Run one headless capture; return (rgb_image[H,W,4] float, device_str) or (None, '').
+    max_frames > 0 sets the hard capture cap: for the PT reference leave it 0 (converges via epsilon),
+    but a real-time technique NEVER settles below the auto-stop epsilon (RT GI/AO/TAA keep a per-frame
+    noise floor), so uncapped it burns the full 3000-frame safety cap (~100s/capture). Capping it at a
+    small fixed value force-captures a deterministic settle window in ~7s -- and is more honest than
+    3000 static frames, which over-accumulate TAA/RT beyond any real real-time frame."""
     ldr = out_base.with_name(out_base.name + "_ldr.npy")
     if ldr.exists():
         ldr.unlink()
 
     env = os.environ.copy()
     env["SS_QUALITY_CAPTURE_FRAMES"] = str(frames)
+    if max_frames > 0:
+        env["SS_QUALITY_CAPTURE_MAXFRAMES"] = str(max_frames)
     env["SS_QUALITY_CAPTURE_PATH"] = str(out_base)
     env["SS_STARTUP_SCENE"] = scene
     env["SS_VALIDATION_NONFATAL"] = "1"
@@ -202,16 +209,26 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
     if layer_path and layer_path.is_dir():
         env["VK_ADD_LAYER_PATH"] = str(layer_path)
 
-    try:
-        proc = subprocess.run([str(exe)], cwd=str(cwd), env=env, capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        print(f"  FAIL (timed out after {timeout}s)")
-        return None, ""
-    if proc.returncode != 0:
-        print(f"  FAIL (exit code {proc.returncode})")
-        return None, ""
-    if not ldr.exists():
-        print(f"  FAIL (no capture written to {ldr})")
+    # Retry transient failures. Rapid repeated launches occasionally flake (Vulkan/driver init, a lost
+    # device, a missed readback) -> a one-off None would poison the tuner's objective as inf and wrongly
+    # reject an otherwise-good config, so give each capture a couple of attempts before giving up.
+    proc = None
+    for attempt in range(3):
+        if ldr.exists():
+            ldr.unlink()
+        try:
+            proc = subprocess.run([str(exe)], cwd=str(cwd), env=env, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            print(f"  FAIL (timed out after {timeout}s){' -- retrying' if attempt < 2 else ''}")
+            continue
+        if proc.returncode != 0:
+            print(f"  FAIL (exit code {proc.returncode}){' -- retrying' if attempt < 2 else ''}")
+            continue
+        if not ldr.exists():
+            print(f"  FAIL (no capture written to {ldr}){' -- retrying' if attempt < 2 else ''}")
+            continue
+        break
+    else:
         return None, ""
 
     device = ""
@@ -311,6 +328,9 @@ def main() -> int:
     ap.add_argument("--scene", default=DEFAULT_SCENE, help="Scene to benchmark")
     ap.add_argument("--update-baseline", action="store_true", help="Write current metrics as the new baseline")
     ap.add_argument("--fresh-ref", action="store_true", help="Ignore the cached PT reference and re-capture it")
+    ap.add_argument("--tech-maxframes", type=int, default=200, help="Hard frame cap for real-time technique captures "
+                    "(they never converge below the auto-stop epsilon; uncapped they burn the full 3000-frame safety "
+                    "cap ~100s each). Default 200 -> ~7s/capture. The PT reference is uncapped (converges).")
     args = ap.parse_args()
 
     repo_root = Path(__file__).resolve().parent.parent
@@ -353,7 +373,7 @@ def main() -> int:
         for tech, env in techniques.items():
             print(f"--- {vp} / {tech} ---")
             img, dev = run_capture({**env, **cam}, tmp / f"{vp}_{tech}", args.frames, exe, repo_root,
-                                   args.timeout, layer_path, args.scene)
+                                   args.timeout, layer_path, args.scene, max_frames=args.tech_maxframes)
             if img is None:
                 all_ok = False
                 continue

@@ -67,9 +67,11 @@ PARAM_SPACE = {
         ("SS_RENDER_GI_DENOISE_VARIANCE", 0.5, 4.0, False, 2.0), # denoiser strength (bias vs noise)
     ],
     "all-rt": [
-        ("SS_RENDER_GI_RAYS", 1, 8, True, 2),
-        ("SS_RENDER_AO_RADIUS", 0.2, 1.5, False, 0.5),
-        ("SS_RENDER_AO_RAYS", 4, 32, True, 8),
+        ("SS_RENDER_GI_RAYS", 1, 8, True, 2),                       # GI quality (noise/occlusion of indirect)
+        ("SS_RENDER_GI_RANGE", 2.0, 20.0, False, 8.0),              # indirect gather distance (world units; Sponza ~20u)
+        ("SS_RENDER_AO_RADIUS", 0.2, 3.0, False, 0.5),              # occlusion extent (widened: prior run clamped at 1.5)
+        ("SS_RENDER_AO_RAYS", 4, 32, True, 8),                      # occlusion quality (noise)
+        ("SS_RENDER_GI_SPEC_AMBIENT_FADE", 0.0, 1.0, False, 1.0),  # #163 env-spec occlusion (semi-brightness; watch for dimming)
     ],
 }
 
@@ -85,6 +87,8 @@ def main() -> int:
     ap.add_argument("--samples", type=int, default=5, help="Line-search samples per parameter per round")
     ap.add_argument("--frames", type=int, default=60, help="Settle frames per real-time trial capture")
     ap.add_argument("--ref-frames", type=int, default=250, help="PT accumulation frames for the (cached) reference")
+    ap.add_argument("--tech-maxframes", type=int, default=200, help="Hard frame cap for real-time trial captures "
+                    "(they never converge; uncapped each burns the 3000-frame safety cap ~100s). Default 200 -> ~7s.")
     ap.add_argument("--timeout", type=int, default=300, help="Per-capture wall-clock timeout in seconds")
     ap.add_argument("--config", default="Debug")
     ap.add_argument("--scene", default=qb.DEFAULT_SCENE)
@@ -131,7 +135,8 @@ def main() -> int:
         flips = []
         for vp, pose in qb.VIEWPOINTS.items():
             env = {**base_env, **overrides, **qb.camera_env(pose)}
-            img, _ = qb.run_capture(env, tmp / f"{vp}_trial", args.frames, exe, ROOT, args.timeout, layer_path, args.scene)
+            img, _ = qb.run_capture(env, tmp / f"{vp}_trial", args.frames, exe, ROOT, args.timeout, layer_path,
+                                    args.scene, max_frames=args.tech_maxframes)
             if img is None or img.shape != refs[vp].shape:
                 cache[key] = float("inf")
                 return float("inf")
