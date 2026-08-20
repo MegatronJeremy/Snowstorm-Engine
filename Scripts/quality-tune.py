@@ -67,11 +67,17 @@ PARAM_SPACE = {
         ("SS_RENDER_GI_DENOISE_VARIANCE", 0.5, 4.0, False, 2.0), # denoiser strength (bias vs noise)
     ],
     "all-rt": [
-        ("SS_RENDER_GI_RAYS", 1, 8, True, 2),                       # GI quality (noise/occlusion of indirect)
-        ("SS_RENDER_GI_RANGE", 2.0, 20.0, False, 8.0),              # indirect gather distance (world units; Sponza ~20u)
-        ("SS_RENDER_AO_RADIUS", 0.2, 3.0, False, 0.5),              # occlusion extent (widened: prior run clamped at 1.5)
-        ("SS_RENDER_AO_RAYS", 4, 32, True, 8),                      # occlusion quality (noise)
-        ("SS_RENDER_GI_SPEC_AMBIENT_FADE", 0.0, 1.0, False, 1.0),  # #163 env-spec occlusion (semi-brightness; watch for dimming)
+        ("SS_RENDER_GI_RAYS", 1, 8, True, 4),                        # GI quality; prior runs: 4 optimal
+        ("SS_RENDER_GI_RANGE", 4.0, 30.0, False, 21.0),             # indirect gather distance; interior optimum ~21 (v3)
+        ("SS_RENDER_AO_RADIUS", 0.2, 3.0, False, 0.5),              # occlusion extent, CAPPED at ~3 physical: beyond that AO
+                                                                     # becomes a global dimmer (gaming, #161). A clamp at 3 =
+                                                                     # residual structural over-brightness to investigate, not crank.
+        ("SS_RENDER_GI_SPEC_AMBIENT_FADE", 0.0, 1.0, False, 1.0),  # #163 env-spec occlusion (validated ->1.0 twice)
+        ("SS_RENDER_SHADOW_SUN_ANGLE_DEG", 0.1, 5.0, False, 1.0),  # NEW: sun soft-shadow penumbra width vs the PT's real sun angle
+        ("SS_RENDER_SHARPEN", 0.0, 1.0, False, 0.0),               # NEW: post-sharpen detail vs reference
+        ("SS_RENDER_REFLECTIONS_MAX_ROUGHNESS", 0.3, 1.0, False, 0.8), # NEW: glossy/env cutoff (low expected: reflections FLIP-invisible)
+        # DROPPED (proven no value for static FLIP): gi.denoise.iterations/variance (v3 flat -- temporal accumulation
+        # denoises at 200 static frames; they matter under motion, #159), ao.rays (v2 flat). Left at defaults.
     ],
 }
 
