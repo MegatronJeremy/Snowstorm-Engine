@@ -1771,10 +1771,34 @@ namespace Snowstorm
 			void Contribute(ViewportRenderContext& v) override
 			{
 				FrameContext& fc = v.Frame;
-				// Record the capture on frame == quality.capture.frames (a static camera has accumulated the PT
-				// reference by then); the pass still ticks every frame so the retired slot gets serialized.
-				const uint64_t target = static_cast<uint64_t>(CVars::QualityCaptureFrames.Get());
-				const bool doCapture = fc.Renderer.GetFrameCounter() == target;
+				// Readiness gate (#160): capture only once the scene is steady-state, not at a fixed frame that
+				// might land mid-streaming. Wait for asset streaming to finish (PathTraceSceneSettling =
+				// PendingLoadCount>0), THEN converge quality.capture.frames more frames (the settle window: the PT
+				// accumulates / real-time TAA+denoisers converge from loaded content). A restart of streaming resets
+				// the window. quality.capture.maxframes is a hard cap so a broken/never-settling scene can't hang.
+				const uint64_t frame = fc.Renderer.GetFrameCounter();
+				const uint64_t settle = static_cast<uint64_t>(CVars::QualityCaptureFrames.Get());
+				const int maxFramesCVar = CVars::QualityCaptureMaxFrames.Get();
+				const uint64_t cap = maxFramesCVar > 0 ? static_cast<uint64_t>(maxFramesCVar) : UINT64_MAX;
+
+				if (v.PathTraceSceneSettling)
+				{
+					m_StreamDoneFrame = UINT64_MAX; // still streaming (or restarted) -> window not started
+				}
+				else if (m_StreamDoneFrame == UINT64_MAX)
+				{
+					m_StreamDoneFrame = frame; // streaming just completed this frame
+				}
+				const bool converged = m_StreamDoneFrame != UINT64_MAX && (frame - m_StreamDoneFrame) >= settle;
+				const bool capHit = frame >= cap;
+				const bool doCapture = converged || capHit;
+				if (capHit && !converged && !m_WarnedCap)
+				{
+					m_WarnedCap = true;
+					SS_CORE_WARN("Quality capture: hit the {}-frame safety cap before the scene settled (streaming/convergence "
+					             "unfinished) -- capturing anyway; raise quality.capture.maxframes or check the scene.",
+					             cap);
+				}
 				const Ref<Texture> presentImg = v.RT.PresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
 				const std::string basePath = CVars::QualityCapturePath.Get();
 				fc.Graph.AddPass({.Name = "QualityCapture" + v.Suffix,
@@ -1790,7 +1814,9 @@ namespace Snowstorm
 
 		private:
 			RenderSystem& m_Owner;
-			QualityCapturePass m_Pass; // readback + .npy serialize; exclusive to this effect
+			QualityCapturePass m_Pass;               // readback + .npy serialize; exclusive to this effect
+			uint64_t m_StreamDoneFrame = UINT64_MAX; // frame streaming completed (UINT64_MAX = not yet / restarted)
+			bool m_WarnedCap = false;                // logged the safety-cap warning once
 		};
 	}
 

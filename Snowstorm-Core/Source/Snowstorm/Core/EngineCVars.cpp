@@ -11,9 +11,11 @@ namespace Snowstorm::CVars
 
 	CVar<std::string> PerfBenchPath{"perf.bench.path", "perf-bench.json", "Output path for the perf.bench.frames JSON dump.", CVarFlags::ReadOnly};
 
-	CVar<int> QualityCaptureFrames{"quality.capture.frames", 0, "Headless image-quality capture (#153): render N frames (a static camera lets the reference path tracer accumulate), then dump the final present (LDR sRGB) + HDR scene color to disk as .npy and exit (0 = off). Driven by Scripts/quality-bench.py, which diffs FLIP/PSNR/SSIM vs a committed baseline.", CVarFlags::ReadOnly};
+	CVar<int> QualityCaptureFrames{"quality.capture.frames", 0, "Headless image-quality capture (#153): when > 0, dump the final present (LDR sRGB) to disk as .npy and exit. This is the SETTLE WINDOW -- the number of frames to keep rendering AFTER asset streaming completes (PendingLoadCount hits 0), so the path tracer has accumulated / the real-time denoisers have converged from a steady-state scene rather than a fixed frame-from-zero that could capture half-loaded content (#160). Driven by Scripts/quality-bench.py.", CVarFlags::ReadOnly};
 
-	CVar<std::string> QualityCapturePath{"quality.capture.path", "quality-capture", "Output basename for quality.capture.frames; writes <path>_ldr.npy (RGBA8 sRGB) + <path>_hdr.npy (RGBA16F). Relative to the working directory.", CVarFlags::ReadOnly};
+	CVar<int> QualityCaptureMaxFrames{"quality.capture.maxframes", 3000, "Hard safety cap for quality.capture (#160): if streaming never finishes / convergence never triggers within this many total frames, capture anyway and log a warning, so a broken scene can't hang the headless run. Must exceed the streaming warmup + quality.capture.frames.", CVarFlags::ReadOnly};
+
+	CVar<std::string> QualityCapturePath{"quality.capture.path", "quality-capture", "Output basename for quality.capture.frames; writes <path>_ldr.npy (RGBA8 sRGB). Relative to the working directory.", CVarFlags::ReadOnly};
 
 	CVar<int> VSyncStress{"debug.vsync_stress", 0, "Toggle VSync every N frames (0 = off) to exercise swapchain recreation under validation — surfaces present-semaphore reuse bugs the steady-state smoke misses"};
 

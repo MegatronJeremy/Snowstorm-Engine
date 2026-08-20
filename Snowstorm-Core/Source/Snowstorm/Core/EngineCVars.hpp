@@ -23,7 +23,8 @@ namespace Snowstorm::CVars
 	// this many times (so a static camera accumulates the reference path tracer / warms the real-time path),
 	// then copy the final present (LDR sRGB) + HDR scene color to disk as .npy and exit. Scripts/quality-bench.py
 	// drives (viewpoint x technique) runs and diffs FLIP/PSNR/SSIM against a committed baseline. CLI/env-only.
-	extern CVar<int> QualityCaptureFrames;
+	extern CVar<int> QualityCaptureFrames;       // settle window: converge this many frames AFTER streaming completes
+	extern CVar<int> QualityCaptureMaxFrames;    // hard safety cap on total frames (capture anyway + warn if hit)
 	extern CVar<std::string> QualityCapturePath; // output basename; writes <path>_ldr.npy + <path>_hdr.npy
 
 	// Toggle VSync every N frames (0 = off). A test hook: recreating the swapchain repeatedly under
