@@ -301,6 +301,10 @@ namespace Snowstorm::CVars
 	// is already cosine-convolved (different scale than the analytic hemisphere lerp); tune to taste.
 	extern CVar<float> IBLIntensity;
 
+	// #163: fade the un-occluded env-cube SPECULAR ambient by roughness when RT GI is active (0 = off, 1 =
+	// full). Corrects the RT-GI-on shadow over-fill that the path-traced reference exposed.
+	extern CVar<float> GISpecAmbientFade;
+
 	// Ambient-occlusion technique (#151), a mode CVar (mirrors render.shadows.mode) for a clean thesis A/B:
 	// 0 = Off, 1 = SSAO (screen-space, any GPU), 2 = RT (hardware ray query, RT GPU only). Both techniques
 	// write the SAME half-res AOTarget the forward pass samples, so the forward shader is agnostic to which

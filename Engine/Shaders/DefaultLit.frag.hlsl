@@ -406,6 +406,18 @@ float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness,
 	// diffuse below.
 	float3 specular = envRadiance * specWeight * IBLIntensity;
 
+	// #163: when RT GI is active the diffuse indirect above is scene-traced + occluded (giDiffuse), but this
+	// env-cube specular stays un-occluded. On ROUGH surfaces its wide lobe behaves like a second, un-occluded
+	// ambient that overlaps the occluded diffuse GI and over-fills shadows vs the path-traced reference (the
+	// whole measured RT-GI-on brightness gap traced to this term). Real engines feed rough specular from the
+	// same occluded scene radiance (Lumen's radiance cache), not an un-occluded skybox; lacking that here,
+	// fade the rough env-cube specular by roughness so it defers to the traced GI. Smooth surfaces keep it
+	// (a genuine mirror-ish reflection, and the RT reflection below replaces it for roughness < cutoff).
+	if (useGIDiffuse != 0)
+	{
+		specular *= 1.0 - GISpecAmbientFade * saturate(roughness);
+	}
+
 	// RT reflections (#129): for smooth surfaces, blend in the traced reflection of the ACTUAL scene. The
 	// trace now runs in a SEPARATE full-res pass (ReflectionPass) that writes raw reflected radiance into a
 	// buffer (ReflectionTextureIndex), so it can be temporally accumulated to kill the few-ray shimmer —

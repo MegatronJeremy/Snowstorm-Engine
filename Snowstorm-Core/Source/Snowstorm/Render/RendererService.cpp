@@ -63,7 +63,12 @@ namespace Snowstorm
 			uint32_t BRDFLutIndex = 0;
 			uint32_t PrefilteredMipCount = 0;
 			float IBLIntensity = 1.0f; // separate ambient dial for IBL (irradiance is already convolved)
-			float _IBLPad0 = 0.0f;
+			// #163: when RT GI is active, fade the env-cube SPECULAR ambient by roughness. With GI on the
+			// diffuse indirect is scene-traced + occluded (giDiffuse), but the env-cube specular stays
+			// un-occluded; on rough surfaces its wide lobe acts as a second un-occluded ambient that overlaps
+			// the occluded diffuse GI and over-fills shadows vs a path-traced reference. 0 = off (old
+			// behavior), 1 = full linear roughness fade. Reuses a former pad slot (layout unchanged).
+			float GISpecAmbientFade = 0.0f;
 			float _IBLPad1 = 0.0f;
 			float _IBLPad2 = 0.0f;
 
@@ -337,6 +342,7 @@ namespace Snowstorm
 			frame.BRDFLutIndex = fd.IBL.BRDFLutIndex;
 			frame.PrefilteredMipCount = fd.IBL.PrefilteredMipCount;
 			frame.IBLIntensity = CVars::IBLIntensity.Get();
+			frame.GISpecAmbientFade = CVars::GISpecAmbientFade.Get();
 		}
 
 		// RT reflections (#118): active only when render.reflections.rt is on AND the device supports RT

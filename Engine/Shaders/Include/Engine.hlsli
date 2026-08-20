@@ -133,7 +133,9 @@ cbuffer FrameCB : register(b0, space0)
 	uint BRDFLutIndex;
 	uint PrefilteredMipCount;
 	float IBLIntensity;
-	float _IBLPad0;
+	// #163: fades the env-cube SPECULAR ambient by roughness when RT GI is active (see DefaultLit ComputeIBL).
+	// 0 = off (old behavior), 1 = full linear roughness fade. Reuses a former pad slot (layout unchanged).
+	float GISpecAmbientFade;
 	float _IBLPad1;
 	float _IBLPad2;
 
