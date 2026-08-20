@@ -15,10 +15,12 @@ black box; swap in Optuna/CMA-ES later if sample-efficiency becomes the bottlene
 
 The real-time vs reference gap is an un-occluded ambient shadow-fill (see #161), so the levers are the
 ambient (render.ibl.intensity), the occlusion (AO radius/rays), and the indirect (render.gi.*). The
-search is HARDENED against metric-gaming: an early run drove gi/ibl intensity to zero, which cuts FLIP
-by darkening the image rather than fixing occlusion. So intensities are constrained to near-physical
-bands (can't be dimmed away) and occlusion-quality knobs are the actual search dimension; a
-boundary-clamped optimum is flagged. Reuses quality-bench.py's capture + FLIP (loaded as a module).
+search tunes OCCLUSION-QUALITY knobs ONLY (ray counts, AO radius, denoiser) at FIXED physical
+intensities. Intensity is deliberately NOT a lever: runs showed the optimizer always dims gi/ibl to
+darken the (structurally over-bright) real-time indirect toward the reference's shadows -- a metric-
+gaming shortcut, not a quality gain (even near-physical bands pinned to their floors). With brightness
+fixed, any FLIP gain is legitimately better occlusion; no gain is the honest signal that the gap is
+structural (#157). A boundary-clamped optimum is still flagged. Reuses quality-bench.py (as a module).
 
 Needs a real GPU (the PT reference). Local, offline, slow-by-design (each trial is a headless capture).
 
@@ -42,36 +44,32 @@ _spec.loader.exec_module(qb)
 
 # Per-technique search space: (env var, lo, hi, is_int, start). `start` seeds coordinate descent.
 #
-# Hardened against metric-gaming (#161): the first version let the optimizer drive gi/ibl intensity to
-# zero, which minimizes FLIP by DARKENING the image to match the reference's shadows instead of fixing
-# the actual cause (the ambient's missing occlusion). So the intensity knobs are constrained to
-# NEAR-PHYSICAL bands (they can't be dimmed away), and the real lever -- OCCLUSION quality (AO
-# radius/rays, GI rays) -- is included so the optimizer reduces the shadow over-fill the correct way
-# (occluding the ambient more accurately, not turning it off). A best value pinned to a band edge is
-# flagged as a boundary-clamp warning (still suspect).
+# OCCLUSION-ONLY, deliberately (#161). The first version let the optimizer tune intensity (gi/ibl/ao),
+# and it always drove them down to darken the image toward the reference's shadows -- a metric-gaming
+# "turn the lights down" that isn't a quality improvement (see the boundary-clamp finding). Constraining
+# to near-physical bands didn't help: the optima still pinned to the floors. The real lesson: brightness
+# must NOT be a tuning lever, because dimming the (structurally over-bright) real-time indirect always
+# improves the average match. So the tuner only searches OCCLUSION-QUALITY knobs (ray counts, AO radius,
+# denoiser) at FIXED physical intensities -- any FLIP gain is then legitimately better occlusion, and if
+# there is none, that is the honest signal that the gap is structural (the real-time indirect is
+# un-occluded / over-bright vs the reference's true visibility -- the #157/structural item, not a CVar).
 PARAM_SPACE = {
     "ssao": [
-        ("SS_RENDER_AO_RADIUS", 0.2, 1.5, False, 0.5),      # occlusion extent -- the RIGHT lever
-        ("SS_RENDER_AO_RAYS", 4, 32, True, 8),              # occlusion quality
-        ("SS_RENDER_AO_INTENSITY", 0.75, 1.5, False, 1.0),  # near-physical band
-        ("SS_RENDER_IBL_INTENSITY", 0.4, 1.0, False, 0.75), # constrained: can't be dimmed to 0
+        ("SS_RENDER_AO_RADIUS", 0.2, 1.5, False, 0.5), # occlusion extent
+        ("SS_RENDER_AO_RAYS", 4, 32, True, 8),         # occlusion quality (noise)
     ],
     "rtao": [
         ("SS_RENDER_AO_RADIUS", 0.2, 1.5, False, 0.5),
         ("SS_RENDER_AO_RAYS", 4, 32, True, 8),
-        ("SS_RENDER_AO_INTENSITY", 0.75, 1.5, False, 1.0),
-        ("SS_RENDER_IBL_INTENSITY", 0.4, 1.0, False, 0.75),
     ],
     "rtgi": [
-        ("SS_RENDER_GI_RAYS", 1, 8, True, 2),               # GI quality -- occlude indirect the right way
-        ("SS_RENDER_GI_INTENSITY", 0.8, 1.25, False, 1.0),  # near-physical band
-        ("SS_RENDER_IBL_INTENSITY", 0.4, 1.0, False, 0.75),
+        ("SS_RENDER_GI_RAYS", 1, 8, True, 2),                  # GI quality (noise/occlusion of indirect)
+        ("SS_RENDER_GI_DENOISE_VARIANCE", 0.5, 4.0, False, 2.0), # denoiser strength (bias vs noise)
     ],
     "all-rt": [
         ("SS_RENDER_GI_RAYS", 1, 8, True, 2),
-        ("SS_RENDER_GI_INTENSITY", 0.8, 1.25, False, 1.0),
-        ("SS_RENDER_AO_INTENSITY", 0.75, 1.5, False, 1.0),
-        ("SS_RENDER_IBL_INTENSITY", 0.4, 1.0, False, 0.75),
+        ("SS_RENDER_AO_RADIUS", 0.2, 1.5, False, 0.5),
+        ("SS_RENDER_AO_RAYS", 4, 32, True, 8),
     ],
 }
 
