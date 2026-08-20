@@ -110,9 +110,10 @@ def main() -> int:
     # 1) Capture + cache the PT reference for each viewpoint (once). Runtime + camera.override per viewpoint.
     refs = {}
     for vp, pose in qb.VIEWPOINTS.items():
-        print(f"[ref] {vp}: path tracer ({args.ref_frames} frames)...")
-        img, _ = qb.run_capture({**qb.REF_ENV, **qb.camera_env(pose)}, tmp / f"{vp}_ref", args.ref_frames, exe, ROOT,
-                                max(args.timeout, args.ref_frames // 2 + 60), layer_path, args.scene)
+        img, _, cached = qb.capture_reference(vp, pose, args.ref_frames, exe, ROOT,
+                                              max(args.timeout, args.ref_frames // 2 + 60), layer_path,
+                                              args.scene, tmp)
+        print(f"[ref] {vp}: {'cached' if cached else f'path tracer ({args.ref_frames} frames)'}")
         if img is None:
             print(f"  reference capture FAILED for {vp}; aborting.")
             return 1

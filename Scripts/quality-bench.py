@@ -28,6 +28,7 @@ FLIP is optional: if the `flip-evaluator` package isn't importable the run still
 Exit code: 0 if every technique is within threshold (or --update-baseline), 1 on a regression/failure.
 """
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -225,6 +226,52 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
     return img, device
 
 
+# The PT reference is deterministic given (scene, viewpoint, ref-frames, PT code, GPU), and the 400-frame
+# accumulation is by far the most expensive capture. So cache it to disk keyed on a content hash of
+# everything that changes the reference image; a subsequent run (another gate invocation, a tuner session)
+# that only varies real-time CVars reuses the cached ground truth instead of re-accumulating it. The key
+# includes the PT shader sources (recompiled at runtime, so they don't bump the exe) AND the runtime exe
+# mtime (engine C++ PT path) AND the scene-file mtime, so any of those changing re-captures automatically.
+# Known limitation: a material/mesh/texture edit that doesn't touch the .world file or rebuild the exe is
+# NOT detected -- use --fresh-ref after such an edit. Cache dir is gitignored (per-machine, like baselines).
+_REF_CACHE_VERSION = 1  # bump to invalidate all cached references on a format/keying change
+_PT_SOURCES = ["Engine/Shaders/PathTrace.comp.hlsl", "Engine/Shaders/Include/Engine.hlsli"]
+
+
+def _reference_key(repo_root: Path, exe: Path, scene: str, pose, ref_frames: int) -> str:
+    h = hashlib.sha256()
+    h.update(f"v{_REF_CACHE_VERSION}|{scene}|{ref_frames}|".encode())
+    h.update(",".join(f"{v}" for v in (list(pose["pos"]) + list(pose["rot"]))).encode() if pose else b"none")
+    for rel in _PT_SOURCES:
+        p = repo_root / rel
+        h.update(p.read_bytes() if p.exists() else b"missing")
+    for p in (exe, repo_root / scene):
+        h.update(str(p.stat().st_mtime_ns).encode() if p.exists() else b"0")
+    return h.hexdigest()[:16]
+
+
+def capture_reference(vp: str, pose, ref_frames: int, exe: Path, repo_root: Path, timeout: int,
+                      layer_path: Path, scene: str, tmp: Path, fresh: bool = False):
+    """Return the PT reference image [H,W,4], reusing a disk cache unless the key changed or `fresh`.
+    Returns (img, device, cached_bool) or (None, '', False) on capture failure."""
+    cache_dir = repo_root / "Scripts" / ".quality-ref-cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    key = _reference_key(repo_root, exe, scene, pose, ref_frames)
+    cache_npy = cache_dir / f"{vp}__{key}.npy"
+
+    if cache_npy.exists() and not fresh:
+        try:
+            return np.load(cache_npy), "", True
+        except Exception as e:
+            print(f"  note: cached reference unreadable ({e}); re-capturing.")
+
+    img, dev = run_capture({**REF_ENV, **camera_env(pose)}, tmp / f"{vp}_ref", ref_frames, exe, repo_root,
+                           timeout, layer_path, scene)
+    if img is not None:
+        np.save(cache_npy, img)
+    return img, dev, False
+
+
 def baseline_path(repo_root: Path, viewpoint: str, technique: str) -> Path:
     return repo_root / "Scripts" / "quality-baseline" / f"{viewpoint}__{technique}.json"
 
@@ -263,6 +310,7 @@ def main() -> int:
     ap.add_argument("--threshold", type=float, default=10.0, help="Regression tolerance %% (default 10)")
     ap.add_argument("--scene", default=DEFAULT_SCENE, help="Scene to benchmark")
     ap.add_argument("--update-baseline", action="store_true", help="Write current metrics as the new baseline")
+    ap.add_argument("--fresh-ref", action="store_true", help="Ignore the cached PT reference and re-capture it")
     args = ap.parse_args()
 
     repo_root = Path(__file__).resolve().parent.parent
@@ -292,9 +340,11 @@ def main() -> int:
     all_ok = True
     for vp, pose in VIEWPOINTS.items():
         cam = camera_env(pose)  # SS_CAMERA_OVERRIDE for this viewpoint (runtime); no scene/sidecar mutation
-        print(f"=== viewpoint '{vp}': capturing path-traced reference ({args.ref_frames} frames) ===")
-        ref_img, ref_dev = run_capture({**REF_ENV, **cam}, tmp / f"{vp}_ref", args.ref_frames, exe, repo_root,
-                                       max(args.timeout, args.ref_frames // 2 + 60), layer_path, args.scene)
+        ref_img, ref_dev, cached = capture_reference(vp, pose, args.ref_frames, exe, repo_root,
+                                                     max(args.timeout, args.ref_frames // 2 + 60), layer_path,
+                                                     args.scene, tmp, fresh=args.fresh_ref)
+        src = "cached reference" if cached else f"captured path-traced reference ({args.ref_frames} frames)"
+        print(f"=== viewpoint '{vp}': {src} ===")
         if ref_img is None:
             print("  reference capture FAILED; skipping viewpoint.\n")
             all_ok = False

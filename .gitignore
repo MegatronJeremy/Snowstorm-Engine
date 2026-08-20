@@ -5,6 +5,8 @@ build/
 Vendor/Binaries
 vcpkg/
 Engine/cache
+# Cached PT references for the image-quality gate (per-machine, regenerated on demand). See Scripts/quality-bench.py.
+Scripts/.quality-ref-cache/
 # Radeon GPU Analyzer, auto-bootstrapped (pinned version, ~238MB) by Scripts/rga-occupancy.py.
 # Downloaded tool, not source — never commit.
 Tools/rga/
