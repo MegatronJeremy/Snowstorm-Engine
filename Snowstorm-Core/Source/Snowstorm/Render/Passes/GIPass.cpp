@@ -43,7 +43,7 @@ namespace Snowstorm
 
 			uint32_t ReflGeoTableAddrLo = 0;
 			uint32_t ReflGeoTableAddrHi = 0;
-			uint32_t RayCount = 2; // render.gi.rays (clamped) — hemisphere-gather rays/pixel this frame
+			uint32_t RayCount = 2;        // render.gi.rays (clamped) — hemisphere-gather rays/pixel this frame
 			float GIBounceAmbient = 1.0f; // #39: scale on un-occluded IBL ambient at GI secondary hits
 		};
 
