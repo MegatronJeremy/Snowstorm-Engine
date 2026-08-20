@@ -28,8 +28,9 @@ namespace Snowstorm::CVars
 	// viewpoint in the runtime without editing the scene. Applied in RuntimeLayer::ConfigureSceneCamera.
 	extern CVar<std::string> CameraOverride;
 
-	extern CVar<int> QualityCaptureFrames;       // settle window: converge this many frames AFTER streaming completes
+	extern CVar<int> QualityCaptureFrames;       // MIN settle frames after streaming before convergence can trigger
 	extern CVar<int> QualityCaptureMaxFrames;    // hard safety cap on total frames (capture anyway + warn if hit)
+	extern CVar<float> QualityCaptureEpsilon;    // converged when the mean per-channel present delta (/255) drops below this
 	extern CVar<std::string> QualityCapturePath; // output basename; writes <path>_ldr.npy + <path>_hdr.npy
 
 	// Toggle VSync every N frames (0 = off). A test hook: recreating the swapchain repeatedly under

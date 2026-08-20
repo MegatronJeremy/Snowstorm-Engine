@@ -17,6 +17,8 @@ namespace Snowstorm::CVars
 
 	CVar<int> QualityCaptureMaxFrames{"quality.capture.maxframes", 3000, "Hard safety cap for quality.capture (#160): if streaming never finishes / convergence never triggers within this many total frames, capture anyway and log a warning, so a broken scene can't hang the headless run. Must exceed the streaming warmup + quality.capture.frames.", CVarFlags::ReadOnly};
 
+	CVar<float> QualityCaptureEpsilon{"quality.capture.epsilon", 0.0005f, "Convergence threshold for quality.capture (#153/#160): the image is captured once the mean per-channel change of the tonemapped present between successive checkpoints falls below this fraction of full white (i.e. the path tracer has accumulated / real-time TAA+denoisers have settled). Smaller = stricter (more frames), so no magic frame count. Measured on Sponza: 0.0015 -> ~217 PT frames but ~2.7% off a strict run; 0.0003 -> ~919 frames. Default 0.0005 balances a clean reference against capture time (the PT ref is captured once and cached; real-time technique captures settle fast regardless).", CVarFlags::ReadOnly};
+
 	CVar<std::string> QualityCapturePath{"quality.capture.path", "quality-capture", "Output basename for quality.capture.frames; writes <path>_ldr.npy (RGBA8 sRGB). Relative to the working directory.", CVarFlags::ReadOnly};
 
 	CVar<int> VSyncStress{"debug.vsync_stress", 0, "Toggle VSync every N frames (0 = off) to exercise swapchain recreation under validation — surfaces present-semaphore reuse bugs the steady-state smoke misses"};
