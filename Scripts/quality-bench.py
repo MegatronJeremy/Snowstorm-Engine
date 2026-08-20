@@ -48,12 +48,11 @@ except ImportError:
 
 DEFAULT_SCENE = "Projects/Sandbox/assets/scenes/Sponza.world"
 
-# Viewpoints (#158). The editor viewport renders the editor fly camera whose pose lives in the
-# <scene>.world.editor sidecar; the harness writes that sidecar per viewpoint (and restores it after,
-# see main). pose = {pos:[x,y,z], rot:[pitch,yaw,roll] radians}. All share the known-good committed
-# position and vary orientation so none point into the void, while covering different content (atrium,
-# floor, upper gallery, side columns) that stresses AO/GI/reflections differently. Averaging FLIP
-# across these is what the auto-tuner (#161) should minimize, to avoid single-view overfit.
+# Viewpoints (#158). Captured in the RUNTIME (deterministic fixed viewport, no editor panels), pinned
+# per viewpoint via the camera.override CVar (see camera_env). pose = {pos:[x,y,z], rot:[pitch,yaw,roll]
+# radians}. All share a known-good position and vary orientation so none point into the void, while
+# covering different content (atrium, floor, upper gallery) that stresses AO/GI/reflections differently.
+# Averaging FLIP across these is what the auto-tuner (#161) minimizes, to avoid single-view overfit.
 _SPONZA_POS = [8.519126892089844, 1.4949023723602295, -0.4308139383792877]
 VIEWPOINTS = {
     "atrium":  {"pos": _SPONZA_POS, "rot": [0.027, 1.496, 0.0]},  # committed default: sunlit atrium down the nave
@@ -62,7 +61,7 @@ VIEWPOINTS = {
 }
 # Dropped two candidate orientations that rendered degenerate content from this spot (validated via the
 # capture stats): yaw+pi faced a near-black wall (99.7% dark), and the side yaw was 78.7% dark / 0% bright.
-# More/better viewpoints (from other positions) can be added later; the sidecar mechanism makes it trivial.
+# More/better viewpoints (from other positions) are trivial to add via camera.override.
 
 # The path-traced reference: unbiased (clamps off), progressive -- --ref-frames controls convergence.
 REF_ENV = {
@@ -83,6 +82,32 @@ TECHNIQUES = {
     "all-rt": {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2",
                "SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_GI_RT": "1", "SS_RENDER_AA": "2"},
 }
+
+
+# Canonical metric resolution. The capture size = the editor viewport = window minus panels, which is
+# NOT deterministic across launches (observed 1177x649 and 1817x1009 in the same session), so raw captures
+# can mismatch shape -> broken comparisons. Every capture is bilinear-resized to this fixed size before any
+# metric, which (a) makes the gate deterministic across sessions/machines and (b) lets ref vs technique
+# always compare 1:1. Chosen below both observed native sizes so it only ever downscales. The engine-side
+# fixed-resolution render (#162) is the cleaner fix that avoids the resample; this is the metric-domain one.
+CANON_W, CANON_H = 1024, 576
+
+
+def _resize_bilinear(img: "np.ndarray", out_h: int, out_w: int) -> "np.ndarray":
+    in_h, in_w = img.shape[:2]
+    if (in_h, in_w) == (out_h, out_w):
+        return img
+    ys = np.clip((np.arange(out_h) + 0.5) * in_h / out_h - 0.5, 0, in_h - 1)
+    xs = np.clip((np.arange(out_w) + 0.5) * in_w / out_w - 0.5, 0, in_w - 1)
+    y0 = np.floor(ys).astype(int)
+    x0 = np.floor(xs).astype(int)
+    y1 = np.minimum(y0 + 1, in_h - 1)
+    x1 = np.minimum(x0 + 1, in_w - 1)
+    wy = (ys - y0)[:, None, None]
+    wx = (xs - x0)[None, :, None]
+    top = img[y0][:, x0] * (1 - wx) + img[y0][:, x1] * wx
+    bot = img[y1][:, x0] * (1 - wx) + img[y1][:, x1] * wx
+    return top * (1 - wy) + bot * wy
 
 
 # ---- metrics (offline, numpy) ------------------------------------------------------------------
@@ -194,7 +219,9 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
         if any(v in low for v in ("radeon", "geforce", "nvidia", "intel(r)", "arc ", " gpu ")):
             device = line.split("SNOWSTORM:")[-1].strip()[:64]
             break
-    img = np.load(ldr).astype(np.float64)
+    # Normalize to the canonical metric resolution so window-size nondeterminism can't cause shape
+    # mismatches / non-comparable metrics (see CANON_W/H).
+    img = _resize_bilinear(np.load(ldr).astype(np.float64), CANON_H, CANON_W)
     return img, device
 
 
@@ -202,14 +229,14 @@ def baseline_path(repo_root: Path, viewpoint: str, technique: str) -> Path:
     return repo_root / "Scripts" / "quality-baseline" / f"{viewpoint}__{technique}.json"
 
 
-def sidecar_path(scene: str) -> Path:
-    # The editor camera pose lives beside the scene as "<scene>.editor" (EditorLayer::EditorSidecarPath).
-    return Path(scene + ".editor")
-
-
-def write_sidecar(path: Path, pose: dict) -> None:
-    # Pin the editor fly camera to this viewpoint; the editor loads it on scene open (LoadEditorCameraSidecar).
-    path.write_text(json.dumps({"Camera": {"Position": pose["pos"], "Rotation": pose["rot"]}, "Version": 1}, indent=2))
+def camera_env(pose) -> dict:
+    # Pin the runtime camera to this viewpoint via the camera.override CVar (RuntimeLayer applies it before
+    # the first update, so the free-look controller seeds from it and holds). pose = {pos:[x,y,z],
+    # rot:[pitch,yaw,roll] radians}; None = leave the scene's authored camera. Replaces the editor sidecar.
+    if pose is None:
+        return {}
+    vals = list(pose["pos"]) + list(pose["rot"])
+    return {"SS_CAMERA_OVERRIDE": ",".join(f"{v}" for v in vals)}
 
 
 def regressed(metric: str, base: float, cur: float, threshold_pct: float) -> bool:
@@ -241,7 +268,7 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
     build_dir = (repo_root / args.build_dir).resolve()
     layer_path = (repo_root / "vcpkg" / "installed" / args.triplet / "bin").resolve()
-    exe = build_dir / f"Snowstorm-Editor/{args.config}/Snowstorm-Editor.exe"
+    exe = build_dir / f"Snowstorm-Runtime/{args.config}/Snowstorm-Runtime.exe"
     if not exe.exists():
         print(f"FAIL: executable not found at {exe} (build first, or check --config)")
         return 1
@@ -262,18 +289,11 @@ def main() -> int:
     print(f"Scene     : {args.scene}   Ref frames: {args.ref_frames}   Threshold: {args.threshold}%")
     print(f"Mode      : {'UPDATE BASELINE' if args.update_baseline else 'compare vs baseline'}\n")
 
-    # Pin the editor camera per viewpoint by writing the scene's .editor sidecar, and restore the committed
-    # one afterwards (try/finally) so a bench run never leaves the tracked sidecar modified, even on crash.
-    sidecar = sidecar_path(args.scene)
-    orig_sidecar = sidecar.read_bytes() if sidecar.exists() else None
-
     all_ok = True
-    try:
-      for vp, pose in VIEWPOINTS.items():
-        if pose is not None:
-            write_sidecar(sidecar, pose)
+    for vp, pose in VIEWPOINTS.items():
+        cam = camera_env(pose)  # SS_CAMERA_OVERRIDE for this viewpoint (runtime); no scene/sidecar mutation
         print(f"=== viewpoint '{vp}': capturing path-traced reference ({args.ref_frames} frames) ===")
-        ref_img, ref_dev = run_capture(REF_ENV, tmp / f"{vp}_ref", args.ref_frames, exe, repo_root,
+        ref_img, ref_dev = run_capture({**REF_ENV, **cam}, tmp / f"{vp}_ref", args.ref_frames, exe, repo_root,
                                        max(args.timeout, args.ref_frames // 2 + 60), layer_path, args.scene)
         if ref_img is None:
             print("  reference capture FAILED; skipping viewpoint.\n")
@@ -282,7 +302,7 @@ def main() -> int:
 
         for tech, env in techniques.items():
             print(f"--- {vp} / {tech} ---")
-            img, dev = run_capture(env, tmp / f"{vp}_{tech}", args.frames, exe, repo_root,
+            img, dev = run_capture({**env, **cam}, tmp / f"{vp}_{tech}", args.frames, exe, repo_root,
                                    args.timeout, layer_path, args.scene)
             if img is None:
                 all_ok = False
@@ -313,12 +333,6 @@ def main() -> int:
                         all_ok = False
             else:
                 print(f"  no baseline at {bp.relative_to(repo_root)} -- run with --update-baseline first.")
-    finally:
-        # Restore the committed sidecar (or remove one we created) so the tracked file is never left modified.
-        if orig_sidecar is not None:
-            sidecar.write_bytes(orig_sidecar)
-        elif sidecar.exists():
-            sidecar.unlink()
 
     print("\n=== Summary ===")
     print("PASS" if all_ok else "FAIL (regression or run failure)")
