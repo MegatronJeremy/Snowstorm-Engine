@@ -11,6 +11,10 @@ namespace Snowstorm::CVars
 
 	CVar<std::string> PerfBenchPath{"perf.bench.path", "perf-bench.json", "Output path for the perf.bench.frames JSON dump.", CVarFlags::ReadOnly};
 
+	CVar<int> QualityCaptureFrames{"quality.capture.frames", 0, "Headless image-quality capture (#153): render N frames (a static camera lets the reference path tracer accumulate), then dump the final present (LDR sRGB) + HDR scene color to disk as .npy and exit (0 = off). Driven by Scripts/quality-bench.py, which diffs FLIP/PSNR/SSIM vs a committed baseline.", CVarFlags::ReadOnly};
+
+	CVar<std::string> QualityCapturePath{"quality.capture.path", "quality-capture", "Output basename for quality.capture.frames; writes <path>_ldr.npy (RGBA8 sRGB) + <path>_hdr.npy (RGBA16F). Relative to the working directory.", CVarFlags::ReadOnly};
+
 	CVar<int> VSyncStress{"debug.vsync_stress", 0, "Toggle VSync every N frames (0 = off) to exercise swapchain recreation under validation — surfaces present-semaphore reuse bugs the steady-state smoke misses"};
 
 	CVar<int> MaxFrameMs{"debug.max_frame_ms", 0, "Frame-time watchdog: log [error] when a frame exceeds this many ms (0 = off)"};

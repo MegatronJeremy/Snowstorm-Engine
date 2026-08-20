@@ -19,6 +19,13 @@ namespace Snowstorm::CVars
 	extern CVar<int> PerfBenchFrames;
 	extern CVar<std::string> PerfBenchPath;
 
+	// Headless quality capture (local image-quality gate, #153 increment 2). When > 0, let the frame render
+	// this many times (so a static camera accumulates the reference path tracer / warms the real-time path),
+	// then copy the final present (LDR sRGB) + HDR scene color to disk as .npy and exit. Scripts/quality-bench.py
+	// drives (viewpoint x technique) runs and diffs FLIP/PSNR/SSIM against a committed baseline. CLI/env-only.
+	extern CVar<int> QualityCaptureFrames;
+	extern CVar<std::string> QualityCapturePath; // output basename; writes <path>_ldr.npy + <path>_hdr.npy
+
 	// Toggle VSync every N frames (0 = off). A test hook: recreating the swapchain repeatedly under
 	// validation surfaces present/acquire-semaphore reuse bugs that steady-state running never triggers.
 	extern CVar<int> VSyncStress;

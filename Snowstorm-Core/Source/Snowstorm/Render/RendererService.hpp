@@ -275,6 +275,11 @@ namespace Snowstorm
 		void SetDatasetFramesWritten(const uint64_t n) { m_DatasetFramesWritten = n; }
 		[[nodiscard]] uint64_t GetDatasetFramesWritten() const { return m_DatasetFramesWritten; }
 
+		// 1 once the headless quality capture (#153, quality.capture.frames) has written its .npy to disk. Set
+		// by RenderSystem from the QualityCapturePass; read by the app loop to exit after the single capture.
+		void SetQualityCaptureWritten(const uint64_t n) { m_QualityCaptureWritten = n; }
+		[[nodiscard]] uint64_t GetQualityCaptureWritten() const { return m_QualityCaptureWritten; }
+
 		// --- RT editor picking (#118 follow-up) --------------------------------------------------------
 		// The editor requests a pixel-accurate mesh pick by handing over the camera->cursor WORLD ray; a
 		// single-thread compute dispatch traces it against the scene TLAS (RecordPick, driven by RenderSystem)
@@ -419,6 +424,9 @@ namespace Snowstorm
 
 		// Running count of dataset-export tuples written to disk (#46), set by RenderSystem when exporting.
 		uint64_t m_DatasetFramesWritten = 0;
+
+		// 1 once the headless quality capture (#153) has written its .npy (set by RenderSystem).
+		uint64_t m_QualityCaptureWritten = 0;
 
 		// --- RT editor picking (#118 follow-up) ---
 		// One pending ray, latest-wins (RequestPick overwrites). Cleared when RecordPick dispatches it.

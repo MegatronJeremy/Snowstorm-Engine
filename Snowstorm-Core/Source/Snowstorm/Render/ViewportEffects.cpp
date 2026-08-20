@@ -34,6 +34,7 @@
 #include "Snowstorm/Render/Passes/AOUpsamplePass.hpp"
 #include "Snowstorm/Render/Passes/GIUpsamplePass.hpp"
 #include "Snowstorm/Render/Passes/MetricsPass.hpp"
+#include "Snowstorm/Render/Passes/QualityCapturePass.hpp" // #153: headless FLIP/PSNR/SSIM capture
 #include "Snowstorm/Render/Passes/NeuralUpscalePass.hpp"
 #include "Snowstorm/Render/Passes/SharpenPass.hpp"
 #include "Snowstorm/Render/Passes/TemporalResolvePass.hpp"
@@ -1745,6 +1746,52 @@ namespace Snowstorm
 			Ref<RenderTarget> m_GtDownsampleTarget;
 			Ref<TextureView> m_GtDownsampleColorView;
 		};
+
+		// Headless image-quality capture (#153 increment 2). Runs last, only when quality.capture.frames > 0
+		// (a Scripts/quality-bench.py run): on the target frame it copies the FINAL present (LDR sRGB) + the HDR
+		// scene color to disk as .npy, so a real-time technique can be diffed (FLIP/PSNR/SSIM) against the
+		// converged path-traced reference offline. Works in BOTH modes (PT and real-time) since both publish the
+		// same present via the shared LDR chain, so it is not gated on compare. Off = zero cost.
+		class QualityCaptureEffect final : public IViewportEffect
+		{
+		public:
+			explicit QualityCaptureEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "QualityCapture"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return CVars::QualityCaptureFrames.Get() > 0 && v.RT.PresentTarget &&
+				       !v.RT.PresentTarget->GetDesc().ColorAttachments.empty();
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+				// Record the capture on frame == quality.capture.frames (a static camera has accumulated the PT
+				// reference by then); the pass still ticks every frame so the retired slot gets serialized.
+				const uint64_t target = static_cast<uint64_t>(CVars::QualityCaptureFrames.Get());
+				const bool doCapture = fc.Renderer.GetFrameCounter() == target;
+				const Ref<Texture> presentImg = v.RT.PresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+				const std::string basePath = CVars::QualityCapturePath.Get();
+				fc.Graph.AddPass({.Name = "QualityCapture" + v.Suffix,
+				                  .IsCompute = true, // no render target; records the readback copy
+				                  .Reads = {{presentImg, RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, presentImg, doCapture, basePath](CommandContext& c)
+				                  {
+					                  const Ref<CommandContext> cref(&c, [](CommandContext*) {});
+					                  const uint64_t written = m_Pass.Tick(cref, presentImg, doCapture, fc.FrameIndex, basePath);
+					                  fc.Renderer.SetQualityCaptureWritten(written);
+				                  }});
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			QualityCapturePass m_Pass; // readback + .npy serialize; exclusive to this effect
+		};
 	}
 
 	void RenderSystem::BuildViewportEffects()
@@ -1776,5 +1823,6 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<PrevColorSnapshotEffect>(*this)); // #151: snapshot HDR color for next frame's SSR
 		m_ViewportEffects.push_back(CreateScope<LdrChainEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<CompareEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<QualityCaptureEffect>(*this)); // #153: last — captures the final present
 	}
 }

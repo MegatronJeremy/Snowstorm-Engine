@@ -263,6 +263,16 @@ namespace Snowstorm
 				}
 			}
 
+			// Quality capture (#153 increment 2): once the single reference/technique frame has been dumped to
+			// disk (a static camera has accumulated the path tracer by then), exit — the headless analogue of the
+			// dataset/perf-bench runs. Scripts/quality-bench.py drives per-(viewpoint, technique) captures.
+			if (CVars::QualityCaptureFrames.Get() > 0 &&
+			    m_ServiceManager->GetService<RendererService>().GetQualityCaptureWritten() > 0)
+			{
+				SS_CORE_INFO("Quality capture: image written, requesting shutdown.");
+				m_Running = false;
+			}
+
 			// End-of-frame marker: Tracy uses this to segment its timeline into frames (enables the
 			// per-frame view / frame-time graph). No-op for the JSON tracer.
 			SS_PROFILE_FRAME_MARK();
