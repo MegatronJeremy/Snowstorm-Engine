@@ -113,7 +113,7 @@ namespace Snowstorm::CVars
 
 	CVar<int> Msaa{"render.msaa", 1, "Forward MSAA sample count: 1 = off, 2/4/8 = multisample the forward color+depth for geometric-edge AA, resolved before post. Does NOT cover the RT effects (single-sample G-buffer) or shader/specular aliasing. Applies live (targets + pipelines rebuilt on change); clamped to the device max.", CVarFlags::Persist};
 
-	CVar<int> DebugView{"render.debugview", 0, "Viewport debug overlay: 0 = Normal (tonemapped scene), 1 = Motion Vectors (per-pixel screen-space velocity as color; drives the velocity pass + tonemap debug branch, #44), 2 = Ambient Occlusion (DefaultLit outputs the isolated grayscale AO term for tuning RTAO, #118), 3 = Reflections (raw reflected albedo from the RT reflection trace, for verifying hit resolution, #118), 4 = Global Illumination (raw RT GI indirect term, for tuning intensity/range, #118), 5 = World Normals (the depth+normal prepass G-buffer, [-1,1] normal mapped to RGB, for verifying the half-res GI substrate, #124), 6 = Half-res GI raw (the raw half-res GI irradiance buffer, tonemapped, before the bilateral upsample, #124), 7 = Half-res GI denoised (the same buffer AFTER temporal accumulation + à-trous, the A/B against view 6 that shows what the denoiser did, #125)", CVarFlags::Persist};
+	CVar<int> DebugView{"render.debugview", 0, "Viewport debug overlay: 0 = Normal (tonemapped scene), 1 = Motion Vectors (per-pixel screen-space velocity as color; drives the velocity pass + tonemap debug branch, #44), 2 = Ambient Occlusion (DefaultLit outputs the isolated grayscale AO term for tuning RTAO, #118), 3 = Reflections (raw reflected albedo from the RT reflection trace, for verifying hit resolution, #118), 4 = Global Illumination (raw RT GI indirect term, for tuning intensity/range, #118), 5 = World Normals (the depth+normal prepass G-buffer, [-1,1] normal mapped to RGB, for verifying the half-res GI substrate, #124), 6 = Half-res GI raw (the raw half-res GI irradiance buffer, tonemapped, before the bilateral upsample, #124), 7 = Half-res GI denoised (the same buffer AFTER temporal accumulation + à-trous, the A/B against view 6 that shows what the denoiser did, #125), 8 = Half-res RT shadow raw (the noisy 1-ray/pixel stochastic aggregate shadow ratio before temporal+denoise), 9 = Half-res RT shadow denoised (the same buffer AFTER temporal + à-trous, the A/B against view 8)", CVarFlags::Persist};
 
 	CVar<float> TaaBlend{"render.taa.blend", 0.9f, "TAA base history weight while moving (higher = smoother/more lag). Live-tunable (#44)", CVarFlags::Persist};
 
@@ -132,6 +132,24 @@ namespace Snowstorm::CVars
 	CVar<bool> ShadowSoft{"render.shadow.soft", true, "Soft shadows: 3x3 PCF for the raster shadow map; cone-sampled penumbra for RT shadows (each shadow ray jittered within the light's size, TAA-denoised). Off = hard single tap / single ray. Needs TAA (render.aa = TAA) for a clean RT penumbra.", CVarFlags::Persist};
 
 	CVar<float> ShadowStrength{"render.shadow.strength", 1.0f, "Shadow darkness (1 = full occlusion, 0 = none)", CVarFlags::Persist};
+
+	CVar<float> ShadowScale{"render.shadows.scale", 0.5f, "RT sun-shadow internal resolution: the half-res sun-visibility trace runs at this fraction of viewport res (0.5 = quarter the pixels = ~4x cheaper), then a depth-aware bilateral upsample restores full res. 1.0 = full-res reference for the A/B. Clamped to [0.25, 1.0]. Mirrors render.ao.scale / render.gi.scale; independent of both.", CVarFlags::Persist};
+
+	CVar<float> ShadowNormalBias{"render.shadows.normalbias", 0.02f, "RT sun-shadow ray-origin normal offset in world units: pushes the shadow ray start off the surface along the geometric normal to avoid self-intersection (shadow acne). Too small = acne (surfaces shadow themselves); too large = peter-panning (contact shadows detach). Clamped to [0, 0.2].", CVarFlags::Persist};
+
+	CVar<int> ShadowRayCount{"render.shadows.rays", 4, "Stochastic RT shadow rays per pixel per frame: each independently importance-samples one light (proportional to unshadowed contribution) and traces one shadow ray; the average is the aggregate shadow ratio. More rays = less per-frame variance (the 1-ray estimate is a noisy binary sample) at ~linear cost, so the temporal + denoiser converge cleaner — especially at edges and under motion. Clamped to [1, 16]. Mirrors render.ao.rays.", CVarFlags::Persist};
+
+	CVar<bool> ShadowTemporal{"render.shadows.temporal", true, "Stochastic RT shadow temporal accumulation: reproject the previous accumulated shadow ratio by the motion vectors and blend with this frame's 1-ray estimate (depth-disocclusion reject, shared SVGF temporal). REQUIRED for a usable result — the 1 importance-sampled ray/pixel is very noisy without it. Off = the raw stochastic estimate. Read per-frame; forces the velocity pass on.", CVarFlags::Persist};
+
+	CVar<float> ShadowTemporalBlend{"render.shadows.temporal.blend", 0.9f, "RT shadow temporal history weight while moving. The velocity-aware blend lerps between this and maxblend by staticness. Mirrors AO/GI's 0.9.", CVarFlags::Persist};
+
+	CVar<float> ShadowTemporalMaxBlend{"render.shadows.temporal.maxblend", 0.97f, "RT shadow temporal history weight when the pixel is ~static: deeper accumulation to converge the 1-ray estimate. Mirrors AO/GI's 0.97.", CVarFlags::Persist};
+
+	CVar<bool> ShadowDenoise{"render.shadows.denoise", true, "Stochastic RT shadow spatial denoiser: the shared edge-avoiding a-trous over the shadow ratio, guided by the G-buffer (normal + depth), after temporal accumulation. Off = temporal-only. Read per-frame.", CVarFlags::Persist};
+
+	CVar<int> ShadowDenoiseIterations{"render.shadows.denoise.iterations", 3, "RT shadow denoiser a-trous pass count: each doubles the tap stride (1,2,4,...) for a wider edge-aware blur. More = smoother but costlier. Clamped to [0, 5]; 0 disables like render.shadows.denoise off.", CVarFlags::Persist};
+
+	CVar<float> ShadowDenoiseVariance{"render.shadows.denoise.variance", 4.0f, "SVGF variance-guided a-trous luminance-phi for RT shadows: widens the a-trous in noisy/disoccluded regions, tight where converged. 0 = off. ~2-8 typical.", CVarFlags::Persist};
 
 	CVar<float> ShadowSunAngleDeg{"render.shadow.sun_angle_deg", 1.0f, "Sun angular diameter in degrees — drives RT soft-shadow penumbra width for the directional light (real sun ~0.53 deg; larger = softer). Only used by the RT soft path.", CVarFlags::Persist};
 
@@ -388,6 +406,58 @@ namespace Snowstorm::CVars
 			return 1.0f;
 		}
 		return s;
+	}
+
+	float ClampedShadowScale()
+	{
+		const float s = ShadowScale.Get();
+		if (s < 0.25f)
+		{
+			return 0.25f;
+		}
+		if (s > 1.0f)
+		{
+			return 1.0f;
+		}
+		return s;
+	}
+
+	int ClampedShadowRayCount()
+	{
+		const int n = ShadowRayCount.Get();
+		if (n < 1)
+		{
+			return 1;
+		}
+		if (n > 16)
+		{
+			return 16;
+		}
+		return n;
+	}
+
+	bool ShadowTemporalActive()
+	{
+		return ShadowsRTActive() && ShadowTemporal.Get();
+	}
+
+	int ClampedShadowDenoiseIterations()
+	{
+		const int n = ShadowDenoiseIterations.Get();
+		if (n < 0)
+		{
+			return 0;
+		}
+		if (n > 5)
+		{
+			return 5;
+		}
+		return n;
+	}
+
+	bool ShadowDenoiseActive()
+	{
+		return ShadowsRTActive() && ShadowDenoise.Get() && ClampedShadowDenoiseIterations() > 0;
 	}
 
 	float ClampedCompareSplit()

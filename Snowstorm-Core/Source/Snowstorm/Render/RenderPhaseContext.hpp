@@ -99,6 +99,11 @@ namespace Snowstorm
 		// stale buffer. Null until AOEffect runs.
 		Ref<TextureView> AOView;
 
+		// The current live half-res sun-visibility buffer: RTShadowEffect publishes the raw ShadowTarget, then
+		// ShadowUpsampleEffect reads it. Threaded like AOView (Increment A has no temporal/denoise stage in
+		// between; the pointer is ready for one). Null until RTShadowEffect runs.
+		Ref<TextureView> ShadowView;
+
 		// The current live full-res RT reflection buffer as it flows Reflection-trace -> [temporal] -> forward
 		// (#129). ReflectionEffect publishes the raw ReflectionTarget; ReflectionTemporalEffect republishes
 		// the accumulated GIHistory[cur]; ForwardEffect reads whatever is current for the specular blend.

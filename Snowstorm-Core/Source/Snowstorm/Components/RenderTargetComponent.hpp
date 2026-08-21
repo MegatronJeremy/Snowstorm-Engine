@@ -102,6 +102,25 @@ namespace Snowstorm
 		// A RenderTarget (the upsample is a fullscreen graphics pass). Null until allocated.
 		Ref<RenderTarget> AOUpscaleTarget;
 
+		// Half-res RT sun-shadow: the sun-visibility trace runs into this Sampled|Storage RGBA16F target at
+		// render.ao.scale (reusing the AO scale — one half-res grid for both scalar signals). Stores a sun
+		// VISIBILITY factor [0,1] (1 = lit) in .r, the same shape as the AO factor. A bare Texture + view
+		// (compute writes it as a UAV), like AOTarget. Null until allocated. Only dispatched when ShadowsRTActive().
+		Ref<Texture> ShadowTarget;
+		Ref<TextureView> ShadowTargetView;
+
+		// Stochastic RT shadow SVGF denoiser state: history + moments + a-trous scratch ping-pongs + history-valid
+		// flag (the shadow twin of AODenoiser). Half-res (render.shadows.scale, tracks ShadowTarget). The 1-ray/
+		// pixel aggregate shadow ratio rides .r/.rgb (grey), so the shared color-path denoiser treats it as a
+		// luminance signal unchanged. REQUIRED for a usable result. See DenoiserInstance.
+		DenoiserInstance ShadowDenoiser;
+
+		// Full-res sun-visibility factor: the depth+normal-aware bilateral upsample (reusing AOUpsamplePass —
+		// signal-agnostic) renders the half-res ShadowTarget (after temporal+denoise) into this full-viewport
+		// target, which the forward pass samples (by screen UV) in place of the inline per-pixel RayQuery. Null
+		// until allocated.
+		Ref<RenderTarget> ShadowUpscaleTarget;
+
 		// Full-res RT reflection (#129): the reflection trace runs into this Sampled|Storage RGBA16F target at
 		// FULL viewport res (reflections are high-frequency — half-res would soften mirrors). Stores RAW
 		// reflected radiance (.rgb, no Fresnel/BRDF weight — the forward pass applies that per-pixel) + the hit

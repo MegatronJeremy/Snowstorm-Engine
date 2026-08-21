@@ -563,6 +563,21 @@ float4 main(PSInput i) : SV_Target0
 		return float4(giIndirect, 1.0);
 	}
 
+	// Stochastic RT shadows (MegaLights-lite): when the half-res shadow pass ran (SunShadowTextureIndex != 0 —
+	// the name is legacy; it now holds the AGGREGATE shadow-ratio target for ALL lights), sample the temporally-
+	// accumulated + denoised + upsampled ratio by screen UV. It is an estimate of Sum(contrib_i*vis_i)/Sum(contrib_i)
+	// over all lights, so it modulates the WHOLE direct term at the end instead of any per-light RayQuery. Jitter-
+	// matched like GI/AO. 0 index -> raster/inline fallback (per-light shadows inside the loops below).
+	float shadowRatio = 1.0;
+	bool useShadowTex = false;
+	if (SunShadowTextureIndex != 0)
+	{
+		const float2 shUv = i.PositionCS.xy / max(RenderTargetSize, float2(1.0, 1.0)); // plain UV: the effect buffers are jittered like the geometry now, so no JitterUv compensation
+		const float r = Textures[NonUniformResourceIndex(SunShadowTextureIndex)].SampleLevel(LinearSampler, shUv, 0).r;
+		shadowRatio = lerp(1.0, r, ShadowStrength); // ShadowStrength dial, matching the inline path's return
+		useShadowTex = true;
+	}
+
 	float3 Lo = float3(0, 0, 0);
 
 	// --- Directional lights (the sun). Only light 0 casts shadows in this single-map implementation.
@@ -573,7 +588,15 @@ float4 main(PSInput i) : SV_Target0
 		const float3 radiance = DirectionalLights[l].Color * DirectionalLights[l].Intensity;
 		// Shadow multiplies the whole contribution; ambient is unaffected so shadows stay lit-but-dim. N is
 		// the shading normal, reused to offset the RT shadow ray origin off the surface (good enough here).
-		const float shadow = (l == 0) ? SampleSunShadow(i.PositionWS, N, L, max(dot(N, L), 0.0), i.PositionCS.xy) : 1.0;
+		// Stochastic path: all per-light shadowing is folded into the single aggregate ratio applied after the
+		// loops, so light stays unshadowed here (shadow = 1). Raster/inline fallback: light 0 (the sun) traces.
+		// EXPLICIT branch (not a ?:) so the expensive SampleSunShadow RayQuery is genuinely NOT executed on the
+		// texture path — a ternary can let DXC evaluate both sides. useShadowTex is cbuffer-uniform (warp-coherent).
+		float shadow = 1.0;
+		if (!useShadowTex && l == 0)
+		{
+			shadow = SampleSunShadow(i.PositionWS, N, L, max(dot(N, L), 0.0), i.PositionCS.xy);
+		}
 		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * shadow;
 	}
 
@@ -585,15 +608,28 @@ float4 main(PSInput i) : SV_Target0
 	{
 		const float3 toLight = PointLights[p].Position - i.PositionWS;
 		const float dist = length(toLight);
-		const float3 L = toLight / max(dist, 1e-4);
-
 		const float range = max(PointLights[p].Range, 1e-4);
+
+		// Per-pixel range cull (the poor-man's clustered-forward light cull): a point light past its Range
+		// contributes exactly zero (the falloff window is 0 at d >= range), so skip the WHOLE light — including
+		// the expensive inline RT shadow trace. Lossless. The dominant forward RT-shadow cost was tracing toward
+		// point lights that don't even light the pixel (Sponza: 6 point lights, mostly local).
+		if (dist >= range)
+		{
+			continue;
+		}
+
+		const float3 L = toLight / max(dist, 1e-4);
 		const float window = pow(saturate(1.0 - pow(dist / range, 4.0)), 2.0);
 		const float atten = window / max(dist * dist, 1e-4);
 
-		// Shadow: 1 when unshadowed / this light casts no shadow. NdotL uses the surface normal vs L. The RT
-		// path traces from the surface to the light (dist), offset by N.
-		const float pointShadow = SamplePointShadow(PointLights[p], i.PositionWS, N, L, dist, max(dot(N, L), 0.0), i.PositionCS.xy);
+		// Stochastic path: shadowing folds into the aggregate ratio after the loops (unshadowed here). Raster/
+		// inline fallback traces. Explicit branch so the RayQuery is skipped on the texture path (see sun loop).
+		float pointShadow = 1.0;
+		if (!useShadowTex)
+		{
+			pointShadow = SamplePointShadow(PointLights[p], i.PositionWS, N, L, dist, max(dot(N, L), 0.0), i.PositionCS.xy);
+		}
 
 		const float3 radiance = PointLights[p].Color * PointLights[p].Intensity * atten;
 		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * pointShadow;
@@ -607,25 +643,49 @@ float4 main(PSInput i) : SV_Target0
 	{
 		const float3 toLight = SpotLights[s].Position - i.PositionWS;
 		const float dist = length(toLight);
+		const float range = max(SpotLights[s].Range, 1e-4);
+
+		// Range cull (see the point-light loop): out-of-range spots contribute zero — skip trace + shade.
+		if (dist >= range)
+		{
+			continue;
+		}
+
 		const float3 L = toLight / max(dist, 1e-4);
 
-		const float range = max(SpotLights[s].Range, 1e-4);
+		// Cone cull: outside the outer half-angle the cone falloff is exactly 0, so this spot contributes
+		// nothing here — skip the inline RT shadow trace and shading. Lossless (matches cone == 0 below).
+		const float cosAngle = dot(-L, SpotLights[s].Direction);
+		if (cosAngle <= SpotLights[s].CosOuter)
+		{
+			continue;
+		}
+
 		const float window = pow(saturate(1.0 - pow(dist / range, 4.0)), 2.0);
 		const float atten = window / max(dist * dist, 1e-4);
 
 		// Cone falloff: 1 inside the inner angle, smoothly to 0 at the outer angle. cos() decreases with
 		// angle, so a larger dot() == closer to the axis == more lit.
-		const float cosAngle = dot(-L, SpotLights[s].Direction);
 		const float denom = max(SpotLights[s].CosInner - SpotLights[s].CosOuter, 1e-4);
 		const float cone = pow(saturate((cosAngle - SpotLights[s].CosOuter) / denom), 2.0);
 
-		// Shadow: 1 when unshadowed / this spot casts no shadow. NdotL uses the surface normal vs L. The RT
-		// path traces from the surface to the spot (dist), offset by N.
-		const float spotShadow = SampleSpotShadow(SpotLights[s], i.PositionWS, N, L, dist, max(dot(N, L), 0.0), i.PositionCS.xy);
+		// Stochastic path: shadowing folds into the aggregate ratio after the loops (unshadowed here). Raster/
+		// inline fallback traces. Explicit branch so the RayQuery is skipped on the texture path (see sun loop).
+		float spotShadow = 1.0;
+		if (!useShadowTex)
+		{
+			spotShadow = SampleSpotShadow(SpotLights[s], i.PositionWS, N, L, dist, max(dot(N, L), 0.0), i.PositionCS.xy);
+		}
 
 		const float3 radiance = SpotLights[s].Color * SpotLights[s].Intensity * atten * cone;
 		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * spotShadow;
 	}
+
+	// Stochastic RT shadows: apply the aggregate shadow ratio to the WHOLE accumulated direct term (dir+point+
+	// spot). It estimates Sum(contrib_i*vis_i)/Sum(contrib_i), so scaling the unshadowed direct sum reconstructs
+	// the shadowed direct lighting. 1.0 (no-op) on the raster/inline fallback, where shadows were applied per
+	// light above. Ambient / IBL / GI are added after this, so they stay unshadowed (matches the inline path).
+	Lo *= shadowRatio;
 
 	// 1-bounce RT diffuse GI (#118): when active, the traced indirect REPLACES the DIFFUSE ambient (Lumen/
 	// RTXGI model) — the diffuse fill becomes scene-derived (color bleed, contact fill) instead of the

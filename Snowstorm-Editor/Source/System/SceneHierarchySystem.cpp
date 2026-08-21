@@ -274,13 +274,13 @@ namespace Snowstorm
 					// 3 = Reflections (raw reflected albedo from the RT reflection trace, for verifying hit resolution,
 					// #118). Index maps 1:1 to render.debugview.
 					{
-						const char* dbgLabels[] = {"Normal", "Motion Vectors", "Ambient Occlusion", "Reflections", "Global Illumination", "World Normals", "Half-res GI (raw)", "Half-res GI (denoised)"};
+						const char* dbgLabels[] = {"Normal", "Motion Vectors", "Ambient Occlusion", "Reflections", "Global Illumination", "World Normals", "Half-res GI (raw)", "Half-res GI (denoised)", "RT Shadow (raw)", "RT Shadow (denoised)"};
 						int dbg = CVars::DebugView.Get();
-						if (dbg < 0 || dbg > 7)
+						if (dbg < 0 || dbg > 9)
 						{
 							dbg = 0;
 						}
-						if (ImGui::Combo("Debug View", &dbg, dbgLabels, 8))
+						if (ImGui::Combo("Debug View", &dbg, dbgLabels, 10))
 						{
 							CVars::DebugView.Set(dbg);
 						}
@@ -361,6 +361,45 @@ namespace Snowstorm
 					{
 						ImGui::TextDisabled("(RT penumbra needs TAA for a clean result)");
 					}
+
+					// Half-res RT sun-shadow controls (RT-only; the raster map has neither). RT Resolution mirrors the
+					// AO/GI Resolution slider: the sun-visibility trace runs at this fraction of viewport res, then a
+					// bilateral upsample restores full res (1.0 = full-res reference). Normal Bias offsets the ray
+					// origin off the surface — the acne (too small) vs peter-panning (too large) dial.
+					ImGui::BeginDisabled(!rtMode);
+					if (float shScale = CVars::ShadowScale.Get(); ImGui::SliderFloat("RT Resolution", &shScale, 0.25f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+					{
+						CVars::ShadowScale.Set(shScale);
+					}
+					if (float nb = CVars::ShadowNormalBias.Get(); ImGui::SliderFloat("Normal Bias", &nb, 0.0f, 0.2f, "%.3f m", ImGuiSliderFlags_AlwaysClamp))
+					{
+						CVars::ShadowNormalBias.Set(nb);
+					}
+					if (int rays = CVars::ShadowRayCount.Get(); ImGui::SliderInt("Rays/pixel##Shadow", &rays, 1, 16, "%d", ImGuiSliderFlags_AlwaysClamp))
+					{
+						CVars::ShadowRayCount.Set(rays);
+					}
+					// Stochastic RT shadow temporal + denoise (mirrors the AO panel). REQUIRED for a clean result —
+					// the 1 importance-sampled ray/pixel is very noisy raw.
+					if (bool temporal = CVars::ShadowTemporal.Get(); ImGui::Checkbox("Temporal Accumulation##Shadow", &temporal))
+					{
+						CVars::ShadowTemporal.Set(temporal);
+					}
+					if (bool denoise = CVars::ShadowDenoise.Get(); ImGui::Checkbox("Spatial Denoise (a-trous)##Shadow", &denoise))
+					{
+						CVars::ShadowDenoise.Set(denoise);
+					}
+					ImGui::BeginDisabled(!CVars::ShadowDenoise.Get());
+					if (int it = CVars::ShadowDenoiseIterations.Get(); ImGui::SliderInt("Iterations##ShadowD", &it, 0, 5, "%d", ImGuiSliderFlags_AlwaysClamp))
+					{
+						CVars::ShadowDenoiseIterations.Set(it);
+					}
+					if (float vp = CVars::ShadowDenoiseVariance.Get(); ImGui::SliderFloat("Variance phi##ShadowD", &vp, 0.0f, 16.0f, "%.1f", ImGuiSliderFlags_AlwaysClamp))
+					{
+						CVars::ShadowDenoiseVariance.Set(vp);
+					}
+					ImGui::EndDisabled();
+					ImGui::EndDisabled();
 
 					// Strength: how dark shadows get (1 = full occlusion, 0 = none). Read into FrameCB each frame.
 					if (float strength = CVars::ShadowStrength.Get(); ImGui::SliderFloat("Strength", &strength, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))

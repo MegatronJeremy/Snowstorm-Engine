@@ -221,7 +221,10 @@ cbuffer FrameCB : register(b0, space0)
 	// screen UV (SV_Position.xy / RenderTargetSize) and blends it into specular. New 16-byte row; MUST match
 	// RendererService.cpp field-for-field.
 	uint ReflectionTextureIndex;
-	uint _ReflTexPad0;
+	// Half-res RT sun-shadow consumption: bindless index of the full-res upsampled sun-visibility factor
+	// (0 = no half-res shadow this frame -> DefaultLit falls back to the inline SampleSunShadow). Takes the
+	// former _ReflTexPad0 slot (zero layout change). Sampled by the same screen UV as GI/AO/reflection.
+	uint SunShadowTextureIndex;
 	// TAA sub-pixel jitter in UV units (#: = JitterNdc * 0.5), or (0,0) on unjittered passes. The GI/AO/
 	// reflection screen-UV samples subtract this so the effect is fetched at the SAME sub-pixel location the
 	// jittered geometry is — without it those buffers are sampled at fixed integer pixel centers (jitter-

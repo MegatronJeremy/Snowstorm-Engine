@@ -230,6 +230,16 @@ namespace Snowstorm
 			m_GIRenderTargetSize = renderTargetSize;
 		}
 
+		// Half-res RT sun-shadow consumption: mirror of SetAOTexture. The forward shader samples the full-res
+		// upsampled sun-visibility target by the same screen UV (shares the RenderTargetSize divide). 0 = no
+		// half-res shadow this frame -> DefaultLit falls back to the inline SampleSunShadow. Reset to 0 per
+		// frame by non-shadow viewports so a stale index can't leak.
+		void SetShadowTexture(const uint32_t bindlessIndex, const glm::vec2& renderTargetSize)
+		{
+			m_ShadowTextureIndex = bindlessIndex;
+			m_GIRenderTargetSize = renderTargetSize;
+		}
+
 		// Current frame's lights / environment (uploaded by the PreRender systems). The IBL bake reads
 		// these to capture the sky; exposed so the bake lives in its own pass, not the renderer.
 		[[nodiscard]] const LightDataBlock& GetLights() const { return m_FrameData.Lights; }
@@ -376,6 +386,11 @@ namespace Snowstorm
 		// reflection), pushed per-viewport by SetReflTexture, read into FrameCB in AcquireFrameSet. Shares
 		// m_GIRenderTargetSize.
 		uint32_t m_ReflectionTextureIndex = 0;
+
+		// Half-res RT sun-shadow consumption: the full-res upsampled sun-visibility target's bindless index
+		// (0 = no half-res shadow), pushed per-viewport by SetShadowTexture, read into FrameCB in
+		// AcquireFrameSet. Shares m_GIRenderTargetSize.
+		uint32_t m_ShadowTextureIndex = 0;
 
 		std::vector<BatchData> m_Batches;
 

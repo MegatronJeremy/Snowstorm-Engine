@@ -120,11 +120,14 @@ namespace Snowstorm
 			const uint32_t giH = ScaledExtent(h, CVars::ClampedGIScale());
 			const uint32_t aoW = ScaledExtent(w, CVars::ClampedAOScale());
 			const uint32_t aoH = ScaledExtent(h, CVars::ClampedAOScale());
+			const uint32_t shadowW = ScaledExtent(w, CVars::ClampedShadowScale());
+			const uint32_t shadowH = ScaledExtent(h, CVars::ClampedShadowScale());
 
 			if (!rtc.Target || !rtc.PresentTarget || !rtc.AAIntermediateTarget || !rtc.SceneUpscaleTarget ||
 			    !rtc.GroundTruthTarget || !rtc.GroundTruthPresentTarget || !rtc.VelocityTarget ||
 			    !rtc.GBufferNormalTarget || !rtc.GITarget || !rtc.GIUpscaleTarget ||
-			    !rtc.AOTarget || !rtc.AOBlurTarget || !rtc.AOUpscaleTarget || !rtc.PathTraceAccumTarget ||
+			    !rtc.AOTarget || !rtc.AOBlurTarget || !rtc.AOUpscaleTarget ||
+			    !rtc.ShadowTarget || !rtc.ShadowUpscaleTarget || !rtc.PathTraceAccumTarget ||
 			    !rtc.HistoryTarget[0] || !rtc.HistoryTarget[1])
 			{
 				needsCreate = true;
@@ -137,7 +140,8 @@ namespace Snowstorm
 				const auto& targetDesc = rtc.Target->GetDesc();
 				if (presentDesc.Width != w || presentDesc.Height != h || targetDesc.Width != sw || targetDesc.Height != sh ||
 				    rtc.GITarget->GetDesc().Width != giW || rtc.GITarget->GetDesc().Height != giH ||
-				    rtc.AOTarget->GetDesc().Width != aoW || rtc.AOTarget->GetDesc().Height != aoH)
+				    rtc.AOTarget->GetDesc().Width != aoW || rtc.AOTarget->GetDesc().Height != aoH ||
+				    rtc.ShadowTarget->GetDesc().Width != shadowW || rtc.ShadowTarget->GetDesc().Height != shadowH)
 				{
 					needsCreate = true;
 				}
@@ -167,7 +171,11 @@ namespace Snowstorm
 				wRtc.AOBlurTargetView = wRtc.AOBlurTarget->GetDefaultView();
 				AllocateDenoiser(wRtc.AODenoiser, aoW, aoH, "ViewportAO");                  // AO SVGF denoiser buffers (#130)
 				wRtc.AOUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportAOUpscale"); // full-res AO (#126)
-				wRtc.ReflectionTarget = CreateGITarget(w, h, "ViewportReflection");         // full-res RT reflection (#129)
+				wRtc.ShadowTarget = CreateAOTarget(shadowW, shadowH, "ViewportShadow");     // half-res stochastic shadow ratio
+				wRtc.ShadowTargetView = wRtc.ShadowTarget->GetDefaultView();
+				AllocateDenoiser(wRtc.ShadowDenoiser, shadowW, shadowH, "ViewportShadow");          // shadow SVGF denoiser (temporal+à-trous)
+				wRtc.ShadowUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportShadowUpscale"); // full-res sun shadow
+				wRtc.ReflectionTarget = CreateGITarget(w, h, "ViewportReflection");                 // full-res RT reflection (#129)
 				wRtc.ReflectionTargetView = wRtc.ReflectionTarget->GetDefaultView();
 				AllocateDenoiser(wRtc.ReflectionDenoiser, w, h, "ViewportRefl");                 // reflection SVGF denoiser buffers (#132)
 				wRtc.PrevSceneColorTarget = CreateColorOnlyHDRTarget(w, h, "ViewportPrevColor"); // prev-frame color for SSR (#151)

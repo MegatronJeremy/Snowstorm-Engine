@@ -362,7 +362,8 @@ namespace Snowstorm
 		const bool giTemporal = (CVars::GIRTActive() && CVars::GITemporalActive()) ||
 		                        CVars::ReflectionsSSRActive() ||
 		                        (CVars::ReflectionsRTActive() && CVars::ReflectionTemporalActive()) ||
-		                        (CVars::AoRTActive() && CVars::AOTemporalActive());
+		                        (CVars::AoRTActive() && CVars::AOTemporalActive()) ||
+		                        (CVars::ShadowsRTActive() && CVars::ShadowTemporalActive());
 		// velocityNeeded is cached on the context because several effects branch on it: VelocityEffect (whether
 		// to render the buffer), LdrChainEffect (the tonemap debug view samples it), and CompareEffect (dataset
 		// export reads it as a channel).
@@ -379,10 +380,11 @@ namespace Snowstorm
 		const bool giActive = CVars::GIRTActive();
 		const bool aoActive = CVars::AoActive();            // SSAO or RT AO — both need the depth+normal prepass + debug view 2 (#151)
 		const bool reflActive = CVars::ReflectionsActive(); // SSR or RT reflections — both need the depth+normal prepass (#151)
+		const bool shadowActive = CVars::ShadowsRTActive(); // half-res RT sun shadow reconstructs world pos from the G-buffer too
 		// Path-trace mode (#153) owns the frame: the reference PT produces the whole image, so skip the entire
-		// G-buffer substrate (DepthNormal/GI/AO/SSR/RT-reflection) — forward/upscale/TAA are gated off too.
+		// G-buffer substrate (DepthNormal/GI/AO/SSR/RT-reflection/shadow) — forward/upscale/TAA are gated off too.
 		const bool gbufferNeeded = !CVars::PathTraceActive() &&
-		                           (giActive || aoActive || reflActive || debugView == 5 || debugView == 6 || debugView == 7 || debugView == 2 || debugView == 3) &&
+		                           (giActive || aoActive || reflActive || shadowActive || debugView == 5 || debugView == 6 || debugView == 7 || debugView == 2 || debugView == 3 || debugView == 8 || debugView == 9) &&
 		                           vpRT.GBufferNormalTarget && !vpRT.GBufferNormalTarget->GetDesc().ColorAttachments.empty() &&
 		                           vpRT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
 		v.GBufferNeeded = gbufferNeeded;
@@ -454,6 +456,38 @@ namespace Snowstorm
 			primaryTonemap.DebugScale = static_cast<float>(vpRT.GITarget->GetDesc().Width) /
 			                            static_cast<float>(vpRT.GBufferNormalTarget->GetDesc().Width);
 			debugRead = liveGI->GetTexture();
+		}
+		else if (debugView == 8 && shadowActive && gbufferNeeded && vpRT.ShadowTarget && vpRT.ShadowTargetView)
+		{
+			// Raw half-res stochastic shadow ratio (before temporal+denoise): the noisy 1-ray/pixel estimate, the
+			// A/B against view 9 that shows what the denoiser did. Grayscale .r (DebugMode 4, like AO). Half-res
+			// point-fetch readout via the shadow/present size ratio as DebugScale.
+			primaryTonemap.DebugMode = 4;
+			primaryTonemap.DebugTexIndex = vpRT.ShadowTargetView->GetGlobalBindlessIndex();
+			primaryTonemap.DebugScale = static_cast<float>(vpRT.ShadowTarget->GetDesc().Width) /
+			                            static_cast<float>(vpRT.GBufferNormalTarget->GetDesc().Width);
+			debugRead = vpRT.ShadowTarget;
+		}
+		else if (debugView == 9 && shadowActive && gbufferNeeded && vpRT.ShadowTarget && vpRT.ShadowTargetView)
+		{
+			// Denoised/accumulated half-res shadow ratio: the LIVE buffer after the temporal + à-trous stages,
+			// vs view 8's RAW estimate. Point at whichever buffer the shadow sub-chain last wrote (à-trous ->
+			// Scratch[0]; else temporal -> History[cur]; else the raw ShadowTarget), mirroring the GI view 7.
+			Ref<TextureView> liveShadow = vpRT.ShadowTargetView;
+			if (CVars::ShadowDenoiseActive() && vpRT.ShadowDenoiser.ScratchView[0])
+			{
+				liveShadow = vpRT.ShadowDenoiser.ScratchView[0];
+			}
+			else if (CVars::ShadowTemporalActive() && vpRT.ShadowDenoiser.Allocated())
+			{
+				const uint32_t curIdx = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
+				liveShadow = vpRT.ShadowDenoiser.HistoryView[curIdx];
+			}
+			primaryTonemap.DebugMode = 4;
+			primaryTonemap.DebugTexIndex = liveShadow->GetGlobalBindlessIndex();
+			primaryTonemap.DebugScale = static_cast<float>(vpRT.ShadowTarget->GetDesc().Width) /
+			                            static_cast<float>(vpRT.GBufferNormalTarget->GetDesc().Width);
+			debugRead = liveShadow->GetTexture();
 		}
 
 		// Post-tonemap LDR filter sizing (#44), derived up front so the effect chain (UpscaleEffect /
@@ -538,7 +572,8 @@ namespace Snowstorm
 	void RenderSystem::AddForwardPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& hdrTarget,
 	                                  const std::string& name, const bool jittered, const bool forceRasterShadow,
 	                                  const uint32_t giTextureIndex, const uint32_t aoTextureIndex,
-	                                  const uint32_t reflTextureIndex, const Ref<Texture>& reflTexture)
+	                                  const uint32_t reflTextureIndex, const Ref<Texture>& reflTexture,
+	                                  const uint32_t shadowTextureIndex)
 	{
 		std::vector<RenderGraph::ResourceAccess> meshReads;
 		if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
@@ -578,6 +613,18 @@ namespace Snowstorm
 		{
 			meshReads.push_back({reflTexture, RenderGraph::AccessState::Sampled});
 		}
+		// Full-res sun-visibility target: the forward shader samples it by screen UV (bindless), so declare the
+		// Sampled read — the graph transitions it out of the ShadowUpsample pass's color-attachment layout
+		// before this pass. Only when the half-res shadow is fed this pass.
+		if (shadowTextureIndex != 0)
+		{
+			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
+			    rt && rt->ShadowUpscaleTarget && !rt->ShadowUpscaleTarget->GetDesc().ColorAttachments.empty())
+			{
+				meshReads.push_back({rt->ShadowUpscaleTarget->GetDesc().ColorAttachments[0].View->GetTexture(),
+				                     RenderGraph::AccessState::Sampled});
+			}
+		}
 
 		// GI screen size = this pass's scene target size (viewport * render.scale), for the UV divide.
 		const glm::vec2 sceneSize{static_cast<float>(hdrTarget->GetDesc().Width), static_cast<float>(hdrTarget->GetDesc().Height)};
@@ -585,7 +632,7 @@ namespace Snowstorm
 		fc.Graph.AddPass({.Name = name,
 		                  .Target = hdrTarget,
 		                  .Reads = std::move(meshReads),
-		                  .Execute = [this, &fc, cam, hdrTarget, jittered, forceRasterShadow, giTextureIndex, aoTextureIndex, reflTextureIndex, sceneSize](CommandContext& c)
+		                  .Execute = [this, &fc, cam, hdrTarget, jittered, forceRasterShadow, giTextureIndex, aoTextureIndex, reflTextureIndex, shadowTextureIndex, sceneSize](CommandContext& c)
 		                  {
 			                  // Per-pass GI (execute-ordered so the compare GT render's giTextureIndex=0 can't be
 			                  // overwritten by the primary pass's index at build time). AcquireFrameSet (called in
@@ -596,6 +643,9 @@ namespace Snowstorm
 			                  // Per-pass RT reflection (#129, same execute-ordered reason). Shares sceneSize for the
 			                  // screen-UV sample. 0 on the GT compare render keeps the reference reflection-free.
 			                  fc.Renderer.SetReflTexture(reflTextureIndex, sceneSize);
+			                  // Per-pass half-res sun shadow (same execute-ordered reason). Shares sceneSize for the
+			                  // screen-UV sample. 0 on the GT compare render keeps the reference on the raster path.
+			                  fc.Renderer.SetShadowTexture(shadowTextureIndex, sceneSize);
 
 			                  const glm::vec3 camPos = cam.Transform->Position;
 			                  fc.Renderer.BeginScene(*cam.Rt, camPos, fc.Ctx, fc.FrameIndex, jittered, forceRasterShadow);

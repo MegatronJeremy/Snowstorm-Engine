@@ -25,6 +25,7 @@
 #include <unordered_map> // #153: per-viewport path-trace accumulation state
 #include "Snowstorm/Render/Passes/FxaaPass.hpp"
 #include "Snowstorm/Render/Passes/AOPass.hpp"
+#include "Snowstorm/Render/Passes/RTShadowPass.hpp" // stochastic all-light RT shadow trace
 #include "Snowstorm/Render/Passes/SSAOPass.hpp"     // #151: screen-space AO trace
 #include "Snowstorm/Render/Passes/SSAOBlurPass.hpp" // #151: SSAO depth+normal bilateral blur
 #include "Snowstorm/Render/Denoiser.hpp"            // #132: shared SVGF processor (owns the GITemporal/GIDenoise passes)
@@ -834,6 +835,225 @@ namespace Snowstorm
 			SSRPass m_Pass; // owned here: the SSR compute pass is exclusive to this effect
 		};
 
+		// Half-res STOCHASTIC direct-shadow compute pass (MegaLights-lite): the scalar twin of AOEffect. Lifts
+		// ALL inline per-light shadow RayQueries (sun+point+spot) out of DefaultLit (the dominant Forward RT cost)
+		// into a half-res pass that importance-samples ONE light per pixel and traces ONE ray, writing an unbiased
+		// estimate of the aggregate shadow ratio into ShadowTarget. Runs before Forward. Gated on ShadowsRTActive()
+		// alone (occlusion only, no geometry table). Uses render.shadows.scale for its half-res grid.
+		class RTShadowEffect final : public IViewportEffect
+		{
+		public:
+			explicit RTShadowEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "RTShadow"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::ShadowsRTActive() && v.RT.ShadowTarget && v.RT.ShadowTargetView;
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+
+				const auto& gbufDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const uint32_t fullW = gbufDesc.Width;
+				const uint32_t fullH = gbufDesc.Height;
+				const float scale = CVars::ClampedShadowScale(); // render.shadows.scale (own half-res grid, independent of AO/GI)
+				const uint32_t shW = ScaledExtent(fullW, scale);
+				const uint32_t shH = ScaledExtent(fullH, scale);
+
+				const Ref<TextureView> gbufView = gbufDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbufDesc.DepthAttachment->View; // fp32 D32 depth
+				const Ref<TextureView> shadowView = v.RT.ShadowTargetView;
+				// Reconstruct from THIS frame's JITTERED camera VP (the matrix the jittered DepthNormal prepass +
+				// the forward color pass both use, so effect and geometry silhouettes align), NOT GetFrameData().
+				// ViewProjection which still holds the previous frame's forward matrix at build time — see AOEffect.
+				const glm::mat4 invViewProj = glm::inverse(v.Cam.Rt->JitteredViewProjection); // match the jittered DepthNormal G-buffer
+
+				// The whole light block feeds the importance sampler (positions/dirs/ranges/cones/luma + per-light
+				// cast masks). No lights -> skip (the pass would write ratio 1 everywhere, harmless, but save it).
+				// Copy the light block by value into the lambda (per-frame, ~KB): captured across the graph
+				// build -> execute boundary, so a reference into FrameData would risk a stale/dangling read.
+				const LightDataBlock lights = fc.Renderer.GetLights();
+				if (lights.LightCount <= 0 && lights.PointCount <= 0 && lights.SpotCount <= 0)
+				{
+					return;
+				}
+				const float normalBias = CVars::ShadowNormalBias.Get(); // render.shadows.normalbias (acne vs peter-panning)
+				const auto frameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
+				// Soft shadows: jitter the chosen ray within each light's area (temporal+denoise converge the
+				// penumbra). Reuses the existing raster/inline soft CVars. Sun cone = tan(angular half-size).
+				const bool soft = CVars::ShadowSoft.Get();
+				const float sunTanAngular = glm::tan(glm::radians(CVars::ShadowSunAngleDeg.Get()));
+				const float sourceRadius = CVars::ShadowSourceRadius.Get();
+				const auto rayCount = static_cast<uint32_t>(CVars::ClampedShadowRayCount());
+
+				fc.Graph.AddPass({.Name = "RTShadow" + v.Suffix,
+				                  .IsCompute = true,
+				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Writes = {{shadowView->GetTexture(), RenderGraph::AccessState::Storage}},
+				                  .Execute = [this, &fc, invViewProj, lights, normalBias, frameCounter, soft, sunTanAngular, sourceRadius, rayCount, gbufView, depthView, shadowView, shW, shH](CommandContext& c)
+				                  {
+					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, lights, normalBias, frameCounter,
+					                                  soft, sunTanAngular, sourceRadius, rayCount, gbufView, depthView, shadowView, shW, shH);
+				                  }});
+
+				v.ShadowView = shadowView; // the raw estimate; the temporal/denoise stages republish (step 2b)
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			RTShadowPass m_Pass; // owned here: the stochastic shadow compute pass is exclusive to this effect
+		};
+
+		// Stochastic RT shadow temporal accumulation — the shadow twin of AOTemporalEffect, via the shared
+		// Denoiser. Runs between RTShadowEffect and ShadowDenoiseEffect: reproject the previous accumulated ratio
+		// by the motion vectors, depth-disocclusion-reject, blend with this frame's 1-ray estimate, republish
+		// v.ShadowView. REQUIRED for a usable result (1 ray/pixel is very noisy). Runs whenever shadows are live
+		// so it OWNS clearing the history-valid flag when toggled off (mirrors AOTemporalEffect).
+		class ShadowTemporalEffect final : public IViewportEffect
+		{
+		public:
+			explicit ShadowTemporalEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "ShadowTemporal"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::ShadowsRTActive() && v.ShadowView && v.RT.ShadowDenoiser.Allocated();
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+				auto& inst = fc.Reg.Write<RenderTargetComponent>(v.ViewportEntity).ShadowDenoiser;
+				const auto& shDesc = v.RT.ShadowTarget->GetDesc();
+				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
+
+				DenoiserConfig cfg{};
+				cfg.TemporalActive = CVars::ShadowTemporalActive();
+				cfg.TemporalBlend = CVars::ShadowTemporalBlend.Get();
+				cfg.TemporalMaxBlend = CVars::ShadowTemporalMaxBlend.Get();
+				cfg.NamePrefix = "Shadow";
+
+				v.ShadowView = m_Denoiser.Temporal(fc, inst, cfg, v.ShadowView, gbufView, depthView, v.Velocity, v.Cam,
+				                                   shDesc.Width, shDesc.Height, v.Suffix);
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			Denoiser m_Denoiser; // owned here: the shared SVGF processor for shadows
+		};
+
+		// Stochastic RT shadow spatial denoiser — the shadow twin of AODenoiseEffect, via the shared Denoiser.
+		// Runs between ShadowTemporalEffect and ShadowUpsampleEffect: an edge-avoiding à-trous over the temporally-
+		// accumulated ratio, guided by the main G-buffer (receiver normal + depth). Republishes v.ShadowView.
+		// Gated on shadows running AND ShadowDenoiseActive(); off => the upsample reads the raw/temporal buffer.
+		class ShadowDenoiseEffect final : public IViewportEffect
+		{
+		public:
+			explicit ShadowDenoiseEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "ShadowDenoise"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::ShadowsRTActive() && CVars::ShadowDenoiseActive() && v.ShadowView &&
+				       v.RT.ShadowDenoiser.Allocated();
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+				const auto& shDesc = v.RT.ShadowTarget->GetDesc();
+				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
+
+				DenoiserConfig cfg{};
+				cfg.DenoiseIterations = CVars::ClampedShadowDenoiseIterations();
+				cfg.VariancePhi = CVars::ShadowDenoiseVariance.Get();
+				cfg.HitDistPhi = 0.0f; // the shadow ratio carries no hit-distance guide channel (unlike AO's .a)
+				cfg.NearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
+				cfg.FarPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+				cfg.DepthSigma = CVars::DepthEdgeSigma.Get();
+				cfg.NamePrefix = "Shadow";
+
+				v.ShadowView = m_Denoiser.Atrous(fc, v.RT.ShadowDenoiser, cfg, v.ShadowView, gbufView, depthView,
+				                                 v.RT.ShadowTargetView, shDesc.Width, shDesc.Height, v.Suffix);
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			Denoiser m_Denoiser; // owned here: the shared SVGF processor for the shadow à-trous
+		};
+
+		// Depth+normal-aware bilateral upsample of the half-res sun visibility to full res — reuses the
+		// signal-agnostic AOUpsamplePass (a scalar bilateral upsample, identical to AO). Runs after RTShadowEffect,
+		// before Forward: reads the half-res ShadowTarget + the full-res G-buffer guide, writes the full-res
+		// ShadowUpscaleTarget the forward pass samples in place of the inline RayQuery.
+		class ShadowUpsampleEffect final : public IViewportEffect
+		{
+		public:
+			explicit ShadowUpsampleEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "ShadowUpsample"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::ShadowsRTActive() && v.RT.ShadowTarget && v.ShadowView &&
+				       v.RT.ShadowUpscaleTarget && !v.RT.ShadowUpscaleTarget->GetDesc().ColorAttachments.empty();
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+
+				const auto& shDesc = v.RT.ShadowTarget->GetDesc();
+				const uint32_t shW = shDesc.Width;
+				const uint32_t shH = shDesc.Height;
+				const Ref<TextureView> shadowView = v.ShadowView;
+				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
+				const Ref<RenderTarget>& dst = v.RT.ShadowUpscaleTarget;
+				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
+				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+				const float depthSigma = CVars::DepthEdgeSigma.Get();
+
+				fc.Graph.AddPass({.Name = "ShadowUpsample" + v.Suffix,
+				                  .Target = dst,
+				                  .Reads = {{shadowView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, shadowView, gbufView, depthView, shW, shH, nearPlane, farPlane, depthSigma, dstFmt](CommandContext& c)
+				                  {
+					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, shadowView, gbufView, depthView, shW, shH, nearPlane, farPlane, depthSigma, dstFmt);
+				                  }});
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			AOUpsamplePass m_Pass; // owned here: reused signal-agnostic bilateral upsample (AO twin)
+		};
+
 		// Full-res RT reflection compute pass (#129): the reflection analogue of GIEffect, lifting the inline
 		// RayTraceReflection out of DefaultLit into a standalone pass over the depth+normal G-buffer. Traces one
 		// sharp reflection ray per full-res pixel, shades the hit through the geometry table, and writes raw
@@ -1118,6 +1338,16 @@ namespace Snowstorm
 					aoIndex = v.RT.AOUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 				}
 
+				// Half-res RT sun-shadow consumption: mirror of the AO index. 0 = no half-res shadow -> DefaultLit
+				// falls back to the inline SampleSunShadow. Gated on the shadow sub-chain having run (v.ShadowView)
+				// so a stale upscale target from a prior frame can't leak in when shadows are off this frame.
+				uint32_t shadowIndex = 0;
+				if (v.GBufferNeeded && CVars::ShadowsRTActive() && v.ShadowView && v.RT.ShadowUpscaleTarget &&
+				    !v.RT.ShadowUpscaleTarget->GetDesc().ColorAttachments.empty())
+				{
+					shadowIndex = v.RT.ShadowUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
+				}
+
 				// RT reflection consumption (#129): the live reflection buffer's bindless index (0 = no RT
 				// reflection -> env-cube specular). v.ReflectionView is whatever the reflection sub-chain last
 				// wrote — the raw trace, or the temporally-accumulated buffer if that ran — so reading the moving
@@ -1187,7 +1417,7 @@ namespace Snowstorm
 				}
 
 				m_Owner.AddForwardPass(v.Frame, v.Cam, forwardTarget, "Forward" + v.Suffix, /*jittered*/ true,
-				                       /*forceRasterShadow*/ false, giIndex, aoIndex, reflIndex, reflTexture);
+				                       /*forceRasterShadow*/ false, giIndex, aoIndex, reflIndex, reflTexture, shadowIndex);
 				// Publish the HDR scene color for the downstream chain (upscale/TAA/tonemap). Under MSAA this is
 				// the resolved single-sample image (GetSampleableColorView), never the multisampled attachment.
 				v.SceneColor.Target = v.RT.Target;
@@ -1818,6 +2048,10 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<AOTemporalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<AODenoiseEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<AOUpsampleEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<RTShadowEffect>(*this)); // stochastic all-light shadow chain (before Forward)
+		m_ViewportEffects.push_back(CreateScope<ShadowTemporalEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<ShadowDenoiseEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<ShadowUpsampleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<SSREffect>(*this)); // #151: SSR (mode 1); RT reflection chain below is mode 2
 		m_ViewportEffects.push_back(CreateScope<ReflectionEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ReflectionTemporalEffect>(*this));

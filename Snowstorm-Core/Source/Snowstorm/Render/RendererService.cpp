@@ -136,7 +136,9 @@ namespace Snowstorm
 			// #129: full-res RT reflection target bindless index (0 = no RT reflection). New 16-byte row;
 			// matches Engine.hlsli FrameCB tail field-for-field.
 			uint32_t ReflectionTextureIndex = 0;
-			uint32_t _ReflTexPad0 = 0;
+			// Half-res RT sun-shadow target bindless index (0 = no half-res shadow). Takes the former
+			// _ReflTexPad0 slot (zero layout change); matches Engine.hlsli FrameCB field-for-field.
+			uint32_t SunShadowTextureIndex = 0;
 			// TAA sub-pixel jitter in UV units (JitterNdc * 0.5), 0 on unjittered passes. The forward pass
 			// subtracts it from the GI/AO/reflection screen-UV samples so they're fetched at the jittered
 			// geometry's sub-pixel spot -> TAA can average their half-res edges. Matches Engine.hlsli FrameCB.
@@ -383,6 +385,11 @@ namespace Snowstorm
 		// reflection -> DefaultLit keeps the prefiltered env-cube specular). Pushed per-viewport by
 		// ForwardEffect via SetReflTexture just before the forward pass.
 		frame.ReflectionTextureIndex = m_ReflectionTextureIndex;
+
+		// Half-res RT sun-shadow consumption: the full-res upsampled sun-visibility target's bindless index
+		// (0 = no half-res shadow -> DefaultLit falls back to the inline SampleSunShadow). Pushed per-viewport
+		// by ForwardEffect via SetShadowTexture just before the forward pass.
+		frame.SunShadowTextureIndex = m_ShadowTextureIndex;
 
 		const Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
 		SS_CORE_ASSERT(frameUBO, "Frame UBO missing for frame descriptor set");

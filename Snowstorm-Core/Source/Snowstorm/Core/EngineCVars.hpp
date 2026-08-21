@@ -298,6 +298,33 @@ namespace Snowstorm::CVars
 	// How dark shadows get: 1 = full occlusion, 0 = none. Lerps the sun's visibility toward 1.
 	extern CVar<float> ShadowStrength;
 
+	// RT sun-shadow half-res internal resolution (fraction of viewport res). The sun-visibility trace runs at
+	// this scale, then a bilateral upsample restores full res. Clamp with ClampedShadowScale(). Mirrors
+	// render.ao.scale / render.gi.scale; independent of both (its own half-res grid).
+	extern CVar<float> ShadowScale;
+	[[nodiscard]] float ClampedShadowScale();
+
+	// RT sun-shadow ray-origin normal offset (world units): acne vs peter-panning tuning. Read per-frame by
+	// RTShadowEffect into the pass CB (edits take effect immediately).
+	extern CVar<float> ShadowNormalBias;
+
+	// Stochastic RT shadow rays per pixel: more = less per-frame variance (the 1-ray estimate is a noisy binary
+	// sample), so the temporal + denoiser converge cleaner. Clamp with ClampedShadowRayCount(). Mirrors AO rays.
+	extern CVar<int> ShadowRayCount;
+	[[nodiscard]] int ClampedShadowRayCount();
+
+	// Stochastic RT shadow temporal accumulation + spatial denoise (REQUIRED for a usable 1-ray/pixel result).
+	// Mirror the AO temporal/denoise family. Accessors gate on ShadowsRTActive().
+	extern CVar<bool> ShadowTemporal;
+	extern CVar<float> ShadowTemporalBlend;
+	extern CVar<float> ShadowTemporalMaxBlend;
+	extern CVar<bool> ShadowDenoise;
+	extern CVar<int> ShadowDenoiseIterations;
+	extern CVar<float> ShadowDenoiseVariance;
+	[[nodiscard]] bool ShadowTemporalActive();
+	[[nodiscard]] bool ShadowDenoiseActive();
+	[[nodiscard]] int ClampedShadowDenoiseIterations();
+
 	// RT soft-shadow light sizes (#118): the sun's angular diameter (degrees; real sun ~0.53) and a local
 	// light's physical source radius (world units). Larger => wider penumbra. Only used by the RT soft path.
 	extern CVar<float> ShadowSunAngleDeg;
