@@ -87,8 +87,8 @@ namespace Snowstorm
 			const float hitPhi = cfg.HitDistPhi; // #130 Inc B: 0 for GI/reflections (no-op)
 			const float nearPlane = cfg.NearPlane;
 			const float farPlane = cfg.FarPlane;
-			const float depthSigma = cfg.DepthSigma;         // Fix B: relative view-depth edge-stop
-			const float penumbraScale = cfg.PenumbraScale;   // SIGMA penumbra kernel (shadows only; 0 = identity)
+			const float depthSigma = cfg.DepthSigma;       // Fix B: relative view-depth edge-stop
+			const float penumbraScale = cfg.PenumbraScale; // SIGMA penumbra kernel (shadows only; 0 = identity)
 
 			fc.Graph.AddPass({.Name = std::string(cfg.NamePrefix) + "Denoise" + std::to_string(i) + suffix,
 			                  .IsCompute = true,

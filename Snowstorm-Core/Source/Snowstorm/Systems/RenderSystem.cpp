@@ -378,8 +378,8 @@ namespace Snowstorm
 		// additionally check their own gates. Reflections need it because ReflectionPass reconstructs each
 		// pixel's world position + normal from the G-buffer (like GI), so reflections-only must still prepass.
 		const bool giActive = CVars::GIRTActive();
-		const bool aoActive = CVars::AoActive();            // SSAO or RT AO — both need the depth+normal prepass + debug view 2 (#151)
-		const bool reflActive = CVars::ReflectionsActive(); // SSR or RT reflections — both need the depth+normal prepass (#151)
+		const bool aoActive = CVars::AoActive();                   // SSAO or RT AO — both need the depth+normal prepass + debug view 2 (#151)
+		const bool reflActive = CVars::ReflectionsActive();        // SSR or RT reflections — both need the depth+normal prepass (#151)
 		const bool shadowActive = CVars::ShadowStochasticActive(); // the half-res stochastic shadow pass needs the G-buffer (inline RT shadows don't)
 		// Path-trace mode (#153) owns the frame: the reference PT produces the whole image, so skip the entire
 		// G-buffer substrate (DepthNormal/GI/AO/SSR/RT-reflection/shadow) — forward/upscale/TAA are gated off too.
