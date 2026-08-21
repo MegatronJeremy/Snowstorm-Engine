@@ -62,6 +62,12 @@ namespace Snowstorm
 		return m_Pipeline != nullptr;
 	}
 
+	void VulkanOmmBaker::Shutdown()
+	{
+		m_Pipeline.reset();
+		m_Sampler.reset();
+	}
+
 	VkPipeline VulkanOmmBaker::GetPipelineHandle() const
 	{
 		return std::static_pointer_cast<VulkanComputePipeline>(m_Pipeline)->GetHandle();

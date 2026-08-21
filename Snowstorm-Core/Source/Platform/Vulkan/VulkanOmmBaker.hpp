@@ -40,6 +40,11 @@ namespace Snowstorm
 		// True once the compute shader has compiled (async). Bake callers must gate on this.
 		bool IsReady();
 
+		// Release the bake pipeline + sampler. MUST run during renderer teardown, before vkDestroyDevice. This is
+		// a function-local static, so without this its Ref members destruct at process exit (after the device is
+		// gone), freeing GPU objects on a dead device: the leaked-objects validation error + shutdown crash.
+		void Shutdown();
+
 		[[nodiscard]] VkPipeline GetPipelineHandle() const;
 		[[nodiscard]] VkPipelineLayout GetPipelineLayout() const;
 		[[nodiscard]] const Ref<Pipeline>& GetPipeline() const { return m_Pipeline; }
