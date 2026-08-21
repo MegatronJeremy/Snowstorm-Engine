@@ -716,12 +716,16 @@ float4 main(PSInput i) : SV_Target0
 		const float3 diffuseDirect = albedo * (1.0 / PI) * (1.0 - metallic) * shadowedIrr;
 		if (useShadowSpec)
 		{
-			// Demodulated specular (MegaLights/NRD): re-apply F0 via the roughness-aware Fresnel at NdotV (the
-			// per-light F was dropped in the pass). ShadowStrength lerps from the unshadowed specular (specSum) to
-			// the per-light-shadowed one, so the specular is dimmed by its OWN visibility, not the diffuse grey.
+			// Specular VISIBILITY (not radiance): the denoised demodulated specular is soft/boils when used as the
+			// highlight directly. Instead derive a SMOOTH [0,1] specular shadow ratio from it — denoised shadowed
+			// specular (shadowSpec*F0) over the SHARP full-res unshadowed specSum — and modulate specSum by that.
+			// Highlight shape stays crisp (from specSum, matches inline); only the shadow term is denoised (smooth),
+			// so no soft highlight and no motion boiling. F0/material cancel in the ratio, leaving the visibility.
 			const float3 fEnv = FresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness);
-			const float3 specShadowed = shadowSpec * fEnv;
-			Lo = diffuseDirect + lerp(specSum, specShadowed, ShadowStrength);
+			const float3 lw = float3(0.2126, 0.7152, 0.0722);
+			const float sU = dot(specSum, lw);
+			const float specVis = (sU > 1e-4) ? saturate(dot(shadowSpec * fEnv, lw) / sU) : 1.0;
+			Lo = diffuseDirect + specSum * lerp(1.0, specVis, ShadowStrength);
 		}
 		else
 		{
