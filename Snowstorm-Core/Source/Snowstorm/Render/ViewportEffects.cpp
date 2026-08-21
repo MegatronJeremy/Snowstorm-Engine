@@ -1054,7 +1054,7 @@ namespace Snowstorm
 
 		private:
 			RenderSystem& m_Owner;
-			AOUpsamplePass m_Pass; // owned here: reused signal-agnostic bilateral upsample (AO twin)
+			GIUpsamplePass m_Pass; // owned here: RGB bilateral upsample (colored irradiance, Option B — not the scalar AO one)
 		};
 
 		// Full-res RT reflection compute pass (#129): the reflection analogue of GIEffect, lifting the inline

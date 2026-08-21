@@ -47,14 +47,19 @@ cbuffer ShadowCB : register(b3, space0)
 	uint RayCount;       // stochastic samples/pixel (render.shadows.rays): more = less variance, ~linear cost
 	float _Pad3;
 
-	// Slim tracer + importance-weight params (16-byte rows):
-	float4 DirData[SHADOW_MAX_DIR];         // xyz = normalized dir TO light, w = luma(color*intensity)
+	// Slim tracer + importance params (16-byte rows). Option B: each light carries its full RGB radiance
+	// (color*intensity) so the pass can accumulate COLORED shadowed irradiance; the importance weight is the
+	// luma of that radiance, computed here.
+	float4 DirData[SHADOW_MAX_DIR];         // xyz = normalized dir TO light, w unused
+	float4 DirColor[SHADOW_MAX_DIR];        // xyz = color*intensity (radiance, no attenuation)
 	float4 PointPosRange[SHADOW_MAX_POINT]; // xyz = world pos, w = range
-	float4 PointLum[SHADOW_MAX_POINT];      // x = luma(color*intensity)
+	float4 PointColor[SHADOW_MAX_POINT];    // xyz = color*intensity
 	float4 SpotPosRange[SHADOW_MAX_SPOT];   // xyz = world pos, w = range
 	float4 SpotDirCos[SHADOW_MAX_SPOT];     // xyz = spot forward axis, w = cos(outer half-angle)
-	float4 SpotLumInner[SHADOW_MAX_SPOT];   // x = luma(color*intensity), y = cos(inner half-angle)
+	float4 SpotColorInner[SHADOW_MAX_SPOT]; // xyz = color*intensity, w = cos(inner half-angle)
 };
+
+float Luma3(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 
 // ---- Set 3: engine bindless pool (gap-filled by the compute pipeline builder) ----
 RaytracingAccelerationStructure SceneTLAS : register(t2, space3);
@@ -98,13 +103,15 @@ float FalloffWindow(float dist, float range)
 // ~1/K). Returns false when no light contributes here; else fills the chosen light's tracer params (direction
 // TO light, ray tMax, soft cone/disk radius, whether it casts a shadow).
 bool SelectLight(uint2 px, float3 positionWS, float3 N, uint frame, uint dimBase, out float3 outL, out float outTMax,
-                 out float outConeR, out bool outCasts)
+                 out float outConeR, out bool outCasts, out float3 outRadNdotL, out float outWSum)
 {
 	float wSum = 0.0;
 	outL = float3(0, 0, 1);
 	outTMax = 1e30;
 	outConeR = 0.0;
 	outCasts = false;
+	outRadNdotL = float3(0, 0, 0); // chosen light's COLORED radiance * NdotL (pre-visibility), for the RIS estimate
+	outWSum = 0.0;
 	bool have = false;
 	uint lightIdx = 0; // global stream index, for decorrelated randoms
 
@@ -112,7 +119,8 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint frame, uint dimBase
 	for (uint d = 0; d < DirCount; ++d, ++lightIdx)
 	{
 		const float3 L = DirData[d].xyz;
-		const float w = DirData[d].w * max(dot(N, L), 0.0);
+		const float3 radNdotL = DirColor[d].xyz * max(dot(N, L), 0.0);
+		const float w = Luma3(radNdotL); // importance weight = luma of the colored contribution
 		if (w <= 0.0)
 		{
 			continue;
@@ -124,6 +132,7 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint frame, uint dimBase
 			outTMax = 1e30;
 			outConeR = SunTanAngular; // sun angular half-size
 			outCasts = (DirCastMask & (1u << d)) != 0u;
+			outRadNdotL = radNdotL;
 			have = true;
 		}
 	}
@@ -139,7 +148,8 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint frame, uint dimBase
 			continue;
 		}
 		const float3 L = toLight / max(dist, 1e-4);
-		const float w = PointLum[p].x * FalloffWindow(dist, range) * max(dot(N, L), 0.0);
+		const float3 radNdotL = PointColor[p].xyz * FalloffWindow(dist, range) * max(dot(N, L), 0.0);
+		const float w = Luma3(radNdotL);
 		if (w <= 0.0)
 		{
 			continue;
@@ -151,6 +161,7 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint frame, uint dimBase
 			outTMax = max(dist - 0.05, 0.0);
 			outConeR = SourceRadius / max(dist, 1e-4); // source disk subtends a wider cone up close
 			outCasts = (PointCastMask & (1u << p)) != 0u;
+			outRadNdotL = radNdotL;
 			have = true;
 		}
 	}
@@ -172,9 +183,10 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint frame, uint dimBase
 		{
 			continue;
 		}
-		const float denom = max(SpotLumInner[s].y - cosOuter, 1e-4);
+		const float denom = max(SpotColorInner[s].w - cosOuter, 1e-4); // .w = cos(inner)
 		const float cone = pow(saturate((cosAngle - cosOuter) / denom), 2.0);
-		const float w = SpotLumInner[s].x * FalloffWindow(dist, range) * cone * max(dot(N, L), 0.0);
+		const float3 radNdotL = SpotColorInner[s].xyz * FalloffWindow(dist, range) * cone * max(dot(N, L), 0.0);
+		const float w = Luma3(radNdotL);
 		if (w <= 0.0)
 		{
 			continue;
@@ -186,10 +198,12 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint frame, uint dimBase
 			outTMax = max(dist - 0.05, 0.0);
 			outConeR = SourceRadius / max(dist, 1e-4);
 			outCasts = (SpotCastMask & (1u << s)) != 0u;
+			outRadNdotL = radNdotL;
 			have = true;
 		}
 	}
 
+	outWSum = wSum;
 	return have;
 }
 
@@ -250,10 +264,11 @@ void main(uint3 id : SV_DispatchThreadID)
 	const float4 gbuf = GBufferNormal.Load(int3(gbTexel, 0));
 	const float depth = GBufferDepth.Load(int3(gbTexel, 0)).r;
 
-	// Sky / no geometry -> fully lit (ratio 1). The forward's unshadowed term is ~0 here anyway.
+	// Sky / no geometry -> no direct irradiance (0). DefaultLit doesn't shade sky pixels (the sky pass does),
+	// so this only keeps the denoiser/upsample from bleeding a bogus value in from the background.
 	if (IsSky(depth))
 	{
-		ShadowOut[id.xy] = 1.0;
+		ShadowOut[id.xy] = float4(0, 0, 0, 0);
 		return;
 	}
 
@@ -262,12 +277,14 @@ void main(uint3 id : SV_DispatchThreadID)
 	const float3 positionWS = worldH.xyz / worldH.w;
 	const float3 N = DecodeNormalOct(gbuf.xy);
 
-	// --- K-sample estimate of the aggregate shadow ratio (render.shadows.rays). Each sample independently
-	// importance-samples one light (∝ unshadowed contribution) and traces one ray; averaging cuts the binary
-	// 1-sample variance ~1/K, so the temporal + à-trous converge cleaner (fixes the edge/motion noise). A
-	// non-casting or no-light sample contributes visibility 1 (lit); only a sampled caster traces.
+	// --- K-sample RIS estimate of the COLORED shadowed direct irradiance D = Σ_i radiance_i·NdotL_i·vis_i
+	// (Option B). Each sample importance-samples one light y ∝ luma-contribution and traces one ray; the RIS
+	// estimate of the whole sum is radiance_y·NdotL_y·vis_y · wSum / contrib_y (contrib_y = luma of that colored
+	// term). Averaging K samples converges to D. The forward multiplies full-res albedo/π·(1-metallic) — albedo
+	// factors out of the diffuse sum, so it stays out of this half/full-res buffer (no albedo blur), the GI
+	// pattern. A non-casting chosen light contributes with vis = 1 (lit); no-light -> 0.
 	const uint rayCount = max(RayCount, 1u);
-	float visSum = 0.0;
+	float3 Dsum = float3(0, 0, 0);
 	float hitTSum = 0.0;  // sum of nearest-occluder distances over the OCCLUDED rays (world units)
 	uint hitCount = 0u;   // how many rays hit — the mean is over hits only (misses carry no penumbra info)
 	[loop] for (uint s = 0; s < rayCount; ++s)
@@ -280,25 +297,36 @@ void main(uint3 id : SV_DispatchThreadID)
 		float tMax;
 		float coneR;
 		bool casts;
-		if (!SelectLight(id.xy, positionWS, N, FrameCounter, dimBase, L, tMax, coneR, casts) || !casts)
+		float3 radNdotL; // chosen light's colored radiance*NdotL (pre-visibility)
+		float wSum;      // Σ luma-contribution over all in-range lights (the RIS normalization)
+		if (!SelectLight(id.xy, positionWS, N, FrameCounter, dimBase, L, tMax, coneR, casts, radNdotL, wSum))
 		{
-			visSum += 1.0; // no contributing light / non-casting chosen -> lit
-			continue;
+			continue; // no contributing light here -> 0 irradiance from this sample
 		}
-		float hitT;
-		visSum += TraceShadow(id.xy, FrameCounter, dimBase, positionWS, N, L, tMax, coneR, hitT);
-		if (hitT >= 0.0)
+		float vis = 1.0; // non-casting chosen light is fully lit (no ray)
+		if (casts)
 		{
-			hitTSum += hitT;
-			++hitCount;
+			float hitT;
+			vis = TraceShadow(id.xy, FrameCounter, dimBase, positionWS, N, L, tMax, coneR, hitT);
+			if (hitT >= 0.0)
+			{
+				hitTSum += hitT;
+				++hitCount;
+			}
+		}
+		// RIS: estimate of the FULL colored sum from this one sample = radNdotL·vis · wSum / contrib_y.
+		const float contribY = Luma3(radNdotL);
+		if (contribY > 1e-6)
+		{
+			Dsum += radNdotL * (vis * wSum / contribY);
 		}
 	}
 
-	const float ratio = visSum / float(rayCount);
+	const float3 D = Dsum / float(rayCount); // colored shadowed direct irradiance (no albedo)
 	// Mean nearest-occluder distance (world units) over the occluded rays, 0 when fully lit (no occluder). The
 	// SIGMA-style denoiser reads this from .a to size the à-trous kernel — near occluder (small) => sharp contact
 	// shadow, far occluder (large) => wide soft penumbra. Noisy at few rays but spatially smooth + the denoiser
 	// only uses it as a monotonic penumbra proxy.
 	const float meanHitT = (hitCount > 0u) ? (hitTSum / float(hitCount)) : 0.0;
-	ShadowOut[id.xy] = float4(ratio, ratio, ratio, meanHitT); // ShadowStrength applied in DefaultLit at consumption
+	ShadowOut[id.xy] = float4(D, meanHitT); // .rgb = colored shadowed irradiance, .a = penumbra guide; forward applies albedo + ShadowStrength
 }

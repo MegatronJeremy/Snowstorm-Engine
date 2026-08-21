@@ -458,6 +458,24 @@ float3 ShadePBR(float3 N, float3 V, float3 L, float3 F0, float3 albedo, float me
 	return (kd * albedo / PI + specular) * radiance * NdotL;
 }
 
+// Cook-Torrance split into diffuse + specular (the same terms as ShadePBR, unshadowed). The stochastic-shadow
+// forward path (Option B) needs them separately: the colored diffuse direct comes from the denoised RT-shadow
+// irradiance buffer (per-light color + shadow correct), while specular is summed here and shadowed by a cheap
+// aggregate visibility. `radiance` is color*intensity pre-attenuation; caller applies attenuation/cone.
+void ShadePBRSplit(float3 N, float3 V, float3 L, float3 F0, float3 albedo, float metallic, float roughness,
+                   float3 radiance, out float3 outDiffuse, out float3 outSpecular)
+{
+	const float3 H = normalize(V + L);
+	const float NdotL = max(dot(N, L), 0.0);
+	const float Dd = DistributionGGX(N, H, roughness);
+	const float G = GeometrySmith(N, V, L, roughness);
+	const float3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
+	const float3 specular = (Dd * G * F) / max(4.0 * max(dot(N, V), 0.0) * NdotL, 1e-4);
+	const float3 kd = (1.0 - F) * (1.0 - metallic);
+	outDiffuse = kd * albedo / PI * radiance * NdotL;
+	outSpecular = specular * radiance * NdotL;
+}
+
 // World-space shading normal: perturb the geometric normal by the tangent-space normal map when one
 // is bound, otherwise fall back to the interpolated vertex normal.
 float3 ResolveNormal(PSInput i, uint normalIndex)
@@ -563,58 +581,56 @@ float4 main(PSInput i) : SV_Target0
 		return float4(giIndirect, 1.0);
 	}
 
-	// Stochastic RT shadows (MegaLights-lite): when the half-res shadow pass ran (SunShadowTextureIndex != 0 —
-	// the name is legacy; it now holds the AGGREGATE shadow-ratio target for ALL lights), sample the temporally-
-	// accumulated + denoised + upsampled ratio by screen UV. It is an estimate of Sum(contrib_i*vis_i)/Sum(contrib_i)
-	// over all lights, so it modulates the WHOLE direct term at the end instead of any per-light RayQuery. Jitter-
-	// matched like GI/AO. 0 index -> raster/inline fallback (per-light shadows inside the loops below).
-	float shadowRatio = 1.0;
+	// Stochastic RT direct lighting (Option B / MegaLights-lite): when the half-res shadow pass ran
+	// (SunShadowTextureIndex != 0), it wrote the COLORED shadowed direct IRRADIANCE D = Σ_i radiance_i·NdotL_i·vis_i
+	// over ALL lights (per-light color + shadow correct, NO albedo) into .rgb, temporally-accumulated + à-trous-
+	// denoised + upsampled. The forward multiplies full-res albedo here (albedo factors out of the diffuse sum, so
+	// it stays out of the denoised buffer -> no albedo blur, the GI pattern). Specular is summed sharp below and
+	// shadowed by a cheap aggregate visibility. 0 index -> inline/raster per-light path (loops below trace).
+	float3 shadowIrr = float3(0, 0, 0); // denoised colored shadowed direct irradiance (Option B)
 	bool useShadowTex = false;
 	if (SunShadowTextureIndex != 0)
 	{
-		const float2 shUv = i.PositionCS.xy / max(RenderTargetSize, float2(1.0, 1.0)); // plain UV: the effect buffers are jittered like the geometry now, so no JitterUv compensation
-		const float r = Textures[NonUniformResourceIndex(SunShadowTextureIndex)].SampleLevel(LinearSampler, shUv, 0).r;
-		shadowRatio = lerp(1.0, r, ShadowStrength); // ShadowStrength dial, matching the inline path's return
+		const float2 shUv = i.PositionCS.xy / max(RenderTargetSize, float2(1.0, 1.0)); // plain UV: effect buffers jittered like geometry
+		shadowIrr = Textures[NonUniformResourceIndex(SunShadowTextureIndex)].SampleLevel(LinearSampler, shUv, 0).rgb;
 		useShadowTex = true;
 	}
 
 	float3 Lo = float3(0, 0, 0);
+	float3 unshadowedIrr = float3(0, 0, 0); // Σ radiance_i·NdotL_i (unshadowed) — diffuse albedo scale + specular vis
+	float3 specSum = float3(0, 0, 0);       // Σ unshadowed specular (stochastic path shadows it by an aggregate ratio)
 
-	// --- Directional lights (the sun). Only light 0 casts shadows in this single-map implementation.
+	// --- Directional lights (the sun).
 	const int count = clamp(LightCount, 0, MAX_DIRECTIONAL_LIGHTS);
 	[loop] for (int l = 0; l < count; ++l)
 	{
 		const float3 L = normalize(-DirectionalLights[l].Direction);
 		const float3 radiance = DirectionalLights[l].Color * DirectionalLights[l].Intensity;
-		// Shadow multiplies the whole contribution; ambient is unaffected so shadows stay lit-but-dim. N is
-		// the shading normal, reused to offset the RT shadow ray origin off the surface (good enough here).
-		// Stochastic path: all per-light shadowing is folded into the single aggregate ratio applied after the
-		// loops, so light stays unshadowed here (shadow = 1). Raster/inline fallback: light 0 (the sun) traces.
-		// EXPLICIT branch (not a ?:) so the expensive SampleSunShadow RayQuery is genuinely NOT executed on the
-		// texture path — a ternary can let DXC evaluate both sides. useShadowTex is cbuffer-uniform (warp-coherent).
-		float shadow = 1.0;
-		if (!useShadowTex && l == 0)
+		const float ndl = max(dot(N, L), 0.0);
+		// Stochastic (useShadowTex): the diffuse comes from the denoised irradiance D; here we only need the
+		// unshadowed irradiance (for the albedo scale) + the sharp specular. Inline: light 0 traces its own shadow.
+		if (useShadowTex)
 		{
-			shadow = SampleSunShadow(i.PositionWS, N, L, max(dot(N, L), 0.0), i.PositionCS.xy);
+			float3 diff, spec;
+			ShadePBRSplit(N, V, L, F0, albedo, metallic, roughness, radiance, diff, spec);
+			unshadowedIrr += radiance * ndl;
+			specSum += spec;
 		}
-		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * shadow;
+		else
+		{
+			const float shadow = (l == 0) ? SampleSunShadow(i.PositionWS, N, L, ndl, i.PositionCS.xy) : 1.0;
+			Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * shadow;
+		}
 	}
 
 	// --- Point lights: inverse-square falloff with a smooth windowed cutoff at Range (UE4/Frostbite).
-	// The window ((1-(d/R)^4)^2) drives the contribution to exactly zero at d==Range instead of an abrupt
-	// clip, so there's no hard lit/unlit edge. Shadow (omni cube atlas) multiplies the whole contribution.
 	const int pointCount = clamp(PointCount, 0, MAX_POINT_LIGHTS);
 	[loop] for (int p = 0; p < pointCount; ++p)
 	{
 		const float3 toLight = PointLights[p].Position - i.PositionWS;
 		const float dist = length(toLight);
 		const float range = max(PointLights[p].Range, 1e-4);
-
-		// Per-pixel range cull (the poor-man's clustered-forward light cull): a point light past its Range
-		// contributes exactly zero (the falloff window is 0 at d >= range), so skip the WHOLE light — including
-		// the expensive inline RT shadow trace. Lossless. The dominant forward RT-shadow cost was tracing toward
-		// point lights that don't even light the pixel (Sponza: 6 point lights, mostly local).
-		if (dist >= range)
+		if (dist >= range) // range cull (lossless: falloff is 0 at d >= range)
 		{
 			continue;
 		}
@@ -622,70 +638,77 @@ float4 main(PSInput i) : SV_Target0
 		const float3 L = toLight / max(dist, 1e-4);
 		const float window = pow(saturate(1.0 - pow(dist / range, 4.0)), 2.0);
 		const float atten = window / max(dist * dist, 1e-4);
-
-		// Stochastic path: shadowing folds into the aggregate ratio after the loops (unshadowed here). Raster/
-		// inline fallback traces. Explicit branch so the RayQuery is skipped on the texture path (see sun loop).
-		float pointShadow = 1.0;
-		if (!useShadowTex)
-		{
-			pointShadow = SamplePointShadow(PointLights[p], i.PositionWS, N, L, dist, max(dot(N, L), 0.0), i.PositionCS.xy);
-		}
-
+		const float ndl = max(dot(N, L), 0.0);
 		const float3 radiance = PointLights[p].Color * PointLights[p].Intensity * atten;
-		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * pointShadow;
+
+		if (useShadowTex)
+		{
+			float3 diff, spec;
+			ShadePBRSplit(N, V, L, F0, albedo, metallic, roughness, radiance, diff, spec);
+			unshadowedIrr += radiance * ndl;
+			specSum += spec;
+		}
+		else
+		{
+			const float pointShadow = SamplePointShadow(PointLights[p], i.PositionWS, N, L, dist, ndl, i.PositionCS.xy);
+			Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * pointShadow;
+		}
 	}
 
-	// --- Spot lights: point attenuation multiplied by a smooth cone falloff between the inner/outer
-	// half-angles (stored as cosines). -L is the light->surface direction compared to the spot's
-	// forward axis. Unshadowed.
+	// --- Spot lights: point attenuation * smooth cone falloff.
 	const int spotCount = clamp(SpotCount, 0, MAX_SPOT_LIGHTS);
 	[loop] for (int s = 0; s < spotCount; ++s)
 	{
 		const float3 toLight = SpotLights[s].Position - i.PositionWS;
 		const float dist = length(toLight);
 		const float range = max(SpotLights[s].Range, 1e-4);
-
-		// Range cull (see the point-light loop): out-of-range spots contribute zero — skip trace + shade.
-		if (dist >= range)
+		if (dist >= range) // range cull
 		{
 			continue;
 		}
 
 		const float3 L = toLight / max(dist, 1e-4);
-
-		// Cone cull: outside the outer half-angle the cone falloff is exactly 0, so this spot contributes
-		// nothing here — skip the inline RT shadow trace and shading. Lossless (matches cone == 0 below).
 		const float cosAngle = dot(-L, SpotLights[s].Direction);
-		if (cosAngle <= SpotLights[s].CosOuter)
+		if (cosAngle <= SpotLights[s].CosOuter) // cone cull
 		{
 			continue;
 		}
 
 		const float window = pow(saturate(1.0 - pow(dist / range, 4.0)), 2.0);
 		const float atten = window / max(dist * dist, 1e-4);
-
-		// Cone falloff: 1 inside the inner angle, smoothly to 0 at the outer angle. cos() decreases with
-		// angle, so a larger dot() == closer to the axis == more lit.
 		const float denom = max(SpotLights[s].CosInner - SpotLights[s].CosOuter, 1e-4);
 		const float cone = pow(saturate((cosAngle - SpotLights[s].CosOuter) / denom), 2.0);
-
-		// Stochastic path: shadowing folds into the aggregate ratio after the loops (unshadowed here). Raster/
-		// inline fallback traces. Explicit branch so the RayQuery is skipped on the texture path (see sun loop).
-		float spotShadow = 1.0;
-		if (!useShadowTex)
-		{
-			spotShadow = SampleSpotShadow(SpotLights[s], i.PositionWS, N, L, dist, max(dot(N, L), 0.0), i.PositionCS.xy);
-		}
-
+		const float ndl = max(dot(N, L), 0.0);
 		const float3 radiance = SpotLights[s].Color * SpotLights[s].Intensity * atten * cone;
-		Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * spotShadow;
+
+		if (useShadowTex)
+		{
+			float3 diff, spec;
+			ShadePBRSplit(N, V, L, F0, albedo, metallic, roughness, radiance, diff, spec);
+			unshadowedIrr += radiance * ndl;
+			specSum += spec;
+		}
+		else
+		{
+			const float spotShadow = SampleSpotShadow(SpotLights[s], i.PositionWS, N, L, dist, ndl, i.PositionCS.xy);
+			Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * spotShadow;
+		}
 	}
 
-	// Stochastic RT shadows: apply the aggregate shadow ratio to the WHOLE accumulated direct term (dir+point+
-	// spot). It estimates Sum(contrib_i*vis_i)/Sum(contrib_i), so scaling the unshadowed direct sum reconstructs
-	// the shadowed direct lighting. 1.0 (no-op) on the raster/inline fallback, where shadows were applied per
-	// light above. Ambient / IBL / GI are added after this, so they stay unshadowed (matches the inline path).
-	Lo *= shadowRatio;
+	// Stochastic path (Option B): reconstruct the shadowed direct term from the denoised colored irradiance.
+	// Diffuse = albedo/π·(1-metallic)·shadowedIrr, with per-light color + shadow carried correctly by D (fixes the
+	// grey-aggregate-ratio color error). ShadowStrength lerps between unshadowed (0) and D (1); clamp <= unshadowed
+	// so RIS/denoiser overshoot can't brighten past the unshadowed light (the "overly bright" guard). Specular is
+	// sharp (out of the denoiser) but shadowed by an aggregate grey visibility (specular color error is minor).
+	if (useShadowTex)
+	{
+		const float3 shadowedIrr = min(lerp(unshadowedIrr, shadowIrr, ShadowStrength), unshadowedIrr);
+		const float3 diffuseDirect = albedo * (1.0 / PI) * (1.0 - metallic) * shadowedIrr;
+		const float3 lw = float3(0.2126, 0.7152, 0.0722);
+		const float uL = dot(unshadowedIrr, lw);
+		const float visGrey = (uL > 1e-4) ? saturate(dot(shadowedIrr, lw) / uL) : 1.0;
+		Lo = diffuseDirect + specSum * visGrey;
+	}
 
 	// 1-bounce RT diffuse GI (#118): when active, the traced indirect REPLACES the DIFFUSE ambient (Lumen/
 	// RTXGI model) — the diffuse fill becomes scene-derived (color bleed, contact fill) instead of the

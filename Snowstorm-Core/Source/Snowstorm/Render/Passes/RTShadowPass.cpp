@@ -41,12 +41,16 @@ namespace Snowstorm
 			uint32_t RayCount = 1;
 			float _Pad3 = 0.0f;
 
-			glm::vec4 DirData[MAX_DIRECTIONAL_LIGHTS]{}; // xyz = dir TO light, w = luma(color*intensity)
-			glm::vec4 PointPosRange[MAX_POINT_LIGHTS]{}; // xyz = pos, w = range
-			glm::vec4 PointLum[MAX_POINT_LIGHTS]{};      // x = luma(color*intensity)
-			glm::vec4 SpotPosRange[MAX_SPOT_LIGHTS]{};   // xyz = pos, w = range
-			glm::vec4 SpotDirCos[MAX_SPOT_LIGHTS]{};     // xyz = dir, w = cos(outer)
-			glm::vec4 SpotLumInner[MAX_SPOT_LIGHTS]{};   // x = luma(color*intensity), y = cos(inner)
+			// Option B (colored diffuse): the pass now accumulates COLORED shadowed irradiance, so each light
+			// carries its full RGB radiance (color*intensity), not just a luma weight. Importance weight = luma
+			// of that color, computed in the shader.
+			glm::vec4 DirData[MAX_DIRECTIONAL_LIGHTS]{};       // xyz = dir TO light, w unused
+			glm::vec4 DirColor[MAX_DIRECTIONAL_LIGHTS]{};      // xyz = color*intensity (radiance, no attenuation)
+			glm::vec4 PointPosRange[MAX_POINT_LIGHTS]{};       // xyz = pos, w = range
+			glm::vec4 PointColor[MAX_POINT_LIGHTS]{};          // xyz = color*intensity
+			glm::vec4 SpotPosRange[MAX_SPOT_LIGHTS]{};         // xyz = pos, w = range
+			glm::vec4 SpotDirCos[MAX_SPOT_LIGHTS]{};           // xyz = dir, w = cos(outer)
+			glm::vec4 SpotColorInner[MAX_SPOT_LIGHTS]{};       // xyz = color*intensity, w = cos(inner)
 		};
 
 		// Binding indices in Shadow.comp.hlsl set 0 (same layout as AO.comp.hlsl).
@@ -54,11 +58,6 @@ namespace Snowstorm
 		constexpr uint32_t kOutputBinding = 1;
 		constexpr uint32_t kParamsBinding = 3;
 		constexpr uint32_t kDepthBinding = 4;
-
-		float Luma(const glm::vec3& c)
-		{
-			return glm::dot(c, glm::vec3(0.2126f, 0.7152f, 0.0722f));
-		}
 	}
 
 	void RTShadowPass::EnsureResources()
@@ -124,7 +123,8 @@ namespace Snowstorm
 		for (uint32_t i = 0; i < cb.DirCount; ++i)
 		{
 			const GPUDirectionalLight& L = lights.Lights[i];
-			cb.DirData[i] = glm::vec4(glm::normalize(-L.Direction), Luma(L.Color) * L.Intensity);
+			cb.DirData[i] = glm::vec4(glm::normalize(-L.Direction), 0.0f);
+			cb.DirColor[i] = glm::vec4(L.Color * L.Intensity, 0.0f); // radiance (no attenuation for the sun)
 			cb.DirCastMask |= (1u << i);
 		}
 
@@ -136,7 +136,7 @@ namespace Snowstorm
 		{
 			const GPUPointLight& L = lights.PointLights[i];
 			cb.PointPosRange[i] = glm::vec4(L.Position, L.Range);
-			cb.PointLum[i] = glm::vec4(Luma(L.Color) * L.Intensity, 0.0f, 0.0f, 0.0f);
+			cb.PointColor[i] = glm::vec4(L.Color * L.Intensity, 0.0f); // radiance pre-attenuation (shader applies falloff)
 			if (L.ShadowSlot >= 0)
 			{
 				cb.PointCastMask |= (1u << i);
@@ -150,7 +150,7 @@ namespace Snowstorm
 			const GPUSpotLight& L = lights.SpotLights[i];
 			cb.SpotPosRange[i] = glm::vec4(L.Position, L.Range);
 			cb.SpotDirCos[i] = glm::vec4(L.Direction, L.CosOuter);
-			cb.SpotLumInner[i] = glm::vec4(Luma(L.Color) * L.Intensity, L.CosInner, 0.0f, 0.0f);
+			cb.SpotColorInner[i] = glm::vec4(L.Color * L.Intensity, L.CosInner); // xyz=radiance, w=cos(inner)
 			if (L.ShadowIndex >= 0)
 			{
 				cb.SpotCastMask |= (1u << i);
