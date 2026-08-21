@@ -119,6 +119,7 @@ namespace Snowstorm
 				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIDenoiser.Allocated() || !rt.GIUpscaleTarget ||
 				                     !rt.AOTarget || !rt.AOBlurTarget || !rt.AODenoiser.Allocated() || !rt.AOUpscaleTarget ||
 				                     !rt.ShadowTarget || !rt.ShadowDenoiser.Allocated() || !rt.ShadowUpscaleTarget ||
+				                     !rt.ShadowSpecTarget || !rt.ShadowSpecDenoiser.Allocated() || !rt.ShadowSpecUpscaleTarget ||
 				                     !rt.ReflectionTarget || !rt.ReflectionDenoiser.Allocated() || !rt.PrevSceneColorTarget ||
 				                     !rt.PathTraceAccumTarget ||
 				                     !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
@@ -204,6 +205,12 @@ namespace Snowstorm
 					// Full-res sun-shadow target: the bilateral upsample renders the half-res shadow (after temporal+
 					// denoise) into this; the forward pass samples it (by screen UV) as the aggregate ratio. Full res.
 					rtW.ShadowUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportShadowUpscale");
+					// Specular twin of the shadow chain (demodulated MegaLights specular): same half-res grid + its own
+					// denoiser, so the specular signal denoises independently of the diffuse. Full-res upscale target.
+					rtW.ShadowSpecTarget = CreateAOTarget(shadowW, shadowH, "ViewportShadowSpec");
+					rtW.ShadowSpecTargetView = rtW.ShadowSpecTarget->GetDefaultView();
+					AllocateDenoiser(rtW.ShadowSpecDenoiser, shadowW, shadowH, "ViewportShadowSpec");
+					rtW.ShadowSpecUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportShadowSpecUpscale");
 					// Full-res RT reflection (#129): full viewport res (reflections are high-frequency). Always
 					// allocated; only dispatched when reflections are active. Rebuilt on viewport resize.
 					rtW.ReflectionTarget = CreateGITarget(w, h, "ViewportReflection");

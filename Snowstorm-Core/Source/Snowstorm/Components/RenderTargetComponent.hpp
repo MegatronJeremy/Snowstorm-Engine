@@ -121,6 +121,15 @@ namespace Snowstorm
 		// until allocated.
 		Ref<RenderTarget> ShadowUpscaleTarget;
 
+		// Stochastic RT shadow SPECULAR twin (demodulated MegaLights/NRD path): the shadow compute pass also emits
+		// the shadowed specular (GGX D*G, no Fresnel) here, denoised + upsampled by its OWN chain (a second
+		// DenoiserInstance) so the forward re-applies F0 full-res. Separate from the diffuse ShadowTarget because
+		// the two signals have different content and must denoise independently. Same half-res grid as ShadowTarget.
+		Ref<Texture> ShadowSpecTarget;
+		Ref<TextureView> ShadowSpecTargetView;
+		DenoiserInstance ShadowSpecDenoiser;
+		Ref<RenderTarget> ShadowSpecUpscaleTarget;
+
 		// Full-res RT reflection (#129): the reflection trace runs into this Sampled|Storage RGBA16F target at
 		// FULL viewport res (reflections are high-frequency — half-res would soften mirrors). Stores RAW
 		// reflected radiance (.rgb, no Fresnel/BRDF weight — the forward pass applies that per-pixel) + the hit

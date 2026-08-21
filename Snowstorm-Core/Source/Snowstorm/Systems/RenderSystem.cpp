@@ -573,7 +573,7 @@ namespace Snowstorm
 	                                  const std::string& name, const bool jittered, const bool forceRasterShadow,
 	                                  const uint32_t giTextureIndex, const uint32_t aoTextureIndex,
 	                                  const uint32_t reflTextureIndex, const Ref<Texture>& reflTexture,
-	                                  const uint32_t shadowTextureIndex)
+	                                  const uint32_t shadowTextureIndex, const uint32_t shadowSpecTextureIndex)
 	{
 		std::vector<RenderGraph::ResourceAccess> meshReads;
 		if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
@@ -625,6 +625,17 @@ namespace Snowstorm
 				                     RenderGraph::AccessState::Sampled});
 			}
 		}
+		// Full-res demodulated specular target: same screen-UV bindless sample; declare the read so the graph
+		// transitions it out of the ShadowSpecUpsample color-attachment layout before this pass.
+		if (shadowSpecTextureIndex != 0)
+		{
+			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
+			    rt && rt->ShadowSpecUpscaleTarget && !rt->ShadowSpecUpscaleTarget->GetDesc().ColorAttachments.empty())
+			{
+				meshReads.push_back({rt->ShadowSpecUpscaleTarget->GetDesc().ColorAttachments[0].View->GetTexture(),
+				                     RenderGraph::AccessState::Sampled});
+			}
+		}
 
 		// GI screen size = this pass's scene target size (viewport * render.scale), for the UV divide.
 		const glm::vec2 sceneSize{static_cast<float>(hdrTarget->GetDesc().Width), static_cast<float>(hdrTarget->GetDesc().Height)};
@@ -632,7 +643,7 @@ namespace Snowstorm
 		fc.Graph.AddPass({.Name = name,
 		                  .Target = hdrTarget,
 		                  .Reads = std::move(meshReads),
-		                  .Execute = [this, &fc, cam, hdrTarget, jittered, forceRasterShadow, giTextureIndex, aoTextureIndex, reflTextureIndex, shadowTextureIndex, sceneSize](CommandContext& c)
+		                  .Execute = [this, &fc, cam, hdrTarget, jittered, forceRasterShadow, giTextureIndex, aoTextureIndex, reflTextureIndex, shadowTextureIndex, shadowSpecTextureIndex, sceneSize](CommandContext& c)
 		                  {
 			                  // Per-pass GI (execute-ordered so the compare GT render's giTextureIndex=0 can't be
 			                  // overwritten by the primary pass's index at build time). AcquireFrameSet (called in
@@ -646,6 +657,9 @@ namespace Snowstorm
 			                  // Per-pass half-res sun shadow (same execute-ordered reason). Shares sceneSize for the
 			                  // screen-UV sample. 0 on the GT compare render keeps the reference on the raster path.
 			                  fc.Renderer.SetShadowTexture(shadowTextureIndex, sceneSize);
+			                  // Per-pass demodulated specular index (same execute-ordered reason). 0 keeps the forward
+			                  // on the grey-vis specular fallback (GT compare render / spec disabled).
+			                  fc.Renderer.SetShadowSpecTexture(shadowSpecTextureIndex);
 
 			                  const glm::vec3 camPos = cam.Transform->Position;
 			                  fc.Renderer.BeginScene(*cam.Rt, camPos, fc.Ctx, fc.FrameIndex, jittered, forceRasterShadow);

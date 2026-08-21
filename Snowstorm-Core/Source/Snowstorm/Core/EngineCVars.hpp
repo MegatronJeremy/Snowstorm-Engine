@@ -338,6 +338,10 @@ namespace Snowstorm::CVars
 	// stops a strong occluded light from dominating selection and darkening a pixel a weaker visible light lights.
 	extern CVar<bool> ShadowImportanceLog;
 
+	// Demodulated per-light specular shadowing (separate denoised specular signal + full-res F0 re-apply) vs the
+	// cheaper diffuse-weighted grey-visibility specular. On = MegaLights/NRD endpoint; off = the grey fallback.
+	extern CVar<bool> ShadowSpecularDemodulated;
+
 	// Temporal neighborhood clamp for the stochastic shadow signal: off by default (the clamp clips the HDR RIS
 	// estimate's rare bright samples, darkening multi-light overlaps). GI/AO/reflections keep it on regardless.
 	extern CVar<bool> ShadowDenoiseClamp;

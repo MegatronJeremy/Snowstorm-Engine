@@ -852,7 +852,8 @@ namespace Snowstorm
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				return v.GBufferNeeded && CVars::ShadowStochasticActive() && v.RT.ShadowTarget && v.RT.ShadowTargetView;
+				return v.GBufferNeeded && CVars::ShadowStochasticActive() && v.RT.ShadowTarget && v.RT.ShadowTargetView &&
+				       v.RT.ShadowSpecTargetView;
 			}
 
 			void Contribute(ViewportRenderContext& v) override
@@ -866,9 +867,12 @@ namespace Snowstorm
 				const uint32_t shW = ScaledExtent(fullW, scale);
 				const uint32_t shH = ScaledExtent(fullH, scale);
 
-				const Ref<TextureView> gbufView = gbufDesc.ColorAttachments[0].View;
-				const Ref<TextureView> depthView = gbufDesc.DepthAttachment->View; // fp32 D32 depth
+				const Ref<TextureView> gbufView = gbufDesc.ColorAttachments[0].View;    // geometric normal + roughness (ray origin, GGX)
+				const Ref<TextureView> shadingView = gbufDesc.ColorAttachments[1].View; // shading normal (NdotL + specular BRDF)
+				const Ref<TextureView> depthView = gbufDesc.DepthAttachment->View;      // fp32 D32 depth
 				const Ref<TextureView> shadowView = v.RT.ShadowTargetView;
+				const Ref<TextureView> shadowSpecView = v.RT.ShadowSpecTargetView; // demodulated specular output
+				const glm::vec3 camPos = v.Cam.Transform->Position;                // world-space camera pos for V in the specular BRDF
 				// Reconstruct from THIS frame's JITTERED camera VP (the matrix the jittered DepthNormal prepass +
 				// the forward color pass both use, so effect and geometry silhouettes align), NOT GetFrameData().
 				// ViewProjection which still holds the previous frame's forward matrix at build time — see AOEffect.
@@ -899,15 +903,18 @@ namespace Snowstorm
 				fc.Graph.AddPass({.Name = "RTShadow" + v.Suffix,
 				                  .IsCompute = true,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {shadingView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
-				                  .Writes = {{shadowView->GetTexture(), RenderGraph::AccessState::Storage}},
-				                  .Execute = [this, &fc, invViewProj, lights, normalBias, frameCounter, soft, sunTanAngular, sourceRadius, rayCount, tableAddr, gbufView, depthView, shadowView, shW, shH](CommandContext& c)
+				                  .Writes = {{shadowView->GetTexture(), RenderGraph::AccessState::Storage},
+				                             {shadowSpecView->GetTexture(), RenderGraph::AccessState::Storage}},
+				                  .Execute = [this, &fc, invViewProj, lights, normalBias, frameCounter, soft, sunTanAngular, sourceRadius, rayCount, tableAddr, camPos, gbufView, shadingView, depthView, shadowView, shadowSpecView, shW, shH](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, lights, normalBias, frameCounter,
-					                                  soft, sunTanAngular, sourceRadius, rayCount, tableAddr, gbufView, depthView, shadowView, shW, shH);
+					                                  soft, sunTanAngular, sourceRadius, rayCount, tableAddr, camPos, gbufView, shadingView, depthView, shadowView, shadowSpecView, shW, shH);
 				                  }});
 
-				v.ShadowView = shadowView; // the raw estimate; the temporal/denoise stages republish (step 2b)
+				v.ShadowView = shadowView;         // the raw diffuse estimate; the temporal/denoise stages republish
+				v.ShadowSpecView = shadowSpecView; // the raw demodulated specular estimate; its own denoise chain republishes
 			}
 
 		private:
@@ -1062,6 +1069,143 @@ namespace Snowstorm
 		private:
 			RenderSystem& m_Owner;
 			GIUpsamplePass m_Pass; // owned here: RGB bilateral upsample (colored irradiance, Option B — not the scalar AO one)
+		};
+
+		// --- Demodulated SPECULAR shadow chain (MegaLights/NRD): the exact triplet above, run on the second
+		// (specular) signal the shadow pass emits. Separate DenoiserInstance (ShadowSpecDenoiser) + buffers so
+		// the specular denoises independently of the diffuse; the forward re-applies F0 to the upsampled result.
+		class ShadowSpecTemporalEffect final : public IViewportEffect
+		{
+		public:
+			explicit ShadowSpecTemporalEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "ShadowSpecTemporal"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::ShadowStochasticActive() && CVars::ShadowSpecularDemodulated.Get() &&
+				       v.ShadowSpecView && v.RT.ShadowSpecDenoiser.Allocated();
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+				auto& inst = fc.Reg.Write<RenderTargetComponent>(v.ViewportEntity).ShadowSpecDenoiser;
+				const auto& shDesc = v.RT.ShadowSpecTarget->GetDesc();
+				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View;
+
+				DenoiserConfig cfg{};
+				cfg.TemporalActive = CVars::ShadowTemporalActive();
+				cfg.TemporalBlend = CVars::ShadowTemporalBlend.Get();
+				cfg.TemporalMaxBlend = CVars::ShadowTemporalMaxBlend.Get();
+				cfg.NeighborhoodClamp = CVars::ShadowDenoiseClamp.Get(); // off (HDR stochastic), same as the diffuse chain
+				cfg.NamePrefix = "ShadowSpec";
+
+				v.ShadowSpecView = m_Denoiser.Temporal(fc, inst, cfg, v.ShadowSpecView, gbufView, depthView, v.Velocity, v.Cam,
+				                                       shDesc.Width, shDesc.Height, v.Suffix);
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			Denoiser m_Denoiser;
+		};
+
+		class ShadowSpecDenoiseEffect final : public IViewportEffect
+		{
+		public:
+			explicit ShadowSpecDenoiseEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "ShadowSpecDenoise"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::ShadowStochasticActive() && CVars::ShadowSpecularDemodulated.Get() &&
+				       CVars::ShadowDenoiseActive() && v.ShadowSpecView && v.RT.ShadowSpecDenoiser.Allocated();
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+				const auto& shDesc = v.RT.ShadowSpecTarget->GetDesc();
+				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View;
+
+				DenoiserConfig cfg{};
+				cfg.DenoiseIterations = CVars::ClampedShadowDenoiseIterations();
+				cfg.VariancePhi = CVars::ShadowDenoiseVariance.Get();
+				cfg.HitDistPhi = 0.0f;
+				cfg.PenumbraScale = CVars::ShadowDenoisePenumbra.Get();
+				cfg.NearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
+				cfg.FarPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+				cfg.DepthSigma = CVars::DepthEdgeSigma.Get();
+				cfg.NamePrefix = "ShadowSpec";
+
+				v.ShadowSpecView = m_Denoiser.Atrous(fc, v.RT.ShadowSpecDenoiser, cfg, v.ShadowSpecView, gbufView, depthView,
+				                                     v.RT.ShadowSpecTargetView, shDesc.Width, shDesc.Height, v.Suffix);
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			Denoiser m_Denoiser;
+		};
+
+		class ShadowSpecUpsampleEffect final : public IViewportEffect
+		{
+		public:
+			explicit ShadowSpecUpsampleEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "ShadowSpecUpsample"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::ShadowStochasticActive() && CVars::ShadowSpecularDemodulated.Get() &&
+				       v.RT.ShadowSpecTarget && v.ShadowSpecView && v.RT.ShadowSpecUpscaleTarget &&
+				       !v.RT.ShadowSpecUpscaleTarget->GetDesc().ColorAttachments.empty();
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+
+				const auto& shDesc = v.RT.ShadowSpecTarget->GetDesc();
+				const uint32_t shW = shDesc.Width;
+				const uint32_t shH = shDesc.Height;
+				const Ref<TextureView> shadowView = v.ShadowSpecView;
+				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View;
+				const Ref<RenderTarget>& dst = v.RT.ShadowSpecUpscaleTarget;
+				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
+				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+				const float depthSigma = CVars::DepthEdgeSigma.Get();
+
+				fc.Graph.AddPass({.Name = "ShadowSpecUpsample" + v.Suffix,
+				                  .Target = dst,
+				                  .Reads = {{shadowView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Execute = [this, &fc, shadowView, gbufView, depthView, shW, shH, nearPlane, farPlane, depthSigma, dstFmt](CommandContext& c)
+				                  {
+					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, shadowView, gbufView, depthView, shW, shH, nearPlane, farPlane, depthSigma, dstFmt);
+				                  }});
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			GIUpsamplePass m_Pass;
 		};
 
 		// Full-res RT reflection compute pass (#129): the reflection analogue of GIEffect, lifting the inline
@@ -1358,6 +1502,14 @@ namespace Snowstorm
 					shadowIndex = v.RT.ShadowUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 				}
 
+				// Demodulated specular twin index (0 = no spec buffer -> forward falls back to the grey-vis specular).
+				uint32_t shadowSpecIndex = 0;
+				if (v.GBufferNeeded && CVars::ShadowStochasticActive() && CVars::ShadowSpecularDemodulated.Get() && v.ShadowSpecView &&
+				    v.RT.ShadowSpecUpscaleTarget && !v.RT.ShadowSpecUpscaleTarget->GetDesc().ColorAttachments.empty())
+				{
+					shadowSpecIndex = v.RT.ShadowSpecUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
+				}
+
 				// RT reflection consumption (#129): the live reflection buffer's bindless index (0 = no RT
 				// reflection -> env-cube specular). v.ReflectionView is whatever the reflection sub-chain last
 				// wrote — the raw trace, or the temporally-accumulated buffer if that ran — so reading the moving
@@ -1427,7 +1579,7 @@ namespace Snowstorm
 				}
 
 				m_Owner.AddForwardPass(v.Frame, v.Cam, forwardTarget, "Forward" + v.Suffix, /*jittered*/ true,
-				                       /*forceRasterShadow*/ false, giIndex, aoIndex, reflIndex, reflTexture, shadowIndex);
+				                       /*forceRasterShadow*/ false, giIndex, aoIndex, reflIndex, reflTexture, shadowIndex, shadowSpecIndex);
 				// Publish the HDR scene color for the downstream chain (upscale/TAA/tonemap). Under MSAA this is
 				// the resolved single-sample image (GetSampleableColorView), never the multisampled attachment.
 				v.SceneColor.Target = v.RT.Target;
@@ -2062,6 +2214,9 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<ShadowTemporalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ShadowDenoiseEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ShadowUpsampleEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<ShadowSpecTemporalEffect>(*this)); // demodulated specular twin chain
+		m_ViewportEffects.push_back(CreateScope<ShadowSpecDenoiseEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<ShadowSpecUpsampleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<SSREffect>(*this)); // #151: SSR (mode 1); RT reflection chain below is mode 2
 		m_ViewportEffects.push_back(CreateScope<ReflectionEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<ReflectionTemporalEffect>(*this));

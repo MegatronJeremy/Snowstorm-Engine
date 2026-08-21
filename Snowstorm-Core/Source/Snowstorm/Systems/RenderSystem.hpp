@@ -70,7 +70,8 @@ namespace Snowstorm
 		void AddForwardPass(FrameContext& fc, const CameraPick& cam, const Ref<RenderTarget>& hdrTarget,
 		                    const std::string& name, bool jittered, bool forceRasterShadow = false,
 		                    uint32_t giTextureIndex = 0, uint32_t aoTextureIndex = 0, uint32_t reflTextureIndex = 0,
-		                    const Ref<Texture>& reflTexture = nullptr, uint32_t shadowTextureIndex = 0);
+		                    const Ref<Texture>& reflTexture = nullptr, uint32_t shadowTextureIndex = 0,
+		                    uint32_t shadowSpecTextureIndex = 0);
 
 		// AddTonemapPass: tonemap an HDR scene-color view into an LDR target (exposure/ACES; hardware sRGB on
 		// write). Declares the HDR color (and, for the motion-vector debug view, the velocity target) as

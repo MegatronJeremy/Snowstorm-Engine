@@ -104,6 +104,10 @@ namespace Snowstorm
 		// between; the pointer is ready for one). Null until RTShadowEffect runs.
 		Ref<TextureView> ShadowView;
 
+		// The current live demodulated SPECULAR shadow buffer, flowing RTShadow -> temporal -> à-trous -> upsample
+		// (its own chain, parallel to ShadowView). Null until RTShadowEffect runs.
+		Ref<TextureView> ShadowSpecView;
+
 		// The current live full-res RT reflection buffer as it flows Reflection-trace -> [temporal] -> forward
 		// (#129). ReflectionEffect publishes the raw ReflectionTarget; ReflectionTemporalEffect republishes
 		// the accumulated GIHistory[cur]; ForwardEffect reads whatever is current for the specular blend.

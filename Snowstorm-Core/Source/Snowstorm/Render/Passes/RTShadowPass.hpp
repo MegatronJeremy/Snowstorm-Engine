@@ -34,8 +34,9 @@ namespace Snowstorm
 		void Dispatch(const Ref<CommandContext>& ctx, uint32_t frameIndex, const glm::mat4& invViewProj,
 		              const LightDataBlock& lights, float normalBias, uint32_t frameCounter, bool soft,
 		              float sunTanAngular, float sourceRadius, uint32_t rayCount, uint64_t tableAddr,
-		              const Ref<TextureView>& gbuffer, const Ref<TextureView>& depth, const Ref<TextureView>& output,
-		              uint32_t outW, uint32_t outH);
+		              const glm::vec3& cameraPosition, const Ref<TextureView>& gbuffer,
+		              const Ref<TextureView>& shadingNormal, const Ref<TextureView>& depth,
+		              const Ref<TextureView>& output, const Ref<TextureView>& specOutput, uint32_t outW, uint32_t outH);
 
 	private:
 		void EnsureResources();

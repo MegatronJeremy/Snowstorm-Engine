@@ -231,6 +231,14 @@ cbuffer FrameCB : register(b0, space0)
 	// independent) and their silhouettes stay frozen to the pixel grid, so TAA has no sub-pixel variation to
 	// average and half-res GI/AO edges never anti-alias (jaggies persist with TAA on).
 	float2 JitterUv;
+
+	// Demodulated specular twin of the shadow signal (MegaLights/NRD): bindless index of the full-res upsampled
+	// shadowed specular (GGX D*G, no Fresnel). 0 = no spec buffer -> forward uses the grey-vis specular fallback.
+	// New 16-byte row; MUST match RendererService.cpp field-for-field.
+	uint ShadowSpecTextureIndex;
+	uint _FramePad0;
+	uint _FramePad1;
+	uint _FramePad2;
 };
 
 // --- SPACE 1: Material Data ---

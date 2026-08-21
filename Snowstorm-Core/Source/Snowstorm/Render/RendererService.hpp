@@ -240,6 +240,10 @@ namespace Snowstorm
 			m_GIRenderTargetSize = renderTargetSize;
 		}
 
+		// Demodulated specular twin index (shares the shadow screen-UV divide). 0 = forward uses the grey-vis
+		// specular fallback. Reset per frame by non-shadow viewports, like SetShadowTexture.
+		void SetShadowSpecTexture(const uint32_t bindlessIndex) { m_ShadowSpecTextureIndex = bindlessIndex; }
+
 		// Current frame's lights / environment (uploaded by the PreRender systems). The IBL bake reads
 		// these to capture the sky; exposed so the bake lives in its own pass, not the renderer.
 		[[nodiscard]] const LightDataBlock& GetLights() const { return m_FrameData.Lights; }
@@ -391,6 +395,7 @@ namespace Snowstorm
 		// (0 = no half-res shadow), pushed per-viewport by SetShadowTexture, read into FrameCB in
 		// AcquireFrameSet. Shares m_GIRenderTargetSize.
 		uint32_t m_ShadowTextureIndex = 0;
+		uint32_t m_ShadowSpecTextureIndex = 0; // demodulated specular twin (0 = grey-vis specular fallback)
 
 		std::vector<BatchData> m_Batches;
 

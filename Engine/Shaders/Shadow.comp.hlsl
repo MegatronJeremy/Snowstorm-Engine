@@ -21,9 +21,11 @@
 #define SHADOW_MAX_SPOT 16
 
 // ---- Set 0: this pass's own resources ----
-Texture2D<float4> GBufferNormal : register(t0, space0); // .xy = oct GEOMETRIC normal
-Texture2D<float> GBufferDepth : register(t4, space0);   // fp32 NDC depth (D32 attachment)
-[[vk::image_format("rgba16f")]] RWTexture2D<float4> ShadowOut : register(u1, space0); // aggregate shadow ratio in .r
+Texture2D<float4> GBufferNormal : register(t0, space0);        // .xy = oct GEOMETRIC normal, .z = roughness (ray origin + GGX)
+Texture2D<float4> GBufferShadingNormal : register(t5, space0); // .xy = oct NORMAL-MAPPED normal (NdotL + specular BRDF, matches DefaultLit)
+Texture2D<float> GBufferDepth : register(t4, space0);          // fp32 NDC depth (D32 attachment)
+[[vk::image_format("rgba16f")]] RWTexture2D<float4> ShadowOut : register(u1, space0);     // .rgb = colored shadowed DIFFUSE irradiance D, .a = penumbra guide
+[[vk::image_format("rgba16f")]] RWTexture2D<float4> ShadowSpecOut : register(u6, space0); // .rgb = demodulated shadowed SPECULAR (GGX D*G, no Fresnel); forward re-applies F0
 SamplerState LinearSampler : register(s2, space0); // wrapping sampler for the cutout alpha lookup (any-hit test)
 
 cbuffer ShadowCB : register(b3, space0)
@@ -48,10 +50,8 @@ cbuffer ShadowCB : register(b3, space0)
 	uint RayCount;           // stochastic samples/pixel (render.shadows.rays): more = less variance, ~linear cost
 	uint ReflGeoTableAddrHi; // device address (hi) of the per-instance geometry table
 
-	uint UseLogWeight; // 1 = log(1+luma) perceptual importance weight (downweights strong occluded lights); 0 = linear luma
-	uint _Pad4;
-	uint _Pad5;
-	uint _Pad6;
+	uint UseLogWeight;      // 1 = log(1+luma) perceptual importance weight (downweights strong occluded lights); 0 = linear luma
+	float3 CameraPosition; // world-space camera pos, for V = normalize(camPos - worldPos) in the specular BRDF
 
 	// Slim tracer + importance params (16-byte rows). Option B: each light carries its full RGB radiance
 	// (color*intensity) so the pass can accumulate COLORED shadowed irradiance; the importance weight is the
@@ -75,6 +75,29 @@ float ImportanceWeight(float3 radNdotL)
 {
 	const float l = Luma3(radNdotL);
 	return (UseLogWeight != 0u) ? log(1.0 + l) : l;
+}
+
+// GGX specular geometry (Cook-Torrance D*G, NO Fresnel) — copied from DefaultLit's ShadePBR so the pass's
+// per-sample specular matches the forward. Fresnel is DEMODULATED here (re-applied as F0 in the forward), so the
+// denoised specular buffer carries no material term -> no albedo/F0 blur across material edges.
+static const float SS_PI = 3.14159265358979;
+float SpecDistributionGGX(float3 N, float3 H, float roughness)
+{
+	const float a = roughness * roughness;
+	const float a2 = a * a;
+	const float nh = max(dot(N, H), 0.0);
+	const float d = nh * nh * (a2 - 1.0) + 1.0;
+	return a2 / max(SS_PI * d * d, 1e-5);
+}
+float SpecGeometrySchlickGGX(float nv, float roughness)
+{
+	const float r = roughness + 1.0;
+	const float k = (r * r) / 8.0; // direct-lighting remap (matches DefaultLit)
+	return nv / (nv * (1.0 - k) + k);
+}
+float SpecGeometrySmith(float3 N, float3 V, float3 L, float roughness)
+{
+	return SpecGeometrySchlickGGX(max(dot(N, V), 0.0), roughness) * SpecGeometrySchlickGGX(max(dot(N, L), 0.0), roughness);
 }
 
 // ---- Set 3: engine bindless pool (gap-filled by the compute pipeline builder) ----
@@ -302,6 +325,7 @@ void main(uint3 id : SV_DispatchThreadID)
 	GBufferNormal.GetDimensions(gbDims.x, gbDims.y);
 	const int2 gbTexel = clamp(int2(uv * float2(gbDims)), int2(0, 0), int2(gbDims) - 1);
 	const float4 gbuf = GBufferNormal.Load(int3(gbTexel, 0));
+	const float4 gbufShade = GBufferShadingNormal.Load(int3(gbTexel, 0));
 	const float depth = GBufferDepth.Load(int3(gbTexel, 0)).r;
 
 	// Sky / no geometry -> no direct irradiance (0). DefaultLit doesn't shade sky pixels (the sky pass does),
@@ -309,13 +333,19 @@ void main(uint3 id : SV_DispatchThreadID)
 	if (IsSky(depth))
 	{
 		ShadowOut[id.xy] = float4(0, 0, 0, 0);
+		ShadowSpecOut[id.xy] = float4(0, 0, 0, 0);
 		return;
 	}
 
 	const float2 ndc = uv * 2.0 - 1.0;
 	const float4 worldH = mul(float4(ndc, depth, 1.0), InvViewProj);
 	const float3 positionWS = worldH.xyz / worldH.w;
-	const float3 N = DecodeNormalOct(gbuf.xy);
+	// Ng (geometric) offsets the ray origin (acne guard); Ns (shading/normal-mapped) drives NdotL + the specular
+	// BRDF so the pass matches DefaultLit's shading. Roughness rides the geometric G-buffer .z (PackGBuffer).
+	const float3 Ng = DecodeNormalOct(gbuf.xy);
+	const float3 Ns = DecodeNormalOct(gbufShade.xy);
+	const float roughness = clamp(gbuf.z, 0.04, 1.0);
+	const float3 V = normalize(CameraPosition - positionWS);
 
 	// --- K-sample RIS estimate of the COLORED shadowed direct irradiance D = Σ_i radiance_i·NdotL_i·vis_i
 	// (Option B). Each sample importance-samples one light y ∝ luma-contribution and traces one ray; the RIS
@@ -325,6 +355,7 @@ void main(uint3 id : SV_DispatchThreadID)
 	// pattern. A non-casting chosen light contributes with vis = 1 (lit); no-light -> 0.
 	const uint rayCount = max(RayCount, 1u);
 	float3 Dsum = float3(0, 0, 0);
+	float3 Ssum = float3(0, 0, 0); // demodulated shadowed specular (GGX D*G, no Fresnel), same RIS estimator as D
 	float hitTSum = 0.0;  // sum of nearest-occluder distances over the OCCLUDED rays (world units)
 	uint hitCount = 0u;   // how many rays hit — the mean is over hits only (misses carry no penumbra info)
 	[loop] for (uint s = 0; s < rayCount; ++s)
@@ -339,7 +370,7 @@ void main(uint3 id : SV_DispatchThreadID)
 		bool casts;
 		float3 radNdotL; // chosen light's colored radiance*NdotL (pre-visibility)
 		float wSum;      // Σ luma-contribution over all in-range lights (the RIS normalization)
-		if (!SelectLight(id.xy, positionWS, N, FrameCounter, dimBase, L, tMax, coneR, casts, radNdotL, wSum))
+		if (!SelectLight(id.xy, positionWS, Ns, FrameCounter, dimBase, L, tMax, coneR, casts, radNdotL, wSum))
 		{
 			continue; // no contributing light here -> 0 irradiance from this sample
 		}
@@ -347,7 +378,7 @@ void main(uint3 id : SV_DispatchThreadID)
 		if (casts)
 		{
 			float hitT;
-			vis = TraceShadow(id.xy, FrameCounter, dimBase, positionWS, N, L, tMax, coneR, hitT);
+			vis = TraceShadow(id.xy, FrameCounter, dimBase, positionWS, Ng, L, tMax, coneR, hitT);
 			if (hitT >= 0.0)
 			{
 				hitTSum += hitT;
@@ -358,15 +389,28 @@ void main(uint3 id : SV_DispatchThreadID)
 		const float contribY = ImportanceWeight(radNdotL); // MUST match SelectLight's weight or the RIS estimate biases
 		if (contribY > 1e-6)
 		{
-			Dsum += radNdotL * (vis * wSum / contribY);
+			const float risW = vis * wSum / contribY;
+			Dsum += radNdotL * risW;
+			// Demodulated specular: Sg = (D_ggx*G / max(4*NsDotV*NsDotL, 1e-4)) * radNdotL. radNdotL is already
+			// radiance*NsDotL, so this equals DefaultLit's `specular*radiance*NdotL` with the Fresnel F omitted
+			// (F0 re-applied full-res in the forward). Same 1/p RIS weight as diffuse -> unbiased estimate of
+			// S = Σ_i specGeom_i·radiance_i·NsDotL_i·vis_i (noisier than D since importance is diffuse-weighted).
+			const float3 H = normalize(V + L);
+			const float nl = max(dot(Ns, L), 0.0);
+			const float nv = max(dot(Ns, V), 0.0);
+			const float dg = SpecDistributionGGX(Ns, H, roughness) * SpecGeometrySmith(Ns, V, L, roughness);
+			const float specGeom = dg / max(4.0 * nv * nl, 1e-4);
+			Ssum += radNdotL * (specGeom * risW);
 		}
 	}
 
 	const float3 D = Dsum / float(rayCount); // colored shadowed direct irradiance (no albedo)
+	const float3 S = Ssum / float(rayCount); // demodulated shadowed specular (no F0); forward re-applies Fresnel
 	// Mean nearest-occluder distance (world units) over the occluded rays, 0 when fully lit (no occluder). The
 	// SIGMA-style denoiser reads this from .a to size the à-trous kernel — near occluder (small) => sharp contact
 	// shadow, far occluder (large) => wide soft penumbra. Noisy at few rays but spatially smooth + the denoiser
 	// only uses it as a monotonic penumbra proxy.
 	const float meanHitT = (hitCount > 0u) ? (hitTSum / float(hitCount)) : 0.0;
-	ShadowOut[id.xy] = float4(D, meanHitT); // .rgb = colored shadowed irradiance, .a = penumbra guide; forward applies albedo + ShadowStrength
+	ShadowOut[id.xy] = float4(D, meanHitT);     // .rgb = colored shadowed diffuse irradiance, .a = penumbra guide
+	ShadowSpecOut[id.xy] = float4(S, meanHitT); // .rgb = demodulated shadowed specular, .a = shared penumbra guide
 }

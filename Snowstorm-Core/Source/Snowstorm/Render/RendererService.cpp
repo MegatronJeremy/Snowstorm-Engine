@@ -143,6 +143,12 @@ namespace Snowstorm
 			// subtracts it from the GI/AO/reflection screen-UV samples so they're fetched at the jittered
 			// geometry's sub-pixel spot -> TAA can average their half-res edges. Matches Engine.hlsli FrameCB.
 			glm::vec2 JitterUv{0.0f, 0.0f};
+
+			// Demodulated specular twin index (0 = grey-vis specular fallback). New 16-byte row; matches Engine.hlsli.
+			uint32_t ShadowSpecTextureIndex = 0;
+			uint32_t _FramePad0 = 0;
+			uint32_t _FramePad1 = 0;
+			uint32_t _FramePad2 = 0;
 		};
 	}
 
@@ -390,6 +396,7 @@ namespace Snowstorm
 		// (0 = no half-res shadow -> DefaultLit falls back to the inline SampleSunShadow). Pushed per-viewport
 		// by ForwardEffect via SetShadowTexture just before the forward pass.
 		frame.SunShadowTextureIndex = m_ShadowTextureIndex;
+		frame.ShadowSpecTextureIndex = m_ShadowSpecTextureIndex;
 
 		const Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
 		SS_CORE_ASSERT(frameUBO, "Frame UBO missing for frame descriptor set");

@@ -587,13 +587,23 @@ float4 main(PSInput i) : SV_Target0
 	// denoised + upsampled. The forward multiplies full-res albedo here (albedo factors out of the diffuse sum, so
 	// it stays out of the denoised buffer -> no albedo blur, the GI pattern). Specular is summed sharp below and
 	// shadowed by a cheap aggregate visibility. 0 index -> inline/raster per-light path (loops below trace).
-	float3 shadowIrr = float3(0, 0, 0); // denoised colored shadowed direct irradiance (Option B)
+	float3 shadowIrr = float3(0, 0, 0);  // denoised colored shadowed direct DIFFUSE irradiance (Option B)
+	float3 shadowSpec = float3(0, 0, 0); // denoised demodulated shadowed SPECULAR (GGX D*G, no Fresnel) — forward re-applies F0
 	bool useShadowTex = false;
+	bool useShadowSpec = false;
 	if (SunShadowTextureIndex != 0)
 	{
 		const float2 shUv = i.PositionCS.xy / max(RenderTargetSize, float2(1.0, 1.0)); // plain UV: effect buffers jittered like geometry
 		shadowIrr = Textures[NonUniformResourceIndex(SunShadowTextureIndex)].SampleLevel(LinearSampler, shUv, 0).rgb;
 		useShadowTex = true;
+		// Demodulated specular twin (MegaLights/NRD): re-apply F0 here (full-res, sharp) instead of shadowing the
+		// summed specular by the diffuse-weighted grey visibility, which dimmed specular where a visible light's
+		// highlight sat on a diffuse-shadowed pixel. 0 index -> fall back to that grey-vis path.
+		if (ShadowSpecTextureIndex != 0)
+		{
+			shadowSpec = Textures[NonUniformResourceIndex(ShadowSpecTextureIndex)].SampleLevel(LinearSampler, shUv, 0).rgb;
+			useShadowSpec = true;
+		}
 	}
 
 	float3 Lo = float3(0, 0, 0);
@@ -704,10 +714,23 @@ float4 main(PSInput i) : SV_Target0
 	{
 		const float3 shadowedIrr = min(lerp(unshadowedIrr, shadowIrr, ShadowStrength), unshadowedIrr);
 		const float3 diffuseDirect = albedo * (1.0 / PI) * (1.0 - metallic) * shadowedIrr;
-		const float3 lw = float3(0.2126, 0.7152, 0.0722);
-		const float uL = dot(unshadowedIrr, lw);
-		const float visGrey = (uL > 1e-4) ? saturate(dot(shadowedIrr, lw) / uL) : 1.0;
-		Lo = diffuseDirect + specSum * visGrey;
+		if (useShadowSpec)
+		{
+			// Demodulated specular (MegaLights/NRD): re-apply F0 via the roughness-aware Fresnel at NdotV (the
+			// per-light F was dropped in the pass). ShadowStrength lerps from the unshadowed specular (specSum) to
+			// the per-light-shadowed one, so the specular is dimmed by its OWN visibility, not the diffuse grey.
+			const float3 fEnv = FresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness);
+			const float3 specShadowed = shadowSpec * fEnv;
+			Lo = diffuseDirect + lerp(specSum, specShadowed, ShadowStrength);
+		}
+		else
+		{
+			// Fallback (spec buffer off): shadow the summed specular by the diffuse-weighted grey visibility.
+			const float3 lw = float3(0.2126, 0.7152, 0.0722);
+			const float uL = dot(unshadowedIrr, lw);
+			const float visGrey = (uL > 1e-4) ? saturate(dot(shadowedIrr, lw) / uL) : 1.0;
+			Lo = diffuseDirect + specSum * visGrey;
+		}
 	}
 
 	// 1-bounce RT diffuse GI (#118): when active, the traced indirect REPLACES the DIFFUSE ambient (Lumen/
