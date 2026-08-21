@@ -852,7 +852,7 @@ namespace Snowstorm
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				return v.GBufferNeeded && CVars::ShadowsRTActive() && v.RT.ShadowTarget && v.RT.ShadowTargetView;
+				return v.GBufferNeeded && CVars::ShadowStochasticActive() && v.RT.ShadowTarget && v.RT.ShadowTargetView;
 			}
 
 			void Contribute(ViewportRenderContext& v) override
@@ -928,7 +928,7 @@ namespace Snowstorm
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				return v.GBufferNeeded && CVars::ShadowsRTActive() && v.ShadowView && v.RT.ShadowDenoiser.Allocated();
+				return v.GBufferNeeded && CVars::ShadowStochasticActive() && v.ShadowView && v.RT.ShadowDenoiser.Allocated();
 			}
 
 			void Contribute(ViewportRenderContext& v) override
@@ -971,7 +971,7 @@ namespace Snowstorm
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				return v.GBufferNeeded && CVars::ShadowsRTActive() && CVars::ShadowDenoiseActive() && v.ShadowView &&
+				return v.GBufferNeeded && CVars::ShadowStochasticActive() && CVars::ShadowDenoiseActive() && v.ShadowView &&
 				       v.RT.ShadowDenoiser.Allocated();
 			}
 
@@ -1020,7 +1020,7 @@ namespace Snowstorm
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				return v.GBufferNeeded && CVars::ShadowsRTActive() && v.RT.ShadowTarget && v.ShadowView &&
+				return v.GBufferNeeded && CVars::ShadowStochasticActive() && v.RT.ShadowTarget && v.ShadowView &&
 				       v.RT.ShadowUpscaleTarget && !v.RT.ShadowUpscaleTarget->GetDesc().ColorAttachments.empty();
 			}
 
@@ -1345,7 +1345,7 @@ namespace Snowstorm
 				// falls back to the inline SampleSunShadow. Gated on the shadow sub-chain having run (v.ShadowView)
 				// so a stale upscale target from a prior frame can't leak in when shadows are off this frame.
 				uint32_t shadowIndex = 0;
-				if (v.GBufferNeeded && CVars::ShadowsRTActive() && v.ShadowView && v.RT.ShadowUpscaleTarget &&
+				if (v.GBufferNeeded && CVars::ShadowStochasticActive() && v.ShadowView && v.RT.ShadowUpscaleTarget &&
 				    !v.RT.ShadowUpscaleTarget->GetDesc().ColorAttachments.empty())
 				{
 					shadowIndex = v.RT.ShadowUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();

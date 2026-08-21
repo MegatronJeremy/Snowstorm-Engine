@@ -321,6 +321,11 @@ namespace Snowstorm::CVars
 	extern CVar<bool> ShadowDenoise;
 	extern CVar<int> ShadowDenoiseIterations;
 	extern CVar<float> ShadowDenoiseVariance;
+	// RT shadow technique within mode 2: OFF (default) = per-light inline RT shadows (#118, sharp, higher
+	// quality at low light count); ON = the half-res stochastic aggregate-ratio pass (MegaLights-lite, scales
+	// to many lights but noisier at ~10). Prefer ShadowStochasticActive().
+	extern CVar<bool> ShadowStochastic;
+	[[nodiscard]] bool ShadowStochasticActive();
 	// NRD SIGMA-style penumbra-aware à-trous kernel sizing (shadows only): scale the tap stride by the
 	// receiver's occluder distance so contact shadows stay sharp and soft penumbrae blur wide. 0 = off.
 	extern CVar<float> ShadowDenoisePenumbra;

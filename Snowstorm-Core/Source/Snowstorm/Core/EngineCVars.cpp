@@ -151,6 +151,8 @@ namespace Snowstorm::CVars
 
 	CVar<float> ShadowDenoiseVariance{"render.shadows.denoise.variance", 4.0f, "SVGF variance-guided a-trous luminance-phi for RT shadows: widens the a-trous in noisy/disoccluded regions, tight where converged. 0 = off. ~2-8 typical.", CVarFlags::Persist};
 
+	CVar<bool> ShadowStochastic{"render.shadows.stochastic", false, "RT shadow technique within mode 2 (Ray Traced). OFF (default) = per-light INLINE RT shadows (one sharp ray per light in DefaultLit, the #118 path) — higher quality at a low light count. ON = the half-res STOCHASTIC aggregate-ratio pass (MegaLights-lite): importance-sample one light/pixel, trace one ray, denoise. Constant cost regardless of light count (scales to many lights) but noisier at ~10 lights. Prefer ShadowStochasticActive() over reading this directly.", CVarFlags::Persist};
+
 	CVar<float> ShadowDenoisePenumbra{"render.shadows.denoise.penumbra", 0.1f, "NRD SIGMA-style penumbra-aware a-trous kernel sizing for RT shadows: scale the tap stride by the receiver's nearest-occluder distance (world units) so a NEAR occluder keeps a tight kernel (sharp contact shadow) and a FAR occluder widens it (smooth soft penumbra) — what a fixed-stride a-trous can't do (it over-blurs contacts or under-blurs soft penumbrae at one setting). Value = 1/reference-distance: penumbra saturates to the widest kernel around (1/this) world units (0.1 => ~10 units). 0 = off (uniform kernel). Shadows only; GI/AO/reflections are unaffected.", CVarFlags::Persist};
 
 	CVar<float> ShadowSunAngleDeg{"render.shadow.sun_angle_deg", 1.0f, "Sun angular diameter in degrees — drives RT soft-shadow penumbra width for the directional light (real sun ~0.53 deg; larger = softer). Only used by the RT soft path.", CVarFlags::Persist};
@@ -489,6 +491,15 @@ namespace Snowstorm::CVars
 		// the SS_RAYTRACING shader permutation exists. On a non-RT GPU mode 2 degrades to no shadows (the RT
 		// branch is compiled out), matching the graceful-fallback contract of the original render.shadows.rt.
 		return ShadowsMode.Get() == 2 && Renderer::IsRayTracingSupported();
+	}
+
+	bool ShadowStochasticActive()
+	{
+		// The half-res STOCHASTIC aggregate-shadow-ratio pass (MegaLights-lite) runs only when RT shadows are
+		// active AND this opt-in is set. Default OFF: mode 2 keeps the per-light INLINE RT shadows (sharp, one
+		// map per light), which are higher quality on a low light count. Stochastic is the many-light-scaling
+		// experiment — noisier at ~10 lights (below cached shadow maps), so it's not the default.
+		return ShadowsRTActive() && ShadowStochastic.Get();
 	}
 
 	bool AoSSAOActive()

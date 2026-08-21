@@ -362,6 +362,22 @@ namespace Snowstorm
 						ImGui::TextDisabled("(RT penumbra needs TAA for a clean result)");
 					}
 
+					// Within Ray Traced: pick the technique. OFF (default) = per-light INLINE RT shadows (#118, one
+					// sharp ray per light in DefaultLit — higher quality at a low light count). ON = the half-res
+					// STOCHASTIC aggregate-ratio pass (MegaLights-lite): one importance-sampled ray/pixel for ALL
+					// lights + denoise, constant cost regardless of light count but noisier at ~10 lights. The
+					// stochastic-only sliders below (RT Resolution/Normal Bias/rays/temporal/denoise) apply only when on.
+					ImGui::BeginDisabled(!rtMode);
+					if (bool stoch = CVars::ShadowStochastic.Get(); ImGui::Checkbox("Stochastic (MegaLights-lite)", &stoch))
+					{
+						CVars::ShadowStochastic.Set(stoch);
+					}
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::SetTooltip("Off = per-light inline RT shadows (sharp, one map per light). On = one importance-sampled ray/pixel for all lights + denoise (scales to many lights, noisier at ~10). The stochastic sliders below only apply when this is on.");
+					}
+					ImGui::EndDisabled();
+
 					// Half-res RT sun-shadow controls (RT-only; the raster map has neither). RT Resolution mirrors the
 					// AO/GI Resolution slider: the sun-visibility trace runs at this fraction of viewport res, then a
 					// bilateral upsample restores full res (1.0 = full-res reference). Normal Bias offsets the ray
