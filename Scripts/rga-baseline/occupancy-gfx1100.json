@@ -2,13 +2,13 @@
   "asic": "gfx1100",
   "shaders": {
     "AO.comp": {
-      "vgprs": 52.0,
-      "sgprs": 54.0,
+      "vgprs": 63.0,
+      "sgprs": 58.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 2476.0,
+      "isa_size": 3280.0,
       "permutations": 2
     },
     "AOUpsample.frag": {
@@ -22,13 +22,13 @@
       "permutations": 2
     },
     "DefaultLit.frag": {
-      "vgprs": 93.0,
-      "sgprs": 63.0,
+      "vgprs": 101.0,
+      "sgprs": 72.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 21276.0,
+      "isa_size": 29480.0,
       "permutations": 2
     },
     "DepthNormal.frag": {
@@ -49,6 +49,16 @@
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 616.0,
+      "permutations": 2
+    },
+    "DepthPrepass.frag": {
+      "vgprs": 5.0,
+      "sgprs": 22.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 220.0,
       "permutations": 2
     },
     "Fullscreen.vert": {
@@ -72,13 +82,13 @@
       "permutations": 2
     },
     "GI.comp": {
-      "vgprs": 65.0,
-      "sgprs": 44.0,
+      "vgprs": 74.0,
+      "sgprs": 45.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 4940.0,
+      "isa_size": 6536.0,
       "permutations": 2
     },
     "GIDenoise.comp": {
@@ -221,6 +231,16 @@
       "isa_size": 460.0,
       "permutations": 2
     },
+    "PathTrace.comp": {
+      "vgprs": 107.0,
+      "sgprs": 85.0,
+      "lds": 4096.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 21796.0,
+      "permutations": 2
+    },
     "Pick.comp": {
       "vgprs": 30.0,
       "sgprs": 33.0,
@@ -242,13 +262,43 @@
       "permutations": 2
     },
     "Reflection.comp": {
-      "vgprs": 71.0,
-      "sgprs": 45.0,
+      "vgprs": 79.0,
+      "sgprs": 46.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 4940.0,
+      "isa_size": 6516.0,
+      "permutations": 2
+    },
+    "SSAO.comp": {
+      "vgprs": 36.0,
+      "sgprs": 58.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 5996.0,
+      "permutations": 2
+    },
+    "SSAOBlur.comp": {
+      "vgprs": 38.0,
+      "sgprs": 46.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 8712.0,
+      "permutations": 2
+    },
+    "SSR.comp": {
+      "vgprs": 23.0,
+      "sgprs": 66.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 2756.0,
       "permutations": 2
     },
     "Shadow.frag": {
@@ -293,12 +343,12 @@
     },
     "TemporalResolve.frag": {
       "vgprs": 61.0,
-      "sgprs": 30.0,
+      "sgprs": 38.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 2592.0,
+      "isa_size": 3620.0,
       "permutations": 2
     },
     "Tonemap.frag": {
