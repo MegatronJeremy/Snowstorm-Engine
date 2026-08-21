@@ -401,6 +401,18 @@ namespace Snowstorm
 					{
 						CVars::ShadowTemporal.Set(temporal);
 					}
+					ImGui::BeginDisabled(!CVars::ShadowTemporal.Get());
+					// History weight = how much of the accumulated result is kept per frame. Higher converges the
+					// 1-ray estimate cleaner but smears detail under motion (the main temporal-softness lever).
+					if (float tb = CVars::ShadowTemporalBlend.Get(); ImGui::SliderFloat("History (moving)##Shadow", &tb, 0.5f, 0.99f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+					{
+						CVars::ShadowTemporalBlend.Set(tb);
+					}
+					if (float tmb = CVars::ShadowTemporalMaxBlend.Get(); ImGui::SliderFloat("History (static)##Shadow", &tmb, 0.5f, 0.99f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+					{
+						CVars::ShadowTemporalMaxBlend.Set(tmb);
+					}
+					ImGui::EndDisabled();
 					if (bool denoise = CVars::ShadowDenoise.Get(); ImGui::Checkbox("Spatial Denoise (a-trous)##Shadow", &denoise))
 					{
 						CVars::ShadowDenoise.Set(denoise);
@@ -413,6 +425,12 @@ namespace Snowstorm
 					if (float vp = CVars::ShadowDenoiseVariance.Get(); ImGui::SliderFloat("Variance phi##ShadowD", &vp, 0.0f, 16.0f, "%.1f", ImGuiSliderFlags_AlwaysClamp))
 					{
 						CVars::ShadowDenoiseVariance.Set(vp);
+					}
+					// SIGMA penumbra: 0 = uniform tight kernel (sharpest contacts); higher widens the kernel by
+					// occluder distance for soft penumbrae (more detail loss). Primary sharp<->soft lever.
+					if (float pen = CVars::ShadowDenoisePenumbra.Get(); ImGui::SliderFloat("Penumbra (SIGMA)##ShadowD", &pen, 0.0f, 0.5f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+					{
+						CVars::ShadowDenoisePenumbra.Set(pen);
 					}
 					ImGui::EndDisabled();
 					ImGui::EndDisabled();
