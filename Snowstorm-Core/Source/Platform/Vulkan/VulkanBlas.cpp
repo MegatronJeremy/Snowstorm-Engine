@@ -105,8 +105,12 @@ namespace Snowstorm
 			VmaAllocationCreateInfo indexAlloc{};
 			indexAlloc.usage = VMA_MEMORY_USAGE_AUTO;
 			indexAlloc.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-			SS_CORE_ASSERT(vmaCreateBuffer(GetAllocator(), &indexInfo, &indexAlloc, &ommIndexBuffer, &ommIndexAllocation, nullptr) == VK_SUCCESS,
-			               "Failed to create OMM index buffer");
+			// Compute the result on its own line: SS_CORE_ASSERT strips its expression in release (NDEBUG), so a
+			// vmaCreateBuffer() call placed inside the assert never runs there -> ommIndexBuffer/Allocation stay null
+			// and the vmaGetAllocationInfo() below dereferences null (release-only OMM crash).
+			const VkResult ommIndexResult =
+			    vmaCreateBuffer(GetAllocator(), &indexInfo, &indexAlloc, &ommIndexBuffer, &ommIndexAllocation, nullptr);
+			SS_CORE_ASSERT(ommIndexResult == VK_SUCCESS, "Failed to create OMM index buffer");
 			VmaAllocationInfo mapped{};
 			vmaGetAllocationInfo(GetAllocator(), ommIndexAllocation, &mapped);
 			auto* indices = static_cast<uint32_t*>(mapped.pMappedData);
