@@ -104,6 +104,12 @@ namespace Snowstorm
 		// geometry through it (Inc 2). Filled in lockstep with `instances`, so record[i] describes the
 		// instance the GPU stamps instanceCustomIndex = i.
 		std::vector<GeometryRecord> geoRecords;
+
+		// A cutout (glTF MASK) instance uses an OMM-carrying BLAS on an OMM-capable device (the micromap resolves
+		// coverage during traversal, any-hit only on UNKNOWN edges); elsewhere it falls back to the
+		// FORCE_NO_OPAQUE any-hit path. kOmmSubdivisionLevel = 4^level microtriangles per triangle.
+		const bool ommDevice = Renderer::IsOpacityMicromapSupported();
+		constexpr uint32_t kOmmSubdivisionLevel = 3;
 		for (auto view = reg.view<TransformComponent, MeshComponent>(); const entt::entity e : view)
 		{
 			const auto& mc = reg.Read<MeshComponent>(e);
@@ -112,7 +118,19 @@ namespace Snowstorm
 				continue;
 			}
 
-			const Ref<BLAS>& blas = mc.MeshInstance->GetOrBuildBLAS();
+			// Read the material up front: it decides both the geometry record and whether this is a cutout
+			// instance (which picks the OMM BLAS and drops FORCE_NO_OPAQUE). May be null (async) — then the
+			// record stays a BaseColor-white fallback and the instance is treated as opaque.
+			const Material::Constants* c = nullptr;
+			if (const auto* matc = reg.try_get_const<MaterialComponent>(e); matc && matc->MaterialInstance)
+			{
+				c = &matc->MaterialInstance->GetConstants();
+			}
+			const bool masked = c && c->AlphaMaskEnabled != 0;
+			const bool useOmm = masked && ommDevice;
+
+			const Ref<BLAS>& blas =
+			    useOmm ? mc.MeshInstance->GetOrBuildOmmBlas(kOmmSubdivisionLevel) : mc.MeshInstance->GetOrBuildBLAS();
 			if (!blas)
 			{
 				continue;
@@ -122,35 +140,31 @@ namespace Snowstorm
 			const glm::mat4 model = tc.GetTransformMatrix();
 			instances.push_back({model, blas->GetDeviceAddress()});
 			instanceEntities.push_back(e);
+			// Masked geometry must traverse non-opaque so the alpha test runs. With an OMM the micromap drives
+			// opacity (and FORCE_NO_OPAQUE would OVERRIDE it, forcing any-hit everywhere), so only the non-OMM
+			// fallback sets the instance flag; the OMM BLAS is already built non-opaque.
+			instances.back().ForceNonOpaque = masked && !useOmm;
 
 			GeometryRecord rec{};
 			rec.VertexAddress = mc.MeshInstance->GetVertexBuffer()->GetGPUAddress();
 			rec.IndexAddress = mc.MeshInstance->GetIndexBuffer()->GetGPUAddress();
 			rec.Model = model;
-			// Material may not be resolved yet (async) — a null record still shades as BaseColor white; the
-			// table stays index-aligned regardless, so a missing material never desyncs the mapping.
-			if (const auto* matc = reg.try_get_const<MaterialComponent>(e); matc && matc->MaterialInstance)
+			if (c)
 			{
-				const Material::Constants& c = matc->MaterialInstance->GetConstants();
-				rec.AlbedoTextureIndex = c.AlbedoTextureIndex;
-				rec.BaseColor = c.BaseColor;
-				// Alpha-cutout state for the RT any-hit test (Inc 2): masked instances become
-				// FORCE_NON_OPAQUE in the TLAS and the traversal alpha-tests the albedo at the hit UV.
-				rec.AlphaMaskEnabled = c.AlphaMaskEnabled;
-				rec.AlphaCutoff = c.AlphaCutoff;
+				rec.AlbedoTextureIndex = c->AlbedoTextureIndex;
+				rec.BaseColor = c->BaseColor;
+				rec.AlphaMaskEnabled = c->AlphaMaskEnabled;
+				rec.AlphaCutoff = c->AlphaCutoff;
 				// PBR block (#153) for the reference path tracer: the full material so PT hits shade with the
 				// real BRDF (metallic/roughness/emissive + normal/MR maps), not just albedo.
-				rec.MetallicRoughnessTextureIndex = c.MetallicRoughnessTextureIndex;
-				rec.NormalTextureIndex = c.NormalTextureIndex;
-				rec.EmissiveTextureIndex = c.EmissiveTextureIndex;
-				rec.Metallic = c.Metallic;
-				rec.Roughness = c.Roughness;
-				rec.EmissiveR = c.EmissiveColor.r;
-				rec.EmissiveG = c.EmissiveColor.g;
-				rec.EmissiveB = c.EmissiveColor.b;
-				// Flag masked instances FORCE_NON_OPAQUE in the TLAS so the any-hit alpha test actually runs
-				// (the shader-side cutout is otherwise dead — every hit auto-commits as opaque, #151).
-				instances.back().ForceNonOpaque = (c.AlphaMaskEnabled != 0);
+				rec.MetallicRoughnessTextureIndex = c->MetallicRoughnessTextureIndex;
+				rec.NormalTextureIndex = c->NormalTextureIndex;
+				rec.EmissiveTextureIndex = c->EmissiveTextureIndex;
+				rec.Metallic = c->Metallic;
+				rec.Roughness = c->Roughness;
+				rec.EmissiveR = c->EmissiveColor.r;
+				rec.EmissiveG = c->EmissiveColor.g;
+				rec.EmissiveB = c->EmissiveColor.b;
 			}
 			geoRecords.push_back(rec);
 		}

@@ -1,8 +1,12 @@
 #include "VulkanBlas.hpp"
 
 #include "VulkanBuffer.hpp"
+#include "VulkanMicromap.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/Log.hpp"
+
+#include <cstdint>
+#include <vector>
 
 namespace Snowstorm
 {
@@ -57,7 +61,7 @@ namespace Snowstorm
 
 	VulkanBlas::VulkanBlas(const Ref<Buffer>& vertexBuffer, const uint32_t vertexCount, const uint32_t vertexStride,
 	                       const uint32_t positionOffset, const Ref<Buffer>& indexBuffer, const uint32_t indexCount,
-	                       const std::string& debugName)
+	                       const std::string& debugName, const Ref<Micromap>& micromap)
 	{
 		const VkDevice device = GetVulkanDevice();
 
@@ -76,6 +80,58 @@ namespace Snowstorm
 		geometry.geometry.triangles.indexData.deviceAddress = BufferAddress(indexBuffer);
 
 		const uint32_t triangleCount = indexCount / 3;
+
+		// OMM: when a micromap is supplied, build the geometry NON-OPAQUE and chain the micromap in, so the
+		// hardware resolves cutout coverage per-microtriangle (OPAQUE -> hit, TRANSPARENT -> miss, UNKNOWN ->
+		// any-hit). The identity index buffer maps BLAS triangle i -> micromap triangle i. The OMM struct +
+		// index buffer are build inputs referenced by BOTH the size query and the build, so they outlive both;
+		// the index buffer is transient (freed after the build), the micromap is kept alive (m_Micromap) as the
+		// built AS references it. The instance must NOT be FORCE_NO_OPAQUE (that overrides the OMM) — the caller
+		// drops it for OMM-covered instances (TlasBuildSystem).
+		VkBuffer ommIndexBuffer = VK_NULL_HANDLE;
+		VmaAllocation ommIndexAllocation = nullptr;
+		VkAccelerationStructureTrianglesOpacityMicromapEXT ommGeometry{
+		    VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_TRIANGLES_OPACITY_MICROMAP_EXT};
+		VkMicromapUsageEXT ommUsage{};
+		if (micromap)
+		{
+			m_Micromap = micromap;
+			geometry.flags = 0; // not opaque: the OMM drives opacity (an OPAQUE geometry would ignore it)
+
+			const VkDeviceSize indexBytes = static_cast<VkDeviceSize>(triangleCount) * sizeof(uint32_t);
+			VkBufferCreateInfo indexInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+			indexInfo.size = indexBytes;
+			indexInfo.usage = VK_BUFFER_USAGE_MICROMAP_BUILD_INPUT_READ_ONLY_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+			VmaAllocationCreateInfo indexAlloc{};
+			indexAlloc.usage = VMA_MEMORY_USAGE_AUTO;
+			indexAlloc.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+			SS_CORE_ASSERT(vmaCreateBuffer(GetAllocator(), &indexInfo, &indexAlloc, &ommIndexBuffer, &ommIndexAllocation, nullptr) == VK_SUCCESS,
+			               "Failed to create OMM index buffer");
+			VmaAllocationInfo mapped{};
+			vmaGetAllocationInfo(GetAllocator(), ommIndexAllocation, &mapped);
+			auto* indices = static_cast<uint32_t*>(mapped.pMappedData);
+			for (uint32_t i = 0; i < triangleCount; ++i)
+			{
+				indices[i] = i;
+			}
+			vmaFlushAllocation(GetAllocator(), ommIndexAllocation, 0, indexBytes);
+
+			const auto* vkMicromap = static_cast<const VulkanMicromap*>(micromap.get());
+			ommUsage.count = triangleCount;
+			ommUsage.subdivisionLevel = vkMicromap->GetSubdivisionLevel();
+			ommUsage.format = VK_OPACITY_MICROMAP_FORMAT_4_STATE_EXT;
+
+			VkBufferDeviceAddressInfo indexAddr{VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO};
+			indexAddr.buffer = ommIndexBuffer;
+			ommGeometry.indexType = VK_INDEX_TYPE_UINT32;
+			ommGeometry.indexBuffer.deviceAddress = vkGetBufferDeviceAddress(GetVulkanDevice(), &indexAddr);
+			ommGeometry.indexStride = sizeof(uint32_t);
+			ommGeometry.baseTriangle = 0;
+			ommGeometry.usageCountsCount = 1;
+			ommGeometry.pUsageCounts = &ommUsage;
+			ommGeometry.micromap = vkMicromap->GetHandle();
+			geometry.geometry.triangles.pNext = &ommGeometry;
+		}
 
 		// 2. Query the sizes needed for the AS and its build scratch.
 		VkAccelerationStructureBuildGeometryInfoKHR buildInfo{
@@ -128,6 +184,10 @@ namespace Snowstorm
 		                { vkCmdBuildAccelerationStructuresKHR(cmd, 1, &buildInfo, &pRange); });
 
 		vmaDestroyBuffer(GetAllocator(), scratchBuffer, scratchAllocation);
+		if (ommIndexBuffer != VK_NULL_HANDLE)
+		{
+			vmaDestroyBuffer(GetAllocator(), ommIndexBuffer, ommIndexAllocation);
+		}
 
 		// 6. Device address, used later as a TLAS instance's accelerationStructureReference.
 		VkAccelerationStructureDeviceAddressInfoKHR addrInfo{

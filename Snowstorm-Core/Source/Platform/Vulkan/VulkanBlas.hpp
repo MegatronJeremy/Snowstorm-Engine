@@ -15,7 +15,7 @@ namespace Snowstorm
 	public:
 		VulkanBlas(const Ref<Buffer>& vertexBuffer, uint32_t vertexCount, uint32_t vertexStride,
 		           uint32_t positionOffset, const Ref<Buffer>& indexBuffer, uint32_t indexCount,
-		           const std::string& debugName);
+		           const std::string& debugName, const Ref<Micromap>& micromap = nullptr);
 		~VulkanBlas() override;
 
 		[[nodiscard]] uint64_t GetDeviceAddress() const override { return m_DeviceAddress; }
@@ -29,5 +29,7 @@ namespace Snowstorm
 		VmaAllocation m_Allocation = nullptr;
 
 		uint64_t m_DeviceAddress = 0;
+
+		Ref<Micromap> m_Micromap; // kept alive when set: the built AS references the VkMicromapEXT (OMM geometry)
 	};
 }

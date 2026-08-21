@@ -243,6 +243,12 @@ namespace Snowstorm
 		return s_API->IsRayTracingSupported();
 	}
 
+	bool Renderer::IsOpacityMicromapSupported()
+	{
+		SS_CORE_ASSERT(s_API, "Renderer not initialized");
+		return s_API->IsOpacityMicromapSupported();
+	}
+
 	bool Renderer::IsFloat16Supported()
 	{
 		SS_CORE_ASSERT(s_API, "Renderer not initialized");

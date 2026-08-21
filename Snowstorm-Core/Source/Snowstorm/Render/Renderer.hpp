@@ -49,6 +49,10 @@ namespace Snowstorm
 		// path (#118); false => raster fallback. Forwards to the backend capability query.
 		static bool IsRayTracingSupported();
 
+		// True when the device supports + enabled opacity micromaps (VK_EXT_opacity_micromap). Gates the OMM
+		// bake/attach path; false => the any-hit alpha test alone handles cutout geometry.
+		static bool IsOpacityMicromapSupported();
+
 		// True when the device supports + enabled fp16 shader math + 16-bit storage. Gates the neural conv's
 		// fp16 permutation (# fp16 inference); false => fp32 fallback. Forwards to the backend capability query.
 		static bool IsFloat16Supported();

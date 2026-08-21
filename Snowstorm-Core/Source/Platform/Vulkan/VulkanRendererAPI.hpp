@@ -35,6 +35,7 @@ namespace Snowstorm
 		std::string GetDeviceName() const override;
 
 		bool IsRayTracingSupported() const override;
+		bool IsOpacityMicromapSupported() const override;
 		bool IsFloat16Supported() const override;
 		uint32_t GetMaxSampleCount() const override;
 

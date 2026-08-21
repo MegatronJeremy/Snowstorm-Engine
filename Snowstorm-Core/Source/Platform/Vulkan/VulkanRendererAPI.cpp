@@ -438,6 +438,11 @@ namespace Snowstorm
 		return VulkanContext::Get().SupportsRayTracing();
 	}
 
+	bool VulkanRendererAPI::IsOpacityMicromapSupported() const
+	{
+		return VulkanContext::Get().SupportsOpacityMicromap();
+	}
+
 	bool VulkanRendererAPI::IsFloat16Supported() const
 	{
 		return VulkanContext::Get().SupportsFloat16();
