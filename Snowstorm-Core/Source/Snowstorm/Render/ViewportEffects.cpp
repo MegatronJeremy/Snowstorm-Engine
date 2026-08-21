@@ -986,7 +986,10 @@ namespace Snowstorm
 				DenoiserConfig cfg{};
 				cfg.DenoiseIterations = CVars::ClampedShadowDenoiseIterations();
 				cfg.VariancePhi = CVars::ShadowDenoiseVariance.Get();
-				cfg.HitDistPhi = 0.0f; // the shadow ratio carries no hit-distance guide channel (unlike AO's .a)
+				cfg.HitDistPhi = 0.0f; // no hit-distance EDGE-STOP; the shadow .a drives the penumbra kernel size instead
+				// NRD SIGMA-style penumbra sizing: the raw trace's .a (nearest-occluder world distance) scales the
+				// à-trous kernel per pixel — contact shadows stay sharp, soft penumbrae blur wide. 0 = uniform kernel.
+				cfg.PenumbraScale = CVars::ShadowDenoisePenumbra.Get();
 				cfg.NearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
 				cfg.FarPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
 				cfg.DepthSigma = CVars::DepthEdgeSigma.Get();

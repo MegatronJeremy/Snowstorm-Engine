@@ -27,7 +27,8 @@ namespace Snowstorm
 			float Near = 0.1f;         // camera near/far to linearize the packed NDC depth for the edge-stop
 
 			float Far = 500.0f;
-			glm::vec3 _Pad{0.0f};
+			float PenumbraScale = 0.0f; // SIGMA-style penumbra kernel sizing (shadows only); 0 = identity for GI/AO/refl
+			glm::vec2 _Pad{0.0f};
 		};
 
 		// Binding indices in GIDenoise.comp.hlsl set 0. Binding 3 (the #129 Inc 2c freed sampler slot) now holds
@@ -86,7 +87,7 @@ namespace Snowstorm
 	                             const Ref<TextureView>& depth,
 	                             const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH,
 	                             const float lumaPhi, const Ref<TextureView>& hitGuide, const float hitDistPhi,
-	                             const float nearPlane, const float farPlane, const float depthSigma)
+	                             const float nearPlane, const float farPlane, const float depthSigma, const float penumbraScale)
 	{
 		if (!ctx || !input || !gbuffer || !depth || !output || !hitGuide || outW == 0 || outH == 0)
 		{
@@ -111,6 +112,7 @@ namespace Snowstorm
 		cb.HitDistPhi = hitDistPhi;  // #130 Inc B: 0 disables the hit-distance term (GI/reflections)
 		cb.Near = nearPlane;
 		cb.Far = farPlane;
+		cb.PenumbraScale = penumbraScale; // SIGMA penumbra kernel (shadows only); 0 = identity for GI/AO/reflections
 		m_ParamBuffers[idx]->SetData(&cb, sizeof(GIDenoiseCB), 0);
 
 		const auto& layouts = m_Pipeline->GetSetLayouts();

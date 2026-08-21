@@ -32,13 +32,15 @@ namespace Snowstorm
 		// but only reads it when `hitDistPhi > 0` — GI/reflections pass their `gbuffer` here + phi 0 (no-op, so
 		// their output is bit-identical). AO passes its raw trace + phi > 0. near/far linearize the guide's NDC
 		// depth for the relative view-depth edge-stop; depthSigma is its tightness (render.rt.depthsigma).
-		// Lazily builds the pipeline; no-op until ready.
+		// penumbraScale (SIGMA-style, shadows only) scales the tap stride by the receiver's occluder distance
+		// (hitGuide .a, world units) so contact shadows stay sharp and soft penumbrae blur wide; 0 = identity
+		// (GI/AO/reflections pass 0 => bit-identical output). Lazily builds the pipeline; no-op until ready.
 		void Dispatch(const Ref<CommandContext>& ctx, uint32_t frameIndex, uint32_t slot, int step,
 		              const Ref<TextureView>& input, const Ref<TextureView>& gbuffer,
 		              const Ref<TextureView>& depth,
 		              const Ref<TextureView>& output, uint32_t outW, uint32_t outH, float lumaPhi,
 		              const Ref<TextureView>& hitGuide, float hitDistPhi, float nearPlane, float farPlane,
-		              float depthSigma);
+		              float depthSigma, float penumbraScale = 0.0f);
 
 	private:
 		void EnsureResources();

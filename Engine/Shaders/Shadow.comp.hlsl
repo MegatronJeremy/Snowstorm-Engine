@@ -178,7 +178,9 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint seed, out float3 ou
 }
 
 // Trace one (optionally area-jittered) shadow ray toward the chosen light. Returns visibility (1 = lit).
-float TraceShadow(uint2 px, uint seed, float3 positionWS, float3 N, float3 L, float tMax, float coneR)
+// outHitT = distance to the nearest occluder on a hit (world units, for the SIGMA-style penumbra-aware
+// denoiser kernel), or -1 on a miss (no occluder -> excluded from the mean).
+float TraceShadow(uint2 px, uint seed, float3 positionWS, float3 N, float3 L, float tMax, float coneR, out float outHitT)
 {
 	float3 dir = L;
 	// Soft shadows: jitter the ray within the light's area (disk of radius coneR perpendicular to L). The
@@ -204,7 +206,13 @@ float TraceShadow(uint2 px, uint seed, float3 positionWS, float3 N, float3 L, fl
 	RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_CULL_NON_OPAQUE> q;
 	q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
 	q.Proceed();
-	return (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT) ? 0.0 : 1.0;
+	if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+	{
+		outHitT = q.CommittedRayT(); // nearest occluder distance -> penumbra size guide
+		return 0.0;                  // shadowed
+	}
+	outHitT = -1.0; // no occluder
+	return 1.0;     // lit
 }
 
 [numthreads(8, 8, 1)]
@@ -243,6 +251,8 @@ void main(uint3 id : SV_DispatchThreadID)
 	// non-casting or no-light sample contributes visibility 1 (lit); only a sampled caster traces.
 	const uint rayCount = max(RayCount, 1u);
 	float visSum = 0.0;
+	float hitTSum = 0.0;  // sum of nearest-occluder distances over the OCCLUDED rays (world units)
+	uint hitCount = 0u;   // how many rays hit — the mean is over hits only (misses carry no penumbra info)
 	[loop] for (uint s = 0; s < rayCount; ++s)
 	{
 		const uint seed = FrameCounter * 16u + s; // decorrelate per sample AND per frame
@@ -255,9 +265,20 @@ void main(uint3 id : SV_DispatchThreadID)
 			visSum += 1.0; // no contributing light / non-casting chosen -> lit
 			continue;
 		}
-		visSum += TraceShadow(id.xy, seed, positionWS, N, L, tMax, coneR);
+		float hitT;
+		visSum += TraceShadow(id.xy, seed, positionWS, N, L, tMax, coneR, hitT);
+		if (hitT >= 0.0)
+		{
+			hitTSum += hitT;
+			++hitCount;
+		}
 	}
 
 	const float ratio = visSum / float(rayCount);
-	ShadowOut[id.xy] = float4(ratio, ratio, ratio, 1.0); // ShadowStrength applied in DefaultLit at consumption
+	// Mean nearest-occluder distance (world units) over the occluded rays, 0 when fully lit (no occluder). The
+	// SIGMA-style denoiser reads this from .a to size the à-trous kernel — near occluder (small) => sharp contact
+	// shadow, far occluder (large) => wide soft penumbra. Noisy at few rays but spatially smooth + the denoiser
+	// only uses it as a monotonic penumbra proxy.
+	const float meanHitT = (hitCount > 0u) ? (hitTSum / float(hitCount)) : 0.0;
+	ShadowOut[id.xy] = float4(ratio, ratio, ratio, meanHitT); // ShadowStrength applied in DefaultLit at consumption
 }

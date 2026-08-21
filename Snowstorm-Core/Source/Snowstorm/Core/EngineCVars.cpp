@@ -151,6 +151,8 @@ namespace Snowstorm::CVars
 
 	CVar<float> ShadowDenoiseVariance{"render.shadows.denoise.variance", 4.0f, "SVGF variance-guided a-trous luminance-phi for RT shadows: widens the a-trous in noisy/disoccluded regions, tight where converged. 0 = off. ~2-8 typical.", CVarFlags::Persist};
 
+	CVar<float> ShadowDenoisePenumbra{"render.shadows.denoise.penumbra", 0.1f, "NRD SIGMA-style penumbra-aware a-trous kernel sizing for RT shadows: scale the tap stride by the receiver's nearest-occluder distance (world units) so a NEAR occluder keeps a tight kernel (sharp contact shadow) and a FAR occluder widens it (smooth soft penumbra) — what a fixed-stride a-trous can't do (it over-blurs contacts or under-blurs soft penumbrae at one setting). Value = 1/reference-distance: penumbra saturates to the widest kernel around (1/this) world units (0.1 => ~10 units). 0 = off (uniform kernel). Shadows only; GI/AO/reflections are unaffected.", CVarFlags::Persist};
+
 	CVar<float> ShadowSunAngleDeg{"render.shadow.sun_angle_deg", 1.0f, "Sun angular diameter in degrees — drives RT soft-shadow penumbra width for the directional light (real sun ~0.53 deg; larger = softer). Only used by the RT soft path.", CVarFlags::Persist};
 
 	CVar<float> ShadowSourceRadius{"render.shadow.source_radius", 0.1f, "Local light (spot/point) source radius in world units — drives RT soft-shadow penumbra width (larger/closer source = softer). Only used by the RT soft path.", CVarFlags::Persist};

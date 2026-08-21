@@ -38,7 +38,8 @@ cbuffer GIDenoiseCB : register(b4, space0)
 	float Near;         // camera near/far to linearize the packed NDC depth for the edge-stop
 
 	float Far;
-	float3 _Pad;
+	float PenumbraScale; // SIGMA-style penumbra kernel sizing (shadows only); 0 => identity (GI/AO/refl unchanged)
+	float2 _Pad;
 };
 
 #include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky (#129 Inc 1b)
@@ -113,11 +114,23 @@ void main(uint3 id : SV_DispatchThreadID)
 	float varAccum = 0.0; // #129 Inc 3c part 2: filter the variance through the à-trous with SQUARED weights
 	float varWsum = 0.0;
 
+	// SIGMA-style penumbra-aware kernel sizing (shadows only; PenumbraScale == 0 => identity for GI/AO/reflections,
+	// so their output stays bit-identical). Scale the à-trous tap stride by the receiver's occluder distance
+	// (HitDistGuide.a, world units): a NEAR occluder (small) keeps a TIGHT kernel -> sharp contact shadow, a FAR
+	// occluder WIDENS it -> smooth soft penumbra. This is the NRD SIGMA idea (penumbra ∝ occluder distance) that a
+	// fixed-stride à-trous can't do: it otherwise over-blurs contacts or under-blurs soft penumbrae at one setting.
+	float kStep = float(Step); // == Step exactly when PenumbraScale == 0 -> integer taps unchanged for other signals
+	if (PenumbraScale > 0.0)
+	{
+		const float penumbra = saturate(hitCenter * PenumbraScale); // 0 at contact / fully-lit, ->1 for a distant occluder
+		kStep = float(Step) * lerp(0.4, 2.2, penumbra);
+	}
+
 	[unroll] for (int dy = -2; dy <= 2; ++dy)
 	{
 		[unroll] for (int dx = -2; dx <= 2; ++dx)
 		{
-			const int2 tap = centerPx + int2(dx, dy) * Step;
+			const int2 tap = centerPx + int2(round(float2(dx, dy) * kStep));
 			const int2 tapC = clamp(tap, int2(0, 0), int2(OutSize) - 1);
 
 			const float4 tapIn = GIIn.Load(int3(tapC, 0));

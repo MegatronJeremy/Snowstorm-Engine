@@ -321,6 +321,9 @@ namespace Snowstorm::CVars
 	extern CVar<bool> ShadowDenoise;
 	extern CVar<int> ShadowDenoiseIterations;
 	extern CVar<float> ShadowDenoiseVariance;
+	// NRD SIGMA-style penumbra-aware à-trous kernel sizing (shadows only): scale the tap stride by the
+	// receiver's occluder distance so contact shadows stay sharp and soft penumbrae blur wide. 0 = off.
+	extern CVar<float> ShadowDenoisePenumbra;
 	[[nodiscard]] bool ShadowTemporalActive();
 	[[nodiscard]] bool ShadowDenoiseActive();
 	[[nodiscard]] int ClampedShadowDenoiseIterations();
