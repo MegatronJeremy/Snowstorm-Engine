@@ -338,6 +338,10 @@ namespace Snowstorm::CVars
 	// stops a strong occluded light from dominating selection and darkening a pixel a weaker visible light lights.
 	extern CVar<bool> ShadowImportanceLog;
 
+	// Combined diffuse+specular reservoir target (capped specular boost) vs diffuse-only importance: samples the
+	// specular-dominant light too, cutting specular-visibility noise on glossy/rough surfaces. Unbiased either way.
+	extern CVar<bool> ShadowImportanceSpecular;
+
 	// Demodulated per-light specular shadowing (separate denoised specular signal + full-res F0 re-apply) vs the
 	// cheaper diffuse-weighted grey-visibility specular. On = MegaLights/NRD endpoint; off = the grey fallback.
 	extern CVar<bool> ShadowSpecularDemodulated;

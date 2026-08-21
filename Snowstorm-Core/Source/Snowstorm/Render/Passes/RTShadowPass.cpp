@@ -45,6 +45,9 @@ namespace Snowstorm
 			uint32_t UseLogWeight = 1;      // log(1+luma) perceptual importance weight; 0 = linear luma
 			glm::vec3 CameraPosition{0.0f}; // world-space camera pos for V = normalize(camPos - worldPos) in the specular BRDF
 
+			uint32_t UseSpecImportance = 1; // combined diffuse+spec RIS target; 0 = diffuse-only importance
+			glm::vec3 _PadSpecImp{0.0f};    // pad to a 16-byte row (matches Shadow.comp.hlsl)
+
 			// Option B (colored diffuse): the pass now accumulates COLORED shadowed irradiance, so each light
 			// carries its full RGB radiance (color*intensity), not just a luma weight. Importance weight = luma
 			// of that color, computed in the shader.
@@ -140,8 +143,9 @@ namespace Snowstorm
 		cb.RayCount = rayCount;
 		cb.ReflGeoTableAddrLo = static_cast<uint32_t>(tableAddr & 0xFFFFFFFFull); // cutout any-hit alpha test
 		cb.ReflGeoTableAddrHi = static_cast<uint32_t>(tableAddr >> 32);
-		cb.UseLogWeight = CVars::ShadowImportanceLog.Get() ? 1u : 0u; // perceptual light-importance weight (MegaLights)
-		cb.CameraPosition = cameraPosition;                           // for V in the demodulated specular BRDF
+		cb.UseLogWeight = CVars::ShadowImportanceLog.Get() ? 1u : 0u;           // perceptual light-importance weight (MegaLights)
+		cb.CameraPosition = cameraPosition;                                     // for V in the demodulated specular BRDF
+		cb.UseSpecImportance = CVars::ShadowImportanceSpecular.Get() ? 1u : 0u; // combined diffuse+spec RIS target
 
 		// Directional: every directional light is a shadow-caster in the RT path (matches DefaultLit, where the
 		// sun casts). dir TO light = -Direction. Weight = luma(color) * intensity, no attenuation.

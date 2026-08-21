@@ -470,10 +470,10 @@ void ShadePBRSplit(float3 N, float3 V, float3 L, float3 F0, float3 albedo, float
 	const float Dd = DistributionGGX(N, H, roughness);
 	const float G = GeometrySmith(N, V, L, roughness);
 	const float3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
-	const float3 specular = (Dd * G * F) / max(4.0 * max(dot(N, V), 0.0) * NdotL, 1e-4);
+	const float specGeom = (Dd * G) / max(4.0 * max(dot(N, V), 0.0) * NdotL, 1e-4); // D*G/(4 NoV NoL), Fresnel-free
 	const float3 kd = (1.0 - F) * (1.0 - metallic);
 	outDiffuse = kd * albedo / PI * radiance * NdotL;
-	outSpecular = specular * radiance * NdotL;
+	outSpecular = specGeom * F * radiance * NdotL; // sharp full-res highlight with correct per-light F
 }
 
 // World-space shading normal: perturb the geometric normal by the tangent-space normal map when one
@@ -587,8 +587,8 @@ float4 main(PSInput i) : SV_Target0
 	// denoised + upsampled. The forward multiplies full-res albedo here (albedo factors out of the diffuse sum, so
 	// it stays out of the denoised buffer -> no albedo blur, the GI pattern). Specular is summed sharp below and
 	// shadowed by a cheap aggregate visibility. 0 index -> inline/raster per-light path (loops below trace).
-	float3 shadowIrr = float3(0, 0, 0);  // denoised colored shadowed direct DIFFUSE irradiance (Option B)
-	float3 shadowSpec = float3(0, 0, 0); // denoised demodulated shadowed SPECULAR (GGX D*G, no Fresnel) — forward re-applies F0
+	float3 shadowIrr = float3(0, 0, 0); // denoised colored shadowed direct DIFFUSE irradiance (Option B)
+	float3 specVis = float3(1, 1, 1);   // denoised per-channel specular VISIBILITY [0,1] from the pass; modulates the sharp full-res specular
 	bool useShadowTex = false;
 	bool useShadowSpec = false;
 	if (SunShadowTextureIndex != 0)
@@ -596,19 +596,19 @@ float4 main(PSInput i) : SV_Target0
 		const float2 shUv = i.PositionCS.xy / max(RenderTargetSize, float2(1.0, 1.0)); // plain UV: effect buffers jittered like geometry
 		shadowIrr = Textures[NonUniformResourceIndex(SunShadowTextureIndex)].SampleLevel(LinearSampler, shUv, 0).rgb;
 		useShadowTex = true;
-		// Demodulated specular twin (MegaLights/NRD): re-apply F0 here (full-res, sharp) instead of shadowing the
-		// summed specular by the diffuse-weighted grey visibility, which dimmed specular where a visible light's
-		// highlight sat on a diffuse-shadowed pixel. 0 index -> fall back to that grey-vis path.
+		// Specular visibility twin (MegaLights/NRD): the pass emits a SMOOTH per-channel specular shadow ratio (the
+		// specular BRDF shape cancels in shadowed/unshadowed), so denoising it never blurs a sharp glossy highlight —
+		// the highlight itself stays full-res in specSum below. 0 index -> fall back to the diffuse-weighted grey-vis.
 		if (ShadowSpecTextureIndex != 0)
 		{
-			shadowSpec = Textures[NonUniformResourceIndex(ShadowSpecTextureIndex)].SampleLevel(LinearSampler, shUv, 0).rgb;
+			specVis = Textures[NonUniformResourceIndex(ShadowSpecTextureIndex)].SampleLevel(LinearSampler, shUv, 0).rgb;
 			useShadowSpec = true;
 		}
 	}
 
 	float3 Lo = float3(0, 0, 0);
-	float3 unshadowedIrr = float3(0, 0, 0); // Σ radiance_i·NdotL_i (unshadowed) — diffuse albedo scale + specular vis
-	float3 specSum = float3(0, 0, 0);       // Σ unshadowed specular (stochastic path shadows it by an aggregate ratio)
+	float3 unshadowedIrr = float3(0, 0, 0); // Σ radiance_i·NdotL_i (unshadowed) — diffuse albedo scale + fallback specular vis
+	float3 specSum = float3(0, 0, 0);       // Σ unshadowed specular WITH Fresnel (the sharp full-res highlight)
 
 	// --- Directional lights (the sun).
 	const int count = clamp(LightCount, 0, MAX_DIRECTIONAL_LIGHTS);
@@ -716,16 +716,11 @@ float4 main(PSInput i) : SV_Target0
 		const float3 diffuseDirect = albedo * (1.0 / PI) * (1.0 - metallic) * shadowedIrr;
 		if (useShadowSpec)
 		{
-			// Specular VISIBILITY (not radiance): the denoised demodulated specular is soft/boils when used as the
-			// highlight directly. Instead derive a SMOOTH [0,1] specular shadow ratio from it — denoised shadowed
-			// specular (shadowSpec*F0) over the SHARP full-res unshadowed specSum — and modulate specSum by that.
-			// Highlight shape stays crisp (from specSum, matches inline); only the shadow term is denoised (smooth),
-			// so no soft highlight and no motion boiling. F0/material cancel in the ratio, leaving the visibility.
-			const float3 fEnv = FresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness);
-			const float3 lw = float3(0.2126, 0.7152, 0.0722);
-			const float sU = dot(specSum, lw);
-			const float specVis = (sU > 1e-4) ? saturate(dot(shadowSpec * fEnv, lw) / sU) : 1.0;
-			Lo = diffuseDirect + specSum * lerp(1.0, specVis, ShadowStrength);
+			// Specular VISIBILITY: the pass already computed the smooth per-channel [0,1] specular shadow ratio (the
+			// BRDF shape cancels there), so just modulate the SHARP full-res specSum by it — highlight stays crisp
+			// (specSum, correct per-light Fresnel), only the shadow term is denoised. No highlight smear on glossy
+			// surfaces and no grazing-angle dimming (deriving the ratio from a denoised specular RADIANCE did both).
+			Lo = diffuseDirect + specSum * lerp(float3(1, 1, 1), specVis, ShadowStrength);
 		}
 		else
 		{

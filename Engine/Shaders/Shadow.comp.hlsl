@@ -53,6 +53,9 @@ cbuffer ShadowCB : register(b3, space0)
 	uint UseLogWeight;      // 1 = log(1+luma) perceptual importance weight (downweights strong occluded lights); 0 = linear luma
 	float3 CameraPosition; // world-space camera pos, for V = normalize(camPos - worldPos) in the specular BRDF
 
+	uint UseSpecImportance; // 1 = combined diffuse+spec RIS target (samples specular-dominant lights too); 0 = diffuse-only
+	float3 _PadSpecImp;     // pad to a 16-byte row
+
 	// Slim tracer + importance params (16-byte rows). Option B: each light carries its full RGB radiance
 	// (color*intensity) so the pass can accumulate COLORED shadowed irradiance; the importance weight is the
 	// luma of that radiance, computed here.
@@ -66,16 +69,6 @@ cbuffer ShadowCB : register(b3, space0)
 };
 
 float Luma3(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
-
-// Importance weight for the reservoir AND the RIS normalization (must match in both, or the estimate biases).
-// UseLogWeight = log(1+luma) perceptual weighting downweights very strong lights so a strong-but-occluded light
-// can't dominate the per-pixel selection and drag the aggregate dark where a weaker VISIBLE light should light
-// the pixel (UE5 MegaLights uses log weighting for this exact "strong occluded light" issue, SIGGRAPH 2025).
-float ImportanceWeight(float3 radNdotL)
-{
-	const float l = Luma3(radNdotL);
-	return (UseLogWeight != 0u) ? log(1.0 + l) : l;
-}
 
 // GGX specular geometry (Cook-Torrance D*G, NO Fresnel) — copied from DefaultLit's ShadePBR so the pass's
 // per-sample specular matches the forward. Fresnel is DEMODULATED here (re-applied as F0 in the forward), so the
@@ -98,6 +91,32 @@ float SpecGeometrySchlickGGX(float nv, float roughness)
 float SpecGeometrySmith(float3 N, float3 V, float3 L, float roughness)
 {
 	return SpecGeometrySchlickGGX(max(dot(N, V), 0.0), roughness) * SpecGeometrySchlickGGX(max(dot(N, L), 0.0), roughness);
+}
+
+// Cap on the specular importance boost: a near-mirror light's specGeom peaks very high, so left unbounded it
+// would spike its reservoir weight and starve the diffuse-dominant lights (noisy diffuse D). 8 lets specular
+// raise a light's weight up to ~9x its diffuse luma — enough to sample glossy highlights well without starving.
+static const float SPEC_IMPORTANCE_CAP = 8.0;
+
+// Importance weight for the reservoir AND the RIS normalization (must match in both, or the estimate biases).
+// UseLogWeight = log(1+luma) perceptual weighting downweights very strong lights so a strong-but-occluded light
+// can't dominate the per-pixel selection and drag the aggregate dark where a weaker VISIBLE light should light
+// the pixel (UE5 MegaLights uses log weighting for this exact "strong occluded light" issue, SIGGRAPH 2025).
+// UseSpecImportance boosts the diffuse luma by the light's (capped) specular response so the SAME reservoir also
+// samples the specular-dominant light well -> lower specular-visibility variance. Off = diffuse-only importance.
+float ImportanceWeight(float3 radNdotL, float3 N, float3 V, float3 L, float roughness)
+{
+	float total = Luma3(radNdotL);
+	if (UseSpecImportance != 0u)
+	{
+		const float3 H = normalize(V + L);
+		const float nl = max(dot(N, L), 0.0);
+		const float nv = max(dot(N, V), 0.0);
+		const float dg = SpecDistributionGGX(N, H, roughness) * SpecGeometrySmith(N, V, L, roughness);
+		const float specBoost = min(dg / max(4.0 * nv * nl, 1e-4), SPEC_IMPORTANCE_CAP);
+		total *= (1.0 + specBoost);
+	}
+	return (UseLogWeight != 0u) ? log(1.0 + total) : total;
 }
 
 // ---- Set 3: engine bindless pool (gap-filled by the compute pipeline builder) ----
@@ -152,8 +171,8 @@ float FalloffWindow(float dist, float range)
 // contribution -> averaging their visibility is a K-sample estimate of the aggregate shadow ratio (variance
 // ~1/K). Returns false when no light contributes here; else fills the chosen light's tracer params (direction
 // TO light, ray tMax, soft cone/disk radius, whether it casts a shadow).
-bool SelectLight(uint2 px, float3 positionWS, float3 N, uint frame, uint dimBase, out float3 outL, out float outTMax,
-                 out float outConeR, out bool outCasts, out float3 outRadNdotL, out float outWSum)
+bool SelectLight(uint2 px, float3 positionWS, float3 N, float3 V, float roughness, uint frame, uint dimBase, out float3 outL,
+                 out float outTMax, out float outConeR, out bool outCasts, out float3 outRadNdotL, out float outWSum)
 {
 	float wSum = 0.0;
 	outL = float3(0, 0, 1);
@@ -170,7 +189,7 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint frame, uint dimBase
 	{
 		const float3 L = DirData[d].xyz;
 		const float3 radNdotL = DirColor[d].xyz * max(dot(N, L), 0.0);
-		const float w = ImportanceWeight(radNdotL); // log/linear importance weight (render.shadows.importance.log)
+		const float w = ImportanceWeight(radNdotL, N, V, L, roughness); // combined diffuse+spec importance (render.shadows.importance.*)
 		if (w <= 0.0)
 		{
 			continue;
@@ -199,7 +218,7 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint frame, uint dimBase
 		}
 		const float3 L = toLight / max(dist, 1e-4);
 		const float3 radNdotL = PointColor[p].xyz * FalloffWindow(dist, range) * max(dot(N, L), 0.0);
-		const float w = ImportanceWeight(radNdotL);
+		const float w = ImportanceWeight(radNdotL, N, V, L, roughness);
 		if (w <= 0.0)
 		{
 			continue;
@@ -236,7 +255,7 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint frame, uint dimBase
 		const float denom = max(SpotColorInner[s].w - cosOuter, 1e-4); // .w = cos(inner)
 		const float cone = pow(saturate((cosAngle - cosOuter) / denom), 2.0);
 		const float3 radNdotL = SpotColorInner[s].xyz * FalloffWindow(dist, range) * cone * max(dot(N, L), 0.0);
-		const float w = ImportanceWeight(radNdotL);
+		const float w = ImportanceWeight(radNdotL, N, V, L, roughness);
 		if (w <= 0.0)
 		{
 			continue;
@@ -355,7 +374,12 @@ void main(uint3 id : SV_DispatchThreadID)
 	// pattern. A non-casting chosen light contributes with vis = 1 (lit); no-light -> 0.
 	const uint rayCount = max(RayCount, 1u);
 	float3 Dsum = float3(0, 0, 0);
-	float3 Ssum = float3(0, 0, 0); // demodulated shadowed specular (GGX D*G, no Fresnel), same RIS estimator as D
+	// Specular VISIBILITY (not radiance): accumulate the colored specular-contribution-weighted SHADOWED and
+	// UNSHADOWED sums; their per-channel ratio is a SMOOTH shadow ratio [0,1] (the specular BRDF shape cancels), so
+	// it denoises cleanly at ANY roughness. Per-channel (not grey) so a colored light occluded while another isn't
+	// shifts the highlight hue correctly. Denoising the specular RADIANCE instead blurred sharp glossy highlights.
+	float3 specShadowed = float3(0, 0, 0);
+	float3 specUnshadowed = float3(0, 0, 0);
 	float hitTSum = 0.0;  // sum of nearest-occluder distances over the OCCLUDED rays (world units)
 	uint hitCount = 0u;   // how many rays hit — the mean is over hits only (misses carry no penumbra info)
 	[loop] for (uint s = 0; s < rayCount; ++s)
@@ -370,7 +394,7 @@ void main(uint3 id : SV_DispatchThreadID)
 		bool casts;
 		float3 radNdotL; // chosen light's colored radiance*NdotL (pre-visibility)
 		float wSum;      // Σ luma-contribution over all in-range lights (the RIS normalization)
-		if (!SelectLight(id.xy, positionWS, Ns, FrameCounter, dimBase, L, tMax, coneR, casts, radNdotL, wSum))
+		if (!SelectLight(id.xy, positionWS, Ns, V, roughness, FrameCounter, dimBase, L, tMax, coneR, casts, radNdotL, wSum))
 		{
 			continue; // no contributing light here -> 0 irradiance from this sample
 		}
@@ -386,31 +410,38 @@ void main(uint3 id : SV_DispatchThreadID)
 			}
 		}
 		// RIS: estimate of the FULL colored sum from this one sample = radNdotL·vis · wSum / contrib_y.
-		const float contribY = ImportanceWeight(radNdotL); // MUST match SelectLight's weight or the RIS estimate biases
+		const float contribY = ImportanceWeight(radNdotL, Ns, V, L, roughness); // MUST match SelectLight's weight or the RIS estimate biases
 		if (contribY > 1e-6)
 		{
-			const float risW = vis * wSum / contribY;
+			const float risWnoVis = wSum / contribY; // 1/p RIS weight (no visibility)
+			const float risW = vis * risWnoVis;
 			Dsum += radNdotL * risW;
-			// Demodulated specular: Sg = (D_ggx*G / max(4*NsDotV*NsDotL, 1e-4)) * radNdotL. radNdotL is already
-			// radiance*NsDotL, so this equals DefaultLit's `specular*radiance*NdotL` with the Fresnel F omitted
-			// (F0 re-applied full-res in the forward). Same 1/p RIS weight as diffuse -> unbiased estimate of
-			// S = Σ_i specGeom_i·radiance_i·NsDotL_i·vis_i (noisier than D since importance is diffuse-weighted).
+			// Colored specular contribution of the chosen light: specGeom * radiance*NsDotL (Fresnel-free). Accumulate
+			// it into the SHADOWED (×vis) and UNSHADOWED sums; specVis = shadowed/unshadowed is the pure specular
+			// visibility, and specGeom·radiance·NsDotL cancels -> no highlight shape in the denoised signal.
 			const float3 H = normalize(V + L);
 			const float nl = max(dot(Ns, L), 0.0);
 			const float nv = max(dot(Ns, V), 0.0);
 			const float dg = SpecDistributionGGX(Ns, H, roughness) * SpecGeometrySmith(Ns, V, L, roughness);
-			const float specGeom = dg / max(4.0 * nv * nl, 1e-4);
-			Ssum += radNdotL * (specGeom * risW);
+			const float3 specContrib = (dg / max(4.0 * nv * nl, 1e-4)) * radNdotL; // colored (Fresnel-free)
+			specShadowed += specContrib * risW;
+			specUnshadowed += specContrib * risWnoVis;
 		}
 	}
 
 	const float3 D = Dsum / float(rayCount); // colored shadowed direct irradiance (no albedo)
-	const float3 S = Ssum / float(rayCount); // demodulated shadowed specular (no F0); forward re-applies Fresnel
+	// Per-channel specular shadow ratio [0,1] (num/den normalizes out the 1/rayCount): forward multiplies the sharp
+	// full-res specular by it. 1 (fully lit) where a channel has no specular (its specSum is ~0 too, so the value
+	// there is moot); guarding to 1 instead of 0 keeps a tiny residue from wrongly darkening.
+	float3 specVis;
+	specVis.r = (specUnshadowed.r > 1e-8) ? saturate(specShadowed.r / specUnshadowed.r) : 1.0;
+	specVis.g = (specUnshadowed.g > 1e-8) ? saturate(specShadowed.g / specUnshadowed.g) : 1.0;
+	specVis.b = (specUnshadowed.b > 1e-8) ? saturate(specShadowed.b / specUnshadowed.b) : 1.0;
 	// Mean nearest-occluder distance (world units) over the occluded rays, 0 when fully lit (no occluder). The
 	// SIGMA-style denoiser reads this from .a to size the à-trous kernel — near occluder (small) => sharp contact
 	// shadow, far occluder (large) => wide soft penumbra. Noisy at few rays but spatially smooth + the denoiser
 	// only uses it as a monotonic penumbra proxy.
 	const float meanHitT = (hitCount > 0u) ? (hitTSum / float(hitCount)) : 0.0;
-	ShadowOut[id.xy] = float4(D, meanHitT);     // .rgb = colored shadowed diffuse irradiance, .a = penumbra guide
-	ShadowSpecOut[id.xy] = float4(S, meanHitT); // .rgb = demodulated shadowed specular, .a = shared penumbra guide
+	ShadowOut[id.xy] = float4(D, meanHitT);                             // .rgb = colored shadowed diffuse irradiance, .a = penumbra guide
+	ShadowSpecOut[id.xy] = float4(specVis, meanHitT); // colored specular VISIBILITY [0,1], .a = shared penumbra guide
 }
