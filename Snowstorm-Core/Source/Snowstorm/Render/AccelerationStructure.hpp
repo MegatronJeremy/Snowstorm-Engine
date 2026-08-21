@@ -35,6 +35,13 @@ namespace Snowstorm
 		// packed 2-bit states (statesData, statesSize = triangleCount * BytesPerTriangle(level)). Synchronous.
 		static Ref<Micromap> Create(uint32_t triangleCount, uint32_t subdivisionLevel, const void* statesData,
 		                            uint64_t statesSize, const std::string& debugName = "");
+
+		// Baked variant (#OMM B2): builds a micromap whose states are baked on the GPU by sampling the mesh's
+		// albedo alpha per microtriangle (vertex/index read by device address). Returns NULL if the bake compute
+		// pipeline isn't ready yet (async shader compile) — the caller falls back to the non-OMM path that frame.
+		static Ref<Micromap> CreateBaked(uint64_t vertexAddress, uint64_t indexAddress, uint32_t triangleCount,
+		                                 uint32_t subdivisionLevel, uint32_t albedoTextureIndex, float alphaCutoff,
+		                                 float baseColorAlpha, const std::string& debugName = "");
 	};
 
 	// Bottom-level acceleration structure (#118): the ray-traced triangle geometry of a single mesh, built

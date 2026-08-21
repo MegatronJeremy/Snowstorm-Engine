@@ -12,6 +12,7 @@
 // --- Stdlib ---
 #include <cassert>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace Snowstorm
@@ -74,6 +75,11 @@ namespace Snowstorm
 		// and invokes the any-hit alpha test only on UNKNOWN (edge) microtriangles. False (e.g. RDNA3) => masked
 		// geometry falls back to the FORCE_NO_OPAQUE any-hit path alone. Set in Init from a capability query.
 		[[nodiscard]] bool SupportsOpacityMicromap() const { return m_OpacityMicromapSupported; }
+
+		// The graphics+present-capable physical devices enumerated at init (in candidate-index order, matching
+		// the render.gpu CVar's index selection), and which one was chosen. For the editor's GPU picker.
+		[[nodiscard]] const std::vector<std::string>& GetGpuNames() const { return m_GpuNames; }
+		[[nodiscard]] int GetSelectedGpuIndex() const { return m_SelectedGpuIndex; }
 		// fp16 shader math + 16-bit storage (shaderFloat16 + storageBuffer16BitAccess). Gates the neural conv's
 		// fp16 permutation; false => the fp32 path runs. Set in Init from a capability query.
 		[[nodiscard]] bool SupportsFloat16() const { return m_Float16Supported; }
@@ -127,6 +133,8 @@ namespace Snowstorm
 		// the picked device and were enabled at device creation. Gates the whole RT path (#118).
 		bool m_RayTracingSupported = false;
 		bool m_OpacityMicromapSupported = false;
+		std::vector<std::string> m_GpuNames; // graphics+present candidates, candidate-index order
+		int m_SelectedGpuIndex = 0;          // index into m_GpuNames of the chosen device
 
 		// True when shaderFloat16 + 16-bit storage are supported and were enabled. Gates the neural conv's fp16
 		// permutation (# fp16 inference); false => fp32 fallback.

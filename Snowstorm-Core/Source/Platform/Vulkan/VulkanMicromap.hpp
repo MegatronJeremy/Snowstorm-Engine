@@ -29,6 +29,14 @@ namespace Snowstorm
 		// the micromap's microtriangle addressing; irrelevant for a uniform (all-same-state) fill.
 		VulkanMicromap(uint32_t triangleCount, uint32_t subdivisionLevel, const void* statesData,
 		               uint64_t statesSize, const std::string& debugName);
+
+		// Baked variant (#OMM B2): runs the OmmBake.comp compute bake to fill the 4-state states from the mesh's
+		// albedo alpha (sampled per microtriangle), then builds the micromap — all in ONE ImmediateSubmit. The
+		// caller MUST have confirmed VulkanOmmBaker::Get().IsReady() (the compute shader is async-compiled).
+		VulkanMicromap(uint64_t vertexAddress, uint64_t indexAddress, uint32_t triangleCount,
+		               uint32_t subdivisionLevel, uint32_t albedoTextureIndex, float alphaCutoff,
+		               float baseColorAlpha, const std::string& debugName);
+
 		~VulkanMicromap();
 
 		VulkanMicromap(const VulkanMicromap&) = delete;

@@ -249,6 +249,18 @@ namespace Snowstorm
 		return s_API->IsOpacityMicromapSupported();
 	}
 
+	const std::vector<std::string>& Renderer::GetGpuNames()
+	{
+		SS_CORE_ASSERT(s_API, "Renderer not initialized");
+		return s_API->GetGpuNames();
+	}
+
+	int Renderer::GetSelectedGpuIndex()
+	{
+		SS_CORE_ASSERT(s_API, "Renderer not initialized");
+		return s_API->GetSelectedGpuIndex();
+	}
+
 	bool Renderer::IsFloat16Supported()
 	{
 		SS_CORE_ASSERT(s_API, "Renderer not initialized");

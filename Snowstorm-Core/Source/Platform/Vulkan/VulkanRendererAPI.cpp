@@ -443,6 +443,16 @@ namespace Snowstorm
 		return VulkanContext::Get().SupportsOpacityMicromap();
 	}
 
+	const std::vector<std::string>& VulkanRendererAPI::GetGpuNames() const
+	{
+		return VulkanContext::Get().GetGpuNames();
+	}
+
+	int VulkanRendererAPI::GetSelectedGpuIndex() const
+	{
+		return VulkanContext::Get().GetSelectedGpuIndex();
+	}
+
 	bool VulkanRendererAPI::IsFloat16Supported() const
 	{
 		return VulkanContext::Get().SupportsFloat16();

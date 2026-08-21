@@ -34,6 +34,7 @@ namespace Snowstorm
 		Ref<TLAS> m_TLAS; // created lazily on first RT-enabled build; scene-scoped
 		bool m_BuiltOnce = false;
 		bool m_WasRTActive = false;              // RT-active state last frame — detects the off->on edge to force a rebuild
+		bool m_LastOmmEnabled = true;            // render.omm last build — a toggle forces a rebuild (OMM vs any-hit)
 		uint32_t m_LastLoggedCount = UINT32_MAX; // de-dupe the instance-count log across per-frame rebuilds
 	};
 }

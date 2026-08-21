@@ -83,9 +83,15 @@ namespace Snowstorm
 			return;
 		}
 
-		// Rebuild when the scene changed OR RT just turned on (the scene's per-frame dirty flags were consumed
-		// on prior frames, so a plain dirty-check would miss the enable edge).
-		if (m_BuiltOnce && !justEnabled && !IsSceneDirtyThisFrame())
+		// Toggling render.omm swaps which BLAS each cutout instance uses (OMM vs any-hit); force a rebuild on
+		// the edge so the A/B / safety switch takes effect on a static scene.
+		const bool ommEnabled = CVars::OmmEnabled.Get();
+		const bool ommToggled = m_BuiltOnce && ommEnabled != m_LastOmmEnabled;
+		m_LastOmmEnabled = ommEnabled;
+
+		// Rebuild when the scene changed OR RT just turned on OR render.omm toggled (the scene's per-frame dirty
+		// flags were consumed on prior frames, so a plain dirty-check would miss those edges).
+		if (m_BuiltOnce && !justEnabled && !ommToggled && !IsSceneDirtyThisFrame())
 		{
 			return;
 		}
@@ -108,7 +114,7 @@ namespace Snowstorm
 		// A cutout (glTF MASK) instance uses an OMM-carrying BLAS on an OMM-capable device (the micromap resolves
 		// coverage during traversal, any-hit only on UNKNOWN edges); elsewhere it falls back to the
 		// FORCE_NO_OPAQUE any-hit path. kOmmSubdivisionLevel = 4^level microtriangles per triangle.
-		const bool ommDevice = Renderer::IsOpacityMicromapSupported();
+		const bool ommDevice = Renderer::IsOpacityMicromapSupported() && ommEnabled;
 		constexpr uint32_t kOmmSubdivisionLevel = 3;
 		for (auto view = reg.view<TransformComponent, MeshComponent>(); const entt::entity e : view)
 		{
@@ -129,8 +135,20 @@ namespace Snowstorm
 			const bool masked = c && c->AlphaMaskEnabled != 0;
 			const bool useOmm = masked && ommDevice;
 
-			const Ref<BLAS>& blas =
-			    useOmm ? mc.MeshInstance->GetOrBuildOmmBlas(kOmmSubdivisionLevel) : mc.MeshInstance->GetOrBuildBLAS();
+			// OMM path builds a GPU-baked micromap BLAS; it returns null while the bake compute pipeline is still
+			// compiling, so fall back to the plain BLAS + FORCE_NO_OPAQUE any-hit that frame (retried next build).
+			Ref<BLAS> blas;
+			bool ommBuilt = false;
+			if (useOmm)
+			{
+				blas = mc.MeshInstance->GetOrBuildOmmBlas(kOmmSubdivisionLevel, c->AlbedoTextureIndex, c->AlphaCutoff,
+				                                          c->BaseColor.a);
+				ommBuilt = blas != nullptr;
+			}
+			if (!ommBuilt)
+			{
+				blas = mc.MeshInstance->GetOrBuildBLAS();
+			}
 			if (!blas)
 			{
 				continue;
@@ -143,7 +161,7 @@ namespace Snowstorm
 			// Masked geometry must traverse non-opaque so the alpha test runs. With an OMM the micromap drives
 			// opacity (and FORCE_NO_OPAQUE would OVERRIDE it, forcing any-hit everywhere), so only the non-OMM
 			// fallback sets the instance flag; the OMM BLAS is already built non-opaque.
-			instances.back().ForceNonOpaque = masked && !useOmm;
+			instances.back().ForceNonOpaque = masked && !ommBuilt;
 
 			GeometryRecord rec{};
 			rec.VertexAddress = mc.MeshInstance->GetVertexBuffer()->GetGPUAddress();

@@ -147,6 +147,11 @@ namespace Snowstorm::CVars
 	// once at device creation (VulkanContext), which logs every candidate so the indices are discoverable.
 	extern CVar<std::string> GpuSelect;
 
+	// Use opacity micromaps for RT cutout geometry when the device supports them (VK_EXT_opacity_micromap):
+	// the hardware resolves coverage per-microtriangle so the any-hit alpha test runs only on UNKNOWN edges.
+	// Off = the inline any-hit test alone (FORCE_NO_OPAQUE). Read at TLAS build; an A/B knob + a safety switch.
+	extern CVar<bool> OmmEnabled;
+
 	// Linear exposure multiplier applied before tonemapping in DefaultLit. 1.0 = neutral; raise to
 	// brighten, lower to darken. Runtime-tweakable from the editor's Settings panel.
 	extern CVar<float> Exposure;

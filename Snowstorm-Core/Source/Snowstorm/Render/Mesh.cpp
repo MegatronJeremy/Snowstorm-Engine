@@ -41,19 +41,22 @@ namespace Snowstorm
 		return m_BLAS;
 	}
 
-	const Ref<BLAS>& Mesh::GetOrBuildOmmBlas(const uint32_t subdivisionLevel)
+	const Ref<BLAS>& Mesh::GetOrBuildOmmBlas(const uint32_t subdivisionLevel, const uint32_t albedoTextureIndex,
+	                                         const float alphaCutoff, const float baseColorAlpha)
 	{
 		if (!m_OmmBlas)
 		{
 			const uint32_t triangleCount = m_IndexCount / 3;
-			// B1: all-UNKNOWN_OPAQUE — each microtriangle's 2 bits = 0b11, so every state byte is 0xFF. The
-			// any-hit still runs on every microtriangle, so the image is identical; this only proves the OMM
-			// build + BLAS-attach path. B2 replaces this fill with a compute bake of real OPAQUE/TRANSPARENT/
-			// UNKNOWN states, at which point interior microtriangles skip the any-hit.
-			const std::vector<uint8_t> states(
-			    static_cast<size_t>(triangleCount) * Micromap::BytesPerTriangle(subdivisionLevel), 0xFF);
+			// GPU-bake the micromap states from the material's albedo alpha, then attach to a non-opaque BLAS.
+			// Null when the bake pipeline is still compiling: leave m_OmmBlas null (returned below) so the gather
+			// falls back to the any-hit path this frame and retries next.
 			const Ref<Micromap> micromap =
-			    Micromap::Create(triangleCount, subdivisionLevel, states.data(), states.size(), "Mesh OMM");
+			    Micromap::CreateBaked(m_VertexBuffer->GetGPUAddress(), m_IndexBuffer->GetGPUAddress(), triangleCount,
+			                          subdivisionLevel, albedoTextureIndex, alphaCutoff, baseColorAlpha, "Mesh OMM");
+			if (!micromap)
+			{
+				return m_OmmBlas; // still null; retried next call
+			}
 			m_OmmBlas = BLAS::Create(m_VertexBuffer, m_VertexCount, sizeof(Vertex), offsetof(Vertex, Position),
 			                         m_IndexBuffer, m_IndexCount, "Mesh OMM BLAS", micromap);
 		}

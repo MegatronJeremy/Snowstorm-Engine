@@ -3,6 +3,9 @@
 #include "Snowstorm/Render/CommandContext.hpp"
 #include "Snowstorm/Render/RenderEnums.hpp"
 
+#include <string>
+#include <vector>
+
 namespace Snowstorm
 {
 	class RendererAPI : public NonCopyable
@@ -67,6 +70,11 @@ namespace Snowstorm
 		// True when the device supports (and enabled) opacity micromaps (VK_EXT_opacity_micromap). Gates the OMM
 		// bake/attach path; false => the any-hit alpha test alone handles cutout geometry. Device capability.
 		virtual bool IsOpacityMicromapSupported() const = 0;
+
+		// Graphics+present-capable GPUs enumerated at init (candidate-index order = render.gpu index) + the
+		// chosen one. For the editor's GPU picker (selection applies on restart). Empty on a non-device backend.
+		virtual const std::vector<std::string>& GetGpuNames() const = 0;
+		virtual int GetSelectedGpuIndex() const = 0;
 
 		// True when the device supports (and enabled) fp16 shader math + 16-bit storage. Gates the neural conv's
 		// fp16 permutation (# fp16 inference); false => fp32 fallback. A device capability, hence on RendererAPI.

@@ -69,7 +69,9 @@ namespace Snowstorm::CVars
 
 	CVar<std::string> StartupScene{"startup.scene", "", "Path to a .world to load at startup (empty = the active project's StartScene); e.g. Projects/Sandbox/assets/scenes/Sponza.world", CVarFlags::ReadOnly};
 
-	CVar<std::string> GpuSelect{"render.gpu", "", "Select the physical GPU by case-insensitive name substring (e.g. \"9070\", \"NVIDIA\") or candidate index (\"0\",\"1\"); empty = auto (prefer a discrete GPU). Multi-GPU boxes only; the candidate list is logged at startup.", CVarFlags::ReadOnly};
+	CVar<std::string> GpuSelect{"render.gpu", "", "Select the physical GPU by case-insensitive name substring (e.g. \"9070\", \"NVIDIA\") or candidate index (\"0\",\"1\"); empty = auto (prefer a discrete GPU). Read once at device creation, so a change applies on the next launch. Persisted; the editor's GPU picker writes it.", CVarFlags::Persist};
+
+	CVar<bool> OmmEnabled{"render.omm", true, "Use opacity micromaps (VK_EXT_opacity_micromap) for RT cutout geometry when supported; off = the inline any-hit alpha test alone. Read at TLAS build (change forces a rebuild).", CVarFlags::Persist};
 
 	CVar<float> Exposure{"render.exposure", 1.0f, "Linear exposure multiplier applied before tonemapping (1.0 = neutral)", CVarFlags::Persist};
 

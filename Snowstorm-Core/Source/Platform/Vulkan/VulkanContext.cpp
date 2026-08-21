@@ -302,7 +302,8 @@ namespace Snowstorm
 		size_t chosen = candidates.size(); // sentinel: unresolved
 		if (const std::string& sel = CVars::GpuSelect.Get(); !sel.empty())
 		{
-			if (std::all_of(sel.begin(), sel.end(), [](unsigned char c) { return c >= '0' && c <= '9'; }))
+			if (std::all_of(sel.begin(), sel.end(), [](unsigned char c)
+			                { return c >= '0' && c <= '9'; }))
 			{
 				if (const size_t idx = static_cast<size_t>(std::stoul(sel)); idx < candidates.size())
 				{
@@ -367,6 +368,14 @@ namespace Snowstorm
 
 		SS_CORE_INFO("Selected GPU [{}]: {} (of {} candidate(s)).", chosen, candidates[chosen].Props.deviceName,
 		             candidates.size());
+
+		// Record the candidate names + selection for the editor's GPU picker (index order matches render.gpu).
+		m_GpuNames.reserve(candidates.size());
+		for (const GpuCandidate& c : candidates)
+		{
+			m_GpuNames.emplace_back(c.Props.deviceName);
+		}
+		m_SelectedGpuIndex = static_cast<int>(chosen);
 
 		// 4. Logical Device
 		float queuePriority = 1.0f;

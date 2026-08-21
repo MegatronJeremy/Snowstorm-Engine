@@ -1,7 +1,9 @@
 #include "EditorMenuSystem.hpp"
 
 #include "Snowstorm/Core/Application.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Debug/Instrumentor.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
 
 #include "System/ConsoleSystem.hpp"
 #include "System/CVarPanelSystem.hpp"
@@ -269,6 +271,29 @@ namespace Snowstorm
 					ImGui::TextDisabled("capturing...");
 				}
 
+				// GPU picker (multi-GPU boxes). Selecting a device writes the persisted render.gpu CVar; it applies
+				// on the NEXT launch (a live switch would mean recreating the whole Vulkan device + every resource).
+				ImGui::Separator();
+				if (ImGui::BeginMenu("Select GPU"))
+				{
+					const std::vector<std::string>& gpus = Renderer::GetGpuNames();
+					const int selectedGpu = Renderer::GetSelectedGpuIndex();
+					if (gpus.empty())
+					{
+						ImGui::TextDisabled("no GPU info");
+					}
+					for (int i = 0; i < static_cast<int>(gpus.size()); ++i)
+					{
+						if (ImGui::MenuItem(gpus[i].c_str(), nullptr, i == selectedGpu))
+						{
+							CVars::GpuSelect.Set(gpus[i]); // full name, substring-matched at startup
+							notify.Push("GPU set to '" + gpus[i] + "' - restart to apply.", EditorToastType::Info);
+						}
+					}
+					ImGui::Separator();
+					ImGui::TextDisabled("applies on restart");
+					ImGui::EndMenu();
+				}
 				ImGui::EndMenu();
 			}
 

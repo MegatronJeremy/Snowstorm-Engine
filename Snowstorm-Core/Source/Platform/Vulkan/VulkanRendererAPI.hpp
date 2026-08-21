@@ -36,6 +36,8 @@ namespace Snowstorm
 
 		bool IsRayTracingSupported() const override;
 		bool IsOpacityMicromapSupported() const override;
+		const std::vector<std::string>& GetGpuNames() const override;
+		int GetSelectedGpuIndex() const override;
 		bool IsFloat16Supported() const override;
 		uint32_t GetMaxSampleCount() const override;
 

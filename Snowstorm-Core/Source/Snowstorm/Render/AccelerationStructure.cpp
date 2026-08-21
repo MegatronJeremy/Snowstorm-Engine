@@ -4,6 +4,7 @@
 
 #include "Platform/Vulkan/VulkanBlas.hpp"
 #include "Platform/Vulkan/VulkanMicromap.hpp"
+#include "Platform/Vulkan/VulkanOmmBaker.hpp"
 #include "Platform/Vulkan/VulkanTlas.hpp"
 
 namespace Snowstorm
@@ -21,6 +22,30 @@ namespace Snowstorm
 		case RendererAPI::API::DX12:
 		default:
 			SS_CORE_ASSERT(false, "Micromap::Create: only the Vulkan backend supports opacity micromaps");
+			return nullptr;
+		}
+	}
+
+	Ref<Micromap> Micromap::CreateBaked(const uint64_t vertexAddress, const uint64_t indexAddress,
+	                                    const uint32_t triangleCount, const uint32_t subdivisionLevel,
+	                                    const uint32_t albedoTextureIndex, const float alphaCutoff,
+	                                    const float baseColorAlpha, const std::string& debugName)
+	{
+		switch (RendererAPI::GetAPI())
+		{
+		case RendererAPI::API::Vulkan:
+			if (!VulkanOmmBaker::Get().IsReady())
+			{
+				return nullptr; // bake compute pipeline still compiling; caller retries next frame
+			}
+			return CreateRef<VulkanMicromap>(vertexAddress, indexAddress, triangleCount, subdivisionLevel,
+			                                 albedoTextureIndex, alphaCutoff, baseColorAlpha, debugName);
+
+		case RendererAPI::API::None:
+		case RendererAPI::API::OpenGL:
+		case RendererAPI::API::DX12:
+		default:
+			SS_CORE_ASSERT(false, "Micromap::CreateBaked: only the Vulkan backend supports opacity micromaps");
 			return nullptr;
 		}
 	}
