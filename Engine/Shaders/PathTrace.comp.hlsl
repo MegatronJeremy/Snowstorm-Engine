@@ -222,6 +222,13 @@ struct Hit
 // Closest-hit trace with cutout alpha (masked instances are FORCE_NON_OPAQUE -> surfaced as candidates).
 bool TraceClosest(float3 origin, float3 dir, float tMax, uint64_t tableAddr, out uint instId, out uint prim, out float2 bary, out float t)
 {
+	// Initialize the out params so the early `return false` (miss) path leaves them defined (callers gate on the
+	// return, but this silences the DXC -Wparameter-usage warning and is correct either way).
+	instId = 0u;
+	prim = 0u;
+	bary = float2(0.0, 0.0);
+	t = 0.0;
+
 	RayDesc ray;
 	ray.Origin = origin;
 	ray.Direction = dir;
