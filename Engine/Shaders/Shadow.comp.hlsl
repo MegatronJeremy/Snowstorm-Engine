@@ -24,6 +24,7 @@
 Texture2D<float4> GBufferNormal : register(t0, space0); // .xy = oct GEOMETRIC normal
 Texture2D<float> GBufferDepth : register(t4, space0);   // fp32 NDC depth (D32 attachment)
 [[vk::image_format("rgba16f")]] RWTexture2D<float4> ShadowOut : register(u1, space0); // aggregate shadow ratio in .r
+SamplerState LinearSampler : register(s2, space0); // wrapping sampler for the cutout alpha lookup (any-hit test)
 
 cbuffer ShadowCB : register(b3, space0)
 {
@@ -32,20 +33,20 @@ cbuffer ShadowCB : register(b3, space0)
 	float NormalBias;     // world-space normal offset for the ray origin (acne/peter-pan guard)
 	uint FrameCounter;    // per-frame sample rotation (the temporal pass converges the 1 ray/pixel)
 
-	uint DirCount;   // active directional lights (<= SHADOW_MAX_DIR)
-	uint PointCount; // active point lights (<= SHADOW_MAX_POINT)
-	uint SpotCount;  // active spot lights (<= SHADOW_MAX_SPOT)
-	uint _Pad0;
+	uint DirCount;           // active directional lights (<= SHADOW_MAX_DIR)
+	uint PointCount;         // active point lights (<= SHADOW_MAX_POINT)
+	uint SpotCount;          // active spot lights (<= SHADOW_MAX_SPOT)
+	uint ReflGeoTableAddrLo; // device address (lo) of the per-instance geometry table, for the cutout alpha test
 
 	uint DirCastMask;   // bit i set => dir light i casts a shadow (else vis=1, no ray)
 	uint PointCastMask; // bit i => point light i casts
 	uint SpotCastMask;  // bit i => spot light i casts
 	uint SoftEnabled;   // 1 => jitter the chosen ray within the light's area (soft penumbra); 0 => hard ray
 
-	float SunTanAngular; // tan(sun angular half-size) -> directional cone radius for the soft jitter
-	float SourceRadius;  // local-light source radius (world units); spot/point cone radius = SourceRadius / dist
-	uint RayCount;       // stochastic samples/pixel (render.shadows.rays): more = less variance, ~linear cost
-	float _Pad3;
+	float SunTanAngular;     // tan(sun angular half-size) -> directional cone radius for the soft jitter
+	float SourceRadius;      // local-light source radius (world units); spot/point cone radius = SourceRadius / dist
+	uint RayCount;           // stochastic samples/pixel (render.shadows.rays): more = less variance, ~linear cost
+	uint ReflGeoTableAddrHi; // device address (hi) of the per-instance geometry table
 
 	// Slim tracer + importance params (16-byte rows). Option B: each light carries its full RGB radiance
 	// (color*intensity) so the pass can accumulate COLORED shadowed irradiance; the importance weight is the
@@ -62,9 +63,20 @@ cbuffer ShadowCB : register(b3, space0)
 float Luma3(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 
 // ---- Set 3: engine bindless pool (gap-filled by the compute pipeline builder) ----
+Texture2D Textures[] : register(t0, space3); // bindless albedo (for the cutout any-hit alpha test)
 RaytracingAccelerationStructure SceneTLAS : register(t2, space3);
 
+// Record + any-hit cutout alpha test, shared with the AO/GI/reflection passes + the inline shadow path.
+// Textures[] above satisfies RTGeometry's contract, so this include must follow it.
+#include "Include/RTGeometry.hlsli"
 #include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky
+
+// Reassemble the geometry-table device address from the CB lo/hi halves (0 = table not published this frame ->
+// the any-hit test treats every hit as solid, matching AO's fallback).
+uint64_t GeoTableAddress()
+{
+	return (uint64_t(ReflGeoTableAddrHi) << 32) | uint64_t(ReflGeoTableAddrLo);
+}
 
 // Interleaved-gradient noise in [0,1), FIXED per pixel — its power spectrum is blue-ish in screen space
 // (Jimenez), so neighbouring pixels get well-separated values that the spatial (à-trous) denoiser averages
@@ -234,9 +246,22 @@ float TraceShadow(uint2 px, uint frame, uint dimBase, float3 positionWS, float3 
 	ray.TMin = 0.0;
 	ray.TMax = tMax;
 
-	RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_CULL_NON_OPAQUE> q;
+	// ACCEPT_FIRST_HIT: a shadow ray only needs "is anything in the way". Opaque geometry auto-commits; masked
+	// (glTF MASK / FORCE_NON_OPAQUE) instances surface as candidates and are ALPHA-TESTED so a cutout texel
+	// (foliage leaf gap, chain link) lets the ray through instead of casting a solid shadow. Previously this used
+	// RAY_FLAG_CULL_NON_OPAQUE + a single Proceed(), which discarded ALL cutout geometry -> foliage/thin cutout
+	// objects cast no shadow at all (the accuracy bug). Now matches the inline path / AO / GI.
+	const uint64_t tableAddr = GeoTableAddress();
+	RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
 	q.TraceRayInline(SceneTLAS, RAY_FLAG_NONE, 0xFF, ray);
-	q.Proceed();
+	while (q.Proceed())
+	{
+		if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE &&
+		    RTCommitCandidate(tableAddr, q.CandidateInstanceID(), q.CandidatePrimitiveIndex(), q.CandidateTriangleBarycentrics(), LinearSampler))
+		{
+			q.CommitNonOpaqueTriangleHit();
+		}
+	}
 	if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
 	{
 		outHitT = q.CommittedRayT(); // nearest occluder distance -> penumbra size guide

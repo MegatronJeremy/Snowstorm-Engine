@@ -29,7 +29,7 @@ namespace Snowstorm
 			uint32_t DirCount = 0;
 			uint32_t PointCount = 0;
 			uint32_t SpotCount = 0;
-			uint32_t _Pad0 = 0;
+			uint32_t ReflGeoTableAddrLo = 0; // per-instance geometry table device address (lo) for the cutout alpha test
 
 			uint32_t DirCastMask = 0;
 			uint32_t PointCastMask = 0;
@@ -39,23 +39,24 @@ namespace Snowstorm
 			float SunTanAngular = 0.0f;
 			float SourceRadius = 0.0f;
 			uint32_t RayCount = 1;
-			float _Pad3 = 0.0f;
+			uint32_t ReflGeoTableAddrHi = 0; // geometry table device address (hi)
 
 			// Option B (colored diffuse): the pass now accumulates COLORED shadowed irradiance, so each light
 			// carries its full RGB radiance (color*intensity), not just a luma weight. Importance weight = luma
 			// of that color, computed in the shader.
-			glm::vec4 DirData[MAX_DIRECTIONAL_LIGHTS]{};       // xyz = dir TO light, w unused
-			glm::vec4 DirColor[MAX_DIRECTIONAL_LIGHTS]{};      // xyz = color*intensity (radiance, no attenuation)
-			glm::vec4 PointPosRange[MAX_POINT_LIGHTS]{};       // xyz = pos, w = range
-			glm::vec4 PointColor[MAX_POINT_LIGHTS]{};          // xyz = color*intensity
-			glm::vec4 SpotPosRange[MAX_SPOT_LIGHTS]{};         // xyz = pos, w = range
-			glm::vec4 SpotDirCos[MAX_SPOT_LIGHTS]{};           // xyz = dir, w = cos(outer)
-			glm::vec4 SpotColorInner[MAX_SPOT_LIGHTS]{};       // xyz = color*intensity, w = cos(inner)
+			glm::vec4 DirData[MAX_DIRECTIONAL_LIGHTS]{};  // xyz = dir TO light, w unused
+			glm::vec4 DirColor[MAX_DIRECTIONAL_LIGHTS]{}; // xyz = color*intensity (radiance, no attenuation)
+			glm::vec4 PointPosRange[MAX_POINT_LIGHTS]{};  // xyz = pos, w = range
+			glm::vec4 PointColor[MAX_POINT_LIGHTS]{};     // xyz = color*intensity
+			glm::vec4 SpotPosRange[MAX_SPOT_LIGHTS]{};    // xyz = pos, w = range
+			glm::vec4 SpotDirCos[MAX_SPOT_LIGHTS]{};      // xyz = dir, w = cos(outer)
+			glm::vec4 SpotColorInner[MAX_SPOT_LIGHTS]{};  // xyz = color*intensity, w = cos(inner)
 		};
 
 		// Binding indices in Shadow.comp.hlsl set 0 (same layout as AO.comp.hlsl).
 		constexpr uint32_t kGBufferBinding = 0;
 		constexpr uint32_t kOutputBinding = 1;
+		constexpr uint32_t kSamplerBinding = 2; // wrapping sampler for the cutout alpha lookup
 		constexpr uint32_t kParamsBinding = 3;
 		constexpr uint32_t kDepthBinding = 4;
 	}
@@ -81,6 +82,19 @@ namespace Snowstorm
 		m_Pipeline = Pipeline::Create(p);
 		SS_CORE_ASSERT(m_Pipeline, "Failed to create RTShadow pipeline");
 
+		// Wrapping linear sampler for the bindless albedo ALPHA lookup in the cutout any-hit test (foliage
+		// textures tile, so Repeat). Mirrors AOPass; only used by RTGeometry's alpha test.
+		SamplerDesc s{};
+		s.MinFilter = Filter::Linear;
+		s.MagFilter = Filter::Linear;
+		s.MipmapMode = SamplerMipmapMode::Linear;
+		s.AddressU = SamplerAddressMode::Repeat;
+		s.AddressV = SamplerAddressMode::Repeat;
+		s.AddressW = SamplerAddressMode::Repeat;
+		s.EnableAnisotropy = false;
+		s.DebugName = "RTShadowSampler";
+		m_Sampler = Sampler::Create(s);
+
 		const uint32_t frames = Renderer::GetFramesInFlight();
 		m_ParamBuffers.resize(frames);
 		m_Sets.resize(frames);
@@ -93,8 +107,9 @@ namespace Snowstorm
 	void RTShadowPass::Dispatch(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const glm::mat4& invViewProj,
 	                            const LightDataBlock& lights, const float normalBias, const uint32_t frameCounter,
 	                            const bool soft, const float sunTanAngular, const float sourceRadius,
-	                            const uint32_t rayCount, const Ref<TextureView>& gbuffer, const Ref<TextureView>& depth,
-	                            const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH)
+	                            const uint32_t rayCount, const uint64_t tableAddr, const Ref<TextureView>& gbuffer,
+	                            const Ref<TextureView>& depth, const Ref<TextureView>& output, const uint32_t outW,
+	                            const uint32_t outH)
 	{
 		if (!ctx || !gbuffer || !depth || !output || outW == 0 || outH == 0)
 		{
@@ -116,6 +131,8 @@ namespace Snowstorm
 		cb.SunTanAngular = sunTanAngular;
 		cb.SourceRadius = sourceRadius;
 		cb.RayCount = rayCount;
+		cb.ReflGeoTableAddrLo = static_cast<uint32_t>(tableAddr & 0xFFFFFFFFull); // cutout any-hit alpha test
+		cb.ReflGeoTableAddrHi = static_cast<uint32_t>(tableAddr >> 32);
 
 		// Directional: every directional light is a shadow-caster in the RT path (matches DefaultLit, where the
 		// sun casts). dir TO light = -Direction. Weight = luma(color) * intensity, no attenuation.
@@ -170,6 +187,7 @@ namespace Snowstorm
 		m_Sets[frameIndex]->SetTexture(kGBufferBinding, gbuffer);
 		m_Sets[frameIndex]->SetTexture(kDepthBinding, depth);
 		m_Sets[frameIndex]->SetTexture(kOutputBinding, output);
+		m_Sets[frameIndex]->SetSampler(kSamplerBinding, m_Sampler); // cutout alpha lookup
 		const BufferBinding cbBB{.Buffer = m_ParamBuffers[frameIndex], .Offset = 0, .Range = sizeof(ShadowCB)};
 		m_Sets[frameIndex]->SetBuffer(kParamsBinding, cbBB);
 		m_Sets[frameIndex]->Commit();

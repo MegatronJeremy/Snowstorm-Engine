@@ -891,16 +891,20 @@ namespace Snowstorm
 				const float sunTanAngular = glm::tan(glm::radians(CVars::ShadowSunAngleDeg.Get()));
 				const float sourceRadius = CVars::ShadowSourceRadius.Get();
 				const auto rayCount = static_cast<uint32_t>(CVars::ClampedShadowRayCount());
+				// Geometry-table device address for the cutout any-hit alpha test (foliage/thin cutout occluders).
+				// 0 = table not published this frame -> the traversal treats hits as solid (AO's fallback). The table
+				// is built whenever RT shadows are active (TlasBuildSystem), so this is normally non-zero.
+				const uint64_t tableAddr = fc.Renderer.GetReflectionGeometryAddress();
 
 				fc.Graph.AddPass({.Name = "RTShadow" + v.Suffix,
 				                  .IsCompute = true,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Writes = {{shadowView->GetTexture(), RenderGraph::AccessState::Storage}},
-				                  .Execute = [this, &fc, invViewProj, lights, normalBias, frameCounter, soft, sunTanAngular, sourceRadius, rayCount, gbufView, depthView, shadowView, shW, shH](CommandContext& c)
+				                  .Execute = [this, &fc, invViewProj, lights, normalBias, frameCounter, soft, sunTanAngular, sourceRadius, rayCount, tableAddr, gbufView, depthView, shadowView, shW, shH](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, lights, normalBias, frameCounter,
-					                                  soft, sunTanAngular, sourceRadius, rayCount, gbufView, depthView, shadowView, shW, shH);
+					                                  soft, sunTanAngular, sourceRadius, rayCount, tableAddr, gbufView, depthView, shadowView, shW, shH);
 				                  }});
 
 				v.ShadowView = shadowView; // the raw estimate; the temporal/denoise stages republish (step 2b)

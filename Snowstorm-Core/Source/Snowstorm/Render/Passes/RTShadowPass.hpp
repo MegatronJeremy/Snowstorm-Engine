@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Snowstorm/Render/Pipeline.hpp"
+#include "Snowstorm/Render/Sampler.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
 #include <glm/glm.hpp>
@@ -32,13 +33,15 @@ namespace Snowstorm
 		// converges the 1 ray/pixel). Lazily builds the pipeline (async shader); no-op until ready.
 		void Dispatch(const Ref<CommandContext>& ctx, uint32_t frameIndex, const glm::mat4& invViewProj,
 		              const LightDataBlock& lights, float normalBias, uint32_t frameCounter, bool soft,
-		              float sunTanAngular, float sourceRadius, uint32_t rayCount, const Ref<TextureView>& gbuffer,
-		              const Ref<TextureView>& depth, const Ref<TextureView>& output, uint32_t outW, uint32_t outH);
+		              float sunTanAngular, float sourceRadius, uint32_t rayCount, uint64_t tableAddr,
+		              const Ref<TextureView>& gbuffer, const Ref<TextureView>& depth, const Ref<TextureView>& output,
+		              uint32_t outW, uint32_t outH);
 
 	private:
 		void EnsureResources();
 
 		Ref<Pipeline> m_Pipeline;
+		Ref<Sampler> m_Sampler;                  // wrapping sampler for the cutout alpha lookup (set 0, binding 2)
 		std::vector<Ref<Buffer>> m_ParamBuffers; // one per frame-in-flight
 		std::vector<Ref<DescriptorSet>> m_Sets;  // one per frame-in-flight
 	};
