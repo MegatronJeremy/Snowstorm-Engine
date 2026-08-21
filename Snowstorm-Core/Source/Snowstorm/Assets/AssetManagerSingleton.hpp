@@ -64,6 +64,12 @@ namespace Snowstorm
 		[[nodiscard]] uint32_t PendingLoadCount() const;
 		[[nodiscard]] uint32_t PendingLoadTotal() const { return m_PendingTotal; }
 
+		// True when a bindless texture slot holds its REAL image, not the async magenta placeholder. Slot 0 =
+		// untextured (no dependency) counts as resident. A one-shot GPU consumer that samples a slot at build
+		// time (the OMM bake) MUST gate on this: the material bakes the slot index the instant it resolves, but
+		// the real pixels stream in later, so a bake before residency samples the opaque placeholder.
+		[[nodiscard]] bool IsTextureSlotResident(uint32_t slot) const;
+
 		Ref<Shader> GetShader(AssetHandle handle);
 
 		// Resolve a texture handle to a sampled view. `srgb` selects the color space the GPU view
@@ -180,5 +186,10 @@ namespace Snowstorm
 		std::unordered_map<uint64_t, Ref<Texture>> m_ResidentTextures;
 
 		Ref<TextureView> EnsurePlaceholderView(const std::string& debugName);
+
+		// Bindless slots still showing the magenta placeholder (real pixels not uploaded yet). A slot is added
+		// when its placeholder view is created and removed when ProcessCompletedLoads repoints it to the real
+		// image. Main-thread-only (like the caches above), so no lock. Backs IsTextureSlotResident.
+		std::unordered_set<uint32_t> m_PlaceholderSlots;
 	};
 }

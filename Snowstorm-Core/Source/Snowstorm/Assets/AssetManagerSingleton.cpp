@@ -609,6 +609,7 @@ namespace Snowstorm
 			realView->SetGlobalBindlessIndex(done.Slot);
 
 			m_ResidentTextures[done.Key] = real;
+			m_PlaceholderSlots.erase(done.Slot); // real pixels are in the slot now -> resident (a failed load kept it)
 			// Swap the cache entry from the placeholder view to the real view so a later GetTextureView(Async)
 			// returns the real one. Both share slot `done.Slot` on the GPU now.
 			(done.Srgb ? m_TextureViewCache : m_TextureViewCacheLinear)[done.Handle.Value()] = realView;
@@ -638,6 +639,13 @@ namespace Snowstorm
 		// Both meshes and textures still loading OR waiting for GPU finalize. (Textures re-queued past the
 		// per-frame finalize budget remain in m_InFlightTextures until actually finalized.)
 		return static_cast<uint32_t>(m_InFlightMeshes.size() + m_InFlightTextures.size());
+	}
+
+	bool AssetManagerSingleton::IsTextureSlotResident(const uint32_t slot) const
+	{
+		// Slot 0 = untextured (no image dependency). Every other slot is real unless it is still in the
+		// placeholder set (async pixels not yet uploaded).
+		return slot == 0 || !m_PlaceholderSlots.contains(slot);
 	}
 
 	Ref<Shader> AssetManagerSingleton::GetShader(const AssetHandle handle)
@@ -752,6 +760,7 @@ namespace Snowstorm
 		const std::string debugName = meta->Path.filename().string();
 		const uint64_t sourceTime = GetFileWriteTimeU64(path);
 		const uint32_t slot = placeholder->GetGlobalBindlessIndex();
+		m_PlaceholderSlots.insert(slot); // slot now shows the placeholder; cleared when the real image is uploaded
 
 		(void)jobs.Submit([this, key, handle, srgb, slot, path, sourceTime, debugName]()
 		                  {

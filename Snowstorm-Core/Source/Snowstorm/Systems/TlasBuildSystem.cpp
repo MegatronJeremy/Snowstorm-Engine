@@ -1,5 +1,6 @@
 #include "TlasBuildSystem.hpp"
 
+#include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Components/MaterialComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
@@ -89,9 +90,20 @@ namespace Snowstorm
 		const bool ommToggled = m_BuiltOnce && ommEnabled != m_LastOmmEnabled;
 		m_LastOmmEnabled = ommEnabled;
 
-		// Rebuild when the scene changed OR RT just turned on OR render.omm toggled (the scene's per-frame dirty
-		// flags were consumed on prior frames, so a plain dirty-check would miss those edges).
-		if (m_BuiltOnce && !justEnabled && !ommToggled && !IsSceneDirtyThisFrame())
+		// While textures are still streaming, keep rebuilding: a cutout instance whose albedo isn't resident yet
+		// uses the any-hit fallback BLAS this frame (correct but unoptimized) and its OMM must bake once the real
+		// pixels arrive. Nothing else marks the scene dirty on a texture-only completion, so gate on the async
+		// load count. m_PrevPendingLoads carries one extra frame past the drain so the just-resident albedo
+		// triggers the final rebuild that bakes its OMM.
+		auto& assets = SingletonView<AssetManagerSingleton>();
+		const uint32_t pendingLoads = assets.PendingLoadCount();
+		const bool streaming = pendingLoads > 0 || m_PrevPendingLoads > 0;
+		m_PrevPendingLoads = pendingLoads;
+
+		// Rebuild when the scene changed OR RT just turned on OR render.omm toggled OR assets are still streaming
+		// (the scene's per-frame dirty flags were consumed on prior frames, so a plain dirty-check would miss
+		// those edges).
+		if (m_BuiltOnce && !justEnabled && !ommToggled && !streaming && !IsSceneDirtyThisFrame())
 		{
 			return;
 		}
@@ -116,6 +128,7 @@ namespace Snowstorm
 		// FORCE_NO_OPAQUE any-hit path. kOmmSubdivisionLevel = 4^level microtriangles per triangle.
 		const bool ommDevice = Renderer::IsOpacityMicromapSupported() && ommEnabled;
 		constexpr uint32_t kOmmSubdivisionLevel = 3;
+		uint32_t ommDeferred = 0; // cutout instances on the any-hit fallback this frame because their albedo isn't resident
 		for (auto view = reg.view<TransformComponent, MeshComponent>(); const entt::entity e : view)
 		{
 			const auto& mc = reg.Read<MeshComponent>(e);
@@ -133,7 +146,16 @@ namespace Snowstorm
 				c = &matc->MaterialInstance->GetConstants();
 			}
 			const bool masked = c && c->AlphaMaskEnabled != 0;
-			const bool useOmm = masked && ommDevice;
+			// The OMM bakes the albedo alpha ONCE at BLAS build and caches the result. If the albedo texture isn't
+			// resident yet (its slot still holds the async magenta placeholder, alpha = 1), that bake classifies
+			// every microtriangle OPAQUE -> solid cutouts, cached forever. Defer to the any-hit fallback until the
+			// real pixels land; the streaming rebuild above re-enters here and bakes the OMM once resident.
+			const bool albedoReady = !masked || assets.IsTextureSlotResident(c->AlbedoTextureIndex);
+			const bool useOmm = masked && ommDevice && albedoReady;
+			if (masked && ommDevice && !albedoReady)
+			{
+				++ommDeferred;
+			}
 
 			// OMM path builds a GPU-baked micromap BLAS; it returns null while the bake compute pipeline is still
 			// compiling, so fall back to the plain BLAS + FORCE_NO_OPAQUE any-hit that frame (retried next build).
@@ -251,6 +273,18 @@ namespace Snowstorm
 		{
 			SS_CORE_INFO("TLAS rebuilt: {} instance(s).", count);
 			m_LastLoggedCount = count;
+		}
+
+		// Cutouts whose albedo hasn't streamed in bake no OMM this frame and run on the any-hit fallback (correct,
+		// just unoptimized); they re-bake once resident. Log the count only when it changes (settles to 0 as
+		// textures land) so a slow load doesn't spam.
+		if (ommDeferred != m_LastOmmDeferredLogged)
+		{
+			if (ommDeferred > 0)
+			{
+				SS_CORE_INFO("OMM bake deferred for {} cutout instance(s) awaiting albedo residency.", ommDeferred);
+			}
+			m_LastOmmDeferredLogged = ommDeferred;
 		}
 	}
 }
