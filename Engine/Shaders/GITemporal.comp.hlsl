@@ -38,6 +38,11 @@ cbuffer GITemporalCB : register(b6, space0)
 	float Near;         // camera near/far to linearize the packed NDC depths for the disocclusion test
 	float Far;
 	float DepthRejectScale; // relative view-space threshold (0 = OFF); reuses the TAA #127 value
+
+	float NeighborhoodClamp; // 1 = clip reprojected history to the current 3x3 range; 0 = off (HDR stochastic shadows)
+	float _Pad0;
+	float _Pad1;
+	float _Pad2;
 };
 
 static const float3 kLumaWeights = float3(0.2126, 0.7152, 0.0722);
@@ -172,7 +177,10 @@ void main(uint3 id : SV_DispatchThreadID)
 	const float gamma = lerp(1.0, 8.0, staticness);
 	const float3 boxMin = mean - gamma * sigma;
 	const float3 boxMax = mean + gamma * sigma;
-	const float3 clampedHistory = ClipToAABB(historyGI, mean, boxMin, boxMax);
+	// Clip stale history into the current-frame neighborhood (kills moving-edge ghosts on GI/reflections). OFF for
+	// the HDR stochastic shadow signal: its per-frame estimate is bimodal (0 vs a rare bright RIS spike), so the
+	// 3x3 box is low/narrow at a multi-light overlap and would clip the accumulating history dark -> a black seam.
+	const float3 clampedHistory = (NeighborhoodClamp != 0.0) ? ClipToAABB(historyGI, mean, boxMin, boxMax) : historyGI;
 
 	// Depth-disocclusion rejection (#127): if the current surface's linear depth differs from the reprojected
 	// history's beyond a relative threshold, the history is a DIFFERENT surface -> confidence -> 0 so the

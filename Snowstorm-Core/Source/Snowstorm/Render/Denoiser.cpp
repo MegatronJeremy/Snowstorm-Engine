@@ -41,6 +41,7 @@ namespace Snowstorm
 		const float depthReject = CVars::TaaDepthReject.Get(); // share the TAA disocclusion threshold
 		const float blend = cfg.TemporalBlend;
 		const float maxBlend = cfg.TemporalMaxBlend;
+		const bool neighborhoodClamp = cfg.NeighborhoodClamp; // off for the HDR stochastic shadow signal
 
 		fc.Graph.AddPass({.Name = std::string(cfg.NamePrefix) + "Temporal" + suffix,
 		                  .IsCompute = true,
@@ -52,11 +53,11 @@ namespace Snowstorm
 		                            {prevMomView->GetTexture(), RenderGraph::AccessState::Sampled}},
 		                  .Writes = {{curHistView->GetTexture(), RenderGraph::AccessState::Storage},
 		                             {curMomView->GetTexture(), RenderGraph::AccessState::Storage}},
-		                  .Execute = [this, &fc, raw, gbuffer, depth, velocity, prevHistView, curHistView, prevMomView, curMomView, w, h, historyValid, blend, maxBlend, nearPlane, farPlane, depthReject](CommandContext& c)
+		                  .Execute = [this, &fc, raw, gbuffer, depth, velocity, prevHistView, curHistView, prevMomView, curMomView, w, h, historyValid, blend, maxBlend, nearPlane, farPlane, depthReject, neighborhoodClamp](CommandContext& c)
 		                  {
 			                  m_Temporal.Dispatch(fc.Ctx, fc.FrameIndex, raw, gbuffer, depth, velocity, prevHistView,
 			                                      prevMomView, curMomView, curHistView, w, h, historyValid,
-			                                      blend, maxBlend, nearPlane, farPlane, depthReject);
+			                                      blend, maxBlend, nearPlane, farPlane, depthReject, neighborhoodClamp);
 		                  }});
 
 		return curHistView; // the accumulated buffer is now the live signal

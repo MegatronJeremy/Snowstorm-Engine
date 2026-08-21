@@ -2,6 +2,7 @@
 
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Lighting/LightingUniforms.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/CommandContext.hpp"
@@ -40,6 +41,11 @@ namespace Snowstorm
 			float SourceRadius = 0.0f;
 			uint32_t RayCount = 1;
 			uint32_t ReflGeoTableAddrHi = 0; // geometry table device address (hi)
+
+			uint32_t UseLogWeight = 1; // log(1+luma) perceptual importance weight; 0 = linear luma
+			uint32_t _Pad4 = 0;
+			uint32_t _Pad5 = 0;
+			uint32_t _Pad6 = 0;
 
 			// Option B (colored diffuse): the pass now accumulates COLORED shadowed irradiance, so each light
 			// carries its full RGB radiance (color*intensity), not just a luma weight. Importance weight = luma
@@ -133,6 +139,7 @@ namespace Snowstorm
 		cb.RayCount = rayCount;
 		cb.ReflGeoTableAddrLo = static_cast<uint32_t>(tableAddr & 0xFFFFFFFFull); // cutout any-hit alpha test
 		cb.ReflGeoTableAddrHi = static_cast<uint32_t>(tableAddr >> 32);
+		cb.UseLogWeight = CVars::ShadowImportanceLog.Get() ? 1u : 0u; // perceptual light-importance weight (MegaLights)
 
 		// Directional: every directional light is a shadow-caster in the RT path (matches DefaultLit, where the
 		// sun casts). dir TO light = -Direction. Weight = luma(color) * intensity, no attenuation.

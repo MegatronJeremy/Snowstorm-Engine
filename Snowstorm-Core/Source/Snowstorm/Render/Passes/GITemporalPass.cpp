@@ -27,6 +27,11 @@ namespace Snowstorm
 			float Near = 0.1f;
 			float Far = 500.0f;
 			float DepthRejectScale = 0.02f;
+
+			float NeighborhoodClamp = 1.0f; // 1 = clip history to the current 3x3 range; 0 = off (HDR stochastic signals)
+			float _Pad0 = 0.0f;
+			float _Pad1 = 0.0f;
+			float _Pad2 = 0.0f;
 		};
 
 		// Binding indices in GITemporal.comp.hlsl set 0.
@@ -90,7 +95,8 @@ namespace Snowstorm
 	                              const Ref<TextureView>& momentsPrev, const Ref<TextureView>& momentsOut,
 	                              const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH,
 	                              const bool historyValid, const float blend, const float maxBlend,
-	                              const float nearPlane, const float farPlane, const float depthReject)
+	                              const float nearPlane, const float farPlane, const float depthReject,
+	                              const bool neighborhoodClamp)
 	{
 		if (!ctx || !current || !gbuffer || !depth || !velocity || !historyPrev || !momentsPrev || !momentsOut || !output || outW == 0 || outH == 0)
 		{
@@ -111,6 +117,7 @@ namespace Snowstorm
 		cb.Near = nearPlane;
 		cb.Far = farPlane;
 		cb.DepthRejectScale = depthReject;
+		cb.NeighborhoodClamp = neighborhoodClamp ? 1.0f : 0.0f;
 		m_ParamBuffers[frameIndex]->SetData(&cb, sizeof(GITemporalCB), 0);
 
 		const auto& layouts = m_Pipeline->GetSetLayouts();

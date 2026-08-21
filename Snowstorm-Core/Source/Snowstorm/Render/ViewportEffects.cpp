@@ -948,6 +948,9 @@ namespace Snowstorm
 				cfg.TemporalActive = CVars::ShadowTemporalActive();
 				cfg.TemporalBlend = CVars::ShadowTemporalBlend.Get();
 				cfg.TemporalMaxBlend = CVars::ShadowTemporalMaxBlend.Get();
+				// The neighborhood clamp (right for GI/reflections) clips the HDR stochastic shadow estimate's rare
+				// bright RIS samples, darkening multi-light overlaps into a seam. Off for shadows by default.
+				cfg.NeighborhoodClamp = CVars::ShadowDenoiseClamp.Get();
 				cfg.NamePrefix = "Shadow";
 
 				v.ShadowView = m_Denoiser.Temporal(fc, inst, cfg, v.ShadowView, gbufView, depthView, v.Velocity, v.Cam,

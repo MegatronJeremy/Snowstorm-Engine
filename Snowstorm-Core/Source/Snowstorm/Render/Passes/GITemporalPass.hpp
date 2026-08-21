@@ -36,7 +36,7 @@ namespace Snowstorm
 		              const Ref<TextureView>& momentsPrev, const Ref<TextureView>& momentsOut,
 		              const Ref<TextureView>& output, uint32_t outW, uint32_t outH,
 		              bool historyValid, float blend, float maxBlend, float nearPlane, float farPlane,
-		              float depthReject);
+		              float depthReject, bool neighborhoodClamp);
 
 	private:
 		void EnsureResources();

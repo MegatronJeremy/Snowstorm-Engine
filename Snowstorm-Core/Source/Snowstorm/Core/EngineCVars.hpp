@@ -329,6 +329,14 @@ namespace Snowstorm::CVars
 	// NRD SIGMA-style penumbra-aware à-trous kernel sizing (shadows only): scale the tap stride by the
 	// receiver's occluder distance so contact shadows stay sharp and soft penumbrae blur wide. 0 = off.
 	extern CVar<float> ShadowDenoisePenumbra;
+
+	// Log(1+luma) perceptual light-importance weighting for the stochastic shadow reservoir (else linear luma):
+	// stops a strong occluded light from dominating selection and darkening a pixel a weaker visible light lights.
+	extern CVar<bool> ShadowImportanceLog;
+
+	// Temporal neighborhood clamp for the stochastic shadow signal: off by default (the clamp clips the HDR RIS
+	// estimate's rare bright samples, darkening multi-light overlaps). GI/AO/reflections keep it on regardless.
+	extern CVar<bool> ShadowDenoiseClamp;
 	[[nodiscard]] bool ShadowTemporalActive();
 	[[nodiscard]] bool ShadowDenoiseActive();
 	[[nodiscard]] int ClampedShadowDenoiseIterations();

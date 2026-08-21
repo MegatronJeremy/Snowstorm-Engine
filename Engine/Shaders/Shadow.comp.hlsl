@@ -48,6 +48,11 @@ cbuffer ShadowCB : register(b3, space0)
 	uint RayCount;           // stochastic samples/pixel (render.shadows.rays): more = less variance, ~linear cost
 	uint ReflGeoTableAddrHi; // device address (hi) of the per-instance geometry table
 
+	uint UseLogWeight; // 1 = log(1+luma) perceptual importance weight (downweights strong occluded lights); 0 = linear luma
+	uint _Pad4;
+	uint _Pad5;
+	uint _Pad6;
+
 	// Slim tracer + importance params (16-byte rows). Option B: each light carries its full RGB radiance
 	// (color*intensity) so the pass can accumulate COLORED shadowed irradiance; the importance weight is the
 	// luma of that radiance, computed here.
@@ -61,6 +66,16 @@ cbuffer ShadowCB : register(b3, space0)
 };
 
 float Luma3(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
+
+// Importance weight for the reservoir AND the RIS normalization (must match in both, or the estimate biases).
+// UseLogWeight = log(1+luma) perceptual weighting downweights very strong lights so a strong-but-occluded light
+// can't dominate the per-pixel selection and drag the aggregate dark where a weaker VISIBLE light should light
+// the pixel (UE5 MegaLights uses log weighting for this exact "strong occluded light" issue, SIGGRAPH 2025).
+float ImportanceWeight(float3 radNdotL)
+{
+	const float l = Luma3(radNdotL);
+	return (UseLogWeight != 0u) ? log(1.0 + l) : l;
+}
 
 // ---- Set 3: engine bindless pool (gap-filled by the compute pipeline builder) ----
 Texture2D Textures[] : register(t0, space3); // bindless albedo (for the cutout any-hit alpha test)
@@ -132,7 +147,7 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint frame, uint dimBase
 	{
 		const float3 L = DirData[d].xyz;
 		const float3 radNdotL = DirColor[d].xyz * max(dot(N, L), 0.0);
-		const float w = Luma3(radNdotL); // importance weight = luma of the colored contribution
+		const float w = ImportanceWeight(radNdotL); // log/linear importance weight (render.shadows.importance.log)
 		if (w <= 0.0)
 		{
 			continue;
@@ -161,7 +176,7 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint frame, uint dimBase
 		}
 		const float3 L = toLight / max(dist, 1e-4);
 		const float3 radNdotL = PointColor[p].xyz * FalloffWindow(dist, range) * max(dot(N, L), 0.0);
-		const float w = Luma3(radNdotL);
+		const float w = ImportanceWeight(radNdotL);
 		if (w <= 0.0)
 		{
 			continue;
@@ -198,7 +213,7 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint frame, uint dimBase
 		const float denom = max(SpotColorInner[s].w - cosOuter, 1e-4); // .w = cos(inner)
 		const float cone = pow(saturate((cosAngle - cosOuter) / denom), 2.0);
 		const float3 radNdotL = SpotColorInner[s].xyz * FalloffWindow(dist, range) * cone * max(dot(N, L), 0.0);
-		const float w = Luma3(radNdotL);
+		const float w = ImportanceWeight(radNdotL);
 		if (w <= 0.0)
 		{
 			continue;
@@ -340,7 +355,7 @@ void main(uint3 id : SV_DispatchThreadID)
 			}
 		}
 		// RIS: estimate of the FULL colored sum from this one sample = radNdotL·vis · wSum / contrib_y.
-		const float contribY = Luma3(radNdotL);
+		const float contribY = ImportanceWeight(radNdotL); // MUST match SelectLight's weight or the RIS estimate biases
 		if (contribY > 1e-6)
 		{
 			Dsum += radNdotL * (vis * wSum / contribY);
