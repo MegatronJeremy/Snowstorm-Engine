@@ -61,12 +61,27 @@ RaytracingAccelerationStructure SceneTLAS : register(t2, space3);
 
 #include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky
 
-// Cheap per-(pixel,frame,light) hash in [0,1) for the weighted-reservoir random stream. Interleaved-gradient
-// style, decorrelated per light index by a large stride — same family the AO/GI/soft-shadow passes use.
-float Rand01(uint2 px, uint frame, uint lightIdx)
+// Interleaved-gradient noise in [0,1), FIXED per pixel — its power spectrum is blue-ish in screen space
+// (Jimenez), so neighbouring pixels get well-separated values that the spatial (à-trous) denoiser averages
+// cleanly. This is the spatial base for the spatiotemporal blue-noise sampler below.
+float IGN(uint2 px)
 {
-	const float2 p = float2(px) + float2((frame * 3u + lightIdx * 7u) * 5.588238, (frame * 5u + lightIdx * 11u) * 3.539418);
-	return frac(52.9829189 * frac(dot(p, float2(0.06711056, 0.00583715))));
+	return frac(52.9829189 * frac(0.06711056 * float(px.x) + 0.00583715 * float(px.y)));
+}
+
+// Spatiotemporal blue-noise sample in [0,1): the fixed IGN spatial pattern advanced by a golden-ratio (R1
+// low-discrepancy) increment per FRAME and decorrelated per DIMENSION. Animating blue noise by the golden
+// ratio keeps the screen-space blue-noise property while making successive frames low-discrepancy IN TIME
+// (Wolfe, "Animating Noise for Integration Over Time"; MegaLights/NRD both stress blue + low-discrepancy at
+// 1-4 rpp) — far better temporal convergence and far less shimmer than the previous white-noise-in-time hash,
+// which re-rolled the whole pattern every frame. `dim` separates the per-frame draws (each light in the
+// reservoir stream + the two soft-jitter axes). 0.6180339887 = 1/φ (temporal); 0.7548776662 = the plastic-
+// number R2 additive constant (per-dimension decorrelation).
+float STBN(uint2 px, uint frame, uint dim)
+{
+	// Wrap the frame to a 64-frame period: keeps float(frame) exact over arbitrarily long runs AND matches NRD's
+	// "limited animated frames" guidance for blue noise. dim is small (<= ~50) so it stays exact too.
+	return frac(IGN(px) + float(frame & 63u) * 0.61803398875 + float(dim) * 0.75487766624);
 }
 
 // Windowed inverse-square attenuation, matching DefaultLit's point/spot falloff exactly.
@@ -76,12 +91,13 @@ float FalloffWindow(float dist, float range)
 	return (t * t) / max(dist * dist, 1e-4);
 }
 
-// One-pass weighted reservoir selection over ALL in-range lights, weight = unshadowed contribution. `seed`
-// decorrelates the random stream per sample (and frame), so calling this K times draws K independent lights
-// ~proportional to contribution -> averaging their visibility is a K-sample estimate of the aggregate shadow
-// ratio (variance ~1/K). Returns false when no light contributes here; else fills the chosen light's tracer
-// params (direction TO light, ray tMax, soft cone/disk radius, whether it casts a shadow).
-bool SelectLight(uint2 px, float3 positionWS, float3 N, uint seed, out float3 outL, out float outTMax,
+// One-pass weighted reservoir selection over ALL in-range lights, weight = unshadowed contribution. `frame`
+// animates the spatiotemporal blue noise; `dimBase` decorrelates this sample's draws from the other K samples'
+// (each light in the stream reads dimBase + lightIdx). Calling this K times draws K lights ~proportional to
+// contribution -> averaging their visibility is a K-sample estimate of the aggregate shadow ratio (variance
+// ~1/K). Returns false when no light contributes here; else fills the chosen light's tracer params (direction
+// TO light, ray tMax, soft cone/disk radius, whether it casts a shadow).
+bool SelectLight(uint2 px, float3 positionWS, float3 N, uint frame, uint dimBase, out float3 outL, out float outTMax,
                  out float outConeR, out bool outCasts)
 {
 	float wSum = 0.0;
@@ -102,7 +118,7 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint seed, out float3 ou
 			continue;
 		}
 		wSum += w;
-		if (Rand01(px, seed, lightIdx) < w / wSum)
+		if (STBN(px, frame, dimBase + lightIdx) < w / wSum)
 		{
 			outL = L;
 			outTMax = 1e30;
@@ -129,7 +145,7 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint seed, out float3 ou
 			continue;
 		}
 		wSum += w;
-		if (Rand01(px, seed, lightIdx) < w / wSum)
+		if (STBN(px, frame, dimBase + lightIdx) < w / wSum)
 		{
 			outL = L;
 			outTMax = max(dist - 0.05, 0.0);
@@ -164,7 +180,7 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint seed, out float3 ou
 			continue;
 		}
 		wSum += w;
-		if (Rand01(px, seed, lightIdx) < w / wSum)
+		if (STBN(px, frame, dimBase + lightIdx) < w / wSum)
 		{
 			outL = L;
 			outTMax = max(dist - 0.05, 0.0);
@@ -180,7 +196,7 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, uint seed, out float3 ou
 // Trace one (optionally area-jittered) shadow ray toward the chosen light. Returns visibility (1 = lit).
 // outHitT = distance to the nearest occluder on a hit (world units, for the SIGMA-style penumbra-aware
 // denoiser kernel), or -1 on a miss (no occluder -> excluded from the mean).
-float TraceShadow(uint2 px, uint seed, float3 positionWS, float3 N, float3 L, float tMax, float coneR, out float outHitT)
+float TraceShadow(uint2 px, uint frame, uint dimBase, float3 positionWS, float3 N, float3 L, float tMax, float coneR, out float outHitT)
 {
 	float3 dir = L;
 	// Soft shadows: jitter the ray within the light's area (disk of radius coneR perpendicular to L). The
@@ -190,8 +206,9 @@ float TraceShadow(uint2 px, uint seed, float3 positionWS, float3 N, float3 L, fl
 		const float3 up = abs(L.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
 		const float3 tangent = normalize(cross(up, L));
 		const float3 bitangent = cross(L, tangent);
-		const float u1 = Rand01(px, seed, 4096u);
-		const float u2 = Rand01(px, seed, 8192u);
+		// Jitter axes at high dims (past the light-stream dims for this sample) so they don't collide.
+		const float u1 = STBN(px, frame, dimBase + 48u);
+		const float u2 = STBN(px, frame, dimBase + 49u);
 		const float rr = coneR * sqrt(u1);
 		const float phi = 6.2831853 * u2;
 		dir = normalize(L + (rr * cos(phi)) * tangent + (rr * sin(phi)) * bitangent);
@@ -255,18 +272,21 @@ void main(uint3 id : SV_DispatchThreadID)
 	uint hitCount = 0u;   // how many rays hit — the mean is over hits only (misses carry no penumbra info)
 	[loop] for (uint s = 0; s < rayCount; ++s)
 	{
-		const uint seed = FrameCounter * 16u + s; // decorrelate per sample AND per frame
+		// This sample's dimension block for the spatiotemporal blue noise: lights read dimBase + lightIdx (stream
+		// <= 36), the soft-jitter axes read dimBase + 48/49; stride 64 keeps the K samples' blocks disjoint. The
+		// FRAME (not the sample) is the golden-ratio-animated axis, so the temporal accumulation is low-discrepancy.
+		const uint dimBase = s * 64u;
 		float3 L;
 		float tMax;
 		float coneR;
 		bool casts;
-		if (!SelectLight(id.xy, positionWS, N, seed, L, tMax, coneR, casts) || !casts)
+		if (!SelectLight(id.xy, positionWS, N, FrameCounter, dimBase, L, tMax, coneR, casts) || !casts)
 		{
 			visSum += 1.0; // no contributing light / non-casting chosen -> lit
 			continue;
 		}
 		float hitT;
-		visSum += TraceShadow(id.xy, seed, positionWS, N, L, tMax, coneR, hitT);
+		visSum += TraceShadow(id.xy, FrameCounter, dimBase, positionWS, N, L, tMax, coneR, hitT);
 		if (hitT >= 0.0)
 		{
 			hitTSum += hitT;

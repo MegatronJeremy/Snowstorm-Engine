@@ -133,7 +133,7 @@ namespace Snowstorm::CVars
 
 	CVar<float> ShadowStrength{"render.shadow.strength", 1.0f, "Shadow darkness (1 = full occlusion, 0 = none)", CVarFlags::Persist};
 
-	CVar<float> ShadowScale{"render.shadows.scale", 0.5f, "RT sun-shadow internal resolution: the half-res sun-visibility trace runs at this fraction of viewport res (0.5 = quarter the pixels = ~4x cheaper), then a depth-aware bilateral upsample restores full res. 1.0 = full-res reference for the A/B. Clamped to [0.25, 1.0]. Mirrors render.ao.scale / render.gi.scale; independent of both.", CVarFlags::Persist};
+	CVar<float> ShadowScale{"render.shadows.scale", 1.0f, "Stochastic RT shadow internal resolution: the shadow-ratio trace runs at this fraction of viewport res, then a depth-aware bilateral upsample restores full res. DEFAULT 1.0 (FULL-RES): shadows are the highest-frequency signal in the frame (sharp contact/thin shadows), so a half-res trace + bilateral upsample can't reconstruct them and looks blocky/soft — production stochastic shadows (MegaLights/RTXDI) trace per full-res pixel. 0.5 = quarter the pixels (~4x cheaper) for a perf/quality A/B. Clamped to [0.25, 1.0].", CVarFlags::Persist};
 
 	CVar<float> ShadowNormalBias{"render.shadows.normalbias", 0.02f, "RT sun-shadow ray-origin normal offset in world units: pushes the shadow ray start off the surface along the geometric normal to avoid self-intersection (shadow acne). Too small = acne (surfaces shadow themselves); too large = peter-panning (contact shadows detach). Clamped to [0, 0.2].", CVarFlags::Persist};
 
