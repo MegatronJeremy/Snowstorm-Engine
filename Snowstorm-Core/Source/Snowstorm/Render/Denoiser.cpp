@@ -38,7 +38,7 @@ namespace Snowstorm
 
 		const float nearPlane = cam.Cam ? cam.Cam->PerspectiveNear : 0.1f;
 		const float farPlane = cam.Cam ? cam.Cam->PerspectiveFar : 500.0f;
-		const float depthReject = CVars::TaaDepthReject.Get(); // share the TAA disocclusion threshold
+		const float depthReject = CVars::RtDepthReject.Get(); // RT denoiser disocclusion, decoupled from the TAA knob (which stays 0)
 		const float blend = cfg.TemporalBlend;
 		const float maxBlend = cfg.TemporalMaxBlend;
 		const bool neighborhoodClamp = cfg.NeighborhoodClamp; // off for the HDR stochastic shadow signal

@@ -206,6 +206,10 @@ namespace Snowstorm::CVars
 	extern CVar<float> TaaDepthReject;
 	extern CVar<bool> TaaDepthRejectSlope;
 
+	// RT denoiser disocclusion threshold, decoupled from the TAA knob so revealed surfaces reset (not ramp from
+	// stale dark history) under motion even when render.taa.depth_reject is 0. Used by the shared Denoiser temporal.
+	extern CVar<float> RtDepthReject;
+
 	// Post-tonemap contrast-adaptive sharpen (AMD CAS) strength, 0..1 (#44). Display-space (runs after
 	// tonemap, like FXAA), so it's hue-safe — a sharpen in linear HDR before ACES turns overshoot into a hue
 	// shift. 0 = off (default; sharpen is a taste/compensation knob, not silently-on). Guidance: ~0.3 native
