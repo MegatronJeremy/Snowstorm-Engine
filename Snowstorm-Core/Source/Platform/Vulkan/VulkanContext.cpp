@@ -250,46 +250,123 @@ namespace Snowstorm
 		std::vector<VkPhysicalDevice> devices(deviceCount);
 		vkEnumeratePhysicalDevices(m_Instance, &deviceCount, devices.data());
 
+		// Gather candidate devices (each with a graphics+present queue family) and log them so a multi-GPU box's
+		// options + indices are visible. The old code just took the FIRST graphics+present device, which is
+		// enumeration-order-dependent and on a 2-GPU box can land on the wrong card.
+		struct GpuCandidate
+		{
+			VkPhysicalDevice Device;
+			uint32_t GraphicsFamily;
+			VkPhysicalDeviceProperties Props;
+		};
+		std::vector<GpuCandidate> candidates;
 		for (auto& device : devices)
 		{
-			// For simplicity, just pick the first that supports graphics + present
 			uint32_t queueCount = 0;
 			vkGetPhysicalDeviceQueueFamilyProperties(device, &queueCount, nullptr);
 			std::vector<VkQueueFamilyProperties> props(queueCount);
 			vkGetPhysicalDeviceQueueFamilyProperties(device, &queueCount, props.data());
-
 			for (uint32_t i = 0; i < queueCount; ++i)
 			{
 				VkBool32 presentSupport = false;
 				vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_Surface, &presentSupport);
 				if (props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT && presentSupport)
 				{
-					m_PhysicalDevice = device;
-					m_GraphicsQueueFamily = i;
+					VkPhysicalDeviceProperties dp{};
+					vkGetPhysicalDeviceProperties(device, &dp);
+					candidates.push_back({device, i, dp});
 					break;
 				}
 			}
-			if (m_PhysicalDevice != VK_NULL_HANDLE)
+		}
+		SS_CORE_ASSERT(!candidates.empty(), "No Vulkan device with a graphics+present queue family");
+		for (size_t i = 0; i < candidates.size(); ++i)
+		{
+			SS_CORE_INFO("GPU candidate [{}]: {} (type {}).", i, candidates[i].Props.deviceName,
+			             static_cast<int>(candidates[i].Props.deviceType));
+		}
+
+		// Pick per render.gpu: an all-digits value selects by candidate index; otherwise a case-insensitive
+		// name substring. Empty (default) auto-selects the first DISCRETE GPU, else the first candidate.
+		auto toLowerAscii = [](std::string s)
+		{
+			for (char& c : s)
 			{
-				// Prefer a DEDICATED transfer family (TRANSFER_BIT set, GRAPHICS/COMPUTE clear) — that's the
-				// async-DMA path that uploads without contending the graphics queue. Fall back to the graphics
-				// family (transfer is implicitly supported there) when the GPU exposes no dedicated one; then
-				// m_TransferQueueFamily == m_GraphicsQueueFamily and HasDedicatedTransferQueue() is false.
-				m_TransferQueueFamily = m_GraphicsQueueFamily;
-				for (uint32_t i = 0; i < queueCount; ++i)
+				if (c >= 'A' && c <= 'Z')
 				{
-					const bool hasTransfer = (props[i].queueFlags & VK_QUEUE_TRANSFER_BIT) != 0;
-					const bool hasGraphics = (props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
-					const bool hasCompute = (props[i].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0;
-					if (hasTransfer && !hasGraphics && !hasCompute)
+					c = static_cast<char>(c - 'A' + 'a');
+				}
+			}
+			return s;
+		};
+		size_t chosen = candidates.size(); // sentinel: unresolved
+		if (const std::string& sel = CVars::GpuSelect.Get(); !sel.empty())
+		{
+			if (std::all_of(sel.begin(), sel.end(), [](unsigned char c) { return c >= '0' && c <= '9'; }))
+			{
+				if (const size_t idx = static_cast<size_t>(std::stoul(sel)); idx < candidates.size())
+				{
+					chosen = idx;
+				}
+			}
+			else
+			{
+				const std::string needle = toLowerAscii(sel);
+				for (size_t i = 0; i < candidates.size(); ++i)
+				{
+					if (toLowerAscii(candidates[i].Props.deviceName).find(needle) != std::string::npos)
 					{
-						m_TransferQueueFamily = i;
+						chosen = i;
 						break;
 					}
 				}
-				break;
+			}
+			if (chosen == candidates.size())
+			{
+				SS_CORE_WARN("render.gpu='{}' matched no candidate; using auto-select.", sel);
 			}
 		}
+		if (chosen == candidates.size())
+		{
+			chosen = 0;
+			for (size_t i = 0; i < candidates.size(); ++i)
+			{
+				if (candidates[i].Props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+				{
+					chosen = i;
+					break;
+				}
+			}
+		}
+
+		m_PhysicalDevice = candidates[chosen].Device;
+		m_GraphicsQueueFamily = candidates[chosen].GraphicsFamily;
+
+		// Transfer family for the chosen device: prefer a DEDICATED transfer family (TRANSFER set, GRAPHICS/
+		// COMPUTE clear) — the async-DMA path that uploads without contending the graphics queue. Fall back to
+		// the graphics family when none exists (then m_TransferQueueFamily == m_GraphicsQueueFamily and
+		// HasDedicatedTransferQueue() is false).
+		{
+			uint32_t queueCount = 0;
+			vkGetPhysicalDeviceQueueFamilyProperties(m_PhysicalDevice, &queueCount, nullptr);
+			std::vector<VkQueueFamilyProperties> props(queueCount);
+			vkGetPhysicalDeviceQueueFamilyProperties(m_PhysicalDevice, &queueCount, props.data());
+			m_TransferQueueFamily = m_GraphicsQueueFamily;
+			for (uint32_t i = 0; i < queueCount; ++i)
+			{
+				const bool hasTransfer = (props[i].queueFlags & VK_QUEUE_TRANSFER_BIT) != 0;
+				const bool hasGraphics = (props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
+				const bool hasCompute = (props[i].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0;
+				if (hasTransfer && !hasGraphics && !hasCompute)
+				{
+					m_TransferQueueFamily = i;
+					break;
+				}
+			}
+		}
+
+		SS_CORE_INFO("Selected GPU [{}]: {} (of {} candidate(s)).", chosen, candidates[chosen].Props.deviceName,
+		             candidates.size());
 
 		// 4. Logical Device
 		float queuePriority = 1.0f;
@@ -363,6 +440,33 @@ namespace Snowstorm
 			deviceExtensions.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
 			// acceleration_structure requires deferred_host_operations to be enabled alongside it.
 			deviceExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+
+			// VK_EXT_opacity_micromap (OMM): lets the BLAS carry per-microtriangle opaque/transparent/unknown
+			// state so the hardware resolves cutout coverage during traversal and calls the any-hit alpha test
+			// only on UNKNOWN (edge) microtriangles. Requires acceleration_structure (above) + the micromap
+			// feature bit. Availability-gated so a non-OMM GPU (RDNA3) still creates the device and masked
+			// geometry falls back to the FORCE_NO_OPAQUE any-hit path.
+			uint32_t extCount = 0;
+			vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extCount, nullptr);
+			std::vector<VkExtensionProperties> avail(extCount);
+			vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extCount, avail.data());
+			for (const auto& e : avail)
+			{
+				if (std::strcmp(e.extensionName, VK_EXT_OPACITY_MICROMAP_EXTENSION_NAME) == 0)
+				{
+					VkPhysicalDeviceOpacityMicromapFeaturesEXT ommQuery{
+					    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_EXT};
+					VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+					f2.pNext = &ommQuery;
+					vkGetPhysicalDeviceFeatures2(m_PhysicalDevice, &f2);
+					m_OpacityMicromapSupported = (ommQuery.micromap == VK_TRUE);
+					break;
+				}
+			}
+			if (m_OpacityMicromapSupported)
+			{
+				deviceExtensions.push_back(VK_EXT_OPACITY_MICROMAP_EXTENSION_NAME);
+			}
 		}
 
 #ifdef SS_DEBUG
@@ -476,6 +580,17 @@ namespace Snowstorm
 			features13.pNext = &faultFeatures;
 		}
 
+		// Opacity-micromap feature (OMM). Splice on when the extension was added above; storage outside the if so
+		// it outlives vkCreateDevice, tail preserves whatever the chain already had.
+		VkPhysicalDeviceOpacityMicromapFeaturesEXT ommFeatures{
+		    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_EXT};
+		if (m_OpacityMicromapSupported)
+		{
+			ommFeatures.micromap = VK_TRUE;
+			ommFeatures.pNext = features13.pNext;
+			features13.pNext = &ommFeatures;
+		}
+
 		VK_CHECK(vkCreateDevice(m_PhysicalDevice, &devInfo, nullptr, &m_Device));
 		volkLoadDevice(m_Device);
 		vkGetDeviceQueue(m_Device, m_GraphicsQueueFamily, 0, &m_GraphicsQueue);
@@ -486,6 +601,8 @@ namespace Snowstorm
 		             HasDedicatedTransferQueue() ? " (dedicated)" : " (shared with graphics)");
 		SS_CORE_INFO("Ray tracing (VK_KHR_ray_query): {}.",
 		             m_RayTracingSupported ? "supported (enabled)" : "not supported (raster fallback)");
+		SS_CORE_INFO("Opacity micromaps (VK_EXT_opacity_micromap): {}.",
+		             m_OpacityMicromapSupported ? "supported (enabled)" : "not supported (any-hit fallback)");
 		SS_CORE_INFO("fp16 shader math (shaderFloat16 + 16-bit storage): {}.",
 		             m_Float16Supported ? "supported (neural fp16 path enabled)" : "not supported (fp32 fallback)");
 #ifdef SS_DEBUG

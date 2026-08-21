@@ -142,6 +142,11 @@ namespace Snowstorm::CVars
 	// the PBR sampling path that Startup.world doesn't, without a manual Content Browser open.
 	extern CVar<std::string> StartupScene;
 
+	// GPU override for multi-GPU boxes: pick the physical device by case-insensitive name substring
+	// (e.g. "9070", "NVIDIA") or by candidate index ("0","1"); empty = auto (prefer a discrete GPU). Resolved
+	// once at device creation (VulkanContext), which logs every candidate so the indices are discoverable.
+	extern CVar<std::string> GpuSelect;
+
 	// Linear exposure multiplier applied before tonemapping in DefaultLit. 1.0 = neutral; raise to
 	// brighten, lower to darken. Runtime-tweakable from the editor's Settings panel.
 	extern CVar<float> Exposure;

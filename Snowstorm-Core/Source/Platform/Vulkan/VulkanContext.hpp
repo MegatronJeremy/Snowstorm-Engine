@@ -69,6 +69,11 @@ namespace Snowstorm
 		// Gates all RT features downstream (AS builds, RT shadow pass); false => the raster path runs. Set in
 		// Init from a capability query on the chosen physical device (see QueryRayTracingSupport).
 		[[nodiscard]] bool SupportsRayTracing() const { return m_RayTracingSupported; }
+		// True when VK_EXT_opacity_micromap is enabled (extension + micromap feature bit, RT also supported).
+		// Gates the OMM bake/attach path: with an OMM the hardware resolves cutout coverage during traversal
+		// and invokes the any-hit alpha test only on UNKNOWN (edge) microtriangles. False (e.g. RDNA3) => masked
+		// geometry falls back to the FORCE_NO_OPAQUE any-hit path alone. Set in Init from a capability query.
+		[[nodiscard]] bool SupportsOpacityMicromap() const { return m_OpacityMicromapSupported; }
 		// fp16 shader math + 16-bit storage (shaderFloat16 + storageBuffer16BitAccess). Gates the neural conv's
 		// fp16 permutation; false => the fp32 path runs. Set in Init from a capability query.
 		[[nodiscard]] bool SupportsFloat16() const { return m_Float16Supported; }
@@ -121,6 +126,7 @@ namespace Snowstorm
 		// True when VK_KHR_ray_query + VK_KHR_acceleration_structure (features + extensions) are supported on
 		// the picked device and were enabled at device creation. Gates the whole RT path (#118).
 		bool m_RayTracingSupported = false;
+		bool m_OpacityMicromapSupported = false;
 
 		// True when shaderFloat16 + 16-bit storage are supported and were enabled. Gates the neural conv's fp16
 		// permutation (# fp16 inference); false => fp32 fallback.
