@@ -32,6 +32,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -79,6 +80,7 @@ TECHNIQUES = {
     "rtao": {"SS_RENDER_AO_MODE": "2", "SS_RENDER_AA": "2"},
     "ssr": {"SS_RENDER_REFLECTIONS_MODE": "1", "SS_RENDER_AA": "2"},
     "rtrefl": {"SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_AA": "2"},
+    "ssgi": {"SS_RENDER_GI_MODE": "1", "SS_RENDER_AA": "2"},
     "rtgi": {"SS_RENDER_GI_MODE": "2", "SS_RENDER_AA": "2"},
     "all-rt": {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2",
                "SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_GI_MODE": "2", "SS_RENDER_AA": "2"},
@@ -231,12 +233,17 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
     else:
         return None, ""
 
+    # "Selected GPU [i]: <name> (of N candidate(s))." is the unambiguous line (the candidate list logs
+    # every adapter, so a vendor-keyword match can record one the run didn't use). Reduced to the bare
+    # adapter name so it compares against perf-bench's device field. Keyword sweep is the fallback.
     device = ""
     for line in proc.stdout.splitlines():
         low = line.lower()
-        if any(v in low for v in ("radeon", "geforce", "nvidia", "intel(r)", "arc ", " gpu ")):
-            device = line.split("SNOWSTORM:")[-1].strip()[:64]
+        if (m := re.search(r"Selected GPU \[\d+\]:\s*(.+?)\s*(?:\(of \d+|$)", line)):
+            device = m.group(1).strip()[:64]
             break
+        if not device and any(v in low for v in ("radeon", "geforce", "nvidia", "intel(r)", "arc ")):
+            device = line.split("SNOWSTORM:")[-1].strip()[:64]
     # Normalize to the canonical metric resolution so window-size nondeterminism can't cause shape
     # mismatches / non-comparable metrics (see CANON_W/H).
     img = _resize_bilinear(np.load(ldr).astype(np.float64), CANON_H, CANON_W)
