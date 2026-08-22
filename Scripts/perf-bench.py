@@ -4,8 +4,10 @@
 Runs the Editor headlessly once per RT-effect config (SS_PERF_BENCH_FRAMES), each of
 which boots a scene, averages the render graph's per-pass GPU timings over a fixed
 frame budget, and writes a JSON (see PerfBench.hpp). This script parses each JSON,
-prints a per-pass table, and diffs against a committed baseline in Scripts/perf-baseline/
--- failing (exit 1) if any pass regresses beyond the threshold.
+prints a per-pass table, and diffs against a committed baseline in
+Scripts/perf-baseline/<device-slug>/ -- failing (exit 1) if any pass regresses beyond the
+threshold. Baselines are keyed by adapter, so one checkout can hold a set per GPU and a run
+only ever diffs against the set captured on the adapter it is running on.
 
 The config matrix answers "what does each RT effect cost": it starts from all-RT-off and
 enables shadows / +AO / +reflections / +GI in turn, so the Forward-pass ms delta between
@@ -23,12 +25,14 @@ Usage (from repo root or anywhere):
     py Scripts/perf-bench.py --frames 300       # more frames (less noise, slower)
     py Scripts/perf-bench.py --threshold 20     # regression tolerance % (default 15)
     py Scripts/perf-bench.py --scene <path>     # benchmark a different scene
+    py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
 
 Exit code: 0 if every config is within threshold (or --update-baseline), 1 on a regression.
 """
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -102,30 +106,22 @@ def run_config(name: str, env_overrides: dict, exe: Path, cwd: Path, frames: int
     return data
 
 
-def baseline_path(repo_root: Path, name: str) -> Path:
-    return repo_root / "Scripts" / "perf-baseline" / f"{name}.json"
+def device_slug(device: str) -> str:
+    """Filesystem-safe directory name for an adapter, e.g. 'AMD Radeon RX 9070 XT' -> 'amd-radeon-rx-9070-xt'."""
+    slug = re.sub(r"[^a-z0-9]+", "-", device.lower()).strip("-")
+    return slug or "unknown-device"
 
 
-def other_baseline_device(repo_root: Path, name: str) -> tuple[str, str] | None:
-    """Device recorded by some OTHER config's baseline, as (config, device)."""
-    for other, _ in CONFIGS:
-        if other == name:
-            continue
-        p = baseline_path(repo_root, other)
-        if not p.exists():
-            continue
-        dev = json.loads(p.read_text()).get("device")
-        if dev:
-            return other, dev
-    return None
+def baseline_path(repo_root: Path, device: str, name: str) -> Path:
+    # Keyed by adapter, so one checkout can hold a baseline set per GPU (ms are not comparable across
+    # hardware, and a set split across two adapters would turn every cross-config delta into effect cost
+    # plus hardware difference). The directory IS the isolation: a run only ever diffs against the set
+    # captured on the adapter it is running on.
+    return repo_root / "Scripts" / "perf-baseline" / device_slug(device) / f"{name}.json"
 
 
 def compare(name: str, current: dict, baseline: dict, threshold_pct: float) -> bool:
     """Print a per-pass table (baseline vs current, Δ%); return True if within threshold."""
-    if baseline.get("device") and current.get("device") and baseline["device"] != current["device"]:
-        print(f"  note: device differs (baseline '{baseline['device']}' vs current '{current['device']}') "
-              f"-- perf numbers aren't comparable across GPUs; consider --update-baseline.")
-
     cur_passes = current.get("passes", {})
     base_passes = baseline.get("passes", {})
     all_names = sorted(set(cur_passes) | set(base_passes))
@@ -198,8 +194,6 @@ def main() -> int:
     print(f"Scene     : {args.scene}   Frames: {args.frames}   Threshold: {args.threshold}%")
     print(f"Mode      : {'UPDATE BASELINE' if args.update_baseline else 'compare vs baseline'}\n")
 
-    (repo_root / "Scripts" / "perf-baseline").mkdir(parents=True, exist_ok=True)
-
     all_ok = True
     for name, env_overrides in configs:
         print(f"=== {name} ===")
@@ -209,26 +203,19 @@ def main() -> int:
             all_ok = False
             continue
 
-        bp = baseline_path(repo_root, name)
+        device = current.get("device", "")
+        bp = baseline_path(repo_root, device, name)
         if args.update_baseline:
-            # A baseline set split across two adapters is silently meaningless (every cross-config delta
-            # then mixes an effect's cost with the hardware difference), so refuse to write one without
-            # an explicit --gpu saying that's intended.
-            other = other_baseline_device(repo_root, name)
-            if other and current.get("device") and other[1] != current["device"] and not args.gpu:
-                print(f"  SKIPPED: this run used '{current['device']}' but baseline '{other[0]}' records "
-                      f"'{other[1]}'. Re-run with --gpu <substring> to pin the adapter.")
-                all_ok = False
-                print()
-                continue
+            bp.parent.mkdir(parents=True, exist_ok=True)
             bp.write_text(json.dumps(current, indent=2))
-            print(f"  updated baseline: {bp.relative_to(repo_root)}  (device: {current.get('device', '?')})")
+            print(f"  updated baseline: {bp.relative_to(repo_root)}  (device: {device or '?'})")
         elif bp.exists():
             baseline = json.loads(bp.read_text())
             if not compare(name, current, baseline, args.threshold):
                 all_ok = False
         else:
-            print(f"  no baseline at {bp.relative_to(repo_root)} -- run with --update-baseline first.")
+            print(f"  no baseline at {bp.relative_to(repo_root)} for '{device or 'unknown device'}' "
+                  f"-- run with --update-baseline first.")
             # Still print the current numbers so the run isn't useless.
             for p, s in sorted(current.get("passes", {}).items()):
                 print(f"    {p:<18} {s['avgMs']:>10.3f} ms")

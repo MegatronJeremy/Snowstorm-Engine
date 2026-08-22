@@ -1,0 +1,79 @@
+{
+  "device": "NVIDIA GeForce RTX 5070",
+  "config": "Projects/Sandbox/assets/scenes/Sponza.world",
+  "frames": 300,
+  "timestampsSupported": true,
+  "totalGpuMs": 1.3265,
+  "passes": {
+    "CameraDepthPrepass": {
+      "avgMs": 0.0504,
+      "minMs": 0.0367,
+      "maxMs": 0.2013,
+      "fragInvocations": 3507046,
+      "depth": 0
+    },
+    "DepthPrepassBarrier": {
+      "avgMs": 0.0008,
+      "minMs": 0.0006,
+      "maxMs": 0.0034,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "Editor": {
+      "avgMs": 0.0596,
+      "minMs": 0.0567,
+      "maxMs": 0.073,
+      "fragInvocations": 9787440,
+      "depth": 0
+    },
+    "Forward": {
+      "avgMs": 0.4706,
+      "minMs": 0.4268,
+      "maxMs": 0.4867,
+      "fragInvocations": 2681228,
+      "depth": 0
+    },
+    "PointShadows": {
+      "avgMs": 0.5132,
+      "minMs": 0.5114,
+      "maxMs": 0.5741,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "PostProcess": {
+      "avgMs": 0.0138,
+      "minMs": 0.0133,
+      "maxMs": 0.0177,
+      "fragInvocations": 2037560,
+      "depth": 0
+    },
+    "Shadow": {
+      "avgMs": 0.0611,
+      "minMs": 0.0599,
+      "maxMs": 0.0702,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "Sky": {
+      "avgMs": 0.0002,
+      "minMs": 0.0001,
+      "maxMs": 0.0004,
+      "fragInvocations": 0,
+      "depth": 1
+    },
+    "TemporalResolve": {
+      "avgMs": 0.0953,
+      "minMs": 0.0934,
+      "maxMs": 0.0989,
+      "fragInvocations": 2037560,
+      "depth": 0
+    },
+    "Velocity": {
+      "avgMs": 0.057,
+      "minMs": 0.0562,
+      "maxMs": 0.058,
+      "fragInvocations": 3064203,
+      "depth": 0
+    }
+  }
+}

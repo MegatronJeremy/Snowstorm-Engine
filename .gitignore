@@ -24,7 +24,7 @@ Tools/rdts/
 # Committed golden perf baselines (not generated artifacts): re-included past the blanket *.json so the
 # perf-bench regression gate has a tracked reference. See Scripts/perf-bench.py.
 !Scripts/perf-baseline/
-!Scripts/perf-baseline/*.json
+!Scripts/perf-baseline/**/*.json
 # Committed golden occupancy baselines for the RGA static gate. See Scripts/rga-occupancy.py.
 !Scripts/rga-baseline/
 !Scripts/rga-baseline/*.json

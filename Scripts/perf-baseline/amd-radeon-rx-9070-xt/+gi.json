@@ -1,0 +1,191 @@
+{
+  "device": "AMD Radeon RX 9070 XT",
+  "config": "Projects/Sandbox/assets/scenes/Sponza.world",
+  "frames": 300,
+  "timestampsSupported": true,
+  "totalGpuMs": 11.2325,
+  "passes": {
+    "AO": {
+      "avgMs": 0.1653,
+      "minMs": 0.1547,
+      "maxMs": 0.3277,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "AODenoise0": {
+      "avgMs": 0.1098,
+      "minMs": 0.1029,
+      "maxMs": 0.3436,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "AODenoise1": {
+      "avgMs": 0.1089,
+      "minMs": 0.1028,
+      "maxMs": 0.218,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "AODenoise2": {
+      "avgMs": 0.1164,
+      "minMs": 0.1094,
+      "maxMs": 0.2954,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "AOTemporal": {
+      "avgMs": 0.0445,
+      "minMs": 0.0415,
+      "maxMs": 0.0723,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "AOUpsample": {
+      "avgMs": 0.0454,
+      "minMs": 0.0408,
+      "maxMs": 0.2037,
+      "fragInvocations": 2037560,
+      "depth": 0
+    },
+    "CameraDepthPrepass": {
+      "avgMs": 0.0019,
+      "minMs": 0.0004,
+      "maxMs": 0.0022,
+      "fragInvocations": 4002041,
+      "depth": 0
+    },
+    "DepthNormal": {
+      "avgMs": 0.1428,
+      "minMs": 0.1326,
+      "maxMs": 0.1892,
+      "fragInvocations": 4273240,
+      "depth": 0
+    },
+    "DepthPrepassBarrier": {
+      "avgMs": 0.0001,
+      "minMs": 0.0001,
+      "maxMs": 0.0002,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "Editor": {
+      "avgMs": 0.042,
+      "minMs": 0.0377,
+      "maxMs": 0.1699,
+      "fragInvocations": 9770331,
+      "depth": 0
+    },
+    "Forward": {
+      "avgMs": 6.1656,
+      "minMs": 5.7628,
+      "maxMs": 10.7868,
+      "fragInvocations": 2817289,
+      "depth": 0
+    },
+    "GI": {
+      "avgMs": 0.6749,
+      "minMs": 0.6467,
+      "maxMs": 1.3528,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "GIDenoise0": {
+      "avgMs": 0.1104,
+      "minMs": 0.1046,
+      "maxMs": 0.2224,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "GIDenoise1": {
+      "avgMs": 0.1079,
+      "minMs": 0.1024,
+      "maxMs": 0.2195,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "GIDenoise2": {
+      "avgMs": 0.1146,
+      "minMs": 0.1086,
+      "maxMs": 0.2328,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "GITemporal": {
+      "avgMs": 0.0545,
+      "minMs": 0.0518,
+      "maxMs": 0.0796,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "GIUpsample": {
+      "avgMs": 0.0473,
+      "minMs": 0.0428,
+      "maxMs": 0.0853,
+      "fragInvocations": 2037560,
+      "depth": 0
+    },
+    "PostProcess": {
+      "avgMs": 0.0354,
+      "minMs": 0.0153,
+      "maxMs": 0.1868,
+      "fragInvocations": 2037560,
+      "depth": 0
+    },
+    "Reflection": {
+      "avgMs": 1.4535,
+      "minMs": 1.375,
+      "maxMs": 2.7905,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ReflectionDenoise0": {
+      "avgMs": 0.3552,
+      "minMs": 0.3336,
+      "maxMs": 0.6725,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ReflectionDenoise1": {
+      "avgMs": 0.3666,
+      "minMs": 0.3423,
+      "maxMs": 0.6996,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ReflectionDenoise2": {
+      "avgMs": 0.4103,
+      "minMs": 0.3822,
+      "maxMs": 0.7856,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ReflectionTemporal": {
+      "avgMs": 0.1429,
+      "minMs": 0.1379,
+      "maxMs": 0.2374,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "Sky": {
+      "avgMs": 0.0,
+      "minMs": 0.0,
+      "maxMs": 0.0,
+      "fragInvocations": 0,
+      "depth": 1
+    },
+    "TemporalResolve": {
+      "avgMs": 0.1703,
+      "minMs": 0.0978,
+      "maxMs": 0.3337,
+      "fragInvocations": 2037560,
+      "depth": 0
+    },
+    "Velocity": {
+      "avgMs": 0.0766,
+      "minMs": 0.0676,
+      "maxMs": 0.2234,
+      "fragInvocations": 3064205,
+      "depth": 0
+    }
+  }
+}

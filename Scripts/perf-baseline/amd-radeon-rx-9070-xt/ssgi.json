@@ -1,0 +1,198 @@
+{
+  "device": "AMD Radeon RX 9070 XT",
+  "config": "Projects/Sandbox/assets/scenes/Sponza.world",
+  "frames": 300,
+  "timestampsSupported": true,
+  "totalGpuMs": 10.8045,
+  "passes": {
+    "AO": {
+      "avgMs": 0.1656,
+      "minMs": 0.1538,
+      "maxMs": 0.3244,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "AODenoise0": {
+      "avgMs": 0.1079,
+      "minMs": 0.103,
+      "maxMs": 0.2201,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "AODenoise1": {
+      "avgMs": 0.1076,
+      "minMs": 0.1027,
+      "maxMs": 0.2202,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "AODenoise2": {
+      "avgMs": 0.1143,
+      "minMs": 0.1089,
+      "maxMs": 0.2334,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "AOTemporal": {
+      "avgMs": 0.0416,
+      "minMs": 0.0391,
+      "maxMs": 0.0734,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "AOUpsample": {
+      "avgMs": 0.0455,
+      "minMs": 0.0413,
+      "maxMs": 0.0836,
+      "fragInvocations": 2037560,
+      "depth": 0
+    },
+    "CameraDepthPrepass": {
+      "avgMs": 0.0019,
+      "minMs": 0.0004,
+      "maxMs": 0.0022,
+      "fragInvocations": 4000878,
+      "depth": 0
+    },
+    "DepthNormal": {
+      "avgMs": 0.1415,
+      "minMs": 0.1318,
+      "maxMs": 0.1872,
+      "fragInvocations": 4273613,
+      "depth": 0
+    },
+    "DepthPrepassBarrier": {
+      "avgMs": 0.0001,
+      "minMs": 0.0001,
+      "maxMs": 0.0002,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "Editor": {
+      "avgMs": 0.0409,
+      "minMs": 0.0378,
+      "maxMs": 0.067,
+      "fragInvocations": 9769516,
+      "depth": 0
+    },
+    "Forward": {
+      "avgMs": 6.1627,
+      "minMs": 5.743,
+      "maxMs": 11.6146,
+      "fragInvocations": 2817326,
+      "depth": 0
+    },
+    "GIDenoise0": {
+      "avgMs": 0.1077,
+      "minMs": 0.1023,
+      "maxMs": 0.2204,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "GIDenoise1": {
+      "avgMs": 0.1071,
+      "minMs": 0.1023,
+      "maxMs": 0.2198,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "GIDenoise2": {
+      "avgMs": 0.1138,
+      "minMs": 0.1085,
+      "maxMs": 0.2328,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "GITemporal": {
+      "avgMs": 0.0421,
+      "minMs": 0.0391,
+      "maxMs": 0.0733,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "GIUpsample": {
+      "avgMs": 0.0473,
+      "minMs": 0.0428,
+      "maxMs": 0.1204,
+      "fragInvocations": 2037560,
+      "depth": 0
+    },
+    "PostProcess": {
+      "avgMs": 0.0236,
+      "minMs": 0.0147,
+      "maxMs": 0.1735,
+      "fragInvocations": 2037560,
+      "depth": 0
+    },
+    "PrevColorSnapshot": {
+      "avgMs": 0.0458,
+      "minMs": 0.0298,
+      "maxMs": 0.1908,
+      "fragInvocations": 2037560,
+      "depth": 0
+    },
+    "Reflection": {
+      "avgMs": 1.4477,
+      "minMs": 1.3661,
+      "maxMs": 2.6148,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ReflectionDenoise0": {
+      "avgMs": 0.3556,
+      "minMs": 0.3337,
+      "maxMs": 0.6906,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ReflectionDenoise1": {
+      "avgMs": 0.3668,
+      "minMs": 0.3426,
+      "maxMs": 0.7215,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ReflectionDenoise2": {
+      "avgMs": 0.4098,
+      "minMs": 0.3836,
+      "maxMs": 0.7958,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ReflectionTemporal": {
+      "avgMs": 0.1421,
+      "minMs": 0.1365,
+      "maxMs": 0.2446,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "SSGI": {
+      "avgMs": 0.2658,
+      "minMs": 0.2528,
+      "maxMs": 0.5381,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "Sky": {
+      "avgMs": 0.0,
+      "minMs": 0.0,
+      "maxMs": 0.0,
+      "fragInvocations": 0,
+      "depth": 1
+    },
+    "TemporalResolve": {
+      "avgMs": 0.1796,
+      "minMs": 0.0984,
+      "maxMs": 0.3189,
+      "fragInvocations": 2037560,
+      "depth": 0
+    },
+    "Velocity": {
+      "avgMs": 0.0743,
+      "minMs": 0.0687,
+      "maxMs": 0.1346,
+      "fragInvocations": 3064205,
+      "depth": 0
+    }
+  }
+}

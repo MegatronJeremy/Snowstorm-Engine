@@ -86,7 +86,7 @@ py Scripts/perf-bench.py                    # run the matrix, diff vs baseline, 
 py Scripts/perf-bench.py --update-baseline  # capture current results as the new baseline
 py Scripts/perf-bench.py --only +gi         # one config (rt-off | shadows | +ao | +refl | +gi | ssgi)
 py Scripts/perf-bench.py --frames 300       # more frames = less noise, slower
-py Scripts/perf-bench.py --gpu xtx          # pin the adapter on a multi-GPU box
+py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
 ```
 
 The config matrix (`rt-off → shadows → +ao → +refl → +gi`) enables one RT effect at a time, so the
@@ -99,15 +99,18 @@ smoke, it needs a **real GPU** (Vulkan timestamps) so it's a **local** gate, not
 without timestamp support the JSON sets `timestampsSupported:false` and the script skips rather than
 false-failing.
 
-**Baselines are per-machine** (GPU differences make ms non-comparable), so re-run `--update-baseline`
-on a new box; compare mode notes a device mismatch, and `--update-baseline` refuses outright to write
-a baseline whose device disagrees with the rest of the set, since a matrix split across two adapters
-turns every cross-config delta into effect-cost plus hardware difference. On a multi-GPU machine
-`SS_CONFIG_IGNORE` also discards the persisted `render.gpu` pick, so selection falls back to auto and
-the adapter is whatever the driver enumerates first; `--gpu` pins it (a value of all digits is a
-candidate **index**, anything else a case-insensitive name substring, so pass `xtx`, not `7900`).
-Re-baseline deliberately (with a commit) when a change *intends* to shift perf, never to paper over an
-unexplained regression.
+**Baselines are keyed by adapter**: `Scripts/perf-baseline/<device-slug>/<config>.json`, where the slug
+comes from the device name the run reports. GPU differences make ms non-comparable, so a run only ever
+diffs against the set captured on the adapter it is running on, and a box with two cards keeps two
+independent sets (the repo holds `amd-radeon-rx-9070-xt`, `nvidia-geforce-rtx-5070`, and an
+`amd-radeon-rx-7900-xtx` set from another machine). Cross-vendor comparison is then a deliberate read
+across two directories rather than an accidental mixture inside one set, which would turn every
+cross-config delta into effect-cost plus hardware difference. Missing set = the gate says so and prints
+raw numbers instead of failing. On a multi-GPU machine `SS_CONFIG_IGNORE` also discards the persisted
+`render.gpu` pick, so selection falls back to auto and the adapter is whatever the driver enumerates
+first; `--gpu` pins it, taking a short all-digits value as a candidate **index** and anything else
+(including a model number like `9070`) as a case-insensitive name substring. Re-baseline deliberately
+(with a commit) when a change *intends* to shift perf, never to paper over an unexplained regression.
 
 ## Shader occupancy gate (RGA, static)
 
