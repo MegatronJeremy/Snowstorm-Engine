@@ -23,7 +23,8 @@ py Scripts/Generate-Solution.py --fresh         # also wipe vcpkg installed/buil
 ```
 
 Then open `build/Snowstorm.sln` and build. **Snowstorm-Editor** is the default startup project;
-the debugger working directory is the repo root, so relative `Assets/...` paths resolve. Vulkan
+the debugger working directory is the repo root, so relative `Engine/...` and `Projects/...` paths
+resolve. Vulkan
 validation layers are wired via the `VK_ADD_LAYER_PATH` env var (set by the script and in the VS
 debugger environment) pointing at the vcpkg `bin` dir.
 
@@ -50,14 +51,17 @@ semaphore/fence hazards) and **best-practices** (perf/usage foot-guns) via `VkVa
 These are off by default — they add overhead and best-practices is advisory/noisy. Strict findings
 are logged at `[warning]` level and shown as **notes**, not failures (a strict run still PASSes on
 them); add `--warnings-fail` to gate on them. Genuine validation **errors** are always `[error]`
-level and fail the run in either mode. GPU-assisted validation is not wired up (much heavier) — add
-it when the compute path needs it.
+level and fail the run in either mode. **GPU-assisted validation** is separate and much heavier
+(it instruments shaders to catch out-of-bounds descriptor/buffer access at execution time): it sits
+behind its own `validation.gpu` CVar (`SS_VALIDATION_GPU=1`), off by default and not implied by
+`--strict`.
 
 **Run it after any change substantial enough to affect runtime behavior** (engine/render/ECS/asset
 code, the frame loop, anything touching Vulkan) — not for docs/comment/build-script-only edits.
 Build first (`cmake --build build --config Debug`), then smoke-test. It needs a **real GPU/display**
-(Vulkan), so it is a **local** gate — it cannot run on hosted CI; the GitHub `build` workflow only
-compiles. The harness sets `VK_ADD_LAYER_PATH` itself so validation layers load.
+(Vulkan), so it is a **local** gate that cannot run on hosted CI; the GitHub `build` workflow
+compiles and runs the GPU-free unit tests (`ctest --test-dir build -C Debug --output-on-failure`),
+nothing that needs a device. The harness sets `VK_ADD_LAYER_PATH` itself so validation layers load.
 
 The harness also sets `SS_VALIDATION_NONFATAL=1`: by default the Vulkan validation messenger
 asserts (and the process dies) on the first ERROR, so you only see one error per run. With this env
@@ -80,19 +84,30 @@ pass regresses beyond `--threshold` (default 15%).
 ```
 py Scripts/perf-bench.py                    # run the matrix, diff vs baseline, PASS/FAIL
 py Scripts/perf-bench.py --update-baseline  # capture current results as the new baseline
-py Scripts/perf-bench.py --only +gi         # one config (rt-off | shadows | +ao | +refl | +gi)
+py Scripts/perf-bench.py --only +gi         # one config (rt-off | shadows | +ao | +refl | +gi | ssgi)
 py Scripts/perf-bench.py --frames 300       # more frames = less noise, slower
+py Scripts/perf-bench.py --gpu xtx          # pin the adapter on a multi-GPU box
 ```
 
 The config matrix (`rt-off → shadows → +ao → +refl → +gi`) enables one RT effect at a time, so the
-**Forward-pass ms delta between adjacent configs is that effect's cost** — the RT effects are inline in
+**Forward-pass ms delta between adjacent configs is that effect's cost**: the RT effects are inline in
 the Forward pass, so this A/B *is* the per-effect timing (there's no separate GPU scope per effect, by
-design). Sub-0.05 ms passes are ignored (timestamp noise). Like smoke, it needs a **real GPU** (Vulkan
-timestamps) so it's a **local** gate, not CI; on a device without timestamp support the JSON sets
-`timestampsSupported:false` and the script skips rather than false-failing. **Baselines are
-per-machine** (GPU differences make ms non-comparable) — re-run `--update-baseline` on a new box, and
-the script warns if the recorded device differs. Re-baseline deliberately (with a commit) when a change
-*intends* to shift perf; never to paper over an unexplained regression.
+design). A trailing `ssgi` config sits outside that ladder, repeating the `+gi` rung with the
+screen-space GI producer, so it diffs against `+refl` rather than its neighbour and gives the
+screen-space-vs-RT cost of the same effect. Sub-0.05 ms passes are ignored (timestamp noise). Like
+smoke, it needs a **real GPU** (Vulkan timestamps) so it's a **local** gate, not CI; on a device
+without timestamp support the JSON sets `timestampsSupported:false` and the script skips rather than
+false-failing.
+
+**Baselines are per-machine** (GPU differences make ms non-comparable), so re-run `--update-baseline`
+on a new box; compare mode notes a device mismatch, and `--update-baseline` refuses outright to write
+a baseline whose device disagrees with the rest of the set, since a matrix split across two adapters
+turns every cross-config delta into effect-cost plus hardware difference. On a multi-GPU machine
+`SS_CONFIG_IGNORE` also discards the persisted `render.gpu` pick, so selection falls back to auto and
+the adapter is whatever the driver enumerates first; `--gpu` pins it (a value of all digits is a
+candidate **index**, anything else a case-insensitive name substring, so pass `xtx`, not `7900`).
+Re-baseline deliberately (with a commit) when a change *intends* to shift perf, never to paper over an
+unexplained regression.
 
 ## Shader occupancy gate (RGA, static)
 
@@ -140,7 +155,19 @@ populated by any editor build+run. But a clean checkout / CI has no cache and no
 (VulkanShader.cpp: profiles `vs/ps/cs_6_5`, entry `main`, `SS_RAYTRACING`/`SS_FP16` permutations)
 into `Engine/cache/shaders-cook/`. The cook reproduces the runtime-cache numbers **bit-for-bit**, so
 both paths gate against the same committed baseline; the baseline is generated from the cook so it
-also covers shaders never exercised in a run (`Metrics.comp`, the `Neural*.comp` passes). Keep
+also covers shaders never exercised in a run (`Metrics.comp`, the `Neural*.comp` passes). The
+baseline holds the worst case across **both** permutations, so reproduce it the way CI does, with
+both variants and the cook directory:
+
+```
+py Scripts/cook-shaders.py --variants rt,base
+py Scripts/rga-occupancy.py --spv-dir Engine/cache/shaders-cook
+```
+
+Cooking the default `rt` variant alone drops the `base` permutation from every entry, so any shader
+whose worst case lives there is re-baselined to a weaker number and the local gate stops agreeing
+with CI. Pointing the gate at the runtime cache (`Engine/cache/shaders`, its default) is the other
+trap: a `--update-baseline` from there deletes the entries for shaders no editor run exercises. Keep
 `cook-shaders.py`'s flags in sync with VulkanShader.cpp (it is a deliberate second copy; no shared
 source of truth today). `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
 expected the old `#type` split and silently compiled nothing).
@@ -149,24 +176,80 @@ expected the old `#type` split and silently compiled nothing).
 static and needs no GPU, so hosted CI cooks the shaders and runs the occupancy gate on every shader
 change. RGA is cached across runs (actions/cache) so only the first pays the download.
 
+## Image-quality gate vs the path tracer (run after any change to a lighting technique)
+
+`Scripts/quality-bench.py` is the correctness counterpart to perf-bench: perf-bench answers "how
+fast", this answers "how close to ground truth". Per viewpoint it captures the **converged path
+tracer** as the reference, then each real-time technique, and reports **FLIP** (perceptual, lower is
+better), **PSNR** and **SSIM** of technique vs reference, diffing against
+`Scripts/quality-baseline/<viewpoint>__<technique>.json` and failing (exit 1) past `--threshold`
+(default 10%). This is how real-time GI/denoiser work is measured in the literature (SVGF, ReSTIR,
+NVIDIA FLIP).
+
+```
+py Scripts/quality-bench.py                    # capture ref + all techniques, diff vs baseline
+py Scripts/quality-bench.py --update-baseline  # capture current metrics as the new baseline
+py Scripts/quality-bench.py --only ssgi        # a single technique
+py Scripts/quality-bench.py --ref-frames 400   # PT accumulation frames (reference convergence)
+py Scripts/quality-bench.py --fresh-ref        # ignore the cached PT reference and re-capture
+```
+
+Both sides tonemap through the same LDR chain, so toggling `render.pathtrace` is an apples-to-apples
+A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the final present to
+`<path>_ldr.npy` and the script computes the metrics offline. The reference runs **unbiased**
+(`pathtrace.clamp` and `pathtrace.weightclamp` both 0).
+
+- **Runtime, not Editor.** Captures run `Snowstorm-Runtime` (fixed viewport, no editor panels), so
+  the framing is deterministic. Even so, every capture is bilinear-resampled to a canonical
+  **1024x576** before any metric, because the editor viewport size is not reproducible across
+  launches (1177x649 and 1817x1009 were both observed in one session) and a shape mismatch silently
+  breaks the comparison. A fixed-resolution render path would remove the resample.
+- **Three Sponza viewpoints** (`atrium`, `floor`, `gallery`) share one position and vary orientation,
+  covering content that stresses AO, GI and reflections differently. Two further candidate
+  orientations were dropped as degenerate (yaw+pi was 99.7% dark; the side yaw 78.7% dark, 0%
+  bright). Averaging across viewpoints is what `Scripts/quality-tune.py` minimizes, so a tuned
+  parameter does not overfit one frame.
+- **Eight techniques**: `raster`, `ssao`, `rtao`, `ssr`, `rtrefl`, `ssgi`, `rtgi`, `all-rt`. Each is a
+  full real-time render with that one technique on, TAA enabled.
+- **FLIP is pinned** to `flip-evaluator==1.7` (a perceptual metric that drifts between versions makes
+  a committed baseline meaningless, same reasoning as the clang-format and RGA pins). It is optional:
+  without the package the gate still runs on PSNR/SSIM. **numpy is required.**
+- The PT reference is cached under `Scripts/.quality-ref-cache/` (gitignored, per-machine). The cache
+  key does **not** track engine/shader edits, so use `--fresh-ref` after a change that could move the
+  reference itself. Real-time captures are frame-capped by `--tech-maxframes` (default 200) since
+  they never converge; the reference is uncapped because it does.
+- Needs a **real GPU** (Vulkan + the path tracer), so this is a **local** gate, not CI. **Baselines
+  are per-machine.**
+
+Every run sets `SS_CONFIG_IGNORE=1`, so a capture is code defaults plus the technique's overrides and
+never this machine's persisted `SnowstormConfig.cfg`. Note that only `all-rt` overrides
+`render.shadows.mode`: every other technique renders with the default shadow map, so shadowing is a
+constant in the matrix rather than something the gate measures.
+
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc
 `std::getenv`. Declare engine-wide CVars in `Snowstorm/Core/EngineCVars.{hpp,cpp}`; each
 self-registers and is resolved once at startup by `CVarRegistry::Initialize(argc, argv)` (called in
-`EntryPoint.hpp`) from, in increasing priority: **default → environment → CLI**.
+`EntryPoint.hpp`) from, in increasing priority: **default → `SnowstormConfig.cfg` →
+`SnowstormStartup.cfg` → environment → CLI**. `SnowstormConfig.cfg` is auto-saved by the editor on
+shutdown and holds persistent CVars only; `SnowstormStartup.cfg` is hand-authored, never written by
+the app, and can carry any CVar, so it is the safe place for machine-local toggles the auto-save
+cannot clobber. `config.ignore` (`SS_CONFIG_IGNORE=1`) skips both files, which is what the benchmark
+harnesses set so a run depends on code defaults plus its own overrides, never on local settings.
 
 A CVar named `validation.extra` is set by env `SS_VALIDATION_EXTRA` **or** CLI `--validation.extra`
 (dots→`_`, uppercased, `SS_` prefix for env). Bools accept presence (`--flag`, or env set to
 anything but `0`/`false`/`off`/`no`). Run any executable with `--list-cvars` (or `--help`) to print
-every CVar with its value, type, env name, and description. Current CVars: `smoke.frames`,
-`validation.nonfatal`, `validation.extra` (the smoke harness still sets the matching env vars, so
-nothing about running it changed). Startup resolution is read-once (env → CLI), but CVars can now also
-be **edited live at runtime** from the editor's *Debug > Console Variables* panel (`CVarPanelSystem`):
-it lists every CVar with a type-appropriate widget (checkbox/int/float) plus a `name value` command
-line, via typed accessors on `ICVar` (`GetKind`/`Get*`/`Set*`). Most engine CVars are read per-frame
-through `.Get()` (shadows, IBL, exposure, shadow quality), so edits take effect immediately. A
-config-file source is still a planned follow-up.
+every CVar with its value, type, env name, and description. `EngineCVars.cpp` declares ~124 of them
+(rendering technique modes, denoiser knobs, path tracer, benchmark hooks, validation); treat
+`--list-cvars` as the authoritative list rather than any enumeration here. Startup resolution runs
+once, but CVars can also be **edited live at runtime** from the editor's *Debug > Console Variables*
+panel (`CVarPanelSystem`): it lists every CVar with a type-appropriate widget (checkbox/int/float)
+plus a `name value` command line, via typed accessors on `ICVar` (`GetKind`/`Get*`/`Set*`). Most
+engine CVars are read per-frame through `.Get()` (shadows, IBL, exposure, shadow quality), so edits
+take effect immediately, and those marked `CVarFlags::Persist` are written back to
+`SnowstormConfig.cfg` on shutdown.
 
 ## Layout
 
@@ -176,8 +259,11 @@ Snowstorm-Core/      # STATIC library: all engine code (the only place most work
   Source/Platform/   #   Vulkan/ (RHI implementation, ~28 files) and Windows/
 Snowstorm-Editor/    # Editor EXECUTABLE — links Core; ImGui dockspace, panels, viewport
 Snowstorm-Runtime/   # Editor-free runtime EXECUTABLE — links Core; shares RegisterCoreSystems (WIP)
-Assets/              # Shaders, Meshes, Materials, Scenes, Textures (loaded at runtime)
-Scripts/             # Generate-Solution.{py,bat}
+Snowstorm-Tests/     # Catch2 unit tests (GPU-free; run by ctest, gated in CI)
+Engine/              # engine-owned runtime data: Shaders/, Fonts/, and the gitignored cache/
+Projects/Sandbox/    # the sample project: assets/ (scenes, meshes, materials, textures, registry)
+Dataset/             # gitignored capture output + trained weights
+Scripts/             # build, smoke, perf, quality, shader-occupancy tooling + committed baselines
 Tools/dxc/           # DirectX Shader Compiler (HLSL -> SPIR-V)
 ```
 
@@ -269,9 +355,13 @@ Keep those two in sync when adding a dependency.
 
 ## Git hygiene
 
-`.gitignore` excludes everything generated: `build/`, `vcpkg/`, `.vs/`, `Assets/cache`, and all
-solution/project files (`*.sln`, `*.vcxproj*`, `*.cmake`, `CMakeCache.txt`, `ALL_BUILD.*`,
-`ZERO_CHECK.*`, `Makefile`). Never commit those or compiled artifacts. Commit messages in English.
+`.gitignore` excludes everything generated: `build/`, `vcpkg/`, `.vs/`, `Engine/cache`, the local
+config files (`SnowstormConfig.cfg`, `SnowstormStartup.cfg`), captures and weights (`Dataset/`,
+`*.npy`, `*.ssnn`), downloaded tooling (`Tools/rga/`, `Tools/rdts/`), the PT reference cache
+(`Scripts/.quality-ref-cache/`), and all solution/project files (`*.sln`, `*.vcxproj*`, `*.cmake`,
+`CMakeCache.txt`, `ALL_BUILD.*`, `ZERO_CHECK.*`, `Makefile`). The committed baselines under
+`Scripts/{perf,rga,quality}-baseline/*.json` are re-included explicitly, so they survive those rules.
+Never commit generated or compiled artifacts. Commit messages in English.
 
 ## Think like a real engine
 
@@ -376,7 +466,7 @@ Worked example — **asset pipeline** (the engine's current biggest simplificati
 
 - **Use the instrumentation that already exists BEFORE writing ad-hoc probes.** This engine already has
   rich, always-on timing/state readouts — check them first instead of scattering `SS_CORE_WARN` probes:
-  - The editor's **Performance panel** (`Snowstorm-Editor/System/SceneHierarchySystem.cpp`) shows
+  - The editor's **Performance panel** (`Snowstorm-Editor/Source/System/SceneHierarchySystem.cpp`) shows
     per-phase + per-**system** CPU ms, per-**pass GPU** ms (timestamp scopes), draw/batch/instance/
     triangle counts, and cull stats — smoothed and heat-colored. A "which part of the frame is slow"
     question is usually answered by reading this, not by instrumenting.
