@@ -231,6 +231,16 @@
       "isa_size": 460.0,
       "permutations": 2
     },
+    "OmmBake.comp": {
+      "vgprs": 12.0,
+      "sgprs": 30.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 1192.0,
+      "permutations": 2
+    },
     "PathTrace.comp": {
       "vgprs": 107.0,
       "sgprs": 85.0,
@@ -291,6 +301,16 @@
       "isa_size": 8712.0,
       "permutations": 2
     },
+    "SSGI.comp": {
+      "vgprs": 44.0,
+      "sgprs": 82.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 3568.0,
+      "permutations": 2
+    },
     "SSR.comp": {
       "vgprs": 23.0,
       "sgprs": 66.0,
@@ -299,6 +319,16 @@
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 2756.0,
+      "permutations": 2
+    },
+    "Shadow.comp": {
+      "vgprs": 88.0,
+      "sgprs": 58.0,
+      "lds": 4096.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 7084.0,
       "permutations": 2
     },
     "Shadow.frag": {
