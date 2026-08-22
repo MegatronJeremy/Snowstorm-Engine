@@ -594,10 +594,10 @@ namespace Snowstorm::CVars
 	// PT pass AND the skip of the normal scene path (forward/G-buffer/upscale/temporal) so PT owns the frame.
 	[[nodiscard]] bool PathTraceActive();
 
-	// True when ANY inline-RT effect is active (shadows/AO/reflections/GI). Drives the DefaultLit shader
-	// permutation swap (#118 perf): when false, DefaultLit compiles the cheap non-RT variant so a scene with
-	// RT off doesn't pay the RT permutation's occupancy tax. Folds device support via the four helpers, so
-	// it's always false on a non-RT GPU. Also the natural single gate for the TLAS build (mirrors the OR in
-	// TlasBuildSystem).
+	// True when an effect still ray-traces INLINE inside DefaultLit (shadows, reflections). Drives that
+	// shader's permutation swap (#118 perf): when false, DefaultLit compiles the cheap non-RT variant so a
+	// scene with RT off doesn't pay the RT permutation's occupancy tax. Folds device support via the two
+	// helpers, so it's always false on a non-RT GPU. GI and AO are excluded because they moved to compute
+	// passes; this is therefore NOT the TLAS gate, which ORs those plus path tracing (see TlasBuildSystem).
 	[[nodiscard]] bool AnyRTEffectActive();
 }
