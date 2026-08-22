@@ -286,8 +286,11 @@ namespace Snowstorm
 			             static_cast<int>(candidates[i].Props.deviceType));
 		}
 
-		// Pick per render.gpu: an all-digits value selects by candidate index; otherwise a case-insensitive
-		// name substring. Empty (default) auto-selects the first DISCRETE GPU, else the first candidate.
+		// Pick per render.gpu: a short all-digits value in range selects by candidate index, and anything
+		// that does not resolve that way is tried as a case-insensitive name substring. Model numbers
+		// ("9070", "5070") are the natural way to name an adapter and are indistinguishable from an index,
+		// so digits must not be a dead end. Empty (default) auto-selects the first DISCRETE GPU, else the
+		// first candidate.
 		auto toLowerAscii = [](std::string s)
 		{
 			for (char& c : s)
@@ -302,15 +305,15 @@ namespace Snowstorm
 		size_t chosen = candidates.size(); // sentinel: unresolved
 		if (const std::string& sel = CVars::GpuSelect.Get(); !sel.empty())
 		{
-			if (std::all_of(sel.begin(), sel.end(), [](unsigned char c)
-			                { return c >= '0' && c <= '9'; }))
+			if (sel.size() <= 3 && std::all_of(sel.begin(), sel.end(), [](unsigned char c)
+			                                   { return c >= '0' && c <= '9'; }))
 			{
 				if (const size_t idx = static_cast<size_t>(std::stoul(sel)); idx < candidates.size())
 				{
 					chosen = idx;
 				}
 			}
-			else
+			if (chosen == candidates.size())
 			{
 				const std::string needle = toLowerAscii(sel);
 				for (size_t i = 0; i < candidates.size(); ++i)
