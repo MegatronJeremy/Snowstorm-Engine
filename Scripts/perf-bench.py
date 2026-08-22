@@ -10,7 +10,9 @@ prints a per-pass table, and diffs against a committed baseline in Scripts/perf-
 The config matrix answers "what does each RT effect cost": it starts from all-RT-off and
 enables shadows / +AO / +reflections / +GI in turn, so the Forward-pass ms delta between
 adjacent configs is that effect's cost (the RT effects are inline in the Forward pass, so
-per-effect timing IS the A/B across configs, not a separate GPU scope).
+per-effect timing IS the A/B across configs, not a separate GPU scope). A trailing `ssgi`
+config repeats the last rung with the screen-space GI producer, so it diffs against `+refl`
+(not against its neighbour) and gives the screen-space-vs-RT cost of the same effect.
 
 Needs a real GPU (Vulkan timestamps), so it's a LOCAL gate like smoke-test.py, not CI.
 
@@ -36,12 +38,15 @@ from pathlib import Path
 # subsequent config turns one more effect on so the Forward delta attributes per-effect cost.
 # Env names follow the CVar->env mapping (dots->_, SS_ prefix). All use TAA (render.aa=2) since the
 # RT effects need it for a clean result and that's the realistic configuration.
+# `ssgi` is not another rung: it re-runs the `+gi` rung with the screen-space GI producer instead of
+# the ray-traced one, so (ssgi - +refl) against (+gi - +refl) is the screen-space-vs-RT cost A/B.
 CONFIGS = [
     ("rt-off",   {"SS_RENDER_SHADOWS_MODE": "1", "SS_RENDER_AO_MODE": "0", "SS_RENDER_REFLECTIONS_MODE": "0", "SS_RENDER_GI_MODE": "0"}),
     ("shadows",  {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "0", "SS_RENDER_REFLECTIONS_MODE": "0", "SS_RENDER_GI_MODE": "0"}),
     ("+ao",      {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2", "SS_RENDER_REFLECTIONS_MODE": "0", "SS_RENDER_GI_MODE": "0"}),
     ("+refl",    {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2", "SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_GI_MODE": "0"}),
     ("+gi",      {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2", "SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_GI_MODE": "2"}),
+    ("ssgi",     {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2", "SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_GI_MODE": "1"}),
 ]
 
 DEFAULT_SCENE = "Projects/Sandbox/assets/scenes/Sponza.world"
@@ -52,7 +57,7 @@ def find_repo_root(script_dir: Path) -> Path:
 
 
 def run_config(name: str, env_overrides: dict, exe: Path, cwd: Path, frames: int,
-               timeout: int, layer_path: Path, scene: str) -> dict | None:
+               timeout: int, layer_path: Path, scene: str, gpu: str) -> dict | None:
     """Run one config headlessly; return the parsed perf JSON (or None on failure)."""
     out_path = Path(tempfile.gettempdir()) / f"perf-bench-{name}.json"
     if out_path.exists():
@@ -68,6 +73,11 @@ def run_config(name: str, env_overrides: dict, exe: Path, cwd: Path, frames: int
     # SnowstormConfig.cfg. Without it a persisted setting (e.g. render.shadow.resolution=4096) leaks into every
     # config and silently skews the baseline diff -- the benchmark must depend only on code, not local settings.
     env["SS_CONFIG_IGNORE"] = "1"
+    # On a multi-GPU box that isolation also discards the persisted render.gpu picker choice, so device
+    # selection falls back to auto and a run can land on a different adapter than the baseline was
+    # captured on. --gpu pins it (same substring/index syntax as the CVar).
+    if gpu:
+        env["SS_RENDER_GPU"] = gpu
     env.update(env_overrides)
     if layer_path and layer_path.is_dir():
         env["VK_ADD_LAYER_PATH"] = str(layer_path)
@@ -94,6 +104,20 @@ def run_config(name: str, env_overrides: dict, exe: Path, cwd: Path, frames: int
 
 def baseline_path(repo_root: Path, name: str) -> Path:
     return repo_root / "Scripts" / "perf-baseline" / f"{name}.json"
+
+
+def other_baseline_device(repo_root: Path, name: str) -> tuple[str, str] | None:
+    """Device recorded by some OTHER config's baseline, as (config, device)."""
+    for other, _ in CONFIGS:
+        if other == name:
+            continue
+        p = baseline_path(repo_root, other)
+        if not p.exists():
+            continue
+        dev = json.loads(p.read_text()).get("device")
+        if dev:
+            return other, dev
+    return None
 
 
 def compare(name: str, current: dict, baseline: dict, threshold_pct: float) -> bool:
@@ -148,6 +172,7 @@ def main() -> int:
     ap.add_argument("--only", default=None, help="Run only this config (e.g. rt-off, +gi)")
     ap.add_argument("--threshold", type=float, default=15.0, help="Regression tolerance %% (default 15)")
     ap.add_argument("--scene", default=DEFAULT_SCENE, help="Scene to benchmark")
+    ap.add_argument("--gpu", default="", help="Pin the GPU (render.gpu syntax: name substring or index)")
     ap.add_argument("--update-baseline", action="store_true", help="Write current results as the new baseline")
     args = ap.parse_args()
 
@@ -179,15 +204,25 @@ def main() -> int:
     for name, env_overrides in configs:
         print(f"=== {name} ===")
         current = run_config(name, env_overrides, exe, repo_root, args.frames,
-                             args.timeout, layer_path, args.scene)
+                             args.timeout, layer_path, args.scene, args.gpu)
         if current is None:
             all_ok = False
             continue
 
         bp = baseline_path(repo_root, name)
         if args.update_baseline:
+            # A baseline set split across two adapters is silently meaningless (every cross-config delta
+            # then mixes an effect's cost with the hardware difference), so refuse to write one without
+            # an explicit --gpu saying that's intended.
+            other = other_baseline_device(repo_root, name)
+            if other and current.get("device") and other[1] != current["device"] and not args.gpu:
+                print(f"  SKIPPED: this run used '{current['device']}' but baseline '{other[0]}' records "
+                      f"'{other[1]}'. Re-run with --gpu <substring> to pin the adapter.")
+                all_ok = False
+                print()
+                continue
             bp.write_text(json.dumps(current, indent=2))
-            print(f"  updated baseline: {bp.relative_to(repo_root)}")
+            print(f"  updated baseline: {bp.relative_to(repo_root)}  (device: {current.get('device', '?')})")
         elif bp.exists():
             baseline = json.loads(bp.read_text())
             if not compare(name, current, baseline, args.threshold):
