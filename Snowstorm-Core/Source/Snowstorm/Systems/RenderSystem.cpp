@@ -357,10 +357,10 @@ namespace Snowstorm
 		const bool exporting = CVars::DatasetExport.Get() && comparing;
 		// GI (#125), reflection (#129), and AO (#130) temporal accumulation reproject by motion vectors, so any
 		// forces the velocity pass on whenever its effect runs (mirrors VelocityEffect::ShouldRun so flag + pass agree).
-		// SSR (#151) ALWAYS needs velocity (it reprojects the previous-frame color at the hit), not just when a
-		// temporal stage is on — so it forces the pass on whenever SSR is active, separately from the RT-temporal ORs.
-		const bool giTemporal = (CVars::GIRTActive() && CVars::GITemporalActive()) ||
-		                        CVars::ReflectionsSSRActive() ||
+		// SSR and SSGI (#151) ALWAYS need velocity (they reproject the previous-frame color at the hit), not just
+		// when a temporal stage is on, so either forces the pass on separately from the RT-temporal ORs.
+		const bool giTemporal = (CVars::GiActive() && CVars::GITemporalActive()) ||
+		                        CVars::ReflectionsSSRActive() || CVars::GiSSGIActive() ||
 		                        (CVars::ReflectionsRTActive() && CVars::ReflectionTemporalActive()) ||
 		                        (CVars::AoRTActive() && CVars::AOTemporalActive()) ||
 		                        (CVars::ShadowStochasticActive() && CVars::ShadowTemporalActive());
@@ -377,7 +377,7 @@ namespace Snowstorm
 		// half-res AO, 3 = reflections — each lets you eyeball the substrate in isolation). The compute passes
 		// additionally check their own gates. Reflections need it because ReflectionPass reconstructs each
 		// pixel's world position + normal from the G-buffer (like GI), so reflections-only must still prepass.
-		const bool giActive = CVars::GIRTActive();
+		const bool giActive = CVars::GiActive();                   // SSGI or RT GI: both need the depth+normal prepass (#151)
 		const bool aoActive = CVars::AoActive();                   // SSAO or RT AO — both need the depth+normal prepass + debug view 2 (#151)
 		const bool reflActive = CVars::ReflectionsActive();        // SSR or RT reflections — both need the depth+normal prepass (#151)
 		const bool shadowActive = CVars::ShadowStochasticActive(); // the half-res stochastic shadow pass needs the G-buffer (inline RT shadows don't)

@@ -30,6 +30,7 @@
 #include "Snowstorm/Render/Passes/SSAOBlurPass.hpp" // #151: SSAO depth+normal bilateral blur
 #include "Snowstorm/Render/Denoiser.hpp"            // #132: shared SVGF processor (owns the GITemporal/GIDenoise passes)
 #include "Snowstorm/Render/Passes/GIPass.hpp"
+#include "Snowstorm/Render/Passes/SSGIPass.hpp" // #151: screen-space GI gather
 #include "Snowstorm/Render/Passes/ReflectionPass.hpp"
 #include "Snowstorm/Render/Passes/SSRPass.hpp" // #151: screen-space reflection trace
 #include "Snowstorm/Render/Passes/AOUpsamplePass.hpp"
@@ -221,6 +222,88 @@ namespace Snowstorm
 			DepthNormalPass m_Pass; // owned here: the depth+normal prepass is exclusive to this effect
 		};
 
+		// Screen-space GI technique (#151), the raster baseline the thesis compares RT GI against. Runs only in
+		// render.gi.mode == SSGI. Reads the SAME depth+geometric-normal G-buffer and writes the SAME half-res
+		// GITarget as the RT path, then flows through the SAME GI temporal/denoise/upsample/forward tail, so the
+		// only variable in the A/B is where the incoming radiance came from (screen march vs ray trace). Marches
+		// the depth buffer along cosine-hemisphere directions; a hit gathers the PREVIOUS frame's scene color
+		// (reprojected by velocity, snapshotted by PrevColorSnapshotEffect), a miss gathers the prefiltered env
+		// cube. Needs the velocity buffer + the prev-color history, so it forces the velocity pass on (see the
+		// RenderSystem preamble / VelocityEffect gate). Debug view 6 shows the raw GITarget, same as RT.
+		class SSGIEffect final : public IViewportEffect
+		{
+		public:
+			explicit SSGIEffect(RenderSystem& owner)
+			    : m_Owner(owner)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "SSGI"; }
+
+			// No geometry-table check (the screen march resolves hits against the depth buffer, not the BLAS
+			// table). Both GITarget AND GITargetView are required because the downstream tail dereferences
+			// v.RT.GITarget->GetDesc() for the half-res extent.
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.GBufferNeeded && CVars::GiSSGIActive() && v.RT.GITarget && v.RT.GITargetView &&
+				       v.RT.PrevSceneColorTarget && !v.RT.PrevSceneColorTarget->GetDesc().ColorAttachments.empty() &&
+				       v.Velocity;
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+
+				const auto& gbufDesc = v.RT.GBufferNormalTarget->GetDesc();
+				const uint32_t giW = ScaledExtent(gbufDesc.Width, CVars::ClampedGIScale());
+				const uint32_t giH = ScaledExtent(gbufDesc.Height, CVars::ClampedGIScale());
+
+				// ColorAttachments[0] = GEOMETRIC normal, the same attachment GI.comp reads. The diffuse gather
+				// wants the surface's true hemisphere, not the normal-mapped shading normal SSR reflects off.
+				const Ref<TextureView> gbufView = gbufDesc.ColorAttachments[0].View;
+				const Ref<TextureView> depthView = gbufDesc.DepthAttachment->View; // fp32 D32 depth
+				const Ref<TextureView> giView = v.RT.GITargetView;
+				const Ref<TextureView> prevColorView = v.RT.PrevSceneColorTarget->GetDesc().ColorAttachments[0].View;
+				const Ref<TextureView> velocityView = v.Velocity;
+
+				// THIS frame's jittered camera VP (matches the jittered DepthNormal G-buffer + forward), not the
+				// stale GetFrameData().ViewProjection (same fix as GI/AO/SSR (#133 follow-up).
+				const glm::mat4 viewProj = v.Cam.Rt->JitteredViewProjection;
+				const glm::vec3 camPos = v.Cam.Transform->Position;
+				const float giRange = CVars::GIRange.Get();
+				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
+				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+				const float giIntensity = CVars::GIIntensity.Get();
+				const float iblIntensity = CVars::IBLIntensity.Get();
+				const uint32_t rayCount = CVars::ClampedGIRayCount();
+				const auto frameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
+				// The bindless index is stable frame-to-frame (unlike the camera VP), so graph-build-time
+				// GetFrameData() is fine here.
+				const uint32_t prefilteredCubeIndex = fc.Renderer.GetFrameData().IBL.PrefilteredCubeIndex;
+
+				fc.Graph.AddPass({.Name = "SSGI" + v.Suffix,
+				                  .IsCompute = true,
+				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {prevColorView->GetTexture(), RenderGraph::AccessState::Sampled},
+				                            {velocityView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Writes = {{giView->GetTexture(), RenderGraph::AccessState::Storage}},
+				                  .Execute = [this, &fc, viewProj, camPos, giRange, nearPlane, farPlane, giIntensity, iblIntensity, rayCount, frameCounter, prefilteredCubeIndex, gbufView, depthView, prevColorView, velocityView, giView, giW, giH](CommandContext& c)
+				                  {
+					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, viewProj, camPos, giRange, nearPlane, farPlane,
+					                                  giIntensity, iblIntensity, rayCount, frameCounter, prefilteredCubeIndex,
+					                                  gbufView, depthView, prevColorView, velocityView, giView, giW, giH);
+				                  }});
+
+				v.GBufferNormal = gbufView;
+				v.GIView = giView; // the raw SSGI gather is the live GI buffer; temporal/denoise republish downstream
+			}
+
+		private:
+			RenderSystem& m_Owner;
+			SSGIPass m_Pass; // owned here: the SSGI compute pass is exclusive to this effect
+		};
+
 		// Half-res RT GI compute pass (#124): traces the diffuse GI hemisphere at render.gi.scale over the
 		// depth+normal G-buffer (produced by DepthNormalEffect just before), writing incoming irradiance into
 		// the half-res GITarget. Runs after DepthNormal, before forward. Gated on GI actually being active AND
@@ -317,10 +400,12 @@ namespace Snowstorm
 			// Runs whenever the GI sub-chain is live (not just when temporal is on) so it can OWN clearing the
 			// history-valid flag when temporal is toggled off — otherwise re-enabling would reproject against
 			// stale history and ghost. Mirrors TemporalEffect (#44). The actual accumulation is gated inside.
+			// Producer-agnostic (#151): GiActive() covers both SSGI and RT GI, and v.GIView being published is
+			// itself the proof that whichever producer was selected actually ran this frame, which is why the
+			// RT-only geometry-table check belongs on GIEffect, not here.
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				return v.GBufferNeeded && CVars::GIRTActive() && v.GIView && v.RT.GIDenoiser.Allocated() &&
-				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
+				return v.GBufferNeeded && CVars::GiActive() && v.GIView && v.RT.GIDenoiser.Allocated();
 			}
 
 			void Contribute(ViewportRenderContext& v) override
@@ -368,9 +453,8 @@ namespace Snowstorm
 			{
 				// Same GI-active gate as GIUpsampleEffect, plus the denoiser toggle. Needs both scratch buffers
 				// and a live GI buffer (v.GIView — the raw trace, or the temporally-accumulated buffer if that ran).
-				return v.GBufferNeeded && CVars::GIRTActive() && CVars::GIDenoiseActive() && v.GIView &&
-				       v.RT.GIDenoiser.Allocated() &&
-				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
+				return v.GBufferNeeded && CVars::GiActive() && CVars::GIDenoiseActive() && v.GIView &&
+				       v.RT.GIDenoiser.Allocated();
 			}
 
 			void Contribute(ViewportRenderContext& v) override
@@ -402,7 +486,8 @@ namespace Snowstorm
 
 		// Depth+normal-aware bilateral upsample of the half-res GI to full res (#124). Runs after GIEffect,
 		// before Forward: reads the half-res GITarget + the full-res G-buffer guide, writes the full-res
-		// GIUpscaleTarget the forward pass samples. Same gate as GIEffect (GI active + geometry table). No
+		// GIUpscaleTarget the forward pass samples. Gated on GI being active and a producer having published
+		// v.GIView (SSGI or RT; the geometry table is the RT producer's own precondition, not the tail's). No
 		// republish of SceneColor — the forward pass consumes GIUpscaleTarget via FrameCB.GITextureIndex,
 		// which ForwardEffect sets from this target's bindless index.
 		class GIUpsampleEffect final : public IViewportEffect
@@ -417,9 +502,8 @@ namespace Snowstorm
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				return v.GBufferNeeded && CVars::GIRTActive() && v.GIView &&
-				       v.RT.GIUpscaleTarget && !v.RT.GIUpscaleTarget->GetDesc().ColorAttachments.empty() &&
-				       v.Frame.Renderer.GetReflectionGeometryAddress() != 0;
+				return v.GBufferNeeded && CVars::GiActive() && v.GIView &&
+				       v.RT.GIUpscaleTarget && !v.RT.GIUpscaleTarget->GetDesc().ColorAttachments.empty();
 			}
 
 			void Contribute(ViewportRenderContext& v) override
@@ -1397,12 +1481,12 @@ namespace Snowstorm
 				const bool exporting = CVars::DatasetExport.Get() && v.Comparing;
 				// GI (#125) and reflection (#129) temporal accumulation reproject by motion vectors, so either
 				// forces the velocity pass on whenever its effect is running — even without TAA / debug / neural.
-				const bool giTemporal = CVars::GIRTActive() && CVars::GITemporalActive();
+				const bool giTemporal = CVars::GiActive() && CVars::GITemporalActive();
 				const bool reflTemporal = CVars::ReflectionsRTActive() && CVars::ReflectionTemporalActive();
-				// SSR (#151) reprojects the previous-frame color by velocity every frame, so it needs the pass on
-				// unconditionally (not only when the reflection temporal stage is enabled).
-				const bool reflSSR = CVars::ReflectionsSSRActive();
-				return (debugView == 1 || taaOn || neuralTemporal || exporting || giTemporal || reflTemporal || reflSSR) && v.RT.VelocityTarget &&
+				// SSR and SSGI (#151) reproject the previous-frame color by velocity every frame, so either needs
+				// the pass on unconditionally (not only when its temporal stage is enabled).
+				const bool prevColorGather = CVars::ReflectionsSSRActive() || CVars::GiSSGIActive();
+				return (debugView == 1 || taaOn || neuralTemporal || exporting || giTemporal || reflTemporal || prevColorGather) && v.RT.VelocityTarget &&
 				       !v.RT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
 				       v.RT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 			}
@@ -1474,10 +1558,12 @@ namespace Snowstorm
 				// ordered) — NOT here at build time, or the compare GT forward (a second AddForwardPass) would
 				// read this primary pass's index (the FrameCB mirror trap, same reason forceRasterShadow threads
 				// through the lambda). The GT render passes giIndex=0, keeping the reference GI-free.
+				// GiActive() so BOTH SSGI and RT GI feed the same forward slot (#151); v.GIView is the proof a
+				// producer actually ran (the same published-view gate shadowIndex/reflIndex use), which replaces
+				// the old RT-only geometry-table check here.
 				uint32_t giIndex = 0;
-				if (v.GBufferNeeded && CVars::GIRTActive() && v.RT.GIUpscaleTarget &&
-				    !v.RT.GIUpscaleTarget->GetDesc().ColorAttachments.empty() &&
-				    v.Frame.Renderer.GetReflectionGeometryAddress() != 0)
+				if (v.GBufferNeeded && CVars::GiActive() && v.GIView && v.RT.GIUpscaleTarget &&
+				    !v.RT.GIUpscaleTarget->GetDesc().ColorAttachments.empty())
 				{
 					giIndex = v.RT.GIUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 				}
@@ -1814,11 +1900,12 @@ namespace Snowstorm
 			std::unordered_set<entt::entity> m_HistoryValid;
 		};
 
-		// Previous-frame scene-color snapshot (#151, SSR): after the temporal resolve, copy the post-resolve HDR
-		// scene color into the persistent PrevSceneColorTarget, so NEXT frame's SSR can sample it as the reflected
-		// radiance on a screen-space hit (SSR is consumed before the current forward runs, so it can only reflect
-		// the previous frame's color — the standard forward-renderer SSR source). Runs only in SSR mode. Single-
-		// buffered: written late this frame, read early next frame; the one graphics queue + the read's barrier
+		// Previous-frame scene-color snapshot (#151): after the temporal resolve, copy the post-resolve HDR scene
+		// color into the persistent PrevSceneColorTarget, so NEXT frame's screen-space gathers (SSR reflection,
+		// SSGI bounce) can sample it as incoming radiance on a hit. Both are consumed before the current forward
+		// runs, so the previous frame's color is the only lit source available: the standard forward-renderer
+		// screen-space source. Runs only when one of those modes is selected. Single-buffered: written late this
+		// frame, read early next frame; the one graphics queue + the read's barrier
 		// order it (like the TAA history). Reuses UpscalePass as a 1:1 HDR copy (src and dst are both full res).
 		class PrevColorSnapshotEffect final : public IViewportEffect
 		{
@@ -1832,7 +1919,7 @@ namespace Snowstorm
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				return CVars::ReflectionsSSRActive() && v.SceneColor.View && v.SceneColor.Texture &&
+				return (CVars::ReflectionsSSRActive() || CVars::GiSSGIActive()) && v.SceneColor.View && v.SceneColor.Texture &&
 				       v.RT.PrevSceneColorTarget && !v.RT.PrevSceneColorTarget->GetDesc().ColorAttachments.empty();
 			}
 
@@ -2201,6 +2288,7 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<PathTraceEffect>(*this)); // #153: reference mode, runs first + owns the frame when active
 		m_ViewportEffects.push_back(CreateScope<DepthNormalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<VelocityEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<SSGIEffect>(*this)); // #151: SSGI (mode 1); RT GI chain below is mode 2
 		m_ViewportEffects.push_back(CreateScope<GIEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<GITemporalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<GIDenoiseEffect>(*this));
