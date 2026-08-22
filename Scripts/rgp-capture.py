@@ -52,7 +52,7 @@ TOOLS = ["RadeonDeveloperPanelCLI", "RadeonDeveloperServiceCLI", "RadeonDevelope
 
 # The engine config that puts GIDenoise.comp on the hot path (from EngineCVars + perf-bench.py).
 EDITOR_ENV = {
-    "SS_RENDER_GI_RT": "1",       # RT global illumination -> runs the GI denoiser
+    "SS_RENDER_GI_MODE": "2",       # RT global illumination -> runs the GI denoiser
     "SS_RENDER_SHADOWS_MODE": "2",
     "SS_RENDER_AA": "2",          # TAA (RT effects assume it)
     "SS_STARTUP_SCENE": "Projects/Sandbox/assets/scenes/Sponza.world",

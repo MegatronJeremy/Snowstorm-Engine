@@ -79,9 +79,9 @@ TECHNIQUES = {
     "rtao": {"SS_RENDER_AO_MODE": "2", "SS_RENDER_AA": "2"},
     "ssr": {"SS_RENDER_REFLECTIONS_MODE": "1", "SS_RENDER_AA": "2"},
     "rtrefl": {"SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_AA": "2"},
-    "rtgi": {"SS_RENDER_GI_RT": "1", "SS_RENDER_AA": "2"},
+    "rtgi": {"SS_RENDER_GI_MODE": "2", "SS_RENDER_AA": "2"},
     "all-rt": {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2",
-               "SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_GI_RT": "1", "SS_RENDER_AA": "2"},
+               "SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_GI_MODE": "2", "SS_RENDER_AA": "2"},
 }
 
 

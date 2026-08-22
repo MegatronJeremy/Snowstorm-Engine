@@ -223,9 +223,9 @@ namespace Snowstorm::CVars
 
 	CVar<float> ReflectionDenoiseVariance{"render.reflections.denoise.variance", 4.0f, "SVGF variance-guided à-trous luminance-phi for reflections (#129 Inc 3b): widens the à-trous in noisy/disoccluded regions, tight where converged. 0 = off. ~2-8 typical.", CVarFlags::Persist};
 
-	CVar<bool> GIRT{"render.gi.rt", false, "Ray-traced 1-bounce diffuse global illumination (#118): from each shaded point, trace hemisphere rays, shade what they hit (albedo * sun), and add the average as indirect light (color bleeding + contact fill). Requires an RT GPU (ignored otherwise). Few rays/frame — needs TAA (render.aa = TAA) for a clean result; noisy without it.", CVarFlags::Persist};
+	CVar<int> GiMode{"render.gi.mode", 0, "Diffuse global-illumination technique (#151): 0 = Off, 1 = SSGI (screen-space 1-bounce: march the depth buffer along hemisphere directions and gather the PREVIOUS frame's lit color, any GPU), 2 = RT (hemisphere ray-query gather that shades what it hits, requires an RT GPU; falls back to Off on a non-RT device). Both write the same half-res GI target and share the temporal + à-trous + upsample tail, for a clean same-scene A/B. Few rays/frame either way, so this needs TAA (render.aa = TAA) for a clean result.", CVarFlags::Persist};
 
-	CVar<float> GIIntensity{"render.gi.intensity", 1.0f, "Multiplier on the RT GI indirect contribution (1 = physical, 0 = none)", CVarFlags::Persist};
+	CVar<float> GIIntensity{"render.gi.intensity", 1.0f, "Multiplier on the GI indirect contribution, whichever render.gi.mode technique produced it (1 = physical, 0 = none)", CVarFlags::Persist};
 
 	CVar<float> GIRange{"render.gi.range", 8.0f, "RT GI gather ray max distance in world units — how far a bounce can come from (larger = broader indirect, more cost)", CVarFlags::Persist};
 
@@ -559,12 +559,26 @@ namespace Snowstorm::CVars
 		return ReflectionTemporal.Get();
 	}
 
+	bool GiSSGIActive()
+	{
+		// render.gi.mode == SSGI. Screen-space, so no device-support check: it runs on any GPU (#151).
+		return GiMode.Get() == 1;
+	}
+
 	bool GIRTActive()
 	{
-		// render.gi.rt on AND an RT-capable device. Mirrors ReflectionsRTActive; on a non-RT GPU the GI shader
-		// branch is compiled out so this stays false. Drives the TLAS build gate AND the geometry-table build
-		// (GI shades its hits through the same table reflections use).
-		return GIRT.Get() && Renderer::IsRayTracingSupported();
+		// render.gi.mode == RT AND an RT-capable device. Mirrors ReflectionsRTActive; on a non-RT GPU the GI
+		// shader branch is compiled out so this stays false (mode 2 degrades to Off). Drives the TLAS build gate
+		// AND the geometry-table build (GI shades its hits through the same table reflections use).
+		return GiMode.Get() == 2 && Renderer::IsRayTracingSupported();
+	}
+
+	bool GiActive()
+	{
+		// Either technique is live. The shared tail (GI temporal + à-trous + bilateral upsample + forward
+		// consumption + the G-buffer prepass) gates on this so SSGI and RT GI converge on the same forward
+		// slot (#151). SSGI needs no geometry table, so tail gates must NOT also require one.
+		return GiSSGIActive() || GIRTActive();
 	}
 
 	CVar<bool> PathTrace{"render.pathtrace", false, "Reference path tracer (#153): a brute-force ground-truth render mode (GGX+Lambert BSDF, sun next-event estimation, sky environment, multi-bounce, Russian roulette) that progressively accumulates while the camera is static. NOT real-time — the correctness anchor for the thesis A/B. When on it replaces the raster/RT scene path. Requires an RT GPU.", CVarFlags::Persist};

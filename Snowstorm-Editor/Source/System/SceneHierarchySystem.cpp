@@ -674,29 +674,37 @@ namespace Snowstorm
 				if (ImGui::CollapsingHeader("Global Illumination", ImGuiTreeNodeFlags_DefaultOpen))
 				{
 
-					// Ray-traced 1-bounce diffuse GI (#118): from each shaded point, gather hemisphere rays, shade the
-					// hits, and REPLACE the diffuse ambient with that scene-derived indirect (color bleeding + contact
-					// fill). RT-only; the shader branch is compiled out on a non-RT GPU. A hemisphere integral is noisier
-					// than one ray, so it needs TAA even more than the other RT effects; the sliders are enabled only when
-					// RT GI is on.
+					// 1-bounce diffuse GI (#151): gather indirect light over the hemisphere and REPLACE the diffuse
+					// ambient with that scene-derived indirect (color bleeding + contact fill). SSGI marches the depth
+					// buffer and bounces the previous frame's color (any GPU); RT traces the scene and shades the hits
+					// (RT GPU only, shader branch compiled out otherwise). Both write the same GI target and share the
+					// temporal + à-trous tail, so this combo IS the thesis A/B flip. A hemisphere integral is noisier
+					// than one ray, so it needs TAA even more than the other effects.
 					{
 						const bool giRtSupported = Renderer::IsRayTracingSupported();
-						ImGui::BeginDisabled(!giRtSupported);
-						if (bool giRt = CVars::GIRT.Get(); ImGui::Checkbox("Ray-traced (RT)##GI", &giRt))
+						int giMode = CVars::GiMode.Get();
+						if (giMode < 0 || giMode > 2)
 						{
-							CVars::GIRT.Set(giRt);
+							giMode = 0;
 						}
-						ImGui::EndDisabled();
+						{
+							const char* giModeLabels[] = {"Off", "SSGI", "Ray Traced"};
+							const int giModeCount = giRtSupported ? 3 : 2; // hide Ray Traced when the device can't do it
+							if (ImGui::Combo("Technique##GI", &giMode, giModeLabels, giModeCount))
+							{
+								CVars::GiMode.Set(giMode);
+							}
+						}
 						if (!giRtSupported)
 						{
-							ImGui::TextDisabled("(requires an RT-capable GPU)");
+							ImGui::TextDisabled("(Ray Traced requires an RT-capable GPU)");
 						}
 						else
 						{
 							ImGui::TextDisabled("(replaces diffuse ambient; needs TAA)");
 						}
 
-						ImGui::BeginDisabled(!CVars::GIRT.Get());
+						ImGui::BeginDisabled(giMode == 0);
 						if (float giIntensity = CVars::GIIntensity.Get(); ImGui::SliderFloat("Intensity##GI", &giIntensity, 0.0f, 4.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
 						{
 							CVars::GIIntensity.Set(giIntensity);

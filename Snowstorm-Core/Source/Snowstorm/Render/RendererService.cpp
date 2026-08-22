@@ -368,7 +368,7 @@ namespace Snowstorm
 		// Debug view 3 = Reflections: DefaultLit outputs the raw reflected albedo for verifying hit resolution.
 		frame.DebugReflections = (CVars::DebugView.Get() == 3) ? 1u : 0u;
 
-		// 1-bounce RT diffuse GI (#118): active only when render.gi.rt is on AND the device supports RT
+		// 1-bounce RT diffuse GI (#118): active only when render.gi.mode is RT AND the device supports RT
 		// (GIRTActive folds both) AND the geometry table exists (GI shades hits through it, same as
 		// reflections). 0 disables the shader's GI gather. DebugView 4 = GI (raw indirect term).
 		frame.RTGIEnabled = (CVars::GIRTActive() && m_ReflectionTableAddress != 0) ? 1u : 0u;

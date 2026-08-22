@@ -474,10 +474,13 @@ namespace Snowstorm::CVars
 	// SVGF variance-guided luminance-phi for the reflection denoiser (#129 Inc 3b). 0 = off.
 	extern CVar<float> ReflectionDenoiseVariance;
 
-	// Ray-traced 1-bounce diffuse global illumination (#118): hemisphere-gather indirect light. Prefer
-	// GIRTActive() over reading the bool. GIIntensity scales the contribution; GIRange is the gather ray
-	// max distance (world units).
-	extern CVar<bool> GIRT;
+	// Diffuse global-illumination technique (#151), a mode CVar (mirrors render.ao.mode) for a clean thesis
+	// A/B: 0 = Off, 1 = SSGI (screen-space prev-frame color bounce, any GPU), 2 = RT (hemisphere ray-query
+	// gather, RT GPU only). Both techniques write the SAME half-res GITarget the shared denoise tail consumes,
+	// so the forward shader is agnostic to which produced it. Prefer the GiActive()/GiSSGIActive()/GIRTActive()
+	// helpers over reading the int directly. GIIntensity scales the contribution; GIRange is the gather ray
+	// max distance (world units). Both are shared by the two techniques.
+	extern CVar<int> GiMode;
 	extern CVar<float> GIIntensity;
 	extern CVar<float> GIRange;
 	// RT GI hemisphere-gather rays per pixel per frame (was the compile-time GI_RAY_COUNT). More rays = less
@@ -546,9 +549,19 @@ namespace Snowstorm::CVars
 	// + denoise + forward consumption + the G-buffer prepass) uses, so both converge on the same forward slot (#151).
 	[[nodiscard]] bool ReflectionsActive();
 
-	// True when RT GI should run (render.gi.rt on AND the device supports RT). Drives FrameCB.RTGIEnabled +
+	// True when SSGI should run (render.gi.mode == 1). Screen-space, no RT device needed. Drives the SSGI
+	// compute pass + the previous-frame color snapshot; NOT the TLAS / geometry-table / RTGIEnabled gates
+	// (SSGI marches the depth buffer and bounces the previous frame's color, #151).
+	[[nodiscard]] bool GiSSGIActive();
+
+	// True when RT GI should run (render.gi.mode == 2 AND the device supports RT). Drives FrameCB.RTGIEnabled +
 	// the shader branch + the TLAS build gate + the geometry-table build. False on a non-RT GPU.
 	[[nodiscard]] bool GIRTActive();
+
+	// True when EITHER GI technique is live (SSGI or RT). The gate the shared tail (GI temporal + à-trous +
+	// bilateral upsample + forward consumption + the G-buffer prepass) uses, so both converge on the same
+	// forward slot (#151).
+	[[nodiscard]] bool GiActive();
 
 	// Reference path tracer (#153): a brute-force ground-truth render mode (GGX+Lambert BSDF, sun NEE, sky
 	// environment, multi-bounce, Russian roulette) that progressively accumulates while the camera is static.
