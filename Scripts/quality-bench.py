@@ -194,9 +194,16 @@ def flip(a: "np.ndarray", b: "np.ndarray"):
 
 # ---- capture -----------------------------------------------------------------------------------
 
+# Returned in the device slot when the engine refused the capture because an RT technique was
+# requested on an adapter without ray tracing. Distinct from a run failure: nothing was measured, so
+# it is SKIP (exit 2), never FAIL.
+RT_UNSUPPORTED = "<rt-unsupported>"
+
+
 def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd: Path,
                 timeout: int, layer_path: Path, scene: str, max_frames: int = 0):
     """Run one headless capture; return (rgb_image[H,W,4] float, device_str) or (None, '').
+    Returns (None, RT_UNSUPPORTED) when the adapter cannot run the requested RT technique.
     max_frames > 0 sets the hard capture cap: for the PT reference leave it 0 (converges via epsilon),
     but a real-time technique NEVER settles below the auto-stop epsilon (RT GI/AO/TAA keep a per-frame
     noise floor), so uncapped it burns the full 3000-frame safety cap (~100s/capture). Capping it at a
@@ -233,6 +240,12 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
         if proc.returncode != 0:
             print(f"  FAIL (exit code {proc.returncode}){' -- retrying' if attempt < 2 else ''}")
             continue
+        # Application::Run refuses the capture (and writes no image) when a raw RT mode is requested on
+        # an adapter without ray tracing. A config/hardware mismatch is deterministic, so skip the retry
+        # loop and report it distinctly instead of three identical "no capture written" failures.
+        if "Quality capture: ray tracing unsupported" in proc.stdout:
+            print("  SKIP (ray tracing unsupported on this adapter; the technique never ran)")
+            return None, RT_UNSUPPORTED
         if not ldr.exists():
             print(f"  FAIL (no capture written to {ldr}){' -- retrying' if attempt < 2 else ''}")
             continue
@@ -251,6 +264,10 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
             break
         if not device and any(v in low for v in ("radeon", "geforce", "nvidia", "intel(r)", "arc ")):
             device = line.split("SNOWSTORM:")[-1].strip()[:64]
+    # Which branch ended the capture decides how to read the metrics: "converged" means the epsilon
+    # settle fired, "safety cap" means the frame cap cut it off with the image still moving.
+    if (m := re.search(r"Quality capture: wrote .* at frame (\d+) \((converged|safety cap)\)", proc.stdout)):
+        print(f"  captured at frame {m.group(1)} ({m.group(2)})")
     # Normalize to the canonical metric resolution so window-size nondeterminism can't cause shape
     # mismatches / non-comparable metrics (see CANON_W/H).
     img = _resize_bilinear(np.load(ldr).astype(np.float64), CANON_H, CANON_W)
@@ -284,7 +301,8 @@ def _reference_key(repo_root: Path, exe: Path, scene: str, pose, ref_frames: int
 def capture_reference(vp: str, pose, ref_frames: int, exe: Path, repo_root: Path, timeout: int,
                       layer_path: Path, scene: str, tmp: Path, fresh: bool = False):
     """Return the PT reference image [H,W,4], reusing a disk cache unless the key changed or `fresh`.
-    Returns (img, device, cached_bool) or (None, '', False) on capture failure."""
+    Returns (img, device, cached_bool), or (None, device, False) on capture failure, where device is
+    RT_UNSUPPORTED when the adapter cannot path trace."""
     cache_dir = repo_root / "Scripts" / ".quality-ref-cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
     key = _reference_key(repo_root, exe, scene, pose, ref_frames)
@@ -394,6 +412,12 @@ def main() -> int:
         src = "cached reference" if cached else f"captured path-traced reference ({args.ref_frames} frames)"
         print(f"=== viewpoint '{vp}': {src} ===")
         if ref_img is None:
+            if ref_dev == RT_UNSUPPORTED:
+                # No path-traced reference on this adapter, so every technique here is ungated. The
+                # raster/screen-space techniques would still run: they just have nothing to compare to.
+                ungated.append(f"{vp}: no PT reference (adapter lacks ray tracing)")
+                print("  reference needs ray tracing, unsupported here; viewpoint NOT GATED.\n")
+                continue
             print("  reference capture FAILED; skipping viewpoint.\n")
             all_ok = False
             continue
@@ -403,6 +427,9 @@ def main() -> int:
             img, dev = run_capture({**env, **cam}, tmp / f"{vp}_{tech}", args.frames, exe, repo_root,
                                    args.timeout, layer_path, args.scene, max_frames=args.tech_maxframes)
             if img is None:
+                if dev == RT_UNSUPPORTED:
+                    ungated.append(f"{vp}/{tech}: needs ray tracing, unsupported on this adapter")
+                    continue
                 all_ok = False
                 continue
             if img.shape != ref_img.shape:

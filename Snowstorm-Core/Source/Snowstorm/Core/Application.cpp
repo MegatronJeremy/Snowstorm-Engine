@@ -124,6 +124,36 @@ namespace Snowstorm
 		// appear across a swapchain rebuild (the steady-state smoke never toggles). Off by default.
 		const int vsyncStress = CVars::VSyncStress.Get();
 
+		// Quality-capture readiness: the *Active() predicates AND in IsRayTracingSupported(), so an RT technique
+		// requested on a non-RT adapter degrades to raster silently. That contract is deliberate for interactive
+		// and perf-bench use, although for a metric capture it writes a raster image under an RT technique's name
+		// and the comparison is then meaningless. Read the RAW requested modes (an *Active() query is false in
+		// exactly the case being detected) and refuse to capture instead.
+		if (CVars::QualityCaptureFrames.Get() > 0 && !Renderer::IsRayTracingSupported())
+		{
+			std::string rtRequested;
+			const auto note = [&rtRequested](const char* name)
+			{
+				rtRequested += rtRequested.empty() ? name : std::string(", ") + name;
+			};
+			if (CVars::ShadowsMode.Get() == 2)
+				note("render.shadows.mode");
+			if (CVars::AoMode.Get() == 2)
+				note("render.ao.mode");
+			if (CVars::ReflectionsMode.Get() == 2)
+				note("render.reflections.mode");
+			if (CVars::GiMode.Get() == 2)
+				note("render.gi.mode");
+			if (CVars::PathTrace.Get())
+				note("render.pathtrace");
+			if (!rtRequested.empty())
+			{
+				SS_CORE_ERROR("Quality capture: ray tracing unsupported on {}; requested RT modes: {}. No capture written.",
+				              Renderer::GetDeviceName(), rtRequested);
+				m_Running = false;
+			}
+		}
+
 		while (m_Running)
 		{
 			if (vsyncStress > 0 && frameNo > 0 && frameNo % static_cast<uint64_t>(vsyncStress) == 0)
