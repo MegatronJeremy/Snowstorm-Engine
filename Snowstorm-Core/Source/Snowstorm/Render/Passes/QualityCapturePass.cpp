@@ -7,6 +7,7 @@
 #include "Snowstorm/Render/Renderer.hpp"
 
 #include <cstdlib> // std::abs(int)
+#include <cstring> // std::memcpy
 #include <filesystem>
 #include <system_error>
 
@@ -85,7 +86,18 @@ namespace Snowstorm
 			if (settled || forced)
 			{
 				const std::string path = basePath + "_ldr.npy";
-				WriteNpy(path, cur, bytes, {m_H, m_W, kChannels}, NpyDType::UInt8);
+				// The readback comes back bottom-row-first relative to the displayed image: the engine renders
+				// in un-flipped Vulkan clip space (VulkanCommandContext::SetViewport), so the display path
+				// applies the Y-flip and a raw copy does not. Reverse rows so the .npy is top-down for NumPy/PIL.
+				// Metric-neutral: quality-bench flips reference and technique identically.
+				const size_t rowBytes = static_cast<size_t>(m_W) * kChannels;
+				std::vector<uint8_t> flipped(bytes);
+				for (uint32_t r = 0; r < m_H; ++r)
+				{
+					std::memcpy(flipped.data() + static_cast<size_t>(r) * rowBytes,
+					            cur + (static_cast<size_t>(m_H) - 1 - r) * rowBytes, rowBytes);
+				}
+				WriteNpy(path, flipped.data(), bytes, {m_H, m_W, kChannels}, NpyDType::UInt8);
 				SS_CORE_INFO("Quality capture: wrote {} ({}x{}) at frame {} ({}).", path, m_W, m_H, frame,
 				             forced && !settled ? "safety cap" : "converged");
 				if (forced && !settled && !m_WarnedCap)
