@@ -453,6 +453,21 @@ namespace Snowstorm
 			enabledFeatures.pipelineStatisticsQuery = VK_TRUE;
 		}
 
+		// GPU-assisted validation reports violations by injecting storage writes into the instrumented shader,
+		// so the graphics stages can only be instrumented on a device that permits stores from them. Gated on
+		// validation.gpu so a normal run creates the same device it does today.
+		bool gpuAssistedValidationActive = false;
+		if (enableValidationLayers && CVars::ValidationGpu.Get())
+		{
+			gpuAssistedValidationActive = supportedFeatures.fragmentStoresAndAtomics == VK_TRUE &&
+			                              supportedFeatures.vertexPipelineStoresAndAtomics == VK_TRUE;
+			if (gpuAssistedValidationActive)
+			{
+				enabledFeatures.fragmentStoresAndAtomics = VK_TRUE;
+				enabledFeatures.vertexPipelineStoresAndAtomics = VK_TRUE;
+			}
+		}
+
 		// Common device extensions
 		std::vector<const char*> deviceExtensions = {
 		    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -634,6 +649,13 @@ namespace Snowstorm
 		             m_OpacityMicromapSupported ? "supported (enabled)" : "not supported (any-hit fallback)");
 		SS_CORE_INFO("fp16 shader math (shaderFloat16 + 16-bit storage): {}.",
 		             m_Float16Supported ? "supported (neural fp16 path enabled)" : "not supported (fp32 fallback)");
+		if (enableValidationLayers && CVars::ValidationGpu.Get())
+		{
+			SS_CORE_INFO("GPU-assisted validation: {}.",
+			             gpuAssistedValidationActive
+			                 ? "graphics stages instrumented (fragment/vertex stores+atomics enabled)"
+			                 : "compute stages only (device lacks fragment/vertex stores+atomics)");
+		}
 #ifdef SS_DEBUG
 		SS_CORE_INFO("Device fault diagnostics (VK_EXT_device_fault): {}.",
 		             m_DeviceFaultSupported ? "supported (enabled)" : "not supported");
