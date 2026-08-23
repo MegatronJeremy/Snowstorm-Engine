@@ -320,6 +320,9 @@ namespace Snowstorm
 		const Ref<VulkanCommandContext> ctx = m_GraphicsContexts[m_CurrentFrameIndex][0];
 		ctx->Begin();
 
+		m_FrameGpuScopes.clear();
+		AppendCollectedScopes(*ctx);
+
 		// A frame that never forks ends with exactly this one entry, which EndFrame finalizes with the
 		// present signal and fence, reproducing the original single submit.
 		m_FrameGraphicsSubmits.push_back({.Ctx = ctx});
@@ -588,6 +591,14 @@ namespace Snowstorm
 		return m_GraphicsContexts[m_CurrentFrameIndex][m_CurrentGraphicsSegment];
 	}
 
+	void VulkanRendererAPI::AppendCollectedScopes(VulkanCommandContext& ctx)
+	{
+		std::vector<GpuScope> scopes = ctx.CollectGpuScopes();
+		m_FrameGpuScopes.insert(m_FrameGpuScopes.end(),
+		                        std::make_move_iterator(scopes.begin()),
+		                        std::make_move_iterator(scopes.end()));
+	}
+
 	bool VulkanRendererAPI::IsAsyncComputeAvailable() const
 	{
 		// The timeline only exists when the device exposed a dedicated compute family (see Init), so its
@@ -617,6 +628,7 @@ namespace Snowstorm
 		}
 		const Ref<VulkanCommandContext> comp = m_ComputeContexts[frame][m_CurrentComputeBatch];
 		comp->Begin();
+		AppendCollectedScopes(*comp);
 
 		// The join value is reserved now so the batch's submit record is complete; JoinAsyncCompute opens the
 		// next graphics segment waiting on it.
@@ -647,6 +659,7 @@ namespace Snowstorm
 		}
 		const Ref<VulkanCommandContext> gfx = m_GraphicsContexts[frame][m_CurrentGraphicsSegment];
 		gfx->Begin();
+		AppendCollectedScopes(*gfx);
 		m_FrameGraphicsSubmits.push_back({.Ctx = gfx, .WaitTimeline = joinValue});
 	}
 

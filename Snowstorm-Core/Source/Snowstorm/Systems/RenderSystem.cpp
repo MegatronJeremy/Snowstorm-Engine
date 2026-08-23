@@ -119,11 +119,6 @@ namespace Snowstorm
 		// dispatch a new one into the same slot below.
 		renderer.PumpPickReadback(frameIndex);
 
-		// Resolve the PRIOR frame's per-pass GPU timestamps (this command buffer's last submission has
-		// retired) and reset the pool for this frame's scopes. Must run before any graph pass writes a
-		// scope. The resolved times feed the editor's "GPU passes" overlay (1-frame lag, like the frame total).
-		renderer.SetGpuPassTimes(ctx->CollectGpuScopes());
-
 		RenderGraph graph;
 
 		FrameContext fc{.Graph = graph, .Renderer = renderer, .Ctx = ctx, .Reg = reg, .FrameIndex = frameIndex};
@@ -253,6 +248,12 @@ namespace Snowstorm
 		}
 
 		graph.Execute(*ctx);
+
+		// Only complete after Execute: each command buffer resolves its own timestamp pool as it begins
+		// recording, and fork/join opens further buffers mid-graph. Still a one-frame lag, since a pool
+		// resolves the recording from the previous use of this frame slot.
+		renderer.SetGpuPassTimes(Renderer::GetCollectedGpuScopes());
+
 		Renderer::EndFrame();
 	}
 

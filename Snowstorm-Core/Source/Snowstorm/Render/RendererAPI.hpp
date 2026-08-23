@@ -102,6 +102,12 @@ namespace Snowstorm
 		// afterwards may read what the batch wrote.
 		virtual void JoinAsyncCompute() = 0;
 
+		// Per-pass GPU timings resolved this frame, merged across every command buffer the frame opened.
+		// Each context resolves its own pool as it begins recording, since CollectGpuScopes records a
+		// vkCmdResetQueryPool and so needs an open buffer, so this is only complete once the render graph
+		// has executed. Values still lag one use of the frame slot, as they always have.
+		virtual const std::vector<GpuScope>& GetCollectedGpuScopes() const = 0;
+
 		//-- ImGui Backend Abstraction
 		virtual void InitImGuiBackend(void* windowHandle) = 0;
 		virtual void ShutdownImGuiBackend() = 0;
