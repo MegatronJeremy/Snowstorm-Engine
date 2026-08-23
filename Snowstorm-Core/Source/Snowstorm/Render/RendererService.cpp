@@ -331,7 +331,7 @@ namespace Snowstorm
 		frame.SpotShadowAtlasIndex = fd.Shadow.SpotShadowAtlasIndex;
 		frame.PointShadowAtlasIndex = fd.Shadow.PointShadowAtlasIndex;
 
-		// RT ambient occlusion (#118): active only when render.ao.rt is on AND the device supports RT
+		// RT ambient occlusion (#118): active only when render.ao.mode is RT AND the device supports RT
 		// (AoRTActive folds both). The shader's RTAO branch is compiled out on non-RT devices, so this stays
 		// 0 there. FrameCounter drives the per-frame sample rotation that TAA averages into smooth AO.
 		frame.RTAOEnabled = CVars::AoRTActive() ? 1u : 0u;
@@ -354,7 +354,7 @@ namespace Snowstorm
 			frame.GISpecAmbientFade = CVars::GISpecAmbientFade.Get();
 		}
 
-		// RT reflections (#118): active only when render.reflections.rt is on AND the device supports RT
+		// RT reflections (#118): active only when render.reflections.mode is RT AND the device supports RT
 		// (ReflectionsRTActive folds both) AND a geometry table exists this frame. The shader branch is
 		// compiled out on non-RT devices, so this stays 0 there. The table address is pushed by RenderSystem
 		// (SetReflectionGeometryAddress) from the ReflectionGeometrySingleton that TlasBuildSystem fills; 0
