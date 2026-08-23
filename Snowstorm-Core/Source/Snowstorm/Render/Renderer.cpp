@@ -279,6 +279,24 @@ namespace Snowstorm
 		return s_API->GetGraphicsCommandContext();
 	}
 
+	bool Renderer::IsAsyncComputeAvailable()
+	{
+		SS_CORE_ASSERT(s_API, "Renderer not initialized");
+		return s_API->IsAsyncComputeAvailable();
+	}
+
+	Ref<CommandContext> Renderer::ForkAsyncCompute()
+	{
+		SS_CORE_ASSERT(s_API, "Renderer not initialized");
+		return s_API->ForkAsyncCompute();
+	}
+
+	void Renderer::JoinAsyncCompute()
+	{
+		SS_CORE_ASSERT(s_API, "Renderer not initialized");
+		s_API->JoinAsyncCompute();
+	}
+
 	Ref<DescriptorSetLayout> Renderer::GetUITextureLayout()
 	{
 		SS_CORE_ASSERT(s_API, "Renderer not initialized");

@@ -151,7 +151,7 @@ namespace Snowstorm
 			               .IsCompute = true,
 			               .Execute = [&renderer, frameIndex](CommandContext& c)
 			               {
-				               renderer.RecordPick(Renderer::GetGraphicsCommandContext(), frameIndex);
+				               renderer.RecordPick(c, frameIndex);
 			               }});
 		}
 
@@ -246,7 +246,7 @@ namespace Snowstorm
 					               .Reads = {{src->GetTexture(), RenderGraph::AccessState::Sampled}},
 					               .Execute = [this, src, swapFormat, frameIndex](CommandContext& c)
 					               {
-						               m_PresentPass.Draw(Renderer::GetGraphicsCommandContext(), frameIndex, src, swapFormat);
+						               m_PresentPass.Draw(c, frameIndex, src, swapFormat);
 					               }});
 				}
 			}

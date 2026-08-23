@@ -3,6 +3,7 @@
 #include "VulkanCommon.hpp"
 
 #include "Snowstorm/Render/CommandContext.hpp"
+#include "Snowstorm/Render/RenderEnums.hpp"
 
 #include <vector>
 
@@ -15,13 +16,18 @@ namespace Snowstorm
 	class VulkanCommandContext final : public CommandContext
 	{
 	public:
-		VulkanCommandContext();
+		// An AsyncCompute context can only record compute and transfer commands; recording a draw into one
+		// is a validation error, which is why RenderGraph rejects a graphics pass on the async queue rather
+		// than trusting callers.
+		explicit VulkanCommandContext(GpuQueue queue = GpuQueue::Graphics);
 		~VulkanCommandContext() override;
 
 		void Begin();
 		void End();
 
 		VkCommandBuffer GetVulkanCommandBuffer() const { return m_CommandBuffer; }
+
+		[[nodiscard]] GpuQueue GetQueue() const { return m_Queue; }
 
 		void TransitionLayout(const Ref<Texture>& texture, VkImageLayout newLayout) const;
 
@@ -82,6 +88,10 @@ namespace Snowstorm
 
 	private:
 		VkCommandBuffer m_CommandBuffer = VK_NULL_HANDLE;
+
+		// Which queue family's pool m_CommandBuffer came from. Fixed at construction; the destructor frees
+		// back to the matching pool.
+		GpuQueue m_Queue = GpuQueue::Graphics;
 
 		// --- Per-pass GPU timing (timestamp queries) ---
 		// One timestamp query pool owned by this context (the context is per-frame-in-flight, so the pool is

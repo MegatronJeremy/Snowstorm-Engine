@@ -40,12 +40,22 @@ namespace Snowstorm
 				return false;
 			}
 		}
+
+		// The command pool a context of this queue kind allocates from (and frees back to). Both pools alias
+		// m_GraphicsCommandPool when the device has no dedicated async-compute family, so this is always valid.
+		VkCommandPool PoolForQueue(const GpuQueue queue)
+		{
+			return queue == GpuQueue::AsyncCompute
+			           ? VulkanContext::Get().GetComputeCommandPool()
+			           : VulkanContext::Get().GetGraphicsCommandPool();
+		}
 	}
 
-	VulkanCommandContext::VulkanCommandContext()
+	VulkanCommandContext::VulkanCommandContext(const GpuQueue queue)
+	    : m_Queue(queue)
 	{
 		const VkDevice device = GetVulkanDevice();
-		const VkCommandPool pool = GetGraphicsCommandPool();
+		const VkCommandPool pool = PoolForQueue(m_Queue);
 
 		VkCommandBufferAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -62,6 +72,30 @@ namespace Snowstorm
 		vkGetPhysicalDeviceProperties(VulkanContext::Get().GetPhysicalDevice(), &props);
 		m_TimestampPeriodNs = props.limits.timestampPeriod;
 		m_TimestampsSupported = m_TimestampPeriodNs > 0.0f;
+
+		// timestampPeriod is device-wide, but timestamp WRITES are per queue family: a family reporting
+		// timestampValidBits == 0 cannot record them at all (vkCmdWriteTimestamp there is a validation error).
+		// The graphics family always supports them in practice; a compute-only family is the case that can not,
+		// so check the family this context actually targets rather than assuming the device-wide limit applies.
+		if (m_TimestampsSupported)
+		{
+			const auto& ctx = VulkanContext::Get();
+			const uint32_t family = m_Queue == GpuQueue::AsyncCompute
+			                            ? ctx.GetComputeQueueFamilyIndex()
+			                            : ctx.GetGraphicsQueueFamilyIndex();
+			uint32_t familyCount = 0;
+			vkGetPhysicalDeviceQueueFamilyProperties(ctx.GetPhysicalDevice(), &familyCount, nullptr);
+			std::vector<VkQueueFamilyProperties> familyProps(familyCount);
+			vkGetPhysicalDeviceQueueFamilyProperties(ctx.GetPhysicalDevice(), &familyCount, familyProps.data());
+			if (family >= familyCount || familyProps[family].timestampValidBits == 0)
+			{
+				SS_CORE_WARN("Queue family {} reports no valid timestamp bits; per-pass GPU timing disabled "
+				             "for this context.",
+				             family);
+				m_TimestampsSupported = false;
+			}
+		}
+
 		if (m_TimestampsSupported)
 		{
 			VkQueryPoolCreateInfo qpInfo{.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
@@ -78,9 +112,13 @@ namespace Snowstorm
 		// pipelineStatisticsQuery feature (enabled in VulkanContext when supported) and rides the same
 		// per-frame reuse as the timestamp pool, so gate it on timestamp support too. Fail-soft: on absence
 		// FragInvocations stays 0 and timing is unaffected.
+		//
+		// Skipped entirely on an async-compute context: there are no fragment shaders on that queue, and a
+		// compute-only family is not required to support pipeline-statistics queries at all (querying one
+		// there is a validation error), so the pool would be both useless and invalid.
 		VkPhysicalDeviceFeatures feats{};
 		vkGetPhysicalDeviceFeatures(VulkanContext::Get().GetPhysicalDevice(), &feats);
-		if (m_TimestampsSupported && feats.pipelineStatisticsQuery)
+		if (m_Queue == GpuQueue::Graphics && m_TimestampsSupported && feats.pipelineStatisticsQuery)
 		{
 			VkQueryPoolCreateInfo psInfo{.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
 			psInfo.queryType = VK_QUERY_TYPE_PIPELINE_STATISTICS;
@@ -100,7 +138,7 @@ namespace Snowstorm
 	VulkanCommandContext::~VulkanCommandContext()
 	{
 		const VkDevice device = GetVulkanDevice();
-		const VkCommandPool pool = GetGraphicsCommandPool();
+		const VkCommandPool pool = PoolForQueue(m_Queue);
 
 		if (m_TimestampPool != VK_NULL_HANDLE)
 		{

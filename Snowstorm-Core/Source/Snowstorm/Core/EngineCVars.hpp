@@ -65,6 +65,11 @@ namespace Snowstorm::CVars
 	// kill-switch if a parallel path ever misbehaves.
 	extern CVar<bool> EcsParallel;
 
+	// GPU analogue of ecs.parallel. Off runs AsyncCompute passes inline on the graphics queue in the same
+	// order, producing identical images, so one build gives the before/after for measuring the overlap and
+	// a kill-switch for a cross-queue hazard. No effect without a dedicated compute family.
+	extern CVar<bool> AsyncCompute;
+
 	// Number of bare Transform+Rotator entities the stress bake ("scene.bake stress") spawns, on top of
 	// the renderable fields. These carry no mesh/material, so they load only RotatorSystem's per-entity
 	// loop: the heavy, pure workload for the parallel-ECS before/after benchmark (#85). 0 (default) = none.

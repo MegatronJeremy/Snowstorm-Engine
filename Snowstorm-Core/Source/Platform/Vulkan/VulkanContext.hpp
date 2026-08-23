@@ -54,6 +54,17 @@ namespace Snowstorm
 		VkCommandPool GetTransferCommandPool() const { return m_TransferCommandPool; }
 		[[nodiscard]] bool HasDedicatedTransferQueue() const { return m_TransferQueueFamily != m_GraphicsQueueFamily; }
 
+		// Independent compute front-end (AMD ACE, NVIDIA compute-only family) whose work runs concurrently
+		// with graphics rather than serializing behind it.
+		//
+		// Aliases the graphics queue when the GPU exposes no COMPUTE-without-GRAPHICS family. Callers must
+		// then stay on the graphics path: submitting to the aliased queue serializes anyway while still
+		// paying cross-queue sync and ownership transfer, which is strictly worse than not splitting.
+		VkQueue GetComputeQueue() const { return m_ComputeQueue; }
+		uint32_t GetComputeQueueFamilyIndex() const { return m_ComputeQueueFamily; }
+		VkCommandPool GetComputeCommandPool() const { return m_ComputeCommandPool; }
+		[[nodiscard]] bool HasDedicatedComputeQueue() const { return m_ComputeQueueFamily != m_GraphicsQueueFamily; }
+
 		VmaAllocator GetAllocator() const { return m_Allocator; }
 
 		VkCommandPool GetGraphicsCommandPool() const { return m_GraphicsCommandPool; }
@@ -117,6 +128,12 @@ namespace Snowstorm
 		VkQueue m_TransferQueue = VK_NULL_HANDLE;
 		uint32_t m_TransferQueueFamily = 0;
 		VkCommandPool m_TransferCommandPool = VK_NULL_HANDLE;
+
+		// Async-compute queue. Aliases the graphics queue/family/pool when the GPU has no dedicated
+		// COMPUTE-without-GRAPHICS family (see HasDedicatedComputeQueue).
+		VkQueue m_ComputeQueue = VK_NULL_HANDLE;
+		uint32_t m_ComputeQueueFamily = 0;
+		VkCommandPool m_ComputeCommandPool = VK_NULL_HANDLE;
 
 		VmaAllocator m_Allocator = nullptr;
 

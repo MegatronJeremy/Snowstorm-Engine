@@ -809,7 +809,7 @@ namespace Snowstorm
 		m_PickDispatched[frameIndex] = false;
 	}
 
-	void RendererService::RecordPick(const Ref<CommandContext>& commandContext, const uint32_t frameIndex)
+	void RendererService::RecordPick(CommandContext& commandContext, const uint32_t frameIndex)
 	{
 		if (!m_PickRequest.Pending || !EnsurePickResources() || frameIndex >= m_PickResultBuffers.size())
 		{
@@ -836,10 +836,10 @@ namespace Snowstorm
 		m_PickSets[frameIndex]->SetBuffer(1, paramBB);
 		m_PickSets[frameIndex]->Commit();
 
-		commandContext->BindPipeline(m_PickPipeline);
-		commandContext->BindDescriptorSet(m_PickSets[frameIndex], 0);
-		commandContext->BindGlobalResources(); // set 3 = the bindless SceneTLAS (written by TlasBuildSystem)
-		commandContext->Dispatch(1, 1, 1);
+		commandContext.BindPipeline(m_PickPipeline);
+		commandContext.BindDescriptorSet(m_PickSets[frameIndex], 0);
+		commandContext.BindGlobalResources(); // set 3 = the bindless SceneTLAS (written by TlasBuildSystem)
+		commandContext.Dispatch(1, 1, 1);
 
 		m_PickDispatched[frameIndex] = true;
 		m_PickRequest.Pending = false;

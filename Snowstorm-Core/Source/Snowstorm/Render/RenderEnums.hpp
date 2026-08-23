@@ -26,6 +26,15 @@ namespace Snowstorm
 		All = Vertex | Fragment | Compute
 	};
 
+	// AsyncCompute is a request, not a guarantee: honoured only when the device exposes an independent
+	// compute family and render.async_compute is on, otherwise the pass runs inline on Graphics. Declaring
+	// it is therefore always safe, and callers need no capability check.
+	enum class GpuQueue : uint8_t
+	{
+		Graphics = 0,
+		AsyncCompute
+	};
+
 	enum class PixelFormat : uint8_t
 	{
 		Unknown = 0,
