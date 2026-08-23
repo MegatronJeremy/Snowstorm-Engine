@@ -13,6 +13,14 @@
 //
 // This pass's inputs (GI SRV, guide SRV, output UAV, sampler, params) are set 0. No TLAS / bindless — a
 // plain image filter, unlike GI.comp.hlsl.
+//
+// PERMUTATION SS_DENOISE_HITDIST: the per-tap hit-distance edge-stop is AO-only (GI, reflections and both
+// shadow chains pass HitDistPhi == 0). Its 25 per-tap loads are register-allocated for every consumer even
+// though three of the four branch past them, and this shader is the frame's only occupancy-limited one, so
+// the term is compiled out unless the variant asks for it. The DECLARATION and the single center Load stay
+// unconditional: -fspv-preserve-bindings then keeps binding 3 in the reflected layout, so both variants
+// share one descriptor-set layout and GIDenoisePass binds them identically. Defining the macro reproduces
+// the pre-permutation shader exactly, so the AO variant is bit-identical to the old single build.
 
 // ---- Set 0: this pass's own resources ----
 Texture2D<float4> GIIn : register(t0, space0);          // half-res incoming irradiance (rgb) to filter
@@ -82,8 +90,11 @@ void main(uint3 id : SV_DispatchThreadID)
 	const float3 centerGI = centerIn.rgb;
 	const float centerVar = max(centerIn.a, 0.0); // #129 Inc 3c: SVGF variance rides .a (from the temporal pass)
 	const float lumaCenter = Luma(centerGI);
-	// #130 Inc B: center hit distance for the REBLUR-style edge-stop (AO only; HitDistPhi == 0 => unused).
+	// #130 Inc B: center hit distance, read by the AO edge-stop and the shadow penumbra sizing. Neither
+	// variant compiles it in for GI/reflections, which consume neither.
+#if defined(SS_DENOISE_HITDIST) || defined(SS_DENOISE_PENUMBRA)
 	const float hitCenter = HitDistGuide.Load(int3(centerPx, 0)).a;
+#endif
 
 	// SVGF luminance edge-stop (#129 Inc 3c, textbook temporal-moment variant). The denominator uses the
 	// temporally-accumulated variance (not a per-pass spatial estimate as in Inc 3b), pre-blurred by a 3x3
@@ -120,11 +131,13 @@ void main(uint3 id : SV_DispatchThreadID)
 	// occluder WIDENS it -> smooth soft penumbra. This is the NRD SIGMA idea (penumbra ∝ occluder distance) that a
 	// fixed-stride à-trous can't do: it otherwise over-blurs contacts or under-blurs soft penumbrae at one setting.
 	float kStep = float(Step); // == Step exactly when PenumbraScale == 0 -> integer taps unchanged for other signals
+#ifdef SS_DENOISE_PENUMBRA
 	if (PenumbraScale > 0.0)
 	{
 		const float penumbra = saturate(hitCenter * PenumbraScale); // 0 at contact / fully-lit, ->1 for a distant occluder
 		kStep = float(Step) * lerp(0.4, 2.2, penumbra);
 	}
+#endif
 
 	[unroll] for (int dy = -2; dy <= 2; ++dy)
 	{
@@ -161,11 +174,13 @@ void main(uint3 id : SV_DispatchThreadID)
 			// AO. AO-only: GI/reflections pass HitDistPhi == 0 => wH == 1 => identical output. Always Load the
 			// guide (above) so the binding is never stripped even when the term is off.
 			float wH = 1.0;
+#ifdef SS_DENOISE_HITDIST
 			if (HitDistPhi > 0.0)
 			{
 				const float hitTap = HitDistGuide.Load(int3(tapC, 0)).a;
 				wH = exp(-abs(hitCenter - hitTap) * HitDistPhi);
 			}
+#endif
 			const float wK = kKernel[dx + 2] * kKernel[dy + 2];
 			const float w = wK * wN * wD * wL * wH;
 
