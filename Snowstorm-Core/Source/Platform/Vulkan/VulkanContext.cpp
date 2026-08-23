@@ -289,8 +289,8 @@ namespace Snowstorm
 		// Pick per render.gpu: a short all-digits value in range selects by candidate index, and anything
 		// that does not resolve that way is tried as a case-insensitive name substring. Model numbers
 		// ("9070", "5070") are the natural way to name an adapter and are indistinguishable from an index,
-		// so digits must not be a dead end. Empty (default) auto-selects the first DISCRETE GPU, else the
-		// first candidate.
+		// so digits must not be a dead end. Empty (default) auto-selects the best-ranked candidate by device
+		// type, ties going to the lower enumeration index.
 		auto toLowerAscii = [](std::string s)
 		{
 			for (char& c : s)
@@ -332,13 +332,30 @@ namespace Snowstorm
 		}
 		if (chosen == candidates.size())
 		{
-			chosen = 0;
-			for (size_t i = 0; i < candidates.size(); ++i)
+			// VkPhysicalDeviceType values are not ordered by desirability (OTHER=0, INTEGRATED=1,
+			// DISCRETE=2, VIRTUAL=3, CPU=4), so preference is an explicit rank: lower wins.
+			auto deviceTypeRank = [](const VkPhysicalDeviceType type)
 			{
-				if (candidates[i].Props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+				switch (type)
+				{
+				case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+					return 0;
+				case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+					return 1;
+				case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+					return 2;
+				case VK_PHYSICAL_DEVICE_TYPE_CPU:
+					return 3;
+				default:
+					return 4;
+				}
+			};
+			chosen = 0;
+			for (size_t i = 1; i < candidates.size(); ++i)
+			{
+				if (deviceTypeRank(candidates[i].Props.deviceType) < deviceTypeRank(candidates[chosen].Props.deviceType))
 				{
 					chosen = i;
-					break;
 				}
 			}
 		}
