@@ -1,4 +1,4 @@
-# AGENTS.md — Snowstorm Engine
+# AGENTS.md: Snowstorm Engine
 
 3D game engine with an abstraction over the rendering backend. Currently Vulkan-only (DirectX 12
 planned). Windows-only for now. Public domain (`UNLICENSE.txt`). The engine is Hazel-inspired
@@ -139,7 +139,7 @@ py Scripts/smoke-test.py --strict        # enable deeper Vulkan validation (see 
 
 `--strict` sets `SS_VALIDATION_EXTRA=1`, which enables **synchronization validation** (barrier/
 semaphore/fence hazards) and **best-practices** (perf/usage foot-guns) via `VkValidationFeaturesEXT`.
-These are off by default — they add overhead and best-practices is advisory/noisy. Strict findings
+These are off by default since they add overhead and best-practices is advisory/noisy. Strict findings
 are logged at `[warning]` level and shown as **notes**, not failures (a strict run still PASSes on
 them); add `--warnings-fail` to gate on them. Genuine validation **errors** are always `[error]`
 level and fail the run in either mode. **GPU-assisted validation** is separate and much heavier
@@ -148,7 +148,7 @@ behind its own `validation.gpu` CVar (`SS_VALIDATION_GPU=1`), off by default and
 `--strict`.
 
 **Run it after any change substantial enough to affect runtime behavior** (engine/render/ECS/asset
-code, the frame loop, anything touching Vulkan) — not for docs/comment/build-script-only edits.
+code, the frame loop, anything touching Vulkan), and not for docs/comment/build-script-only edits.
 Build first (`cmake --build build --config Debug`), then smoke-test. It needs a **real GPU/display**
 (Vulkan), so it is a **local** gate that cannot run on hosted CI; the GitHub `build` workflow
 compiles and runs the GPU-free unit tests (`ctest --test-dir build -C Debug --output-on-failure`),
@@ -157,7 +157,7 @@ nothing that needs a device. The harness sets `VK_ADD_LAYER_PATH` itself so vali
 The harness also sets `SS_VALIDATION_NONFATAL=1`: by default the Vulkan validation messenger
 asserts (and the process dies) on the first ERROR, so you only see one error per run. With this env
 var set, every validation error is logged and the app keeps running, so a single smoke run surfaces
-**all** of them at once — the harness then detects failures by scanning the log, not the exit code.
+**all** of them at once: the harness then detects failures by scanning the log, not the exit code.
 Set it yourself when debugging validation interactively. GPU resources are also named via
 `SetVulkanObjectName` (`VK_EXT_debug_utils`), so validation/RenderDoc report e.g. `Swapchain[0]`
 instead of a raw `VkImage 0x...` handle.
@@ -286,8 +286,8 @@ Cooking the default `rt` variant alone drops the `base` permutation from every e
 whose worst case lives there is re-baselined to a weaker number and the local gate stops agreeing
 with CI. Pointing the gate at the runtime cache (`Engine/cache/shaders`, its default) is the other
 trap: a `--update-baseline` from there deletes the entries for shaders no editor run exercises. Keep
-`cook-shaders.py`'s flags in sync with VulkanShader.cpp (it is a deliberate second copy; no shared
-source of truth today). `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
+`cook-shaders.py`'s flags in sync with VulkanShader.cpp: it is a deliberate second copy of them, with
+no shared source of truth. `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
 expected the old `#type` split and silently compiled nothing).
 
 **This gate runs in CI** (`.github/workflows/shaders.yml`): unlike smoke-test and perf-bench, RGA is
@@ -399,8 +399,8 @@ take effect immediately, and those marked `CVarFlags::Persist` are written back 
 Snowstorm-Core/      # STATIC library: all engine code (the only place most work happens)
   Source/Snowstorm/  #   platform-independent engine (Core, ECS, Render, Systems, ...)
   Source/Platform/   #   Vulkan/ (RHI implementation, ~28 files) and Windows/
-Snowstorm-Editor/    # Editor EXECUTABLE — links Core; ImGui dockspace, panels, viewport
-Snowstorm-Runtime/   # Editor-free runtime EXECUTABLE — links Core; shares RegisterCoreSystems (WIP)
+Snowstorm-Editor/    # Editor EXECUTABLE, links Core; ImGui dockspace, panels, viewport
+Snowstorm-Runtime/   # Editor-free runtime EXECUTABLE, links Core; shares RegisterCoreSystems
 Snowstorm-Tests/     # Catch2 unit tests (GPU-free; run by ctest, gated in CI)
 Engine/              # engine-owned runtime data: Shaders/, Fonts/, and the gitignored cache/
 Projects/Sandbox/    # the sample project: assets/ (scenes, meshes, materials, textures, registry)
@@ -411,7 +411,7 @@ Tools/dxc/           # DirectX Shader Compiler (HLSL -> SPIR-V)
 
 Core builds to a static lib holding code shared by multiple apps; executables (currently the Editor)
 link Core and add it to their include path. All targets are **C++20** (the root `CMakeLists.txt`
-sets C++17 globally, but every target overrides to 20 — treat the project as C++20).
+sets C++17 globally, although every target overrides to 20, so treat the project as C++20).
 
 **Keep the in-editor shortcut reference current.** The editor has a *Help > Keyboard & Mouse
 Shortcuts* window (`Snowstorm-Editor/Source/System/EditorMenuSystem.cpp`, `DrawShortcutsWindow`)
@@ -431,7 +431,7 @@ see, so treat it as part of the feature, not an afterthought.
   the editor/serializer registry from a per-component static initializer (`RTTR_REGISTRATION { ... }` +
   `AUTO_REGISTER_COMPONENT(T)` in each `Components/*.cpp`; see `Components/ComponentRegistry.hpp`).
   Core is a static lib, so the executables link it `WHOLE_ARCHIVE` to keep those initializer TUs.
-- **Data-parallelism is a first-class option for systems — always consider it.** When adding a new
+- **Data-parallelism is a first-class option for systems: always consider it.** When adding a new
   system (or extending/reworking one), explicitly ask whether its per-entity work is *pure and
   independent* (each entity reads/writes only its OWN components, no shared accumulator, no renderer/
   asset-manager/singleton calls, no `TrackedRegistry` mutation APIs in the loop) and would benefit from
@@ -442,11 +442,11 @@ see, so treat it as part of the feature, not an afterthought.
   a grain size, degrade to an inline serial pass for small N (parallel only when it pays), gate on the
   `ecs.parallel` CVar for a pure serial-vs-parallel A/B, and preserve deterministic (bit-identical)
   output so `ChangedView`/draw order stay stable. Most systems will NOT qualify (they submit to the
-  renderer, touch singletons, run scripts, or scatter into shared state) — those stay serial on plain
+  renderer, touch singletons, run scripts, or scatter into shared state), and those stay serial on plain
   `System`, and that's the correct call, not a missed optimization. The point is to make the
   parallel-vs-serial decision *consciously* each time, not default to serial by habit. Note the current
   ceiling: the O(n) post-barrier change-mark (#91) caps end-to-end speedup at scale even when the
-  compute parallelizes near-linearly — measure with `--ecs.benchmark` rather than assuming a win.
+  compute parallelizes near-linearly, so measure with `--ecs.benchmark` rather than assuming a win.
 - **Rendering:** backend-agnostic interfaces in `Render/` (`RendererAPI`, `Renderer`, `Pipeline`,
   `Shader`, `Buffer`, `Texture`, `Material`, `RenderGraph`, ...). The concrete implementation lives
   in `Platform/Vulkan/` (volk + Vulkan Memory Allocator + spirv-reflect; shaders compiled to SPIR-V
@@ -457,7 +457,7 @@ see, so treat it as part of the feature, not an afterthought.
 ### Conventions
 
 - Namespace `Snowstorm`. Smart-pointer aliases `Ref<T>` (shared) / `Scope<T>` (unique) with
-  `CreateRef` / `CreateScope` — use these, not raw `std::shared_ptr`/`make_unique`, in engine code.
+  `CreateRef` / `CreateScope`. Use these, not raw `std::shared_ptr`/`make_unique`, in engine code.
 - Macros from `Core/Base.hpp`: `SS_ASSERT` / `SS_CORE_ASSERT`, `BIT(x)`, `SS_BIND_EVENT_FN(fn)`,
   `SS_DEBUGBREAK()`. Logging is `SS_CORE_*` / `SS_*` (spdlog). Asserts compile out unless `SS_DEBUG`;
   use `SS_VERIFY` / `SS_CORE_VERIFY` for checks that must survive release builds.
@@ -468,22 +468,22 @@ see, so treat it as part of the feature, not an afterthought.
 - **Formatting (format-on-touch):** the repo has a `.clang-format`. The `lint` CI checks the C++
   files changed by a push/PR and **fails if any touched file isn't fully clang-format-clean**, so the
   codebase formats gradually as files are edited. Pinned to **`clang-format==22.1.5`** (match it
-  locally — version drift changes output). Run `clang-format -i <files>` (or enable format-on-save
+  locally, since version drift changes output). Run `clang-format -i <files>` (or enable format-on-save
   against the repo config) before committing. `Scripts/check-format.py` predicts this gate locally:
   default mode checks the files changed vs `master` + uncommitted (the same set CI gates on), `--all`
   scans the whole project (surfaces the legacy backlog CI does *not* gate on), `--fix` reformats in
   place. A tracked `pre-push` hook (`.githooks/pre-push`) runs the default mode so a lint-failing push
-  is blocked before it leaves the machine — **enable it once per clone** with
+  is blocked before it leaves the machine. **Enable it once per clone** with
   `git config core.hooksPath .githooks` (bypass a single push with `git push --no-verify`).
-- **Shared-header shader bindings are global — mind `space1` collisions (learned from #60).** A
+- **Shared-header shader bindings are global: mind `space1` collisions (learned from #60).** A
   resource declared in `Engine/Shaders/Include/Engine.hlsli` is emitted into *every* shader that
-  includes it, and with `-fspv-preserve-bindings` (always on) it survives even when unused — so it
+  includes it, and with `-fspv-preserve-bindings` (always on) it survives even when unused, so it
   lands in the reflected layout of every pipeline, including the full-screen post passes
   (Fxaa/Sharpen/TemporalResolve), which pair their frag with `Fullscreen.vert` (also includes the
-  header) and **park their own cbuffers/textures high in `space1` — bindings 3/4/5/6 — to dodge the
+  header) and **park their own cbuffers/textures high in `space1` (bindings 3/4/5/6) to dodge the
   material bindings 0/1/2**. Adding a new binding to the shared header at one of those slots silently
   collides with a post pass's resource of a *different* descriptor type in the same pipeline (a
-  validation error, not a compile error — it only shows in smoke). If a binding is used by only one
+  validation error, not a compile error: it only shows in smoke). If a binding is used by only one
   shader family (e.g. the shadow comparison sampler is DefaultLit-only), declare it in that shader's
   `.frag`, NOT the shared header, and gate any C++ that binds it on the reflected layout actually
   having that binding (custom-shader materials like Mandelbrot won't).
@@ -508,62 +508,62 @@ Never commit generated or compiled artifacts. Commit messages in English.
 ## Think like a real engine
 
 **Always** check how a serious production engine (Unreal, Unity, Godot, modern in-house) does it
-*before* proposing or implementing any design — this is a required step, not an optional prompt.
+*before* proposing or implementing any design. This is a required step, not an optional prompt.
 Name the reference model concretely (e.g. "Unity Clear Flags", "Unreal SkyAtmosphere actor", "Godot
 WorldEnvironment Background Mode"), state how that engine actually structures the feature, and only
 then deliberately decide how far to go for *this* project. If you're unsure how the reference engines
-do it, research it (web search / docs) rather than guessing — a vague "engines usually…" is not
+do it, research it (web search / docs) rather than guessing: a vague "engines usually…" is not
 acceptable. The point is to anchor every design decision in a proven pattern so today's choice is a
 known subset of the real thing, not an accidental invention.
 
 **Lead with the more rigid, long-term-correct option.** When choosing between a quick patch and the
-structurally sound design, *propose the sound one first* and recommend it by default — even if it is
-more work — and only fall back to the shortcut when there is a concrete reason (time-box, throwaway
+structurally sound design, *propose the sound one first* and recommend it by default (even if it is
+more work), and only fall back to the shortcut when there is a concrete reason (time-box, throwaway
 code, the right design needs infra that doesn't exist yet). Don't offer the lazy option as the
 headline and the good one as an afterthought. Vuk's stated preference: this should feel like a
 professional engine, so bias toward the design that a production codebase would actually ship. A
 worked example: when per-entity material overrides needed an editor, the rigid choice was to replace
 the fixed `mask + one-field-per-property` struct with a *sparse list of named, typed overrides*
-(Unity `MaterialPropertyBlock` / Unreal MID) rather than just bolting a picker onto the old shape —
-the latter would have had to be ripped out the moment a third override type appeared. The point is not to build AAA infrastructure
-— it's a thesis platform — but to make the simplification a *conscious* choice with the real shape
+(Unity `MaterialPropertyBlock` / Unreal MID) rather than just bolting a picker onto the old shape:
+the latter would have had to be ripped out the moment a third override type appeared. The point is not
+to build AAA infrastructure (this is a thesis platform), but to make the simplification a *conscious* choice with the real shape
 in view, so today's shortcut is a known subset of the right design rather than an accidental dead
 end. Call out which parts are intentionally deferred and why, and prefer shortcuts that are a
 *smaller version of* the real thing (so they extend later) over ones that would have to be ripped
 out. When the "real" way is genuinely cheap, just do it the real way.
 
-**Counterweight — actively guard against bloat.** "Long-term-correct" is NOT "more layers." Before
+**Counterweight, and actively guard against bloat.** "Long-term-correct" is NOT "more layers." Before
 adding any new abstraction, base class, wrapper, config knob, or indirection, ask out loud: *does this
 earn its keep, or is it speculative?* An abstraction with one caller/subclass, a wrapper that only
-saves a few lines, a second way to do something the codebase already does — these are bloat, not
+saves a few lines, a second way to do something the codebase already does: these are bloat, not
 rigor. Prefer the load-bearing primitive over sugar layered on top of it; prefer one clear way to do a
 thing over two. On every new feature/implementation, explicitly weigh whether it *adds* surface area
 (a concept a future reader must learn, a decision they must make) against what it removes, and say so.
-When a proposed piece optimizes the rare case while taxing the common case, that's backwards — cut it.
+When a proposed piece optimizes the rare case while taxing the common case, that's backwards, so cut it.
 The bias toward the production-grade design (above) and the bias against bloat are the same instinct:
-build the real shape, but only the parts that are actually load-bearing. When in doubt, leave it out —
+build the real shape, but only the parts that are actually load-bearing. When in doubt, leave it out:
 re-adding a thin wrapper later is cheap; ripping out an entangled one that grew callers is not. A
 worked example: a CRTP `EntitySystem` base was built to wrap the `ParallelForEach` primitive for
-single-query systems, then cut — it had one subclass, only fit the one-query case (multi-loop systems
+single-query systems, then cut. It had one subclass, only fit the one-query case (multi-loop systems
 drop back to the primitive anyway), and added a "which base do I derive?" decision to every new
 system, all to save ~5 lines. The primitive was the real abstraction; the wrapper was bloat.
 
-Worked example — **asset pipeline** (the engine's current biggest simplification):
+Worked example, the **asset pipeline** (the engine's biggest deliberate simplification):
 
 - **Real engines separate source assets from cooked runtime assets.** The file you drop in
   (`.obj`/`.png`/`.fbx`) is the *source*; an *importer* cooks it once into a GPU-ready artifact
   (mesh → packed vertex/index buffers; texture → BC7/ASTC + mips; shader → SPIR-V/DXIL) plus a
   sidecar `.meta` holding a stable GUID + import settings (cf. Unity's `foo.fbx.meta`). Scenes
-  reference the **GUID**, never the path — so moving/renaming a file never breaks references.
+  reference the **GUID**, never the path, so moving/renaming a file never breaks references.
 - An **asset database** maps `GUID → (source, cooked, dependencies, content hash)`; a **file
   watcher** re-cooks only what changed (and its dependents) and hot-reloads it; the runtime
   **streams** cooked assets asynchronously under a memory budget; builds cook only the transitive
   closure of what scenes actually reference (no dead content shipped).
-- **Where Snowstorm is today (deliberately):** `Import` just adds a `handle → path` row to a JSON
+- **What Snowstorm does instead, deliberately:** `Import` just adds a `handle → path` row to a JSON
   registry; there is no cook step (Assimp/dxc/stb run every startup), no `.meta`, no hot-reload, no
   async, no GUID-vs-path indirection (handles are stable but the registry stores raw paths). This is
   acceptable for the thesis. The editor's manual "Import" button mirrors the fact that, in a real
-  engine, import is a *deliberate, potentially expensive* step — not a reason the current trivial
+  engine, import is a *deliberate, potentially expensive* step, not a reason the current trivial
   version must stay manual. The honest upgrade path, in order: auto-import on scan → file watcher →
   a cook step with `.meta` sidecars → async streaming. Treat the existing `AssetRegistry` /
   `AssetManagerSingleton` as the seam where that grows.
@@ -571,9 +571,9 @@ Worked example — **asset pipeline** (the engine's current biggest simplificati
 ## Verify before claiming
 
 - This is graphics code: "renders/looks correct" can only be confirmed by **building and running**
-  on a machine with a GPU/display. Headless verification is not possible — say so when you can't run it.
+  on a machine with a GPU/display. Headless verification is not possible, so say so when you can't run it.
 - After non-trivial runtime changes, **build then run `Scripts/smoke-test.py`** (see Smoke test
-  above) — it catches crashes, hangs, and Vulkan validation/assertion errors that compilation can't.
+  above): it catches crashes, hangs, and Vulkan validation/assertion errors that compilation can't.
   A clean smoke run is the minimum bar before claiming a runtime change works.
 - Confirm behavior against the actual source/build, not from names. Mark unverified statements as
   assumptions.
@@ -586,19 +586,19 @@ Worked example — **asset pipeline** (the engine's current biggest simplificati
   so the app keeps running stale code and every downstream test is meaningless.
 - **Confirm the exe was actually rebuilt** before testing behavior: check the binary's timestamp
   (`ls -l build/Snowstorm-Editor/Debug/Snowstorm-Editor.exe`) is newer than your edit. If a "rebuild"
-  didn't update the timestamp, the build failed silently — fix that first. This is the #1 cause of
+  didn't update the timestamp, the build failed silently, so fix that first. This is the #1 cause of
   "my change isn't taking effect."
 - **A running editor locks the exe.** `LNK1168: cannot open ... for writing` means a previous instance
   is still alive; `taskkill //IM Snowstorm-Editor.exe //F` before rebuilding. A leftover process also
   means you may be looking at an old build.
 - Strip all temporary debug probes (logs, on-screen text) before committing, and `git diff` each
-  touched file to catch leftovers — incremental edits during debugging are easy to forget.
+  touched file to catch leftovers, since incremental edits during debugging are easy to forget.
 
 ### Don't turn the user into your debugger
 
 - Prefer verification you control: headless runs (`SS_SMOKE_FRAMES=N`), startup-time logging, and
   reading source/state. Reserve "please click X and tell me what you see" for genuine final visual
-  confirmation, not for diagnosing logic — a manual launch→click→report loop burns the user's time
+  confirmation, not for diagnosing logic: a manual launch/click/report loop burns the user's time
   and stalls on build/timing artifacts.
 - **Keep effort proportional.** Time-box cosmetic/nice-to-have features; if one can't be made to work
   and verified in a couple of clean attempts, drop it rather than rabbit-holing. Commit the larger
@@ -607,28 +607,28 @@ Worked example — **asset pipeline** (the engine's current biggest simplificati
 ### How to debug effectively (don't guess in a loop)
 
 - **Use the instrumentation that already exists BEFORE writing ad-hoc probes.** This engine already has
-  rich, always-on timing/state readouts — check them first instead of scattering `SS_CORE_WARN` probes:
+  rich, always-on timing/state readouts. Check them first instead of scattering `SS_CORE_WARN` probes:
   - The editor's **Performance panel** (`Snowstorm-Editor/Source/System/SceneHierarchySystem.cpp`) shows
     per-phase + per-**system** CPU ms, per-**pass GPU** ms (timestamp scopes), draw/batch/instance/
-    triangle counts, and cull stats — smoothed and heat-colored. A "which part of the frame is slow"
+    triangle counts, and cull stats, smoothed and heat-colored. A "which part of the frame is slow"
     question is usually answered by reading this, not by instrumenting.
-  - `SystemManager::GetSystemTimingsMs()` / `GetPhaseTimingsMs()` — per-system/phase CPU time (the same
+  - `SystemManager::GetSystemTimingsMs()` / `GetPhaseTimingsMs()`: per-system/phase CPU time (the same
     data the panel draws), queryable in code.
-  - `CommandContext::BeginGpuScope`/`CollectGpuScopes` (`RendererService::GetGpuPassTimes()`) — per-pass
+  - `CommandContext::BeginGpuScope`/`CollectGpuScopes` (`RendererService::GetGpuPassTimes()`): per-pass
     GPU timestamps.
   - The **frame-time watchdog** (`debug.max_frame_ms` CVar / `--max-frame-ms` smoke flag) turns a
     per-frame stall into a headless `[error]` naming the exact frame + duration.
   - The **profiler** (`SS_PROFILE_SCOPE` / `SS_PROFILE_FUNCTION`) for a full cross-thread timeline. Two
-    back-ends behind the same macros: **Tracy** (primary, live — connect the Tracy GUI to a running Debug
+    back-ends behind the same macros: **Tracy** (primary, live; connect the Tracy GUI to a running Debug
     build over the network; `TRACY_ENABLE` is on in Debug) and a **headless JSON fallback**
     (`profile.capture_frames` / `profile.capture_path` CVars dump a chrome://tracing / Perfetto file with
     no GUI, for automated/offline trace analysis). Instrumented spots: frame-loop phases, every ECS system,
     and JobSystem worker tasks. One `SS_PROFILE_SCOPE` per lexical scope (it declares a fixed-name RAII
-    object — two in the same block is a redefinition; nest them).
+    object, so two in the same block is a redefinition; nest them).
   A whole debugging session was once burned scattering probes to find a load spike that the Performance
-  panel would have pinned to `RenderSystem`/shadow-fit in one glance (and the fix — read the panel — was
+  panel would have pinned to `RenderSystem`/shadow-fit in one glance (and the fix, reading the panel, was
   already built). If the existing readouts genuinely don't cover the spot, ADD a permanent, toggleable
-  diagnostic there (extend the panel / add a scope / a CVar-gated log) rather than a throwaway probe —
+  diagnostic there (extend the panel / add a scope / a CVar-gated log) rather than a throwaway probe;
   see "Build the engine to be debuggable" below. Reserve ad-hoc probes for gaps the standing tools can't
   reach, and strip them before committing.
 - **Bisect, don't guess.** When behavior contradicts the code, the bug is somewhere between "what I
@@ -637,7 +637,7 @@ Worked example — **asset pipeline** (the engine's current biggest simplificati
   five hopeful edits.
 - **One assumption per probe; isolate the variable.** Each test should answer exactly one yes/no
   question. If a result is paradoxical (e.g. "metadata valid at registration but absent at render"),
-  do not theorize further — put *both* readings in a *single build/run* and compare. Contradictions
+  do not theorize further: put *both* readings in a *single build/run* and compare. Contradictions
   across separate runs usually mean the runs differed (stale exe, different selection), not that the
   code is haunted.
 - **Verify the harness before the hypothesis.** Before concluding "the code is wrong," confirm the
@@ -654,7 +654,7 @@ Worked example — **asset pipeline** (the engine's current biggest simplificati
 ### Debugging rendering bugs specifically (lead with observation, not code)
 
 A plausible cause is not a proven cause. On a flickering-texture bug the obvious-looking culprits
-(missing mipmaps, near-plane z-fighting, depth precision) were all *wrong* — each was "fixed" before
+(missing mipmaps, near-plane z-fighting, depth precision) were all *wrong*: each was "fixed" before
 being proven, wasting three rounds. What actually found it: the user's observations + visual probes.
 
 - **Ask "when does it NOT happen?" before reading code.** Which scene only? Which material only?
@@ -665,28 +665,28 @@ being proven, wasting three rounds. What actually found it: the user's observati
   search space in half immediately.
 - **Bisect with temporary shader probes, not theory.** Force a flat color (geometry vs sampling),
   force texture index 0 (slot vs index), output a value as RGB (index magnitude, `SV_InstanceID`),
-  force a mip level (`SampleLevel`). Each probe is one yes/no that halves the space; ~4–5 pin it. This
-  is "bisect, don't guess" applied to the GPU — strip every probe before committing.
+  force a mip level (`SampleLevel`). Each probe is one yes/no that halves the space; 4 to 5 pin it. This
+  is "bisect, don't guess" applied to the GPU. Strip every probe before committing.
 - **Don't "fix" before the probe proves the cause.** Prove with one probe, *then* change code.
 - **Bindless + instancing red flag:** when one draw renders many objects with *different*
   descriptor-array indices, the index is not dynamically uniform → wrap in `NonUniformResourceIndex()`
   and enable the matching `shader*ArrayNonUniformIndexing` device feature. Silent garbage/flicker
   otherwise; it "works" pre-instancing only because each object was its own draw.
 - **A wrong fix that's independently useful can stay.** Misdiagnoses (mipmaps, near plane) were real
-  improvements on their own — keep them; don't revert good changes just because they missed this bug.
+  improvements on their own, so keep them; don't revert good changes just because they missed this bug.
 - **Color/hue/gamma bug → suspect the color space and pipeline STAGE before the formula.** On a color
   bug, if two fixes fail in the *same category*, stop tweaking the math and ask: wrong color space
   (linear vs display/sRGB, HDR vs tonemap-compressed, RGB vs signed-chroma like YCoCg) or wrong pipeline
   stage (before vs after tonemap)? Several correct-looking diagnoses that all trace to one structural
   fact = that fact is the bug. Worked example (#44): an in-resolve TAA sharpen corrupted edge colors
-  through five formula rewrites (signed-chroma clamp → dark-biased low-pass → pre-tonemap hue shift) —
-  all one root cause: **sharpening in linear HDR before the per-channel ACES tonemap**, which curves
+  through five formula rewrites (signed-chroma clamp, then dark-biased low-pass, then pre-tonemap hue
+  shift), all one root cause: **sharpening in linear HDR before the per-channel ACES tonemap**, which curves
   R/G/B differently and turns any overshoot into a hue shift. This is the "change altitude after ~2
   failed attempts" rule applied to color: interrogate placement, not parameters.
 
-**Pipeline-stage invariant (learned from #44).** The **temporal resolve runs in linear HDR —
-accumulation only**. Perceptual / display-space operations — **sharpening, CAS, contrast, any
-per-channel curve** — belong **after** tonemap (a post-tonemap pass, like FXAA on the LDR present
+**Pipeline-stage invariant (learned from #44).** The **temporal resolve runs in linear HDR and does
+accumulation only**. Perceptual / display-space operations (**sharpening, CAS, contrast, any
+per-channel curve**) belong **after** tonemap (a post-tonemap pass, like FXAA on the LDR present
 target), NEVER inside the resolve or any pre-tonemap linear-HDR stage: an overshoot that's a neutral
 brightness change in linear becomes a **hue shift** once ACES curves each channel. One pass = one
 responsibility: don't bolt a display-space effect onto a linear-HDR pass.
@@ -698,15 +698,15 @@ The deeper fix for "I couldn't verify without the user" is to make state inspect
 - **Expose state to headless inspection.** If you can only confirm a feature by looking at the screen,
   add a non-visual path to read the same truth: a startup/CVar-gated dump, a query function, or a log.
   The inspector's reflection (RTTR) and the `smoke.frames` hook already make a lot of state reachable
-  without a GPU — prefer wiring new state through those.
+  without a GPU, so prefer wiring new state through those.
 - **Prefer pure, testable cores.** Logic that maps data→data (name formatting, layout math, value
   conversions, asset-handle resolution) should live in free functions that a Catch2 test or a headless
-  run can exercise directly — not be entangled in an ImGui draw call that only runs on a click.
+  run can exercise directly, not be entangled in an ImGui draw call that only runs on a click.
 - **Fail loud, not silent.** Silent fallbacks (a missing asset resolving to null, an unread metadata
   key, a default value) hide bugs and force interactive spelunking. Log once at `[error]`/`[warn]`
   when an expectation is violated, the way `ResolveAssetName` / the unresolved-handle path do.
 - **Name things for diagnosis.** Vulkan objects via `SetVulkanObjectName`, ImGui widgets with stable
-  unique IDs, components with reflected type names — so logs, validation, and RenderDoc say
+  unique IDs, components with reflected type names, so logs, validation, and RenderDoc say
   `Swapchain[0]` / `DIRECTIONAL LIGHT`, not an opaque handle.
 - **Treat "I had to add a temporary on-screen probe" as a missing feature.** It usually means that
   state should be permanently visible (a debug overlay / stats panel / CVar dump). Consider promoting
