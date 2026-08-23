@@ -338,11 +338,12 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   reference itself. Real-time captures are frame-capped by `--tech-maxframes` (default 200) since
   they never converge; the reference is uncapped because it does.
 - Needs a **real GPU** (Vulkan + the path tracer), so this is a **local** gate, not CI. **Baselines
-  are per-machine.** The reference is a path trace on the local adapter, so a baseline captured on a
-  different GPU measures hardware difference on top of technique error: that case exits **2** (SKIP)
-  and refuses to gate, as does a missing baseline. The committed set holds one device, so a second
-  machine needs its own capture (and `--update-baseline` overwrites, since the path is keyed by
-  viewpoint and technique only, not by device the way perf baselines are).
+  are keyed by adapter**, `Scripts/quality-baseline/<device-slug>/<viewpoint>__<technique>.json`, the
+  same scheme perf-bench uses. The reference is a path trace on the local adapter, so a baseline
+  captured on a different GPU measures hardware difference on top of technique error: a second card
+  gets its own directory, and `--update-baseline` there cannot overwrite the first one's committed
+  numbers. A missing set exits **2** (SKIP) and refuses to gate, as does a directory hand-copied from
+  another machine (each JSON also records its device, checked against the running one).
 - **A metric A/B needs a static camera.** Leave `--camera.path` out of any run whose numbers are
   compared against another run: it desynchronises which frame each side captures and manufactures
   differences that have nothing to do with the change under test. The gate's fixed viewpoints

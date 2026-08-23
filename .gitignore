@@ -30,7 +30,7 @@ Tools/rdts/
 !Scripts/rga-baseline/*.json
 # Committed golden image-quality baselines for the FLIP/PSNR/SSIM gate. See Scripts/quality-bench.py.
 !Scripts/quality-baseline/
-!Scripts/quality-baseline/*.json
+!Scripts/quality-baseline/**/*.json
 *.DotSettings
 *.DotSettings.user
 *.ini

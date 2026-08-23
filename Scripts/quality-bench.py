@@ -4,16 +4,19 @@
 The GPU perf-bench (Scripts/perf-bench.py) answers "how fast"; this answers "how correct".
 For each viewpoint it captures the CONVERGED path tracer as ground truth, then each real-time
 technique, and reports perceptual + numerical image-quality metrics (FLIP, PSNR, SSIM) of the
-technique vs the reference, diffing against a committed baseline in Scripts/quality-baseline/
--- failing (exit 1) on a quality regression. This is how real-time GI/denoiser work is measured
-in practice (NVIDIA FLIP; SVGF/ReSTIR papers report FLIP/SSIM vs a path-traced reference).
+technique vs the reference, diffing against a committed baseline in
+Scripts/quality-baseline/<device-slug>/ -- failing (exit 1) on a quality regression. This is how
+real-time GI/denoiser work is measured in practice (NVIDIA FLIP; SVGF/ReSTIR papers report FLIP/SSIM
+vs a path-traced reference).
 
 Both modes tonemap through the same LDR chain, so toggling render.pathtrace is an apples-to-apples
 A/B: the engine's headless quality-capture (quality.capture.frames, phase A) dumps the final
 present of each run to <path>_ldr.npy; this script loads the pair and computes the metrics offline.
 
 Needs a real GPU (Vulkan + the path tracer), so it's a LOCAL gate like perf-bench.py, not CI.
-Baselines are per-machine: the PT reference differs slightly across GPUs -- re-baseline on a new box.
+Baselines are keyed by adapter (Scripts/quality-baseline/<device-slug>/) like perf-bench: the
+reference is a path trace on the local GPU, so one checkout holds an independent set per card and a
+--update-baseline on a second card cannot overwrite the first one's numbers. Capture on a new box.
 
 Usage (from repo root or anywhere):
     py Scripts/quality-bench.py                    # capture ref + techniques, diff vs baseline
@@ -300,8 +303,22 @@ def capture_reference(vp: str, pose, ref_frames: int, exe: Path, repo_root: Path
     return img, dev, False
 
 
-def baseline_path(repo_root: Path, viewpoint: str, technique: str) -> Path:
-    return repo_root / "Scripts" / "quality-baseline" / f"{viewpoint}__{technique}.json"
+def device_slug(device: str) -> str:
+    """Filesystem-safe directory name for an adapter, e.g. 'AMD Radeon RX 9070 XT' -> 'amd-radeon-rx-9070-xt'.
+
+    Must produce the same slug as perf-bench.py's copy: the two gates key their baseline trees by the
+    same adapter name, and a divergence would split one machine's results across two directories.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "-", device.lower()).strip("-")
+    return slug or "unknown-device"
+
+
+def baseline_path(repo_root: Path, device: str, viewpoint: str, technique: str) -> Path:
+    # Keyed by adapter, like perf-baseline. The reference is a path trace on the local GPU, so a set
+    # captured elsewhere measures hardware difference on top of technique error; separate directories
+    # let one checkout hold a set per GPU and stop --update-baseline on a second card from overwriting
+    # the first one's committed numbers.
+    return repo_root / "Scripts" / "quality-baseline" / device_slug(device) / f"{viewpoint}__{technique}.json"
 
 
 def camera_env(pose) -> dict:
@@ -361,7 +378,6 @@ def main() -> int:
 
     tmp = Path(tempfile.gettempdir()) / "snowstorm-quality-bench"
     tmp.mkdir(parents=True, exist_ok=True)
-    (repo_root / "Scripts" / "quality-baseline").mkdir(parents=True, exist_ok=True)
 
     print(f"Repo root : {repo_root}")
     print(f"Build dir : {build_dir}  (config: {args.config})")
@@ -399,8 +415,9 @@ def main() -> int:
             fl = f"{cur['flip']:.4f}" if cur["flip"] is not None else "n/a"
             print(f"  FLIP={fl}  PSNR={cur['psnr']:.2f}dB  SSIM={cur['ssim']:.4f}")
 
-            bp = baseline_path(repo_root, vp, tech)
+            bp = baseline_path(repo_root, cur["device"], vp, tech)
             if args.update_baseline:
+                bp.parent.mkdir(parents=True, exist_ok=True)
                 bp.write_text(json.dumps(cur, indent=2))
                 print(f"  updated baseline: {bp.relative_to(repo_root)}")
             elif not bp.exists():
