@@ -100,6 +100,7 @@ float SampleShadowFactor(uint texIndex, float4x4 lightViewProj, float4 atlasRect
 // Record + any-hit cutout alpha test, shared with the AO/GI/reflection passes. Engine.hlsli already declared
 // Textures[] (t0, space3), satisfying RTGeometry's contract, so this include must follow it.
 #include "Include/RTGeometry.hlsli"
+#include "Include/LightSampling.hlsli" // SampleCone / LightConeCos, shared with the path tracer
 
 // Reassemble the geometry-table device address from FrameCB's lo/hi halves (0 = table not published yet ->
 // the any-hit test falls back to treating hits as solid).
@@ -151,19 +152,15 @@ float RayTraceShadow(float3 positionWS, float3 Ng, float3 L, float tMax)
 #define SHADOW_RAY_COUNT 2
 
 // Soft ray-traced shadow (#118): like RayTraceShadow, but instead of one ray straight at the light, shoot
-// SHADOW_RAY_COUNT rays whose directions are jittered within a disk of radius `coneRadius` (tan of the
-// light's angular half-size) perpendicular to `L` — modelling the light's AREA. Averaging the hits gives a
-// visibility in [0,1] (a penumbra) instead of {0,1}. Sharp where the caster is close (small subtended
-// angle), softening with distance — the physical behaviour. Reuses the RTAO disk-sample + orthonormal
-// basis + frame-rotated IGN hash so successive frames pick different directions and TAA smooths the noise.
-// coneRadius == 0 reduces exactly to the hard single ray. RT permutation only.
-float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, float coneRadius, float2 pixelPos)
+// SHADOW_RAY_COUNT rays sampled uniformly inside the cone the light subtends (half-angle acos(`coneCos`)),
+// modelling the light's AREA. Averaging the hits gives a visibility in [0,1] (a penumbra) instead of {0,1}.
+// Sharp where the caster is close (small subtended angle), softening with distance, which is the physical
+// behaviour. Sampling by SOLID ANGLE rather than in a tangent-plane disk is what makes this agree with the
+// path tracer's NEE at any cone width, not only in the small-angle limit. The frame-rotated IGN hash picks
+// different directions each frame so TAA smooths the noise. coneCos == 1 reduces exactly to the hard single
+// ray. RT permutation only.
+float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, float coneCos, float2 pixelPos)
 {
-	// Orthonormal basis around the light direction L to place disk offsets in the plane perpendicular to it.
-	const float3 up = abs(L.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
-	const float3 tangent = normalize(cross(up, L));
-	const float3 bitangent = cross(L, tangent);
-
 	// Per-pixel + per-frame rotation seed (same interleaved-gradient-noise hash RTAO uses).
 	const float2 px = pixelPos + float2(FrameCounter * 5.588238, FrameCounter * 3.539418);
 	const float ign = frac(52.9829189 * frac(dot(px, float2(0.06711056, 0.00583715))));
@@ -174,12 +171,18 @@ float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, flo
 	float visSum = 0.0;
 	[unroll] for (int s = 0; s < SHADOW_RAY_COUNT; ++s)
 	{
-		// Uniform disk sample (stratified by ray index, jittered by the hash), scaled to the cone radius.
+		// Cone sample (stratified by ray index, jittered by the hash).
 		const float u1 = frac((float(s) + ign) / float(SHADOW_RAY_COUNT));
 		const float u2 = frac(ign + float(s) * 0.61803398875); // golden-ratio decorrelation
-		const float rr = coneRadius * sqrt(u1);
-		const float phi = 2.0 * PI * u2;
-		const float3 dir = normalize(L + (rr * cos(phi)) * tangent + (rr * sin(phi)) * bitangent);
+		const float3 dir = SampleCone(L, coneCos, u1, u2);
+
+		// Part of the light's disk sits below the GEOMETRIC horizon near the terminator; the surface itself
+		// occludes those samples, and no ray can report that (the origin is offset above the surface).
+		// Counting them lit is the light leak the path tracer avoids by rejecting the same samples in NEE.
+		if (dot(Ng, dir) <= 0.0)
+		{
+			continue;
+		}
 
 		RayDesc ray;
 		ray.Origin = origin;
@@ -220,11 +223,11 @@ float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL, float
 #ifdef SS_RAYTRACING
 	if (RTShadowEnabled != 0)
 	{
-		// Soft (cone-sampled penumbra) when enabled — the sun's angular half-size subtends a disk of
-		// radius tan(SunAngularRadius) perpendicular to L. Else the hard single ray. Sun is at infinity.
+		// Soft (cone-sampled penumbra) when enabled: the sun's angular radius is already supplied as a
+		// cosine, so it feeds the cone sampler directly. Else the hard single ray. Sun is at infinity.
 		if (ShadowSoft != 0)
 		{
-			return RayTraceSoftShadow(positionWS, Ng, L, 1e30, tan(SunAngularRadius), pixelPos);
+			return RayTraceSoftShadow(positionWS, Ng, L, 1e30, SunCosThetaMax, pixelPos);
 		}
 		return RayTraceShadow(positionWS, Ng, L, 1e30);
 	}
@@ -251,11 +254,11 @@ float SampleSpotShadow(SpotLight spot, float3 positionWS, float3 Ng, float3 L, f
 		}
 		// Stop just short of the light so the ray can't hit geometry at/behind the light position.
 		const float tMax = max(distToLight - 0.05, 0.0);
-		// Soft: a source of radius LightSourceRadius at distToLight subtends a cone of half-angle whose
-		// tangent is (radius / distance) — bigger/closer source => wider penumbra.
+		// Soft: a source of radius LightSourceRadius at distToLight subtends a cone whose half-angle has
+		// sine (radius / distance), so a bigger or closer source gives a wider penumbra.
 		if (ShadowSoft != 0)
 		{
-			return RayTraceSoftShadow(positionWS, Ng, L, tMax, LightSourceRadius / max(distToLight, 1e-4), pixelPos);
+			return RayTraceSoftShadow(positionWS, Ng, L, tMax, LightConeCos(LightSourceRadius, distToLight), pixelPos);
 		}
 		return RayTraceShadow(positionWS, Ng, L, tMax);
 	}
@@ -301,7 +304,7 @@ float SamplePointShadow(PointLight light, float3 positionWS, float3 Ng, float3 L
 		const float tMax = max(distToLight - 0.05, 0.0);
 		if (ShadowSoft != 0)
 		{
-			return RayTraceSoftShadow(positionWS, Ng, L, tMax, LightSourceRadius / max(distToLight, 1e-4), pixelPos);
+			return RayTraceSoftShadow(positionWS, Ng, L, tMax, LightConeCos(LightSourceRadius, distToLight), pixelPos);
 		}
 		return RayTraceShadow(positionWS, Ng, L, tMax);
 	}

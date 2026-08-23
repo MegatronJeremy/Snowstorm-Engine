@@ -37,7 +37,7 @@ namespace Snowstorm
 			uint32_t SpotCastMask = 0;
 			uint32_t SoftEnabled = 0;
 
-			float SunTanAngular = 0.0f;
+			float SunCosThetaMax = 1.0f;
 			float SourceRadius = 0.0f;
 			uint32_t RayCount = 1;
 			uint32_t ReflGeoTableAddrHi = 0; // geometry table device address (hi)
@@ -115,7 +115,7 @@ namespace Snowstorm
 
 	void RTShadowPass::Dispatch(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const glm::mat4& invViewProj,
 	                            const LightDataBlock& lights, const float normalBias, const uint32_t frameCounter,
-	                            const bool soft, const float sunTanAngular, const float sourceRadius,
+	                            const bool soft, const float sunCosThetaMax, const float sourceRadius,
 	                            const uint32_t rayCount, const uint64_t tableAddr, const glm::vec3& cameraPosition,
 	                            const Ref<TextureView>& gbuffer, const Ref<TextureView>& shadingNormal,
 	                            const Ref<TextureView>& depth, const Ref<TextureView>& output,
@@ -138,7 +138,7 @@ namespace Snowstorm
 		cb.NormalBias = normalBias;
 		cb.FrameCounter = frameCounter;
 		cb.SoftEnabled = soft ? 1u : 0u;
-		cb.SunTanAngular = sunTanAngular;
+		cb.SunCosThetaMax = sunCosThetaMax;
 		cb.SourceRadius = sourceRadius;
 		cb.RayCount = rayCount;
 		cb.ReflGeoTableAddrLo = static_cast<uint32_t>(tableAddr & 0xFFFFFFFFull); // cutout any-hit alpha test

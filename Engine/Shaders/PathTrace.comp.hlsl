@@ -117,21 +117,9 @@ float NextFloat(inout Rng r)
 	return float((word >> 22u) ^ word) * (1.0 / 4294967296.0);
 }
 
-// -------- Orthonormal basis (Duff et al. 2017).
-void OnbFromNormal(float3 n, out float3 t, out float3 b)
-{
-	const float sgn = n.z >= 0.0 ? 1.0 : -1.0;
-	const float a = -1.0 / (sgn + n.z);
-	const float bb = n.x * n.y * a;
-	t = float3(1.0 + sgn * n.x * n.x * a, sgn * bb, -sgn * n.x);
-	b = float3(bb, sgn + n.y * n.y * a, -n.y);
-}
-float3 ToWorld(float3 v, float3 n)
-{
-	float3 t, b;
-	OnbFromNormal(n, t, b);
-	return v.x * t + v.y * b + v.z * n;
-}
+// OnbFromNormal / ToWorld / SampleCone live in Include/LightSampling.hlsli, shared with the two real-time
+// shadow paths so all three sample a light's cone identically.
+#include "Include/LightSampling.hlsli"
 
 // Robust ray-origin offset (Wächter & Binder, "A Fast and Robust Method for Avoiding Self-Intersection",
 // Ray Tracing Gems ch.6). Scales the offset with the surface's world-coordinate magnitude via integer ULP
@@ -150,18 +138,6 @@ float3 OffsetRay(float3 p, float3 n)
 	return float3(abs(p.x) < origin ? p.x + floatScale * n.x : pI.x,
 	              abs(p.y) < origin ? p.y + floatScale * n.y : pI.y,
 	              abs(p.z) < origin ? p.z + floatScale * n.z : pI.z);
-}
-
-// Uniformly sample a direction inside the cone of half-angle acos(cosThetaMax) around `axis`. Used to give
-// the sun a FINITE angular size for NEE (a true delta would make its specular reflection a single infinite
-// hot pixel on smooth surfaces — the "bright stuck dot"). cosThetaMax == 1 collapses back to the exact axis.
-float3 SampleCone(float3 axis, float cosThetaMax, float u1, float u2)
-{
-	const float cosTheta = 1.0 - u1 * (1.0 - cosThetaMax);
-	const float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
-	const float phi = 2.0 * PI * u2;
-	const float3 local = float3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
-	return normalize(ToWorld(local, axis));
 }
 
 // -------- Microfacet terms (metallic-roughness, GGX / Smith / Schlick).
@@ -623,9 +599,7 @@ void main(uint3 id : SV_DispatchThreadID)
 				// Finite light size: sample within the cone the light's sphere subtends, so its reflection on
 				// smooth surfaces is a converging soft highlight, not a delta hot pixel. radius 0 => delta.
 				const float3 toL = d / dist;
-				const float sinHalf = saturate(LightSourceRadius / dist);
-				const float cosMax = sqrt(max(0.0, 1.0 - sinHalf * sinHalf));
-				const float3 L = SampleCone(toL, cosMax, NextFloat(rng), NextFloat(rng));
+				const float3 L = SampleCone(toL, LightConeCos(LightSourceRadius, dist), NextFloat(rng), NextFloat(rng));
 				if (dot(h.N, L) <= 0.0)
 				{
 					continue;
@@ -661,9 +635,7 @@ void main(uint3 id : SV_DispatchThreadID)
 				{
 					continue;
 				}
-				const float sinHalf = saturate(LightSourceRadius / dist);
-				const float cosMax = sqrt(max(0.0, 1.0 - sinHalf * sinHalf));
-				const float3 L = SampleCone(toL, cosMax, NextFloat(rng), NextFloat(rng));
+				const float3 L = SampleCone(toL, LightConeCos(LightSourceRadius, dist), NextFloat(rng), NextFloat(rng));
 				if (dot(h.N, L) <= 0.0)
 				{
 					continue;

@@ -162,11 +162,12 @@ cbuffer FrameCB : register(b0, space0)
 	// Debug: 1 = output the isolated grayscale AO term (material AO * RTAO) instead of the shaded scene, for
 	// tuning the RTAO radius/intensity against the raw signal. Reuses a former pad slot.
 	uint DebugAO;
-	// Soft RT shadows (#118): SunAngularRadius is the sun's angular HALF-size in radians (= ½ angular
-	// diameter; real sun ~0.0047 rad). LightSourceRadius is a local light's physical radius in world units.
-	// Drive the shadow-ray cone jitter (bigger source => wider penumbra). Consumed only when ShadowSoft != 0
-	// in the RT path. SunAngularRadius fills the last pad; LightSourceRadius starts a new 16-byte row.
-	float SunAngularRadius;
+	// Soft RT shadows (#118): SunCosThetaMax is cos of the sun's angular RADIUS (= ½ its angular diameter;
+	// the real sun is ~0.0047 rad, cos ~0.999989). LightSourceRadius is a local light's physical radius in
+	// world units, converted to a cone cosine per shading point by LightConeCos. Both drive the shadow-ray
+	// cone jitter (bigger source => wider penumbra) and are consumed only when ShadowSoft != 0 in the RT
+	// path. SunCosThetaMax fills the last pad; LightSourceRadius starts a new 16-byte row.
+	float SunCosThetaMax;
 	float LightSourceRadius;
 	// RT reflections (#118): RTReflEnabled gates the reflection trace (SS_RAYTRACING builds + a geometry
 	// table present); ReflIntensity scales the contribution; ReflMaxRoughness is the roughness cutoff

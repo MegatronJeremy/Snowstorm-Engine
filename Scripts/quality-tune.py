@@ -84,7 +84,7 @@ PARAM_SPACE = {
                                                                      # 0.5 measurably hurts, so the cap is the load-bearing part.
         ("SS_RENDER_GI_SPEC_AMBIENT_FADE", 0.0, 1.0, False, 1.0),  # #163 env-spec occlusion (validated ->1.0 three times)
         ("SS_RENDER_SHADOW_SUN_ANGLE_DEG", 0.1, 5.0, False, 1.0),  # sun soft-shadow penumbra width vs the PT's real sun angle.
-                                                                     # Reaches the default inline path via frame.SunAngularRadius;
+                                                                     # Reaches the default inline path via frame.SunCosThetaMax;
                                                                      # shadows.normalbias does NOT (stochastic pass only), so it is absent.
         ("SS_RENDER_REFLECTIONS_MAX_ROUGHNESS", 0.3, 1.0, False, 0.8), # glossy/env cutoff: traced radiance instead of the
                                                                      # un-occluded env cube, the #163 theme. Near-flat standalone

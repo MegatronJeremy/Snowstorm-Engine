@@ -45,8 +45,8 @@ cbuffer ShadowCB : register(b3, space0)
 	uint SpotCastMask;  // bit i => spot light i casts
 	uint SoftEnabled;   // 1 => jitter the chosen ray within the light's area (soft penumbra); 0 => hard ray
 
-	float SunTanAngular;     // tan(sun angular half-size) -> directional cone radius for the soft jitter
-	float SourceRadius;      // local-light source radius (world units); spot/point cone radius = SourceRadius / dist
+	float SunCosThetaMax;    // cos(sun angular RADIUS) -> the cone the soft jitter samples (1 = delta light)
+	float SourceRadius;      // local-light source radius (world units); the cone it subtends narrows with distance
 	uint RayCount;           // stochastic samples/pixel (render.shadows.rays): more = less variance, ~linear cost
 	uint ReflGeoTableAddrHi; // device address (hi) of the per-instance geometry table
 
@@ -126,7 +126,8 @@ RaytracingAccelerationStructure SceneTLAS : register(t2, space3);
 // Record + any-hit cutout alpha test, shared with the AO/GI/reflection passes + the inline shadow path.
 // Textures[] above satisfies RTGeometry's contract, so this include must follow it.
 #include "Include/RTGeometry.hlsli"
-#include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky
+#include "Include/GBufferEncode.hlsli"  // oct-normal decode + IsSky
+#include "Include/LightSampling.hlsli"  // SampleCone / LightConeCos, shared with the path tracer
 
 // Reassemble the geometry-table device address from the CB lo/hi halves (0 = table not published this frame ->
 // the any-hit test treats every hit as solid, matching AO's fallback).
@@ -170,14 +171,14 @@ float FalloffWindow(float dist, float range)
 // (each light in the stream reads dimBase + lightIdx). Calling this K times draws K lights ~proportional to
 // contribution -> averaging their visibility is a K-sample estimate of the aggregate shadow ratio (variance
 // ~1/K). Returns false when no light contributes here; else fills the chosen light's tracer params (direction
-// TO light, ray tMax, soft cone/disk radius, whether it casts a shadow).
+// TO light, ray tMax, cos of the half-angle its cone subtends, whether it casts a shadow).
 bool SelectLight(uint2 px, float3 positionWS, float3 N, float3 V, float roughness, uint frame, uint dimBase, out float3 outL,
-                 out float outTMax, out float outConeR, out bool outCasts, out float3 outRadNdotL, out float outWSum)
+                 out float outTMax, out float outConeCos, out bool outCasts, out float3 outRadNdotL, out float outWSum)
 {
 	float wSum = 0.0;
 	outL = float3(0, 0, 1);
 	outTMax = 1e30;
-	outConeR = 0.0;
+	outConeCos = 1.0; // delta light until a selection widens it
 	outCasts = false;
 	outRadNdotL = float3(0, 0, 0); // chosen light's COLORED radiance * NdotL (pre-visibility), for the RIS estimate
 	outWSum = 0.0;
@@ -199,7 +200,7 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, float3 V, float roughnes
 		{
 			outL = L;
 			outTMax = 1e30;
-			outConeR = SunTanAngular; // sun angular half-size
+			outConeCos = SunCosThetaMax;
 			outCasts = (DirCastMask & (1u << d)) != 0u;
 			outRadNdotL = radNdotL;
 			have = true;
@@ -228,7 +229,7 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, float3 V, float roughnes
 		{
 			outL = L;
 			outTMax = max(dist - 0.05, 0.0);
-			outConeR = SourceRadius / max(dist, 1e-4); // source disk subtends a wider cone up close
+			outConeCos = LightConeCos(SourceRadius, dist); // the source sphere subtends a wider cone up close
 			outCasts = (PointCastMask & (1u << p)) != 0u;
 			outRadNdotL = radNdotL;
 			have = true;
@@ -265,7 +266,7 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, float3 V, float roughnes
 		{
 			outL = L;
 			outTMax = max(dist - 0.05, 0.0);
-			outConeR = SourceRadius / max(dist, 1e-4);
+			outConeCos = LightConeCos(SourceRadius, dist);
 			outCasts = (SpotCastMask & (1u << s)) != 0u;
 			outRadNdotL = radNdotL;
 			have = true;
@@ -279,22 +280,26 @@ bool SelectLight(uint2 px, float3 positionWS, float3 N, float3 V, float roughnes
 // Trace one (optionally area-jittered) shadow ray toward the chosen light. Returns visibility (1 = lit).
 // outHitT = distance to the nearest occluder on a hit (world units, for the SIGMA-style penumbra-aware
 // denoiser kernel), or -1 on a miss (no occluder -> excluded from the mean).
-float TraceShadow(uint2 px, uint frame, uint dimBase, float3 positionWS, float3 N, float3 L, float tMax, float coneR, out float outHitT)
+float TraceShadow(uint2 px, uint frame, uint dimBase, float3 positionWS, float3 N, float3 L, float tMax, float coneCos, out float outHitT)
 {
 	float3 dir = L;
-	// Soft shadows: jitter the ray within the light's area (disk of radius coneR perpendicular to L). The
-	// per-sample + temporal + à-trous averaging converges the penumbra (MegaLights/RTXDI area-light approach).
-	if (SoftEnabled != 0u && coneR > 0.0)
+	// Soft shadows: jitter the ray uniformly within the cone the light subtends. The per-sample + temporal +
+	// à-trous averaging converges the penumbra (MegaLights/RTXDI area-light approach).
+	if (SoftEnabled != 0u && coneCos < 1.0)
 	{
-		const float3 up = abs(L.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
-		const float3 tangent = normalize(cross(up, L));
-		const float3 bitangent = cross(L, tangent);
 		// Jitter axes at high dims (past the light-stream dims for this sample) so they don't collide.
 		const float u1 = STBN(px, frame, dimBase + 48u);
 		const float u2 = STBN(px, frame, dimBase + 49u);
-		const float rr = coneR * sqrt(u1);
-		const float phi = 6.2831853 * u2;
-		dir = normalize(L + (rr * cos(phi)) * tangent + (rr * sin(phi)) * bitangent);
+		dir = SampleCone(L, coneCos, u1, u2);
+
+		// Near the terminator part of the light's disk sits below the GEOMETRIC horizon; those samples are
+		// occluded by the surface itself, which no ray can report (the ray origin is offset above it). Counting
+		// them as lit is the light leak the path tracer avoids by rejecting the same samples in its NEE loop.
+		if (dot(N, dir) <= 0.0)
+		{
+			outHitT = -1.0; // self-occlusion, not a scene occluder: no distance to feed the penumbra kernel
+			return 0.0;
+		}
 	}
 
 	RayDesc ray;
@@ -390,11 +395,11 @@ void main(uint3 id : SV_DispatchThreadID)
 		const uint dimBase = s * 64u;
 		float3 L;
 		float tMax;
-		float coneR;
+		float coneCos;
 		bool casts;
 		float3 radNdotL; // chosen light's colored radiance*NdotL (pre-visibility)
 		float wSum;      // Σ luma-contribution over all in-range lights (the RIS normalization)
-		if (!SelectLight(id.xy, positionWS, Ns, V, roughness, FrameCounter, dimBase, L, tMax, coneR, casts, radNdotL, wSum))
+		if (!SelectLight(id.xy, positionWS, Ns, V, roughness, FrameCounter, dimBase, L, tMax, coneCos, casts, radNdotL, wSum))
 		{
 			continue; // no contributing light here -> 0 irradiance from this sample
 		}
@@ -402,7 +407,7 @@ void main(uint3 id : SV_DispatchThreadID)
 		if (casts)
 		{
 			float hitT;
-			vis = TraceShadow(id.xy, FrameCounter, dimBase, positionWS, Ng, L, tMax, coneR, hitT);
+			vis = TraceShadow(id.xy, FrameCounter, dimBase, positionWS, Ng, L, tMax, coneCos, hitT);
 			if (hitT >= 0.0)
 			{
 				hitTSum += hitT;

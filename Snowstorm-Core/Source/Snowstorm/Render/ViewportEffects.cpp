@@ -974,9 +974,10 @@ namespace Snowstorm
 				const float normalBias = CVars::ShadowNormalBias.Get(); // render.shadows.normalbias (acne vs peter-panning)
 				const auto frameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
 				// Soft shadows: jitter the chosen ray within each light's area (temporal+denoise converge the
-				// penumbra). Reuses the existing raster/inline soft CVars. Sun cone = tan(angular half-size).
+				// penumbra). Reuses the existing raster/inline soft CVars. The CVar is the sun's angular
+				// DIAMETER, so halve it before taking the cone cosine, matching the path tracer.
 				const bool soft = CVars::ShadowSoft.Get();
-				const float sunTanAngular = glm::tan(glm::radians(CVars::ShadowSunAngleDeg.Get()));
+				const float sunCosThetaMax = glm::cos(glm::radians(0.5f * CVars::ShadowSunAngleDeg.Get()));
 				const float sourceRadius = CVars::ShadowSourceRadius.Get();
 				const auto rayCount = static_cast<uint32_t>(CVars::ClampedShadowRayCount());
 				// Geometry-table device address for the cutout any-hit alpha test (foliage/thin cutout occluders).
@@ -991,10 +992,10 @@ namespace Snowstorm
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Writes = {{shadowView->GetTexture(), RenderGraph::AccessState::Storage},
 				                             {shadowSpecView->GetTexture(), RenderGraph::AccessState::Storage}},
-				                  .Execute = [this, &fc, invViewProj, lights, normalBias, frameCounter, soft, sunTanAngular, sourceRadius, rayCount, tableAddr, camPos, gbufView, shadingView, depthView, shadowView, shadowSpecView, shW, shH](CommandContext& c)
+				                  .Execute = [this, &fc, invViewProj, lights, normalBias, frameCounter, soft, sunCosThetaMax, sourceRadius, rayCount, tableAddr, camPos, gbufView, shadingView, depthView, shadowView, shadowSpecView, shW, shH](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, lights, normalBias, frameCounter,
-					                                  soft, sunTanAngular, sourceRadius, rayCount, tableAddr, camPos, gbufView, shadingView, depthView, shadowView, shadowSpecView, shW, shH);
+					                                  soft, sunCosThetaMax, sourceRadius, rayCount, tableAddr, camPos, gbufView, shadingView, depthView, shadowView, shadowSpecView, shW, shH);
 				                  }});
 
 				v.ShadowView = shadowView;         // the raw diffuse estimate; the temporal/denoise stages republish
