@@ -19,7 +19,6 @@
 #include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Components/VisibilityComponents.hpp"
 
-#include <cstdio> // std::sscanf for camera.override parsing
 #include "Snowstorm/Render/RendererUtils.hpp"
 
 namespace Snowstorm
@@ -66,7 +65,7 @@ namespace Snowstorm
 		// Resolve the asset handles referenced by the scene.
 		m_World->GetSingleton<AssetManagerSingleton>().LoadRegistry(activeProject->GetAssetRegistryPath());
 
-		// The SAME engine systems the editor runs — without the editor/UI systems on top.
+		// The SAME engine systems the editor runs, minus the editor/UI systems on top.
 		RegisterCoreSystems(*m_World);
 
 		// The viewport is host-owned (window-sized), so create it before the scene loads. The CAMERA, in
@@ -116,7 +115,7 @@ namespace Snowstorm
 		auto& reg = m_World->GetRegistry();
 
 		// Find the scene's MAIN camera: the one authored camera flagged Primary (Unity Camera.main / Unreal
-		// model). Primary is the deliberate "this is the game view" mark — the runtime does NOT invent a main
+		// model). Primary is the deliberate "this is the game view" mark; the runtime does NOT invent a main
 		// camera by grabbing an arbitrary non-Primary one, so which camera you see is always the authored
 		// choice, never entt iteration order. (The editor's Scene-view camera is DoNotSerialize + editor-only,
 		// so it never appears in the runtime.)
@@ -144,7 +143,7 @@ namespace Snowstorm
 		// Retarget the authored camera at the runtime viewport. Its serialized TargetViewportUUID (if any)
 		// pointed at a viewport that doesn't exist in the runtime (viewports aren't serialized), so rebind it.
 		// Ensure the pieces needed to DRIVE and CULL it exist even if the author only placed a bare
-		// Transform + CameraComponent (fail-soft — don't require the author to know the full component set).
+		// Transform + CameraComponent (fail-soft, since the author need not know the full component set).
 		Entity cam{authored, m_World.get()};
 		if (!reg.any_of<TransformComponent>(authored))
 		{

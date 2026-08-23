@@ -25,7 +25,7 @@ namespace Snowstorm::CVars
 
 	CVar<std::string> QualityCapturePath{"quality.capture.path", "quality-capture", "Output basename for quality.capture.frames; writes <path>_ldr.npy (RGBA8 sRGB). Relative to the working directory.", CVarFlags::ReadOnly};
 
-	CVar<int> VSyncStress{"debug.vsync_stress", 0, "Toggle VSync every N frames (0 = off) to exercise swapchain recreation under validation — surfaces present-semaphore reuse bugs the steady-state smoke misses"};
+	CVar<int> VSyncStress{"debug.vsync_stress", 0, "Toggle VSync every N frames (0 = off) to exercise swapchain recreation under validation: it surfaces present-semaphore reuse bugs the steady-state smoke misses"};
 
 	CVar<int> MaxFrameMs{"debug.max_frame_ms", 0, "Frame-time watchdog: log [error] when a frame exceeds this many ms (0 = off)"};
 
@@ -54,7 +54,7 @@ namespace Snowstorm::CVars
 	CVar<bool> ValidationGpu{"validation.gpu", false, "Enable GPU-assisted validation (instruments shaders/AS builds to catch on-device OOB descriptor/buffer-address access; much heavier than validation.extra)", CVarFlags::ReadOnly};
 
 	// render.shaders.debug is ReadOnly (startup-only), NOT Persist: it re-keys the .spv cache and recompiling
-	// every shader is a multi-second synchronous stall — so it's resolved once at launch (SnowstormStartup.cfg /
+	// every shader is a multi-second synchronous stall, so it's resolved once at launch (SnowstormStartup.cfg /
 	// CLI) like Unreal's r.Shaders.Optimize, not live-toggled from a settings checkbox mid-session.
 	CVar<bool> ShadersDebug{"render.shaders.debug", false, "Compile shaders unoptimized (-Od) with debug info for RenderDoc/PIX source-stepping (off = optimized, the ship default). Startup-only: set it in SnowstormStartup.cfg / CLI and relaunch.", CVarFlags::ReadOnly};
 
@@ -64,11 +64,11 @@ namespace Snowstorm::CVars
 
 	// User settings below are tagged CVarFlags::Persist: saved to / restored from the config file so they
 	// survive an editor restart. One-shot/dev CVars above (smoke/bake/validation/benchmark) are tagged
-	// CVarFlags::ReadOnly — CLI/env/startup-config-driven, resolved once at launch, never runtime-editable.
+	// CVarFlags::ReadOnly: CLI/env/startup-config-driven, resolved once at launch, never runtime-editable.
 	CVar<bool> VSync{"display.vsync", true, "VSync on (FIFO, locked to refresh) or off (uncapped present)", CVarFlags::Persist};
 
-	// startup.* select what boots — read once during application startup (before the editor exists), so they're
-	// ReadOnly: change them in SnowstormStartup.cfg / CLI and relaunch.
+	// startup.* select what boots and are read once during application startup (before the editor exists), so
+	// they're ReadOnly: change them in SnowstormStartup.cfg / CLI and relaunch.
 	CVar<std::string> StartupProject{"startup.project", "Projects/Sandbox/Sandbox.ssproj", "Path to the .ssproj loaded at startup (relative to the working directory = repo root). The engine boots this real project instead of synthesizing an implicit one at the CWD. If the file is missing/unreadable, falls back to an implicit CWD-rooted project so the engine still runs. Point --startup.project elsewhere to boot a different project.", CVarFlags::ReadOnly};
 
 	CVar<std::string> StartupScene{"startup.scene", "", "Path to a .world to load at startup (empty = the active project's StartScene); e.g. Projects/Sandbox/assets/scenes/Sponza.world", CVarFlags::ReadOnly};
@@ -83,19 +83,19 @@ namespace Snowstorm::CVars
 
 	CVar<bool> Compare{"render.compare", false, "Split-screen A/B: left = upscaled (render.scale), right = full-res ground truth. Renders the scene twice; FXAA off both sides so the only variable is the upscaler (#43)", CVarFlags::Persist};
 
-	CVar<bool> Jitter{"render.jitter", false, "Temporal sub-pixel camera jitter (Halton 2,3): offsets the color projection a fraction of a pixel each frame — the substrate a temporal upscaler/TAA accumulates. Motion vectors + culling stay unjittered. Without a temporal resolve yet, this shows as sub-pixel shimmer (#44)", CVarFlags::Persist};
+	CVar<bool> Jitter{"render.jitter", false, "Temporal sub-pixel camera jitter (Halton 2,3): offsets the color projection a fraction of a pixel each frame (the substrate a temporal upscaler/TAA accumulates). Motion vectors + culling stay unjittered. Without a temporal resolve yet, this shows as sub-pixel shimmer (#44)", CVarFlags::Persist};
 
 	CVar<float> CompareSplit{"compare.split", 0.5f, "Compare-mode divider position (0 = all ground truth, 1 = all upscaled). Draggable in the viewport. Clamped to [0, 1]", CVarFlags::Persist};
 
 	CVar<bool> CameraPath{"camera.path", false, "Drive the camera along a deterministic benchmark orbit instead of free-fly. Repeatable motion so upscaler-vs-ground-truth metric runs are frame-for-frame comparable (#45)", CVarFlags::Persist};
 
-	CVar<bool> CameraPathFixedStep{"camera.path.fixed", true, "Step the benchmark camera path by a fixed 60 Hz dt instead of wall-clock, whenever the path is on. Makes frame N always map to the same pose AND the same per-frame motion-vector magnitude — so a dataset capture and a later metric A/B traverse the orbit identically (a temporal upscaler trains and infers on the SAME motion, #98). Off = wall-clock motion for free interactive playback. Dataset export always forces fixed step regardless.", CVarFlags::Persist};
+	CVar<bool> CameraPathFixedStep{"camera.path.fixed", true, "Step the benchmark camera path by a fixed 60 Hz dt instead of wall-clock, whenever the path is on. Makes frame N always map to the same pose AND the same per-frame motion-vector magnitude, so a dataset capture and a later metric A/B traverse the orbit identically (a temporal upscaler trains and infers on the SAME motion, #98). Off = wall-clock motion for free interactive playback. Dataset export always forces fixed step regardless.", CVarFlags::Persist};
 
 	CVar<bool> Metrics{"render.metrics", false, "Compute PSNR + SSIM of the upscaled image vs full-res ground truth each frame (requires render.compare). GPU compute reduction; results shown in the Performance panel (#45)", CVarFlags::Persist};
 
 	CVar<bool> MetricsLog{"render.metrics.log", false, "Log PSNR/SSIM over a ~1s window (like debug.frame_stats) so a headless benchmark run prints the trace. Requires render.metrics (#45)"};
 
-	CVar<bool> DatasetExport{"dataset.export", false, "Dump per-frame (low-res color, motion vectors, full-res ground truth) tuples to disk as .npy + manifest.json — training data for the neural upscaler (#46). Requires render.compare (ground truth); forces the velocity pass on and the camera path onto a fixed timestep so the dataset is regenerable. Serializes synchronously on the main thread (slow by design)."};
+	CVar<bool> DatasetExport{"dataset.export", false, "Dump per-frame (low-res color, motion vectors, full-res ground truth) tuples to disk as .npy + manifest.json: training data for the neural upscaler (#46). Requires render.compare (ground truth); forces the velocity pass on and the camera path onto a fixed timestep so the dataset is regenerable. Serializes synchronously on the main thread (slow by design)."};
 
 	CVar<bool> DatasetJitter{"dataset.jitter", false, "Apply camera jitter while capturing (dataset.export). Off (default) = unjittered LR, matching a purely SPATIAL upscaler's inference (#102). On = jittered LR, the substrate a TEMPORAL upscaler accumulates (#98). The spatial refiner trains/infers on unjittered, so leave this off for it."};
 
@@ -103,13 +103,13 @@ namespace Snowstorm::CVars
 
 	CVar<int> DatasetExportFrames{"dataset.export.frames", 0, "Stop the app after this many dataset tuples have been written to disk (0 = run until the window closes). Lets a headless capture run produce a fixed-size dataset then exit."};
 
-	CVar<int> DatasetExportWarmup{"dataset.export.warmup", 60, "Frames to skip before the FIRST dataset tuple is captured. Early headless-capture frames are pre-content (asset streaming + TLAS build unfinished) and the viewport resolution is still settling — capturing them pollutes the set with blank/wrong-size tuples. Skipping N leaves every written frame steady-state + same-size (on-disk index still starts at 0). Mirrors profile.capture_delay."};
+	CVar<int> DatasetExportWarmup{"dataset.export.warmup", 60, "Frames to skip before the FIRST dataset tuple is captured. Early headless-capture frames are pre-content (asset streaming + TLAS build unfinished) and the viewport resolution is still settling, so capturing them pollutes the set with blank/wrong-size tuples. Skipping N leaves every written frame steady-state + same-size (on-disk index still starts at 0). Mirrors profile.capture_delay."};
 
 	CVar<int> GtSsaa{"render.gt.ssaa", 1, "Ground-truth supersampling factor for the compare/dataset reference (1 = off, 2 = render the GT at 2x then box-downsample = anti-aliased reference). For a DLAA dataset the GT must be ANTI-ALIASED (a single native GT frame is aliased and not a valid AA target); SSAA is that reference. Capture-only cost (the GT is a 2nd render); clamped to {1,2}.", CVarFlags::Persist};
 
 	CVar<int> Upscaler{"render.upscaler", 0, "Upscale method when render.scale < 1: 0 = Bilinear (baseline), 1 = Neural Spatial (compute CNN residual refiner, single frame, #47), 2 = Neural Temporal (adds MV-warped previous-output + motion vector as extra inputs, DLSS/XeSS-style, #98). Both neural modes run the loaded .ssnn model; with the default identity weights each reproduces bilinear (the correctness baseline). Read per-frame; only active when upscaling (scale < 1). The temporal mode also forces the velocity pass on.", CVarFlags::Persist};
 
-	CVar<std::string> NeuralWeightsPath{"neural.weights", "", "Path to a trained .ssnn weights file for the neural upscaler (#99). Empty = the built-in identity refiner (reproduces bilinear). Loaded lazily when it changes. Used when render.upscaler = 1 (spatial, 3-ch input) or 2 (temporal, 8-ch input) — the model's first-layer width must match the selected mode, or the pass falls back to identity.", CVarFlags::Persist};
+	CVar<std::string> NeuralWeightsPath{"neural.weights", "", "Path to a trained .ssnn weights file for the neural upscaler (#99). Empty = the built-in identity refiner (reproduces bilinear). Loaded lazily when it changes. Used when render.upscaler = 1 (spatial, 3-ch input) or 2 (temporal, 8-ch input); the model's first-layer width must match the selected mode, or the pass falls back to identity.", CVarFlags::Persist};
 
 	CVar<std::string> NeuralDumpIdentity{"neural.dump_identity", "", "One-shot: write the built-in identity refiner to this .ssnn path, then exit (#99). The canonical reference the Python .ssnn writer's byte-parity test compares against. Empty = off."};
 
@@ -139,13 +139,13 @@ namespace Snowstorm::CVars
 
 	CVar<float> ShadowStrength{"render.shadow.strength", 1.0f, "Shadow darkness (1 = full occlusion, 0 = none)", CVarFlags::Persist};
 
-	CVar<float> ShadowScale{"render.shadows.scale", 1.0f, "Stochastic RT shadow internal resolution: the shadow-ratio trace runs at this fraction of viewport res, then a depth-aware bilateral upsample restores full res. DEFAULT 1.0 (FULL-RES): shadows are the highest-frequency signal in the frame (sharp contact/thin shadows), so a half-res trace + bilateral upsample can't reconstruct them and looks blocky/soft — production stochastic shadows (MegaLights/RTXDI) trace per full-res pixel. 0.5 = quarter the pixels (~4x cheaper) for a perf/quality A/B. Clamped to [0.25, 1.0].", CVarFlags::Persist};
+	CVar<float> ShadowScale{"render.shadows.scale", 1.0f, "Stochastic RT shadow internal resolution: the shadow-ratio trace runs at this fraction of viewport res, then a depth-aware bilateral upsample restores full res. DEFAULT 1.0 (FULL-RES): shadows are the highest-frequency signal in the frame (sharp contact/thin shadows), so a half-res trace + bilateral upsample can't reconstruct them and looks blocky/soft; production stochastic shadows (MegaLights/RTXDI) trace per full-res pixel. 0.5 = quarter the pixels (~4x cheaper) for a perf/quality A/B. Clamped to [0.25, 1.0].", CVarFlags::Persist};
 
 	CVar<float> ShadowNormalBias{"render.shadows.normalbias", 0.02f, "RT sun-shadow ray-origin normal offset in world units: pushes the shadow ray start off the surface along the geometric normal to avoid self-intersection (shadow acne). Too small = acne (surfaces shadow themselves); too large = peter-panning (contact shadows detach). Clamped to [0, 0.2].", CVarFlags::Persist};
 
-	CVar<int> ShadowRayCount{"render.shadows.rays", 4, "Stochastic RT shadow rays per pixel per frame: each independently importance-samples one light (proportional to unshadowed contribution) and traces one shadow ray; the average is the aggregate shadow ratio. More rays = less per-frame variance (the 1-ray estimate is a noisy binary sample) at ~linear cost, so the temporal + denoiser converge cleaner — especially at edges and under motion. Clamped to [1, 16]. Mirrors render.ao.rays.", CVarFlags::Persist};
+	CVar<int> ShadowRayCount{"render.shadows.rays", 4, "Stochastic RT shadow rays per pixel per frame: each independently importance-samples one light (proportional to unshadowed contribution) and traces one shadow ray; the average is the aggregate shadow ratio. More rays = less per-frame variance (the 1-ray estimate is a noisy binary sample) at ~linear cost, so the temporal + denoiser converge cleaner, especially at edges and under motion. Clamped to [1, 16]. Mirrors render.ao.rays.", CVarFlags::Persist};
 
-	CVar<bool> ShadowTemporal{"render.shadows.temporal", true, "Stochastic RT shadow temporal accumulation: reproject the previous accumulated shadow ratio by the motion vectors and blend with this frame's 1-ray estimate (depth-disocclusion reject, shared SVGF temporal). REQUIRED for a usable result — the 1 importance-sampled ray/pixel is very noisy without it. Off = the raw stochastic estimate. Read per-frame; forces the velocity pass on.", CVarFlags::Persist};
+	CVar<bool> ShadowTemporal{"render.shadows.temporal", true, "Stochastic RT shadow temporal accumulation: reproject the previous accumulated shadow ratio by the motion vectors and blend with this frame's 1-ray estimate (depth-disocclusion reject, shared SVGF temporal). REQUIRED for a usable result: the 1 importance-sampled ray/pixel is very noisy without it. Off = the raw stochastic estimate. Read per-frame; forces the velocity pass on.", CVarFlags::Persist};
 
 	CVar<float> ShadowTemporalBlend{"render.shadows.temporal.blend", 0.9f, "RT shadow temporal history weight while moving. The velocity-aware blend lerps between this and maxblend by staticness. Mirrors AO/GI's 0.9.", CVarFlags::Persist};
 
@@ -159,19 +159,19 @@ namespace Snowstorm::CVars
 
 	CVar<bool> ShadowStochastic{"render.shadows.stochastic", false, "RT shadow technique within mode 2 (Ray Traced). OFF (default) = per-light INLINE RT shadows (one sharp ray per light in DefaultLit, the #118 path): cost grows per light. ON = the STOCHASTIC aggregate-ratio pass (MegaLights-lite) at render.shadows.scale resolution: importance-sample one light/pixel, trace one ray, denoise. Constant cost regardless of light count, at the price of noise, so it overtakes inline as lights are added. Where the crossover sits depends on the adapter and on render.shadows.specular.demodulated, which adds a second denoise chain here and none to inline. Prefer ShadowStochasticActive() over reading this directly.", CVarFlags::Persist};
 
-	CVar<float> ShadowDenoisePenumbra{"render.shadows.denoise.penumbra", 0.1f, "NRD SIGMA-style penumbra-aware a-trous kernel sizing for RT shadows: scale the tap stride by the receiver's nearest-occluder distance (world units) so a NEAR occluder keeps a tight kernel (sharp contact shadow) and a FAR occluder widens it (smooth soft penumbra) — what a fixed-stride a-trous can't do (it over-blurs contacts or under-blurs soft penumbrae at one setting). Value = 1/reference-distance: penumbra saturates to the widest kernel around (1/this) world units (0.1 => ~10 units). 0 = off (uniform kernel). Shadows only; GI/AO/reflections are unaffected.", CVarFlags::Persist};
+	CVar<float> ShadowDenoisePenumbra{"render.shadows.denoise.penumbra", 0.1f, "NRD SIGMA-style penumbra-aware a-trous kernel sizing for RT shadows: scale the tap stride by the receiver's nearest-occluder distance (world units) so a NEAR occluder keeps a tight kernel (sharp contact shadow) and a FAR occluder widens it (smooth soft penumbra), which a fixed-stride a-trous can't do (it over-blurs contacts or under-blurs soft penumbrae at one setting). Value = 1/reference-distance: penumbra saturates to the widest kernel around (1/this) world units (0.1 => ~10 units). 0 = off (uniform kernel). Shadows only; GI/AO/reflections are unaffected.", CVarFlags::Persist};
 
-	CVar<bool> ShadowDenoiseClamp{"render.shadows.denoise.clamp", false, "Stochastic RT shadow temporal neighborhood-clamp: clip reprojected history into the current 3x3 range. Correct for GI/reflections (kills moving-edge ghosts), but WRONG for the HDR stochastic shadow signal — its per-frame estimate is bimodal (0 vs a rare bright RIS spike), so at a multi-light overlap the 3x3 box is low/narrow and clamps the accumulating history dark (a black seam between two lights that no denoising fills). OFF (default) fixes that; ON restores the clamp for an A/B (may re-introduce a little motion ghosting on shadows). GI/AO/reflections keep the clamp regardless.", CVarFlags::Persist};
+	CVar<bool> ShadowDenoiseClamp{"render.shadows.denoise.clamp", false, "Stochastic RT shadow temporal neighborhood-clamp: clip reprojected history into the current 3x3 range. Correct for GI/reflections (kills moving-edge ghosts), but WRONG for the HDR stochastic shadow signal: its per-frame estimate is bimodal (0 vs a rare bright RIS spike), so at a multi-light overlap the 3x3 box is low/narrow and clamps the accumulating history dark (a black seam between two lights that no denoising fills). OFF (default) fixes that; ON restores the clamp for an A/B (may re-introduce a little motion ghosting on shadows). GI/AO/reflections keep the clamp regardless.", CVarFlags::Persist};
 
-	CVar<bool> ShadowSpecularDemodulated{"render.shadows.specular.demodulated", true, "Stochastic RT shadow specular shadowing. ON = the pass emits a separate DEMODULATED specular signal (GGX D*G, no Fresnel), denoised on its own chain; the forward re-applies F0 full-res so specular is shadowed by its OWN per-light visibility (MegaLights/NRD endpoint). OFF = shadow the summed specular by the diffuse-weighted grey visibility (cheaper, one fewer denoised buffer, but dims specular where a VISIBLE light's highlight sits on a diffuse-shadowed pixel — reflective/rough surfaces). Only the stochastic path.", CVarFlags::Persist};
+	CVar<bool> ShadowSpecularDemodulated{"render.shadows.specular.demodulated", true, "Stochastic RT shadow specular shadowing. ON = the pass emits a separate DEMODULATED specular signal (GGX D*G, no Fresnel), denoised on its own chain; the forward re-applies F0 full-res so specular is shadowed by its OWN per-light visibility (MegaLights/NRD endpoint). OFF = shadow the summed specular by the diffuse-weighted grey visibility (cheaper, one fewer denoised buffer, but dims specular on reflective/rough surfaces where a VISIBLE light's highlight sits on a diffuse-shadowed pixel). Only the stochastic path.", CVarFlags::Persist};
 
 	CVar<bool> ShadowImportanceLog{"render.shadows.importance.log", true, "Stochastic RT shadow light-importance weighting: ON = log(1+luminance) perceptual weight, OFF = linear luminance. Log weighting downweights very strong lights so a strong-but-occluded light can't dominate the per-pixel reservoir and drag the aggregate estimate dark where a weaker VISIBLE light should light the pixel (the 'strong occluded light' issue UE5 MegaLights fixes the same way, SIGGRAPH 2025). Used identically in the reservoir AND the RIS normalization, so the estimate stays unbiased. Most visible where two lights' influence overlaps.", CVarFlags::Persist};
 
 	CVar<bool> ShadowImportanceSpecular{"render.shadows.importance.specular", true, "Stochastic RT shadow reservoir target: ON = combined diffuse+specular importance (boost each light's diffuse-luma weight by its capped specular response, so the SAME reservoir also samples the specular-dominant light well -> lower specular-visibility noise on glossy/rough surfaces). OFF = diffuse-only importance (specular visibility reuses the diffuse selection, unbiased but noisier where the specular-dominant light has low diffuse weight). Used identically in the reservoir AND the RIS normalization so the estimate stays unbiased; the specular boost is capped so a near-mirror light can't starve diffuse.", CVarFlags::Persist};
 
-	CVar<float> ShadowSunAngleDeg{"render.shadow.sun_angle_deg", 1.0f, "Sun angular diameter in degrees — drives RT soft-shadow penumbra width for the directional light (real sun ~0.53 deg; larger = softer). Only used by the RT soft path.", CVarFlags::Persist};
+	CVar<float> ShadowSunAngleDeg{"render.shadow.sun_angle_deg", 1.0f, "Sun angular diameter in degrees: it drives RT soft-shadow penumbra width for the directional light (real sun ~0.53 deg; larger = softer). Only used by the RT soft path.", CVarFlags::Persist};
 
-	CVar<float> ShadowSourceRadius{"render.shadow.source_radius", 0.1f, "Local light (spot/point) source radius in world units — drives RT soft-shadow penumbra width (larger/closer source = softer). Only used by the RT soft path.", CVarFlags::Persist};
+	CVar<float> ShadowSourceRadius{"render.shadow.source_radius", 0.1f, "Local light (spot/point) source radius in world units: it drives RT soft-shadow penumbra width (larger/closer source = softer). Only used by the RT soft path.", CVarFlags::Persist};
 
 	CVar<bool> IBL{"render.ibl", true, "Bake + use image-based lighting from the sky (off = analytic hemisphere ambient)", CVarFlags::Persist};
 
@@ -191,9 +191,9 @@ namespace Snowstorm::CVars
 
 	CVar<int> AORayCount{"render.ao.rays", 2, "RTAO occlusion rays per pixel per frame (was the compile-time AO_RAY_COUNT). More rays = less per-frame noise (less reliance on temporal accumulation, so less shimmer under motion) at a ~linear trace cost. Clamped to [1, 16]. Temporal + the denoiser (#130) still average across frames on top.", CVarFlags::Persist};
 
-	CVar<bool> AOTemporal{"render.ao.temporal", true, "RTAO temporal accumulation (#130): reproject the previous accumulated AO by the motion vectors and blend with this frame's few-ray trace (depth-disocclusion reject, reusing the shared SVGF temporal pass) — kills the at-rest AO shimmer that previously only TAA hid. Off = the noisy raw trace. Read per-frame; forces the velocity pass on.", CVarFlags::Persist};
+	CVar<bool> AOTemporal{"render.ao.temporal", true, "RTAO temporal accumulation (#130): reproject the previous accumulated AO by the motion vectors and blend with this frame's few-ray trace (depth-disocclusion reject, reusing the shared SVGF temporal pass), which kills the at-rest AO shimmer that previously only TAA hid. Off = the noisy raw trace. Read per-frame; forces the velocity pass on.", CVarFlags::Persist};
 
-	CVar<float> AOTemporalBlend{"render.ao.temporal.blend", 0.9f, "RTAO temporal history weight while moving. Mirrors GI's 0.9 (occlusion is view-independent, like GI — unlike reflections). The velocity-aware blend lerps between this and maxblend by staticness (#130).", CVarFlags::Persist};
+	CVar<float> AOTemporalBlend{"render.ao.temporal.blend", 0.9f, "RTAO temporal history weight while moving. Mirrors GI's 0.9 (occlusion is view-independent like GI, unlike reflections). The velocity-aware blend lerps between this and maxblend by staticness (#130).", CVarFlags::Persist};
 
 	CVar<float> AOTemporalMaxBlend{"render.ao.temporal.maxblend", 0.97f, "RTAO temporal history weight when the pixel is ~static: deeper accumulation to average out the few-ray occlusion noise. Mirrors GI's 0.97 (#130).", CVarFlags::Persist};
 
@@ -203,7 +203,7 @@ namespace Snowstorm::CVars
 
 	CVar<float> AODenoiseVariance{"render.ao.denoise.variance", 4.0f, "SVGF variance-guided à-trous luminance-phi for AO (#130): widens the à-trous in noisy/disoccluded regions, tight where converged. 0 = off. ~2-8 typical.", CVarFlags::Persist};
 
-	CVar<float> AODenoiseHitDist{"render.ao.denoise.hitdist", 0.0f, "RTAO hit-distance edge-stop phi (#130 Inc B, NRD REBLUR-style): weights à-trous taps by |Δ normalized hit distance| so a near contact-shadow gradient isn't blurred into distant AO. DEFAULT 0 (OFF): the hit distance rides the RAW few-ray trace's .a, which is far too noisy between neighbours at ~2 rays/pixel — a non-zero phi then rejects every tap and the à-trous becomes a no-op. Only useful once the hit distance is temporally accumulated / denoised (see follow-up). ~4-16 once a clean hitT exists.", CVarFlags::Persist};
+	CVar<float> AODenoiseHitDist{"render.ao.denoise.hitdist", 0.0f, "RTAO hit-distance edge-stop phi (#130 Inc B, NRD REBLUR-style): weights à-trous taps by |Δ normalized hit distance| so a near contact-shadow gradient isn't blurred into distant AO. DEFAULT 0 (OFF): the hit distance rides the RAW few-ray trace's .a, which is far too noisy between neighbours at ~2 rays/pixel, so a non-zero phi rejects every tap and the à-trous becomes a no-op. Only useful once the hit distance is temporally accumulated / denoised (see follow-up). ~4-16 once a clean hitT exists.", CVarFlags::Persist};
 
 	CVar<int> ReflectionsMode{"render.reflections.mode", 0, "Reflection technique (#151): 0 = Off, 1 = SSR (screen-space depth-buffer ray march reflecting the previous frame's color, any GPU), 2 = RT (hardware ray query that re-shades the hit, requires an RT GPU; falls back to Off on a non-RT device). Both write the same forward reflection slot for a clean same-scene A/B. Replaces the old render.reflections.rt bool (#118). Needs TAA (render.aa = TAA) for a clean result either way.", CVarFlags::Persist};
 
@@ -217,13 +217,13 @@ namespace Snowstorm::CVars
 
 	CVar<int> ReflectionRayCount{"render.reflections.rays", 1, "RT reflection rays per pixel per frame (was a single hard-coded ray + glossy jitter). On GLOSSY surfaces more rays average the roughness cone per-frame (less shimmer under motion, less temporal reliance); a perfect mirror (roughness 0) collapses to one deterministic ray regardless. ~linear cost. Clamped to [1, 16].", CVarFlags::Persist};
 
-	CVar<bool> ReflectionTemporal{"render.reflections.temporal", true, "RT reflection temporal accumulation (#129): reproject the previous reflection by the motion vectors and blend with this frame's trace (depth-disocclusion reject, reusing the GI temporal pass) — kills the static reflection shimmer the raw few-ray trace leaves. Off = the shimmery raw trace. Read per-frame; forces the velocity pass on.", CVarFlags::Persist};
+	CVar<bool> ReflectionTemporal{"render.reflections.temporal", true, "RT reflection temporal accumulation (#129): reproject the previous reflection by the motion vectors and blend with this frame's trace (depth-disocclusion reject, reusing the GI temporal pass), which kills the static reflection shimmer the raw few-ray trace leaves. Off = the shimmery raw trace. Read per-frame; forces the velocity pass on.", CVarFlags::Persist};
 
-	CVar<float> ReflectionTemporalBlend{"render.reflections.temporal.blend", 0.8f, "RT reflection temporal history weight while moving. LOWER than GI's (0.9) because reflections are view-dependent — a moving camera changes a mirror's reflected content even on a static surface, so heavy history ghosts. The velocity-aware blend lerps between this and maxblend by staticness (#129).", CVarFlags::Persist};
+	CVar<float> ReflectionTemporalBlend{"render.reflections.temporal.blend", 0.8f, "RT reflection temporal history weight while moving. LOWER than GI's (0.9) because reflections are view-dependent: a moving camera changes a mirror's reflected content even on a static surface, so heavy history ghosts. The velocity-aware blend lerps between this and maxblend by staticness (#129).", CVarFlags::Persist};
 
 	CVar<float> ReflectionTemporalMaxBlend{"render.reflections.temporal.maxblend", 0.95f, "RT reflection temporal history weight when the pixel is ~static: deeper accumulation to average out the few-ray noise (the at-rest reflection shimmer). Slightly below GI's 0.97 to keep mirrors responsive (#129).", CVarFlags::Persist};
 
-	CVar<bool> ReflectionDenoise{"render.reflections.denoise", true, "RT reflection spatial denoiser (#129 Inc 3a): edge-avoiding à-trous wavelet over the reflection buffer (reuses the GI denoiser), guided by the receiver G-buffer, after the temporal accumulation — smooths the edge/disocclusion noise temporal can't reach. Off = temporal-only (noisier at edges). Read per-frame.", CVarFlags::Persist};
+	CVar<bool> ReflectionDenoise{"render.reflections.denoise", true, "RT reflection spatial denoiser (#129 Inc 3a): edge-avoiding à-trous wavelet over the reflection buffer (reuses the GI denoiser), guided by the receiver G-buffer, after the temporal accumulation; it smooths the edge/disocclusion noise temporal can't reach. Off = temporal-only (noisier at edges). Read per-frame.", CVarFlags::Persist};
 
 	CVar<int> ReflectionDenoiseIterations{"render.reflections.denoise.iterations", 3, "RT reflection denoiser à-trous pass count (#129 Inc 3a): each pass doubles the tap stride (1,2,4,…) for a wider edge-aware blur. More = smoother but costlier / more over-blur on glossy detail. Clamped to [0, 5]; 0 disables like render.reflections.denoise off.", CVarFlags::Persist};
 
@@ -241,13 +241,13 @@ namespace Snowstorm::CVars
 
 	CVar<float> DepthEdgeSigma{"render.rt.depthsigma", 50.0f, "Relative view-depth edge-stop sigma for the GI/AO bilateral upsample + a-trous denoise. Weight = exp(-(|delta linear view depth| / center depth) * sigma): higher = tighter (sharper silhouettes, more tap rejection), lower = looser (smoother, risks edge bleed). Replaces the old raw-NDC * fixed 2000 that over-rejected near/grazing surfaces (nearest-neighbour blocking + denoise no-op). ~20-100 typical.", CVarFlags::Persist};
 
-	CVar<bool> GITemporal{"render.gi.temporal", true, "GI temporal accumulation (#125), SVGF's temporal half: reproject the previous accumulated GI by the motion vectors and blend with this frame's few-ray trace before the à-trous filter, so each pixel integrates many frames — fixes the static/slow-motion shimmer a spatial-only denoiser leaves. Depth-disocclusion reject (reused from TAA #127) prevents ghosting. Off = à-trous filters the raw trace. Read per-frame; forces the velocity pass on.", CVarFlags::Persist};
+	CVar<bool> GITemporal{"render.gi.temporal", true, "GI temporal accumulation (#125), SVGF's temporal half: reproject the previous accumulated GI by the motion vectors and blend with this frame's few-ray trace before the à-trous filter, so each pixel integrates many frames, which fixes the static/slow-motion shimmer a spatial-only denoiser leaves. Depth-disocclusion reject (reused from TAA #127) prevents ghosting. Off = à-trous filters the raw trace. Read per-frame; forces the velocity pass on.", CVarFlags::Persist};
 
 	CVar<float> GITemporalBlend{"render.gi.temporal.blend", 0.9f, "GI temporal history weight while the camera/pixel is moving (higher = smoother/more lag, more ghosting risk). The velocity-aware blend lerps between this and maxblend by staticness. Mirrors render.taa.blend (#125).", CVarFlags::Persist};
 
 	CVar<float> GITemporalMaxBlend{"render.gi.temporal.maxblend", 0.97f, "GI temporal history weight when the pixel is ~static: deeper accumulation to average out the few-ray noise that causes at-rest GI shimmer. Mirrors render.taa.maxblend (#125).", CVarFlags::Persist};
 
-	CVar<bool> GIDenoise{"render.gi.denoise", true, "Spatial denoiser for the half-res RT GI (#125): an edge-aware à-trous wavelet blur on GITarget before the bilateral upsample, so each ray looks like several — cleaner GI at the same ray count. Off = the pre-#125 look (TAA-only denoise). Read per-frame; toggle live to A/B.", CVarFlags::Persist};
+	CVar<bool> GIDenoise{"render.gi.denoise", true, "Spatial denoiser for the half-res RT GI (#125): an edge-aware à-trous wavelet blur on GITarget before the bilateral upsample, so each ray looks like several, for cleaner GI at the same ray count. Off = the pre-#125 look (TAA-only denoise). Read per-frame; toggle live to A/B.", CVarFlags::Persist};
 
 	CVar<int> GIDenoiseIterations{"render.gi.denoise.iterations", 3, "RT GI denoiser à-trous pass count (#125): each pass doubles the tap stride (1,2,4,…) for a wider edge-aware blur. More passes = smoother but costlier / more over-blur risk. Clamped to [0, 5]; 0 disables the denoiser like render.gi.denoise off.", CVarFlags::Persist};
 
@@ -272,8 +272,8 @@ namespace Snowstorm::CVars
 	uint32_t MsaaSampleCount()
 	{
 		// LIVE: read render.msaa each call, snapped to the largest of {1,2,4,8} that is <= the request AND <=
-		// the device's color+depth max. The MSAA toggle applies live — ViewportResizeSystem reallocates the
-		// scene targets and rebuilds the material/sky pipelines in place when this value changes — so this must
+		// the device's color+depth max. The MSAA toggle applies live (ViewportResizeSystem reallocates the
+		// scene targets and rebuilds the material/sky pipelines in place when this value changes), so this must
 		// track the CVar, not cache it. Only the device max (constant) is cached, to avoid a per-call
 		// vkGetPhysicalDeviceProperties; cheap enough for the several per-frame consumers.
 		static const uint32_t s_DeviceMax = Renderer::GetMaxSampleCount(); // 1/2/4/8, color+depth intersection
@@ -537,7 +537,7 @@ namespace Snowstorm::CVars
 
 	bool AoSSAOActive()
 	{
-		// render.ao.mode == SSAO. Screen-space, so no device-support check — runs on any GPU (#151).
+		// render.ao.mode == SSAO. Screen-space, so no device-support check: it runs on any GPU (#151).
 		return AoMode.Get() == 1;
 	}
 
@@ -558,7 +558,7 @@ namespace Snowstorm::CVars
 
 	bool ReflectionsSSRActive()
 	{
-		// render.reflections.mode == SSR. Screen-space, so no device-support check — runs on any GPU (#151).
+		// render.reflections.mode == SSR. Screen-space, so no device-support check: it runs on any GPU (#151).
 		return ReflectionsMode.Get() == 1;
 	}
 
@@ -604,7 +604,7 @@ namespace Snowstorm::CVars
 		return GiSSGIActive() || GIRTActive();
 	}
 
-	CVar<bool> PathTrace{"render.pathtrace", false, "Reference path tracer (#153): a brute-force ground-truth render mode (GGX+Lambert BSDF, sun next-event estimation, sky environment, multi-bounce, Russian roulette) that progressively accumulates while the camera is static. NOT real-time — the correctness anchor for the thesis A/B. When on it replaces the raster/RT scene path. Requires an RT GPU.", CVarFlags::Persist};
+	CVar<bool> PathTrace{"render.pathtrace", false, "Reference path tracer (#153): a brute-force ground-truth render mode (GGX+Lambert BSDF, sun next-event estimation, sky environment, multi-bounce, Russian roulette) that progressively accumulates while the camera is static. NOT real-time: the correctness anchor for the thesis A/B. When on it replaces the raster/RT scene path. Requires an RT GPU.", CVarFlags::Persist};
 
 	CVar<int> PathTraceSpp{"render.pathtrace.spp", 2, "Reference path tracer paths per pixel PER FRAME (progressive: total = this x frames since the camera last moved). Higher = faster convergence, lower interactivity. Clamped to [1, 64].", CVarFlags::Persist};
 
@@ -656,7 +656,7 @@ namespace Snowstorm::CVars
 		// OR of the inline-RT effects that STILL trace inside DefaultLit (shadows, reflections). Drives the
 		// DefaultLit permutation swap (#118 perf): false => compile the cheap non-RT variant. Always false on a
 		// non-RT GPU. GI (#124) and AO (#126) are deliberately EXCLUDED: both moved to a half-res compute pass +
-		// full-res texture sample, so the forward shader no longer ray-traces for them — a GI-only or AO-only
+		// full-res texture sample, so the forward shader no longer ray-traces for them; a GI-only or AO-only
 		// scene now compiles the cheap DefaultLit. Their TLAS need is covered by TlasBuildSystem's own gate,
 		// which still ORs in AoRTActive()/GIRTActive().
 		return ShadowsRTActive() || ReflectionsRTActive();

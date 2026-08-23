@@ -30,22 +30,22 @@ namespace Snowstorm
 		// scene (call SaveActiveScene separately, or see CloseProject which does both).
 		bool SaveProject() const;
 
-		// Save the project file (NOT the scene — unsaved scene edits are the user's call to keep or
-		// discard via Ctrl+S), then release the active World/Project. Called by OpenProject to tear
+		// Save the project file (NOT the scene, since unsaved scene edits are the user's call to keep
+		// or discard via Ctrl+S), then release the active World/Project. Called by OpenProject to tear
 		// down the previous project before switching.
 		void CloseProject();
 
 		// Queue a project open for the next frame boundary (see OnUpdate). OpenProject destroys the
-		// active World — running it synchronously from a UI system (the File menu) would free the very
+		// active World, so running it synchronously from a UI system (the File menu) would free the very
 		// World whose system is still executing (use-after-free on singletons/systems mid-frame). Same
 		// deferral pattern as RequestSceneLoad.
 		void RequestProjectOpen(const std::filesystem::path& ssprojPath);
 
 		// Bind everything a freshly-created m_ActiveWorld needs against the CURRENTLY active Project:
-		// asset registry, inspector resolver hooks (SetAssetNameResolver/SetAssetListProvider — these
+		// asset registry, inspector resolver hooks (SetAssetNameResolver/SetAssetListProvider: these
 		// capture the World by raw pointer, so they must be re-bound whenever m_ActiveWorld changes),
 		// editor commands, engine+editor systems, persistent camera/viewport. Called from OnAttach
-		// (implicit bootstrap project) — OpenProject should call it too after swapping m_ActiveWorld,
+		// (implicit bootstrap project); OpenProject should call it too after swapping m_ActiveWorld,
 		// so there is exactly one place that knows how to wire up a World.
 		void InitializeActiveWorld();
 
@@ -53,7 +53,7 @@ namespace Snowstorm
 		void LoadOrCreateStartupWorld();
 
 		// Queue a scene to load at the next frame boundary (see OnUpdate's pending-scene handling). Loading
-		// is deferred so the editor keeps presenting frames — clear color + loading overlay — instead of
+		// is deferred so the editor keeps presenting frames (clear color + loading overlay) instead of
 		// blocking in-place; also the safe point to free the old scene's GPU resources. Caller ensures the
 		// path exists.
 		void RequestSceneLoad(const std::string& scenePath);
@@ -64,7 +64,7 @@ namespace Snowstorm
 		bool BakeRequestedScene();
 
 		// Force-load every material-override texture in the active world so they register in the
-		// bindless set NOW (at load), not lazily during command recording — which would invalidate the
+		// bindless set NOW (at load), not lazily during command recording, which would invalidate the
 		// bound descriptor set. Call after building/loading a scene, before the first render.
 		void PrewarmSceneTextures() const;
 
@@ -95,7 +95,7 @@ namespace Snowstorm
 		[[nodiscard]] Entity FindEditorCamera() const;
 
 		// Position the primary camera so the whole scene's renderable bounds are in view and fit the
-		// near/far planes to its size. Pure camera move (no lights, no save) — shares the framing math
+		// near/far planes to its size. Pure camera move (no lights, no save). Shares the framing math
 		// with the editor's Frame command so an unknown-scale import (e.g. Sponza) is never off-screen.
 		void FrameImportedSceneCamera() const;
 

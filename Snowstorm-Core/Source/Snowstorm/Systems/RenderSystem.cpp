@@ -67,13 +67,13 @@ namespace Snowstorm
 		{
 			m_LastSceneGeneration = gen;
 			// Effects that don't exist yet (before the first RenderViewport, e.g. the initial startup load) hold
-			// no history to invalidate — nothing to clear. A real mid-session scene cut always has them built.
+			// no history to invalidate, so nothing to clear. A real mid-session scene cut always has them built.
 			for (const Scope<IViewportEffect>& effect : m_ViewportEffects)
 			{
 				effect->OnSceneCut();
 			}
 			// #132: the GI/reflection denoiser history-valid flags live in the component (not an effect
-			// side-set), so reset them here where the registry is reachable — every viewport, so a multi-view
+			// side-set), so reset them here where the registry is reachable: every viewport, so a multi-view
 			// setup can't ghost the old scene on one side. Textures survive; only the "converged" flag resets.
 			for (const auto vpEnt : View<RenderTargetComponent>())
 			{
@@ -115,7 +115,7 @@ namespace Snowstorm
 		SS_CORE_ASSERT(ctx, "Renderer returned null CommandContext");
 
 		// RT picking read-back: BeginFrame waited on this frame-slot's fence, so a pick dispatched into this
-		// slot framesInFlight frames ago has retired — latch its result now (CPU-only), before this frame may
+		// slot framesInFlight frames ago has retired; latch its result now (CPU-only), before this frame may
 		// dispatch a new one into the same slot below.
 		renderer.PumpPickReadback(frameIndex);
 
@@ -139,10 +139,10 @@ namespace Snowstorm
 
 		// RT editor picking (#118 follow-up): trace the queued click ray against the scene TLAS in a tiny
 		// compute pass, so the result reads back on a later frame (RecordPick latches the retired dispatch,
-		// then dispatches the pending one). Added only when a pick is queued AND RT is active — the TLAS is
+		// then dispatches the pending one). Added only when a pick is queued AND RT is active: the TLAS is
 		// built by TlasBuildSystem (PreRender) under the same condition, so its bindless slot is live here.
 		// RecordPick also latches any completed prior dispatch, so it must run even when nothing new is
-		// queued; but there's no point adding a GPU pass for a pure latch — the latch happens on the frame a
+		// queued; but there's no point adding a GPU pass for a pure latch, since the latch happens on the frame a
 		// new pick is queued or the next one is. A no-target compute pass (IsCompute) with no graph Reads: the
 		// TLAS isn't a graph-tracked texture resource (it's the bindless AS slot), so no barrier is derived.
 		if (renderer.HasPendingPick())
@@ -169,7 +169,7 @@ namespace Snowstorm
 		for (const auto vpEntity : viewportView)
 		{
 			// Skip a viewport with no target here (cheap) so the pass-name index only advances for viewports
-			// that actually render — keeps "Forward[0]/[1]" stable. RenderViewport re-checks and bails too.
+			// that actually render, which keeps "Forward[0]/[1]" stable. RenderViewport re-checks and bails too.
 			if (!reg.Read<RenderTargetComponent>(vpEntity).Target)
 			{
 				continue;
@@ -265,13 +265,13 @@ namespace Snowstorm
 		// is appended as the graph's first passes (compute), so its dispatches run before the mesh pass that
 		// samples the maps; the graph inserts the Storage/Sampled transitions from the passes' declarations.
 		//
-		// One-time resource creation registers descriptors (RegisterCube / SetTexture) — updating the
+		// One-time resource creation registers descriptors (RegisterCube / SetTexture), which updates the
 		// bindless set. When IBL is toggled on at runtime, prior frames are still in flight reading that set;
 		// updating it under them corrupts state and crashes. Drain the GPU first so the one-time creation
 		// happens with nothing in flight. Only a stall on the single frame the bake runs (no-ops after).
 		// Re-bake IBL when the environment changes. The maps are convolved from the sky, so a bake done
 		// against a stale environment (notably the empty/default world that renders on the first frame,
-		// before the deferred startup scene loads) leaves ambient frozen at that state — black ambient for
+		// before the deferred startup scene loads) leaves ambient frozen at that state: black ambient for
 		// a scene that streamed in afterwards. Detecting the change and invalidating fixes that and covers
 		// runtime environment edits generally (#64).
 
@@ -299,7 +299,7 @@ namespace Snowstorm
 		// cache. No-op on a cache hit or when no save is pending.
 		m_IBLBakePass.PumpCacheSave();
 
-		// Push the baked IBL indices into the renderer's FrameCB assembly — but only while IBL is enabled.
+		// Push the baked IBL indices into the renderer's FrameCB assembly, but only while IBL is enabled.
 		// Toggling off writes zeros, so DefaultLit falls back to the analytic ambient (the maps stay baked,
 		// ready to re-enable without another bake). Mirrors the SetShadowData hand-off.
 		if (CVars::IBL.Get() && m_IBLBakePass.IsBaked())
@@ -336,10 +336,10 @@ namespace Snowstorm
 
 		// Per-viewport context threaded through the effect chain (#120): the moving SceneColor resource plus the
 		// derived per-frame flags/sizing the effects read. Populated by this preamble, then consumed by the
-		// ordered effect list below — RenderViewport itself contributes no passes.
+		// ordered effect list below; RenderViewport itself contributes no passes.
 		ViewportRenderContext v{.Frame = fc, .RT = vpRT, .ViewportEntity = vpEntity, .Cam = cam, .Suffix = passSuffix, .Comparing = comparing};
 
-		// Build the effect list once (lazy — the pass objects it references are constructed with this system).
+		// Build the effect list once (lazy: the pass objects it references are constructed with this system).
 		if (m_ViewportEffects.empty())
 		{
 			BuildViewportEffects();
@@ -391,15 +391,15 @@ namespace Snowstorm
 
 		// The depth+normal prepass renders the G-buffer when GI (#124) OR AO (#126) OR RT reflections (#129)
 		// are active, OR a debug view that needs it is selected (5 = world normals, 6 = raw half-res GI, 2 = raw
-		// half-res AO, 3 = reflections — each lets you eyeball the substrate in isolation). The compute passes
+		// half-res AO, 3 = reflections; each lets you eyeball the substrate in isolation). The compute passes
 		// additionally check their own gates. Reflections need it because ReflectionPass reconstructs each
 		// pixel's world position + normal from the G-buffer (like GI), so reflections-only must still prepass.
 		const bool giActive = CVars::GiActive();                   // SSGI or RT GI: both need the depth+normal prepass (#151)
-		const bool aoActive = CVars::AoActive();                   // SSAO or RT AO — both need the depth+normal prepass + debug view 2 (#151)
-		const bool reflActive = CVars::ReflectionsActive();        // SSR or RT reflections — both need the depth+normal prepass (#151)
+		const bool aoActive = CVars::AoActive();                   // SSAO or RT AO: both need the depth+normal prepass + debug view 2 (#151)
+		const bool reflActive = CVars::ReflectionsActive();        // SSR or RT reflections: both need the depth+normal prepass (#151)
 		const bool shadowActive = CVars::ShadowStochasticActive(); // the half-res stochastic shadow pass needs the G-buffer (inline RT shadows don't)
 		// Path-trace mode (#153) owns the frame: the reference PT produces the whole image, so skip the entire
-		// G-buffer substrate (DepthNormal/GI/AO/SSR/RT-reflection/shadow) — forward/upscale/TAA are gated off too.
+		// G-buffer substrate (DepthNormal/GI/AO/SSR/RT-reflection/shadow); forward/upscale/TAA are gated off too.
 		const bool gbufferNeeded = !CVars::PathTraceActive() &&
 		                           (giActive || aoActive || reflActive || shadowActive || debugView == 5 || debugView == 6 || debugView == 7 || debugView == 2 || debugView == 3 || debugView == 8 || debugView == 9) &&
 		                           vpRT.GBufferNormalTarget && !vpRT.GBufferNormalTarget->GetDesc().ColorAttachments.empty() &&
@@ -411,7 +411,7 @@ namespace Snowstorm
 		v.PathTraceSceneSettling = SingletonView<AssetManagerSingleton>().PendingLoadCount() > 0;
 
 		// Tonemap debug params (#44/#124): visualize an aux buffer ONLY when its debug view is explicitly
-		// selected — NOT merely when the buffer is being rendered (TAA/GI render their buffers but must show
+		// selected, NOT merely when the buffer is being rendered (TAA/GI render their buffers but must show
 		// the real tonemapped scene). Keyed off debugView. Applied to the primary path only (compare mode
 		// keeps its GT side normal). DebugMode 1 = motion vectors (velocity), 2 = world normal (G-buffer).
 		RendererService::TonemapParams primaryTonemap{};
@@ -433,7 +433,7 @@ namespace Snowstorm
 		else if (debugView == 6 && gbufferNeeded && vpRT.GITarget && vpRT.GITargetView)
 		{
 			// Raw half-res GI irradiance. The GI target is smaller than the present target, so pass the size
-			// ratio (gi_res / present_res, < 1) as DebugScale — the shader scales the present texel by it to
+			// ratio (gi_res / present_res, < 1) as DebugScale; the shader scales the present texel by it to
 			// find the matching GI texel (point fetch, a debug readout). Only meaningful when the GI pass ran.
 			primaryTonemap.DebugMode = 3;
 			primaryTonemap.DebugTexIndex = vpRT.GITargetView->GetGlobalBindlessIndex();
@@ -454,7 +454,7 @@ namespace Snowstorm
 		else if (debugView == 7 && giActive && gbufferNeeded && vpRT.GITarget && vpRT.GITargetView)
 		{
 			// Denoised/accumulated half-res GI (#125): the LIVE GI buffer after the temporal + à-trous stages,
-			// vs view 6's RAW trace — the A/B that shows what the denoiser did. Point at whichever buffer the GI
+			// vs view 6's RAW trace, the A/B that shows what the denoiser did. Point at whichever buffer the GI
 			// sub-chain last wrote this frame, mirroring the v.GIView moving pointer: denoiser on => the à-trous
 			// landed in Scratch[0]; else temporal on => History[cur]; else the raw GITarget. Same half-res
 			// point-fetch readout as view 6 (DebugMode 3, gi/present size ratio as DebugScale). #132: buffers via GIDenoiser.
@@ -517,7 +517,7 @@ namespace Snowstorm
 		const int ldrFilters = (fxaaOn ? 1 : 0) + (sharpenOn ? 1 : 0); // stages after tonemap
 		const int totalStages = 1 + ldrFilters;                        // tonemap is stage 0
 
-		// The tonemap (stage 0) writes Present when (totalStages-1) is even, else AAIntermediate — so the
+		// The tonemap (stage 0) writes Present when (totalStages-1) is even, else AAIntermediate, so the
 		// final LDR stage always lands on Present, alternating backward. LdrChainEffect recomputes the same
 		// ping-pong for the FXAA/sharpen stages from v.TotalStages; here we only need stage 0's target.
 		const Ref<RenderTarget> tonemapTarget =
@@ -600,7 +600,7 @@ namespace Snowstorm
 			             {m_IBLBakePass.BRDFLut(), RenderGraph::AccessState::Sampled}};
 		}
 		// Full-res GI target: the forward shader samples it by screen UV (bindless), so declare it a Sampled
-		// read — the graph then transitions it from the GIUpsample pass's color-attachment layout to
+		// read: the graph then transitions it from the GIUpsample pass's color-attachment layout to
 		// shader-read before this pass (same as the IBL cubemaps above). Only when GI is fed this pass.
 		if (giTextureIndex != 0)
 		{
@@ -624,14 +624,14 @@ namespace Snowstorm
 		}
 		// Full-res RT reflection target (#129): the forward shader samples it by screen UV (bindless). Declare
 		// the read so the graph orders this pass after the writer AND transitions the buffer to Sampled. Barrier
-		// the ACTUAL live texture the forward samples — the raw ReflectionTarget, or ReflHistory[cur] when the
-		// temporal stage ran — passed in as reflTexture (a per-texture barrier on a stand-in would miss it).
+		// the ACTUAL live texture the forward samples, passed in as reflTexture: the raw ReflectionTarget, or
+		// ReflHistory[cur] when the temporal stage ran. A per-texture barrier on a stand-in would miss it.
 		if (reflTextureIndex != 0 && reflTexture)
 		{
 			meshReads.push_back({reflTexture, RenderGraph::AccessState::Sampled});
 		}
 		// Full-res sun-visibility target: the forward shader samples it by screen UV (bindless), so declare the
-		// Sampled read — the graph transitions it out of the ShadowUpsample pass's color-attachment layout
+		// Sampled read; the graph transitions it out of the ShadowUpsample pass's color-attachment layout
 		// before this pass. Only when the half-res shadow is fed this pass.
 		if (shadowTextureIndex != 0)
 		{
@@ -731,7 +731,7 @@ namespace Snowstorm
 	{
 		params.SceneColorIndex = hdrColorView->GetGlobalBindlessIndex();
 		const PixelFormat dstFmt = dstTarget->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-		// The debug branch samples the velocity target (extraRead) via bindless, so declare it Sampled too —
+		// The debug branch samples the velocity target (extraRead) via bindless, so declare it Sampled too:
 		// the graph then transitions it to shader-read before this pass, like the HDR scene color.
 		std::vector<RenderGraph::ResourceAccess> reads{{hdrColorView->GetTexture(), RenderGraph::AccessState::Sampled}};
 		if (extraRead)

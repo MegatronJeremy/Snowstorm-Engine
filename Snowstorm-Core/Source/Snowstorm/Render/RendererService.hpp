@@ -26,11 +26,11 @@ namespace Snowstorm
 	struct InstanceData
 	{
 		glm::mat4 Model{1.0f};
-		glm::mat4 PrevModel{1.0f};       // last frame's world matrix — for motion vectors (#44)
+		glm::mat4 PrevModel{1.0f};       // last frame's world matrix, used for motion vectors (#44)
 		uint32_t AlbedoTextureIndex = 0; // per-instance albedo override (0 = material default)
 		glm::vec3 _Pad0{0.0f};
 		// Generic per-instance custom data (cf. Unreal PerInstanceCustomData): four free floats the shader
-		// interprets however it likes. Engine-neutral — a client shader gives them meaning (the Mandelbrot
+		// interprets however it likes. Engine-neutral, since a client shader gives them meaning (the Mandelbrot
 		// demo packs center.xy / zoom / iteration count). Zero for objects that don't use it.
 		glm::vec4 PerInstanceCustomData{0.0f};
 	};
@@ -47,7 +47,7 @@ namespace Snowstorm
 	// Per-scene-pass GPU submission stats, for the editor's perf overlay. Reset each BeginScene and
 	// filled during Flush, so it reflects the most recent scene pass. DrawCalls == Instances today
 	// (one DrawIndexed per object) and Batches tracks how well (mesh, material) batching collapses
-	// objects — both are the headline numbers for diagnosing draw-submission cost.
+	// objects; both are the headline numbers for diagnosing draw-submission cost.
 	struct RenderStats
 	{
 		uint32_t Batches = 0;   // unique (mesh, materialInstance) groups
@@ -85,7 +85,7 @@ namespace Snowstorm
 		// Submit one renderable. Per-instance albedo index (0 = material default) and extras travel in
 		// the instance buffer so objects sharing (mesh, material) batch into a single instanced draw.
 		// prevTransform is last frame's world matrix (for motion vectors, #44); defaults to `transform`
-		// (zero velocity) so callers that don't track it — shadow/velocity-agnostic paths — stay correct.
+		// (zero velocity) so callers that don't track it (shadow/velocity-agnostic paths) stay correct.
 		void DrawMesh(const glm::mat4& transform,
 		              const Ref<Mesh>& mesh,
 		              const Ref<MaterialInstance>& materialInstance,
@@ -105,15 +105,15 @@ namespace Snowstorm
 		// (owned by ShadowPass). `lightViewProj` is pushed as a per-draw push constant (the shadow VS reads
 		// it from there, NOT FrameCB), so the SAME accumulated batches can be re-rendered for multiple light
 		// views in one pass (the spot atlas draws each tile with a different matrix). No materials/bindless,
-		// no set 0. Instances are appended at the running cursor (NOT cleared — the camera pass owns clearing).
+		// no set 0. Instances are appended at the running cursor (NOT cleared: the camera pass owns clearing).
 		void DrawBatchesDepthOnly(const Ref<Pipeline>& depthPipeline, const glm::mat4& lightViewProj);
 
 		// Draw the currently-accumulated batches through a velocity pipeline (VelocityPass, #44), emitting
-		// per-pixel screen-space motion. Like DrawBatchesDepthOnly but pushes BOTH matrices — viewProj and
-		// prevViewProj (128-byte vertex push constant, matching Velocity.vert.hlsl) — and the pipeline has a
-		// color attachment (RGBA16F velocity) plus its own depth. Instances carry Model + PrevModel (from the
-		// set=2 buffer), so the vertex stage projects each vertex in both frames. Instances appended at the
-		// running cursor (NOT cleared — the caller's own BeginScene accumulation owns clearing).
+		// per-pixel screen-space motion. Like DrawBatchesDepthOnly but pushes BOTH matrices (viewProj and
+		// prevViewProj in a 128-byte vertex push constant, matching Velocity.vert.hlsl), and the pipeline has
+		// a color attachment (RGBA16F velocity) plus its own depth. Instances carry Model + PrevModel (from
+		// the set=2 buffer), so the vertex stage projects each vertex in both frames. Instances appended at
+		// the running cursor (NOT cleared, since the caller's own BeginScene accumulation owns clearing).
 		void DrawBatchesVelocity(const Ref<Pipeline>& velocityPipeline,
 		                         const glm::mat4& viewProj,
 		                         const glm::mat4& prevViewProj);
@@ -122,10 +122,10 @@ namespace Snowstorm
 		// DrawBatchesDepthOnly (set 2 instances), but ALSO binds `samplerSet` at set 1 (a plain sampler, pass-
 		// owned) + the bindless table (set 3), and pushes per-batch alpha-mask params in an 80-byte push
 		// constant (VP + albedo bindless index + mask flag + cutoff + base alpha) so the fragment stage can
-		// clip cutout geometry (Sponza plants/vines) — a phantom solid quad in the GI G-buffer otherwise.
+		// clip cutout geometry (Sponza plants/vines), or the GI G-buffer gets a phantom solid quad.
 		// Deliberately does NOT bind MaterialInstance's descriptor set (its set-1 layout differs from this
 		// pipeline's -> layout-incompatibility device loss); the albedo index + cutoff ride the push constant
-		// instead. No set 0 (FrameCB). Instances appended at the running cursor (NOT cleared — camera owns it).
+		// instead. No set 0 (FrameCB). Instances appended at the running cursor (NOT cleared: camera owns it).
 		void DrawBatchesDepthNormal(const Ref<Pipeline>& depthNormalPipeline, const glm::mat4& viewProj,
 		                            const Ref<DescriptorSet>& samplerSet);
 
@@ -174,7 +174,7 @@ namespace Snowstorm
 		// RenderSystem's directional shadow pass. This is the sun analogue of the per-spot fit that
 		// LightingSystem already bakes into GPUSpotLight (ComputeSpotViewProj + atlas tile): ALL shadow
 		// *setup* (which light casts, the light-space view-proj) now lives in one place, and RenderSystem
-		// only binds the depth resource + records the pass. Not part of the GPU FrameData — it's a plain
+		// only binds the depth resource + records the pass. Not part of the GPU FrameData, since it's a plain
 		// handoff (the matrix reaches the shader via SetShadowData once RenderSystem has the map's index).
 		struct SunShadowFit
 		{
@@ -194,7 +194,7 @@ namespace Snowstorm
 		// frame by RenderSystem from the ReflectionGeometrySingleton that TlasBuildSystem fills; folded into
 		// FrameCB so DefaultLit's reflection trace can resolve a committed hit to a surface via
 		// vk::RawBufferLoad. 0 = no table this frame (reflection falls back to the sky cube). Mirrors
-		// SetIBLData/SetShadowData — a plain per-frame handoff, not GPU FrameData.
+		// SetIBLData/SetShadowData (a plain per-frame handoff, not GPU FrameData).
 		void SetReflectionGeometryAddress(const uint64_t address) { m_ReflectionTableAddress = address; }
 		// The per-instance geometry-table device address published this frame (0 = no table). The half-res GI
 		// compute pass (#124) reads it to resolve ray hits, same as the inline reflection/GI path via FrameCB.
@@ -250,7 +250,7 @@ namespace Snowstorm
 		[[nodiscard]] const EnvironmentDataBlock& GetEnvironment() const { return m_FrameData.Environment; }
 
 		// The whole assembled per-frame input block (camera + lights + environment + shadow + IBL). Exposed
-		// for compute passes that need a cross-section of it — the half-res GI pass (#124) reads camera VP,
+		// for compute passes that need a cross-section of it: the half-res GI pass (#124) reads camera VP,
 		// the sun, and the IBL indices together to populate its own params CB (rather than threading a
 		// half-dozen separate getters). Read-only snapshot for the current frame.
 		[[nodiscard]] const FrameData& GetFrameData() const { return m_FrameData; }
@@ -259,7 +259,8 @@ namespace Snowstorm
 		[[nodiscard]] const RenderStats& GetStats() const { return m_Stats; }
 
 		// Monotonic frame counter, incremented once per NewFrame(). Drives the temporal jitter Halton index
-		// (#44); a general "which frame is this" primitive for any frame-phased effect. 64-bit — never wraps.
+		// (#44); a general "which frame is this" primitive for any frame-phased effect. 64-bit, so it
+		// never wraps.
 		[[nodiscard]] uint64_t GetFrameCounter() const { return m_FrameCounter; }
 
 		// True when the device supports + enabled inline ray tracing (#118). Gates the RT shadow path; the RT
@@ -312,7 +313,7 @@ namespace Snowstorm
 		// --- RT editor picking (#118 follow-up) --------------------------------------------------------
 		// The editor requests a pixel-accurate mesh pick by handing over the camera->cursor WORLD ray; a
 		// single-thread compute dispatch traces it against the scene TLAS (RecordPick, driven by RenderSystem)
-		// and latches the committed instance's custom index — TlasBuildSystem's per-entity build order, which
+		// and latches the committed instance's custom index (TlasBuildSystem's per-entity build order), which
 		// the editor maps back to an entt::entity via TlasInstanceMapSingleton. The GPU result reads back with
 		// a frames-in-flight lag (same as MetricsPass), so the selection lands a frame or two after the click.
 		// This service stays entity-agnostic: it deals only in the raw uint index.
@@ -322,7 +323,7 @@ namespace Snowstorm
 		// device (the editor only calls this when RT is active).
 		void RequestPick(const glm::vec3& worldOrigin, const glm::vec3& worldDir, float tMax = 1e5f);
 
-		// True while a queued ray hasn't been dispatched yet — RenderSystem checks this to decide whether to
+		// True while a queued ray hasn't been dispatched yet. RenderSystem checks this to decide whether to
 		// add the pick compute pass this frame.
 		[[nodiscard]] bool HasPendingPick() const { return m_PickRequest.Pending; }
 
@@ -330,7 +331,7 @@ namespace Snowstorm
 		// frame-slot's fence, so a dispatch recorded framesInFlight frames ago into this same slot has retired
 		// and its host-visible write is now readable). Maps + latches that result into m_PickResult. Separate
 		// from RecordPick because the read-back must happen on the recurrence of the slot, which is generally a
-		// DIFFERENT frame than the one that queued the pick — folding it into the (pending-only) GPU pass would
+		// DIFFERENT frame than the one that queued the pick; folding it into the (pending-only) GPU pass would
 		// strand a single click's result forever.
 		void PumpPickReadback(uint32_t frameIndex);
 
@@ -370,7 +371,7 @@ namespace Snowstorm
 
 		// Write one batch's instances into the shared instance buffer at the running cursor and record a
 		// single instanced DrawIndexed. Descriptor sets (including set 2) must already be bound by the
-		// caller. Returns false (and logs) if the batch would overflow the buffer — the caller decides
+		// caller. Returns false (and logs) if the batch would overflow the buffer; the caller decides
 		// whether to clear the batch. The shared core of FlushBatch and DrawBatchesDepthOnly (the
 		// instance-write + draw the depth and lit paths agree on).
 		bool WriteBatchInstancedDraw(BatchData& batch, const char* overflowContext);
@@ -385,7 +386,8 @@ namespace Snowstorm
 		FrameData m_FrameData{};
 
 		// CPU-side sun shadow fit produced by LightingSystem, consumed by RenderSystem's directional shadow
-		// pass (see SunShadowFit above). Not GPU FrameData — a plain per-frame handoff between the two systems.
+		// pass (see SunShadowFit above). Not GPU FrameData, just a plain per-frame handoff between the
+		// two systems.
 		SunShadowFit m_SunShadowFit{};
 
 		// GPU device address of this frame's RT reflection geometry table (#118); pushed by
@@ -418,7 +420,7 @@ namespace Snowstorm
 		// existing batch in O(1) instead of a linear scan. Without this, N unique-material draws cost O(N^2)
 		// in batch matching (measured: ~11ms of superlinear overhead at 10k unique draws). Rebuilt each
 		// frame alongside m_Batches (both cleared in BeginScene). Exact pair key (not a packed hash) so
-		// distinct pairs that hash-collide still compare unequal — no wrong-batch merges.
+		// distinct pairs that hash-collide still compare unequal, which rules out wrong-batch merges.
 		using BatchKey = std::pair<const Mesh*, const MaterialInstance*>;
 		struct BatchKeyHash
 		{

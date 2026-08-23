@@ -83,7 +83,7 @@ namespace Snowstorm
 
 		// Boot the real startup project (a .ssproj, default Projects/Sandbox/Sandbox.ssproj) instead of
 		// synthesizing an implicit one. Its ProjectDirectory becomes the .ssproj's folder, so all content
-		// (registry, scenes, meshes, ...) resolves under Projects/Sandbox/ — while engine assets (shaders,
+		// (registry, scenes, meshes, ...) resolves under Projects/Sandbox/, while engine assets (shaders,
 		// fonts, caches) stay CWD-relative at the repo root. If the .ssproj is missing/unreadable, fall
 		// back to a CWD-rooted implicit project so a stripped checkout still runs (fail-soft).
 		if (!Project::GetActive())
@@ -126,8 +126,8 @@ namespace Snowstorm
 		World* world = m_ActiveWorld.get();
 
 		// EditorCommandsSingleton is an editor concept (menu/shortcut callbacks); it used to be registered by
-		// Core's World ctor, but Core no longer names it (#162). Register it here — before the command-hook
-		// block below uses it — so every fresh editor World (boot, project switch) has it. The other editor
+		// Core's World ctor, but Core no longer names it (#162). Register it here, before the command-hook
+		// block below uses it, so every fresh editor World (boot, project switch) has it. The other editor
 		// singletons register later in RegisterEditorSystems; this one is earlier because InitializeActiveWorld
 		// wires its callbacks immediately.
 		m_ActiveWorld->GetSingletonManager().RegisterSingleton<EditorCommandsSingleton>();
@@ -179,8 +179,8 @@ namespace Snowstorm
 				// Callers pass either an ABSOLUTE path (the native Open dialog) or a PROJECT-RELATIVE one
 				// (the Content Browser stores project-relative paths like "assets/scenes/Foo.world", matching
 				// the registry). A relative path is meaningless against the CWD (= repo root, where the demo
-				// content no longer lives), so resolve it against the active project's directory first —
-				// the same rule AssetManager::ResolveAssetPath uses for registry entries.
+				// content no longer lives), so resolve it against the active project's directory first,
+				// following the same rule AssetManager::ResolveAssetPath uses for registry entries.
 				std::filesystem::path resolved = path;
 				if (resolved.is_relative())
 				{
@@ -227,7 +227,7 @@ namespace Snowstorm
 				}
 
 				// Empty path = the currently open scene (File-menu entry point). It must already have a file
-				// path — an untitled scene can't be a startup target (there's nothing on disk to load).
+				// path, since an untitled scene can't be a startup target (there's nothing on disk to load).
 				const std::string target = scenePath.empty() ? m_ActiveScenePath : scenePath;
 				if (target.empty())
 				{
@@ -238,7 +238,7 @@ namespace Snowstorm
 				// so relativize before writing. A path already relative is kept as-is; an absolute one (the
 				// current scene path, or a Content Browser abs path) is made relative to the project dir. If
 				// it lies outside the project, std::filesystem::relative yields a ".."-path, which we still
-				// store — a scene outside the project is unusual but not something to silently reject.
+				// store: a scene outside the project is unusual but not something to silently reject.
 				std::filesystem::path rel = target;
 				if (rel.is_absolute())
 				{
@@ -267,7 +267,7 @@ namespace Snowstorm
 			cmds.OpenProject = [this](const std::filesystem::path& ssprojPath) -> bool
 			{
 				// Deferred to the frame boundary (see m_PendingProjectPath): OpenProject destroys the
-				// active World, and this lambda runs from a system OF that World — opening inline
+				// active World, and this lambda runs from a system OF that World, so opening inline
 				// would free the caller mid-execution.
 				if (!std::filesystem::exists(ssprojPath))
 				{
@@ -329,10 +329,10 @@ namespace Snowstorm
 		project->SetProjectFileName(name + ".ssproj");
 		project->GetConfig().Name = name;
 
-		// Scaffold the asset folder tree — mirrors Hazel's CreateProject template folders, minus
+		// Scaffold the asset folder tree: mirrors Hazel's CreateProject template folders, minus
 		// Audio/Scripts (no audio or scripting system exists yet). Folder names come from (and match
 		// the casing of) the config's relative paths, so ProjectConfig stays the single source of
-		// truth — a casing mismatch would break the day a case-sensitive platform lands.
+		// truth, since a casing mismatch would break the day a case-sensitive platform lands.
 		const std::filesystem::path assetsDir = directory / project->GetConfig().AssetDirectory;
 		for (const char* sub : {"meshes", "materials", "scenes", "shaders", "textures"})
 		{
@@ -370,19 +370,19 @@ namespace Snowstorm
 		CloseProject();
 		Project::SetActive(project);
 
-		// CloseProject already drained the GPU and dropped the old World (if there was one) — build
+		// CloseProject already drained the GPU and dropped the old World (if there was one), so build
 		// the new project's World fresh and wire it up the same way OnAttach does.
 		m_ActiveWorld = CreateRef<World>();
 		InitializeActiveWorld();
 
-		// Deferred, same as a normal "Open Scene" — if the project has no start scene yet (e.g. a
+		// Deferred, same as a normal "Open Scene". If the project has no start scene yet (e.g. a
 		// brand-new project from CreateProject), TryLoadWorldFromFile warns and leaves the World
 		// empty (camera/viewport only).
 		RequestSceneLoad(Project::GetActive()->GetStartScenePath().string());
 
 		// Point the active-scene path at the NEW project's start scene immediately, not only after a
 		// successful load (TryLoadWorldFromFile sets it on success). Without this, a project whose
-		// start scene doesn't exist yet would leave the path on the PREVIOUS project's scene — and the
+		// start scene doesn't exist yet would leave the path on the PREVIOUS project's scene, so the
 		// next Ctrl+S would overwrite that old file with this project's empty world.
 		m_ActiveScenePath = Project::GetActive()->GetStartScenePath().string();
 
@@ -407,7 +407,7 @@ namespace Snowstorm
 			return;
 		}
 
-		// Save the project file only — deliberately NOT the scene. Whether unsaved scene edits
+		// Save the project file only, deliberately NOT the scene. Whether unsaved scene edits
 		// should survive a project switch is the user's call (Ctrl+S before switching); silently
 		// writing the scene here would overwrite the file with edits they may have wanted to discard.
 		SaveProject();
@@ -415,17 +415,17 @@ namespace Snowstorm
 		// Drain in-flight CPU asset jobs BEFORE destroying the World. AssetManagerSingleton is
 		// World-scoped, but its async mesh/texture loads run on the app-scoped JobSystem and capture
 		// `this`, writing member state (m_CompletedMeshes/Textures) on completion. WaitIdle() below only
-		// drains the GPU — a worker mid-load would still write to the singleton after we free the World,
+		// drains the GPU: a worker mid-load would still write to the singleton after we free the World,
 		// corrupting the heap. WaitAll() blocks until every worker is idle, closing that window. (Any
 		// completed-but-not-finalized CPU blobs are dropped with the singleton; they hold no GPU state.)
 		Application::Get().GetServiceManager().GetService<JobSystem>().WaitAll();
 
-		// Drain the GPU before dropping the old World's resources — same safe point
-		// TryLoadWorldFromFile uses for a scene switch, just for the whole World this time.
+		// Drain the GPU before dropping the old World's resources (the same safe point
+		// TryLoadWorldFromFile uses for a scene switch, just for the whole World this time).
 		Renderer::WaitIdle();
 
 		// Every external Ref<World> must be dropped before this, or the World (and its GPU resources)
-		// outlives the project switch — mirrors Hazel's CloseProject assert ("Scene will not be
+		// outlives the project switch. Mirrors Hazel's CloseProject assert ("Scene will not be
 		// destroyed... something is still holding scene refs!").
 		SS_CORE_ASSERT(m_ActiveWorld.use_count() == 1,
 		               "CloseProject: something besides m_ActiveWorld still holds a Ref<World>");
@@ -450,14 +450,14 @@ namespace Snowstorm
 		// resources (meshes/textures) the moment their refcounts drop in Clear(). Command buffers
 		// from frames still in flight reference those resources, so tearing them down without first
 		// draining the GPU causes a device-lost (the next texture upload's submit then fails). Wait
-		// for the GPU to go idle before wiping — the standard "safe point" for a scene transition.
+		// for the GPU to go idle before wiping, which is the standard "safe point" for a scene transition.
 		Renderer::WaitIdle();
 
 		// "Open Scene" semantics: wipe scene entities first, but KEEP the editor's persistent Scene-view
-		// camera + viewport (tagged DoNotSerialize) alive across the load — so the viewport keeps rendering
+		// camera + viewport (tagged DoNotSerialize) alive across the load, so the viewport keeps rendering
 		// the sky through the transition instead of going black. ClearSceneEntities fires the OnSceneCleared
 		// hook, which resets editor selection AND drops undo history (its commands reference UUIDs in the
-		// world we're about to replace) — see EditorLayer::RegisterEditorSystems.
+		// world we're about to replace); see EditorLayer::RegisterEditorSystems.
 		m_ActiveWorld->ClearSceneEntities();
 
 		if (!SceneSerializer::Deserialize(*m_ActiveWorld, scenePath))
@@ -512,8 +512,8 @@ namespace Snowstorm
 
 		// Every bake follows the same ritual: a recipe populates the world, then we prewarm + save + close.
 		// The editor's persistent camera + viewport already exist (created in OnAttach) and are used for
-		// framing; they are DoNotSerialize, so the saved .world contains scene content only — no editor
-		// camera/viewport — which is exactly the new model (scenes don't author the editor camera).
+		// framing; they are DoNotSerialize, so the saved .world contains scene content only (no editor
+		// camera/viewport), which is exactly the new model: scenes don't author the editor camera.
 		const auto bake = [this](const std::string& outPath, const std::function<bool()>& populate)
 		{
 			if (!populate())
@@ -561,7 +561,7 @@ namespace Snowstorm
 				{
 					return false;
 				}
-				AddDefaultLightRig();       // imported models carry no lights — add a rig as scene content
+				AddDefaultLightRig();       // imported models carry no lights, so add a rig as scene content
 				FrameImportedSceneCamera(); // fit the primary camera to the (unknown-scale) model bounds
 				return true; });
 		}
@@ -572,7 +572,7 @@ namespace Snowstorm
 	void EditorLayer::LoadOrCreateStartupWorld()
 	{
 		// One-shot: write the built-in identity refiner .ssnn (#99), then exit. This is the reference the
-		// Python .ssnn writer's byte-parity test compares against — dumping it from the same SaveModel the
+		// Python .ssnn writer's byte-parity test compares against: dumping it from the same SaveModel the
 		// engine loads with guarantees the contract. Headless; runs before any scene loads.
 		if (const std::string& ssnnPath = CVars::NeuralDumpIdentity.Get(); !ssnnPath.empty())
 		{
@@ -599,7 +599,7 @@ namespace Snowstorm
 		}
 
 		// One-shot data-parallel ECS benchmark (CVar ecs.benchmark): time RotatorSystem serial vs parallel
-		// across a sweep of entity counts, log a table, then exit. Headless — no scene/renderer needed.
+		// across a sweep of entity counts, log a table, then exit. Headless (no scene/renderer needed).
 		if (CVars::EcsBenchmark.Get())
 		{
 			RunParallelEcsBenchmark();
@@ -617,10 +617,10 @@ namespace Snowstorm
 
 		// Resolve which scene to boot, then DEFER the actual load into the frame loop (via the same
 		// pending-scene path the Content Browser uses). Loading in OnAttach would run the whole scene
-		// deserialize + IBL bake + asset kick-off BEFORE the first frame ever presents — so the window
+		// deserialize + IBL bake + asset kick-off BEFORE the first frame ever presents, so the window
 		// shows an uninitialized (white) framebuffer and the loading overlay (a UI-phase system) can't
 		// run yet. Deferring lets the editor present frames immediately (clear color + loading bar) while
-		// assets stream in. The one-shot tools above (dump/bake) stay synchronous — they exit the app.
+		// assets stream in. The one-shot tools above (dump/bake) stay synchronous since they exit the app.
 		//
 		// Optional startup-scene override (CVar startup.scene / env SS_STARTUP_SCENE): boot a chosen scene
 		// headlessly (e.g. Sponza for the smoke harness). Existence is checked now; the load happens in
@@ -639,7 +639,7 @@ namespace Snowstorm
 			return;
 		}
 
-		// First-run: no saved scene exists. Create a default in-place (cheap — no heavy assets) and save
+		// First-run: no saved scene exists. Create a default in-place (cheap: no heavy assets) and save
 		// it; this is a one-time path so a brief synchronous build is fine. The camera + viewport already
 		// exist (created persistently in OnAttach), so only scene content is added here.
 		m_ActiveScenePath = startupScenePath;
@@ -670,7 +670,7 @@ namespace Snowstorm
 		}
 
 		// Persist the editor camera viewpoint for THIS scene as editor-only metadata (a "<scene>.editor"
-		// sidecar), so reopening the scene returns the camera to where it was left — the per-scene position
+		// sidecar), so reopening the scene returns the camera to where it was left: the per-scene position
 		// that used to live in the (now host-owned, unserialized) camera entity.
 		SaveEditorCameraSidecar(scenePath);
 
@@ -708,7 +708,7 @@ namespace Snowstorm
 		// World::ClearSceneEntities) call these, but Core no longer names the editor's selection/history
 		// types. Wire them to the real singletons here. Captured `world` outlives these callbacks (same
 		// World owns both the hooks and the target singletons); the hooks singleton is registered by Core
-		// in the World ctor, so it already exists — we only fill its callbacks.
+		// in the World ctor, so it already exists; we only fill its callbacks.
 		{
 			World* world = m_ActiveWorld.get();
 			auto& hooks = singletonManager.GetSingleton<EditorHooksSingleton>();
@@ -777,7 +777,7 @@ namespace Snowstorm
 		// Editor-owned: persists across scene loads and is never written to a scene file (cf. Unity's
 		// editor Scene-view camera/target, which live outside the scene). Combined with the persistent
 		// editor camera, this guarantees a camera + viewport exist from frame 0 so the sky renders before
-		// any scene loads — no black viewport during startup/scene transitions.
+		// any scene loads (no black viewport during startup/scene transitions).
 		m_RenderTargetEntity.AddComponent<DoNotSerializeComponent>();
 
 		m_RenderTargetEntity.AddComponent<ViewportComponent>(glm::vec2{static_cast<float>(windowWidth), static_cast<float>(windowHeight)});
@@ -834,7 +834,7 @@ namespace Snowstorm
 		// ---------------------------------------------------------------------
 		// Import paths are stored verbatim in AssetRegistry.json, so they stay relative (the
 		// project's config AssetDirectory field, not the composed absolute GetAssetDirectory())
-		// to keep the registry portable — matching the relative paths already committed there.
+		// to keep the registry portable, matching the relative paths already committed there.
 		const std::filesystem::path& assetDir = Project::GetActive()->GetConfig().AssetDirectory;
 
 		const AssetHandle girlMeshH = assets.Import((assetDir / "meshes/girl.obj").generic_string(), AssetType::Mesh);
@@ -973,7 +973,7 @@ namespace Snowstorm
 			auto cameraEntity = m_ActiveWorld->CreateEntity("Editor Camera");
 			// Editor-owned Scene-view camera: persists across scene loads, never serialized (cf. Unity's
 			// editor Scene camera, Unreal's viewport-client camera). It renders the editor viewport. Name is
-			// display-only — its identity is DoNotSerializeComponent, not the tag.
+			// display-only: its identity is DoNotSerializeComponent, not the tag.
 			cameraEntity.AddComponent<DoNotSerializeComponent>();
 			cameraEntity.AddComponent<TransformComponent>();
 
@@ -986,8 +986,8 @@ namespace Snowstorm
 				cc.PerspectiveFar = 1000.0f;
 				// Primary is a GAMEPLAY-only concept (the authored main camera, Unity MainCamera / Unreal). The
 				// editor Scene-view camera is identified by DoNotSerializeComponent and renders its viewport by
-				// that identity (ResolveViewportCamera's else-first pick), so it must NOT claim Primary — else it
-				// competes with the scene's authored main camera. Explicitly false.
+				// that identity (ResolveViewportCamera's else-first pick), so it must NOT claim Primary;
+				// otherwise it competes with the scene's authored main camera. Explicitly false.
 				cc.Primary = false;
 				cc.FixedAspectRatio = false;
 			}
@@ -1016,7 +1016,7 @@ namespace Snowstorm
 		// The editor's Scene-view camera is identified by DoNotSerializeComponent, NOT by Primary. It's the only
 		// DoNotSerialize camera the editor creates (CreateCameraEntities), so the tag is an unambiguous identity.
 		// Primary is a separate, user-facing concept (Unity's MainCamera tag / the authored gameplay camera) that
-		// the user can toggle off on the editor camera — so keying editor-camera identity on Primary meant the
+		// the user can toggle off on the editor camera, so keying editor-camera identity on Primary meant the
 		// editor "lost" its own camera the moment its Primary flag was cleared. Decoupled: identity = the tag.
 		auto& reg = m_ActiveWorld->GetRegistry();
 		for (const auto view = reg.view<CameraComponent, TransformComponent, DoNotSerializeComponent>();
@@ -1029,7 +1029,7 @@ namespace Snowstorm
 
 	namespace
 	{
-		// The editor camera viewpoint lives beside its scene as "<scene>.editor" — editor-only metadata,
+		// The editor camera viewpoint lives beside its scene as "<scene>.editor": editor-only metadata,
 		// deliberately NOT inside the .world (which is portable scene content). Mirrors how Unreal keeps the
 		// per-level editor camera as editor data and Godot stores editor state separately from the scene.
 		std::string EditorSidecarPath(const std::string& scenePath)
@@ -1094,7 +1094,7 @@ namespace Snowstorm
 		std::ifstream in(EditorSidecarPath(scenePath));
 		if (!in.is_open())
 		{
-			return false; // no saved viewpoint for this scene (e.g. first open) — caller may auto-frame
+			return false; // no saved viewpoint for this scene (e.g. first open); caller may auto-frame
 		}
 
 		nlohmann::json j;
@@ -1139,8 +1139,8 @@ namespace Snowstorm
 	void EditorLayer::AddDefaultLightRig() const
 	{
 		// A default key + fill directional rig, added as ordinary scene content (entities the user can
-		// select, edit, or delete). Imported models carry geometry + materials only — lighting is a
-		// scene-authoring decision — so a freshly imported showcase scene needs an explicit rig to be lit.
+		// select, edit, or delete). Imported models carry geometry + materials only (lighting is a
+		// scene-authoring decision), so a freshly imported showcase scene needs an explicit rig to be lit.
 		{
 			auto key = m_ActiveWorld->CreateEntity("Sun (key)");
 			auto& dl = key.AddComponent<DirectionalLightComponent>();
@@ -1177,7 +1177,7 @@ namespace Snowstorm
 		SS_PROFILE_FUNCTION();
 
 		// Persist user settings (render.*, display.*) so they survive a restart. Skipped in smoke/headless
-		// runs (smoke.frames > 0) so automated runs stay side-effect-free and reproducible — they tear down
+		// runs (smoke.frames > 0) so automated runs stay side-effect-free and reproducible: they tear down
 		// the layer stack too, so without this guard they'd overwrite the config with test state.
 		if (CVars::SmokeFrames.Get() == 0)
 		{
@@ -1192,9 +1192,9 @@ namespace Snowstorm
 		// Publish ImGui's input-capture state into the shared InputStateSingleton BEFORE the world runs its
 		// systems this frame. Editor shortcuts (F/framing, gizmo keys, Ctrl+S, console toggle) and the
 		// camera controller gate on WantCaptureKeyboard/Mouse to avoid firing while the user is typing in a
-		// text field or interacting with a panel — but nothing was ever setting those flags (they defaulted
+		// text field or interacting with a panel, but nothing was ever setting those flags (they defaulted
 		// to false), so e.g. typing "F" in the console also framed the scene. ImGui is the authority on who
-		// owns the keyboard/mouse this frame; copy its verdict here. Core stays ImGui-free — this lives in
+		// owns the keyboard/mouse this frame; copy its verdict here. Core stays ImGui-free: this lives in
 		// the editor, the only place that links ImGui.
 		{
 			const ImGuiIO& io = ImGui::GetIO();
@@ -1205,21 +1205,21 @@ namespace Snowstorm
 		}
 
 		// Apply a deferred scene open at the frame boundary. A scene load is heavy (deserialize + asset
-		// kick-off) and BLOCKS the frame it runs in — so if we ran it on the very first frame, that frame
+		// kick-off) and BLOCKS the frame it runs in, so if we ran it on the very first frame, that frame
 		// wouldn't present until the load finished, leaving the window white/frozen. Instead, let the
 		// pending scene wait until the editor chrome is actually VISIBLE, THEN load on the next frame, so
 		// the image held on screen during the blocking load shows populated panels + a loading overlay.
 		//
 		// Why > 1 and not > 0: ImGui hides a window on its first "appearing" frame (it renders once
-		// invisibly to measure auto-size), so on frame 0 every panel is Hidden — a frame-0 present shows
+		// invisibly to measure auto-size), so on frame 0 every panel is Hidden: a frame-0 present shows
 		// a black viewport with NO panels. The panels only become visible on frame 1. So we must let TWO
 		// frames present (0: panels appearing/hidden, 1: panels visible) before blocking on the load on
-		// frame 2; otherwise the load stalls with frame 0's panel-less image frozen on screen — which
+		// frame 2; otherwise the load stalls with frame 0's panel-less image frozen on screen, which
 		// read as "the editor starts blank and only fills in when the scene loads". (Mid-session opens
 		// from the Content Browser already have visible panels on screen, so this wait is invisible there.)
 		// Apply a deferred project open at the frame boundary, BEFORE the pending-scene check:
 		// OpenProject replaces the whole World (and queues the new project's start scene as a pending
-		// scene), so it must run first — and never from inside a UI system, which is a system of the
+		// scene), so it must run first, and never from inside a UI system, which is a system of the
 		// very World it would destroy (see RequestProjectOpen).
 		if (m_HasPendingProject && m_FramesPresented > 1)
 		{
@@ -1232,7 +1232,7 @@ namespace Snowstorm
 			}
 		}
 
-		// Apply a deferred "New Scene" at the frame boundary — same GPU-safe recipe as a scene open
+		// Apply a deferred "New Scene" at the frame boundary: same GPU-safe recipe as a scene open
 		// (WaitIdle, then wipe scene entities; the persistent editor camera/viewport survive), just
 		// with nothing loaded afterwards. The empty active-scene path routes the next save through
 		// Save Scene As.
@@ -1256,7 +1256,7 @@ namespace Snowstorm
 
 		// Play/Stop transition (detected at the frame boundary, like the scene-open above, so the world is
 		// mutated with no render pass in flight). Edit->Play snapshots the world to a JSON string;
-		// Play->Stop restores it, discarding any edits made while playing — play runs on a throwaway copy
+		// Play->Stop restores it, discarding any edits made while playing: play runs on a throwaway copy
 		// (the UE model). Restore reuses the scene-transition recipe: drain the GPU, Clear(), deserialize,
 		// prewarm.
 		{
@@ -1280,7 +1280,7 @@ namespace Snowstorm
 		}
 
 		// Publish the current scene file + unsaved-changes flag to the status bar. Done here (once per
-		// frame, before systems run) because m_ActiveScenePath is owned by the layer, not a singleton —
+		// frame, before systems run) because m_ActiveScenePath is owned by the layer, not a singleton;
 		// this is the single point that knows it, so the StatusBarSystem can stay a pure reader.
 		{
 			auto& statusBar = m_ActiveWorld->GetSingleton<EditorStatusBarSingleton>();
