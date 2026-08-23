@@ -1,0 +1,79 @@
+{
+  "device": "AMD Radeon RX 9060 XT",
+  "config": "Projects/Sandbox/assets/scenes/Sponza.world",
+  "frames": 300,
+  "timestampsSupported": true,
+  "totalGpuMs": 3.6369,
+  "passes": {
+    "CameraDepthPrepass": {
+      "avgMs": 0.1532,
+      "minMs": 0.1475,
+      "maxMs": 0.1565,
+      "fragInvocations": 5235194,
+      "depth": 0
+    },
+    "DepthPrepassBarrier": {
+      "avgMs": 0.0005,
+      "minMs": 0.0002,
+      "maxMs": 0.0006,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "Editor": {
+      "avgMs": 0.1457,
+      "minMs": 0.1352,
+      "maxMs": 0.2778,
+      "fragInvocations": 9686363,
+      "depth": 0
+    },
+    "Forward": {
+      "avgMs": 1.0088,
+      "minMs": 0.8587,
+      "maxMs": 1.1232,
+      "fragInvocations": 2531546,
+      "depth": 0
+    },
+    "PointShadows": {
+      "avgMs": 1.6661,
+      "minMs": 1.6334,
+      "maxMs": 1.7004,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "PostProcess": {
+      "avgMs": 0.0432,
+      "minMs": 0.0414,
+      "maxMs": 0.0547,
+      "fragInvocations": 1680943,
+      "depth": 0
+    },
+    "Shadow": {
+      "avgMs": 0.1914,
+      "minMs": 0.1861,
+      "maxMs": 0.1979,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "Sky": {
+      "avgMs": 0.0,
+      "minMs": 0.0,
+      "maxMs": 0.0,
+      "fragInvocations": 0,
+      "depth": 1
+    },
+    "TemporalResolve": {
+      "avgMs": 0.1789,
+      "minMs": 0.1689,
+      "maxMs": 0.1964,
+      "fragInvocations": 1680943,
+      "depth": 0
+    },
+    "Velocity": {
+      "avgMs": 0.2483,
+      "minMs": 0.2407,
+      "maxMs": 0.2513,
+      "fragInvocations": 3933713,
+      "depth": 0
+    }
+  }
+}
