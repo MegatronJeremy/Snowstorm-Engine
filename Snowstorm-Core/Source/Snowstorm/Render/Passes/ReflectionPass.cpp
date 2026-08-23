@@ -19,7 +19,7 @@ namespace Snowstorm
 	namespace
 	{
 		// Mirrors ReflCB in Reflection.comp.hlsl field-for-field (std140/cbuffer 16-byte rows). A drift here
-		// silently corrupts the reflection trace — keep in lockstep with the shader.
+		// silently corrupts the reflection trace, so keep in lockstep with the shader.
 		struct ReflCB
 		{
 			glm::mat4 InvViewProj{1.0f};
@@ -42,7 +42,7 @@ namespace Snowstorm
 
 			uint32_t ReflGeoTableAddrLo = 0;
 			uint32_t ReflGeoTableAddrHi = 0;
-			uint32_t RayCount = 1; // render.reflections.rays (clamped) — reflection rays/pixel this frame
+			uint32_t RayCount = 1; // render.reflections.rays (clamped): reflection rays/pixel this frame
 			uint32_t _Pad1 = 0;
 		};
 

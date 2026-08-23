@@ -6,7 +6,7 @@
 // against the bindless SceneTLAS, shade the committed hit as lit surface radiance (ShadeSurfaceHit) or
 // reflect the prefiltered sky on a miss, and write RAW reflected radiance (.rgb) + the hit distance (.a).
 //
-// RAW radiance only — NOT multiplied by the Fresnel/BRDF split-sum weight, ReflIntensity, or the
+// RAW radiance only: NOT multiplied by the Fresnel/BRDF split-sum weight, ReflIntensity, or the
 // roughness falloff. Those stay in the forward pass (DefaultLit ComputeIBL), applied per-pixel at full
 // res, exactly as #124 keeps albedo out of the half-res GI buffer. The forward pass samples this target by
 // screen UV and does `lerp(envCubeSpecular, sampled * specWeight * ReflIntensity, reflWeight)`.
@@ -14,7 +14,7 @@
 // SHARP ray (no glossy cone jitter): a mirror ray needs only normal+depth (both in the G-buffer), so the
 // trace stays roughness-free + deterministic. The forward's reflWeight already fades rough surfaces onto
 // the blurry prefiltered env cube, so smooth surfaces get a sharp RT reflection and rough ones hand off to
-// the cube — a roughness-driven glossy blur is a deferred follow-up (#129 Inc 3 / a separate issue).
+// the cube (a roughness-driven glossy blur is a deferred follow-up: #129 Inc 3 / a separate issue).
 //
 // .a = hit distance (world units), for the temporal pass's depth-aware reject now and a future NRD-style
 // reflected-virtual-position reprojection. A miss writes a large sentinel distance.
@@ -42,14 +42,14 @@ cbuffer ReflCB : register(b4, space0)
 	float ReflConeScale;   // how much roughness widens the glossy jitter cone (render.reflections.cone_scale)
 	uint FrameCounter;     // per-frame rotation of the glossy jitter (temporal accumulation averages it)
 
-	// Sun (DirectionalLights[0]) for the one-bounce hit shading — consumed by RTHitShading.hlsli.
+	// Sun (DirectionalLights[0]) for the one-bounce hit shading - consumed by RTHitShading.hlsli.
 	float3 SunDirection;
 	float SunIntensity;
 	float3 SunColor;
 	float ShadowStrength;
 
 	// IBL + geometry table.
-	uint IrradianceCubeIndex;  // bindless cube for hit ambient (0 = flat fill) — used by RTHitShading.hlsli
+	uint IrradianceCubeIndex;  // bindless cube for hit ambient (0 = flat fill) - used by RTHitShading.hlsli
 	uint PrefilteredCubeIndex; // bindless cube for the sky-miss reflection (0 = black)
 	float IBLIntensity;
 	uint LightCount;
@@ -82,8 +82,8 @@ void main(uint3 id : SV_DispatchThreadID)
 
 	const float2 uv = (float2(id.xy) + 0.5) / float2(OutSize);
 
-	// Reflection is FULL-res, 1:1 with the G-buffer, so POINT-fetch (Load) both G-buffers by integer texel —
-	// never bilinear-sample depth/normal. A linear tap blends across silhouettes (midpoint depth -> a
+	// Reflection is FULL-res, 1:1 with the G-buffer, so POINT-fetch (Load) both G-buffers by integer texel
+	// and never bilinear-sample depth/normal. A linear tap blends across silhouettes (midpoint depth -> a
 	// reconstructed world position in mid-air -> a garbage reflection that bleeds a pixel past the edge). This
 	// was the "edge bleeding" on reflections + GI (#129 Inc 2c). The bindless albedo/cubemap fetches in the hit
 	// shading still use LinearSampler; only the G-buffer reconstruction must be point-sampled.
@@ -104,7 +104,7 @@ void main(uint3 id : SV_DispatchThreadID)
 	float4 worldH = mul(float4(ndc, depth, 1.0), InvViewProj);
 	const float3 positionWS = worldH.xyz / worldH.w;
 
-	// #129 Inc 1c: reflect off the NORMAL-MAPPED shading normal (separate target) — the fix for "reflections
+	// #129 Inc 1c: reflect off the NORMAL-MAPPED shading normal (separate target). This fixes "reflections
 	// look flat / shift with angle". AO/GI use the geometric normal in the main G-buffer; reflections need the
 	// bumped one to match DefaultLit's shading.
 	const float3 N = DecodeNormalOct(GBufferShading.Load(int3(id.xy, 0)).xy); // point-fetch (see above)
@@ -115,7 +115,7 @@ void main(uint3 id : SV_DispatchThreadID)
 
 	// Glossy cone jitter (#129 Inc 2b): a SHARP one-ray-per-pixel mirror trace ALIASES the reflected scene into
 	// a pixelated grid (the "blocky" raw buffer). Perturb each ray within a roughness-scaled disk around R,
-	// with a per-frame + per-sample IGN rotation, and AVERAGE render.reflections.rays samples this frame — more
+	// with a per-frame + per-sample IGN rotation, and AVERAGE render.reflections.rays samples this frame: more
 	// rays converge the glossy cone in-frame (less shimmer under motion, less temporal reliance) at ~linear
 	// cost. roughness == 0 (a perfect mirror) => zero cone => every sample is the exact sharp ray, so the loop
 	// collapses to one deterministic result (averaging identical samples is a no-op) and true mirrors stay crisp.

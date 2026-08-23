@@ -3,7 +3,7 @@
 // pixel (at render.gi.scale of the viewport): reconstruct the receiver's world position from the G-buffer
 // depth + InvViewProj, read its world normal, trace GI_RAY_COUNT cosine-weighted hemisphere rays against
 // the bindless SceneTLAS, shade each committed hit as lit surface radiance (sun-with-shadow-ray + IBL
-// ambient) via the geometry table, and average. Output is INCOMING IRRADIANCE only — NOT multiplied by
+// ambient) via the geometry table, and average. Output is INCOMING IRRADIANCE only, NOT multiplied by
 // the receiver albedo (that happens at full res in the forward pass, so the half-res GI never blurs
 // albedo edges through the upsample). On a sky pixel (depth == far), output 0.
 //
@@ -12,13 +12,13 @@
 // DefaultLit reads. This pass's own inputs (depth, normal, output UAV, sampler, params) are set 0.
 //
 // The hit-resolve/shade helpers (ResolveHit / ShadeSurfaceHit / geometry-table reads) now live in the
-// shared Include/RTHitShading.hlsli (#129), included below and also used by the reflection compute pass —
+// shared Include/RTHitShading.hlsli (#129), included below and also used by the reflection compute pass:
 // one implementation for both compute RT passes instead of drifting copies.
 
 static const float PI = 3.14159265359;
 
 // ---- Set 0: this pass's own resources ----
-// One G-buffer color image carries BOTH the world normal (.xyz) and the NDC depth (.w) — see
+// One G-buffer color image carries BOTH the world normal (.xyz) and the NDC depth (.w); see
 // DepthNormal.frag. Sampling one plain color image (not the depth-stencil attachment) sidesteps the
 // DEPTH_STENCIL_READ_ONLY-vs-SHADER_READ_ONLY layout mismatch a compute sampled-image descriptor rejects.
 Texture2D<float4> GBufferNormal : register(t0, space0); // .xy = oct GEOMETRIC normal, .z = roughness, .w = UNUSED (#129 Inc 1c)
@@ -64,9 +64,9 @@ cbuffer GICB : register(b3, space0)
 };
 
 // Set 3 bindless (Textures/Cubemaps/SceneTLAS) + the geometry-table read + one-bounce hit shading
-// (ResolveHit / ShadeSurfaceHit / RTHitShadowRay) are shared with the reflection compute pass (#129) —
-// see RTHitShading.hlsli's contract for the CB scalars it expects (SunDirection/Color/Intensity,
-// LightCount, ShadowStrength, IrradianceCubeIndex, IBLIntensity — all provided by GICB above) and the
+// (ResolveHit / ShadeSurfaceHit / RTHitShadowRay) are shared with the reflection compute pass (#129).
+// See RTHitShading.hlsli's contract for the CB scalars it expects (SunDirection/Color/Intensity,
+// LightCount, ShadowStrength, IrradianceCubeIndex, IBLIntensity; all provided by GICB above) and the
 // LinearSampler on set 0. GeoTableAddress stays here (reassembles THIS CB's ReflGeoTableAddr lo/hi halves).
 #define RTHIT_LOCAL_LIGHTS // the CB above carries HitLightCount + the three packed arrays
 #include "Include/RTHitShading.hlsli"
@@ -91,7 +91,7 @@ void main(uint3 id : SV_DispatchThreadID)
 	// sampler for simplicity; the bilateral upsample (Inc 3) is where edge-correctness is enforced.
 	const float2 uv = (float2(id.xy) + 0.5) / float2(OutSize);
 
-	// POINT-fetch the full-res G-buffer at the nearest texel to this half-res pixel's center — never bilinear.
+	// POINT-fetch the full-res G-buffer at the nearest texel to this half-res pixel's center - never bilinear.
 	// A linear tap blends depth across silhouettes (midpoint depth -> a reconstructed world position in mid-air
 	// -> a garbage GI sample that bleeds a pixel past the edge). This was the "edge bleeding" (#129 Inc 2c); the
 	// old code sampled linear "for simplicity" and left edge-correctness to the upsample, but the leak is in the
@@ -102,7 +102,7 @@ void main(uint3 id : SV_DispatchThreadID)
 	const float4 gbuf = GBufferNormal.Load(int3(gbTexel, 0));
 	const float depth = GBufferDepth.Load(int3(gbTexel, 0)).r; // fp32 depth from the D32 attachment (was gbuf.w)
 	// Sky / no geometry: the prepass clears depth to 1.0 and a real far-plane fragment is also ~1.0, so
-	// depth >= 1 means "nothing here" (#129 Inc 1b — the old zero-normal test is invalid now that .xy is an
+	// depth >= 1 means "nothing here" (#129 Inc 1b: the old zero-normal test is invalid now that .xy is an
 	// octahedral encoding where (0,0) is a valid normal).
 	if (IsSky(depth))
 	{
@@ -111,7 +111,7 @@ void main(uint3 id : SV_DispatchThreadID)
 	}
 
 	// Reconstruct world position from depth + InvViewProj (same convention as Sky.frag: NDC xy in [-1,1],
-	// z = raw depth, w = 1, then perspective divide). NDC.y is NOT flipped — matches the sky reconstruction.
+	// z = raw depth, w = 1, then perspective divide). NDC.y is NOT flipped, matching the sky reconstruction.
 	const float2 ndc = uv * 2.0 - 1.0;
 	float4 worldH = mul(float4(ndc, depth, 1.0), InvViewProj);
 	const float3 positionWS = worldH.xyz / worldH.w;
@@ -176,7 +176,7 @@ void main(uint3 id : SV_DispatchThreadID)
 		}
 	}
 
-	// Incoming irradiance, intensity-scaled. NO receiver albedo — that's multiplied at full res in the
+	// Incoming irradiance, intensity-scaled. NO receiver albedo: that's multiplied at full res in the
 	// forward pass after the bilateral upsample, so half-res GI never blurs albedo edges. GIIntensity is a
 	// linear scalar (no effect on edges), applied here so the debug view shows the tuned signal.
 	const float3 irradiance = (incoming / float(rayCount)) * GIIntensity;

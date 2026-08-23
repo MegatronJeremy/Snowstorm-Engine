@@ -39,8 +39,8 @@ namespace Snowstorm::CVars
 
 	// Profiler capture (headless-driveable). When > 0, capture this many frames of the chrome-tracing
 	// timeline starting a few frames in (past one-time warmup), write it to profile.capture.path, then
-	// keep running. Lets the profiler be exercised without the editor button — e.g. the smoke harness can
-	// produce a trace for offline/automated analysis. 0 (default) = capture only on demand from the editor.
+	// keep running. Lets the profiler be exercised without the editor button (e.g. the smoke harness can
+	// produce a trace for offline/automated analysis). 0 (default) = capture only on demand from the editor.
 	extern CVar<int> ProfileCaptureFrames;
 
 	// Output path for the profile.capture_frames trace (chrome://tracing / Perfetto JSON).
@@ -52,13 +52,13 @@ namespace Snowstorm::CVars
 
 	// Data-parallel ECS toggle. When true (default), systems that opt into System::ParallelForEach split
 	// their per-entity loop across JobSystem workers; when false they run the identical loop serially on
-	// the main thread. Same build, one flag — the before/after switch for measuring the parallel win and a
+	// the main thread. Same build, one flag: the before/after switch for measuring the parallel win and a
 	// kill-switch if a parallel path ever misbehaves.
 	extern CVar<bool> EcsParallel;
 
 	// Number of bare Transform+Rotator entities the stress bake ("scene.bake stress") spawns, on top of
 	// the renderable fields. These carry no mesh/material, so they load only RotatorSystem's per-entity
-	// loop — the heavy, pure workload for the parallel-ECS before/after benchmark (#85). 0 (default) = none.
+	// loop: the heavy, pure workload for the parallel-ECS before/after benchmark (#85). 0 (default) = none.
 	extern CVar<int> StressRotators;
 
 	// Number of unique-material cubes the stress bake spawns. Each gets a distinct BaseColor override ->
@@ -69,7 +69,7 @@ namespace Snowstorm::CVars
 
 	// One-shot headless benchmark: build throwaway worlds with a sweep of bare-rotator counts, time
 	// RotatorSystem serial (ecs.parallel off) vs parallel (on), log a speedup table, then exit. Isolates
-	// the ECS loop from the renderer/vsync/GPU — the #85 thesis measurement. Off (default) = normal boot.
+	// the ECS loop from the renderer/vsync/GPU (the #85 thesis measurement). Off (default) = normal boot.
 	extern CVar<bool> EcsBenchmark;
 
 	// Headless frame-stats logging. When true, log a once-per-second breakdown of the frame: total CPU
@@ -86,7 +86,7 @@ namespace Snowstorm::CVars
 
 	// Skip loading the on-disk config files (SnowstormConfig.cfg + SnowstormStartup.cfg) at startup, so the
 	// app runs pure code-defaults + env/CLI only. Resolved specially, before config load (CVarRegistry::
-	// Initialize). perf-bench sets it for a config-isolated, machine-independent baseline — otherwise a
+	// Initialize). perf-bench sets it for a config-isolated, machine-independent baseline; otherwise a
 	// persisted user setting (e.g. render.shadow.resolution) leaks in and skews the current-vs-baseline diff.
 	extern CVar<bool> ConfigIgnore;
 
@@ -100,7 +100,7 @@ namespace Snowstorm::CVars
 	// device to catch out-of-bounds descriptor/buffer-device-address access that CPU-side validation can't
 	// see (e.g. a ray-query hit reading a stale geometry-table record, a bad BLAS reference). MUCH heavier
 	// than validation.extra (per-draw shader instrumentation + a reserved descriptor slot), so it's a
-	// separate opt-in tier — turn it on only when hunting an on-device fault (a DEVICE_LOST with no CPU-side
+	// separate opt-in tier: turn it on only when hunting an on-device fault (a DEVICE_LOST with no CPU-side
 	// validation message above it). Independent of validation.extra.
 	extern CVar<bool> ValidationGpu;
 
@@ -108,10 +108,10 @@ namespace Snowstorm::CVars
 	// dxc-optimized SPIR-V in EVERY C++ config; on = unoptimized (-Od) + debug info (-Zi/-fspv-debug) so a
 	// dev can source-step a shader in RenderDoc/PIX. Read at compile time (VulkanShader), keys the .spv cache
 	// so opt/debug variants never collide. STARTUP-ONLY (CVarFlags::ReadOnly), like UE's r.Shaders.Optimize:
-	// resolved once at launch from SnowstormStartup.cfg / CLI, NOT live-toggled — flipping it re-keys the cache
-	// and recompiling every shader is a multi-second synchronous stall (the old live checkbox froze the editor).
-	// Not Persist: it's a dev flag, not a saved user setting. RT permutations still drop -fspv-debug even here
-	// (dxc 1.9 crash on -fspv-debug + inline ray query).
+	// resolved once at launch from SnowstormStartup.cfg / CLI, NOT live-toggled, since flipping it re-keys
+	// the cache and recompiling every shader is a multi-second synchronous stall (the old live checkbox
+	// froze the editor). Not Persist: it's a dev flag, not a saved user setting. RT permutations still drop
+	// -fspv-debug even here (dxc 1.9 crash on -fspv-debug + inline ray query).
 	extern CVar<bool> ShadersDebug;
 
 	// One-shot bake tool: populate a fresh scene, serialize it to a .world under Assets/Scenes/, then
@@ -132,14 +132,14 @@ namespace Snowstorm::CVars
 	// (MAILBOX/IMMEDIATE). Runtime-toggleable from the editor's Settings panel.
 	extern CVar<bool> VSync;
 
-	// The .ssproj loaded at startup (default Projects/Sandbox/Sandbox.ssproj) — the engine boots this real
+	// The .ssproj loaded at startup (default Projects/Sandbox/Sandbox.ssproj): the engine boots this real
 	// project instead of synthesizing an implicit one at the CWD. Falls back to a CWD-rooted implicit
 	// project if the file is missing, so the engine still runs. Editor + Runtime both honor it.
 	extern CVar<std::string> StartupProject;
 
 	// Override the scene loaded at startup (path to a .world). Empty (default) uses the active project's
-	// StartScene. Lets the smoke harness boot any scene headlessly — e.g. load Sponza to exercise
-	// the PBR sampling path that Startup.world doesn't, without a manual Content Browser open.
+	// StartScene. Lets the smoke harness boot any scene headlessly (e.g. load Sponza to exercise
+	// the PBR sampling path that Startup.world doesn't, without a manual Content Browser open).
 	extern CVar<std::string> StartupScene;
 
 	// GPU override for multi-GPU boxes: pick the physical device by case-insensitive name substring
@@ -211,7 +211,7 @@ namespace Snowstorm::CVars
 	extern CVar<float> RtDepthReject;
 
 	// Post-tonemap contrast-adaptive sharpen (AMD CAS) strength, 0..1 (#44). Display-space (runs after
-	// tonemap, like FXAA), so it's hue-safe — a sharpen in linear HDR before ACES turns overshoot into a hue
+	// tonemap, like FXAA), so it's hue-safe: a sharpen in linear HDR before ACES turns overshoot into a hue
 	// shift. 0 = off (default; sharpen is a taste/compensation knob, not silently-on). Guidance: ~0.3 native
 	// + TAA, ~0.5 when upscaling; >0.7 over-sharpens and re-introduces aliasing. Read per-frame by SharpenPass.
 	extern CVar<float> Sharpen;
@@ -239,18 +239,18 @@ namespace Snowstorm::CVars
 	extern CVar<bool> CameraPath;
 
 	// Step the path by a fixed 60 Hz dt (vs wall-clock) whenever it's on, so a dataset capture and a metric
-	// A/B produce identical per-frame poses AND motion-vector magnitudes — required for a temporal upscaler to
+	// A/B produce identical per-frame poses AND motion-vector magnitudes: a temporal upscaler needs both to
 	// train and infer on the same motion (#98). Dataset export always forces fixed step. Default on. Persist.
 	extern CVar<bool> CameraPathFixedStep;
 
 	// PSNR/SSIM metrics of upscaled vs ground-truth (#45), computed on the GPU. Metrics needs render.compare
-	// (both images must exist); MetricsLog windows + logs them for headless benchmark runs (not persisted —
+	// (both images must exist); MetricsLog windows + logs them for headless benchmark runs (not persisted:
 	// a run-time diagnostic like debug.frame_stats).
 	extern CVar<bool> Metrics;
 	extern CVar<bool> MetricsLog;
 
 	// Dataset export (#46): dump per-frame (low-res color, motion vectors, full-res ground truth) tuples to
-	// disk as .npy + manifest.json — training data for the neural upscaler. Requires render.compare; forces
+	// disk as .npy + manifest.json (training data for the neural upscaler). Requires render.compare; forces
 	// the velocity pass on and the camera path onto a fixed timestep (regenerable dataset). DatasetExportPath
 	// is the output dir; DatasetExportFrames > 0 stops the app after that many tuples are written.
 	extern CVar<bool> DatasetExport;
@@ -271,7 +271,7 @@ namespace Snowstorm::CVars
 	[[nodiscard]] uint32_t ClampedGtSsaa();
 
 	// Temporal sub-pixel camera jitter (#44): Halton(2,3) offset applied to the color projection each
-	// frame — the substrate a temporal upscaler/TAA accumulates. Motion vectors + frustum culling keep the
+	// frame (the substrate a temporal upscaler/TAA accumulates). Motion vectors + frustum culling keep the
 	// unjittered matrices. Read per-frame by CameraJitterSystem; forced off in compare mode. Persist.
 	extern CVar<bool> Jitter;
 
@@ -284,7 +284,7 @@ namespace Snowstorm::CVars
 	extern CVar<int> ShadowsMode;
 
 	// True when the RASTER shadow path is active (ShadowsMode == Shadow Map). Gates the raster shadow passes
-	// (sun/spot/point depth maps) AND the LightingSystem atlas-tile assignment — so mode Off and mode Ray
+	// (sun/spot/point depth maps) AND the LightingSystem atlas-tile assignment, so mode Off and mode Ray
 	// Traced both skip them.
 	[[nodiscard]] bool ShadowsRasterActive();
 
@@ -385,7 +385,7 @@ namespace Snowstorm::CVars
 	// write the SAME half-res AOTarget the forward pass samples, so the forward shader is agnostic to which
 	// produced it. Prefer the AoActive()/AoSSAOActive()/AoRTActive() helpers over reading the int directly.
 	// Replaces the old render.ao.rt bool (#118). AORadius = occlusion distance (world units); AOIntensity =
-	// strength; AOScale = internal resolution — all shared by both techniques.
+	// strength; AOScale = internal resolution; all three shared by both techniques.
 	extern CVar<int> AoMode;
 	extern CVar<float> AORadius;
 	extern CVar<float> AOIntensity;
@@ -396,7 +396,7 @@ namespace Snowstorm::CVars
 	[[nodiscard]] int ClampedAORayCount();
 	// RT AO internal resolution fraction (#126): the RTAO occlusion trace runs at this fraction of viewport
 	// res, then a depth-aware bilateral upsample restores full res. 0.5 = quarter the pixels. Clamp with
-	// ClampedAOScale(). Independent of render.gi.scale — AO and GI are separate passes.
+	// ClampedAOScale(). Independent of render.gi.scale, since AO and GI are separate passes.
 	extern CVar<float> AOScale;
 	// render.ao.scale clamped to [0.25, 1.0]. Use everywhere the value is consumed.
 	[[nodiscard]] float ClampedAOScale();
@@ -415,7 +415,7 @@ namespace Snowstorm::CVars
 	[[nodiscard]] bool AoActive();
 
 	// RTAO temporal accumulation (#130): reproject the previous accumulated AO factor by the motion vectors
-	// and blend with this frame's few-ray trace (depth-disocclusion reject) — reuses the shared SVGF temporal
+	// and blend with this frame's few-ray trace (depth-disocclusion reject); it reuses the shared SVGF temporal
 	// pass. AO is the last RT signal to get a denoiser (#132 extracted the shared machinery for exactly this).
 	// Kills the at-rest AO shimmer that previously only TAA hid. Off => the raw few-ray trace. Forces the
 	// velocity pass on. Blend/MaxBlend mirror GI (occlusion is view-independent, like GI, unlike reflections).
@@ -444,7 +444,7 @@ namespace Snowstorm::CVars
 	// GPU only). Both write the SAME forward reflection slot (ReflectionTarget), so DefaultLit is agnostic to
 	// which produced it. Prefer the ReflectionsActive()/ReflectionsSSRActive()/ReflectionsRTActive() helpers
 	// over reading the int. Replaces the old render.reflections.rt bool (#118). ReflectionIntensity scales the
-	// contribution; ReflectionMaxRoughness is the roughness cutoff (smoother = traced, rougher = the cube) —
+	// contribution; ReflectionMaxRoughness is the roughness cutoff (smoother = traced, rougher = the cube);
 	// both shared by SSR and RT.
 	extern CVar<int> ReflectionsMode;
 	extern CVar<float> ReflectionIntensity;
@@ -459,9 +459,9 @@ namespace Snowstorm::CVars
 	[[nodiscard]] int ClampedReflectionRayCount();
 
 	// RT reflection temporal accumulation (#129): reproject the previous reflection by the motion vectors and
-	// blend with this frame's trace (depth-disocclusion reject) — reuses the GI temporal pass to kill the
+	// blend with this frame's trace (depth-disocclusion reject), reusing the GI temporal pass to kill the
 	// static reflection shimmer. Reflections are VIEW-DEPENDENT, so the default blend is lower than GI's (a
-	// moving camera changes a mirror's content even on a static surface — too much history ghosts). Off =>
+	// moving camera changes a mirror's content even on a static surface; too much history ghosts). Off =>
 	// the raw few-ray trace (shimmery). ReflectionTemporalActive() forces the velocity pass on.
 	extern CVar<bool> ReflectionTemporal;
 	extern CVar<float> ReflectionTemporalBlend;
@@ -470,7 +470,7 @@ namespace Snowstorm::CVars
 
 	// RT reflection spatial denoiser (#129 Inc 3a): an edge-avoiding à-trous wavelet over the reflection
 	// buffer (reuses the GI denoiser pass), guided by the main G-buffer (receiver geometric normal + depth),
-	// run after the reflection temporal accumulation — fills the edge/disocclusion noise temporal can't reach
+	// run after the reflection temporal accumulation: fills the edge/disocclusion noise temporal can't reach
 	// (reflections had no spatial filter before). Iterations = à-trous pass count (stride doubles 1,2,4,…);
 	// clamp with ClampedReflectionDenoiseIterations(). Off => temporal-only (noisy at edges).
 	extern CVar<bool> ReflectionDenoise;
@@ -509,13 +509,13 @@ namespace Snowstorm::CVars
 	extern CVar<float> DepthEdgeSigma;
 
 	// Spatial denoiser for the half-res RT GI (#125): an edge-aware à-trous wavelet blur run on the half-res
-	// GITarget (between the GI trace and the bilateral upsample), so each ray "looks like" several — cleaner
+	// GITarget (between the GI trace and the bilateral upsample), so each ray "looks like" several, for cleaner
 	// GI at the same GI_RAY_COUNT. Depth+normal edge-stopping (reuses the G-buffer guide), no variance term
 	// (the temporal half of SVGF stays with TAA). Off => bit-identical to the pre-#125 look. Iterations is the
 	// à-trous pass count (stride doubles each pass: 1,2,4,…); clamp with ClampedGIDenoiseIterations().
 	// GI temporal accumulation (#125): the temporal half of SVGF. Reprojects the previous accumulated GI by
 	// the motion vectors and blends it with this frame's few-ray trace BEFORE the à-trous spatial filter, so
-	// each pixel integrates many frames' samples — the actual fix for the static/slow-motion shimmer a
+	// each pixel integrates many frames' samples: the actual fix for the static/slow-motion shimmer a
 	// spatial-only filter leaves (few rays => a fresh noise realization every frame). Depth-disocclusion
 	// rejection (reused from the TAA resolve, #127) keeps it from ghosting across silhouettes. Blend =
 	// history weight while moving; MaxBlend = deeper weight when ~static (kills the at-rest shimmer). Off =>
@@ -524,7 +524,7 @@ namespace Snowstorm::CVars
 	extern CVar<float> GITemporalBlend;
 	extern CVar<float> GITemporalMaxBlend;
 	// True when GI temporal accumulation should run: the toggle is on. Forces the velocity pass on (the
-	// reproject needs motion vectors). Does NOT fold the GI-active gate — callers already require GI running.
+	// reproject needs motion vectors). Does NOT fold the GI-active gate; callers already require GI running.
 	[[nodiscard]] bool GITemporalActive();
 
 	extern CVar<bool> GIDenoise;
@@ -538,7 +538,7 @@ namespace Snowstorm::CVars
 	// True when the GI denoiser should run: the toggle is on AND the clamped iteration count is > 0. The one
 	// condition the denoise effect + its consumers (the upsample's source selection, debug view 7) share, so
 	// they agree on whether the denoised buffer (GIDenoiseScratch[0]) or the raw GITarget is the live GI.
-	// Does NOT fold the GI-active/table gate — the callers already require GI to be running.
+	// Does NOT fold the GI-active/table gate, because the callers already require GI to be running.
 	[[nodiscard]] bool GIDenoiseActive();
 
 	// True when SSR should run (render.reflections.mode == 1). Screen-space, no RT device needed. Drives the
@@ -571,7 +571,7 @@ namespace Snowstorm::CVars
 
 	// Reference path tracer (#153): a brute-force ground-truth render mode (GGX+Lambert BSDF, sun NEE, sky
 	// environment, multi-bounce, Russian roulette) that progressively accumulates while the camera is static.
-	// NOT real-time — the correctness anchor the thesis measures the real-time techniques against. When on, it
+	// NOT real-time: the correctness anchor the thesis measures the real-time techniques against. When on, it
 	// replaces the raster/RT scene path entirely. Requires an RT GPU (RayQuery); prefer PathTraceActive().
 	extern CVar<bool> PathTrace;
 	// Paths per pixel PER FRAME (progressive: total = this x frames-since-reset). Higher = faster convergence,

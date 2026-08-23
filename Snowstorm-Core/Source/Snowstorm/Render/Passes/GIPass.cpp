@@ -20,7 +20,7 @@ namespace Snowstorm
 	namespace
 	{
 		// Mirrors GICB in GI.comp.hlsl field-for-field (std140/cbuffer 16-byte rows). A drift here silently
-		// corrupts the GI reconstruction — keep in lockstep with the shader.
+		// corrupts the GI reconstruction, so keep GICB in lockstep with the shader.
 		struct GICB
 		{
 			glm::mat4 InvViewProj{1.0f};
@@ -44,7 +44,7 @@ namespace Snowstorm
 
 			uint32_t ReflGeoTableAddrLo = 0;
 			uint32_t ReflGeoTableAddrHi = 0;
-			uint32_t RayCount = 2;        // render.gi.rays (clamped) — hemisphere-gather rays/pixel this frame
+			uint32_t RayCount = 2;        // render.gi.rays (clamped): hemisphere-gather rays/pixel this frame
 			float GIBounceAmbient = 1.0f; // #39: scale on un-occluded IBL ambient at GI secondary hits
 
 			// Local lights for RTHitShading.hlsli's secondary-hit NEE. The uvec3 pad is not optional: HLSL

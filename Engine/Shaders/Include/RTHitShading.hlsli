@@ -1,5 +1,5 @@
-// RTHitShading.hlsli — shared inline-RayQuery hit resolution + one-bounce shading for the COMPUTE RT
-// passes (GI #124, Reflection #129). Both trace the bindless SceneTLAS, resolve a committed triangle hit
+// RTHitShading.hlsli - the shared inline-RayQuery hit resolution + one-bounce shading for the COMPUTE
+// RT passes (GI #124, Reflection #129). Both trace the bindless SceneTLAS, resolve a committed triangle hit
 // to its surface via the per-instance geometry table (device-address vertex/index reads + barycentric UV
 // + bindless albedo), and re-light it cheaply: sun with a shadow ray, the surface's own emissive, an IBL/flat
 // ambient fill, and (under RTHIT_LOCAL_LIGHTS) ONE stochastically-chosen local light with a shadow ray of
@@ -10,11 +10,11 @@
 // fields (SunDirection/SunColor/SunIntensity), NOT the DirectionalLights[] material-set array a fragment
 // shader reads. That is why DefaultLit.frag does not include this file.
 //
-// CONTRACT — the includer MUST declare, BEFORE #include-ing this file:
-//   * set 3 bindless is declared HERE (Textures/Cubemaps/SceneTLAS) — identical in every compute RT pass,
+// CONTRACT - the includer MUST declare, BEFORE #include-ing this file:
+//   * set 3 bindless is declared HERE (Textures/Cubemaps/SceneTLAS): identical in every compute RT pass,
 //     gap-filled by the compute pipeline builder. Do NOT re-declare it in the includer.
 //   * a clamp/wrap sampler named `LinearSampler` (the includer owns it on set 0).
-//   * these constant-buffer scalars (any cbuffer, any binding — referenced by name):
+//   * these constant-buffer scalars (any cbuffer or binding, since they are referenced by name):
 //       uint  LightCount;          // 0 = no sun
 //       float3 SunDirection;       // world-space light direction (points FROM the light)
 //       float3 SunColor;  float SunIntensity;
@@ -99,7 +99,7 @@ HitSurface ResolveHit(uint64_t tableAddr, uint instanceId, uint prim, float2 bar
 		s.Emissive *= Textures[NonUniformResourceIndex(rec.EmissiveTextureIndex)].SampleLevel(LinearSampler, uv, 0).rgb;
 	}
 	// Interpolated object normal -> world via the record's Model (rows hold glm's columns, so
-	// mul(n, Model3x3) computes glmModel * n). Ignores non-uniform scale (inverse-transpose) — fine here.
+	// mul(n, Model3x3) computes glmModel * n). Ignores non-uniform scale (inverse-transpose), fine here.
 	const float3 nObj = w * LoadVertexNormal(rec.VertexAddress, i0) + bary.x * LoadVertexNormal(rec.VertexAddress, i1) + bary.y * LoadVertexNormal(rec.VertexAddress, i2);
 	s.Nw = normalize(mul(nObj, (float3x3)rec.Model));
 	return s;
@@ -245,7 +245,7 @@ float3 RTHitLocalLights(uint64_t tableAddr, float3 P, float3 N)
 
 #endif // RTHIT_LOCAL_LIGHTS
 
-// Shade a committed hit as LIT surface radiance: resolve it then re-light cheaply — sun (from the
+// Shade a committed hit as LIT surface radiance. Resolve it and re-light cheaply: sun (from the
 // includer's CB) with a shadow ray, one importance-picked local light with a shadow ray, the surface's own
 // emissive, and an IBL/flat ambient fill (so a hit on a shadowed surface still contributes its ambient, not
 // black). ONE bounce: the shaded hit does NOT itself trace beyond those shadow rays. `hitPos` = world hit
