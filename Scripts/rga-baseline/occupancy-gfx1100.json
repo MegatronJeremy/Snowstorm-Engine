@@ -22,13 +22,13 @@
       "permutations": 2
     },
     "DefaultLit.frag": {
-      "vgprs": 101.0,
-      "sgprs": 72.0,
+      "vgprs": 132.0,
+      "sgprs": 75.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 29480.0,
+      "isa_size": 31288.0,
       "permutations": 2
     },
     "DepthNormal.frag": {
@@ -82,33 +82,33 @@
       "permutations": 2
     },
     "GI.comp": {
-      "vgprs": 74.0,
+      "vgprs": 75.0,
       "sgprs": 45.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 6536.0,
+      "isa_size": 6704.0,
       "permutations": 2
     },
     "GIDenoise.comp": {
-      "vgprs": 192.0,
-      "sgprs": 54.0,
+      "vgprs": 191.0,
+      "sgprs": 53.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 12456.0,
+      "isa_size": 12668.0,
       "permutations": 2
     },
     "GITemporal.comp": {
       "vgprs": 53.0,
-      "sgprs": 27.0,
+      "sgprs": 34.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 4924.0,
+      "isa_size": 4952.0,
       "permutations": 2
     },
     "GIUpsample.frag": {
@@ -242,13 +242,13 @@
       "permutations": 2
     },
     "PathTrace.comp": {
-      "vgprs": 107.0,
+      "vgprs": 102.0,
       "sgprs": 85.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 21796.0,
+      "isa_size": 21848.0,
       "permutations": 2
     },
     "Pick.comp": {
@@ -272,13 +272,13 @@
       "permutations": 2
     },
     "Reflection.comp": {
-      "vgprs": 79.0,
+      "vgprs": 80.0,
       "sgprs": 46.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 6516.0,
+      "isa_size": 6676.0,
       "permutations": 2
     },
     "SSAO.comp": {
