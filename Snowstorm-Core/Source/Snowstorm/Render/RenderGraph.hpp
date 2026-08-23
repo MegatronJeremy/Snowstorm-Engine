@@ -92,6 +92,21 @@ namespace Snowstorm
 		// scheduler trusts this.
 		[[nodiscard]] std::vector<std::vector<Dependency>> BuildDependencies() const;
 
+		// Execution order: a topological sort of BuildDependencies that pulls compute passes as early as
+		// their edges allow, so the RT chains form one contiguous run instead of being split by the raster
+		// upsamples that happen to sit between them in declaration order. That contiguity is what async
+		// compute needs; without it each chain would cost its own fork and join.
+		//
+		// Two constraints the dependency edges do not express, both derived rather than declared:
+		//
+		// Graphics passes keep their relative order. They submit draws through RendererService, which
+		// appends instances into one buffer at a running cursor, so their sequence carries state no texture
+		// edge describes. Only compute passes are free to move.
+		//
+		// A pass writing the swapchain is terminal. Nothing renders after present, and the editor pass
+		// samples the viewport through ImGui bindings the graph cannot see, so it must not be hoisted.
+		[[nodiscard]] std::vector<uint32_t> BuildSchedule() const;
+
 		// Log the dependency graph and, per pass, the earliest slot it could legally occupy. Gated by the
 		// render.graph.dumpdeps CVar (a frame countdown), so it is a standing diagnostic rather than a
 		// throwaway probe.

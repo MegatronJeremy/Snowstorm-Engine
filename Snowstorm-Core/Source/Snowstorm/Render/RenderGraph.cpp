@@ -173,6 +173,105 @@ namespace Snowstorm
 		return deps;
 	}
 
+	std::vector<uint32_t> RenderGraph::BuildSchedule() const
+	{
+		const size_t count = m_Passes.size();
+		std::vector<uint32_t> order;
+		order.reserve(count);
+
+		if (!CVars::GraphReorder.Get())
+		{
+			for (uint32_t i = 0; i < count; ++i)
+			{
+				order.push_back(i);
+			}
+			return order;
+		}
+
+		const std::vector<std::vector<Dependency>> deps = BuildDependencies();
+		std::vector<uint32_t> remaining(count, 0);
+		for (size_t i = 0; i < count; ++i)
+		{
+			remaining[i] = static_cast<uint32_t>(deps[i].size());
+		}
+
+		const Ref<RenderTarget> swapchain = Renderer::GetSwapchainTarget();
+		std::vector<bool> terminal(count, false);
+		for (size_t i = 0; i < count; ++i)
+		{
+			terminal[i] = m_Passes[i].Target && m_Passes[i].Target == swapchain;
+		}
+
+		std::vector<bool> scheduled(count, false);
+		while (order.size() < count)
+		{
+			// Ready means every producer is already placed. Among those, compute wins so the RT chains
+			// coalesce; ties break on declaration index, which is what keeps graphics passes in sequence.
+			int pick = -1;
+			int fallbackTerminal = -1;
+			for (size_t i = 0; i < count; ++i)
+			{
+				if (scheduled[i] || remaining[i] != 0)
+				{
+					continue;
+				}
+				if (terminal[i])
+				{
+					if (fallbackTerminal < 0)
+					{
+						fallbackTerminal = static_cast<int>(i);
+					}
+					continue;
+				}
+				if (pick < 0)
+				{
+					pick = static_cast<int>(i);
+					continue;
+				}
+				const bool candidateIsCompute = m_Passes[i].IsCompute;
+				if (const bool pickIsCompute = m_Passes[pick].IsCompute; candidateIsCompute && !pickIsCompute)
+				{
+					pick = static_cast<int>(i);
+				}
+			}
+
+			if (pick < 0)
+			{
+				pick = fallbackTerminal;
+			}
+			if (pick < 0)
+			{
+				// A cycle would mean the derived edges contradict the declaration order, which cannot happen
+				// while that order is itself topological. Fall back to it rather than emit a partial frame.
+				SS_CORE_ERROR("RenderGraph: dependency cycle, falling back to declaration order");
+				order.clear();
+				for (uint32_t i = 0; i < count; ++i)
+				{
+					order.push_back(i);
+				}
+				return order;
+			}
+
+			scheduled[pick] = true;
+			order.push_back(static_cast<uint32_t>(pick));
+			for (size_t i = 0; i < count; ++i)
+			{
+				if (scheduled[i])
+				{
+					continue;
+				}
+				for (const Dependency& d : deps[i])
+				{
+					if (d.Producer == static_cast<uint32_t>(pick))
+					{
+						--remaining[i];
+					}
+				}
+			}
+		}
+		return order;
+	}
+
 	void RenderGraph::DumpDependencies() const
 	{
 		const std::vector<std::vector<Dependency>> deps = BuildDependencies();
@@ -224,6 +323,17 @@ namespace Snowstorm
 		// count is the measure of how far the declarations can currently be trusted.
 		SS_CORE_WARN("RenderGraph: {} pass(es) have no declared dependencies and would appear free to move",
 		             unconstrained);
+
+		std::string scheduled;
+		for (const uint32_t i : BuildSchedule())
+		{
+			if (!scheduled.empty())
+			{
+				scheduled += " -> ";
+			}
+			scheduled += m_Passes[i].Name;
+		}
+		SS_CORE_INFO("RenderGraph schedule: {}", scheduled);
 	}
 
 	void RenderGraph::Reset()
@@ -264,18 +374,25 @@ namespace Snowstorm
 		// transition is a no-op. Derived here rather than declared: the depth prepass feeding the forward
 		// pass is the motivating case, and expressing it as a hand-placed barrier pass hid the constraint
 		// from the dependency graph entirely.
+		// Walked over the SCHEDULE, not the declaration order: "an earlier pass wrote this depth" is a
+		// statement about execution, and reordering changes which pass that is.
+		const std::vector<uint32_t> schedule = BuildSchedule();
 		std::vector<Ref<Texture>> depthTargets(m_Passes.size());
-		std::vector<bool> needsDepthBarrier(m_Passes.size(), false);
 		for (size_t i = 0; i < m_Passes.size(); ++i)
 		{
 			depthTargets[i] = DepthTargetOf(m_Passes[i]);
+		}
+		std::vector<bool> needsDepthBarrier(m_Passes.size(), false);
+		for (size_t s = 0; s < schedule.size(); ++s)
+		{
+			const uint32_t i = schedule[s];
 			if (!depthTargets[i])
 			{
 				continue;
 			}
-			for (size_t j = i; j-- > 0;)
+			for (size_t t = s; t-- > 0;)
 			{
-				if (depthTargets[j] == depthTargets[i])
+				if (depthTargets[schedule[t]] == depthTargets[i])
 				{
 					needsDepthBarrier[i] = true;
 					break;
@@ -293,7 +410,7 @@ namespace Snowstorm
 		CommandContext* current = &ctx;
 		bool inAsyncBatch = false;
 
-		for (size_t passIndex = 0; passIndex < m_Passes.size(); ++passIndex)
+		for (const uint32_t passIndex : schedule)
 		{
 			const Pass& pass = m_Passes[passIndex];
 

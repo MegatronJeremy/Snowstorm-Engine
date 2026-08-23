@@ -75,6 +75,15 @@ namespace Snowstorm::CVars
 	// prerequisite for trusting any reordering. Non-zero only on demand: one frame is a full picture.
 	extern CVar<int> GraphDumpDeps;
 
+	// Reorder render-graph passes into a dependency-derived schedule rather than running them in
+	// declaration order. Off reproduces the declaration order exactly, so the two are an A/B on one build.
+	//
+	// Default off: grouping the RT compute chains also pushes the raster upsamples together, which costs the
+	// incidental overlap the interleaved order gave the depth prepass (measured: CameraDepthPrepass 0.004 ms
+	// to 0.106 ms on an RX 9060 XT, total within run-to-run noise). The grouping only pays once that compute
+	// block moves to the async queue, so it stays opt-in until it does.
+	extern CVar<bool> GraphReorder;
+
 	// Number of bare Transform+Rotator entities the stress bake ("scene.bake stress") spawns, on top of
 	// the renderable fields. These carry no mesh/material, so they load only RotatorSystem's per-entity
 	// loop: the heavy, pure workload for the parallel-ECS before/after benchmark (#85). 0 (default) = none.
