@@ -7,7 +7,59 @@ own EnTT-based ECS, a Systems/Singletons/Services architecture, a Vulkan RHI, an
 an ImGui editor.
 
 > This repo is consumed as a git **submodule** of `MegatronJeremy/RG2`, but it has its own
-> independent history and `master` branch. Develop it as a standalone project.
+> independent history and `master` branch. Develop it as a standalone project. The working language
+> here is **English** for everything: code, comments, commit messages, issues, and chat. (The RG2
+> parent asks for Serbian commits and chat; that governs RG2's own contents, not this repo.)
+
+## Agent collaboration
+
+How to work in this repo. These rules live here rather than in a personal config so that a clone on
+any machine, driven by any agent, behaves the same.
+
+- **Review in chat before push, and push is gated on explicit approval.** For every change, show the
+  diff or the key snippets with enough surrounding context to read like a real PR: what changed, why
+  it was done that way, the tradeoffs, non-obvious invariants, and what remains unverified. A local
+  commit before that review is fine; the gate is on `git push`. The same gate applies to anything
+  else outward-facing or hard to reverse (issue comments, remote branches, force pushes).
+- **One increment per step.** Each step leaves the repo building and runnable. Small reviewable
+  changes beat big batches.
+- **Prefer a short plan before touching a risky surface**: descriptor/binding layouts, serialization
+  formats, shared or global state, public APIs. Two minutes of planning catches the class of bug that
+  otherwise only surfaces after a full build and test cycle.
+- **Verify NUMBERS, not just actions.** Never state a measurement, benchmark, or quantitative result
+  that was not actually produced. If a measurement is unfinished, say so; a fabricated number is
+  worse than "not measured yet". Every summary separates what was built, run, and measured from what
+  is inference, and marks the inference as such.
+- **Flag conflicts of interest.** When reviewing work you produced earlier (your own code against an
+  external PR, your own benchmark against someone's claim), say so, so the verdict can be weighted.
+- **Assume deep fundamentals.** The reader is a graphics/systems engineer, so skip tutorial framing
+  on C++, Vulkan, and rendering basics. Terse and correct beats verbose and hedged.
+
+### Writing: comments, docs, commits, issues
+
+- **Maximal information, minimal text.** Cut every word that adds none: no throat-clearing, no
+  filler, no restating the obvious. Keep the quantitative (numbers, names, counts) and the
+  qualitative (why, tradeoff), and cut the connective overhead between them.
+- **Committed artifacts state durable facts, not status.** No work log, no TODO, no "as of this
+  change" framing. Ephemeral status belongs in the issue tracker, where it is meant to change; in a
+  file it rots and forces a churn commit to correct it.
+- **Comments: default to none.** Names carry WHAT. Comment only a non-obvious WHY that the code
+  cannot express: a hidden constraint, a load-bearing invariant or ordering, a workaround, or domain
+  encoding a reader cannot derive from the code (wire-format bit ops, protocol field numbers, bit
+  layouts). Cold-reader test: would a competent reader who does not already hold this domain in their
+  head be lost here? Prefer a structural fix (named constant, better name, small helper) over a
+  comment. Never restate the signature, narrate the line, or reference a ticket or a caller.
+- **No em-dashes, anywhere.** The glyph is not the whole problem: the tell is clauses joined by
+  adjacency instead of by a stated relationship, so deleting the character alone relocates the habit
+  into comma splices and stacked parentheticals. Name the relationship instead. Use a colon if the
+  second half explains the first, "although" or "since" if it qualifies, parentheses for a genuine
+  aside, a semicolon between two independent clauses. A plain hyphen dash is fine.
+- **Revise, do not just constrain.** Run a second pass over your own draft: with the whole clause in
+  context the connective can match how the sentence actually ended, which an upfront ban cannot do.
+  Strip the other AI-writing tells on that pass (the "not just X, but Y" antithesis, rule-of-three
+  lists, hollow puffery).
+- **Keep contributor workflow out of consumer-facing docs.** `README.md` is for someone using the
+  engine; build, test, and release process lives next to the code it concerns.
 
 ## Build & run
 
@@ -28,7 +80,46 @@ resolve. Vulkan
 validation layers are wired via the `VK_ADD_LAYER_PATH` env var (set by the script and in the VS
 debugger environment) pointing at the vcpkg `bin` dir.
 
-The first run is slow — vcpkg compiles every dependency from source.
+The first run is slow: vcpkg compiles every dependency from source.
+
+### New box (one time)
+
+A clone plus these commands reproduces the full workflow. There is deliberately no setup script:
+this is six commands, and each is documented in its own section below.
+
+```
+git clone https://github.com/MegatronJeremy/Snowstorm-Engine && cd Snowstorm-Engine
+git config core.hooksPath .githooks              # arms the format pre-push hook (committed but inert until set)
+pip install clang-format==22.1.5 numpy flip-evaluator==1.7
+py Scripts/Generate-Solution.py                  # bootstraps vcpkg; the first run compiles every dependency
+cmake --build build --config Debug
+py Scripts/smoke-test.py
+```
+
+Requires Windows and Visual Studio 2022 (`Generate-Solution.py` pins the exact `v143` toolset
+version). No Vulkan SDK installation is needed: loader, headers, and validation layers all come from
+vcpkg. `Generate-Solution.py` runs `vcpkg integrate install`, a machine-global MSBuild side effect
+outside the repo.
+
+The Python packages serve the gates, not the engine: `clang-format` at the pinned version for the
+pre-push lint hook, `numpy` as a hard requirement of `quality-bench.py`, `flip-evaluator` for the
+perceptual metric (optional, although its absence is now reported rather than silently skipped).
+
+**The golden-file gates start empty on a new machine.** Perf and RGA baselines are keyed by adapter
+and ASIC, and quality baselines are captured against a path trace on the local GPU, so none of the
+committed sets apply until this box captures its own:
+
+```
+py Scripts/perf-bench.py --update-baseline       # only if this adapter has no committed set
+py Scripts/cook-shaders.py --variants rt,base    # both permutations, matching what CI cooks
+py Scripts/rga-occupancy.py --spv-dir Engine/cache/shaders-cook
+```
+
+Until a baseline exists, those gates exit **2** (SKIP), never 0, so an unmeasured machine cannot
+report a pass. Commit a new adapter's perf and RGA baselines. Quality baselines are the exception:
+they are committed but not device-keyed by path, so on a different GPU the gate reports SKIP and
+`--update-baseline` would overwrite the existing machine's set. Re-capture locally, keep it out of
+the commit, or move the reference machine deliberately.
 
 ## Smoke test (run after non-trivial changes)
 
@@ -71,6 +162,12 @@ Set it yourself when debugging validation interactively. GPU resources are also 
 `SetVulkanObjectName` (`VK_EXT_debug_utils`), so validation/RenderDoc report e.g. `Swapchain[0]`
 instead of a raw `VkImage 0x...` handle.
 
+**Smoke and perf-bench do not cover the unit tests.** Both boot the app and watch it behave, so
+neither notices a broken exact-string expectation: `PerfBenchTests` asserts the JSON the benchmark
+writes, character for character. Run `ctest --test-dir build -C Debug --output-on-failure` (or the
+`Snowstorm-Tests` target) before pushing any change to a serialization or report format, since CI
+runs it and a green smoke run says nothing about it.
+
 ## GPU perf benchmark (run before/after any render-path change)
 
 `Scripts/perf-bench.py` is the GPU analogue of the smoke test: a golden-file microbenchmark gate.
@@ -105,12 +202,23 @@ diffs against the set captured on the adapter it is running on, and a box with t
 independent sets (the repo holds `amd-radeon-rx-9070-xt`, `nvidia-geforce-rtx-5070`, and an
 `amd-radeon-rx-7900-xtx` set from another machine). Cross-vendor comparison is then a deliberate read
 across two directories rather than an accidental mixture inside one set, which would turn every
-cross-config delta into effect-cost plus hardware difference. Missing set = the gate says so and prints
-raw numbers instead of failing. On a multi-GPU machine `SS_CONFIG_IGNORE` also discards the persisted
+cross-config delta into effect-cost plus hardware difference. Missing set = the gate prints the raw
+numbers and exits **2** (SKIP), which is not a pass: it compared nothing, so it cannot claim one.
+On a multi-GPU machine `SS_CONFIG_IGNORE` also discards the persisted
 `render.gpu` pick, so selection falls back to auto and the adapter is whatever the driver enumerates
 first; `--gpu` pins it, taking a short all-digits value as a candidate **index** and anything else
 (including a model number like `9070`) as a case-insensitive name substring. Re-baseline deliberately
 (with a commit) when a change *intends* to shift perf, never to paper over an unexplained regression.
+
+**A baseline is also implicitly keyed by resolution**, since the Editor renders at the window size.
+A regression that moves *every* pass by roughly the same factor is a different monitor or window
+size, not a code regression: check the resolution before touching the numbers, and never re-baseline
+to make that shape go away.
+
+**Nondeterministic GPU numbers across runs point at the shader cache first.** Clear
+`Engine/cache/shaders/*.spv` and re-run before trusting any before/after comparison; a stale cache
+means the run measured a mixture of old and new shaders. If the numbers still move after a clean
+cache, that is a real race and a genuine finding.
 
 ## Shader occupancy gate (RGA, static)
 
@@ -151,6 +259,13 @@ headless. The one honest limit: this gates *theoretical* register/occupancy, not
 / bandwidth / stalls (measure those with RGP, runtime capture, headless via `RadeonDeveloperPanelCLI`),
 and the offline compiler can differ slightly from the live driver. Re-baseline deliberately (with a
 commit) when a change intends to shift register pressure.
+
+It exits **2** (SKIP), not 0, whenever a shader was never actually compared: no baseline for this
+ASIC, a shader new since the baseline, or a baselined shader missing from the analysed SPIR-V. That
+last case is the runtime-cache trap below, and it is the common one: an editor run only caches the
+shaders it used, so the default invocation silently skipped 14 of the baselined shaders and still
+printed PASS before the exit code was split. `--only` narrows the baseline to the same filter, so a
+spot check compares its one shader and stays a genuine pass.
 
 **Input SPIR-V (two sources, one baseline).** Locally the gate reads `Engine/cache/shaders/`,
 populated by any editor build+run. But a clean checkout / CI has no cache and no GPU, so
@@ -216,18 +331,42 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   full real-time render with that one technique on, TAA enabled.
 - **FLIP is pinned** to `flip-evaluator==1.7` (a perceptual metric that drifts between versions makes
   a committed baseline meaningless, same reasoning as the clang-format and RGA pins). It is optional:
-  without the package the gate still runs on PSNR/SSIM. **numpy is required.**
+  without the package the gate still runs on PSNR/SSIM, although it then reports the primary metric
+  as ungated (exit 2) rather than passing on the two secondary ones. **numpy is required.**
 - The PT reference is cached under `Scripts/.quality-ref-cache/` (gitignored, per-machine). The cache
   key does **not** track engine/shader edits, so use `--fresh-ref` after a change that could move the
   reference itself. Real-time captures are frame-capped by `--tech-maxframes` (default 200) since
   they never converge; the reference is uncapped because it does.
 - Needs a **real GPU** (Vulkan + the path tracer), so this is a **local** gate, not CI. **Baselines
-  are per-machine.**
+  are per-machine.** The reference is a path trace on the local adapter, so a baseline captured on a
+  different GPU measures hardware difference on top of technique error: that case exits **2** (SKIP)
+  and refuses to gate, as does a missing baseline. The committed set holds one device, so a second
+  machine needs its own capture (and `--update-baseline` overwrites, since the path is keyed by
+  viewpoint and technique only, not by device the way perf baselines are).
+- **A metric A/B needs a static camera.** Leave `--camera.path` out of any run whose numbers are
+  compared against another run: it desynchronises which frame each side captures and manufactures
+  differences that have nothing to do with the change under test. The gate's fixed viewpoints
+  (`camera.override`, `SS_CAMERA_OVERRIDE`) exist for this reason and pin an arbitrary interior pose
+  headlessly.
 
 Every run sets `SS_CONFIG_IGNORE=1`, so a capture is code defaults plus the technique's overrides and
 never this machine's persisted `SnowstormConfig.cfg`. Note that only `all-rt` overrides
 `render.shadows.mode`: every other technique renders with the default shadow map, so shadowing is a
 constant in the matrix rather than something the gate measures.
+
+### Selecting a learned technique (denoiser, upscaler)
+
+Two selection traps, both of which produced a wrong verdict here before being caught:
+
+- **Select on held-out full frames, never on training crops.** A model can improve crop PSNR while
+  losing on the full frame it will actually run on.
+- **PSNR structurally favours the blurry baseline**, so it is the wrong selection metric for anything
+  whose job is detail: a spatial refiner cannot beat bilinear on PSNR because the detail it must
+  recover is temporal, not present in the input frame. Select on a perceptual metric (LPIPS here,
+  which is also what DLSS is tuned against). Under LPIPS selection and LPIPS training, the temporal
+  network beats bilinear by 0.0314; under PSNR selection the same network looks like a loss.
+
+Report both anyway. The point is which one decides.
 
 ## Console variables (CVars)
 
