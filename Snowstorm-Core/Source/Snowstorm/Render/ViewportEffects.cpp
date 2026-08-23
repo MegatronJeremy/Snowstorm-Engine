@@ -1660,13 +1660,6 @@ namespace Snowstorm
 						                                            });
 						                  m_DepthPrepass.RecordDepth(fc.Renderer, fc.FrameIndex, depthFmt, cam.Rt->JitteredViewProjection);
 					                  }});
-
-					// The prepass depth write must be visible to the forward depth test (same texture; the layout
-					// is unchanged so no auto barrier). Compute-style pass => runs outside any render pass.
-					fc.Graph.AddPass({.Name = "DepthPrepassBarrier" + v.Suffix,
-					                  .IsCompute = true,
-					                  .Execute = [sceneDepthTex](CommandContext& c)
-					                  { c.BarrierDepthWriteToRead(sceneDepthTex); }});
 				}
 
 				m_Owner.AddForwardPass(v.Frame, v.Cam, forwardTarget, "Forward" + v.Suffix, /*jittered*/ true,
