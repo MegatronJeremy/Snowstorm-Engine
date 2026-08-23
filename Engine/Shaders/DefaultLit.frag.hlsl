@@ -10,16 +10,16 @@ static const float PI = 3.14159265359;
 // depth compare (SampleCmpLevelZero), giving smooth 2x2 (or wider) PCF in ONE bilinear-cost tap instead of
 // manual N-tap Sample()+compare loops. Clamp-to-edge + LessOrEqual (matches the manual currentDepth <=
 // storedDepth). Material binding 3 (s3, space1); the C++ material set binds it engine-globally. Declared
-// HERE and not in Engine.hlsli on purpose — the full-screen post passes pair with Fullscreen.vert (which
+// HERE and not in Engine.hlsli on purpose: the full-screen post passes pair with Fullscreen.vert (which
 // includes Engine.hlsli) and park their own cbuffer at b3, space1, so a shared-header s3 would collide.
 SamplerComparisonState ShadowCmpSampler : register(s3, space1);
 
 // Sample a bindless texture by a (potentially per-instance, non-uniform) index. Every dynamic index
 // into the Textures[] array must go through NonUniformResourceIndex() or instanced draws sample
-// garbage (the #46 flicker lesson) — centralize it here so no call site forgets.
+// garbage (the #46 flicker lesson). Centralized here so no call site forgets.
 float4 SampleBindless(uint index, float2 uv)
 {
-	// MipBias (FrameCB) is negative under TAA so jitter fetches a sharper mip each frame — the temporal
+	// MipBias (FrameCB) is negative under TAA so jitter fetches a sharper mip each frame: the temporal
 	// resolve then reconstructs the detail instead of thin/distant texels flickering between mips. 0 = off.
 	return Textures[NonUniformResourceIndex(index)].SampleBias(LinearSampler, uv, MipBias);
 }
@@ -119,7 +119,7 @@ uint64_t GeoTableAddress()
 float RayTraceShadow(float3 positionWS, float3 Ng, float3 L, float tMax)
 {
 	// Normal-offset the origin so the ray starts just off the surface; a small along-L push further guards
-	// grazing angles. Scaled by 1e-2 world units — tuned against acne/peter-panning.
+	// grazing angles. Scaled by 1e-2 world units, tuned against acne/peter-panning.
 	const float3 origin = positionWS + Ng * 0.02 + L * 0.01;
 
 	RayDesc ray;
@@ -147,8 +147,8 @@ float RayTraceShadow(float3 positionWS, float3 Ng, float3 L, float tMax)
 	return lerp(1.0, visibility, ShadowStrength);
 }
 
-// Shadow rays per light per frame for the soft path. Compile-time (a cost-class knob, not a live one) —
-// kept low because per-frame sample rotation + TAA accumulate many effective samples over time.
+// Shadow rays per light per frame for the soft path. Compile-time (a cost-class knob, not a live one),
+// kept low since per-frame sample rotation + TAA accumulate many effective samples over time.
 #define SHADOW_RAY_COUNT 2
 
 // Soft ray-traced shadow (#118): like RayTraceShadow, but instead of one ray straight at the light, shoot
@@ -209,11 +209,11 @@ float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, flo
 }
 
 // NOTE (#124/#129): the inline RayTraceGI hemisphere gather AND RayTraceReflection (plus the geometry-
-// table read + hit-shading helpers they used) were DELETED here — GI runs in a half-res compute pass
+// table read + hit-shading helpers they used) were DELETED here: GI runs in a half-res compute pass
 // (GI.comp.hlsl) and reflections in a full-res compute pass (Reflection.comp.hlsl), each writing a target
 // the forward pass samples by screen UV (GITextureIndex / ReflectionTextureIndex reads in main). The
 // shared hit-shading helpers now live in Include/RTHitShading.hlsli (used by both compute passes).
-// RayTraceShadow / RayTraceSoftShadow STAY above — the primary sun/point/spot lighting still traces them.
+// RayTraceShadow / RayTraceSoftShadow STAY above: the primary sun/point/spot lighting still traces them.
 #endif
 
 // Directional-sun shadow: RT ray query (when RTShadowEnabled) or the raster shadow map (dedicated map,
@@ -364,7 +364,7 @@ float3 FresnelSchlickRoughness(float cosTheta, float3 F0, float roughness)
 // IBL isn't baked (IrradianceCubeIndex == 0).
 // positionWS/Ng/pixelPos are only used by the RT reflection blend (SS_RAYTRACING); the raster build
 // ignores them. When useGIDiffuse != 0, the baked-irradiance DIFFUSE term is REPLACED by giDiffuse (the
-// traced 1-bounce GI) — the diffuse indirect becomes scene-derived instead of the constant sky
+// traced 1-bounce GI): the diffuse indirect becomes scene-derived instead of the constant sky
 // approximation (Lumen/RTXGI model). Specular (env cube + RT reflection) is unaffected. giDiffuse already
 // carries the receiver albedo + GIIntensity; kd (metal energy) and ao still modulate it here.
 float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness, float metallic, float ao, float3 positionWS, float3 Ng, float2 pixelPos, uint useGIDiffuse, float3 giDiffuse)
@@ -423,11 +423,11 @@ float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness,
 
 	// RT reflections (#129): for smooth surfaces, blend in the traced reflection of the ACTUAL scene. The
 	// trace now runs in a SEPARATE full-res pass (ReflectionPass) that writes raw reflected radiance into a
-	// buffer (ReflectionTextureIndex), so it can be temporally accumulated to kill the few-ray shimmer —
+	// buffer (ReflectionTextureIndex), so it can be temporally accumulated to kill the few-ray shimmer,
 	// unlike the old inline trace. Here the forward pass just SAMPLES that buffer by screen UV and applies
 	// the same weights: reflWeight is a PURE roughness falloff (rough surfaces stay on the cheap cube;
 	// ReflMaxRoughness is the cutoff), specWeight is the split-sum Fresnel/BRDF, and ReflIntensity is the RT
-	// term's OWN brightness dial (decoupled from IBLIntensity — real scene light, not baked ambient).
+	// term's OWN brightness dial (decoupled from IBLIntensity: real scene light, not baked ambient).
 	if (ReflectionTextureIndex != 0 && roughness < ReflMaxRoughness)
 	{
 		const float2 reflUv = pixelPos / max(RenderTargetSize, float2(1.0, 1.0)); // plain UV: effects jittered like geometry now
@@ -507,7 +507,7 @@ float4 main(PSInput i) : SV_Target0
 
 	// Alpha-cutout (glTF MASK): discard texels whose alpha (texture * BaseColor.a) is below the cutoff,
 	// BEFORE any lighting so masked-out fragments cost nothing and don't write depth. clip() discards when
-	// its argument is < 0. Opaque-pass masking only — no blending/sorting. Off (AlphaMaskEnabled == 0) for
+	// its argument is < 0. Opaque-pass masking only: no blending/sorting. Off (AlphaMaskEnabled == 0) for
 	// normal materials, so this is a no-op there.
 	if (AlphaMaskEnabled != 0)
 	{
@@ -541,13 +541,13 @@ float4 main(PSInput i) : SV_Target0
 	if (RTAOTextureIndex != 0)
 	{
 		// Subtract the TAA jitter (UV units) so the AO is sampled at the SAME sub-pixel spot the jittered
-		// geometry occupies — gives TAA sub-pixel variation to average, so half-res AO edges anti-alias.
+		// geometry occupies, giving TAA sub-pixel variation to average, so half-res AO edges anti-alias.
 		const float2 aoUv = i.PositionCS.xy / max(RenderTargetSize, float2(1.0, 1.0)); // plain UV: effects jittered like geometry now
 		ao *= Textures[NonUniformResourceIndex(RTAOTextureIndex)].SampleLevel(LinearSampler, aoUv, 0).r;
 	}
 
 	// Debug view (#126): the AO debug view (DebugView == 2) now reads the raw half-res AO target directly in
-	// the tonemap pass (Tonemap.frag.hlsl DebugMode 4), same as half-res GI — so there's no in-shader AO
+	// the tonemap pass (Tonemap.frag.hlsl DebugMode 4), same as half-res GI, so there's no in-shader AO
 	// debug branch here anymore (it would be overwritten by that tonemap pass regardless).
 
 	// Debug view 3 (#129): output the raw reflection buffer (the separate ReflectionPass's traced+shaded
@@ -600,7 +600,7 @@ float4 main(PSInput i) : SV_Target0
 		shadowIrr = Textures[NonUniformResourceIndex(SunShadowTextureIndex)].SampleLevel(LinearSampler, shUv, 0).rgb;
 		useShadowTex = true;
 		// Specular visibility twin (MegaLights/NRD): the pass emits a SMOOTH per-channel specular shadow ratio (the
-		// specular BRDF shape cancels in shadowed/unshadowed), so denoising it never blurs a sharp glossy highlight —
+		// specular BRDF shape cancels in shadowed/unshadowed), so denoising it never blurs a sharp glossy highlight;
 		// the highlight itself stays full-res in specSum below. 0 index -> fall back to the diffuse-weighted grey-vis.
 		if (ShadowSpecTextureIndex != 0)
 		{
@@ -610,7 +610,7 @@ float4 main(PSInput i) : SV_Target0
 	}
 
 	float3 Lo = float3(0, 0, 0);
-	float3 unshadowedIrr = float3(0, 0, 0); // Σ radiance_i·NdotL_i (unshadowed) — diffuse albedo scale + fallback specular vis
+	float3 unshadowedIrr = float3(0, 0, 0); // Σ radiance_i·NdotL_i (unshadowed): diffuse albedo scale + fallback specular vis
 	float3 specSum = float3(0, 0, 0);       // Σ unshadowed specular WITH Fresnel (the sharp full-res highlight)
 
 	// --- Directional lights (the sun).
@@ -720,7 +720,7 @@ float4 main(PSInput i) : SV_Target0
 		if (useShadowSpec)
 		{
 			// Specular VISIBILITY: the pass already computed the smooth per-channel [0,1] specular shadow ratio (the
-			// BRDF shape cancels there), so just modulate the SHARP full-res specSum by it — highlight stays crisp
+			// BRDF shape cancels there), so just modulate the SHARP full-res specSum by it: highlight stays crisp
 			// (specSum, correct per-light Fresnel), only the shadow term is denoised. No highlight smear on glossy
 			// surfaces and no grazing-angle dimming (deriving the ratio from a denoised specular RADIANCE did both).
 			Lo = diffuseDirect + specSum * lerp(float3(1, 1, 1), specVis, ShadowStrength);
@@ -736,7 +736,7 @@ float4 main(PSInput i) : SV_Target0
 	}
 
 	// 1-bounce RT diffuse GI (#118): when active, the traced indirect REPLACES the DIFFUSE ambient (Lumen/
-	// RTXGI model) — the diffuse fill becomes scene-derived (color bleed, contact fill) instead of the
+	// RTXGI model): the diffuse fill becomes scene-derived (color bleed, contact fill) instead of the
 	// constant sky guess. Specular ambient (env cube / RT reflection) is unaffected. Off => the baked/
 	// analytic diffuse as before.
 	uint useGI = 0;
@@ -747,9 +747,9 @@ float4 main(PSInput i) : SV_Target0
 		giDiffuse = giIndirect; // upsampled GI irradiance * receiver albedo (see gather above)
 	}
 
-	// Ambient: prefer split-sum IBL (baked from the sky) when available — metals reflect the environment
-	// and specular picks up sky color. Falls back to the analytic hemisphere ambient (same zenith/horizon/
-	// ground colors the sky shows) when IBL isn't baked, so the look degrades gracefully.
+	// Ambient: prefer split-sum IBL (baked from the sky) when available, since metals reflect the
+	// environment and specular picks up sky color. Falls back to the analytic hemisphere ambient (same
+	// zenith/horizon/ground colors the sky shows) when IBL isn't baked, so the look degrades gracefully.
 	float3 ambient = ComputeIBL(N, V, albedo, F0, roughness, metallic, ao, i.PositionWS, normalize(i.NormalWS), i.PositionCS.xy, useGI, giDiffuse);
 	if (IrradianceCubeIndex == 0)
 	{
@@ -782,7 +782,7 @@ float4 main(PSInput i) : SV_Target0
 	}
 
 	// Output raw LINEAR HDR radiance into the HDR scene target. The exposure/ACES/sRGB output transform
-	// now lives once in the post-process pass (Tonemap.frag.hlsl, #53), which samples this target — the
+	// now lives once in the post-process pass (Tonemap.frag.hlsl, #53), which samples this target; the
 	// mesh and sky shaders no longer tonemap inline.
 	return float4(color, BaseColor.a);
 }
