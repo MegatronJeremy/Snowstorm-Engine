@@ -11,10 +11,10 @@ namespace Snowstorm
 	{
 	public:
 		// Single-path: a compute shader (one file, compiled cs_6_0).
-		explicit VulkanShader(std::string filepath);
+		explicit VulkanShader(std::string filepath, ShaderDefines features = {});
 		// Two-path graphics: separate vertex + fragment files, each a plain single-entry HLSL file
 		// (one `main`, stage chosen by the DXC profile). This is the preferred graphics form.
-		VulkanShader(std::string vertPath, std::string fragPath);
+		VulkanShader(std::string vertPath, std::string fragPath, ShaderDefines features = {});
 		~VulkanShader() override = default;
 
 		[[nodiscard]] const std::string& GetPath() const override { return m_Filepath; }
@@ -41,6 +41,10 @@ namespace Snowstorm
 		std::string m_Filepath;
 		std::string m_VertPath;
 		std::string m_FragPath;
+		// Call-site permutation defines, fixed at construction: the library keys on them, so a different set
+		// is a different Shader rather than a mutation of this one. Compile() folds the device-capability
+		// axes in on top. Immutable, so the compile worker reads it race-free like the paths above.
+		ShaderDefines m_FeatureDefines;
 
 		// Compiled SPIR-V paths. Written by Compile() (worker) under m_Mutex, read by GetCompiledPath
 		// (main thread) under the same lock. Only valid once m_Ready is set.

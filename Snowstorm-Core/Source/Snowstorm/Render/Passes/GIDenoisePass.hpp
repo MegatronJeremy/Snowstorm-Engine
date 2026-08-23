@@ -43,9 +43,20 @@ namespace Snowstorm
 		              float depthSigma, float penumbraScale = 0.0f);
 
 	private:
-		void EnsureResources();
+		// Permutation axes of GIDenoise.comp, derived per Dispatch from the signal's own config. Each
+		// Denoiser owns its own GIDenoisePass, so GI/reflections hold the variant with neither term while
+		// AO and shadows hold theirs, all live at once.
+		enum : uint32_t
+		{
+			FeatureHitDist = 1u << 0,  // AO: the REBLUR-style per-tap hit-distance edge-stop
+			FeaturePenumbra = 1u << 1, // shadows: SIGMA-style penumbra kernel sizing
+		};
+		static constexpr uint32_t kFeaturesUnset = ~0u;
+
+		void EnsureResources(uint32_t features);
 
 		Ref<Pipeline> m_Pipeline;
+		uint32_t m_Features = kFeaturesUnset; // permutation m_Pipeline was built for
 		// Per (frame, slot): the denoiser dispatches multiple iterations per frame, so one set/UBO per frame is
 		// not enough — index by frameIndex * kMaxSlots + slot. kMaxSlots caps ClampedGIDenoiseIterations() (5).
 		std::vector<Ref<Buffer>> m_ParamBuffers;
