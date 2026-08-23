@@ -25,7 +25,10 @@ namespace Snowstorm
 		// Copy `srcSampleView` (the viewport's PresentSampleView, a UNORM view) into the current render
 		// target (the swapchain). `colorFormat` = the swapchain color format the pipeline builds for.
 		// Records into `ctx`; no-op until the shader has compiled. `frameIndex` picks the per-frame set.
-		void Draw(const Ref<CommandContext>& ctx, uint32_t frameIndex,
+		// Pass the context the render graph handed the pass, NOT Renderer::GetGraphicsCommandContext():
+		// with async-compute fork/join a frame's graphics commands span several command buffers, so the
+		// global accessor names the current segment rather than this pass's.
+		void Draw(CommandContext& ctx, uint32_t frameIndex,
 		          const Ref<TextureView>& srcSampleView, PixelFormat colorFormat);
 
 	private:

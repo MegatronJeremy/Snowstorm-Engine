@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Platform/Vulkan/VulkanCommandContext.hpp"
 #include "Platform/Vulkan/VulkanContext.hpp"
 
 #include "Snowstorm/Render/RendererAPI.hpp"
@@ -43,6 +44,10 @@ namespace Snowstorm
 
 		Ref<CommandContext> GetGraphicsCommandContext() override;
 
+		bool IsAsyncComputeAvailable() const override;
+		Ref<CommandContext> ForkAsyncCompute() override;
+		void JoinAsyncCompute() override;
+
 		void InitImGuiBackend(void* windowHandle) override;
 		void ShutdownImGuiBackend() override;
 		void ImGuiNewFrame() override;
@@ -76,7 +81,38 @@ namespace Snowstorm
 		float m_TimestampPeriodNs = 0.0f;     // ns per timestamp tick (VkPhysicalDeviceLimits::timestampPeriod)
 		bool m_TimestampsSupported = false;
 
-		std::vector<Ref<CommandContext>> m_GraphicsContexts;
+		// Graphics command buffers, [frame-in-flight][segment]. A frame with no async compute uses exactly one
+		// segment and submits exactly as it always did; each fork/join pair closes the open segment and opens
+		// another, so N forks produce N+1 segments. Segments are allocated lazily and reused across frames.
+		std::vector<std::vector<Ref<VulkanCommandContext>>> m_GraphicsContexts;
+		// Async-compute command buffers, [frame-in-flight][batch]. One per fork/join pair, same lazy reuse.
+		std::vector<std::vector<Ref<VulkanCommandContext>>> m_ComputeContexts;
+
+		// A submission recorded this frame, with the timeline values that order it against the other queue.
+		// 0 means "no timeline wait/signal" (the first graphics segment waits on image-acquire instead, and
+		// the last signals the present semaphore).
+		struct QueuedSubmit
+		{
+			Ref<VulkanCommandContext> Ctx;
+			uint64_t WaitTimeline = 0;
+			uint64_t SignalTimeline = 0;
+		};
+		// Built during recording, drained in EndFrame. Submitted in timeline order: graphics[0], compute[0],
+		// graphics[1], ... so a wait is never enqueued before the submit that will signal it.
+		std::vector<QueuedSubmit> m_FrameGraphicsSubmits;
+		std::vector<QueuedSubmit> m_FrameComputeSubmits;
+
+		uint32_t m_CurrentGraphicsSegment = 0; // index into m_GraphicsContexts[frame] currently recording
+		uint32_t m_CurrentComputeBatch = 0;    // index into m_ComputeContexts[frame] for the next fork
+		bool m_AsyncBatchOpen = false;         // between ForkAsyncCompute and JoinAsyncCompute
+
+		// One timeline semaphore for the whole renderer, with a monotonically increasing value. Each fork
+		// consumes two values (fork = graphics signals / compute waits; join = compute signals / graphics
+		// waits). A single timeline replaces what would otherwise be a pair of binary semaphores per edge.
+		// VK_NULL_HANDLE when the device has no dedicated compute queue (async compute then never engages).
+		VkSemaphore m_Timeline = VK_NULL_HANDLE;
+		uint64_t m_TimelineNext = 0; // last value handed out; ++ before each use
+
 		std::vector<Ref<Texture>> m_SwapchainTextures;
 
 		std::vector<VkSemaphore> m_ImageAvailableSemaphores;

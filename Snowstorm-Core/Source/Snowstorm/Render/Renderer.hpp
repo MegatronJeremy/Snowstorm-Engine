@@ -65,7 +65,14 @@ namespace Snowstorm
 		// Max MSAA sample count usable for both color+depth attachments (1/2/4/8). render.msaa is clamped to it.
 		static uint32_t GetMaxSampleCount();
 
+		// The currently open recording segment, which changes across a fork, so do not cache it. Record
+		// through the context the render graph hands each pass.
 		static Ref<CommandContext> GetGraphicsCommandContext();
+
+		// Driven by RenderGraph::Execute. Passes declare Pass::Queue and never call these directly.
+		static bool IsAsyncComputeAvailable();
+		static Ref<CommandContext> ForkAsyncCompute();
+		static void JoinAsyncCompute();
 
 		static Ref<DescriptorSetLayout> GetUITextureLayout();
 		static Ref<Sampler> GetUISampler();

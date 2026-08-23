@@ -6,6 +6,7 @@
 #include "VulkanOmmBaker.hpp"
 
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 
 #include "Platform/Vulkan/VulkanTexture.hpp"
@@ -36,6 +37,7 @@ namespace Snowstorm
 		m_CurrentFrameIndex = 0;
 
 		m_GraphicsContexts.resize(s_MaxFramesInFlight);
+		m_ComputeContexts.resize(s_MaxFramesInFlight);
 		m_ImageAvailableSemaphores.resize(s_MaxFramesInFlight);
 		m_InFlightFences.resize(s_MaxFramesInFlight);
 
@@ -50,10 +52,29 @@ namespace Snowstorm
 		// you which image you got). The fence is per-frame-in-flight too (throttles CPU to N frames ahead).
 		for (uint32_t i = 0; i < s_MaxFramesInFlight; ++i)
 		{
-			m_GraphicsContexts[i] = CreateRef<VulkanCommandContext>();
+			// Segment 0 always exists; further segments (and any async-compute batches) are allocated on
+			// demand by ForkAsyncCompute and then reused for the life of the renderer.
+			m_GraphicsContexts[i].push_back(CreateRef<VulkanCommandContext>(GpuQueue::Graphics));
 
 			vkCreateSemaphore(device, &semaphoreInfo, nullptr, &m_ImageAvailableSemaphores[i]);
 			vkCreateFence(device, &fenceInfo, nullptr, &m_InFlightFences[i]);
+		}
+
+		// Only meaningful with a dedicated compute family: without one async compute never engages and the
+		// semaphore is never waited on. Its null-ness is the capability check in IsAsyncComputeAvailable.
+		if (context.HasDedicatedComputeQueue())
+		{
+			VkSemaphoreTypeCreateInfo typeInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
+			typeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+			typeInfo.initialValue = 0;
+
+			VkSemaphoreCreateInfo timelineInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+			timelineInfo.pNext = &typeInfo;
+			if (vkCreateSemaphore(device, &timelineInfo, nullptr, &m_Timeline) != VK_SUCCESS)
+			{
+				SS_CORE_WARN("Failed to create the async-compute timeline semaphore; async compute disabled.");
+				m_Timeline = VK_NULL_HANDLE;
+			}
 		}
 
 		// The render-finished / present-signal semaphore is PER-SWAPCHAIN-IMAGE (indexed by image index),
@@ -217,7 +238,18 @@ namespace Snowstorm
 		}
 		m_RenderFinishedSemaphores.clear();
 
+		if (m_Timeline != VK_NULL_HANDLE)
+		{
+			vkDestroySemaphore(device, m_Timeline, nullptr);
+			m_Timeline = VK_NULL_HANDLE;
+		}
+
+		// Both context pools free their command buffers back to their own queue family's pool (which the
+		// VulkanContext::Shutdown below then destroys), so they must be released first.
+		m_FrameGraphicsSubmits.clear();
+		m_FrameComputeSubmits.clear();
 		m_GraphicsContexts.clear();
+		m_ComputeContexts.clear();
 
 		// 2. Shut down the low-level context (Allocator, Device, Instance)
 		VulkanContext::Get().Shutdown();
@@ -277,8 +309,20 @@ namespace Snowstorm
 		// 3. Acquire succeeded — now it's safe to reset the fence and begin recording.
 		vkResetFences(device, 1, &m_InFlightFences[m_CurrentFrameIndex]);
 
-		auto ctx = std::static_pointer_cast<VulkanCommandContext>(m_GraphicsContexts[m_CurrentFrameIndex]);
+		// Reset the per-frame recording state: every frame starts on graphics segment 0 with no async batch
+		// open and no submissions queued. Segments/batches allocated by earlier frames stay in the pool.
+		m_CurrentGraphicsSegment = 0;
+		m_CurrentComputeBatch = 0;
+		m_AsyncBatchOpen = false;
+		m_FrameGraphicsSubmits.clear();
+		m_FrameComputeSubmits.clear();
+
+		const Ref<VulkanCommandContext> ctx = m_GraphicsContexts[m_CurrentFrameIndex][0];
 		ctx->Begin();
+
+		// A frame that never forks ends with exactly this one entry, which EndFrame finalizes with the
+		// present signal and fence, reproducing the original single submit.
+		m_FrameGraphicsSubmits.push_back({.Ctx = ctx});
 
 		// GPU frame timing. We waited on this slot's fence above, so its prior submission is complete and
 		// its timestamps are resolvable; read them, then reset the pool and write a fresh start stamp.
@@ -303,7 +347,14 @@ namespace Snowstorm
 	void VulkanRendererAPI::EndFrame()
 	{
 		auto& context = VulkanContext::Get();
-		auto ctx = std::static_pointer_cast<VulkanCommandContext>(m_GraphicsContexts[m_CurrentFrameIndex]);
+
+		// An unjoined batch would leave the compute buffer open and its join value never signalled, hanging
+		// the final graphics submit. RenderGraph always pairs them; assert so a future caller can't not.
+		SS_CORE_ASSERT(!m_AsyncBatchOpen, "EndFrame with an async-compute batch still open");
+
+		// The present transition and the frame's end timestamp belong to the last graphics segment, the one
+		// still recording. Without a fork that is segment 0.
+		const Ref<VulkanCommandContext> ctx = m_GraphicsContexts[m_CurrentFrameIndex][m_CurrentGraphicsSegment];
 
 		// 1. Transition to a presentable state
 		ctx->TransitionLayout(m_SwapchainTextures[m_ImageIndex], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
@@ -324,34 +375,84 @@ namespace Snowstorm
 		// dependency with the swapchain image's first sync2 layout transition (in BeginRenderPass).
 		// A sync1 vkQueueSubmit wait does not chain into a vkCmdPipelineBarrier2, so validation
 		// reports "semaphore signaled by image acquire was not waited on".
-		VkSemaphoreSubmitInfo waitInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
-		waitInfo.semaphore = m_ImageAvailableSemaphores[m_CurrentFrameIndex];
-		waitInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-
-		// Present-signal semaphore indexed by IMAGE index (per-swapchain-image), not frame-in-flight — see
-		// CreateRenderFinishedSemaphores. This is the one the present below waits on.
-		VkSemaphoreSubmitInfo signalInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
-		signalInfo.semaphore = m_RenderFinishedSemaphores[m_ImageIndex];
-		signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-
-		VkCommandBufferSubmitInfo cmdInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
-		cmdInfo.commandBuffer = ctx->GetVulkanCommandBuffer();
-
-		VkSubmitInfo2 submitInfo{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
-		submitInfo.waitSemaphoreInfoCount = 1;
-		submitInfo.pWaitSemaphoreInfos = &waitInfo;
-		submitInfo.commandBufferInfoCount = 1;
-		submitInfo.pCommandBufferInfos = &cmdInfo;
-		submitInfo.signalSemaphoreInfoCount = 1;
-		submitInfo.pSignalSemaphoreInfos = &signalInfo;
-
-		if (vkQueueSubmit2(context.GetGraphicsQueue(), 1, &submitInfo, m_InFlightFences[m_CurrentFrameIndex]) == VK_ERROR_DEVICE_LOST)
+		//
+		// With async compute the frame is a chain of submits rather than one: graphics[0], compute[0],
+		// graphics[1] and so on, ordered by the timeline values assigned at fork/join. They are issued in
+		// that same order so a wait is never enqueued before the submit that will signal it. The first
+		// graphics segment waits on image-acquire; the last signals the present semaphore and carries the
+		// in-flight fence, which therefore covers the compute batches too since that segment waits on the
+		// final join. A frame with no fork has one graphics submit and no compute ones.
+		auto submitOne = [&](const QueuedSubmit& sub, const bool isFirstGraphics, const bool isLastGraphics,
+		                     const VkQueue queue, const VkFence fence)
 		{
-			// The frame submit faulted the GPU. Dump VK_EXT_device_fault detail (faulting addresses / vendor
-			// description) before anything downstream turns the sticky device-lost into a bare -4 at the next
-			// acquire/submit. No-op unless the extension is enabled (Debug). This is the graphics-work submit,
-			// so a shader OOB (e.g. an out-of-range geometry-table read) surfaces here first.
-			context.LogDeviceFaultInfo();
+			VkSemaphoreSubmitInfo waits[1]{};
+			VkSemaphoreSubmitInfo signals[1]{};
+			uint32_t waitCount = 0;
+			uint32_t signalCount = 0;
+
+			if (isFirstGraphics)
+			{
+				waits[waitCount++] = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+				                      .semaphore = m_ImageAvailableSemaphores[m_CurrentFrameIndex],
+				                      .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};
+			}
+			else if (sub.WaitTimeline != 0)
+			{
+				waits[waitCount++] = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+				                      .semaphore = m_Timeline,
+				                      .value = sub.WaitTimeline,
+				                      .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};
+			}
+
+			if (isLastGraphics)
+			{
+				// Present-signal semaphore is indexed by image, not frame-in-flight (see
+				// CreateRenderFinishedSemaphores).
+				signals[signalCount++] = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+				                          .semaphore = m_RenderFinishedSemaphores[m_ImageIndex],
+				                          .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};
+			}
+			else if (sub.SignalTimeline != 0)
+			{
+				signals[signalCount++] = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+				                          .semaphore = m_Timeline,
+				                          .value = sub.SignalTimeline,
+				                          .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};
+			}
+
+			VkCommandBufferSubmitInfo cmdInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+			cmdInfo.commandBuffer = sub.Ctx->GetVulkanCommandBuffer();
+
+			VkSubmitInfo2 submitInfo{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+			submitInfo.waitSemaphoreInfoCount = waitCount;
+			submitInfo.pWaitSemaphoreInfos = waits;
+			submitInfo.commandBufferInfoCount = 1;
+			submitInfo.pCommandBufferInfos = &cmdInfo;
+			submitInfo.signalSemaphoreInfoCount = signalCount;
+			submitInfo.pSignalSemaphoreInfos = signals;
+
+			if (vkQueueSubmit2(queue, 1, &submitInfo, fence) == VK_ERROR_DEVICE_LOST)
+			{
+				// A submit faulted the GPU. Dump VK_EXT_device_fault detail (faulting addresses / vendor
+				// description) before anything downstream turns the sticky device-lost into a bare -4 at the
+				// next acquire/submit. No-op unless the extension is enabled (Debug). A shader OOB (e.g. an
+				// out-of-range geometry-table read) surfaces here first.
+				context.LogDeviceFaultInfo();
+			}
+		};
+
+		const size_t graphicsCount = m_FrameGraphicsSubmits.size();
+		for (size_t i = 0; i < graphicsCount; ++i)
+		{
+			const bool isLast = i + 1 == graphicsCount;
+			submitOne(m_FrameGraphicsSubmits[i], i == 0, isLast, context.GetGraphicsQueue(),
+			          isLast ? m_InFlightFences[m_CurrentFrameIndex] : VK_NULL_HANDLE);
+
+			// The compute batch forked from this segment goes next, so the chain is issued in timeline order.
+			if (i < m_FrameComputeSubmits.size())
+			{
+				submitOne(m_FrameComputeSubmits[i], false, false, context.GetComputeQueue(), VK_NULL_HANDLE);
+			}
 		}
 
 		VkSemaphore signalSemaphores[] = {m_RenderFinishedSemaphores[m_ImageIndex]};
@@ -484,7 +585,69 @@ namespace Snowstorm
 
 	Ref<CommandContext> VulkanRendererAPI::GetGraphicsCommandContext()
 	{
-		return m_GraphicsContexts[m_CurrentFrameIndex];
+		return m_GraphicsContexts[m_CurrentFrameIndex][m_CurrentGraphicsSegment];
+	}
+
+	bool VulkanRendererAPI::IsAsyncComputeAvailable() const
+	{
+		// The timeline only exists when the device exposed a dedicated compute family (see Init), so its
+		// presence IS the device-capability check. The CVar is the runtime A/B switch on top of it.
+		return m_Timeline != VK_NULL_HANDLE && CVars::AsyncCompute.Get();
+	}
+
+	Ref<CommandContext> VulkanRendererAPI::ForkAsyncCompute()
+	{
+		SS_CORE_ASSERT(IsAsyncComputeAvailable(), "ForkAsyncCompute without async compute available");
+		SS_CORE_ASSERT(!m_AsyncBatchOpen, "ForkAsyncCompute while a batch is already open");
+
+		const uint32_t frame = m_CurrentFrameIndex;
+
+		// Close the graphics segment that was recording; it is already the back of the submit list (seeded in
+		// BeginFrame or pushed by the previous Join), so record the fork value on it rather than pushing again.
+		// The compute batch waits on that value, so everything recorded before this point is visible to it.
+		const uint64_t forkValue = ++m_TimelineNext;
+		const Ref<VulkanCommandContext> gfx = m_GraphicsContexts[frame][m_CurrentGraphicsSegment];
+		gfx->End();
+		m_FrameGraphicsSubmits.back().SignalTimeline = forkValue;
+
+		// Open (allocating on first use) the async-compute buffer for this batch.
+		if (m_CurrentComputeBatch >= m_ComputeContexts[frame].size())
+		{
+			m_ComputeContexts[frame].push_back(CreateRef<VulkanCommandContext>(GpuQueue::AsyncCompute));
+		}
+		const Ref<VulkanCommandContext> comp = m_ComputeContexts[frame][m_CurrentComputeBatch];
+		comp->Begin();
+
+		// The join value is reserved now so the batch's submit record is complete; JoinAsyncCompute opens the
+		// next graphics segment waiting on it.
+		const uint64_t joinValue = ++m_TimelineNext;
+		m_FrameComputeSubmits.push_back({.Ctx = comp, .WaitTimeline = forkValue, .SignalTimeline = joinValue});
+
+		m_AsyncBatchOpen = true;
+		return comp;
+	}
+
+	void VulkanRendererAPI::JoinAsyncCompute()
+	{
+		SS_CORE_ASSERT(m_AsyncBatchOpen, "JoinAsyncCompute without an open batch");
+
+		const uint32_t frame = m_CurrentFrameIndex;
+
+		m_ComputeContexts[frame][m_CurrentComputeBatch]->End();
+		const uint64_t joinValue = m_FrameComputeSubmits.back().SignalTimeline;
+		++m_CurrentComputeBatch;
+		m_AsyncBatchOpen = false;
+
+		// Open the next graphics segment; it waits on the compute batch, so passes recorded from here on may
+		// read what the batch wrote.
+		++m_CurrentGraphicsSegment;
+		if (m_CurrentGraphicsSegment >= m_GraphicsContexts[frame].size())
+		{
+			m_GraphicsContexts[frame].push_back(CreateRef<VulkanCommandContext>(GpuQueue::Graphics));
+		}
+		const Ref<VulkanCommandContext> gfx = m_GraphicsContexts[frame][m_CurrentGraphicsSegment];
+		gfx->Begin();
+		m_FrameGraphicsSubmits.push_back({.Ctx = gfx, .WaitTimeline = joinValue});
 	}
 
 	void VulkanRendererAPI::InitImGuiBackend(void* windowHandle)

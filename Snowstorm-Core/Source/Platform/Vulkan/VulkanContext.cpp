@@ -356,15 +356,22 @@ namespace Snowstorm
 			std::vector<VkQueueFamilyProperties> props(queueCount);
 			vkGetPhysicalDeviceQueueFamilyProperties(m_PhysicalDevice, &queueCount, props.data());
 			m_TransferQueueFamily = m_GraphicsQueueFamily;
+			m_ComputeQueueFamily = m_GraphicsQueueFamily;
 			for (uint32_t i = 0; i < queueCount; ++i)
 			{
 				const bool hasTransfer = (props[i].queueFlags & VK_QUEUE_TRANSFER_BIT) != 0;
 				const bool hasGraphics = (props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
 				const bool hasCompute = (props[i].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0;
-				if (hasTransfer && !hasGraphics && !hasCompute)
+				if (hasTransfer && !hasGraphics && !hasCompute && m_TransferQueueFamily == m_GraphicsQueueFamily)
 				{
 					m_TransferQueueFamily = i;
-					break;
+				}
+				// Async-compute family is COMPUTE without GRAPHICS: a family carrying GRAPHICS would
+				// time-slice against the render work instead of running concurrently, so it is not a
+				// candidate. None found leaves the graphics family aliased in.
+				if (hasCompute && !hasGraphics && m_ComputeQueueFamily == m_GraphicsQueueFamily)
+				{
+					m_ComputeQueueFamily = i;
 				}
 			}
 		}
@@ -401,6 +408,18 @@ namespace Snowstorm
 				xfer.queueCount = 1;
 				xfer.pQueuePriorities = &queuePriority;
 				queueCreates.push_back(xfer);
+			}
+
+			// Async-compute family, same rule. It can never collide with the transfer family (that one is
+			// selected as COMPUTE-less, this one as COMPUTE-ful), so testing against graphics alone is enough.
+			if (m_ComputeQueueFamily != m_GraphicsQueueFamily)
+			{
+				VkDeviceQueueCreateInfo comp{};
+				comp.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+				comp.queueFamilyIndex = m_ComputeQueueFamily;
+				comp.queueCount = 1;
+				comp.pQueuePriorities = &queuePriority;
+				queueCreates.push_back(comp);
 			}
 		}
 
@@ -519,6 +538,13 @@ namespace Snowstorm
 		VkPhysicalDeviceVulkan12Features features12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
 		features12.bufferDeviceAddress = VK_TRUE;
 
+		// Timeline semaphores (core since Vulkan 1.2, but the feature bit still has to be asked for). Needed to
+		// order the async-compute submission against the graphics one WITHIN a frame: a binary semaphore is
+		// single wait/signal and would need a fresh object per fork/join edge, whereas one timeline per
+		// frame-in-flight expresses the whole fork -> compute -> join chain as monotonically increasing values.
+		// This is how Unreal and Frostbite fence async compute against graphics.
+		features12.timelineSemaphore = VK_TRUE;
+
 		// Bindless texture features
 		features12.descriptorBindingPartiallyBound = VK_TRUE;
 		features12.runtimeDescriptorArray = VK_TRUE;
@@ -608,9 +634,13 @@ namespace Snowstorm
 		vkGetDeviceQueue(m_Device, m_GraphicsQueueFamily, 0, &m_GraphicsQueue);
 		// Transfer queue: the dedicated family's queue when distinct, else the graphics queue handle (aliased).
 		vkGetDeviceQueue(m_Device, m_TransferQueueFamily, 0, &m_TransferQueue);
-		SS_CORE_INFO("Vulkan queues: graphics family {}, transfer family {}{}.",
+		// Async-compute queue, same aliasing rule.
+		vkGetDeviceQueue(m_Device, m_ComputeQueueFamily, 0, &m_ComputeQueue);
+		SS_CORE_INFO("Vulkan queues: graphics family {}, transfer family {}{}, compute family {}{}.",
 		             m_GraphicsQueueFamily, m_TransferQueueFamily,
-		             HasDedicatedTransferQueue() ? " (dedicated)" : " (shared with graphics)");
+		             HasDedicatedTransferQueue() ? " (dedicated)" : " (shared with graphics)",
+		             m_ComputeQueueFamily,
+		             HasDedicatedComputeQueue() ? " (dedicated, async compute available)" : " (shared with graphics)");
 		SS_CORE_INFO("Ray tracing (VK_KHR_ray_query): {}.",
 		             m_RayTracingSupported ? "supported (enabled)" : "not supported (raster fallback)");
 		SS_CORE_INFO("Opacity micromaps (VK_EXT_opacity_micromap): {}.",
@@ -642,6 +672,21 @@ namespace Snowstorm
 		else
 		{
 			m_TransferCommandPool = m_GraphicsCommandPool;
+		}
+
+		// Async-compute command pool, same rule as the transfer pool: its own pool on the dedicated family,
+		// otherwise an alias of the graphics pool (Shutdown checks for the alias before destroying).
+		if (HasDedicatedComputeQueue())
+		{
+			VkCommandPoolCreateInfo compPool{};
+			compPool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+			compPool.queueFamilyIndex = m_ComputeQueueFamily;
+			compPool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+			VK_CHECK(vkCreateCommandPool(m_Device, &compPool, nullptr, &m_ComputeCommandPool));
+		}
+		else
+		{
+			m_ComputeCommandPool = m_GraphicsCommandPool;
 		}
 
 		// 6. VMA Allocator
@@ -873,6 +918,13 @@ namespace Snowstorm
 	{
 		DestroySwapchain();
 		vkDestroySurfaceKHR(m_Instance, m_Surface, nullptr);
+
+		// Same alias check as the transfer pool below: the compute pool is m_GraphicsCommandPool when the GPU
+		// has no dedicated async-compute family, and destroying it twice would be a double-free.
+		if (m_ComputeCommandPool != VK_NULL_HANDLE && m_ComputeCommandPool != m_GraphicsCommandPool)
+		{
+			vkDestroyCommandPool(m_Device, m_ComputeCommandPool, nullptr);
+		}
 
 		// Destroy the transfer pool first, but only if it's a distinct object (when shared with graphics it
 		// aliases m_GraphicsCommandPool — destroying it here then again below would be a double-free).

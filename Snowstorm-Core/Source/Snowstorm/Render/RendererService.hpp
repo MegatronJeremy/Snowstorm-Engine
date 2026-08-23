@@ -322,7 +322,10 @@ namespace Snowstorm
 		// Dispatch the pending ray (if any) into this frame's slot. Called by RenderSystem inside a compute
 		// graph pass, AFTER the TLAS is built and its bindless slot written this frame. Binds the pick pipeline
 		// + set 0 (result + params) + BindGlobalResources (set 3 = the bindless SceneTLAS) + Dispatch(1,1,1).
-		void RecordPick(const Ref<CommandContext>& commandContext, uint32_t frameIndex);
+		// Pass the context the render graph handed this pass, not Renderer::GetGraphicsCommandContext():
+		// fork/join splits a frame's graphics commands across several command buffers, so the global
+		// accessor names the currently open segment, not necessarily this pass's.
+		void RecordPick(CommandContext& commandContext, uint32_t frameIndex);
 
 		// Take the most recent completed pick result: the committed instance index, or 0xFFFFFFFF on a miss
 		// (nothing under the cursor). Returns nullopt until a dispatch has read back. Clears on read.

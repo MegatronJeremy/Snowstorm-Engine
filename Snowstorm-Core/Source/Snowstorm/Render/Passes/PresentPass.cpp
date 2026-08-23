@@ -70,10 +70,10 @@ namespace Snowstorm
 		m_ColorFormat = colorFormat;
 	}
 
-	void PresentPass::Draw(const Ref<CommandContext>& ctx, const uint32_t frameIndex,
+	void PresentPass::Draw(CommandContext& ctx, const uint32_t frameIndex,
 	                       const Ref<TextureView>& srcSampleView, const PixelFormat colorFormat)
 	{
-		if (!ctx || !srcSampleView)
+		if (!srcSampleView)
 		{
 			return;
 		}
@@ -107,8 +107,8 @@ namespace Snowstorm
 		m_Sets[frameIndex]->SetSampler(kSamplerBinding, m_Sampler);
 		m_Sets[frameIndex]->Commit();
 
-		ctx->BindPipeline(m_Pipeline);
-		ctx->BindDescriptorSet(m_Sets[frameIndex], kSetIndex);
-		ctx->Draw(3, 1, 0);
+		ctx.BindPipeline(m_Pipeline);
+		ctx.BindDescriptorSet(m_Sets[frameIndex], kSetIndex);
+		ctx.Draw(3, 1, 0);
 	}
 }

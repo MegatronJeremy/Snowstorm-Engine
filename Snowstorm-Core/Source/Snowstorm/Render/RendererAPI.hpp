@@ -85,8 +85,22 @@ namespace Snowstorm
 		// clamped to this. A device capability, hence on RendererAPI.
 		virtual uint32_t GetMaxSampleCount() const = 0;
 
-		//-- acquire a new command context for recording
+		// The currently open recording segment, which changes across a fork, so do not cache it. Record
+		// through the context the render graph hands each pass.
 		virtual Ref<CommandContext> GetGraphicsCommandContext() = 0;
+
+		// True when an independent compute family exists and render.async_compute is on. False keeps every
+		// pass on graphics, so callers never branch on this themselves.
+		virtual bool IsAsyncComputeAvailable() const = 0;
+
+		// Closes the current graphics segment and opens the async-compute buffer. The compute submit is
+		// ordered after everything recorded before the fork, so the batch may read what earlier graphics
+		// passes wrote. Illegal unless IsAsyncComputeAvailable(); must be paired with JoinAsyncCompute.
+		virtual Ref<CommandContext> ForkAsyncCompute() = 0;
+
+		// Closes the async-compute buffer and opens a graphics segment waiting on it, so anything recorded
+		// afterwards may read what the batch wrote.
+		virtual void JoinAsyncCompute() = 0;
 
 		//-- ImGui Backend Abstraction
 		virtual void InitImGuiBackend(void* windowHandle) = 0;
