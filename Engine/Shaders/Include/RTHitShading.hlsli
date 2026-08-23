@@ -5,9 +5,9 @@
 // TEMPORARY copy that lived in GI.comp.hlsl (the #124 note foreshadowed this) so the two compute passes
 // share ONE implementation instead of drifting copies.
 //
-// NOTE: this is the COMPUTE flavour — the sun comes from the includer's OWN constant buffer as scalar
+// NOTE: this is the COMPUTE flavour: the sun comes from the includer's OWN constant buffer as scalar
 // fields (SunDirection/SunColor/SunIntensity), NOT the DirectionalLights[] material-set array a fragment
-// shader reads. DefaultLit.frag keeps its own array-based ShadeSurfaceHit; it does not include this.
+// shader reads. That is why DefaultLit.frag does not include this file.
 //
 // CONTRACT — the includer MUST declare, BEFORE #include-ing this file:
 //   * set 3 bindless is declared HERE (Textures/Cubemaps/SceneTLAS) — identical in every compute RT pass,
@@ -36,10 +36,14 @@ RaytracingAccelerationStructure SceneTLAS : register(t2, space3);
 // satisfying RTGeometry's contract, so this include must follow it.
 #include "RTGeometry.hlsli"
 
+// Own constant, not the includer's PI: Reflection.comp declares its PI *after* this include.
+static const float kRTHitInvPi = 0.31830988618;
+
 struct HitSurface
 {
 	float3 Albedo;
-	float3 Nw; // interpolated world normal
+	float3 Nw;      // interpolated world normal
+	float Metallic; // diffuse response is scaled by (1 - Metallic); this pass models no specular lobe
 };
 
 // Resolve a committed inline-RayQuery triangle hit to its surface albedo + interpolated world normal via
@@ -62,6 +66,15 @@ HitSurface ResolveHit(uint64_t tableAddr, uint instanceId, uint prim, float2 bar
 	{
 		s.Albedo *= Textures[NonUniformResourceIndex(rec.AlbedoTextureIndex)].SampleLevel(LinearSampler, uv, 0).rgb;
 	}
+	// Factor times map, the glTF packing PathTrace.comp resolves identically (metallic in .b). The map read is
+	// not optional: Sponza authors metallic=1.0 on 24 of 26 materials and carries the real value in the texture,
+	// so trusting the factor alone would turn the whole scene metallic and collapse the bounce to black.
+	s.Metallic = rec.Metallic;
+	if (rec.MetallicRoughnessTextureIndex != 0)
+	{
+		s.Metallic *= Textures[NonUniformResourceIndex(rec.MetallicRoughnessTextureIndex)].SampleLevel(LinearSampler, uv, 0).b;
+	}
+	s.Metallic = saturate(s.Metallic);
 	// Interpolated object normal -> world via the record's Model (rows hold glm's columns, so
 	// mul(n, Model3x3) computes glmModel * n). Ignores non-uniform scale (inverse-transpose) — fine here.
 	const float3 nObj = w * LoadVertexNormal(rec.VertexAddress, i0) + bary.x * LoadVertexNormal(rec.VertexAddress, i1) + bary.y * LoadVertexNormal(rec.VertexAddress, i2);
@@ -116,7 +129,10 @@ float3 ShadeSurfaceHit(uint64_t tableAddr, uint instanceId, uint prim, float2 ba
 		if (ndl > 0.0)
 		{
 			const float sh = RTHitShadowRay(tableAddr, hitPos, s.Nw, Lsun, 1e30);
-			direct = SunColor * SunIntensity * ndl * sh;
+			// Lambertian BRDF normalization: SunColor*SunIntensity*ndl is IRRADIANCE, and the outgoing
+			// radiance a diffuse surface emits from it is albedo/PI times that. The ambient term below
+			// needs no such factor: the irradiance cube already stores E/PI (IBLIrradiance.hlsl).
+			direct = SunColor * SunIntensity * ndl * sh * kRTHitInvPi;
 		}
 	}
 
@@ -130,7 +146,10 @@ float3 ShadeSurfaceHit(uint64_t tableAddr, uint instanceId, uint prim, float2 ba
 		ambient = float3(0.03, 0.03, 0.03); // faint fill so shadowed/indirect areas aren't crushed to black
 	}
 
-	return s.Albedo * (direct + ambient * ambientScale);
+	// (1 - Metallic) on the diffuse albedo, matching DefaultLit's kd and PathTrace's diffuse lobe. A conductor
+	// therefore returns black here rather than a bright diffuse reflector: this pass carries no specular lobe,
+	// so under-estimating a metal bounce is the honest error, and it is the one the forward already makes.
+	return s.Albedo * (1.0 - s.Metallic) * (direct + ambient * ambientScale);
 }
 
 #endif // SNOWSTORM_RT_HIT_SHADING_HLSLI

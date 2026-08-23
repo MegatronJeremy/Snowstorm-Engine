@@ -25,7 +25,8 @@ struct GeoRecord
 	float AlphaCutoff;        // [24] albedo.a threshold when masked
 	float4 BaseColor;         // [32] base-color factor (its .a scales the mask alpha)
 	float4x4 Model;           // [48] object->world
-	// PBR block (#153), appended after Model. Read only by the reference path tracer; other RT passes ignore it.
+	// PBR block (#153), appended after Model. The path tracer reads all of it; the compute RT hit shading reads
+	// Metallic (+ its map) to match the forward's diffuse kd. The visibility-only passes ignore the block.
 	uint MetallicRoughnessTextureIndex; // [112] glTF MR (.b metallic, .g roughness)
 	uint NormalTextureIndex;            // [116] tangent-space normal map
 	uint EmissiveTextureIndex;          // [120] emissive map

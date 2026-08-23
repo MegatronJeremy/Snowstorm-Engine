@@ -195,8 +195,8 @@ namespace Snowstorm
 				rec.BaseColor = c->BaseColor;
 				rec.AlphaMaskEnabled = c->AlphaMaskEnabled;
 				rec.AlphaCutoff = c->AlphaCutoff;
-				// PBR block (#153) for the reference path tracer: the full material so PT hits shade with the
-				// real BRDF (metallic/roughness/emissive + normal/MR maps), not just albedo.
+				// PBR block (#153): the full material, so an RT hit shades with the real BRDF
+				// (metallic/roughness/emissive + normal/MR maps) instead of albedo alone.
 				rec.MetallicRoughnessTextureIndex = c->MetallicRoughnessTextureIndex;
 				rec.NormalTextureIndex = c->NormalTextureIndex;
 				rec.EmissiveTextureIndex = c->EmissiveTextureIndex;
