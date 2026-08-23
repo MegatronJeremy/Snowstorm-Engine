@@ -30,12 +30,24 @@ need the dev-mode driver. If it isn't found via --rga, the SS_RGA env var, or PA
 script auto-bootstraps a pinned, checksum-verified copy into Tools/rga/ (~238MB, one-time,
 cached) so a fresh box is fully headless. Disable with --no-bootstrap.
 
+One RGA invocation costs ~1.5s of fixed process/backend startup plus the compile itself (~30s for
+DefaultLit.frag_rt), and RGA is single-threaded per process, so analysing the ~84 modules one after
+another took ~490s. Three things cut that. The modules are dispatched across a thread pool (--jobs).
+Duplicate SPIR-V is analysed once (the rt and base permutations of a shader that ignores
+SS_RAYTRACING are byte-identical, collapsing 84 modules to 50). And stats are memoised by content
+hash in Tools/rga/stats-cache-<asic>.json (gitignored, carried by CI's existing Tools/rga cache),
+keyed on the module's sha256 plus its stage and the RGA version, so a hit is only ever the identical
+compiler on identical bytes: edit one shader and only that shader is recompiled. --no-cache forces
+every module through RGA.
+
 Usage (from repo root or anywhere):
     py Scripts/rga-occupancy.py                     # analyse cache, diff vs baseline, PASS/FAIL
     py Scripts/rga-occupancy.py --update-baseline   # capture current results as the new baseline
     py Scripts/rga-occupancy.py --only Reflection   # one shader (base-name substring)
     py Scripts/rga-occupancy.py --asic gfx1100      # target ASIC (default gfx1100)
     py Scripts/rga-occupancy.py --threshold 10      # regression tolerance %% (default 10)
+    py Scripts/rga-occupancy.py --jobs 8            # RGA invocations in flight (default min(16, cores))
+    py Scripts/rga-occupancy.py --no-cache          # ignore the memoised stats, re-run every module
     py Scripts/rga-occupancy.py --dry-run           # print planned RGA invocations, don't run
 
 Exit code: 0 if every shader is within threshold (or --update-baseline), 1 on a
@@ -45,6 +57,7 @@ import argparse
 import csv
 import glob
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -52,9 +65,11 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 # Pinned RGA release (github.com/GPUOpen-Tools/radeon_gpu_analyzer). Pinned, not "latest", so the
@@ -266,25 +281,57 @@ def parse_rga_csv(csv_path: Path) -> dict | None:
 
 def run_rga(rga: Path, asic: str, stage: str, spv: Path, timeout: int) -> dict | None:
     tmp = Path(tempfile.mkdtemp(prefix="rga-"))
-    stats = tmp / "stats.csv"
-    cmd = [str(rga), "-s", "vk-spv-offline", "-c", asic, f"--{stage}", str(spv), "-a", str(stats)]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        print(f"    RGA timed out after {timeout}s")
-        return None
+        stats = tmp / "stats.csv"
+        cmd = [str(rga), "-s", "vk-spv-offline", "-c", asic, f"--{stage}", str(spv), "-a", str(stats)]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            print(f"    RGA timed out after {timeout}s")
+            return None
+        except OSError as e:
+            print(f"    RGA failed to launch: {e}")
+            return None
+        # RGA prefixes the ASIC and suffixes the stage, e.g. gfx1100_stats_comp.csv.
+        produced = list(tmp.glob("*stats*.csv"))
+        if proc.returncode != 0 and not produced:
+            print(f"    RGA exit {proc.returncode}: {proc.stderr.strip()[:200]}")
+            return None
+        if not produced:
+            print(f"    RGA wrote no stats CSV (cmd: {' '.join(cmd)})")
+            return None
+        return parse_rga_csv(produced[0])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def stats_cache_key(spv: Path, stage: str, version: str) -> str:
+    """Memoisation key for one module's stats: its own bytes, the stage, and the RGA build.
+
+    RGA burns ~1.5s of fixed process/backend startup per invocation before it compiles anything, and
+    the gate feeds it ~84 modules, so re-analysing untouched shaders dominates the runtime of an
+    edit-one-shader loop. Hashing the module content makes that loop cost one invocation instead of
+    all of them, and it cannot go stale: identical SPIR-V through an identical compiler yields
+    identical stats (the same bit-for-bit reproducibility the cook relies on). The version is in the
+    key because RGA's compiler and stats columns drift between releases, which is why it is pinned.
+    """
+    return f"{hashlib.sha256(spv.read_bytes()).hexdigest()}:{stage}:{version}"
+
+
+def load_stats_cache(path: Path) -> dict[str, dict]:
+    try:
+        entries = json.loads(path.read_text()).get("entries")
+    except (OSError, ValueError):
+        return {}
+    return entries if isinstance(entries, dict) else {}
+
+
+def save_stats_cache(path: Path, entries: dict[str, dict]) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"entries": entries}))
     except OSError as e:
-        print(f"    RGA failed to launch: {e}")
-        return None
-    # RGA prefixes the ASIC and suffixes the stage, e.g. gfx1100_stats_comp.csv.
-    produced = list(tmp.glob("*stats*.csv"))
-    if proc.returncode != 0 and not produced:
-        print(f"    RGA exit {proc.returncode}: {proc.stderr.strip()[:200]}")
-        return None
-    if not produced:
-        print(f"    RGA wrote no stats CSV (cmd: {' '.join(cmd)})")
-        return None
-    return parse_rga_csv(produced[0])
+        print(f"  (could not write stats cache: {e})")
 
 
 _LIVEREG_SUMMARY = re.compile(r"Maximum # VGPR used (\d+), VGPRs allocated by HW: (\d+)")
@@ -388,7 +435,12 @@ def main() -> int:
     ap.add_argument("--spv-dir", default="Engine/cache/shaders", help="Directory of compiled .spv")
     ap.add_argument("--only", default=None, help="Analyse only shaders whose base name contains this")
     ap.add_argument("--threshold", type=float, default=10.0, help="Regression tolerance %% (default 10)")
-    ap.add_argument("--timeout", type=int, default=60, help="Per-shader RGA timeout in seconds")
+    # Hang guard, not a work budget: concurrency stretches each process's wall time (DefaultLit.frag_rt
+    # takes ~30s uncontended and blew a 60s timeout at 16 jobs), and a timeout drops a permutation.
+    ap.add_argument("--timeout", type=int, default=300, help="Per-shader RGA timeout in seconds")
+    ap.add_argument("--jobs", "-j", type=int, default=min(16, os.cpu_count() or 4),
+                    help="RGA invocations in flight (default min(16, cores))")
+    ap.add_argument("--no-cache", action="store_true", help="Ignore memoised stats, re-run RGA on every module")
     ap.add_argument("--update-baseline", action="store_true", help="Write current results as baseline")
     ap.add_argument("--dry-run", action="store_true", help="Print planned RGA invocations, don't run")
     ap.add_argument("--livereg", action="store_true",
@@ -460,18 +512,62 @@ def main() -> int:
 
     print(f"Mode      : {'UPDATE BASELINE' if args.update_baseline else 'compare vs baseline'}\n")
 
-    import json  # local: only needed past the dry-run path
-    current: dict[str, dict] = {}
-    for base, files in sorted(groups.items()):
-        perms = []
-        for spv, stage in files:
-            m = run_rga(rga, args.asic, stage, spv, args.timeout)
-            if m is not None:
-                perms.append(m)
-        if perms:
-            current[base] = collapse_worst(perms)
-        else:
-            print(f"  {base:<24} RGA produced no parseable stats")
+    # Tools/rga/ is gitignored and already restored by CI's RGA cache, so the memoised stats ride
+    # along with the toolchain download rather than needing a cache step of their own.
+    cache_file = repo_root / "Tools" / "rga" / f"stats-cache-{args.asic}.json"
+    cache = {} if args.no_cache else load_stats_cache(cache_file)
+
+    tasks = [(base, spv, stage) for base, files in sorted(groups.items()) for spv, stage in files]
+    keys = [stats_cache_key(spv, stage, args.rga_version) for _, spv, stage in tasks]
+
+    # The rt and base permutations of any shader that never references SS_RAYTRACING compile to
+    # byte-identical SPIR-V, so the 84 modules carry only 50 distinct keys. Dispatching per key rather
+    # than per module drops 34 RGA launches from a cold run, since the same bytes cannot produce
+    # different stats.
+    unique: dict[str, tuple[str, Path, str]] = {}
+    for key, task in zip(keys, tasks):
+        unique.setdefault(key, task)
+
+    def analyse(item: tuple[str, tuple[str, Path, str]]) -> tuple[dict | None, bool]:
+        key, (_, spv, stage) = item
+        hit = cache.get(key)
+        if hit is not None:
+            return hit, True
+        return run_rga(rga, args.asic, stage, spv, args.timeout), False
+
+    # One RGA process per unique module, run across a pool: RGA is single-threaded per invocation, so
+    # the only way to use more than one core is to have more than one of it in flight.
+    started = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
+        computed = dict(zip(unique, pool.map(analyse, unique.items())))
+    elapsed = time.perf_counter() - started
+
+    fresh = {k: m for k, (m, hit) in computed.items() if m is not None and not hit}
+    if fresh and not args.no_cache:
+        cache.update(fresh)
+        save_stats_cache(cache_file, cache)
+
+    results = [computed[k] for k in keys]
+    ran = sum(1 for _, hit in computed.values() if not hit)
+    print(f"Analysed {len(tasks)} modules ({len(unique)} unique) in {elapsed:.1f}s "
+          f"({len(unique) - ran} cached, {ran} via RGA, jobs={args.jobs})\n")
+
+    # A dropped module is a hard failure, never a warning: collapse_worst takes the worst case ACROSS
+    # permutations, so losing one silently reports the surviving permutation's weaker numbers and can
+    # turn a genuine regression into a PASS (a 60s timeout on DefaultLit.frag_rt did exactly that).
+    failed = [spv.name for (_, spv, _), (m, _) in zip(tasks, results) if m is None]
+    if failed:
+        print(f"FAIL: RGA produced no stats for {len(failed)} module(s): "
+              f"{', '.join(failed[:8])}{' ...' if len(failed) > 8 else ''}")
+        print("  On timeouts, raise --timeout or lower --jobs (concurrency stretches per-process wall time).")
+        return 1
+
+    by_base: dict[str, list[dict]] = {}
+    for (base, _, _), (m, _) in zip(tasks, results):
+        by_base.setdefault(base, []).append(m)
+
+    # sorted so the written baseline JSON keeps a stable key order
+    current = {base: collapse_worst(by_base[base]) for base in sorted(by_base)}
 
     if not current:
         print("FAIL: RGA produced no results for any shader.")
