@@ -119,7 +119,12 @@ _SPILL_METRICS = ("scratch", "vgpr_spills", "sgpr_spills")
 # the VGPR-limited theoretical occupancy only (and gate LDS growth separately). Not measured -- see RGP.
 RDNA3_VGPR_FILE = 1536
 RDNA3_MAX_WAVES = 16
-RDNA3_VGPR_GRANULARITY = 16
+# Wave32 allocation granularity is 12, not 16, and it is not cosmetic: it decides which side of a wave
+# boundary a shader lands on. RGA reports the ground truth per compile ("VGPR allocation granularity: 12",
+# and e.g. 167 requested -> 168 allocated). 16 mismodels every request that is not already a multiple of
+# it: 167 -> 176 (8 waves) instead of 168 (9), and 169 -> 176 instead of 180. Occupancy is this gate's
+# PRIMARY metric, so an error here silently hides the wave-boundary crossings it exists to catch.
+RDNA3_VGPR_GRANULARITY = 12
 
 
 def vgpr_occupancy(vgprs: float, asic: str) -> int | None:
@@ -243,10 +248,24 @@ def spirv_stage(spv: Path) -> str | None:
 
 
 def base_shader_name(spv: Path) -> str:
-    """'DefaultLit.frag_e24aa653.spv' -> 'DefaultLit.frag'; 'IBLBRDFLut_d068.spv' -> 'IBLBRDFLut'."""
+    """SPIR-V filename -> the key this shader is gated under.
+
+    'DefaultLit.frag_e24aa653.spv'   -> 'DefaultLit.frag'
+    'GIDenoise.comp__ao_rt.spv'      -> 'GIDenoise.comp[ao]'
+
+    The trailing '_<tag>' is either the device-capability permutation (rt/base) or the runtime cache's
+    content hash, and is stripped either way: those are alternatives on one device, so collapse_worst
+    folds them and the gate compares the heaviest. A '__<feature>' segment is a CALL-SITE permutation and
+    is KEPT, because those variants run simultaneously in one frame (GI, AO and shadows each dispatch
+    their own GIDenoise). Collapsing them would report only the heaviest consumer and silently hide a
+    change that improves the others.
+    """
     stem = spv.name[:-4] if spv.name.endswith(".spv") else spv.name
     cut = stem.rfind("_")
-    return stem[:cut] if cut > 0 else stem
+    if cut > 0:
+        stem = stem[:cut]
+    sep = stem.find("__")
+    return stem if sep < 0 else f"{stem[:sep]}[{stem[sep + 2:]}]"
 
 
 def _match_metric(header: list[str], aliases: list[str]) -> int | None:
