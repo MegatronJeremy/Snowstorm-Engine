@@ -13,10 +13,13 @@ coordinate descent with a per-parameter line search -- dependency-free and inter
 exactly which value of each knob was searched and chosen), which suits a thesis better than an opaque
 black box; swap in Optuna/CMA-ES later if sample-efficiency becomes the bottleneck.
 
-The real-time vs reference gap is an un-occluded ambient shadow-fill (see #161), so the levers are the
-ambient (render.ibl.intensity), the occlusion (AO radius/rays), and the indirect (render.gi.*). The
-search tunes OCCLUSION-QUALITY knobs ONLY (ray counts, AO radius, denoiser) at FIXED physical
-intensities. Intensity is deliberately NOT a lever: runs showed the optimizer always dims gi/ibl to
+The residual real-time vs reference gap is an un-occluded ambient shadow-fill (see #161), so the levers
+are the occlusion (AO radius/rays, denoiser edge-stop) and the indirect (render.gi.*).
+Not every part of that gap is tunable: the larger half of it was a missing 1/PI Lambertian
+normalization on the RT secondary-hit sun term, which no CVar could reach. Treat a knob that refuses to
+close a gap as evidence of a bug in the technique, not as a band that needs widening. The
+search tunes OCCLUSION-QUALITY knobs ONLY (ray counts, AO radius, gather range, denoiser) at FIXED
+physical intensities. Intensity is deliberately NOT a lever: runs showed the optimizer always dims gi/ibl to
 darken the (structurally over-bright) real-time indirect toward the reference's shadows -- a metric-
 gaming shortcut, not a quality gain (even near-physical bands pinned to their floors). With brightness
 fixed, any FLIP gain is legitimately better occlusion; no gain is the honest signal that the gap is
@@ -67,17 +70,45 @@ PARAM_SPACE = {
         ("SS_RENDER_GI_DENOISE_VARIANCE", 0.5, 4.0, False, 2.0), # denoiser strength (bias vs noise)
     ],
     "all-rt": [
-        ("SS_RENDER_GI_RAYS", 1, 8, True, 4),                        # GI quality; prior runs: 4 optimal
-        ("SS_RENDER_GI_RANGE", 4.0, 30.0, False, 21.0),             # indirect gather distance; interior optimum ~21 (v3)
+        ("SS_RENDER_GI_RANGE", 4.0, 30.0, False, 17.0),             # indirect gather distance, and the one knob with a
+                                                                     # standalone fidelity-confirmed gain (+8.8% FLIP, +0.59dB
+                                                                     # PSNR at 17 vs the 8.0 default). GI.comp sets ray.TMax =
+                                                                     # GIRange and RayQuery cannot distinguish "left the scene"
+                                                                     # from "ran out of TMax", so both land in the sky-cube else
+                                                                     # branch: too short a range feeds un-occluded sky to rays
+                                                                     # that died in mid-air inside a closed interior.
         ("SS_RENDER_AO_RADIUS", 0.2, 3.0, False, 0.5),              # occlusion extent, CAPPED at ~3 physical: beyond that AO
-                                                                     # becomes a global dimmer (gaming, #161). A clamp at 3 =
-                                                                     # residual structural over-brightness to investigate, not crank.
-        ("SS_RENDER_GI_SPEC_AMBIENT_FADE", 0.0, 1.0, False, 1.0),  # #163 env-spec occlusion (validated ->1.0 twice)
-        ("SS_RENDER_SHADOW_SUN_ANGLE_DEG", 0.1, 5.0, False, 1.0),  # NEW: sun soft-shadow penumbra width vs the PT's real sun angle
-        ("SS_RENDER_SHARPEN", 0.0, 1.0, False, 0.0),               # NEW: post-sharpen detail vs reference
-        ("SS_RENDER_REFLECTIONS_MAX_ROUGHNESS", 0.3, 1.0, False, 0.8), # NEW: glossy/env cutoff (low expected: reflections FLIP-invisible)
-        # DROPPED (proven no value for static FLIP): gi.denoise.iterations/variance (v3 flat -- temporal accumulation
-        # denoises at 200 static frames; they matter under motion, #159), ao.rays (v2 flat). Left at defaults.
+                                                                     # becomes a global dimmer (gaming, #161). Near-flat in
+                                                                     # isolation now (0.5 -> 0.2 is worth ~0); the band above
+                                                                     # 0.5 measurably hurts, so the cap is the load-bearing part.
+        ("SS_RENDER_GI_SPEC_AMBIENT_FADE", 0.0, 1.0, False, 1.0),  # #163 env-spec occlusion (validated ->1.0 three times)
+        ("SS_RENDER_SHADOW_SUN_ANGLE_DEG", 0.1, 5.0, False, 1.0),  # sun soft-shadow penumbra width vs the PT's real sun angle.
+                                                                     # Reaches the default inline path via frame.SunAngularRadius;
+                                                                     # shadows.normalbias does NOT (stochastic pass only), so it is absent.
+        ("SS_RENDER_REFLECTIONS_MAX_ROUGHNESS", 0.3, 1.0, False, 0.8), # glossy/env cutoff: traced radiance instead of the
+                                                                     # un-occluded env cube, the #163 theme. Near-flat standalone
+                                                                     # (+0.8%, inside the +-3% noise floor); kept as an occlusion knob.
+        ("SS_RENDER_GI_BOUNCE_AMBIENT", 0.0, 1.0, False, 0.5),     # un-occluded IBL ambient injected at each RT-GI secondary hit.
+                                                                     # A constant-visibility approximation, so it is an occlusion knob,
+                                                                     # not an intensity dimmer: the floor (0.0) is the physical end,
+                                                                     # matching the path tracer, which injects no free ambient per bounce.
+                                                                     # Searches interior and symmetric around 0.5, confirming the default.
+        # DROPPED, measured flat on this metric: gi.denoise.iterations (0..5 spans 0.56% mean FLIP),
+        # gi.denoise.variance (4.0 -> off, 0.07%), rt.depthsigma (0.2% across its whole 20..100 band, both rounds).
+        # One cause covers all three: every technique here renders with TAA, and render.taa.maxblend 0.97
+        # accumulates the final image over ~33 frames, so a 200-frame static capture converges whatever the GI
+        # chain does (disabling GI temporal accumulation outright moves mean FLIP by 0.3%). The a-trous then
+        # filters an already-clean image, and the static metric scores it BACKWARDS: with temporal off,
+        # iterations=0 wins on FLIP (-3.0%) and PSNR (+0.09dB) while losing SSIM (-0.0024), the signature of
+        # removed blur. An optimizer handed these would delete a filter that earns its keep under motion and on
+        # disocclusion, which a static capture cannot reach (#159).
+        # EXCLUDED BY DESIGN, same reasoning as intensity: the resolution knobs (gi.scale, ao.scale) and the sample
+        # counts (gi.rays, ao.rays) would be driven straight to the ceiling for a 4x cost the static metric cannot
+        # see (gi.rays 2->8 measured +4.3% FLIP for 4x the rays). Buying FLIP with GPU time is the mirror image of
+        # buying it with brightness; that belongs in perf-bench. render.sharpen is excluded for the sharper version
+        # of the same reason: it is the one knob measured to move FLIP and fidelity in OPPOSITE directions (+0.5%
+        # FLIP but -0.44dB PSNR, -0.018 SSIM), so leaving it in lets the optimizer trade real fidelity for a
+        # perceptual-metric win.
     ],
 }
 
@@ -181,10 +212,11 @@ def main() -> int:
     print(f"baseline defaults : {base_score:.4f}")
     print(f"tuned             : {best_score:.4f}  ({100.0 * (base_score - best_score) / base_score:+.1f}% FLIP)")
     print(f"evals             : {evals}")
-    print("best CVars:")
+    # Env form, not a derived CVar name: the CVar->env mapping (dots -> '_') is not reversible, and several
+    # CVars carry underscores of their own (render.gi.bounce_ambient), so a derived name would name nothing.
+    print("best (env form):")
     for env, v in best_str.items():
-        cvar = env[3:].lower().replace("_", ".")  # SS_RENDER_GI_INTENSITY -> render.gi.intensity
-        print(f"  {cvar} = {v}")
+        print(f"  {env}={v}")
 
     # Boundary-clamp check: a best value pinned to a band edge means the true optimum is outside the
     # (deliberately near-physical) range -- likely the optimizer still trying to game the metric, or the
