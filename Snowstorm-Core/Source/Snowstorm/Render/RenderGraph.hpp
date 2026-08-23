@@ -58,10 +58,44 @@ namespace Snowstorm
 			std::function<void(CommandContext&)> Execute;
 		};
 
+		// Why one pass must run after another, derived from overlapping access to a single texture. The
+		// three hazards are the standard set: a consumer must see a producer's write (RAW), a writer must
+		// not clobber data an earlier pass still reads (WAR), and two writers must stay ordered (WAW).
+		enum class Hazard : uint8_t
+		{
+			ReadAfterWrite,
+			WriteAfterRead,
+			WriteAfterWrite
+		};
+
+		struct Dependency
+		{
+			uint32_t Producer = 0; // pass index that must run first
+			Hazard Kind = Hazard::ReadAfterWrite;
+			const Texture* Resource = nullptr;
+		};
+
 		void Reset();
 
 		// Ordered passes (minimal version)
 		void AddPass(Pass pass);
+
+		// Dependencies of each pass on earlier ones, indexed to match the pass list. Derived from declared
+		// Reads/Writes plus the implicit write of a pass's own Target. Declaration order is a valid
+		// topological order by construction, so this constrains which reorderings stay correct: a pass may
+		// move no earlier than one past its latest producer.
+		//
+		// Only as complete as the declarations. A pass touching a resource it does not declare (a bindless
+		// table, an acceleration structure, a buffer, since only textures are tracked) carries a real
+		// ordering requirement no edge here expresses, and would appear free to move. DumpDependencies
+		// reports which passes look unconstrained, precisely so those cases are visible before any
+		// scheduler trusts this.
+		[[nodiscard]] std::vector<std::vector<Dependency>> BuildDependencies() const;
+
+		// Log the dependency graph and, per pass, the earliest slot it could legally occupy. Gated by the
+		// render.graph.dumpdeps CVar (a frame countdown), so it is a standing diagnostic rather than a
+		// throwaway probe.
+		void DumpDependencies() const;
 
 		// Records passes into an already-begun frame command context. `ctx` is the graphics context the frame
 		// opened with; when the graph forks to the compute queue it obtains the async context (and the fresh

@@ -1,7 +1,12 @@
 #include "Snowstorm/Render/RenderGraph.hpp"
 
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
+
+#include <algorithm>
+#include <optional>
+#include <string>
 
 namespace Snowstorm
 {
@@ -41,6 +46,156 @@ namespace Snowstorm
 		}
 	}
 
+	namespace
+	{
+		// Textures a pass writes: its declared Storage/Sampled Writes plus every attachment of its Target,
+		// which is an implicit write that no Writes entry records (Begin/EndRenderPass owns those
+		// transitions). Omitting the target would leave every raster pass looking like it produces nothing.
+		void CollectWrites(const RenderGraph::Pass& pass, std::vector<const Texture*>& out)
+		{
+			for (const RenderGraph::ResourceAccess& w : pass.Writes)
+			{
+				if (w.Texture)
+				{
+					out.push_back(w.Texture.get());
+				}
+			}
+			if (!pass.Target)
+			{
+				return;
+			}
+			const RenderTargetDesc& desc = pass.Target->GetDesc();
+			for (const RenderTargetAttachment& att : desc.ColorAttachments)
+			{
+				if (att.View && att.View->GetTexture())
+				{
+					out.push_back(att.View->GetTexture().get());
+				}
+			}
+			if (desc.DepthAttachment && desc.DepthAttachment->View && desc.DepthAttachment->View->GetTexture())
+			{
+				out.push_back(desc.DepthAttachment->View->GetTexture().get());
+			}
+		}
+
+		void CollectReads(const RenderGraph::Pass& pass, std::vector<const Texture*>& out)
+		{
+			for (const RenderGraph::ResourceAccess& r : pass.Reads)
+			{
+				if (r.Texture)
+				{
+					out.push_back(r.Texture.get());
+				}
+			}
+		}
+
+		const char* HazardName(const RenderGraph::Hazard h)
+		{
+			switch (h)
+			{
+			case RenderGraph::Hazard::ReadAfterWrite:
+				return "RAW";
+			case RenderGraph::Hazard::WriteAfterRead:
+				return "WAR";
+			case RenderGraph::Hazard::WriteAfterWrite:
+				return "WAW";
+			}
+			return "?";
+		}
+	}
+
+	std::vector<std::vector<RenderGraph::Dependency>> RenderGraph::BuildDependencies() const
+	{
+		const size_t count = m_Passes.size();
+		std::vector<std::vector<const Texture*>> reads(count);
+		std::vector<std::vector<const Texture*>> writes(count);
+		for (size_t i = 0; i < count; ++i)
+		{
+			CollectReads(m_Passes[i], reads[i]);
+			CollectWrites(m_Passes[i], writes[i]);
+		}
+
+		// Only the LATEST earlier pass matters per resource and hazard: an edge to anything before it is
+		// implied by transitivity, so keeping just the latest leaves the ordering constraint identical
+		// while avoiding a quadratic blow-up of redundant edges.
+		std::vector<std::vector<Dependency>> deps(count);
+		const auto lastTouching = [](const std::vector<std::vector<const Texture*>>& sets, const size_t before,
+		                             const Texture* res) -> std::optional<uint32_t>
+		{
+			for (size_t j = before; j-- > 0;)
+			{
+				if (std::find(sets[j].begin(), sets[j].end(), res) != sets[j].end())
+				{
+					return static_cast<uint32_t>(j);
+				}
+			}
+			return std::nullopt;
+		};
+
+		for (size_t i = 0; i < count; ++i)
+		{
+			for (const Texture* r : reads[i])
+			{
+				if (const auto producer = lastTouching(writes, i, r))
+				{
+					deps[i].push_back({*producer, Hazard::ReadAfterWrite, r});
+				}
+			}
+			for (const Texture* w : writes[i])
+			{
+				if (const auto reader = lastTouching(reads, i, w))
+				{
+					deps[i].push_back({*reader, Hazard::WriteAfterRead, w});
+				}
+				if (const auto writer = lastTouching(writes, i, w))
+				{
+					deps[i].push_back({*writer, Hazard::WriteAfterWrite, w});
+				}
+			}
+		}
+		return deps;
+	}
+
+	void RenderGraph::DumpDependencies() const
+	{
+		const std::vector<std::vector<Dependency>> deps = BuildDependencies();
+
+		SS_CORE_INFO("RenderGraph: {} passes", m_Passes.size());
+		uint32_t unconstrained = 0;
+		for (size_t i = 0; i < m_Passes.size(); ++i)
+		{
+			uint32_t earliest = 0;
+			for (const Dependency& d : deps[i])
+			{
+				earliest = std::max(earliest, d.Producer + 1);
+			}
+
+			std::string edges;
+			for (const Dependency& d : deps[i])
+			{
+				if (!edges.empty())
+				{
+					edges += ", ";
+				}
+				edges += std::string(HazardName(d.Kind)) + " <- " + m_Passes[d.Producer].Name;
+			}
+			if (edges.empty())
+			{
+				edges = "none";
+				++unconstrained;
+			}
+
+			SS_CORE_INFO("  [{:>2}] {:<28} queue={} earliest={} deps: {}", i, m_Passes[i].Name,
+			             m_Passes[i].Queue == GpuQueue::AsyncCompute ? "async" : "gfx", earliest, edges);
+		}
+
+		// A pass with no edges is either genuinely independent or touching resources the graph cannot see
+		// (buffers, the bindless table, the TLAS). A scheduler would treat both as free to move, so this
+		// count is the measure of how far the declarations can currently be trusted.
+		SS_CORE_WARN("RenderGraph: {} pass(es) have no declared dependencies and would appear free to move",
+		             unconstrained);
+	}
+
 	void RenderGraph::Reset()
 	{
 		m_Passes.clear();
@@ -68,6 +223,12 @@ namespace Snowstorm
 
 	void RenderGraph::Execute(CommandContext& ctx) const
 	{
+		if (const int dumpFrames = CVars::GraphDumpDeps.Get(); dumpFrames > 0)
+		{
+			DumpDependencies();
+			CVars::GraphDumpDeps.Set(dumpFrames - 1);
+		}
+
 		// Resolved once: neither the device capability nor the CVar changes mid-frame. False runs every
 		// pass inline on graphics in declaration order.
 		const bool asyncAvailable = Renderer::IsAsyncComputeAvailable();
