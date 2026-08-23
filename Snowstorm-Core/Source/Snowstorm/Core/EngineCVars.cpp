@@ -33,6 +33,7 @@ namespace Snowstorm::CVars
 
 	CVar<bool> EcsParallel{"ecs.parallel", true, "Run data-parallel systems (System::ParallelForEach) across JobSystem workers (off = serial)"};
 	CVar<bool> AsyncCompute{"render.async_compute", true, "Run render-graph passes marked AsyncCompute on an independent compute queue, overlapping graphics (off = inline on the graphics queue)"};
+	CVar<int> GraphDumpDeps{"render.graph.dumpdeps", 0, "Dump the render graph's pass dependency edges and per-pass earliest legal slot for this many frames"};
 
 	CVar<int> StressRotators{"stress.rotators", 0, "Bare Transform+Rotator entities the stress bake spawns (heavy data-parallel ECS workload for the #85 benchmark)", CVarFlags::ReadOnly};
 

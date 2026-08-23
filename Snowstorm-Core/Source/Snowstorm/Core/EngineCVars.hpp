@@ -70,6 +70,11 @@ namespace Snowstorm::CVars
 	// a kill-switch for a cross-queue hazard. No effect without a dedicated compute family.
 	extern CVar<bool> AsyncCompute;
 
+	// Frames of render-graph dependency dumps remaining, decremented as each is emitted. Reports the
+	// producer/consumer edges the graph derives and how far each pass could legally move, which is the
+	// prerequisite for trusting any reordering. Non-zero only on demand: one frame is a full picture.
+	extern CVar<int> GraphDumpDeps;
+
 	// Number of bare Transform+Rotator entities the stress bake ("scene.bake stress") spawns, on top of
 	// the renderable fields. These carry no mesh/material, so they load only RotatorSystem's per-entity
 	// loop: the heavy, pure workload for the parallel-ECS before/after benchmark (#85). 0 (default) = none.
