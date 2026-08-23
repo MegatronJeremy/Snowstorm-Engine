@@ -3,13 +3,13 @@
   "config": "Projects/Sandbox/assets/scenes/Sponza.world",
   "frames": 300,
   "timestampsSupported": true,
-  "totalGpuMs": 6.2857,
+  "totalGpuMs": 4.6053,
   "passes": {
     "CameraDepthPrepass": {
-      "avgMs": 0.0451,
-      "minMs": 0.0423,
-      "maxMs": 0.0847,
-      "fragInvocations": 4011865,
+      "avgMs": 0.0444,
+      "minMs": 0.0424,
+      "maxMs": 0.0926,
+      "fragInvocations": 4011901,
       "depth": 0
     },
     "DepthPrepassBarrier": {
@@ -20,23 +20,23 @@
       "depth": 0
     },
     "Editor": {
-      "avgMs": 0.0441,
-      "minMs": 0.0377,
-      "maxMs": 0.171,
-      "fragInvocations": 9773125,
+      "avgMs": 0.0397,
+      "minMs": 0.0373,
+      "maxMs": 0.1244,
+      "fragInvocations": 9773275,
       "depth": 0
     },
     "Forward": {
-      "avgMs": 5.8986,
-      "minMs": 5.6836,
-      "maxMs": 11.9235,
-      "fragInvocations": 2816662,
+      "avgMs": 4.2592,
+      "minMs": 4.0479,
+      "maxMs": 8.1768,
+      "fragInvocations": 2816646,
       "depth": 0
     },
     "PostProcess": {
-      "avgMs": 0.0514,
-      "minMs": 0.0149,
-      "maxMs": 0.2507,
+      "avgMs": 0.0386,
+      "minMs": 0.0148,
+      "maxMs": 0.1426,
       "fragInvocations": 2037560,
       "depth": 0
     },
@@ -48,16 +48,16 @@
       "depth": 1
     },
     "TemporalResolve": {
-      "avgMs": 0.1692,
-      "minMs": 0.0922,
-      "maxMs": 0.4053,
+      "avgMs": 0.1468,
+      "minMs": 0.1234,
+      "maxMs": 0.3052,
       "fragInvocations": 2037560,
       "depth": 0
     },
     "Velocity": {
-      "avgMs": 0.0745,
-      "minMs": 0.0716,
-      "maxMs": 0.1258,
+      "avgMs": 0.0739,
+      "minMs": 0.0711,
+      "maxMs": 0.1185,
       "fragInvocations": 3064205,
       "depth": 0
     }
