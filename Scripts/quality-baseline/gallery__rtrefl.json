@@ -2,7 +2,7 @@
   "device": "AMD Radeon RX 9070 XT",
   "viewpoint": "gallery",
   "technique": "rtrefl",
-  "flip": 0.5255398750305176,
-  "psnr": 12.520761965123523,
-  "ssim": 0.28864519546485734
+  "flip": 0.5255584120750427,
+  "psnr": 12.52099623296759,
+  "ssim": 0.2886404780756781
 }

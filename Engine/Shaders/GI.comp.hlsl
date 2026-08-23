@@ -53,6 +53,14 @@ cbuffer GICB : register(b3, space0)
 	uint ReflGeoTableAddrHi;
 	uint RayCount;           // hemisphere-gather rays per pixel this frame (render.gi.rays, clamped [1,16])
 	float GIBounceAmbient;   // #39: scale on the un-occluded IBL ambient at GI secondary hits (render.gi.bounce_ambient)
+
+	// RTHitShading.hlsli's local-light contract. 16 = Snowstorm::kRTHitMaxLights (RTHitLights.hpp), which also
+	// owns the packing; HitLightCount is 0 whenever render.rt.hit_lights is off.
+	uint HitLightCount;
+	uint3 _PadHitLights;
+	float4 HitLightPosRange[16];
+	float4 HitLightColor[16];
+	float4 HitLightDirCos[16];
 };
 
 // Set 3 bindless (Textures/Cubemaps/SceneTLAS) + the geometry-table read + one-bounce hit shading
@@ -60,6 +68,7 @@ cbuffer GICB : register(b3, space0)
 // see RTHitShading.hlsli's contract for the CB scalars it expects (SunDirection/Color/Intensity,
 // LightCount, ShadowStrength, IrradianceCubeIndex, IBLIntensity — all provided by GICB above) and the
 // LinearSampler on set 0. GeoTableAddress stays here (reassembles THIS CB's ReflGeoTableAddr lo/hi halves).
+#define RTHIT_LOCAL_LIGHTS // the CB above carries HitLightCount + the three packed arrays
 #include "Include/RTHitShading.hlsli"
 #include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky (#129 Inc 1b)
 

@@ -127,6 +127,10 @@ def main() -> int:
     ap.add_argument("--ref-frames", type=int, default=250, help="PT accumulation frames for the (cached) reference")
     ap.add_argument("--tech-maxframes", type=int, default=200, help="Hard frame cap for real-time trial captures "
                     "(they never converge; uncapped each burns the 3000-frame safety cap ~100s). Default 200 -> ~7s.")
+    ap.add_argument("--param", action="append", metavar="CVAR_ENV",
+                    help="Restrict the search to these parameters (repeatable, substring match on the env "
+                         "name). The rest stay at their seed. For re-tuning one knob after a change that "
+                         "only moved that knob's balance, instead of re-searching the whole space.")
     ap.add_argument("--timeout", type=int, default=300, help="Per-capture wall-clock timeout in seconds")
     ap.add_argument("--config", default="Debug")
     ap.add_argument("--scene", default=qb.DEFAULT_SCENE)
@@ -146,7 +150,18 @@ def main() -> int:
     base_env = dict(qb.TECHNIQUES[args.technique])
     params = PARAM_SPACE[args.technique]
 
-    print(f"Tuning '{args.technique}' over {[p[0] for p in params]}")
+    # --param narrows the SEARCH, not the override set: every parameter still ships its seed to the engine, so
+    # a narrowed run and a full run evaluate the same configuration space, just with fewer axes moving.
+    search = params
+    if args.param:
+        search = [p for p in params if any(sub.upper() in p[0] for sub in args.param)]
+        if not search:
+            print(f"FAIL: --param {args.param} matched none of {[p[0] for p in params]}")
+            return 1
+
+    print(f"Tuning '{args.technique}' over {[p[0] for p in search]}")
+    if len(search) != len(params):
+        print(f"  (held at seed: {[p[0] for p in params if p not in search]})")
     print(f"Viewpoints: {list(qb.VIEWPOINTS)}   rounds={args.rounds} samples={args.samples}\n")
 
     # 1) Capture + cache the PT reference for each viewpoint (once). Runtime + camera.override per viewpoint.
@@ -194,7 +209,7 @@ def main() -> int:
     print(f"seed {best_str} -> {best_score:.4f}\n")
 
     for r in range(args.rounds):
-        for (env, lo, hi, is_int, _) in params:
+        for (env, lo, hi, is_int, _) in search:
             step = (hi - lo) / (args.samples - 1) if args.samples > 1 else 0.0
             for i in range(args.samples):
                 val = lo + step * i
@@ -223,7 +238,7 @@ def main() -> int:
     # (deliberately near-physical) range -- likely the optimizer still trying to game the metric, or the
     # band being too tight. Flag it; the value should not be applied blindly.
     clamped = []
-    for (env, lo, hi, is_int, _) in params:
+    for (env, lo, hi, is_int, _) in search:
         v = float(best_str[env])
         edge = (hi - lo) * 0.001 + 1e-6
         if v <= lo + edge:

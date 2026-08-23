@@ -23,12 +23,12 @@
     },
     "DefaultLit.frag": {
       "vgprs": 132.0,
-      "sgprs": 75.0,
+      "sgprs": 72.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 31288.0,
+      "isa_size": 31524.0,
       "permutations": 2
     },
     "DepthNormal.frag": {
@@ -82,13 +82,13 @@
       "permutations": 2
     },
     "GI.comp": {
-      "vgprs": 75.0,
-      "sgprs": 45.0,
+      "vgprs": 85.0,
+      "sgprs": 49.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 6704.0,
+      "isa_size": 10536.0,
       "permutations": 2
     },
     "GIDenoise.comp": {
@@ -248,7 +248,7 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 21848.0,
+      "isa_size": 21872.0,
       "permutations": 2
     },
     "Pick.comp": {
@@ -272,13 +272,13 @@
       "permutations": 2
     },
     "Reflection.comp": {
-      "vgprs": 80.0,
+      "vgprs": 83.0,
       "sgprs": 46.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 6676.0,
+      "isa_size": 6808.0,
       "permutations": 2
     },
     "SSAO.comp": {
@@ -328,7 +328,7 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 7084.0,
+      "isa_size": 7176.0,
       "permutations": 2
     },
     "Shadow.frag": {

@@ -46,6 +46,11 @@ namespace Snowstorm
 			uint32_t _Pad1 = 0;
 		};
 
+		// The shader's own cbuffer rows sum to this. Catches the whole-struct half of a drift at compile time
+		// (a per-field offset shuffle that preserves the total still slips through, so read the shader when
+		// reordering).
+		static_assert(sizeof(ReflCB) == 160, "ReflCB no longer matches ReflCB in Reflection.comp.hlsl");
+
 		// Binding indices in Reflection.comp.hlsl set 0 (#129 Inc 1c added the shading-normal SRV at 1).
 		constexpr uint32_t kGBufferBinding = 0;
 		constexpr uint32_t kShadingBinding = 1;

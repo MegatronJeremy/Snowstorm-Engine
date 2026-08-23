@@ -8,6 +8,7 @@
 #include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/FrameData.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
+#include "Snowstorm/Render/Passes/RTHitLights.hpp"
 #include "Snowstorm/Render/Shader.hpp"
 #include "Snowstorm/Service/ServiceManager.hpp"
 
@@ -45,7 +46,21 @@ namespace Snowstorm
 			uint32_t ReflGeoTableAddrHi = 0;
 			uint32_t RayCount = 2;        // render.gi.rays (clamped) — hemisphere-gather rays/pixel this frame
 			float GIBounceAmbient = 1.0f; // #39: scale on un-occluded IBL ambient at GI secondary hits
+
+			// Local lights for RTHitShading.hlsli's secondary-hit NEE. The uvec3 pad is not optional: HLSL
+			// starts a float4 array on a 16-byte boundary, so the shader has 12 bytes there whether or not
+			// this struct names them.
+			uint32_t HitLightCount = 0;
+			glm::uvec3 _PadHitLights{0, 0, 0};
+			glm::vec4 HitLightPosRange[kRTHitMaxLights]{};
+			glm::vec4 HitLightColor[kRTHitMaxLights]{};
+			glm::vec4 HitLightDirCos[kRTHitMaxLights]{};
 		};
+
+		// The shader's own cbuffer rows sum to this. Catches the whole-struct half of a drift at compile time
+		// (a per-field offset shuffle that preserves the total still slips through, so read the shader when
+		// reordering).
+		static_assert(sizeof(GICB) == 1008, "GICB no longer matches GICB in GI.comp.hlsl");
 
 		// Binding indices in GI.comp.hlsl set 0 (G-buffer color: .xy normal, .z roughness; depth is a separate SRV).
 		constexpr uint32_t kGBufferBinding = 0;
@@ -140,6 +155,11 @@ namespace Snowstorm
 		cb.ReflGeoTableAddrHi = static_cast<uint32_t>(tableAddr >> 32);
 		cb.RayCount = static_cast<uint32_t>(CVars::ClampedGIRayCount());
 		cb.GIBounceAmbient = CVars::GIBounceAmbient.Get();
+
+		if (CVars::RTHitLights.Get())
+		{
+			cb.HitLightCount = PackRTHitLights(frame.Lights, cb.HitLightPosRange, cb.HitLightColor, cb.HitLightDirCos);
+		}
 
 		m_ParamBuffers[frameIndex]->SetData(&cb, sizeof(GICB), 0);
 

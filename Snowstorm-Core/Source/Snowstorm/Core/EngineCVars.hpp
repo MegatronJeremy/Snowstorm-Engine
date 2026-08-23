@@ -374,6 +374,12 @@ namespace Snowstorm::CVars
 	// per bounce double-counts the sky and over-fills shadows vs the path-traced reference; lower = closer.
 	extern CVar<float> GIBounceAmbient;
 
+	// Local (point/spot) lights at RT GI secondary hits, one importance-picked light + one shadow ray per hit
+	// (MegaLights estimator). Without it the bounce sees only the sun, while the PT reference sees every light.
+	// GI only: the reflection pass compiles the block out (RTHIT_LOCAL_LIGHTS in GI.comp.hlsl alone), since the
+	// same estimator there measured no quality gain on Sponza at twice the GI side's cost.
+	extern CVar<bool> RTHitLights;
+
 	// Ambient-occlusion technique (#151), a mode CVar (mirrors render.shadows.mode) for a clean thesis A/B:
 	// 0 = Off, 1 = SSAO (screen-space, any GPU), 2 = RT (hardware ray query, RT GPU only). Both techniques
 	// write the SAME half-res AOTarget the forward pass samples, so the forward shader is agnostic to which
