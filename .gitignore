@@ -40,10 +40,12 @@ ALL_BUILD.*
 ZERO_CHECK.*
 Makefile
 
-# Local vcpkg overlay ports are real sources and MUST be committed, despite the
+# Local vcpkg overlay ports and triplets are real sources and MUST be committed, despite the
 # blanket *.json / *.cmake ignores above (those target generated build files).
 !Scripts/vcpkg-overlays/
 !Scripts/vcpkg-overlays/**
+!Scripts/vcpkg-triplets/
+!Scripts/vcpkg-triplets/**
 
 # The asset registry maps the UUID handles in committed scenes to their files. It
 # is project data, not build output, so it must travel with the scenes (despite

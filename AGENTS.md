@@ -74,6 +74,17 @@ py Scripts/Generate-Solution.py --clean         # wipe build/ first
 py Scripts/Generate-Solution.py --fresh         # also wipe vcpkg installed/buildtrees (full reinstall)
 ```
 
+**MSVC toolset is detected, not hardcoded.** vcpkg and CMake pick a toolset by different rules
+(vcpkg takes the latest installed minor version; a bare `-T v143` takes the VS instance default),
+and when they diverge Catch2 fails to link with LNK2019 on vectorized-STL symbols. The script
+resolves the latest installed toolset once via `vswhere` and gives the same version to both: CMake
+via `-T v143,version=<ver>`, vcpkg via the overlay triplet in `Scripts/vcpkg-triplets/` (a copy of
+stock `x64-windows` plus `VCPKG_PLATFORM_TOOLSET_VERSION`, read from `SS_MSVC_TOOLSET_VERSION`). It
+also pins `CMAKE_GENERATOR_INSTANCE` so a multi-VS box can't resolve the version against a different
+install. Override with `SS_MSVC_TOOLSET=<ver>`; detection failure falls back to a bare `-T v143`
+with a warning. Because the triplet feeds vcpkg's ABI hash, **changing the resolved toolset
+invalidates installed packages**: re-run with `--fresh` when a toolset change forces a rebuild.
+
 Then open `build/Snowstorm.sln` and build. **Snowstorm-Editor** is the default startup project;
 the debugger working directory is the repo root, so relative `Engine/...` and `Projects/...` paths
 resolve. Vulkan
@@ -96,7 +107,7 @@ cmake --build build --config Debug
 py Scripts/smoke-test.py
 ```
 
-Requires Windows and Visual Studio 2022 (`Generate-Solution.py` pins the exact `v143` toolset
+Requires Windows and Visual Studio 2022 (`Generate-Solution.py` detects the exact `v143` toolset
 version). No Vulkan SDK installation is needed: loader, headers, and validation layers all come from
 vcpkg. `Generate-Solution.py` runs `vcpkg integrate install`, a machine-global MSBuild side effect
 outside the repo.

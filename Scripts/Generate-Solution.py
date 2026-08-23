@@ -28,13 +28,20 @@ PACKAGES = [
     "tracy",  # real-time frame/sampling profiler (client lib); connect the Tracy GUI to a running build
 ]
 
-# Pin the v143 toolset to a concrete MSVC version. Without this, "-T v143" resolves
-# to Microsoft.VCToolsVersion.v143.default.txt (can lag behind, e.g. 14.38), while
-# vcpkg builds dependencies with the unqualified default (Microsoft.VCToolsVersion.default.txt,
-# e.g. 14.44). The skew makes Catch2 link against vectorized-STL symbols (__std_search_1,
-# __std_find_last_of_trivial_pos_1) the older toolset's libs don't provide -> LNK2019.
-# Keep this matching the vcpkg default toolset; bump when upgrading VS.
-TOOLSET = "v143,version=14.44.35207"
+# The toolset must resolve to one concrete MSVC version, the same on both sides. vcpkg takes the
+# latest installed minor version, a bare "-T v143" takes the VS instance default
+# (Microsoft.VCToolsVersion.default.txt), and when those diverge the engine compiles with one
+# toolset and links libs built by another: Catch2 then fails with LNK2019 on vectorized-STL symbols
+# (__std_search_1, __std_find_last_of_trivial_pos_1) the older toolset's libs do not provide.
+# detect_msvc_toolset resolves the version per machine; CMake receives it via "-T", vcpkg via the
+# overlay triplet in Scripts/vcpkg-triplets/, which reads SS_MSVC_TOOLSET_VERSION.
+#
+# A hardcoded version instead fails outright wherever that exact toolset is absent, with CMake
+# reporting "does not seem to be installed at .../Microsoft.VCToolsVersion.<ver>.props".
+TOOLSET_MAJOR = "v143"
+
+# Set SS_MSVC_TOOLSET to a concrete version (e.g. 14.44.35207) to override detection.
+TOOLSET_ENV = "SS_MSVC_TOOLSET"
 
 def run(cmd, cwd=None, env=None):
     print(">", " ".join(cmd))
@@ -42,6 +49,64 @@ def run(cmd, cwd=None, env=None):
         subprocess.run(cmd, cwd=cwd, env=env, check=True)
     except subprocess.CalledProcessError as e:
         sys.exit(e.returncode)
+
+def _version_key(name: str):
+    """Numeric sort key for an MSVC version dir. Lexicographic would rank 14.9 above 14.37."""
+    return [int(p) if p.isdigit() else -1 for p in name.split(".")]
+
+def find_vs_install() -> Path | None:
+    """Newest VS install with the C++ toolset, via vswhere (ships at a fixed path with any VS)."""
+    program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    vswhere = Path(program_files_x86) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+    if not vswhere.exists():
+        return None
+    try:
+        out = subprocess.run(
+            [str(vswhere), "-latest", "-products", "*",
+             "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+             "-property", "installationPath"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip().splitlines()
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    return Path(out[0]) if out else None
+
+def detect_msvc_toolset() -> tuple[str | None, Path | None]:
+    """Resolve (toolset_version, vs_install_path).
+
+    Picks the LATEST installed toolset, matching vcpkg's own rule, so the common case is a no-op
+    against what vcpkg would have chosen anyway.
+
+    A candidate is accepted when its host-x64 cl.exe is actually present. Note that CMake's failure
+    message names VC/Auxiliary/Build/<ver>/Microsoft.VCToolsVersion.<ver>.props, but that file is
+    NOT what makes a toolset usable -- on a stock VS 2022 install no versioned props file exists at
+    all, and "-T v143,version=<ver>" still configures fine as long as VC/Tools/MSVC/<ver> is there.
+    Checking for the props file instead rejects perfectly good toolsets (verified on 14.37.32822).
+
+    Returns (None, ...) when nothing usable is found; the caller then falls back to a bare -T v143.
+    """
+    override = os.environ.get(TOOLSET_ENV, "").strip()
+    vs_install = find_vs_install()
+
+    if override:
+        print(f"MSVC toolset: {override} (from {TOOLSET_ENV})")
+        return override, vs_install
+
+    if vs_install is None:
+        return None, None
+
+    tools_dir = vs_install / "VC" / "Tools" / "MSVC"
+    if not tools_dir.is_dir():
+        return None, vs_install
+
+    candidates = sorted((d.name for d in tools_dir.iterdir() if d.is_dir()), key=_version_key, reverse=True)
+    for version in candidates:
+        if (tools_dir / version / "bin" / "Hostx64" / "x64" / "cl.exe").exists():
+            print(f"MSVC toolset: {version} (latest installed, at {vs_install})")
+            return version, vs_install
+        print(f"  skipping MSVC {version}: no host-x64 cl.exe (incomplete install)")
+
+    return None, vs_install
 
 def ensure_vcpkg(vcpkg_dir: Path):
     exe = vcpkg_dir / "vcpkg.exe"
@@ -58,32 +123,6 @@ def ensure_vcpkg(vcpkg_dir: Path):
     run([str(exe), "integrate", "install"], cwd=vcpkg_dir)
 
     return exe
-
-def vcpkg_install(vcpkg_exe: Path, triplet: str, packages: list[str]):
-    pkg_str = " ".join(packages)
-    run([
-        str(vcpkg_exe),
-        "install",
-        *packages,
-        "--recurse",
-        "--triplet", triplet
-    ])
-
-def configure_cmake(project_root: Path, build_dir: Path, vcpkg_dir: Path, generator: str | None):
-    toolchain = vcpkg_dir / "scripts" / "buildsystems" / "vcpkg.cmake"
-    args = [
-        "cmake",
-        "-S", str(project_root),
-        "-B", str(build_dir),
-        f"-DCMAKE_TOOLCHAIN_FILE={toolchain}",
-        "-T", TOOLSET,
-    ]
-
-    # If you want to force VS generator explicitly (optional)
-    if generator:
-        args.extend(["-G", generator])
-
-    run(args)
 
 def main():
     ap = argparse.ArgumentParser(description="Configure Snowstorm solution (vcpkg + CMake)")
@@ -113,9 +152,26 @@ def main():
 
     vcpkg_exe = ensure_vcpkg(vcpkg_dir)
 
+    # Resolve the MSVC toolset ONCE and hand the same version to vcpkg and CMake (see TOOLSET_MAJOR).
+    toolset_version, vs_install = detect_msvc_toolset()
+    if toolset_version is None:
+        print("WARNING: could not detect an installed MSVC toolset; falling back to the VS default "
+              f"(-T {TOOLSET_MAJOR}). If dependency links fail with LNK2019 on __std_* symbols, set "
+              f"{TOOLSET_ENV} to the version vcpkg built with.", file=sys.stderr)
+
     # Set VK_ADD_LAYER_PATH so validation layers are discoverable
     env = os.environ.copy()
     env["VK_ADD_LAYER_PATH"] = str(vcpkg_dir / "installed" / args.triplet / "bin")
+
+    # Local overlay triplets: Scripts/vcpkg-triplets/x64-windows.cmake is the stock triplet plus
+    # VCPKG_PLATFORM_TOOLSET_VERSION, which it reads from this env var. Overriding the stock triplet
+    # NAME keeps "--triplet x64-windows" (and every installed/ path and doc reference) unchanged.
+    if toolset_version:
+        env["SS_MSVC_TOOLSET_VERSION"] = toolset_version
+    overlay_triplets = script_dir / "vcpkg-triplets"
+    if overlay_triplets.is_dir():
+        env["VCPKG_OVERLAY_TRIPLETS"] = str(overlay_triplets)
+        print(f"Using overlay triplets: {overlay_triplets}")
 
     # Local overlay ports (override upstream vcpkg ports). polyclipping ships here
     # to fetch clipper 6.4.2 from a GitHub mirror over git instead of SourceForge,
@@ -130,12 +186,21 @@ def main():
 
     print("Configuring CMake...")
     build_dir.mkdir(parents=True, exist_ok=True)
+
+    # "v143,version=X" when detected, bare "v143" otherwise (CMake then uses the instance default).
+    toolset_arg = f"{TOOLSET_MAJOR},version={toolset_version}" if toolset_version else TOOLSET_MAJOR
+
+    # Pin the VS INSTANCE too. With several VS installs, vswhere -latest and CMake's own instance
+    # pick can disagree, and then the version we resolved from one install is looked up in another.
+    instance_arg = [f"-DCMAKE_GENERATOR_INSTANCE={vs_install}"] if vs_install else []
+
     run([
         "cmake",
         "-S", str(project_root),
         "-B", str(build_dir),
         f"-DCMAKE_TOOLCHAIN_FILE={vcpkg_dir / 'scripts' / 'buildsystems' / 'vcpkg.cmake'}",
-        "-T", TOOLSET,
+        "-T", toolset_arg,
+        *instance_arg,
         *(["-G", args.generator] if args.generator else []),
     ], env=env)
 
