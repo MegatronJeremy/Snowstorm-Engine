@@ -1,8 +1,8 @@
 {
-  "device": "",
+  "device": "AMD Radeon RX 9070 XT",
   "viewpoint": "gallery",
   "technique": "rtrefl",
-  "flip": 0.5457563400268555,
-  "psnr": 12.21151490556412,
-  "ssim": 0.2822594020926539
+  "flip": 0.5260631442070007,
+  "psnr": 12.505246068464945,
+  "ssim": 0.28870425701526126
 }
