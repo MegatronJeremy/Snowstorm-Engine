@@ -34,15 +34,19 @@ namespace Snowstorm
 		}
 	}
 
-	std::string PerfBenchAccumulator::ToJson(const std::string& device, const std::string& config,
-	                                         const bool timestampsSupported) const
+	std::string PerfBenchAccumulator::ToJson(const PerfBenchRunInfo& info) const
 	{
 		std::ostringstream o;
 		o << "{\n";
-		o << "  \"device\": \"" << JsonEscape(device) << "\",\n";
-		o << "  \"config\": \"" << JsonEscape(config) << "\",\n";
+		o << "  \"device\": \"" << JsonEscape(info.Device) << "\",\n";
+		o << "  \"config\": \"" << JsonEscape(info.Config) << "\",\n";
 		o << "  \"frames\": " << m_FrameCount << ",\n";
-		o << "  \"timestampsSupported\": " << (timestampsSupported ? "true" : "false") << ",\n";
+		o << "  \"timestampsSupported\": " << (info.TimestampsSupported ? "true" : "false") << ",\n";
+		o << "  \"width\": " << info.Width << ",\n";
+		o << "  \"height\": " << info.Height << ",\n";
+		o << "  \"camera\": [" << Ms(info.CameraPosition.x) << ", " << Ms(info.CameraPosition.y) << ", "
+		  << Ms(info.CameraPosition.z) << ", " << Ms(info.CameraRotation.x) << ", "
+		  << Ms(info.CameraRotation.y) << ", " << Ms(info.CameraRotation.z) << "],\n";
 		o << "  \"totalGpuMs\": " << Ms(m_FrameCount > 0 ? m_TotalGpuSumMs / m_FrameCount : 0.0) << ",\n";
 		o << "  \"passes\": {";
 

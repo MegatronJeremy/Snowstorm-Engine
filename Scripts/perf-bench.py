@@ -14,7 +14,9 @@ enables shadows / +AO / +reflections / +GI in turn, so the Forward-pass ms delta
 adjacent configs is that effect's cost (the RT effects are inline in the Forward pass, so
 per-effect timing IS the A/B across configs, not a separate GPU scope). A trailing `ssgi`
 config repeats the last rung with the screen-space GI producer, so it diffs against `+refl`
-(not against its neighbour) and gives the screen-space-vs-RT cost of the same effect.
+(not against its neighbour) and gives the screen-space-vs-RT cost of the same effect. A trailing
+`shadows-stoch` config does the same for shadows, repeating the `shadows` rung with the stochastic
+aggregate pass instead of one inline ray per light.
 
 Needs a real GPU (Vulkan timestamps), so it's a LOCAL gate like smoke-test.py, not CI.
 
@@ -24,12 +26,14 @@ Usage (from repo root or anywhere):
     py Scripts/perf-bench.py --only rt-off      # run a single config
     py Scripts/perf-bench.py --frames 300       # more frames (less noise, slower)
     py Scripts/perf-bench.py --threshold 20     # regression tolerance % (default 15)
+    py Scripts/perf-bench.py --abs-threshold 0  # gate on % alone (noisy on sub-ms passes)
     py Scripts/perf-bench.py --scene <path>     # benchmark a different scene
     py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
 
 Exit code: 0 if every config is within threshold (or --update-baseline), 1 on a regression or
-run failure, 2 if a config had no baseline for this adapter and so was never compared. Exit 2 is
-not a pass: it means the gate did not run, which is what a fresh box or a new GPU sees.
+run failure, 2 if a config was never compared (no baseline for this adapter, or a device without
+GPU timestamps). Exit 2 is not a pass: it means the gate did not run, which is what a fresh box,
+a new GPU, or a timestamp-less device sees.
 """
 import argparse
 import json
@@ -46,6 +50,15 @@ from pathlib import Path
 # RT effects need it for a clean result and that's the realistic configuration.
 # `ssgi` is not another rung: it re-runs the `+gi` rung with the screen-space GI producer instead of
 # the ray-traced one, so (ssgi - +refl) against (+gi - +refl) is the screen-space-vs-RT cost A/B.
+# `shadows-stoch` is the same idea one technique over: it re-runs the `shadows` rung with the stochastic
+# aggregate pass (MegaLights-lite) instead of one inline ray per light, so (shadows-stoch - rt-off)
+# against (shadows - rt-off) is the two shadow techniques at THIS scene's light count. The ranking
+# flips with light count (inline is per-light, stochastic is constant), which a fixed scene cannot
+# show: read this pair as one point on that curve, not as a verdict.
+# The rung runs the SHIPPING stochastic config, which includes render.shadows.specular.demodulated
+# (default on). That is a second denoise chain the inline path has no analogue for, and the per-pass
+# table names its cost separately (the ShadowSpec* rows), so the pair is a comparison of what each
+# technique costs as shipped, not of the ray-tracing work alone.
 CONFIGS = [
     ("rt-off",   {"SS_RENDER_SHADOWS_MODE": "1", "SS_RENDER_AO_MODE": "0", "SS_RENDER_REFLECTIONS_MODE": "0", "SS_RENDER_GI_MODE": "0"}),
     ("shadows",  {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "0", "SS_RENDER_REFLECTIONS_MODE": "0", "SS_RENDER_GI_MODE": "0"}),
@@ -53,9 +66,23 @@ CONFIGS = [
     ("+refl",    {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2", "SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_GI_MODE": "0"}),
     ("+gi",      {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2", "SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_GI_MODE": "2"}),
     ("ssgi",     {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2", "SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_GI_MODE": "1"}),
+    ("shadows-stoch", {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "0", "SS_RENDER_REFLECTIONS_MODE": "0", "SS_RENDER_GI_MODE": "0",
+                       "SS_RENDER_SHADOWS_STOCHASTIC": "1"}),
 ]
 
 DEFAULT_SCENE = "Projects/Sandbox/assets/scenes/Sponza.world"
+
+# Benchmark viewpoint, "px,py,pz,rx,ry,rz" (world position + Euler radians), pinned via camera.override
+# so the pose is owned by this file rather than by <scene>.world.editor. That sidecar is per-machine
+# working state the editor rewrites on every save, so a baseline captured against it silently measures
+# wherever the last person left the camera. This value is the Sponza atrium pose the committed baselines
+# were captured at. Changing it invalidates every baseline: re-capture all adapters in the same commit.
+BENCH_CAMERA = "8.519127,1.494902,-0.430814,0.027222,1.495751,0.0"
+
+# run_config sentinel: the run itself succeeded, but the device reports no GPU timestamps, so there
+# are no numbers to compare. Distinct from None (a real run failure) because the two exit
+# differently: a device that cannot be measured is a SKIP (2), never a FAIL (1).
+NO_TIMESTAMPS = object()
 
 
 def find_repo_root(script_dir: Path) -> Path:
@@ -63,8 +90,12 @@ def find_repo_root(script_dir: Path) -> Path:
 
 
 def run_config(name: str, env_overrides: dict, exe: Path, cwd: Path, frames: int,
-               timeout: int, layer_path: Path, scene: str, gpu: str) -> dict | None:
-    """Run one config headlessly; return the parsed perf JSON (or None on failure)."""
+               timeout: int, layer_path: Path, scene: str, gpu: str):
+    """Run one config headlessly.
+
+    Returns the parsed perf JSON, NO_TIMESTAMPS if the device cannot be measured, or None on a
+    real run failure (timeout, non-zero exit, no JSON).
+    """
     out_path = Path(tempfile.gettempdir()) / f"perf-bench-{name}.json"
     if out_path.exists():
         out_path.unlink()
@@ -72,7 +103,9 @@ def run_config(name: str, env_overrides: dict, exe: Path, cwd: Path, frames: int
     env = os.environ.copy()
     env["SS_PERF_BENCH_FRAMES"] = str(frames)
     env["SS_PERF_BENCH_PATH"] = str(out_path)
+    env["SS_PERF_BENCH_CONFIG"] = name  # the engine can't infer the rung; it's a combination of CVars
     env["SS_STARTUP_SCENE"] = scene
+    env["SS_CAMERA_OVERRIDE"] = BENCH_CAMERA
     env["SS_RENDER_AA"] = "2"  # TAA: the realistic config the RT effects assume
     env["SS_VALIDATION_NONFATAL"] = "1"
     # Config isolation: run pure code-defaults + the env overrides below, ignoring this machine's persisted
@@ -104,7 +137,7 @@ def run_config(name: str, env_overrides: dict, exe: Path, cwd: Path, frames: int
     data = json.loads(out_path.read_text())
     if not data.get("timestampsSupported", False):
         print(f"  {name}: SKIP (device has no GPU timestamps)")
-        return None
+        return NO_TIMESTAMPS
     return data
 
 
@@ -122,8 +155,39 @@ def baseline_path(repo_root: Path, device: str, name: str) -> Path:
     return repo_root / "Scripts" / "perf-baseline" / device_slug(device) / f"{name}.json"
 
 
-def compare(name: str, current: dict, baseline: dict, threshold_pct: float) -> bool:
-    """Print a per-pass table (baseline vs current, Δ%); return True if within threshold."""
+def view_mismatch(current: dict, baseline: dict) -> str | None:
+    """Reason the two runs are not comparable (resolution or viewpoint), or None if they are.
+
+    Every pass is measured at the host's viewport size and from wherever the camera happens to be, so
+    a baseline captured elsewhere makes the diff meaningless: a resolution change moves every pass by
+    roughly the same factor and reads as a global regression, and a pose change moves whatever the RT
+    effects happen to see. Neither shows up in the ms table as anything but a mystery. A baseline
+    predating these fields carries none of them, so the check is skipped rather than failing a set
+    that is still perfectly valid.
+    """
+    if "width" not in baseline or "camera" not in baseline:
+        return None
+    bw, bh = baseline.get("width"), baseline.get("height")
+    cw, ch = current.get("width"), current.get("height")
+    if (bw, bh) != (cw, ch):
+        return f"resolution {cw}x{ch} != baseline {bw}x{bh}"
+    bc, cc = baseline.get("camera", []), current.get("camera", [])
+    if len(bc) != 6 or len(cc) != 6:
+        return f"camera pose {cc} is not 6 values (baseline {bc})"
+    if any(abs(a - b) > 1e-3 for a, b in zip(cc, bc)):
+        return f"camera pose {cc} != baseline {bc}"
+    return None
+
+
+def compare(name: str, current: dict, baseline: dict, threshold_pct: float, abs_ms: float) -> bool:
+    """Print a per-pass table (baseline vs current, Δ%); return True if within threshold.
+
+    A pass must exceed BOTH thresholds to count as a regression. Percentage alone is meaningless on a
+    sub-ms pass: back-to-back runs of the same binary move TemporalResolve by ~0.08 ms and PostProcess
+    by ~0.02 ms, which reads as +50% and +62% on passes that cost 0.16 ms and 0.04 ms. An absolute
+    floor keeps them gated against a real regression (a 0.2 ms pass doubling still trips it) instead of
+    excluding them the way the sub-0.05 ms noise rule below does.
+    """
     cur_passes = current.get("passes", {})
     base_passes = baseline.get("passes", {})
     all_names = sorted(set(cur_passes) | set(base_passes))
@@ -145,7 +209,7 @@ def compare(name: str, current: dict, baseline: dict, threshold_pct: float) -> b
             continue
         delta = (c - b) / b * 100.0 if b > 0 else 0.0
         flag = ""
-        if delta > threshold_pct:
+        if delta > threshold_pct and (c - b) > abs_ms:
             flag = "  REGRESSION"
             ok = False
         # FS invocations (overdraw metric, #pipeline-stats). Informational: a graphics pass's fragment-
@@ -169,6 +233,8 @@ def main() -> int:
     ap.add_argument("--triplet", default="x64-windows", help="vcpkg triplet for the validation-layer path")
     ap.add_argument("--only", default=None, help="Run only this config (e.g. rt-off, +gi)")
     ap.add_argument("--threshold", type=float, default=15.0, help="Regression tolerance %% (default 15)")
+    ap.add_argument("--abs-threshold", type=float, default=0.10,
+                    help="Minimum absolute ms rise for a regression, on top of --threshold (default 0.10)")
     ap.add_argument("--scene", default=DEFAULT_SCENE, help="Scene to benchmark")
     ap.add_argument("--gpu", default="", help="Pin the GPU (render.gpu syntax: name substring or index)")
     ap.add_argument("--update-baseline", action="store_true", help="Write current results as the new baseline")
@@ -193,7 +259,7 @@ def main() -> int:
 
     print(f"Repo root : {repo_root}")
     print(f"Build dir : {build_dir}  (config: {args.config})")
-    print(f"Scene     : {args.scene}   Frames: {args.frames}   Threshold: {args.threshold}%")
+    print(f"Scene     : {args.scene}   Frames: {args.frames}   Threshold: {args.threshold}% and >{args.abs_threshold} ms")
     print(f"Mode      : {'UPDATE BASELINE' if args.update_baseline else 'compare vs baseline'}\n")
 
     all_ok = True
@@ -202,6 +268,10 @@ def main() -> int:
         print(f"=== {name} ===")
         current = run_config(name, env_overrides, exe, repo_root, args.frames,
                              args.timeout, layer_path, args.scene, args.gpu)
+        if current is NO_TIMESTAMPS:
+            ungated.append(name)
+            print()
+            continue
         if current is None:
             all_ok = False
             continue
@@ -214,7 +284,10 @@ def main() -> int:
             print(f"  updated baseline: {bp.relative_to(repo_root)}  (device: {device or '?'})")
         elif bp.exists():
             baseline = json.loads(bp.read_text())
-            if not compare(name, current, baseline, args.threshold):
+            if reason := view_mismatch(current, baseline):
+                ungated.append(name)
+                print(f"  NOT GATED: {reason}. Nothing comparable, so no diff was run.")
+            elif not compare(name, current, baseline, args.threshold, args.abs_threshold):
                 all_ok = False
         else:
             ungated.append(name)
@@ -230,9 +303,9 @@ def main() -> int:
         print("FAIL (regression or run failure)")
         return 1
     if ungated:
-        print(f"SKIP: no baseline on this adapter for {len(ungated)} config(s): {', '.join(ungated)}")
-        print("      nothing was compared for those, so this run is not a pass. "
-              "Capture them with --update-baseline.")
+        print(f"SKIP: {len(ungated)} config(s) never compared: {', '.join(ungated)}")
+        print("      nothing was compared for those, so this run is not a pass. Missing baseline: "
+              "capture it with --update-baseline. No GPU timestamps: this device cannot be gated.")
         return 2
     print("PASS")
     return 0

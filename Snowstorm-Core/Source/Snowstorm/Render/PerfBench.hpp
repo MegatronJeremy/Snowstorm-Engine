@@ -2,6 +2,8 @@
 
 #include "Snowstorm/Render/CommandContext.hpp" // GpuScope
 
+#include <glm/vec3.hpp>
+
 #include <cstdint>
 #include <map>
 #include <string>
@@ -9,8 +11,22 @@
 
 namespace Snowstorm
 {
-	// Headless GPU perf-benchmark accumulator + serializer (pure, engine-free logic so it's unit-testable
-	// — the WriteNpy / HaltonJitter pattern). Application::Run feeds it the per-frame GpuScope list
+	// Everything about a run that is NOT a timing: what it ran on and what it looked at. The script gates
+	// on all of it, since a ms number only means something against a baseline captured at the same
+	// resolution and viewpoint (the engine renders at the host's viewport size, which no CVar pins).
+	struct PerfBenchRunInfo
+	{
+		std::string Device;               // GPU name; slugged into the baseline directory
+		std::string Config;               // rung the runner set ("rt-off", "+gi", "shadows-stoch")
+		bool TimestampsSupported = false; // false => passes are empty, script skips instead of failing
+		uint32_t Width = 0;
+		uint32_t Height = 0;
+		glm::vec3 CameraPosition{};
+		glm::vec3 CameraRotation{}; // Euler radians, matching the camera.override wire format
+	};
+
+	// Headless GPU perf-benchmark accumulator + serializer (pure, engine-free logic so it's unit-testable,
+	// following the WriteNpy / HaltonJitter pattern). Application::Run feeds it the per-frame GpuScope list
 	// (RendererService::GetGpuPassTimes) over a sample window; on exit it serializes averaged per-pass ms
 	// to a deterministic JSON that Scripts/perf-bench.py diffs against a committed baseline. No file I/O or
 	// GPU calls here beyond the final ToJson string build; the caller owns the ofstream.
@@ -18,8 +34,8 @@ namespace Snowstorm
 	{
 	public:
 		// Fold one frame's resolved scopes into the running per-name stats. Call once per sampled frame
-		// (after warmup). A scope absent this frame simply doesn't advance its count — averages are per the
-		// frames that actually recorded it, which is correct for conditionally-present passes.
+		// (after warmup). A scope absent this frame simply doesn't advance its count, so averages are per
+		// the frames that actually recorded it, which is correct for conditionally-present passes.
 		void AddFrame(const std::vector<GpuScope>& scopes, float gpuFrameMs)
 		{
 			for (const GpuScope& s : scopes)
@@ -39,12 +55,9 @@ namespace Snowstorm
 		[[nodiscard]] uint32_t FrameCount() const { return m_FrameCount; }
 		[[nodiscard]] bool Empty() const { return m_Passes.empty(); }
 
-		// Serialize to a small deterministic JSON. `device` is the GPU name (for per-machine baselines);
-		// `config` labels the RT-effect combo the runner set (e.g. "rt-off", "+gi"). `timestampsSupported`
-		// false => the device lacks GPU timestamps and passes are empty; emit the flag so the script skips
-		// rather than false-failing. Keys are sorted (std::map) so the output is stable/diffable.
-		[[nodiscard]] std::string ToJson(const std::string& device, const std::string& config,
-		                                 bool timestampsSupported) const;
+		// Serialize to a small deterministic JSON that Scripts/perf-bench.py diffs. Keys are sorted
+		// (std::map) so the output is stable and diffable.
+		[[nodiscard]] std::string ToJson(const PerfBenchRunInfo& info) const;
 
 	private:
 		struct PassStat

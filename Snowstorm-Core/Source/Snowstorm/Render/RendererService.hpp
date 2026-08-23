@@ -272,6 +272,21 @@ namespace Snowstorm
 		void SetGpuPassTimes(std::vector<GpuScope> scopes) { m_GpuPassTimes = std::move(scopes); }
 		[[nodiscard]] const std::vector<GpuScope>& GetGpuPassTimes() const { return m_GpuPassTimes; }
 
+		// What the presented viewport rendered this frame: pixel extent and the pose of the camera that
+		// drove it. Set by RenderSystem alongside the pass times; the perf benchmark stamps both into its
+		// JSON so a ms number can be rejected when the baseline was captured at a different size or
+		// viewpoint. Neither is pinnable by a CVar (the render size follows the host's viewport), so
+		// recording is the only way to make the comparison honest.
+		struct FrameViewInfo
+		{
+			uint32_t Width = 0;
+			uint32_t Height = 0;
+			glm::vec3 CameraPosition{};
+			glm::vec3 CameraRotation{}; // Euler radians
+		};
+		void SetFrameViewInfo(const FrameViewInfo& v) { m_FrameViewInfo = v; }
+		[[nodiscard]] const FrameViewInfo& GetFrameViewInfo() const { return m_FrameViewInfo; }
+
 		// Upscaled-vs-ground-truth image-quality metrics (#45). Set by RenderSystem from the MetricsPass each
 		// frame while render.metrics is on; read by the editor Performance panel + the headless metrics log.
 		struct MetricsResult
@@ -438,6 +453,9 @@ namespace Snowstorm
 
 		// Per-pass GPU scopes from the most recent frame's timestamp scopes; see SetGpuPassTimes.
 		std::vector<GpuScope> m_GpuPassTimes;
+
+		// Presented viewport extent + camera pose for this frame; see SetFrameViewInfo.
+		FrameViewInfo m_FrameViewInfo;
 
 		// Latest upscaled-vs-ground-truth image metrics (#45), set by RenderSystem when render.metrics is on.
 		MetricsResult m_Metrics;

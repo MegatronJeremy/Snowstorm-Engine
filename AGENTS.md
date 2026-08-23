@@ -187,12 +187,15 @@ It runs the Editor headlessly once per **RT-effect config** (via `perf.bench.fra
 frame budget and writes a JSON (`PerfBench.hpp` builds it; `Application::Run` drives it past a 15-frame
 warmup that also covers the 1-frame timestamp lag). The script parses each JSON, prints a per-pass
 table, and **diffs against a committed baseline** in `Scripts/perf-baseline/`, failing (exit 1) if any
-pass regresses beyond `--threshold` (default 15%).
+pass regresses beyond **both** `--threshold` (default 15%) and `--abs-threshold` (default 0.10 ms).
+Both apply because a percentage alone is meaningless on a sub-ms pass: back-to-back runs of the same
+binary move `TemporalResolve` by ~0.08 ms, which reads as +50% on a 0.16 ms pass. The absolute floor
+keeps those passes gated against a real regression rather than excluding them outright.
 
 ```
 py Scripts/perf-bench.py                    # run the matrix, diff vs baseline, PASS/FAIL
 py Scripts/perf-bench.py --update-baseline  # capture current results as the new baseline
-py Scripts/perf-bench.py --only +gi         # one config (rt-off | shadows | +ao | +refl | +gi | ssgi)
+py Scripts/perf-bench.py --only +gi         # one config (see the matrix below)
 py Scripts/perf-bench.py --frames 300       # more frames = less noise, slower
 py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
 ```
@@ -200,18 +203,29 @@ py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
 The config matrix (`rt-off → shadows → +ao → +refl → +gi`) enables one RT effect at a time, so the
 **Forward-pass ms delta between adjacent configs is that effect's cost**: the RT effects are inline in
 the Forward pass, so this A/B *is* the per-effect timing (there's no separate GPU scope per effect, by
-design). A trailing `ssgi` config sits outside that ladder, repeating the `+gi` rung with the
-screen-space GI producer, so it diffs against `+refl` rather than its neighbour and gives the
-screen-space-vs-RT cost of the same effect. Sub-0.05 ms passes are ignored (timestamp noise). Like
+design). Two trailing configs sit outside that ladder, each repeating one rung with a different
+producer for the same effect: `ssgi` repeats `+gi` with the screen-space GI producer (so it diffs
+against `+refl`), and `shadows-stoch` repeats `shadows` with the stochastic aggregate pass
+(MegaLights-lite) instead of one inline ray per light (so it diffs against `rt-off`). Read the
+shadow pair as one point on a curve, not a verdict: inline cost grows per light while stochastic is
+constant, so the ranking flips with light count and a fixed scene cannot show that. It also flips on
+`render.shadows.specular.demodulated`, which the rung leaves at its shipping default (on) and which
+adds a second denoise chain the inline path has no analogue for. At Sponza's light count, in ms over
+`rt-off`: 9070 XT inline 2.388, stochastic 2.757 with that chain and 1.677 without; 5070 inline
+1.428, stochastic 3.510 and 2.144. So the shipping configs rank inline first on both adapters, while
+the ray-tracing work alone ranks stochastic first on AMD. The `ShadowSpec*` rows in the per-pass
+table are that chain, priced separately.
+Sub-0.05 ms passes are ignored (timestamp noise). Like
 smoke, it needs a **real GPU** (Vulkan timestamps) so it's a **local** gate, not CI; on a device
-without timestamp support the JSON sets `timestampsSupported:false` and the script skips rather than
-false-failing.
+without timestamp support the JSON sets `timestampsSupported:false` and the run counts as a SKIP
+(exit **2**), never a pass and never a false FAIL.
 
 **Baselines are keyed by adapter**: `Scripts/perf-baseline/<device-slug>/<config>.json`, where the slug
 comes from the device name the run reports. GPU differences make ms non-comparable, so a run only ever
 diffs against the set captured on the adapter it is running on, and a box with two cards keeps two
 independent sets (the repo holds `amd-radeon-rx-9070-xt`, `nvidia-geforce-rtx-5070`, and an
-`amd-radeon-rx-7900-xtx` set from another machine). Cross-vendor comparison is then a deliberate read
+`amd-radeon-rx-7900-xtx` set from another machine, the last predating the resolution/pose stamping
+below and so of unknown viewpoint until that box re-captures). Cross-vendor comparison is then a deliberate read
 across two directories rather than an accidental mixture inside one set, which would turn every
 cross-config delta into effect-cost plus hardware difference. Missing set = the gate prints the raw
 numbers and exits **2** (SKIP), which is not a pass: it compared nothing, so it cannot claim one.
@@ -221,10 +235,15 @@ first; `--gpu` pins it, taking a short all-digits value as a candidate **index**
 (including a model number like `9070`) as a case-insensitive name substring. Re-baseline deliberately
 (with a commit) when a change *intends* to shift perf, never to paper over an unexplained regression.
 
-**A baseline is also implicitly keyed by resolution**, since the Editor renders at the window size.
-A regression that moves *every* pass by roughly the same factor is a different monitor or window
-size, not a code regression: check the resolution before touching the numbers, and never re-baseline
-to make that shape go away.
+**A baseline is also keyed by resolution and viewpoint**, and both are now recorded rather than
+assumed. The Editor renders at the window size, which no CVar pins, so every JSON stamps `width`,
+`height`, and the 6-value `camera` pose; a mismatch against the baseline is a SKIP (exit **2**), not
+a diff. Without that, a different monitor or window size moves *every* pass by roughly the same
+factor and reads as a global regression. The viewpoint is pinned by the script rather than gated:
+`BENCH_CAMERA` in `perf-bench.py` is fed to `camera.override`, so the pose lives in the repo instead
+of in `<scene>.world.editor`, which is per-machine working state the editor rewrites on every save.
+Changing `BENCH_CAMERA` invalidates every baseline, so re-capture all adapters in the same commit.
+A baseline predating these fields carries none of them and is compared without the check.
 
 **Nondeterministic GPU numbers across runs point at the shader cache first.** Clear
 `Engine/cache/shaders/*.spv` and re-run before trusting any before/after comparison; a stale cache
@@ -359,7 +378,8 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   compared against another run: it desynchronises which frame each side captures and manufactures
   differences that have nothing to do with the change under test. The gate's fixed viewpoints
   (`camera.override`, `SS_CAMERA_OVERRIDE`) exist for this reason and pin an arbitrary interior pose
-  headlessly.
+  headlessly. Both hosts honour it: the Runtime applies it when it builds the authored camera, the
+  Editor when it opens a scene, outranking the `<scene>.world.editor` sidecar.
 
 Every run sets `SS_CONFIG_IGNORE=1`, so a capture is code defaults plus the technique's overrides and
 never this machine's persisted `SnowstormConfig.cfg`. Note that only `all-rt` overrides
@@ -395,7 +415,7 @@ harnesses set so a run depends on code defaults plus its own overrides, never on
 A CVar named `validation.extra` is set by env `SS_VALIDATION_EXTRA` **or** CLI `--validation.extra`
 (dots→`_`, uppercased, `SS_` prefix for env). Bools accept presence (`--flag`, or env set to
 anything but `0`/`false`/`off`/`no`). Run any executable with `--list-cvars` (or `--help`) to print
-every CVar with its value, type, env name, and description. `EngineCVars.cpp` declares ~124 of them
+every CVar with its value, type, env name, and description. `EngineCVars.cpp` declares ~126 of them
 (rendering technique modes, denoiser knobs, path tracer, benchmark hooks, validation); treat
 `--list-cvars` as the authoritative list rather than any enumeration here. Startup resolution runs
 once, but CVars can also be **edited live at runtime** from the editor's *Debug > Console Variables*

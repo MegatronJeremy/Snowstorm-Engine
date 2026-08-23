@@ -2,6 +2,8 @@
 
 #include "Snowstorm/Utility/CVar.hpp"
 
+#include <glm/vec3.hpp>
+
 #include <string>
 
 // Central declaration of engine-wide console variables. Defined in EngineCVars.cpp so there is a
@@ -18,6 +20,7 @@ namespace Snowstorm::CVars
 	// committed baseline. CLI/env-only (not persisted), like smoke.frames.
 	extern CVar<int> PerfBenchFrames;
 	extern CVar<std::string> PerfBenchPath;
+	extern CVar<std::string> PerfBenchConfig;
 
 	// Headless quality capture (local image-quality gate, #153 increment 2). When > 0, let the frame render
 	// this many times (so a static camera accumulates the reference path tracer / warms the real-time path),
@@ -27,6 +30,12 @@ namespace Snowstorm::CVars
 	// rotation in radians), empty = off. Lets a headless harness (quality-bench, #158) pin a deterministic
 	// viewpoint in the runtime without editing the scene. Applied in RuntimeLayer::ConfigureSceneCamera.
 	extern CVar<std::string> CameraOverride;
+
+	// Parse a camera.override value ("px,py,pz,rx,ry,rz") into a pose. False (leaving the outputs
+	// untouched) if the string is empty or not 6 comma-separated floats. Shared by the runtime and the
+	// editor so both honour one wire format: a benchmark that pins a pose must get the same viewpoint
+	// whichever host it runs on.
+	[[nodiscard]] bool ParseCameraOverride(const std::string& value, glm::vec3& position, glm::vec3& rotation);
 
 	extern CVar<int> QualityCaptureFrames;       // MIN settle frames after streaming before convergence can trigger
 	extern CVar<int> QualityCaptureMaxFrames;    // hard safety cap on total frames (capture anyway + warn if hit)

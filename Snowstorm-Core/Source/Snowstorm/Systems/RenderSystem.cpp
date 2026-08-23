@@ -199,6 +199,23 @@ namespace Snowstorm
 			}
 		}
 
+		// Record what the presented viewport rendered (extent + camera pose) for the perf benchmark; see
+		// RendererService::SetFrameViewInfo. Cheap and unconditional, so a benchmark run never has to
+		// enable anything to get a comparable stamp.
+		if (presentViewport != entt::null)
+		{
+			RendererService::FrameViewInfo view{};
+			const glm::vec2 size = reg.Read<ViewportComponent>(presentViewport).Size;
+			view.Width = static_cast<uint32_t>(size.x);
+			view.Height = static_cast<uint32_t>(size.y);
+			if (const CameraPick pick = FindCameraForViewport(reg, presentViewport); pick.Transform)
+			{
+				view.CameraPosition = pick.Transform->Position;
+				view.CameraRotation = pick.Transform->Rotation;
+			}
+			renderer.SetFrameViewInfo(view);
+		}
+
 		// Compose the swapchain. Two mutually exclusive paths:
 		//  - Editor: the ImGui pass draws the dockspace (with the viewport image embedded). Runs only when an
 		//    ImGui backend is up.

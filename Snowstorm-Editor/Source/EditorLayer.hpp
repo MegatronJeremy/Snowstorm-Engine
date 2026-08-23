@@ -85,6 +85,11 @@ namespace Snowstorm
 		void SaveEditorCameraSidecar(const std::string& scenePath) const;
 		bool LoadEditorCameraSidecar(const std::string& scenePath) const;
 
+		// Pin the editor camera from the camera.override CVar, outranking the sidecar (false if unset or
+		// malformed). The perf/quality harnesses need a viewpoint the repo owns: the sidecar is per-machine
+		// working state, so a baseline captured against it is not reproducible on another clone.
+		bool ApplyCameraOverride() const;
+
 		// The primary editor Scene-view camera entity (Primary CameraComponent + DoNotSerialize). Invalid
 		// if it doesn't exist yet. Single lookup point for the per-scene camera save/restore.
 		[[nodiscard]] Entity FindEditorCamera() const;

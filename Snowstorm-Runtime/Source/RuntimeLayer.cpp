@@ -161,21 +161,13 @@ namespace Snowstorm
 		// (world position + Euler rotation, radians). Set before the first update so CameraControllerSystem
 		// seeds its look target from this pose (and, with no headless input, holds it). Lets the quality-bench
 		// harness capture arbitrary viewpoints in the runtime without editing the scene.
-		if (const std::string& ov = CVars::CameraOverride.Get(); !ov.empty())
+		if (glm::vec3 pos{}, rot{}; CVars::ParseCameraOverride(CVars::CameraOverride.Get(), pos, rot))
 		{
-			float p[6] = {0, 0, 0, 0, 0, 0};
-			if (std::sscanf(ov.c_str(), "%f,%f,%f,%f,%f,%f", &p[0], &p[1], &p[2], &p[3], &p[4], &p[5]) == 6)
-			{
-				auto& tr = reg.Write<TransformComponent>(authored);
-				tr.Position = {p[0], p[1], p[2]};
-				tr.Rotation = {p[3], p[4], p[5]};
-				SS_CORE_INFO("Runtime: camera.override pos=({:.3f},{:.3f},{:.3f}) rot=({:.3f},{:.3f},{:.3f}).",
-				             p[0], p[1], p[2], p[3], p[4], p[5]);
-			}
-			else
-			{
-				SS_CORE_WARN("Runtime: camera.override '{}' is not 6 comma-separated floats; ignored.", ov);
-			}
+			auto& tr = reg.Write<TransformComponent>(authored);
+			tr.Position = pos;
+			tr.Rotation = rot;
+			SS_CORE_INFO("Runtime: camera.override pos=({:.3f},{:.3f},{:.3f}) rot=({:.3f},{:.3f},{:.3f}).",
+			             pos.x, pos.y, pos.z, rot.x, rot.y, rot.z);
 		}
 
 		SS_CORE_INFO("Runtime: using authored scene camera '{}'.",

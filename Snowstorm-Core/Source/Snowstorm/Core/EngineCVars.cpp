@@ -3,6 +3,8 @@
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 
+#include <cstdio>
+
 namespace Snowstorm::CVars
 {
 	CVar<int> SmokeFrames{"smoke.frames", 0, "Run N frames then exit cleanly (0 = until window closed)", CVarFlags::ReadOnly};
@@ -10,6 +12,8 @@ namespace Snowstorm::CVars
 	CVar<int> PerfBenchFrames{"perf.bench.frames", 0, "Headless GPU perf benchmark: run N frames accumulating per-pass GPU timings (past warmup), write averaged JSON to perf.bench.path, then exit (0 = off). Driven by Scripts/perf-bench.py.", CVarFlags::ReadOnly};
 
 	CVar<std::string> PerfBenchPath{"perf.bench.path", "perf-bench.json", "Output path for the perf.bench.frames JSON dump.", CVarFlags::ReadOnly};
+
+	CVar<std::string> PerfBenchConfig{"perf.bench.config", "", "Label for the RT-effect rung the runner set (\"rt-off\", \"+gi\", \"shadows-stoch\"), copied verbatim into the perf.bench.path JSON. The engine cannot infer it: a rung is a combination of effect CVars, and the runner names it.", CVarFlags::ReadOnly};
 
 	CVar<std::string> CameraOverride{"camera.override", "", "Override the viewport camera pose at startup: \"px,py,pz,rx,ry,rz\" (world position + Euler rotation in radians), empty = off. Headless harness hook (#158) to pin a deterministic viewpoint in the runtime without editing the scene.", CVarFlags::ReadOnly};
 
@@ -153,7 +157,7 @@ namespace Snowstorm::CVars
 
 	CVar<float> ShadowDenoiseVariance{"render.shadows.denoise.variance", 4.0f, "SVGF variance-guided a-trous luminance-phi for RT shadows: widens the a-trous in noisy/disoccluded regions, tight where converged. 0 = off. ~2-8 typical.", CVarFlags::Persist};
 
-	CVar<bool> ShadowStochastic{"render.shadows.stochastic", false, "RT shadow technique within mode 2 (Ray Traced). OFF (default) = per-light INLINE RT shadows (one sharp ray per light in DefaultLit, the #118 path) — higher quality at a low light count. ON = the half-res STOCHASTIC aggregate-ratio pass (MegaLights-lite): importance-sample one light/pixel, trace one ray, denoise. Constant cost regardless of light count (scales to many lights) but noisier at ~10 lights. Prefer ShadowStochasticActive() over reading this directly.", CVarFlags::Persist};
+	CVar<bool> ShadowStochastic{"render.shadows.stochastic", false, "RT shadow technique within mode 2 (Ray Traced). OFF (default) = per-light INLINE RT shadows (one sharp ray per light in DefaultLit, the #118 path): cost grows per light. ON = the STOCHASTIC aggregate-ratio pass (MegaLights-lite) at render.shadows.scale resolution: importance-sample one light/pixel, trace one ray, denoise. Constant cost regardless of light count, at the price of noise, so it overtakes inline as lights are added. Where the crossover sits depends on the adapter and on render.shadows.specular.demodulated, which adds a second denoise chain here and none to inline. Prefer ShadowStochasticActive() over reading this directly.", CVarFlags::Persist};
 
 	CVar<float> ShadowDenoisePenumbra{"render.shadows.denoise.penumbra", 0.1f, "NRD SIGMA-style penumbra-aware a-trous kernel sizing for RT shadows: scale the tap stride by the receiver's nearest-occluder distance (world units) so a NEAR occluder keeps a tight kernel (sharp contact shadow) and a FAR occluder widens it (smooth soft penumbra) — what a fixed-stride a-trous can't do (it over-blurs contacts or under-blurs soft penumbrae at one setting). Value = 1/reference-distance: penumbra saturates to the widest kernel around (1/this) world units (0.1 => ~10 units). 0 = off (uniform kernel). Shadows only; GI/AO/reflections are unaffected.", CVarFlags::Persist};
 
@@ -490,6 +494,23 @@ namespace Snowstorm::CVars
 		return s;
 	}
 
+	bool ParseCameraOverride(const std::string& value, glm::vec3& position, glm::vec3& rotation)
+	{
+		if (value.empty())
+		{
+			return false;
+		}
+		float p[6] = {0, 0, 0, 0, 0, 0};
+		if (std::sscanf(value.c_str(), "%f,%f,%f,%f,%f,%f", &p[0], &p[1], &p[2], &p[3], &p[4], &p[5]) != 6)
+		{
+			SS_CORE_WARN("camera.override '{}' is not 6 comma-separated floats; ignored.", value);
+			return false;
+		}
+		position = {p[0], p[1], p[2]};
+		rotation = {p[3], p[4], p[5]};
+		return true;
+	}
+
 	bool ShadowsRasterActive()
 	{
 		// Mode 1 (Shadow Map) is the only mode that runs the raster shadow passes + the LightingSystem atlas
@@ -499,18 +520,18 @@ namespace Snowstorm::CVars
 
 	bool ShadowsRTActive()
 	{
-		// Mode 2 (Ray Traced) drives the shader's ray-query branch — but only on an RT-capable device, where
-		// the SS_RAYTRACING shader permutation exists. On a non-RT GPU mode 2 degrades to no shadows (the RT
-		// branch is compiled out), matching the graceful-fallback contract of the original render.shadows.rt.
+		// Mode 2 (Ray Traced) drives the shader's ray-query branch, although only on an RT-capable device,
+		// where the SS_RAYTRACING shader permutation exists. On a non-RT GPU mode 2 degrades to no shadows
+		// (the RT branch is compiled out), matching the graceful-fallback contract of render.shadows.rt.
 		return ShadowsMode.Get() == 2 && Renderer::IsRayTracingSupported();
 	}
 
 	bool ShadowStochasticActive()
 	{
-		// The half-res STOCHASTIC aggregate-shadow-ratio pass (MegaLights-lite) runs only when RT shadows are
-		// active AND this opt-in is set. Default OFF: mode 2 keeps the per-light INLINE RT shadows (sharp, one
-		// map per light), which are higher quality on a low light count. Stochastic is the many-light-scaling
-		// experiment — noisier at ~10 lights (below cached shadow maps), so it's not the default.
+		// The STOCHASTIC aggregate-shadow-ratio pass (MegaLights-lite) runs only when RT shadows are active
+		// AND this opt-in is set. Default OFF: mode 2 keeps the per-light INLINE RT shadows (sharp, one ray
+		// per light), which win at a low light count. Stochastic is the many-light-scaling technique:
+		// constant cost, so it overtakes inline as lights are added, at the price of noise.
 		return ShadowsRTActive() && ShadowStochastic.Get();
 	}
 

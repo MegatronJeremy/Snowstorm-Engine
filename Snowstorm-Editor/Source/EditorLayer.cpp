@@ -473,7 +473,9 @@ namespace Snowstorm
 		// Restore this scene's saved editor camera viewpoint (editor-only sidecar). Absolute transform, so
 		// no dependency on async-streamed bounds. If there's no sidecar (first time opening the scene),
 		// frame the camera to the scene's renderable bounds so it opens looking at content, not at nothing.
-		if (!LoadEditorCameraSidecar(scenePath))
+		// camera.override outranks both: a benchmark pins its viewpoint in code, and must not inherit
+		// whatever pose this machine happened to leave in the sidecar.
+		if (!ApplyCameraOverride() && !LoadEditorCameraSidecar(scenePath))
 		{
 			FrameImportedSceneCamera();
 		}
@@ -1056,6 +1058,35 @@ namespace Snowstorm
 		{
 			out << j.dump(2);
 		}
+	}
+
+	bool EditorLayer::ApplyCameraOverride() const
+	{
+		glm::vec3 pos{};
+		glm::vec3 rot{};
+		if (!CVars::ParseCameraOverride(CVars::CameraOverride.Get(), pos, rot))
+		{
+			return false;
+		}
+
+		const Entity cam = FindEditorCamera();
+		if (!cam)
+		{
+			return false;
+		}
+
+		auto& reg = m_ActiveWorld->GetRegistry();
+		auto& tr = reg.Write<TransformComponent>(cam.Handle());
+		tr.Position = pos;
+		tr.Rotation = rot;
+		if (reg.any_of<CameraControllerRuntimeComponent>(cam.Handle()))
+		{
+			reg.Write<CameraControllerRuntimeComponent>(cam.Handle()).Initialized = false;
+		}
+
+		SS_CORE_INFO("Editor: camera.override pos=({:.3f},{:.3f},{:.3f}) rot=({:.3f},{:.3f},{:.3f}).",
+		             pos.x, pos.y, pos.z, rot.x, rot.y, rot.z);
+		return true;
 	}
 
 	bool EditorLayer::LoadEditorCameraSidecar(const std::string& scenePath) const

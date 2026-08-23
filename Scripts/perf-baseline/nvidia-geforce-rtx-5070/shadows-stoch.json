@@ -1,0 +1,159 @@
+{
+  "device": "NVIDIA GeForce RTX 5070",
+  "config": "shadows-stoch",
+  "frames": 300,
+  "timestampsSupported": true,
+  "width": 1915,
+  "height": 1064,
+  "camera": [
+    8.5191,
+    1.4949,
+    -0.4308,
+    0.0272,
+    1.4958,
+    0.0
+  ],
+  "totalGpuMs": 4.8394,
+  "passes": {
+    "CameraDepthPrepass": {
+      "avgMs": 0.0429,
+      "minMs": 0.0411,
+      "maxMs": 0.2381,
+      "fragInvocations": 3555081,
+      "depth": 0
+    },
+    "DepthNormal": {
+      "avgMs": 0.1264,
+      "minMs": 0.1164,
+      "maxMs": 0.3204,
+      "fragInvocations": 3728719,
+      "depth": 0
+    },
+    "DepthPrepassBarrier": {
+      "avgMs": 0.0006,
+      "minMs": 0.0006,
+      "maxMs": 0.0033,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "Editor": {
+      "avgMs": 0.0598,
+      "minMs": 0.0558,
+      "maxMs": 0.2597,
+      "fragInvocations": 9774951,
+      "depth": 0
+    },
+    "Forward": {
+      "avgMs": 0.4396,
+      "minMs": 0.3978,
+      "maxMs": 0.6605,
+      "fragInvocations": 2684380,
+      "depth": 0
+    },
+    "PostProcess": {
+      "avgMs": 0.0145,
+      "minMs": 0.0136,
+      "maxMs": 0.0234,
+      "fragInvocations": 2037560,
+      "depth": 0
+    },
+    "RTShadow": {
+      "avgMs": 1.4482,
+      "minMs": 1.1266,
+      "maxMs": 1.6084,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ShadowDenoise0": {
+      "avgMs": 0.375,
+      "minMs": 0.3331,
+      "maxMs": 0.5208,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ShadowDenoise1": {
+      "avgMs": 0.3388,
+      "minMs": 0.3303,
+      "maxMs": 0.5177,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ShadowDenoise2": {
+      "avgMs": 0.3556,
+      "minMs": 0.3372,
+      "maxMs": 0.5331,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ShadowSpecDenoise0": {
+      "avgMs": 0.3399,
+      "minMs": 0.3334,
+      "maxMs": 0.5156,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ShadowSpecDenoise1": {
+      "avgMs": 0.3384,
+      "minMs": 0.3313,
+      "maxMs": 0.5314,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ShadowSpecDenoise2": {
+      "avgMs": 0.3527,
+      "minMs": 0.3375,
+      "maxMs": 0.5375,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ShadowSpecTemporal": {
+      "avgMs": 0.1815,
+      "minMs": 0.1575,
+      "maxMs": 0.3428,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ShadowSpecUpsample": {
+      "avgMs": 0.0456,
+      "minMs": 0.0444,
+      "maxMs": 0.0518,
+      "fragInvocations": 2037560,
+      "depth": 0
+    },
+    "ShadowTemporal": {
+      "avgMs": 0.1535,
+      "minMs": 0.1466,
+      "maxMs": 0.3373,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ShadowUpsample": {
+      "avgMs": 0.0554,
+      "minMs": 0.0441,
+      "maxMs": 0.2077,
+      "fragInvocations": 2037560,
+      "depth": 0
+    },
+    "Sky": {
+      "avgMs": 0.0002,
+      "minMs": 0.0001,
+      "maxMs": 0.0023,
+      "fragInvocations": 0,
+      "depth": 1
+    },
+    "TemporalResolve": {
+      "avgMs": 0.0989,
+      "minMs": 0.0932,
+      "maxMs": 0.3025,
+      "fragInvocations": 2037560,
+      "depth": 0
+    },
+    "Velocity": {
+      "avgMs": 0.0577,
+      "minMs": 0.0558,
+      "maxMs": 0.0609,
+      "fragInvocations": 3055742,
+      "depth": 0
+    }
+  }
+}

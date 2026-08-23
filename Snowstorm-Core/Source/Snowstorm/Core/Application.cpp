@@ -256,10 +256,18 @@ namespace Snowstorm
 				if (perfBench.FrameCount() >= static_cast<uint32_t>(perfBenchFrames))
 				{
 					const std::string& path = CVars::PerfBenchPath.Get();
-					// Device name (GPU) tags the JSON so per-machine baselines are self-identifying and the
-					// script's baseline-device mismatch check (warn-only) is meaningful. timestampsSupported =
-					// we actually captured scopes (false on a device without GPU timestamps -> script skips).
-					const std::string json = perfBench.ToJson(Renderer::GetDeviceName(), CVars::StartupScene.Get(), !perfBench.Empty());
+					// Device name (GPU) tags the JSON: the script slugs it into the baseline directory, so a run
+					// only ever diffs against the set captured on the same adapter. TimestampsSupported = we
+					// actually captured scopes (false on a device without GPU timestamps -> script skips).
+					const RendererService::FrameViewInfo& view = renderer.GetFrameViewInfo();
+					const PerfBenchRunInfo info{.Device = Renderer::GetDeviceName(),
+					                            .Config = CVars::PerfBenchConfig.Get(),
+					                            .TimestampsSupported = !perfBench.Empty(),
+					                            .Width = view.Width,
+					                            .Height = view.Height,
+					                            .CameraPosition = view.CameraPosition,
+					                            .CameraRotation = view.CameraRotation};
+					const std::string json = perfBench.ToJson(info);
 					if (std::ofstream out(path); out)
 					{
 						out << json;
