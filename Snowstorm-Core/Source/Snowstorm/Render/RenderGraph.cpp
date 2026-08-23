@@ -89,6 +89,23 @@ namespace Snowstorm
 			}
 		}
 
+		// The texture a pass uses as its depth attachment, or null. Two passes naming the same one write it
+		// through the depth stage with no layout change between them, so the automatic attachment transition
+		// emits nothing and the second pass can test against depth the first has not finished writing.
+		Ref<Texture> DepthTargetOf(const RenderGraph::Pass& pass)
+		{
+			if (!pass.Target)
+			{
+				return nullptr;
+			}
+			const RenderTargetDesc& desc = pass.Target->GetDesc();
+			if (!desc.DepthAttachment || !desc.DepthAttachment->View)
+			{
+				return nullptr;
+			}
+			return desc.DepthAttachment->View->GetTexture();
+		}
+
 		const char* HazardName(const RenderGraph::Hazard h)
 		{
 			switch (h)
@@ -185,8 +202,21 @@ namespace Snowstorm
 				++unconstrained;
 			}
 
-			SS_CORE_INFO("  [{:>2}] {:<28} queue={} earliest={} deps: {}", i, m_Passes[i].Name,
-			             m_Passes[i].Queue == GpuQueue::AsyncCompute ? "async" : "gfx", earliest, edges);
+			std::string depthNote;
+			if (const Ref<Texture> d = DepthTargetOf(m_Passes[i]))
+			{
+				for (size_t j = i; j-- > 0;)
+				{
+					if (DepthTargetOf(m_Passes[j]) == d)
+					{
+						depthNote = " DEPTH-BARRIER<-" + m_Passes[j].Name;
+						break;
+					}
+				}
+			}
+
+			SS_CORE_INFO("  [{:>2}] {:<28} queue={} earliest={} deps: {}{}", i, m_Passes[i].Name,
+			             m_Passes[i].Queue == GpuQueue::AsyncCompute ? "async" : "gfx", earliest, edges, depthNote);
 		}
 
 		// A pass with no edges is either genuinely independent or touching resources the graph cannot see
@@ -229,6 +259,30 @@ namespace Snowstorm
 			CVars::GraphDumpDeps.Set(dumpFrames - 1);
 		}
 
+		// A pass sharing its depth attachment with an earlier one needs an execution dependency the layout
+		// machinery cannot supply, since DEPTH_ATTACHMENT_OPTIMAL on both sides means the attachment
+		// transition is a no-op. Derived here rather than declared: the depth prepass feeding the forward
+		// pass is the motivating case, and expressing it as a hand-placed barrier pass hid the constraint
+		// from the dependency graph entirely.
+		std::vector<Ref<Texture>> depthTargets(m_Passes.size());
+		std::vector<bool> needsDepthBarrier(m_Passes.size(), false);
+		for (size_t i = 0; i < m_Passes.size(); ++i)
+		{
+			depthTargets[i] = DepthTargetOf(m_Passes[i]);
+			if (!depthTargets[i])
+			{
+				continue;
+			}
+			for (size_t j = i; j-- > 0;)
+			{
+				if (depthTargets[j] == depthTargets[i])
+				{
+					needsDepthBarrier[i] = true;
+					break;
+				}
+			}
+		}
+
 		// Resolved once: neither the device capability nor the CVar changes mid-frame. False runs every
 		// pass inline on graphics in declaration order.
 		const bool asyncAvailable = Renderer::IsAsyncComputeAvailable();
@@ -239,8 +293,10 @@ namespace Snowstorm
 		CommandContext* current = &ctx;
 		bool inAsyncBatch = false;
 
-		for (auto& pass : m_Passes)
+		for (size_t passIndex = 0; passIndex < m_Passes.size(); ++passIndex)
 		{
+			const Pass& pass = m_Passes[passIndex];
+
 			// Consecutive async passes share one fork/join pair: we only switch queues when the desired queue
 			// differs from the one we're on, so a run of N async passes costs one fork and one join, not N.
 			if (const bool wantAsync = asyncAvailable && pass.Queue == GpuQueue::AsyncCompute;
@@ -271,6 +327,12 @@ namespace Snowstorm
 				// A compute pass's sampled read of a graphics-written target needs the color-write ->
 				// compute-read dependency the layout no-op skips; the graph derives it (see ApplyAccess).
 				ApplyAccess(*current, r, pass.IsCompute);
+			}
+
+			// Must precede BeginRenderPass: a barrier cannot be recorded inside a dynamic-rendering instance.
+			if (needsDepthBarrier[passIndex])
+			{
+				current->BarrierDepthWriteToRead(depthTargets[passIndex]);
 			}
 
 			current->ResetState();
