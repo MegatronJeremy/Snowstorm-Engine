@@ -47,6 +47,7 @@ namespace Snowstorm
 		bool IsAsyncComputeAvailable() const override;
 		Ref<CommandContext> ForkAsyncCompute() override;
 		void JoinAsyncCompute() override;
+		const std::vector<GpuScope>& GetCollectedGpuScopes() const override { return m_FrameGpuScopes; }
 
 		void InitImGuiBackend(void* windowHandle) override;
 		void ShutdownImGuiBackend() override;
@@ -66,6 +67,10 @@ namespace Snowstorm
 		// image count. Called at init and after each swapchain recreate (image count can change with the
 		// present mode). Destroys any existing ones first; the GPU is drained by the caller at both sites.
 		void CreateRenderFinishedSemaphores();
+
+		// Resolve a freshly-begun context's prior recording into m_FrameGpuScopes. Must run while `ctx` is
+		// recording: CollectGpuScopes issues a vkCmdResetQueryPool into it.
+		void AppendCollectedScopes(VulkanCommandContext& ctx);
 
 		uint32_t m_CurrentFrameIndex = 0;
 		uint32_t m_ImageIndex = 0; // The actual index of the swapchain image acquired
@@ -101,6 +106,12 @@ namespace Snowstorm
 		// graphics[1], ... so a wait is never enqueued before the submit that will signal it.
 		std::vector<QueuedSubmit> m_FrameGraphicsSubmits;
 		std::vector<QueuedSubmit> m_FrameComputeSubmits;
+
+		// Scopes resolved by every context begun this frame, in begin order. A context resolves its own pool
+		// when it starts recording, so async passes land here interleaved with the graphics segments that
+		// bracket them; their wall-clock execution overlaps, so these millisecond figures do not sum to the
+		// frame time once a pass actually runs async.
+		std::vector<GpuScope> m_FrameGpuScopes;
 
 		uint32_t m_CurrentGraphicsSegment = 0; // index into m_GraphicsContexts[frame] currently recording
 		uint32_t m_CurrentComputeBatch = 0;    // index into m_ComputeContexts[frame] for the next fork

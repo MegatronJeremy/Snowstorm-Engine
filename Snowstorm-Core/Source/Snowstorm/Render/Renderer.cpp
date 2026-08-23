@@ -285,6 +285,12 @@ namespace Snowstorm
 		return s_API->IsAsyncComputeAvailable();
 	}
 
+	const std::vector<GpuScope>& Renderer::GetCollectedGpuScopes()
+	{
+		SS_CORE_ASSERT(s_API, "Renderer not initialized");
+		return s_API->GetCollectedGpuScopes();
+	}
+
 	Ref<CommandContext> Renderer::ForkAsyncCompute()
 	{
 		SS_CORE_ASSERT(s_API, "Renderer not initialized");

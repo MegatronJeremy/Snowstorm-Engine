@@ -71,6 +71,7 @@ namespace Snowstorm
 
 		// Driven by RenderGraph::Execute. Passes declare Pass::Queue and never call these directly.
 		static bool IsAsyncComputeAvailable();
+		static const std::vector<GpuScope>& GetCollectedGpuScopes();
 		static Ref<CommandContext> ForkAsyncCompute();
 		static void JoinAsyncCompute();
 
