@@ -1461,7 +1461,8 @@ namespace Snowstorm
 		// Motion-vector pass (#44): re-renders visible meshes into the velocity target, projecting each vertex
 		// by this frame's and last frame's matrices. Runs BEFORE forward so the buffer is ready for the passes
 		// that consume it (TAA / neural-temporal / the motion-vector debug tonemap). Gated by velocityNeeded:
-		// the debug view, TAA, the neural temporal upscaler, or dataset export needs it. Publishes the velocity
+		// the debug view, TAA, DLAA, the neural temporal upscaler, dataset export, or any stage that reprojects
+		// by motion vectors (GI/reflection temporal, the previous-frame color gather). Publishes the velocity
 		// view onto the context so downstream stages read it from there.
 		class VelocityEffect final : public IViewportEffect
 		{
@@ -1478,16 +1479,19 @@ namespace Snowstorm
 				const int debugView = CVars::DebugView.Get();
 				const bool taaOn = CVars::AAMode.Get() == 2 && v.RT.HistoryTarget[0] && v.RT.HistoryTarget[1] &&
 				                   !v.RT.HistoryTarget[0]->GetDesc().ColorAttachments.empty();
+				// DLAA runs the neural temporal network as the AA resolve, so it reprojects by motion vectors
+				// exactly like TAA even at scale 1.
+				const bool dlaa = CVars::DlaaActive();
 				const bool neuralTemporal = CVars::Upscaler.Get() == 2;
 				const bool exporting = CVars::DatasetExport.Get() && v.Comparing;
 				// GI (#125) and reflection (#129) temporal accumulation reproject by motion vectors, so either
-				// forces the velocity pass on whenever its effect is running — even without TAA / debug / neural.
+				// forces the velocity pass on whenever its effect is running, even without TAA / debug / neural.
 				const bool giTemporal = CVars::GiActive() && CVars::GITemporalActive();
 				const bool reflTemporal = CVars::ReflectionsRTActive() && CVars::ReflectionTemporalActive();
 				// SSR and SSGI (#151) reproject the previous-frame color by velocity every frame, so either needs
 				// the pass on unconditionally (not only when its temporal stage is enabled).
 				const bool prevColorGather = CVars::ReflectionsSSRActive() || CVars::GiSSGIActive();
-				return (debugView == 1 || taaOn || neuralTemporal || exporting || giTemporal || reflTemporal || prevColorGather) && v.RT.VelocityTarget &&
+				return (debugView == 1 || taaOn || dlaa || neuralTemporal || exporting || giTemporal || reflTemporal || prevColorGather) && v.RT.VelocityTarget &&
 				       !v.RT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
 				       v.RT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 			}
