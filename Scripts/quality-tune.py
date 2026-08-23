@@ -70,13 +70,14 @@ PARAM_SPACE = {
         ("SS_RENDER_GI_DENOISE_VARIANCE", 0.5, 4.0, False, 2.0), # denoiser strength (bias vs noise)
     ],
     "all-rt": [
-        ("SS_RENDER_GI_RANGE", 4.0, 30.0, False, 17.0),             # indirect gather distance, and the one knob with a
-                                                                     # standalone fidelity-confirmed gain (+8.8% FLIP, +0.59dB
-                                                                     # PSNR at 17 vs the 8.0 default). GI.comp sets ray.TMax =
-                                                                     # GIRange and RayQuery cannot distinguish "left the scene"
-                                                                     # from "ran out of TMax", so both land in the sky-cube else
-                                                                     # branch: too short a range feeds un-occluded sky to rays
-                                                                     # that died in mid-air inside a closed interior.
+        ("SS_RENDER_GI_RANGE", 4.0, 30.0, False, 17.0),             # indirect gather distance; the seed matches the engine
+                                                                     # default, whose description carries the measurement.
+                                                                     # GI.comp sets ray.TMax = GIRange and RayQuery cannot
+                                                                     # distinguish "left the scene" from "ran out of TMax", so
+                                                                     # both land in the sky-cube else branch: too short a range
+                                                                     # feeds un-occluded sky to rays that died in mid-air inside
+                                                                     # a closed interior. SSGI reads the same CVar as its march
+                                                                     # step (GIRange / 32), so it is not an RT-only knob.
         ("SS_RENDER_AO_RADIUS", 0.2, 3.0, False, 0.5),              # occlusion extent, CAPPED at ~3 physical: beyond that AO
                                                                      # becomes a global dimmer (gaming, #161). Near-flat in
                                                                      # isolation now (0.5 -> 0.2 is worth ~0); the band above
