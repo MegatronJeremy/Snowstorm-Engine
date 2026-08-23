@@ -8,10 +8,10 @@ Engine/cache
 # Cached PT references for the image-quality gate (per-machine, regenerated on demand). See Scripts/quality-bench.py.
 Scripts/.quality-ref-cache/
 # Radeon GPU Analyzer, auto-bootstrapped (pinned version, ~238MB) by Scripts/rga-occupancy.py.
-# Downloaded tool, not source — never commit.
+# Downloaded tool, not source: never commit.
 Tools/rga/
 # Radeon Developer Tool Suite (RGP/RDP/RDS), bootstrapped by Scripts/rgp-capture.py. Downloaded
-# tool, not source — never commit.
+# tool, not source: never commit.
 Tools/rdts/
 
 # Files
@@ -55,7 +55,7 @@ Makefile
 !Engine/Fonts/
 !Engine/Fonts/**
 # Local user settings written by the editor on shutdown (persistent CVars). Machine-local
-# state, not project data — must not be committed.
+# state, not project data: must not be committed.
 SnowstormConfig.cfg
 # Hand-authored startup CVar overrides (dev/machine toggles like validation.extra); read at startup,
 # never written by the app. Machine-local, must not be committed.
