@@ -1,0 +1,114 @@
+{
+  "device": "AMD Radeon RX 9060 XT",
+  "config": "Projects/Sandbox/assets/scenes/Sponza.world",
+  "frames": 300,
+  "timestampsSupported": true,
+  "totalGpuMs": 9.6553,
+  "passes": {
+    "AO": {
+      "avgMs": 0.2705,
+      "minMs": 0.246,
+      "maxMs": 0.4558,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "AODenoise0": {
+      "avgMs": 0.1821,
+      "minMs": 0.1664,
+      "maxMs": 0.3036,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "AODenoise1": {
+      "avgMs": 0.1797,
+      "minMs": 0.164,
+      "maxMs": 0.3022,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "AODenoise2": {
+      "avgMs": 0.1914,
+      "minMs": 0.1746,
+      "maxMs": 0.3204,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "AOTemporal": {
+      "avgMs": 0.0683,
+      "minMs": 0.0644,
+      "maxMs": 0.0943,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "AOUpsample": {
+      "avgMs": 0.0687,
+      "minMs": 0.0635,
+      "maxMs": 0.1118,
+      "fragInvocations": 1680943,
+      "depth": 0
+    },
+    "CameraDepthPrepass": {
+      "avgMs": 0.11,
+      "minMs": 0.1029,
+      "maxMs": 0.1607,
+      "fragInvocations": 5235137,
+      "depth": 0
+    },
+    "DepthNormal": {
+      "avgMs": 0.3547,
+      "minMs": 0.348,
+      "maxMs": 0.393,
+      "fragInvocations": 5485547,
+      "depth": 0
+    },
+    "DepthPrepassBarrier": {
+      "avgMs": 0.0003,
+      "minMs": 0.0001,
+      "maxMs": 0.0006,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "Editor": {
+      "avgMs": 0.1033,
+      "minMs": 0.0957,
+      "maxMs": 0.1477,
+      "fragInvocations": 9663642,
+      "depth": 0
+    },
+    "Forward": {
+      "avgMs": 7.7144,
+      "minMs": 7.0839,
+      "maxMs": 12.786,
+      "fragInvocations": 2530958,
+      "depth": 0
+    },
+    "PostProcess": {
+      "avgMs": 0.0358,
+      "minMs": 0.0334,
+      "maxMs": 0.0449,
+      "fragInvocations": 1680943,
+      "depth": 0
+    },
+    "Sky": {
+      "avgMs": 0.0,
+      "minMs": 0.0,
+      "maxMs": 0.0,
+      "fragInvocations": 0,
+      "depth": 1
+    },
+    "TemporalResolve": {
+      "avgMs": 0.1719,
+      "minMs": 0.1254,
+      "maxMs": 0.371,
+      "fragInvocations": 1680943,
+      "depth": 0
+    },
+    "Velocity": {
+      "avgMs": 0.1855,
+      "minMs": 0.1754,
+      "maxMs": 0.2648,
+      "fragInvocations": 3933713,
+      "depth": 0
+    }
+  }
+}
