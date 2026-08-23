@@ -51,7 +51,9 @@ Usage (from repo root or anywhere):
     py Scripts/rga-occupancy.py --dry-run           # print planned RGA invocations, don't run
 
 Exit code: 0 if every shader is within threshold (or --update-baseline), 1 on a
-regression / run failure. --dry-run always exits 0.
+regression / run failure, 2 if a shader was never compared (no baseline for this ASIC, a shader new
+since the baseline, or a baselined shader absent from the analysed SPIR-V). Exit 2 is not a pass:
+it says the gate did not run. --dry-run always exits 0.
 """
 import argparse
 import csv
@@ -581,29 +583,48 @@ def main() -> int:
         return 0
 
     if not baseline_file.exists():
-        print(f"No baseline at {baseline_file.relative_to(repo_root)} -- run with --update-baseline first.")
+        print(f"NOT GATED: no baseline at {baseline_file.relative_to(repo_root)} "
+              f"-- run with --update-baseline first.")
         for base, m in sorted(current.items()):
             spill = m.get("vgpr_spills", 0) + m.get("sgpr_spills", 0) + m.get("scratch", 0)
             print(f"  {base:<24} vgpr {m.get('vgprs', 0):>3.0f}  occ {_occ_str(m.get('vgprs', 0), args.asic):>5}  "
                   f"lds {m.get('lds', 0):>5.0f}  spills {spill:.0f}")
-        return 0
+        print("\n=== Summary ===")
+        print(f"SKIP: nothing was compared on ASIC {args.asic}, so this run is not a pass.")
+        return 2
 
     baseline = json.loads(baseline_file.read_text()).get("shaders", {})
+    if args.only:
+        # --only is a spot check, so the shaders it filtered out are absent by request, not missing.
+        baseline = {k: v for k, v in baseline.items() if args.only.lower() in k.lower()}
     all_ok = True
+    ungated = []
     for base in sorted(set(current) | set(baseline)):
         c, b = current.get(base), baseline.get(base)
         if b is None:
+            ungated.append(f"{base} (new shader, no baseline)")
             print(f"  {base:<24} (new shader, no baseline)")
             continue
         if c is None:
+            ungated.append(f"{base} (in baseline, absent from the analysed SPIR-V)")
             print(f"  {base:<24} (gone from cache)")
             continue
         if not compare(base, c, b, args.threshold, args.asic):
             all_ok = False
 
     print("\n=== Summary ===")
-    print("PASS" if all_ok else "FAIL (occupancy/register regression)")
-    return 0 if all_ok else 1
+    if not all_ok:
+        print("FAIL (occupancy/register regression)")
+        return 1
+    if ungated:
+        print(f"SKIP: {len(ungated)} shader(s) were never compared:")
+        for u in ungated:
+            print(f"  {u}")
+        print("      this run is not a pass. Re-baseline, or point --spv-dir at a full cook "
+              "(py Scripts/cook-shaders.py --variants rt,base).")
+        return 2
+    print("PASS")
+    return 0
 
 
 if __name__ == "__main__":

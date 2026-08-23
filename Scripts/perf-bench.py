@@ -27,7 +27,9 @@ Usage (from repo root or anywhere):
     py Scripts/perf-bench.py --scene <path>     # benchmark a different scene
     py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
 
-Exit code: 0 if every config is within threshold (or --update-baseline), 1 on a regression.
+Exit code: 0 if every config is within threshold (or --update-baseline), 1 on a regression or
+run failure, 2 if a config had no baseline for this adapter and so was never compared. Exit 2 is
+not a pass: it means the gate did not run, which is what a fresh box or a new GPU sees.
 """
 import argparse
 import json
@@ -195,6 +197,7 @@ def main() -> int:
     print(f"Mode      : {'UPDATE BASELINE' if args.update_baseline else 'compare vs baseline'}\n")
 
     all_ok = True
+    ungated = []
     for name, env_overrides in configs:
         print(f"=== {name} ===")
         current = run_config(name, env_overrides, exe, repo_root, args.frames,
@@ -214,16 +217,25 @@ def main() -> int:
             if not compare(name, current, baseline, args.threshold):
                 all_ok = False
         else:
-            print(f"  no baseline at {bp.relative_to(repo_root)} for '{device or 'unknown device'}' "
-                  f"-- run with --update-baseline first.")
+            ungated.append(name)
+            print(f"  NOT GATED: no baseline at {bp.relative_to(repo_root)} for "
+                  f"'{device or 'unknown device'}' -- run with --update-baseline first.")
             # Still print the current numbers so the run isn't useless.
             for p, s in sorted(current.get("passes", {}).items()):
                 print(f"    {p:<18} {s['avgMs']:>10.3f} ms")
         print()
 
     print("=== Summary ===")
-    print("PASS" if all_ok else "FAIL (regression or run failure)")
-    return 0 if all_ok else 1
+    if not all_ok:
+        print("FAIL (regression or run failure)")
+        return 1
+    if ungated:
+        print(f"SKIP: no baseline on this adapter for {len(ungated)} config(s): {', '.join(ungated)}")
+        print("      nothing was compared for those, so this run is not a pass. "
+              "Capture them with --update-baseline.")
+        return 2
+    print("PASS")
+    return 0
 
 
 if __name__ == "__main__":

@@ -25,7 +25,11 @@ Usage (from repo root or anywhere):
 FLIP is optional: if the `flip-evaluator` package isn't importable the run still gates on PSNR/SSIM
 (install with `pip install flip-evaluator` to enable it). numpy is required.
 
-Exit code: 0 if every technique is within threshold (or --update-baseline), 1 on a regression/failure.
+Exit code: 0 if every technique is within threshold (or --update-baseline), 1 on a regression or
+failure, 2 if a comparison was never made: no baseline, a baseline captured on a different GPU (the
+PT reference is not comparable across adapters), or FLIP missing while the baseline carries one.
+Exit 2 is not a pass, since a gate that reports success on numbers it never compared is worse than
+no gate.
 """
 import argparse
 import hashlib
@@ -365,6 +369,7 @@ def main() -> int:
     print(f"Mode      : {'UPDATE BASELINE' if args.update_baseline else 'compare vs baseline'}\n")
 
     all_ok = True
+    ungated = []
     for vp, pose in VIEWPOINTS.items():
         cam = camera_env(pose)  # SS_CAMERA_OVERRIDE for this viewpoint (runtime); no scene/sidecar mutation
         ref_img, ref_dev, cached = capture_reference(vp, pose, args.ref_frames, exe, repo_root,
@@ -398,22 +403,42 @@ def main() -> int:
             if args.update_baseline:
                 bp.write_text(json.dumps(cur, indent=2))
                 print(f"  updated baseline: {bp.relative_to(repo_root)}")
-            elif bp.exists():
+            elif not bp.exists():
+                ungated.append(f"{vp}/{tech}: no baseline")
+                print(f"  NOT GATED: no baseline at {bp.relative_to(repo_root)} "
+                      f"-- run with --update-baseline first.")
+            else:
                 base = json.loads(bp.read_text())
                 if base.get("device") and cur["device"] and base["device"] != cur["device"]:
-                    print(f"  note: device differs (baseline '{base['device']}' vs current '{cur['device']}') "
-                          f"-- the PT reference isn't comparable across GPUs; consider --update-baseline.")
+                    # The reference is a path trace on THIS GPU, so a baseline captured elsewhere
+                    # measures hardware difference as well as technique error. Refuse to gate on it.
+                    ungated.append(f"{vp}/{tech}: baseline is from '{base['device']}'")
+                    print(f"  NOT GATED: device differs (baseline '{base['device']}' vs current "
+                          f"'{cur['device']}'); the PT reference isn't comparable across GPUs. "
+                          f"Re-capture with --update-baseline.")
+                    continue
+                if base.get("flip") is not None and cur["flip"] is None:
+                    ungated.append(f"{vp}/{tech}: FLIP unavailable")
+                    print("  NOT GATED [flip]: flip-evaluator is not installed, so the primary "
+                          "perceptual metric was not compared (PSNR/SSIM still are).")
                 for m in ("flip", "psnr", "ssim"):
                     b, c = base.get(m), cur.get(m)
                     if regressed(m, b, c, args.threshold):
                         print(f"  REGRESSION [{m}]: baseline {b} -> current {c}")
                         all_ok = False
-            else:
-                print(f"  no baseline at {bp.relative_to(repo_root)} -- run with --update-baseline first.")
 
     print("\n=== Summary ===")
-    print("PASS" if all_ok else "FAIL (regression or run failure)")
-    return 0 if all_ok else 1
+    if not all_ok:
+        print("FAIL (regression or run failure)")
+        return 1
+    if ungated:
+        print(f"SKIP: {len(ungated)} comparison(s) were never made:")
+        for u in ungated:
+            print(f"  {u}")
+        print("      nothing was compared for those, so this run is not a pass.")
+        return 2
+    print("PASS")
+    return 0
 
 
 if __name__ == "__main__":
