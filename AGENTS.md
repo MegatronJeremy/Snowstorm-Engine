@@ -206,6 +206,13 @@ design). A trailing `ssgi` config sits outside that ladder, repeating the `+gi` 
 screen-space GI producer, so it diffs against `+refl` rather than its neighbour and gives the
 screen-space-vs-RT cost of the same effect. Sub-0.05 ms passes are ignored (timestamp noise).
 
+**Warmup is detected, not assumed.** Sampling begins once the rolling 30-frame GPU-time window's
+peak-to-peak spread drops below `perf.bench.warmup.epsilon` (default 5%) of its mean, capped by
+`perf.bench.warmup.maxframes` (600, after which the run proceeds and logs that it is NOT from a steady
+state). The old fixed 15-frame warmup was ~0.25s and measured on Sponza takes **53 frames** to actually
+settle, so every run before this averaged part of the GPU clock ramp, with the result depending on how
+warm the machine already was and no way to tell from the JSON.
+
 **The dominant noise source is run-level, not frame-level.** Three identical back-to-back runs on an RX
 9060 XT spread **8-12% on every pass**, while each pass's *minimum* moved only ~3%: the GPU still reaches
 peak briefly in every run but spends progressively more frames throttled, which is a DVFS/thermal

@@ -19,6 +19,14 @@ namespace Snowstorm::CVars
 	extern CVar<int> PerfBenchFrames;
 	extern CVar<std::string> PerfBenchPath;
 
+	// Perf-bench warmup is DETECTED, not assumed: sampling starts once the GPU frame time stops moving
+	// (rolling peak-to-peak spread under this fraction of the mean), so a run cannot average part of the
+	// clock ramp. 0 skips detection and uses the minimum warmup only.
+	extern CVar<float> PerfBenchWarmupEpsilon;
+	// Hard cap on the warmup wait. A machine that never settles (background GPU load) still produces a run,
+	// reported as not-settled rather than silently treated as clean.
+	extern CVar<int> PerfBenchWarmupMaxFrames;
+
 	// Headless quality capture (local image-quality gate, #153 increment 2). When > 0, let the frame render
 	// this many times (so a static camera accumulates the reference path tracer / warms the real-time path),
 	// then copy the final present (LDR sRGB) + HDR scene color to disk as .npy and exit. Scripts/quality-bench.py
