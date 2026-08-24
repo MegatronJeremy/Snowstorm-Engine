@@ -84,6 +84,11 @@ namespace Snowstorm::CVars
 	// block moves to the async queue, so it stays opt-in until it does.
 	extern CVar<bool> GraphReorder;
 
+	// Frames of VMA allocation dumps remaining, decremented as each is emitted. Prices the render graph's
+	// transient-aliasing case: aliasing can only recover memory that transient targets actually hold, and
+	// descriptors alone do not show that because VMA sub-allocates from larger blocks.
+	extern CVar<int> MemoryDump;
+
 	// Number of bare Transform+Rotator entities the stress bake ("scene.bake stress") spawns, on top of
 	// the renderable fields. These carry no mesh/material, so they load only RotatorSystem's per-entity
 	// loop: the heavy, pure workload for the parallel-ECS before/after benchmark (#85). 0 (default) = none.
