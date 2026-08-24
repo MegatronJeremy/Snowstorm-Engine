@@ -237,6 +237,8 @@ def main() -> int:
                     help="Minimum absolute ms rise for a regression, on top of --threshold (default 0.10)")
     ap.add_argument("--scene", default=DEFAULT_SCENE, help="Scene to benchmark")
     ap.add_argument("--gpu", default="", help="Pin the GPU (render.gpu syntax: name substring or index)")
+    ap.add_argument("--no-warmup", action="store_true",
+                    help="Skip the discarded warmup run. Faster, but the first config then carries GPU cold-start and is not comparable with the rest.")
     ap.add_argument("--update-baseline", action="store_true", help="Write current results as the new baseline")
     args = ap.parse_args()
 
@@ -261,6 +263,17 @@ def main() -> int:
     print(f"Build dir : {build_dir}  (config: {args.config})")
     print(f"Scene     : {args.scene}   Frames: {args.frames}   Threshold: {args.threshold}% and >{args.abs_threshold} ms")
     print(f"Mode      : {'UPDATE BASELINE' if args.update_baseline else 'compare vs baseline'}\n")
+
+    # Bring the GPU to steady clocks before anything is measured. The per-run 15-frame warmup only
+    # covers timestamp lag inside one process, not the cold-start the FIRST config in a batch pays, and
+    # that config's numbers were systematically not comparable to the rest: measured back to back on an
+    # idle machine, rt-off's Forward pass swings 0.528 to 0.650 ms (+23%) purely on batch position while
+    # every later config reproduces within 1.8%. Cheap insurance against re-baselining a thermal state.
+    if not args.no_warmup and configs:
+        print("=== warmup (discarded) ===")
+        run_config(configs[0][0], configs[0][1], exe, repo_root, min(args.frames, 120),
+                   args.timeout, layer_path, args.scene, args.gpu)
+        print()
 
     all_ok = True
     ungated = []

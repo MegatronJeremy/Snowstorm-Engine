@@ -13,75 +13,68 @@
     1.4958,
     0.0
   ],
-  "totalGpuMs": 1.3293,
+  "totalGpuMs": 1.3507,
   "passes": {
     "CameraDepthPrepass": {
-      "avgMs": 0.0386,
-      "minMs": 0.0378,
-      "maxMs": 0.0397,
-      "fragInvocations": 3556669,
-      "depth": 0
-    },
-    "DepthPrepassBarrier": {
-      "avgMs": 0.0006,
-      "minMs": 0.0006,
-      "maxMs": 0.0006,
-      "fragInvocations": 0,
+      "avgMs": 0.0684,
+      "minMs": 0.0376,
+      "maxMs": 0.1988,
+      "fragInvocations": 3552594,
       "depth": 0
     },
     "Editor": {
       "avgMs": 0.0591,
-      "minMs": 0.0561,
-      "maxMs": 0.0622,
-      "fragInvocations": 9786009,
+      "minMs": 0.0564,
+      "maxMs": 0.0612,
+      "fragInvocations": 9786158,
       "depth": 0
     },
     "Forward": {
-      "avgMs": 0.4876,
-      "minMs": 0.4469,
-      "maxMs": 0.4938,
-      "fragInvocations": 2684155,
+      "avgMs": 0.4907,
+      "minMs": 0.4527,
+      "maxMs": 0.5035,
+      "fragInvocations": 2684103,
       "depth": 0
     },
     "PointShadows": {
-      "avgMs": 0.5117,
-      "minMs": 0.5093,
-      "maxMs": 0.5856,
+      "avgMs": 0.5113,
+      "minMs": 0.5082,
+      "maxMs": 0.6022,
       "fragInvocations": 0,
       "depth": 0
     },
     "PostProcess": {
-      "avgMs": 0.014,
-      "minMs": 0.0134,
-      "maxMs": 0.0149,
+      "avgMs": 0.0138,
+      "minMs": 0.0133,
+      "maxMs": 0.0145,
       "fragInvocations": 2037560,
       "depth": 0
     },
     "Shadow": {
-      "avgMs": 0.061,
-      "minMs": 0.06,
-      "maxMs": 0.0698,
+      "avgMs": 0.0607,
+      "minMs": 0.0595,
+      "maxMs": 0.0848,
       "fragInvocations": 0,
       "depth": 0
     },
     "Sky": {
       "avgMs": 0.0002,
       "minMs": 0.0001,
-      "maxMs": 0.0003,
+      "maxMs": 0.0002,
       "fragInvocations": 0,
       "depth": 1
     },
     "TemporalResolve": {
-      "avgMs": 0.0948,
-      "minMs": 0.0925,
-      "maxMs": 0.0961,
+      "avgMs": 0.0863,
+      "minMs": 0.0855,
+      "maxMs": 0.0871,
       "fragInvocations": 2037560,
       "depth": 0
     },
     "Velocity": {
-      "avgMs": 0.0572,
-      "minMs": 0.0565,
-      "maxMs": 0.0649,
+      "avgMs": 0.0576,
+      "minMs": 0.0562,
+      "maxMs": 0.2145,
       "fragInvocations": 3055742,
       "depth": 0
     }
