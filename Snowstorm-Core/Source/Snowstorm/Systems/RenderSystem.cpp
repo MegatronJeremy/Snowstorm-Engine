@@ -623,9 +623,9 @@ namespace Snowstorm
 		if (aoTextureIndex != 0)
 		{
 			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
-			    rt && rt->AOUpscaleTarget && !rt->AOUpscaleTarget->GetDesc().ColorAttachments.empty())
+			    rt && rt->AOUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())] && !rt->AOUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty())
 			{
-				meshReads.push_back({rt->AOUpscaleTarget->GetDesc().ColorAttachments[0].View->GetTexture(),
+				meshReads.push_back({rt->AOUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments[0].View->GetTexture(),
 				                     RenderGraph::AccessState::Sampled});
 			}
 		}
@@ -643,9 +643,9 @@ namespace Snowstorm
 		if (shadowTextureIndex != 0)
 		{
 			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
-			    rt && rt->ShadowUpscaleTarget && !rt->ShadowUpscaleTarget->GetDesc().ColorAttachments.empty())
+			    rt && rt->ShadowUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())] && !rt->ShadowUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty())
 			{
-				meshReads.push_back({rt->ShadowUpscaleTarget->GetDesc().ColorAttachments[0].View->GetTexture(),
+				meshReads.push_back({rt->ShadowUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments[0].View->GetTexture(),
 				                     RenderGraph::AccessState::Sampled});
 			}
 		}
@@ -654,9 +654,9 @@ namespace Snowstorm
 		if (shadowSpecTextureIndex != 0)
 		{
 			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
-			    rt && rt->ShadowSpecUpscaleTarget && !rt->ShadowSpecUpscaleTarget->GetDesc().ColorAttachments.empty())
+			    rt && rt->ShadowSpecUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())] && !rt->ShadowSpecUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty())
 			{
-				meshReads.push_back({rt->ShadowSpecUpscaleTarget->GetDesc().ColorAttachments[0].View->GetTexture(),
+				meshReads.push_back({rt->ShadowSpecUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments[0].View->GetTexture(),
 				                     RenderGraph::AccessState::Sampled});
 			}
 		}

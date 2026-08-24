@@ -117,9 +117,9 @@ namespace Snowstorm
 				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget ||
 				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget || !rt.VelocityTarget ||
 				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIDenoiser.Allocated() || !rt.GIUpscaleTarget[0] || !rt.GIUpscaleTarget[1] ||
-				                     !rt.AOTarget || !rt.AOBlurTarget || !rt.AODenoiser.Allocated() || !rt.AOUpscaleTarget ||
-				                     !rt.ShadowTarget || !rt.ShadowDenoiser.Allocated() || !rt.ShadowUpscaleTarget ||
-				                     !rt.ShadowSpecTarget || !rt.ShadowSpecDenoiser.Allocated() || !rt.ShadowSpecUpscaleTarget ||
+				                     !rt.AOTarget || !rt.AOBlurTarget || !rt.AODenoiser.Allocated() || !rt.AOUpscaleTarget[0] || !rt.AOUpscaleTarget[1] ||
+				                     !rt.ShadowTarget || !rt.ShadowDenoiser.Allocated() || !rt.ShadowUpscaleTarget[0] || !rt.ShadowUpscaleTarget[1] ||
+				                     !rt.ShadowSpecTarget || !rt.ShadowSpecDenoiser.Allocated() || !rt.ShadowSpecUpscaleTarget[0] || !rt.ShadowSpecUpscaleTarget[1] ||
 				                     !rt.ReflectionTarget || !rt.ReflectionDenoiser.Allocated() || !rt.PrevSceneColorTarget ||
 				                     !rt.PathTraceAccumTarget ||
 				                     !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
@@ -195,7 +195,8 @@ namespace Snowstorm
 					AllocateDenoiser(rtW.AODenoiser, aoW, aoH, "ViewportAO");
 					// Full-res AO target (#126): the bilateral upsample renders the half-res AO into this; the
 					// forward pass samples it (by screen UV) and folds it into `ao`. Full viewport res.
-					rtW.AOUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportAOUpscale");
+					rtW.AOUpscaleTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportAOUpscale0");
+					rtW.AOUpscaleTarget[1] = CreateColorOnlyHDRTarget(w, h, "ViewportAOUpscale1");
 					// Half-res sun-shadow target: render.shadows.scale (shadowW/shadowH), rebuilt on viewport OR
 					// shadows.scale change (tracked by shadowScaleChanged). Only dispatched when ShadowsRTActive().
 					rtW.ShadowTarget = CreateAOTarget(shadowW, shadowH, "ViewportShadow");
@@ -205,13 +206,15 @@ namespace Snowstorm
 					AllocateDenoiser(rtW.ShadowDenoiser, shadowW, shadowH, "ViewportShadow");
 					// Full-res sun-shadow target: the bilateral upsample renders the half-res shadow (after temporal+
 					// denoise) into this; the forward pass samples it (by screen UV) as the aggregate ratio. Full res.
-					rtW.ShadowUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportShadowUpscale");
+					rtW.ShadowUpscaleTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportShadowUpscale0");
+					rtW.ShadowUpscaleTarget[1] = CreateColorOnlyHDRTarget(w, h, "ViewportShadowUpscale1");
 					// Specular twin of the shadow chain (demodulated MegaLights specular): same half-res grid + its own
 					// denoiser, so the specular signal denoises independently of the diffuse. Full-res upscale target.
 					rtW.ShadowSpecTarget = CreateAOTarget(shadowW, shadowH, "ViewportShadowSpec");
 					rtW.ShadowSpecTargetView = rtW.ShadowSpecTarget->GetDefaultView();
 					AllocateDenoiser(rtW.ShadowSpecDenoiser, shadowW, shadowH, "ViewportShadowSpec");
-					rtW.ShadowSpecUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportShadowSpecUpscale");
+					rtW.ShadowSpecUpscaleTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportShadowSpecUpscale0");
+					rtW.ShadowSpecUpscaleTarget[1] = CreateColorOnlyHDRTarget(w, h, "ViewportShadowSpecUpscale1");
 					// Full-res RT reflection (#129): full viewport res (reflections are high-frequency). Always
 					// allocated; only dispatched when reflections are active. Rebuilt on viewport resize.
 					rtW.ReflectionTarget = CreateGITarget(w, h, "ViewportReflection");

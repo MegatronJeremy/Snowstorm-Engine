@@ -105,7 +105,8 @@ namespace Snowstorm
 		// Full-res AO factor (#126): the depth+normal-aware bilateral upsample renders the half-res AOTarget
 		// into this full-viewport target, which the forward pass samples (by screen UV) and folds into `ao`.
 		// A RenderTarget (the upsample is a fullscreen graphics pass). Null until allocated.
-		Ref<RenderTarget> AOUpscaleTarget;
+		// Double-buffered for render.rt.crossframe, as GIUpscaleTarget. Both slots always allocated.
+		Ref<RenderTarget> AOUpscaleTarget[2];
 
 		// Half-res RT sun-shadow: the sun-visibility trace runs into this Sampled|Storage RGBA16F target at
 		// render.ao.scale (reusing the AO scale — one half-res grid for both scalar signals). Stores a sun
@@ -124,7 +125,8 @@ namespace Snowstorm
 		// signal-agnostic) renders the half-res ShadowTarget (after temporal+denoise) into this full-viewport
 		// target, which the forward pass samples (by screen UV) in place of the inline per-pixel RayQuery. Null
 		// until allocated.
-		Ref<RenderTarget> ShadowUpscaleTarget;
+		// Double-buffered for render.rt.crossframe, as GIUpscaleTarget. Both slots always allocated.
+		Ref<RenderTarget> ShadowUpscaleTarget[2];
 
 		// Stochastic RT shadow SPECULAR twin (demodulated MegaLights/NRD path): the shadow compute pass also emits
 		// the shadowed specular (GGX D*G, no Fresnel) here, denoised + upsampled by its OWN chain (a second
@@ -133,7 +135,8 @@ namespace Snowstorm
 		Ref<Texture> ShadowSpecTarget;
 		Ref<TextureView> ShadowSpecTargetView;
 		DenoiserInstance ShadowSpecDenoiser;
-		Ref<RenderTarget> ShadowSpecUpscaleTarget;
+		// Double-buffered for render.rt.crossframe, as GIUpscaleTarget. Both slots always allocated.
+		Ref<RenderTarget> ShadowSpecUpscaleTarget[2];
 
 		// Full-res RT reflection (#129): the reflection trace runs into this Sampled|Storage RGBA16F target at
 		// FULL viewport res (reflections are high-frequency — half-res would soften mirrors). Stores RAW

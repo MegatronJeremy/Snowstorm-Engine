@@ -809,18 +809,21 @@ namespace Snowstorm
 		                              ScaledExtent(windowHeight, CVars::ClampedAOScale()), "Main Viewport");
 		rtc.AOTargetView = rtc.AOTarget->GetDefaultView();
 		// Full-res AO target (#126), full viewport res; the bilateral upsample renders into it.
-		rtc.AOUpscaleTarget = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport AOUpscale");
+		rtc.AOUpscaleTarget[0] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport AOUpscale0");
+		rtc.AOUpscaleTarget[1] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport AOUpscale1");
 		// Half-res sun-shadow target (render.shadows.scale; ViewportResizeSystem rebuilds it on scale change).
 		rtc.ShadowTarget = CreateAOTarget(ScaledExtent(windowWidth, CVars::ClampedShadowScale()),
 		                                  ScaledExtent(windowHeight, CVars::ClampedShadowScale()), "Main Viewport Shadow");
 		rtc.ShadowTargetView = rtc.ShadowTarget->GetDefaultView();
 		// Full-res sun-shadow target, full viewport res; the bilateral upsample renders into it.
-		rtc.ShadowUpscaleTarget = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport ShadowUpscale");
+		rtc.ShadowUpscaleTarget[0] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport ShadowUpscale0");
+		rtc.ShadowUpscaleTarget[1] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport ShadowUpscale1");
 		// Demodulated specular twin of the shadow chain (its own half-res target + denoiser + full-res upscale).
 		rtc.ShadowSpecTarget = CreateAOTarget(ScaledExtent(windowWidth, CVars::ClampedShadowScale()),
 		                                      ScaledExtent(windowHeight, CVars::ClampedShadowScale()), "Main Viewport ShadowSpec");
 		rtc.ShadowSpecTargetView = rtc.ShadowSpecTarget->GetDefaultView();
-		rtc.ShadowSpecUpscaleTarget = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport ShadowSpecUpscale");
+		rtc.ShadowSpecUpscaleTarget[0] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport ShadowSpecUpscale0");
+		rtc.ShadowSpecUpscaleTarget[1] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport ShadowSpecUpscale1");
 		// TAA history ping-pong (#44).
 		rtc.HistoryTarget[0] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport History0");
 		rtc.HistoryTarget[1] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport History1");

@@ -815,7 +815,7 @@ namespace Snowstorm
 				// AoActive(): the shared upsample serves BOTH techniques (SSAO or RT) — v.AOView is whatever the
 				// active AO sub-chain last wrote (SSAO's blur, or the RT trace/temporal/denoise), #151.
 				return v.GBufferNeeded && CVars::AoActive() && v.RT.AOTarget && v.AOView &&
-				       v.RT.AOUpscaleTarget && !v.RT.AOUpscaleTarget->GetDesc().ColorAttachments.empty();
+				       v.RT.AOUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())] && !v.RT.AOUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty();
 			}
 
 			void Contribute(ViewportRenderContext& v) override
@@ -829,7 +829,7 @@ namespace Snowstorm
 				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
 				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
 				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
-				const Ref<RenderTarget>& dst = v.RT.AOUpscaleTarget;
+				const Ref<RenderTarget>& dst = v.RT.AOUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())];
 				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
 				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
@@ -1126,7 +1126,7 @@ namespace Snowstorm
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
 				return v.GBufferNeeded && CVars::ShadowStochasticActive() && v.RT.ShadowTarget && v.ShadowView &&
-				       v.RT.ShadowUpscaleTarget && !v.RT.ShadowUpscaleTarget->GetDesc().ColorAttachments.empty();
+				       v.RT.ShadowUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())] && !v.RT.ShadowUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty();
 			}
 
 			void Contribute(ViewportRenderContext& v) override
@@ -1140,7 +1140,7 @@ namespace Snowstorm
 				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
 				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
 				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
-				const Ref<RenderTarget>& dst = v.RT.ShadowUpscaleTarget;
+				const Ref<RenderTarget>& dst = v.RT.ShadowUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())];
 				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
 				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
@@ -1262,8 +1262,8 @@ namespace Snowstorm
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
 				return v.GBufferNeeded && CVars::ShadowStochasticActive() && CVars::ShadowSpecularDemodulated.Get() &&
-				       v.RT.ShadowSpecTarget && v.ShadowSpecView && v.RT.ShadowSpecUpscaleTarget &&
-				       !v.RT.ShadowSpecUpscaleTarget->GetDesc().ColorAttachments.empty();
+				       v.RT.ShadowSpecTarget && v.ShadowSpecView && v.RT.ShadowSpecUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())] &&
+				       !v.RT.ShadowSpecUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty();
 			}
 
 			void Contribute(ViewportRenderContext& v) override
@@ -1277,7 +1277,7 @@ namespace Snowstorm
 				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
 				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
 				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View;
-				const Ref<RenderTarget>& dst = v.RT.ShadowSpecUpscaleTarget;
+				const Ref<RenderTarget>& dst = v.RT.ShadowSpecUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())];
 				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
 				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
@@ -1585,28 +1585,28 @@ namespace Snowstorm
 				// AoActive() so BOTH SSAO and RT AO feed the same forward slot (#151). Independent of GI (AO can run
 				// with GI off), needs no geometry table.
 				uint32_t aoIndex = 0;
-				if (v.GBufferNeeded && CVars::AoActive() && v.RT.AOUpscaleTarget &&
-				    !v.RT.AOUpscaleTarget->GetDesc().ColorAttachments.empty())
+				if (v.GBufferNeeded && CVars::AoActive() && v.RT.AOUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())] &&
+				    !v.RT.AOUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty())
 				{
-					aoIndex = v.RT.AOUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
+					aoIndex = v.RT.AOUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 				}
 
 				// Half-res RT sun-shadow consumption: mirror of the AO index. 0 = no half-res shadow -> DefaultLit
 				// falls back to the inline SampleSunShadow. Gated on the shadow sub-chain having run (v.ShadowView)
 				// so a stale upscale target from a prior frame can't leak in when shadows are off this frame.
 				uint32_t shadowIndex = 0;
-				if (v.GBufferNeeded && CVars::ShadowStochasticActive() && v.ShadowView && v.RT.ShadowUpscaleTarget &&
-				    !v.RT.ShadowUpscaleTarget->GetDesc().ColorAttachments.empty())
+				if (v.GBufferNeeded && CVars::ShadowStochasticActive() && v.ShadowView && v.RT.ShadowUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())] &&
+				    !v.RT.ShadowUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty())
 				{
-					shadowIndex = v.RT.ShadowUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
+					shadowIndex = v.RT.ShadowUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 				}
 
 				// Demodulated specular twin index (0 = no spec buffer -> forward falls back to the grey-vis specular).
 				uint32_t shadowSpecIndex = 0;
 				if (v.GBufferNeeded && CVars::ShadowStochasticActive() && CVars::ShadowSpecularDemodulated.Get() && v.ShadowSpecView &&
-				    v.RT.ShadowSpecUpscaleTarget && !v.RT.ShadowSpecUpscaleTarget->GetDesc().ColorAttachments.empty())
+				    v.RT.ShadowSpecUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())] && !v.RT.ShadowSpecUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty())
 				{
-					shadowSpecIndex = v.RT.ShadowSpecUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
+					shadowSpecIndex = v.RT.ShadowSpecUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 				}
 
 				// RT reflection consumption (#129): the live reflection buffer's bindless index (0 = no RT
