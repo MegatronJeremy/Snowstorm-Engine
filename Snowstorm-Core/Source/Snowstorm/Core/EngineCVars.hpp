@@ -544,6 +544,7 @@ namespace Snowstorm::CVars
 	[[nodiscard]] int ClampedReflectionDenoiseIterations();
 	[[nodiscard]] bool ReflectionDenoiseActive();
 	// SVGF variance-guided luminance-phi for the reflection denoiser (#129 Inc 3b). 0 = off.
+	extern CVar<float> ReflectionDenoiseHitDist;
 	extern CVar<float> ReflectionDenoiseVariance;
 
 	// Diffuse global-illumination technique (#151), a mode CVar (mirrors render.ao.mode) for a clean thesis

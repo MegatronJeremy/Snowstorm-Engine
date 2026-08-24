@@ -92,6 +92,33 @@ MOTION_ENV = {
 }
 
 
+def prune_ref_cache(repo_root: Path, keep: int = 2) -> None:
+    """Drop all but the `keep` newest cache entries per viewpoint/frame.
+
+    The cache is keyed on content, so a legitimate key change (a shader or scene edit, a different
+    --ref-frames) leaves the old entry behind forever. Each is a full-resolution float array, so they
+    accumulate fast: this repo reached 2.0 GB of mostly-dead entries before the key stopped including
+    the engine binary's mtime. Newest-per-name rather than exact-key matching, so switching
+    --ref-frames back and forth does not re-trace every time.
+    """
+    cache_dir = repo_root / "Scripts" / ".quality-ref-cache"
+    if not cache_dir.is_dir():
+        return
+    groups: dict = {}
+    for f in cache_dir.glob("*.npy"):
+        groups.setdefault(f.stem.partition("__")[0], []).append(f)
+    freed = 0
+    dropped = 0
+    for name, files in sorted(groups.items()):
+        files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+        for f in files[keep:]:
+            freed += f.stat().st_size
+            f.unlink()
+            f.with_suffix(".exe").unlink(missing_ok=True)
+            dropped += 1
+    print(f"Pruned {dropped} stale reference(s), {freed / 1e6:.0f} MB, keeping the {keep} newest per viewpoint.")
+
+
 def probe_frames(names) -> list:
     out = []
     for n in names:
@@ -182,11 +209,10 @@ def _motion_reference_key(repo_root: Path, exe: Path, scene: str, frame: int, re
     """
     h = qb.hashlib.sha256()
     h.update(f"v{_REF_CACHE_VERSION}|{scene}|{frame}|{ref_frames}|".encode())
-    for rel in [ROUTE, *qb._PT_SOURCES]:
-        p = repo_root / rel
-        h.update(p.read_bytes() if p.exists() else b"missing")
-    for p in (exe, repo_root / scene):
-        h.update(str(p.stat().st_mtime_ns).encode() if p.exists() else b"0")
+    # Content-hashed, and deliberately not including the engine binary; see qb.hash_inputs for why.
+    # The route matters here where it does not for the static gate: the frame index only means a
+    # viewpoint in combination with the curve it indexes into.
+    qb.hash_inputs(h, repo_root, scene, extra_files=[ROUTE])
     return h.hexdigest()[:16]
 
 
@@ -208,7 +234,9 @@ def capture_motion_reference(frame: int, ref_frames: int, exe: Path, repo_root: 
 
     if cache_npy.exists() and not fresh:
         try:
-            return np.load(cache_npy), "", True
+            img = np.load(cache_npy)
+            qb.check_engine_fingerprint(cache_npy, exe)
+            return img, "", True
         except Exception as e:
             print(f"  note: cached reference unreadable ({e}); re-capturing.")
 
@@ -217,6 +245,7 @@ def capture_motion_reference(frame: int, ref_frames: int, exe: Path, repo_root: 
                               layer_path, scene)
     if img is not None:
         np.save(cache_npy, img)
+        cache_npy.with_suffix(".exe").write_text(qb.engine_fingerprint(exe))
     return img, dev, False
 
 
@@ -375,10 +404,16 @@ def main() -> int:
     ap.add_argument("--tech-maxframes", type=int, default=4000,
                     help="Hard frame cap per motion capture; must exceed the last probe frame")
     ap.add_argument("--update-baseline", action="store_true", help="Write current metrics as the new baseline")
+    ap.add_argument("--prune-ref-cache", action="store_true",
+                    help="Delete all but the 2 newest cached references per viewpoint, then exit. The cache is content-keyed, so superseded entries linger; each is a full-res float array.")
     ap.add_argument("--fresh-ref", action="store_true", help="Ignore cached PT references and re-capture")
     args = ap.parse_args()
 
     repo_root = Path(__file__).resolve().parent.parent
+    if args.prune_ref_cache:
+        prune_ref_cache(repo_root)
+        return 0
+
     build_dir = (repo_root / args.build_dir).resolve()
     layer_path = (repo_root / "vcpkg" / "installed" / args.triplet / "bin").resolve()
     exe = build_dir / f"Snowstorm-Runtime/{args.config}/Snowstorm-Runtime.exe"

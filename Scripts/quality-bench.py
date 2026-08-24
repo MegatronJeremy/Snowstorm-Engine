@@ -286,15 +286,54 @@ _REF_CACHE_VERSION = 1  # bump to invalidate all cached references on a format/k
 _PT_SOURCES = ["Engine/Shaders/PathTrace.comp.hlsl", "Engine/Shaders/Include/Engine.hlsli"]
 
 
+def hash_inputs(h, repo_root: Path, scene: str, extra_files=()) -> None:
+    """Fold the files that determine a path-traced image into `h`, by CONTENT.
+
+    Content, never mtime. An editor resave that changes nothing, or a `touch`, would otherwise mint a
+    new key and throw away a reference that costs minutes to rebuild.
+
+    The engine BINARY is deliberately not part of the key. It was, via mtime, and it made the cache
+    almost useless: every rebuild for any reason (a comment, an unrelated system, a script) invalidated
+    every reference at once. Measured on this repo, that left 107 cache files totalling 2.0 GB with up
+    to 15 dead keys per viewpoint. Engine changes are instead reported by check_engine_fingerprint
+    below, which warns and lets you decide, rather than silently re-tracing everything.
+    """
+    for rel in [*_PT_SOURCES, scene, *extra_files]:
+        f = repo_root / rel
+        h.update(f.read_bytes() if f.exists() else b"missing")
+
+
+def engine_fingerprint(exe: Path) -> str:
+    return str(exe.stat().st_mtime_ns) if exe.exists() else "0"
+
+
+def check_engine_fingerprint(cache_npy: Path, exe: Path) -> None:
+    """Warn once if the engine was rebuilt since this reference was captured.
+
+    Not an invalidation: most rebuilds do not touch the path tracer, and treating them as if they did
+    is what made the cache worthless. A rebuild that DOES change rendering needs --fresh-ref, and this
+    is the reminder to think about it.
+    """
+    meta = cache_npy.with_suffix(".exe")
+    now = engine_fingerprint(exe)
+    was = meta.read_text().strip() if meta.exists() else None
+    if was is None:
+        meta.write_text(now)
+        return
+    if was != now and not _FINGERPRINT_STATE["warned"]:
+        _FINGERPRINT_STATE["warned"] = True
+        print("  note: the engine was rebuilt since these references were captured. Reusing them anyway "
+              "(a rebuild usually does not change the path tracer). Pass --fresh-ref if it did.")
+
+
+_FINGERPRINT_STATE = {"warned": False}
+
+
 def _reference_key(repo_root: Path, exe: Path, scene: str, pose, ref_frames: int) -> str:
     h = hashlib.sha256()
     h.update(f"v{_REF_CACHE_VERSION}|{scene}|{ref_frames}|".encode())
     h.update(",".join(f"{v}" for v in (list(pose["pos"]) + list(pose["rot"]))).encode() if pose else b"none")
-    for rel in _PT_SOURCES:
-        p = repo_root / rel
-        h.update(p.read_bytes() if p.exists() else b"missing")
-    for p in (exe, repo_root / scene):
-        h.update(str(p.stat().st_mtime_ns).encode() if p.exists() else b"0")
+    hash_inputs(h, repo_root, scene)
     return h.hexdigest()[:16]
 
 
@@ -310,7 +349,9 @@ def capture_reference(vp: str, pose, ref_frames: int, exe: Path, repo_root: Path
 
     if cache_npy.exists() and not fresh:
         try:
-            return np.load(cache_npy), "", True
+            img = np.load(cache_npy)
+            check_engine_fingerprint(cache_npy, exe)
+            return img, "", True
         except Exception as e:
             print(f"  note: cached reference unreadable ({e}); re-capturing.")
 
@@ -318,6 +359,7 @@ def capture_reference(vp: str, pose, ref_frames: int, exe: Path, repo_root: Path
                            timeout, layer_path, scene)
     if img is not None:
         np.save(cache_npy, img)
+        cache_npy.with_suffix(".exe").write_text(engine_fingerprint(exe))
     return img, dev, False
 
 

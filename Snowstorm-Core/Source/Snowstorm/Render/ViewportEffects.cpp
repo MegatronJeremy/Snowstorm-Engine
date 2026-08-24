@@ -1447,10 +1447,23 @@ namespace Snowstorm
 				cfg.DepthSigma = CVars::DepthEdgeSigma.Get();
 				cfg.NamePrefix = "Reflection";
 
-				// The à-trous-filtered buffer becomes the live reflection (#132: shared Denoiser). Reflections
-				// pass gbufView as the (ignored) hit guide + HitDistPhi 0 (#130 Inc B) so output is bit-identical.
-				v.ReflectionView = m_Denoiser.Atrous(fc, v.RT.ReflectionDenoiser, cfg, v.ReflectionView, gbufView, depthView, gbufView,
-				                                     reflDesc.Width, reflDesc.Height, v.Suffix);
+				// Hit-distance edge-stop. This is the only weight in the shared à-trous that can see a
+				// REFLECTION edge: wN and wD are computed from the receiver's normal and depth, which are
+				// constant across a flat reflective surface, so on a mirror they are both 1 and the kernel is
+				// wide open exactly where reflected detail lives. Measured without it, the filter makes the
+				// pixels it touches worse (error 23.327 -> 24.103 inside its own footprint, 0 vs 5 iterations).
+				//
+				// The CVar is normalized (fraction of the trace range) so it means the same thing as AO's,
+				// which divides by AORadius in AO.comp. Reflection.comp writes hit distance in WORLD units, so
+				// the division happens here instead. A miss stores ReflRange, the far end, so a missing tap
+				// reads as distant rather than as a spurious near edge.
+				cfg.HitDistPhi = CVars::ReflectionDenoiseHitDist.Get() / std::max(CVars::ReflectionRange.Get(), 1e-4f);
+
+				// The à-trous-filtered buffer becomes the live reflection (#132: shared Denoiser). The guide is
+				// the RAW trace (ReflectionTargetView, .a = mean hit distance), not v.ReflectionView, whose .a
+				// the temporal pass overwrote with variance. Same full-res grid as the à-trous input.
+				v.ReflectionView = m_Denoiser.Atrous(fc, v.RT.ReflectionDenoiser, cfg, v.ReflectionView, gbufView, depthView,
+				                                     v.RT.ReflectionTargetView, reflDesc.Width, reflDesc.Height, v.Suffix);
 			}
 
 		private:
