@@ -249,6 +249,27 @@ def capture_motion_reference(frame: int, ref_frames: int, exe: Path, repo_root: 
     return img, dev, False
 
 
+def _control_key(repo_root: Path, exe: Path, scene: str, tech_env: dict, frame: int) -> str:
+    """Cache key for a frozen static control.
+
+    Unlike a reference, this one DOES include the engine binary, and that is not an oversight. A
+    reference is ground truth: it depends on the path tracer and the scene, so a rebuild of unrelated
+    engine code cannot change it. A control is a rendering OF THE TECHNIQUE UNDER TEST, so any change
+    to the real-time path changes it, and reusing one across a rebuild would compute the penalty as
+    moving(new engine) minus static(old engine). That is a silently wrong number, which is worse than
+    a slow one.
+
+    So this cache pays off for repeated runs on an unchanged build (verifying a fresh baseline,
+    re-running after a flaky capture), and correctly misses after every rebuild.
+    """
+    h = qb.hashlib.sha256()
+    h.update(f"v{_REF_CACHE_VERSION}|{scene}|{frame}|{qb.CANON_W}x{qb.CANON_H}|".encode())
+    h.update("|".join(f"{k}={v}" for k, v in sorted(tech_env.items())).encode())
+    qb.hash_inputs(h, repo_root, scene, extra_files=[ROUTE])
+    h.update(qb.engine_fingerprint(exe).encode())
+    return h.hexdigest()[:16]
+
+
 def capture_static_controls(tech_env: dict, out_base: Path, exe: Path, repo_root: Path, timeout: int,
                             layer_path: Path, scene: str, probe_names) -> dict:
     """Render each probe's pose again with the camera PARKED, same technique. Returns {probe: image}.
@@ -268,9 +289,23 @@ def capture_static_controls(tech_env: dict, out_base: Path, exe: Path, repo_root
     empirically small: the `static` probe, already parked in the moving run, scores within 0.001
     FLIP of its own control on every technique.
     """
+    cache_dir = repo_root / "Scripts" / ".quality-ref-cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    tag = out_base.name.replace("motion_", "")
+
     out = {}
+    hits = 0
     for name in probe_names:
         f0 = PROBES[name][0]
+        cache_npy = cache_dir / f"control-{tag}-{name}__{_control_key(repo_root, exe, scene, tech_env, f0)}.npy"
+        if cache_npy.exists():
+            try:
+                out[name] = np.load(cache_npy)
+                hits += 1
+                continue
+            except Exception as e:
+                print(f"  note: cached control unreadable ({e}); re-capturing.")
+
         # The frame cap has to clear the freeze point: reaching route frame N means actually RENDERING
         # N frames first, so a cap below it captures the world mid-route instead of frozen. Getting this
         # wrong inverts the metric, since the control then sits further from the reference than the
@@ -281,7 +316,10 @@ def capture_static_controls(tech_env: dict, out_base: Path, exe: Path, repo_root
         if img is None:
             print(f"  static control capture failed for probe '{name}'.")
             return {}
+        np.save(cache_npy, img)
         out[name] = img
+    if hits:
+        print(f"    ({hits}/{len(probe_names)} static control(s) from cache)")
     return out
 
 
