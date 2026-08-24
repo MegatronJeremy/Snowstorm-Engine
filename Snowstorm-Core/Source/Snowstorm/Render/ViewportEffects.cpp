@@ -362,16 +362,27 @@ namespace Snowstorm
 				// Compute pass: reads the G-buffer + depth (Sampled), writes GITarget (Storage). The graph applies
 				// the layout transitions from these declarations (#129 Inc 4) — including the depth attachment's
 				// DepthStencil -> read-only redirect (handled in TransitionLayout).
+				// Reservoir write slot for this frame. The read slot is the other one, which a later
+				// increment resamples; nothing reads it yet.
+				const uint32_t resSlot = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
+				const Ref<TextureView> resSample = v.RT.GIReservoir.SampleView[resSlot];
+				const Ref<TextureView> resRadiance = v.RT.GIReservoir.RadianceView[resSlot];
+				const Ref<TextureView> resNormal = v.RT.GIReservoir.NormalView[resSlot];
+
 				fc.Graph.AddPass({.Name = "GI" + v.Suffix,
 				                  .IsCompute = true,
 				                  .Queue = GpuQueue::AsyncCompute,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
-				                  .Writes = {{giView->GetTexture(), RenderGraph::AccessState::Storage}},
-				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, depthView, giView, giW, giH](CommandContext& c)
+				                  .Writes = {{giView->GetTexture(), RenderGraph::AccessState::Storage},
+				                             {resSample->GetTexture(), RenderGraph::AccessState::Storage},
+				                             {resRadiance->GetTexture(), RenderGraph::AccessState::Storage},
+				                             {resNormal->GetTexture(), RenderGraph::AccessState::Storage}},
+				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, depthView, giView, giW, giH, resSample, resRadiance, resNormal](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, frameData, tableAddr, frameCounter,
-					                                  gbufView, depthView, giView, giW, giH);
+					                                  gbufView, depthView, giView, giW, giH,
+					                                  resSample, resRadiance, resNormal);
 				                  }});
 
 				v.GBufferNormal = gbufView; // republish (DepthNormalEffect already set it; harmless, keeps intent local)

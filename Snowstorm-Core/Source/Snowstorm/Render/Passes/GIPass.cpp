@@ -51,7 +51,8 @@ namespace Snowstorm
 			// starts a float4 array on a 16-byte boundary, so the shader has 12 bytes there whether or not
 			// this struct names them.
 			uint32_t HitLightCount = 0;
-			glm::uvec3 _PadHitLights{0, 0, 0};
+			uint32_t UseReSTIR = 0; // render.gi.restir: resample the candidates instead of averaging
+			glm::uvec2 _PadHitLights{0, 0};
 			glm::vec4 HitLightPosRange[kRTHitMaxLights]{};
 			glm::vec4 HitLightColor[kRTHitMaxLights]{};
 			glm::vec4 HitLightDirCos[kRTHitMaxLights]{};
@@ -67,7 +68,10 @@ namespace Snowstorm
 		constexpr uint32_t kOutputBinding = 1;
 		constexpr uint32_t kSamplerBinding = 2;
 		constexpr uint32_t kParamsBinding = 3;
-		constexpr uint32_t kDepthBinding = 4; // fp32 D32 depth SRV (was packed in the G-buffer .w)
+		constexpr uint32_t kDepthBinding = 4;       // fp32 D32 depth SRV (was packed in the G-buffer .w)
+		constexpr uint32_t kResSampleBinding = 5;   // reservoir .xyz sample pos, .w W  (RGBA32F UAV)
+		constexpr uint32_t kResRadianceBinding = 6; // reservoir .xyz radiance, .w M    (RGBA16F UAV)
+		constexpr uint32_t kResNormalBinding = 7;   // reservoir .xy oct sample normal  (RGBA16F UAV)
 	}
 
 	void GIPass::EnsureResources()
@@ -115,7 +119,9 @@ namespace Snowstorm
 	void GIPass::Dispatch(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const FrameData& frame,
 	                      const uint64_t tableAddr, const uint32_t frameCounter,
 	                      const Ref<TextureView>& gbuffer, const Ref<TextureView>& depth,
-	                      const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH)
+	                      const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH,
+	                      const Ref<TextureView>& resSample, const Ref<TextureView>& resRadiance,
+	                      const Ref<TextureView>& resNormal)
 	{
 		if (!ctx || !gbuffer || !depth || !output || outW == 0 || outH == 0)
 		{
@@ -159,6 +165,7 @@ namespace Snowstorm
 		if (CVars::RTHitLights.Get())
 		{
 			cb.HitLightCount = PackRTHitLights(frame.Lights, cb.HitLightPosRange, cb.HitLightColor, cb.HitLightDirCos);
+			cb.UseReSTIR = CVars::GiReSTIR.Get() ? 1u : 0u;
 		}
 
 		m_ParamBuffers[frameIndex]->SetData(&cb, sizeof(GICB), 0);
@@ -174,6 +181,9 @@ namespace Snowstorm
 		m_Sets[frameIndex]->SetTexture(kGBufferBinding, gbuffer); // .xy normal, .z roughness
 		m_Sets[frameIndex]->SetTexture(kDepthBinding, depth);     // fp32 D32 depth SRV
 		m_Sets[frameIndex]->SetTexture(kOutputBinding, output);   // storage image (UAV)
+		m_Sets[frameIndex]->SetTexture(kResSampleBinding, resSample);
+		m_Sets[frameIndex]->SetTexture(kResRadianceBinding, resRadiance);
+		m_Sets[frameIndex]->SetTexture(kResNormalBinding, resNormal);
 		m_Sets[frameIndex]->SetSampler(kSamplerBinding, m_Sampler);
 		const BufferBinding cbBB{.Buffer = m_ParamBuffers[frameIndex], .Offset = 0, .Range = sizeof(GICB)};
 		m_Sets[frameIndex]->SetBuffer(kParamsBinding, cbBB);

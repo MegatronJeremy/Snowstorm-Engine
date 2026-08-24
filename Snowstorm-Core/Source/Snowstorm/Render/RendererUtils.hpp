@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "RenderTarget.hpp"
 #include "Snowstorm/Components/DenoiserInstance.hpp"
+#include "Snowstorm/Components/ReservoirInstance.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Texture.hpp"
 
@@ -100,6 +101,12 @@ namespace Snowstorm
 	// accumulated history). One call replaces the ~18 flat lines the two alloc systems used to repeat per
 	// signal. `debugPrefix` names the textures (e.g. "ViewportGI" -> "ViewportGI_History0", …).
 	void AllocateDenoiser(DenoiserInstance& inst, uint32_t w, uint32_t h, const char* debugPrefix);
+
+	// Allocate (or reallocate) one signal's ReSTIR reservoir buffers: the Sample/Radiance/Normal parity
+	// ping-pongs and their views, sized to the signal's internal resolution. Sample is RGBA32F (a world
+	// position and the contribution weight W both lose too much in fp16); the other two are CreateGITarget-
+	// shaped RGBA16F. Resets HistoryValid = false, since fresh buffers hold no sample worth resampling.
+	void AllocateReservoir(ReservoirInstance& inst, uint32_t w, uint32_t h, const char* debugPrefix);
 
 	// Half-res AO factor target (#126): same shape as CreateGITarget (Sampled|Storage RGBA16F Texture2D UAV,
 	// sized to viewport * render.ao.scale). Stores a scalar occlusion factor in .r — the RHI has no

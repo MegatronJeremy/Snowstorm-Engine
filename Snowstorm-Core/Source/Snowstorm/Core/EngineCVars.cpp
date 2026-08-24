@@ -47,6 +47,7 @@ namespace Snowstorm::CVars
 	CVar<int> GraphDumpDeps{"render.graph.dumpdeps", 0, "Dump the render graph's pass dependency edges and per-pass earliest legal slot for this many frames"};
 	CVar<bool> GraphReorder{"render.graph.reorder", false, "Execute render-graph passes in a dependency-derived schedule that groups compute work (off = declaration order)"};
 	CVar<bool> RtCrossFrame{"render.rt.crossframe", false, "Sample the RT chain's upscaled output one frame late so the forward pass does not depend on this frame's trace and denoise, which is what lets an async-compute batch overlap the raster work (off = same-frame, single-buffered)"};
+	CVar<bool> GiReSTIR{"render.gi.restir", false, "Resample the GI hemisphere samples (ReSTIR) instead of averaging them, keeping one sample plus its unbiased contribution weight so later increments can reuse it temporally and spatially (off = the cosine-weighted average)", CVarFlags::Persist};
 	CVar<int> MemoryDump{"render.memory.dump", 0, "Log VMA allocation totals and per-heap budget usage for this many frames"};
 
 	CVar<int> StressRotators{"stress.rotators", 0, "Bare Transform+Rotator entities the stress bake spawns (heavy data-parallel ECS workload for the #85 benchmark)", CVarFlags::ReadOnly};

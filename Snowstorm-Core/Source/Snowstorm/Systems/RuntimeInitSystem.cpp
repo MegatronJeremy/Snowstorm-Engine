@@ -165,6 +165,7 @@ namespace Snowstorm
 				wRtc.GITarget = CreateGITarget(giW, giH, "Viewport");                 // half-res GI (#124)
 				wRtc.GITargetView = wRtc.GITarget->GetDefaultView();
 				AllocateDenoiser(wRtc.GIDenoiser, giW, giH, "ViewportGI"); // GI SVGF denoiser buffers (#132)
+				AllocateReservoir(wRtc.GIReservoir, giW, giH, "ViewportGI");
 				// Both slots always: render.rt.crossframe is runtime-toggleable, and a null second slot would
 				// fault the moment it is turned on. One extra full-res HDR target is trivial against the ~1.2 GiB
 				// the renderer already holds.

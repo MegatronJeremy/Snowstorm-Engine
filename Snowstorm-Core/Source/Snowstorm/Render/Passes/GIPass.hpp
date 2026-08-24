@@ -34,7 +34,9 @@ namespace Snowstorm
 		void Dispatch(const Ref<CommandContext>& ctx, uint32_t frameIndex, const FrameData& frame,
 		              uint64_t tableAddr, uint32_t frameCounter,
 		              const Ref<TextureView>& gbuffer, const Ref<TextureView>& depth,
-		              const Ref<TextureView>& output, uint32_t outW, uint32_t outH);
+		              const Ref<TextureView>& output, uint32_t outW, uint32_t outH,
+		              const Ref<TextureView>& resSample, const Ref<TextureView>& resRadiance,
+		              const Ref<TextureView>& resNormal);
 
 	private:
 		void EnsureResources();

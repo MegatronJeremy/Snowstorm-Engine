@@ -26,6 +26,13 @@ Texture2D<float4> GBufferNormal : register(t0, space0); // .xy = oct GEOMETRIC n
 SamplerState LinearSampler : register(s2, space0);       // bindless albedo / cubemap sampling
 Texture2D<float> GBufferDepth : register(t4, space0);    // fp32 NDC depth (D32 attachment), sampled directly
 
+// ReSTIR reservoir, write slot. Split across three images because one reservoir does not fit in four
+// channels: the sample-point normal is needed by the reconnection Jacobian once reuse is added, so it
+// cannot be dropped to save a binding.
+[[vk::image_format("rgba32f")]] RWTexture2D<float4> ResSampleOut : register(u5, space0);   // .xyz sample pos, .w W
+[[vk::image_format("rgba16f")]] RWTexture2D<float4> ResRadianceOut : register(u6, space0); // .xyz radiance, .w M
+[[vk::image_format("rgba16f")]] RWTexture2D<float4> ResNormalOut : register(u7, space0);   // .xy oct sample normal
+
 cbuffer GICB : register(b3, space0)
 {
 	float4x4 InvViewProj; // clip -> world, for depth->world-position reconstruction
@@ -57,7 +64,8 @@ cbuffer GICB : register(b3, space0)
 	// RTHitShading.hlsli's local-light contract. 16 = Snowstorm::kRTHitMaxLights (RTHitLights.hpp), which also
 	// owns the packing; HitLightCount is 0 whenever render.rt.hit_lights is off.
 	uint HitLightCount;
-	uint3 _PadHitLights;
+	uint UseReSTIR;   // 1 = resample the candidates (RIS) instead of averaging them
+	uint2 _PadHitLights;
 	float4 HitLightPosRange[16];
 	float4 HitLightColor[16];
 	float4 HitLightDirCos[16];
@@ -71,6 +79,20 @@ cbuffer GICB : register(b3, space0)
 #define RTHIT_LOCAL_LIGHTS // the CB above carries HitLightCount + the three packed arrays
 #include "Include/RTHitShading.hlsli"
 #include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky (#129 Inc 1b)
+
+// Uniform [0,1) from an integer seed (PCG-style bit mix). The reservoir's accept test needs an independent
+// draw per candidate: reusing the interleaved-gradient rotation would correlate the choice with the sample
+// direction and skew which candidate survives.
+float GIHash01(uint3 v)
+{
+	v = v * 1664525u + 1013904223u;
+	v.x += v.y * v.z;
+	v.y += v.z * v.x;
+	v.z += v.x * v.y;
+	v ^= v >> 16u;
+	v.x += v.y * v.z;
+	return float(v.x & 0x00FFFFFFu) / float(0x01000000u);
+}
 
 uint64_t GeoTableAddress()
 {
@@ -137,6 +159,14 @@ void main(uint3 id : SV_DispatchThreadID)
 	// C++ clamp, so the /rayCount normalization below never divides by zero.
 	const uint rayCount = max(RayCount, 1u);
 	float3 incoming = float3(0, 0, 0);
+
+	// Reservoir state for the RIS path. wSum is the running sum of candidate weights; the survivor's own
+	// weight is kept because the unbiased contribution weight W divides by it.
+	float resWSum = 0.0;
+	float resTargetY = 0.0;
+	float3 resRadiance = float3(0, 0, 0);
+	float3 resHitPos = float3(0, 0, 0);
+	float3 resHitNormal = N;
 	[loop] for (uint s = 0; s < rayCount; ++s)
 	{
 		const float u1 = frac((float(s) + ign) / float(rayCount));
@@ -165,20 +195,56 @@ void main(uint3 id : SV_DispatchThreadID)
 			}
 		}
 
+		// One candidate's contribution in the estimator's own convention: the tail divides the SUM by
+		// rayCount, so a candidate's value is its radiance, with the cosine and its pdf already cancelling
+		// under cosine-weighted sampling.
+		float3 candidate = float3(0, 0, 0);
+		float3 hitPos = origin + dir * GIRange; // sky miss: a far point along the ray
+		float3 hitNormal = -dir;                // faces the receiver, which is all the Jacobian needs
+
 		if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT && tableAddr != 0)
 		{
-			const float3 hitPos = origin + dir * q.CommittedRayT();
-			incoming += ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos, GIBounceAmbient);
+			hitPos = origin + dir * q.CommittedRayT();
+			candidate = ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos, GIBounceAmbient);
 		}
 		else if (PrefilteredCubeIndex != 0)
 		{
-			incoming += Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, dir, 0).rgb * IBLIntensity;
+			candidate = Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, dir, 0).rgb * IBLIntensity;
+		}
+
+		incoming += candidate;
+
+		// Weighted reservoir sampling over the same candidates. Target function is the candidate's luminance,
+		// and the candidates are equally likely draws, so the weight IS the target. Selecting with probability
+		// w/wSum leaves E[estimate] equal to the mean, which is what makes this swap-in unbiased.
+		const float w = RTHitLuminance(candidate);
+		resWSum += w;
+		if (w > 0.0 && GIHash01(uint3(id.xy, FrameCounter * 32u + s)) < w / resWSum)
+		{
+			resTargetY = w;
+			resRadiance = candidate;
+			resHitPos = hitPos;
+			resHitNormal = hitNormal;
 		}
 	}
 
 	// Incoming irradiance, intensity-scaled. NO receiver albedo: that's multiplied at full res in the
 	// forward pass after the bilateral upsample, so half-res GI never blurs albedo edges. GIIntensity is a
 	// linear scalar (no effect on edges), applied here so the debug view shows the tuned signal.
-	const float3 irradiance = (incoming / float(rayCount)) * GIIntensity;
+	// RIS path: the estimate is the survivor scaled by its unbiased contribution weight
+	// W = wSum / (M * targetY). With every candidate equal this collapses to W = 1 and the survivor IS the
+	// mean, so the two paths agree in the uniform case and differ only in variance.
+	const float M = float(rayCount);
+	const float W = (UseReSTIR != 0 && resTargetY > 0.0) ? (resWSum / (M * resTargetY)) : 0.0;
+
+	const float3 averaged = incoming / M;
+	const float3 resampled = resRadiance * W;
+	const float3 irradiance = ((UseReSTIR != 0) ? resampled : averaged) * GIIntensity;
 	GIOut[id.xy] = float4(irradiance, 1.0);
+
+	// Persist the reservoir so a later increment can resample it. Written even when the average is what got
+	// output, so the write path is exercised by the same run that validates the estimator.
+	ResSampleOut[id.xy] = float4(resHitPos, W);
+	ResRadianceOut[id.xy] = float4(resRadiance, M);
+	ResNormalOut[id.xy] = float4(EncodeNormalOct(resHitNormal), 0.0, 0.0);
 }

@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "Snowstorm/Components/DenoiserInstance.hpp"
+#include "Snowstorm/Components/ReservoirInstance.hpp"
 #include "Snowstorm/Render/RenderTarget.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
@@ -70,6 +71,11 @@ namespace Snowstorm
 		// history-valid flag, bundled into one reusable instance (was flat GIHistory/GIMoments/GIDenoiseScratch
 		// fields). Half-res (render.gi.scale). See DenoiserInstance for the per-buffer semantics.
 		DenoiserInstance GIDenoiser;
+
+		// ReSTIR GI reservoirs, half-res like GITarget. The GI pass resamples the previous frame's surviving
+		// sample instead of averaging a fresh hemisphere gather, so one traced ray carries the weight of many.
+		// Unused while render.gi.restir is off, in which case the buffers are allocated but never read.
+		ReservoirInstance GIReservoir;
 
 		// Full-res GI irradiance (#124): the depth+normal-aware bilateral upsample renders the half-res
 		// GITarget into this full-viewport color-only HDR target, which the forward pass then samples (by
