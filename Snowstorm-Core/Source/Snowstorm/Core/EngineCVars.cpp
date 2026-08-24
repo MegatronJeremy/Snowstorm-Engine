@@ -642,4 +642,12 @@ namespace Snowstorm::CVars
 		// which still ORs in AoRTActive()/GIRTActive().
 		return ShadowsRTActive() || ReflectionsRTActive();
 	}
+
+	bool LitInlineRTShadowsActive()
+	{
+		// Note this is NOT the same condition as FrameCB.RTShadowEnabled, which stays 1 under stochastic
+		// shadows: the shader's own useShadowTex branch is what bypasses the inline path at runtime. The
+		// permutation has to key off the technique instead, or it would keep compiling code nothing calls.
+		return ShadowsRTActive() && !ShadowStochasticActive();
+	}
 }

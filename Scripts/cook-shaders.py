@@ -33,6 +33,13 @@ VARIANTS = {"base": [], "rt": ["SS_RAYTRACING=1", "SS_FP16=1"]}
 # Only combinations a call site actually requests are listed; cooking the full cross product is how shader
 # variant counts explode. Keep in sync with the call sites that pass defines to Load().
 FEATURE_VARIANTS = {
+    # DefaultLit's inline ray-query shadow path is a DYNAMIC axis (ShaderReloadSystem swaps it in place from
+    # a frame-constant CVar) rather than a call-site one, but the gate still needs both compiled to see the
+    # occupancy difference, and the heavier variant is what runs when inline RT shadows are on.
+    "DefaultLit.frag": [
+        ("inlineshadow", ["SS_LIT_INLINE_RT_SHADOWS=1"]), # shadows.mode=RayTraced without the stochastic pass
+        ("noinlineshadow", []),                           # stochastic shadows / raster / off: traversal is dead
+    ],
     "GIDenoise.comp": [
         ("gi", []),                            # GI + reflections: neither extra term
         ("ao", ["SS_DENOISE_HITDIST=1"]),      # AO: REBLUR-style hit-distance edge-stop
@@ -74,6 +81,17 @@ def main() -> int:
         print(f"FAIL: shader dir not found at {shaders_dir}")
         return 1
     out.mkdir(parents=True, exist_ok=True)
+
+    # Purge stale .spv before cooking. The cook regenerates everything it owns, so anything left over is
+    # from a previous run with a different shader or variant list, and rga-occupancy.py would analyse it as
+    # a live module: a renamed shader or a changed FEATURE_VARIANTS entry otherwise leaves a phantom that
+    # --update-baseline bakes in permanently. Observed with DefaultLit.frag_{base,rt}.spv surviving the
+    # switch to per-feature variants and reporting an entry the cook no longer produces.
+    stale = list(out.glob("*.spv"))
+    for f in stale:
+        f.unlink()
+    if stale:
+        print(f"cleared {len(stale)} stale .spv from {out.name}")
 
     variants = [v for v in args.variants.split(",") if v in VARIANTS]
     if not variants:

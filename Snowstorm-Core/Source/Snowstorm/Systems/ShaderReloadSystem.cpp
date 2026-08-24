@@ -24,17 +24,28 @@ namespace Snowstorm
 			{
 				const Ref<Shader>& lit = shaderLibrary.Get(litKey);
 				const bool wantRT = CVars::AnyRTEffectActive();
-				if (!m_LitInitialized || wantRT != m_LastWantRT)
+				// Second axis within the RT variant: the inline ray-query shadow path is dead whenever the
+				// stochastic pass supplies a visibility texture instead, so it is compiled out there.
+				const bool wantInlineShadows = CVars::LitInlineRTShadowsActive();
+				if (!m_LitInitialized || wantRT != m_LastWantRT || wantInlineShadows != m_LastWantInlineShadows)
 				{
 					const ShaderPermutation desired = wantRT ? ShaderPermutation::Auto : ShaderPermutation::ForceNonRT;
-					if (lit->GetPermutation() != desired)
+					ShaderDefines dynamic;
+					if (wantInlineShadows)
+					{
+						dynamic.emplace_back("SS_LIT_INLINE_RT_SHADOWS=1");
+					}
+					if (lit->GetPermutation() != desired || lit->GetDynamicDefines() != dynamic)
 					{
 						lit->SetPermutation(desired);
+						lit->SetDynamicDefines(std::move(dynamic));
 						lit->Recompile(); // synchronous; warm .spv cache makes this a fs::exists check after first build
 						needPipelineRebuild = true;
-						SS_CORE_INFO("DefaultLit RT permutation -> {}", wantRT ? "RT" : "non-RT");
+						SS_CORE_INFO("DefaultLit permutation -> {}{}", wantRT ? "RT" : "non-RT",
+						             wantInlineShadows ? " +inline-shadows" : "");
 					}
 					m_LastWantRT = wantRT;
+					m_LastWantInlineShadows = wantInlineShadows;
 					m_LitInitialized = true;
 				}
 			}

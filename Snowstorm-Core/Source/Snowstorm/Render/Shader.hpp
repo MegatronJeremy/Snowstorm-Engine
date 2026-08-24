@@ -74,6 +74,15 @@ namespace Snowstorm
 		[[nodiscard]] virtual ShaderPermutation GetPermutation() const = 0;
 		virtual void SetPermutation(ShaderPermutation p) = 0;
 
+		// DYNAMIC permutation defines: additive axes whose value is a frame-constant global rather than a
+		// property of the call site, so exactly ONE variant is ever live and swapping it should replace this
+		// shader's SPIR-V in place. That is why these mutate rather than key the library: materials hold a
+		// Ref<Pipeline>, and Pipeline::Reload swaps the module under them, where a new library entry would
+		// force every material to re-resolve. Contrast the immutable call-site set passed to Load(), which
+		// exists for variants that must coexist. Set then Recompile(); the choice keys the .spv cache.
+		[[nodiscard]] virtual ShaderDefines GetDynamicDefines() const = 0;
+		virtual void SetDynamicDefines(ShaderDefines defines) = 0;
+
 		void Recompile()
 		{
 			Compile();

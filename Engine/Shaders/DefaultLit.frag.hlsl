@@ -96,7 +96,7 @@ float SampleShadowFactor(uint texIndex, float4x4 lightViewProj, float4 atlasRect
 	return lerp(1.0, visibility, ShadowStrength);
 }
 
-#ifdef SS_RAYTRACING
+#if defined(SS_RAYTRACING) && defined(SS_LIT_INLINE_RT_SHADOWS)
 // Record + any-hit cutout alpha test, shared with the AO/GI/reflection passes. Engine.hlsli already declared
 // Textures[] (t0, space3), satisfying RTGeometry's contract, so this include must follow it.
 #include "Include/RTGeometry.hlsli"
@@ -220,7 +220,7 @@ float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, flo
 // gated by ShadowMapIndex; 0 = no shadows). `Ng`/`L`/`pixelPos` are only used by the RT path.
 float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL, float2 pixelPos)
 {
-#ifdef SS_RAYTRACING
+#if defined(SS_RAYTRACING) && defined(SS_LIT_INLINE_RT_SHADOWS)
 	if (RTShadowEnabled != 0)
 	{
 		// Soft (cone-sampled penumbra) when enabled: the sun's angular radius is already supplied as a
@@ -245,7 +245,7 @@ float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL, float
 // (ShadowIndex >= 0); RT path gated by ShadowIndex >= 0 alone (the "this light casts" sentinel).
 float SampleSpotShadow(SpotLight spot, float3 positionWS, float3 Ng, float3 L, float distToLight, float NdotL, float2 pixelPos)
 {
-#ifdef SS_RAYTRACING
+#if defined(SS_RAYTRACING) && defined(SS_LIT_INLINE_RT_SHADOWS)
 	if (RTShadowEnabled != 0)
 	{
 		if (spot.ShadowIndex < 0)
@@ -294,7 +294,7 @@ int PointShadowFace(float3 dir)
 // being bound AND a shadow slot assigned (ShadowSlot >= 0); RT path gated by ShadowSlot >= 0 alone.
 float SamplePointShadow(PointLight light, float3 positionWS, float3 Ng, float3 L, float distToLight, float NdotL, float2 pixelPos)
 {
-#ifdef SS_RAYTRACING
+#if defined(SS_RAYTRACING) && defined(SS_LIT_INLINE_RT_SHADOWS)
 	if (RTShadowEnabled != 0)
 	{
 		if (light.ShadowSlot < 0)

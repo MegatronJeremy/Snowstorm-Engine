@@ -531,7 +531,11 @@ namespace Snowstorm
 		// Build this compile's variant define list from the shader's permutation intent. THIS is the single
 		// place a new permutation axis is added (one push_back) — the compile chain + cache key are generic
 		// over the list, so nothing downstream changes. Read once here so both stages + the cache key agree.
-		ShaderDefines defines = m_FeatureDefines; // call-site permutation first, then the capability axes
+		ShaderDefines defines = m_FeatureDefines; // call-site permutation, then dynamic, then capability axes
+		{
+			std::lock_guard lock(m_DefinesMutex);
+			defines.insert(defines.end(), m_DynamicDefines.begin(), m_DynamicDefines.end());
+		}
 		// RT axis (#118): emit SS_RAYTRACING only when the device supports RT AND the selector isn't
 		// ForceNonRT. A non-RT device never emits RT regardless (effects are force-off there anyway).
 		if (Renderer::IsRayTracingSupported() &&

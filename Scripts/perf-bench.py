@@ -108,6 +108,45 @@ def run_config(name: str, env_overrides: dict, exe: Path, cwd: Path, frames: int
     return data
 
 
+def aggregate_runs(runs: list[dict]) -> dict:
+    """Fold N independent runs of one config into a median-per-pass result, tagged with the observed spread.
+
+    Repetition is the point: the dominant noise source is RUN-level (GPU clock/thermal state drifts between
+    launches), which more frames INSIDE one run cannot average away. Measured on an RX 9060 XT, three
+    identical back-to-back runs spread 8-12% on every pass while the per-pass minimum moved only ~3% -- the
+    signature of DVFS, not workload. The median across runs rejects a single throttled outlier the way a
+    mean cannot; `spreadPct` carries how noisy the sample actually was so the gate can refuse to rule on a
+    difference smaller than its own measurement error.
+    """
+    base = dict(runs[0])
+    if len(runs) == 1:
+        return base
+
+    def median(vals: list[float]) -> float:
+        v = sorted(vals)
+        n = len(v)
+        return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2.0
+
+    merged: dict[str, dict] = {}
+    for name in {p for r in runs for p in r.get("passes", {})}:
+        samples = [r["passes"][name] for r in runs if name in r.get("passes", {})]
+        avgs = [s.get("avgMs", 0.0) for s in samples]
+        med = median(avgs)
+        entry = dict(samples[0])
+        entry["avgMs"] = med
+        entry["minMs"] = median([s.get("minMs", 0.0) for s in samples])
+        entry["spreadPct"] = ((max(avgs) - min(avgs)) / med * 100.0) if med > 0 else 0.0
+        merged[name] = entry
+
+    base["passes"] = merged
+    totals = [r.get("totalGpuMs", 0.0) for r in runs]
+    base["totalGpuMs"] = median(totals)
+    tmed = base["totalGpuMs"]
+    base["totalSpreadPct"] = ((max(totals) - min(totals)) / tmed * 100.0) if tmed > 0 else 0.0
+    base["runs"] = len(runs)
+    return base
+
+
 def device_slug(device: str) -> str:
     """Filesystem-safe directory name for an adapter, e.g. 'AMD Radeon RX 9070 XT' -> 'amd-radeon-rx-9070-xt'."""
     slug = re.sub(r"[^a-z0-9]+", "-", device.lower()).strip("-")
@@ -145,8 +184,16 @@ def compare(name: str, current: dict, baseline: dict, threshold_pct: float) -> b
             continue
         delta = (c - b) / b * 100.0 if b > 0 else 0.0
         flag = ""
-        if delta > threshold_pct:
+        # A delta smaller than this pass's own run-to-run spread is not a measurement, so do not call it a
+        # regression: that is how a noise-dominated gate manufactures failures (and hides real ones behind
+        # a threshold it cannot resolve). Reported as INCONCLUSIVE, which is not a pass.
+        spread = cur_passes.get(p, {}).get("spreadPct")
+        noisy = spread is not None and abs(delta) <= spread
+        if delta > threshold_pct and not noisy:
             flag = "  REGRESSION"
+            ok = False
+        elif delta > threshold_pct and noisy:
+            flag = f"  INCONCLUSIVE (spread {spread:.1f}%)"
             ok = False
         # FS invocations (overdraw metric, #pipeline-stats). Informational: a graphics pass's fragment-
         # shader invocations; divide by the pass's pixel count for overdraw. Not gated (it's a diagnostic).
@@ -163,6 +210,10 @@ def compare(name: str, current: dict, baseline: dict, threshold_pct: float) -> b
 def main() -> int:
     ap = argparse.ArgumentParser(description="GPU perf benchmark + regression gate.")
     ap.add_argument("--frames", type=int, default=300, help="Frames averaged per config (default 300)")
+    ap.add_argument("--repeat", type=int, default=3,
+                    help="Independent runs per config, medianed (default 3). Run-level GPU clock drift is the "
+                         "dominant noise source and repetition is the only thing that averages it out; 1 "
+                         "restores the old single-shot behaviour and is faster but much noisier.")
     ap.add_argument("--timeout", type=int, default=120, help="Per-config wall-clock timeout in seconds")
     ap.add_argument("--config", default="Debug", help="Build config dir under build/ (default Debug)")
     ap.add_argument("--build-dir", default="build", help="Build directory (default build)")
@@ -200,11 +251,19 @@ def main() -> int:
     ungated = []
     for name, env_overrides in configs:
         print(f"=== {name} ===")
-        current = run_config(name, env_overrides, exe, repo_root, args.frames,
-                             args.timeout, layer_path, args.scene, args.gpu)
-        if current is None:
+        runs = []
+        for attempt in range(max(1, args.repeat)):
+            r = run_config(name, env_overrides, exe, repo_root, args.frames,
+                           args.timeout, layer_path, args.scene, args.gpu)
+            if r is None:
+                break
+            runs.append(r)
+        if not runs:
             all_ok = False
             continue
+        current = aggregate_runs(runs)
+        if len(runs) > 1:
+            print(f"  {len(runs)} runs, median; total spread {current.get('totalSpreadPct', 0.0):.1f}%")
 
         device = current.get("device", "")
         bp = baseline_path(repo_root, device, name)

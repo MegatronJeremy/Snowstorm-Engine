@@ -616,4 +616,11 @@ namespace Snowstorm::CVars
 	// helpers, so it's always false on a non-RT GPU. GI and AO are excluded because they moved to compute
 	// passes; this is therefore NOT the TLAS gate, which ORs those plus path tracing (see TlasBuildSystem).
 	[[nodiscard]] bool AnyRTEffectActive();
+
+	// True when DefaultLit must compile its INLINE ray-query shadow path (SampleSunShadow and friends).
+	// Stochastic shadows produce a denoised full-res visibility texture that the forward pass samples
+	// instead, so the inline traversal is dead code there: still register-allocated, never executed.
+	// Dropping it takes DefaultLit.frag from 11/16 to 16/16 waves on gfx1100 (132 -> 89 VGPRs, ISA 31524 ->
+	// 10232), which matters because that shader is the single largest pass in the frame.
+	[[nodiscard]] bool LitInlineRTShadowsActive();
 }

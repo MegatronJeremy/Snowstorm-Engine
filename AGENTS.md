@@ -193,7 +193,8 @@ pass regresses beyond `--threshold` (default 15%).
 py Scripts/perf-bench.py                    # run the matrix, diff vs baseline, PASS/FAIL
 py Scripts/perf-bench.py --update-baseline  # capture current results as the new baseline
 py Scripts/perf-bench.py --only +gi         # one config (rt-off | shadows | +ao | +refl | +gi | ssgi)
-py Scripts/perf-bench.py --frames 300       # more frames = less noise, slower
+py Scripts/perf-bench.py --frames 300       # more frames = less noise WITHIN a run
+py Scripts/perf-bench.py --repeat 5         # more independent runs = less noise BETWEEN runs (default 3)
 py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
 ```
 
@@ -202,7 +203,21 @@ The config matrix (`rt-off → shadows → +ao → +refl → +gi`) enables one R
 the Forward pass, so this A/B *is* the per-effect timing (there's no separate GPU scope per effect, by
 design). A trailing `ssgi` config sits outside that ladder, repeating the `+gi` rung with the
 screen-space GI producer, so it diffs against `+refl` rather than its neighbour and gives the
-screen-space-vs-RT cost of the same effect. Sub-0.05 ms passes are ignored (timestamp noise). Like
+screen-space-vs-RT cost of the same effect. Sub-0.05 ms passes are ignored (timestamp noise).
+
+**The dominant noise source is run-level, not frame-level.** Three identical back-to-back runs on an RX
+9060 XT spread **8-12% on every pass**, while each pass's *minimum* moved only ~3%: the GPU still reaches
+peak briefly in every run but spends progressively more frames throttled, which is a DVFS/thermal
+signature rather than workload variance (every pass moving by the same factor is a clock change, not a
+code change). More `--frames` cannot average that out because it is drift BETWEEN launches, so the script
+runs each config `--repeat` times (default 3) and takes the **median**, which rejects a single throttled
+outlier as a mean cannot. Each pass carries the observed `spreadPct`, and a delta smaller than its own
+spread is reported **INCONCLUSIVE** rather than PASS or REGRESSION: a gate must not rule on a difference
+below its own measurement error. If a comparison is inconclusive, the fix is more repetitions or a
+**stable power state** (AMD via the Radeon Developer Tool Suite, NVIDIA via `nvidia-smi --lock-gpu-clocks`),
+which is what removes the noise at the source rather than averaging over it. For measuring a *change*,
+prefer an interleaved A/B of two builds in one session over a golden file captured under different
+thermal conditions. Like
 smoke, it needs a **real GPU** (Vulkan timestamps) so it's a **local** gate, not CI; on a device
 without timestamp support the JSON sets `timestampsSupported:false` and the script skips rather than
 false-failing.

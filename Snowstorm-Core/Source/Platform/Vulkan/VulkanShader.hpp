@@ -27,6 +27,17 @@ namespace Snowstorm
 		[[nodiscard]] ShaderPermutation GetPermutation() const override { return m_Permutation.load(std::memory_order_relaxed); }
 		void SetPermutation(const ShaderPermutation p) override { m_Permutation.store(p, std::memory_order_relaxed); }
 
+		[[nodiscard]] ShaderDefines GetDynamicDefines() const override
+		{
+			std::lock_guard lock(m_DefinesMutex);
+			return m_DynamicDefines;
+		}
+		void SetDynamicDefines(ShaderDefines defines) override
+		{
+			std::lock_guard lock(m_DefinesMutex);
+			m_DynamicDefines = std::move(defines);
+		}
+
 	protected:
 		// Runs the DXC compile for every stage and publishes the resulting SPIR-V paths. Called on a
 		// JobSystem worker by ShaderLibrary (or synchronously by Recompile/hot-reload). Thread-safe:
@@ -45,6 +56,10 @@ namespace Snowstorm
 		// is a different Shader rather than a mutation of this one. Compile() folds the device-capability
 		// axes in on top. Immutable, so the compile worker reads it race-free like the paths above.
 		ShaderDefines m_FeatureDefines;
+		// Mutable, so unlike m_FeatureDefines it needs a lock: the main thread swaps it while a JobSystem
+		// worker may be reading it at the top of Compile().
+		mutable std::mutex m_DefinesMutex;
+		ShaderDefines m_DynamicDefines;
 
 		// Compiled SPIR-V paths. Written by Compile() (worker) under m_Mutex, read by GetCompiledPath
 		// (main thread) under the same lock. Only valid once m_Ready is set.
