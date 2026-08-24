@@ -216,6 +216,8 @@ namespace Snowstorm
 		barrier.srcAccessMask = (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED) ? 0 : src.Access;
 		barrier.dstStageMask = dst.Stage;
 		barrier.dstAccessMask = dst.Access;
+		ClampScopeToQueue(barrier.srcStageMask, barrier.srcAccessMask);
+		ClampScopeToQueue(barrier.dstStageMask, barrier.dstAccessMask);
 
 		barrier.oldLayout = oldLayout;
 		barrier.newLayout = newLayout;
@@ -546,6 +548,15 @@ namespace Snowstorm
 
 	void VulkanCommandContext::BarrierColorWriteToComputeRead(const Ref<Texture>& texture)
 	{
+		// On the async-compute queue this dependency is already carried: the producing graphics work is
+		// ordered by the timeline semaphore, and the image arrived through a queue-family ownership
+		// acquire. Recording it here would also be invalid, since the source scope names graphics stages
+		// a compute-only family cannot express.
+		if (m_Queue == GpuQueue::AsyncCompute)
+		{
+			return;
+		}
+
 		// Execution+memory barrier for a graphics-write -> compute-sampled-read hazard, WITHOUT a layout
 		// change. TransitionLayout early-outs when old==new layout, so a color target already left in
 		// SHADER_READ_ONLY by its render pass's EndRenderPass gets NO barrier from a Sampled re-declaration —
@@ -607,6 +618,96 @@ namespace Snowstorm
 		dep.memoryBarrierCount = 1;
 		dep.pMemoryBarriers = &barrier;
 		vkCmdPipelineBarrier2(m_CommandBuffer, &dep);
+	}
+
+	namespace
+	{
+		uint32_t QueueFamilyFor(const GpuQueue queue)
+		{
+			const auto& ctx = VulkanContext::Get();
+			return queue == GpuQueue::AsyncCompute ? ctx.GetComputeQueueFamilyIndex()
+			                                       : ctx.GetGraphicsQueueFamilyIndex();
+		}
+
+		// One half of a queue-family ownership transfer. Release and acquire must agree on both family
+		// indices, the layout and the subresource range, so they share this builder and differ only in which
+		// side of the dependency carries stage/access: the releasing queue names what it finished, the
+		// acquiring queue what it is about to do, and the other side must be NONE.
+		void RecordOwnershipBarrier(const VkCommandBuffer cmd, const Ref<Texture>& texture,
+		                            const uint32_t srcFamily, const uint32_t dstFamily, const bool release)
+		{
+			const auto vkTex = std::static_pointer_cast<VulkanTexture>(texture);
+			const VkImageLayout layout = vkTex->GetCurrentLayout();
+
+			VkImageMemoryBarrier2 barrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+			// Access masks stay NONE on both halves. The timeline semaphore between the two submissions is
+			// itself a full memory dependency, so the transfer needs only the execution scope, and naming a
+			// write access here is invalid whenever the image sits in a read-only layout.
+			barrier.srcStageMask = release ? VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT : VK_PIPELINE_STAGE_2_NONE;
+			barrier.srcAccessMask = VK_ACCESS_2_NONE;
+			barrier.dstStageMask = release ? VK_PIPELINE_STAGE_2_NONE : VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+			barrier.dstAccessMask = VK_ACCESS_2_NONE;
+			barrier.oldLayout = layout;
+			barrier.newLayout = layout;
+			barrier.srcQueueFamilyIndex = srcFamily;
+			barrier.dstQueueFamilyIndex = dstFamily;
+			barrier.image = vkTex->GetImage();
+			barrier.subresourceRange = {vkTex->GetAspectMask(), 0, VK_REMAINING_MIP_LEVELS, 0,
+			                            VK_REMAINING_ARRAY_LAYERS};
+
+			VkDependencyInfo dep{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+			dep.imageMemoryBarrierCount = 1;
+			dep.pImageMemoryBarriers = &barrier;
+			vkCmdPipelineBarrier2(cmd, &dep);
+		}
+	}
+
+	void VulkanCommandContext::ClampScopeToQueue(VkPipelineStageFlags2& stage, VkAccessFlags2& access) const
+	{
+		if (m_Queue != GpuQueue::AsyncCompute)
+		{
+			return;
+		}
+
+		constexpr VkPipelineStageFlags2 kComputeStages =
+		    VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT | VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT |
+		    VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT |
+		    VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
+		constexpr VkAccessFlags2 kAttachmentAccess =
+		    VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT |
+		    VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+		    VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT;
+
+		if ((stage & ~kComputeStages) != 0)
+		{
+			stage = (stage & kComputeStages) | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+		}
+		if ((access & kAttachmentAccess) != 0)
+		{
+			// Only a read replacement: a compute-queue image sits in a storage or read-only layout, and
+			// naming a write access on a read-only layout is itself invalid.
+			access = (access & ~kAttachmentAccess) | VK_ACCESS_2_SHADER_READ_BIT;
+		}
+	}
+
+	void VulkanCommandContext::ReleaseTextureToQueue(const Ref<Texture>& texture, const GpuQueue from,
+	                                                 const GpuQueue to)
+	{
+		const uint32_t srcFamily = QueueFamilyFor(from);
+		if (const uint32_t dstFamily = QueueFamilyFor(to); srcFamily != dstFamily && texture)
+		{
+			RecordOwnershipBarrier(m_CommandBuffer, texture, srcFamily, dstFamily, true);
+		}
+	}
+
+	void VulkanCommandContext::AcquireTextureFromQueue(const Ref<Texture>& texture, const GpuQueue from,
+	                                                   const GpuQueue to)
+	{
+		const uint32_t srcFamily = QueueFamilyFor(from);
+		if (const uint32_t dstFamily = QueueFamilyFor(to); srcFamily != dstFamily && texture)
+		{
+			RecordOwnershipBarrier(m_CommandBuffer, texture, srcFamily, dstFamily, false);
+		}
 	}
 
 	void VulkanCommandContext::CopyTextureToBuffer(const Ref<Texture>& texture, const Ref<Buffer>& dst,

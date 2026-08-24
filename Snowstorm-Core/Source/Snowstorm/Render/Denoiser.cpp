@@ -45,6 +45,7 @@ namespace Snowstorm
 
 		fc.Graph.AddPass({.Name = std::string(cfg.NamePrefix) + "Temporal" + suffix,
 		                  .IsCompute = true,
+		                  .Queue = GpuQueue::AsyncCompute,
 		                  .Reads = {{raw->GetTexture(), RenderGraph::AccessState::Sampled},
 		                            {gbuffer->GetTexture(), RenderGraph::AccessState::Sampled},
 		                            {depth->GetTexture(), RenderGraph::AccessState::Sampled},
@@ -93,6 +94,7 @@ namespace Snowstorm
 
 			fc.Graph.AddPass({.Name = std::string(cfg.NamePrefix) + "Denoise" + std::to_string(i) + suffix,
 			                  .IsCompute = true,
+			                  .Queue = GpuQueue::AsyncCompute,
 			                  .Reads = {{srcView->GetTexture(), RenderGraph::AccessState::Sampled},
 			                            {gbuffer->GetTexture(), RenderGraph::AccessState::Sampled},
 			                            {depth->GetTexture(), RenderGraph::AccessState::Sampled},

@@ -4,6 +4,7 @@
 #include "Snowstorm/Render/RenderTarget.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Render/DescriptorSet.hpp"
+#include "Snowstorm/Render/RenderEnums.hpp"
 
 #include <string>
 #include <vector>
@@ -97,6 +98,18 @@ namespace Snowstorm
 		// transitions don't cover, since it's all one pass. Emit this between the writing and reading Dispatch
 		// so the read sees the completed write. Covers all storage buffers/images touched by compute.
 		virtual void BarrierComputeStorage() = 0;
+
+		// Queue-family ownership transfer for a texture crossing between the graphics and async-compute
+		// queues. Vulkan requires a matched PAIR for a VK_SHARING_MODE_EXCLUSIVE resource: a release
+		// recorded on the source queue and an acquire on the destination, naming the same two families,
+		// the same layout and the same subresource range, with a semaphore ordering release before
+		// acquire. Omitting either half is not a validation error on most drivers, it is silent
+		// corruption, which is why RenderGraph emits both rather than leaving it to passes.
+		//
+		// Both use the texture's CURRENT layout on both sides, so a transfer never doubles as a
+		// transition; the consuming queue transitions afterwards as usual.
+		virtual void ReleaseTextureToQueue(const Ref<Texture>& texture, GpuQueue from, GpuQueue to) = 0;
+		virtual void AcquireTextureFromQueue(const Ref<Texture>& texture, GpuQueue from, GpuQueue to) = 0;
 
 		// GPU->CPU readback: copy ONE subresource (mipLevel, arrayLayer) of a texture into a host-visible buffer
 		// (created with BufferUsage::Readback). Defaults (0, 0) = the base mip of layer 0, the common 2D case.

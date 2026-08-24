@@ -173,6 +173,37 @@ namespace Snowstorm
 		return deps;
 	}
 
+	std::vector<Ref<Texture>> RenderGraph::AsyncBatchTextures(const std::vector<uint32_t>& schedule,
+	                                                          const size_t slot, const bool asyncAvailable) const
+	{
+		std::vector<Ref<Texture>> out;
+		const auto add = [&out](const Ref<Texture>& t)
+		{
+			if (t && std::find(out.begin(), out.end(), t) == out.end())
+			{
+				out.push_back(t);
+			}
+		};
+
+		for (size_t i = slot; i < schedule.size(); ++i)
+		{
+			const Pass& p = m_Passes[schedule[i]];
+			if (!asyncAvailable || p.Queue != GpuQueue::AsyncCompute)
+			{
+				break;
+			}
+			for (const ResourceAccess& r : p.Reads)
+			{
+				add(r.Texture);
+			}
+			for (const ResourceAccess& w : p.Writes)
+			{
+				add(w.Texture);
+			}
+		}
+		return out;
+	}
+
 	std::vector<uint32_t> RenderGraph::BuildSchedule() const
 	{
 		const size_t count = m_Passes.size();
@@ -350,14 +381,6 @@ namespace Snowstorm
 		SS_CORE_ASSERT(pass.Queue != GpuQueue::AsyncCompute || pass.IsCompute,
 		               "RenderGraph AsyncCompute pass must be IsCompute (no draws on a compute queue)");
 
-		// A texture touched on the async queue needs a queue-family ownership transfer (release on the
-		// producing queue, acquire on the consuming one) or concurrent sharing at creation. Neither is
-		// implemented, and omitting it is silent corruption on most drivers rather than a validation error,
-		// so refuse it loudly. VulkanTexture.cpp has the ownership-transfer precedent.
-		SS_CORE_ASSERT(pass.Queue != GpuQueue::AsyncCompute || (pass.Reads.empty() && pass.Writes.empty()),
-		               "RenderGraph AsyncCompute pass declares texture Reads/Writes, which needs queue-family "
-		               "ownership transfer (unimplemented)");
-
 		m_Passes.push_back(std::move(pass));
 	}
 
@@ -410,8 +433,14 @@ namespace Snowstorm
 		CommandContext* current = &ctx;
 		bool inAsyncBatch = false;
 
-		for (const uint32_t passIndex : schedule)
+		// Textures the open async batch took ownership of, so the join hands back exactly what the fork
+		// handed over. Keeping the set rather than recomputing it means an ownership release can never be
+		// emitted without its matching acquire, which is the failure mode that corrupts silently.
+		std::vector<Ref<Texture>> batchOwned;
+
+		for (size_t slot = 0; slot < schedule.size(); ++slot)
 		{
+			const uint32_t passIndex = schedule[slot];
 			const Pass& pass = m_Passes[passIndex];
 
 			// Consecutive async passes share one fork/join pair: we only switch queues when the desired queue
@@ -421,14 +450,36 @@ namespace Snowstorm
 			{
 				if (wantAsync)
 				{
+					// Every texture the whole run touches transfers at the fork and back at the join, rather
+					// than per pass. The set is the same either way, and one pair per batch keeps the release
+					// on the graphics segment that is still open.
+					batchOwned = AsyncBatchTextures(schedule, slot, asyncAvailable);
+					for (const Ref<Texture>& t : batchOwned)
+					{
+						current->ReleaseTextureToQueue(t, GpuQueue::Graphics, GpuQueue::AsyncCompute);
+					}
 					owned = Renderer::ForkAsyncCompute();
+					current = owned.get();
+					for (const Ref<Texture>& t : batchOwned)
+					{
+						current->AcquireTextureFromQueue(t, GpuQueue::Graphics, GpuQueue::AsyncCompute);
+					}
 				}
 				else
 				{
+					for (const Ref<Texture>& t : batchOwned)
+					{
+						current->ReleaseTextureToQueue(t, GpuQueue::AsyncCompute, GpuQueue::Graphics);
+					}
 					Renderer::JoinAsyncCompute();
 					owned = Renderer::GetGraphicsCommandContext();
+					current = owned.get();
+					for (const Ref<Texture>& t : batchOwned)
+					{
+						current->AcquireTextureFromQueue(t, GpuQueue::AsyncCompute, GpuQueue::Graphics);
+					}
+					batchOwned.clear();
 				}
-				current = owned.get();
 				inAsyncBatch = wantAsync;
 			}
 
@@ -478,7 +529,16 @@ namespace Snowstorm
 		// belong on graphics, and the in-flight fence only covers the compute batch through the join.
 		if (inAsyncBatch)
 		{
+			for (const Ref<Texture>& t : batchOwned)
+			{
+				current->ReleaseTextureToQueue(t, GpuQueue::AsyncCompute, GpuQueue::Graphics);
+			}
 			Renderer::JoinAsyncCompute();
+			const Ref<CommandContext> tail = Renderer::GetGraphicsCommandContext();
+			for (const Ref<Texture>& t : batchOwned)
+			{
+				tail->AcquireTextureFromQueue(t, GpuQueue::AsyncCompute, GpuQueue::Graphics);
+			}
 		}
 	}
 }

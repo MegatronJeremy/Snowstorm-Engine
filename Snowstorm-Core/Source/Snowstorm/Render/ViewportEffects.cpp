@@ -283,6 +283,7 @@ namespace Snowstorm
 
 				fc.Graph.AddPass({.Name = "SSGI" + v.Suffix,
 				                  .IsCompute = true,
+				                  .Queue = GpuQueue::AsyncCompute,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {prevColorView->GetTexture(), RenderGraph::AccessState::Sampled},
@@ -363,6 +364,7 @@ namespace Snowstorm
 				// DepthStencil -> read-only redirect (handled in TransitionLayout).
 				fc.Graph.AddPass({.Name = "GI" + v.Suffix,
 				                  .IsCompute = true,
+				                  .Queue = GpuQueue::AsyncCompute,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Writes = {{giView->GetTexture(), RenderGraph::AccessState::Storage}},
@@ -680,6 +682,7 @@ namespace Snowstorm
 
 				fc.Graph.AddPass({.Name = "AO" + v.Suffix,
 				                  .IsCompute = true,
+				                  .Queue = GpuQueue::AsyncCompute,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Writes = {{aoView->GetTexture(), RenderGraph::AccessState::Storage}},
@@ -899,6 +902,7 @@ namespace Snowstorm
 
 				fc.Graph.AddPass({.Name = "SSR" + v.Suffix,
 				                  .IsCompute = true,
+				                  .Queue = GpuQueue::AsyncCompute,
 				                  .Reads = {{shadingView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {prevColorView->GetTexture(), RenderGraph::AccessState::Sampled},
@@ -987,6 +991,7 @@ namespace Snowstorm
 
 				fc.Graph.AddPass({.Name = "RTShadow" + v.Suffix,
 				                  .IsCompute = true,
+				                  .Queue = GpuQueue::AsyncCompute,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {shadingView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
@@ -1340,6 +1345,7 @@ namespace Snowstorm
 
 				fc.Graph.AddPass({.Name = "Reflection" + v.Suffix,
 				                  .IsCompute = true,
+				                  .Queue = GpuQueue::AsyncCompute,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {shadingView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},

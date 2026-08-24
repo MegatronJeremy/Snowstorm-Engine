@@ -32,7 +32,7 @@ namespace Snowstorm::CVars
 	CVar<bool> FrameStats{"debug.frame_stats", false, "Log a once-per-second frame breakdown (total / GPU-wait / GPU-frame / CPU-submit)"};
 
 	CVar<bool> EcsParallel{"ecs.parallel", true, "Run data-parallel systems (System::ParallelForEach) across JobSystem workers (off = serial)"};
-	CVar<bool> AsyncCompute{"render.async_compute", true, "Run render-graph passes marked AsyncCompute on an independent compute queue, overlapping graphics (off = inline on the graphics queue)"};
+	CVar<bool> AsyncCompute{"render.async_compute", false, "Run render-graph passes marked AsyncCompute on an independent compute queue, overlapping graphics (off = inline on the graphics queue). INCOMPLETE: the frame's graphics context is captured once in FrameContext::Ctx and by RendererService::BeginScene, so a fork invalidates it and later graphics passes record into a closed segment. Enabling this today produces validation errors; the remaining work is routing every pass through the context the graph hands it."};
 	CVar<int> GraphDumpDeps{"render.graph.dumpdeps", 0, "Dump the render graph's pass dependency edges and per-pass earliest legal slot for this many frames"};
 	CVar<bool> GraphReorder{"render.graph.reorder", false, "Execute render-graph passes in a dependency-derived schedule that groups compute work (off = declaration order)"};
 	CVar<int> MemoryDump{"render.memory.dump", 0, "Log VMA allocation totals and per-heap budget usage for this many frames"};
