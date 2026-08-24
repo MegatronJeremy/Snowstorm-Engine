@@ -1,0 +1,103 @@
+{
+  "device": "AMD Radeon RX 9070 XT",
+  "technique": "megalights",
+  "route": "Projects/Sandbox/assets/camera-paths/sponza-bench.json",
+  "probes": [
+    "dolly",
+    "strafe",
+    "reversal",
+    "static"
+  ],
+  "flip": 0.3300585150718689,
+  "psnr": 17.005187941467668,
+  "ssim": 0.4798487118883653,
+  "tflip": 0.013175396481528878,
+  "motionPenalty": 0.02401638776063919,
+  "cvvdpJod": 3.16109299659729,
+  "cvvdpPerProbe": {
+    "dolly": 3.276583671569824,
+    "strafe": 2.4812870025634766,
+    "reversal": 2.94203519821167,
+    "static": 3.9444661140441895
+  },
+  "perFrame": [
+    {
+      "probe": "dolly",
+      "frame": 60,
+      "flip": 0.33950886130332947,
+      "psnr": 17.21573124654414,
+      "ssim": 0.40563996742777203
+    },
+    {
+      "probe": "dolly",
+      "frame": 61,
+      "flip": 0.3376212418079376,
+      "psnr": 17.26785294528302,
+      "ssim": 0.4092842343181295
+    },
+    {
+      "probe": "strafe",
+      "frame": 300,
+      "flip": 0.3632005751132965,
+      "psnr": 16.807567172453876,
+      "ssim": 0.40552379180989184
+    },
+    {
+      "probe": "strafe",
+      "frame": 301,
+      "flip": 0.36091724038124084,
+      "psnr": 16.853023734762953,
+      "ssim": 0.40911579259117653
+    },
+    {
+      "probe": "reversal",
+      "frame": 500,
+      "flip": 0.30610111355781555,
+      "psnr": 15.471559236481582,
+      "ssim": 0.5021670912240616
+    },
+    {
+      "probe": "reversal",
+      "frame": 501,
+      "flip": 0.3032034933567047,
+      "psnr": 15.335321040630028,
+      "ssim": 0.5024464261453815
+    },
+    {
+      "probe": "static",
+      "frame": 900,
+      "flip": 0.3148750066757202,
+      "psnr": 18.552456731917655,
+      "ssim": 0.6026599007491115
+    },
+    {
+      "probe": "static",
+      "frame": 901,
+      "flip": 0.31504058837890625,
+      "psnr": 18.537991423668096,
+      "ssim": 0.6019524908413982
+    }
+  ],
+  "perPair": [
+    {
+      "probe": "dolly",
+      "tflip": 0.014681406319141388,
+      "motionPenalty": 0.014475196599960327
+    },
+    {
+      "probe": "strafe",
+      "tflip": 0.024170637130737305,
+      "motionPenalty": 0.02494889497756958
+    },
+    {
+      "probe": "reversal",
+      "tflip": 0.011776477098464966,
+      "motionPenalty": 0.05784556269645691
+    },
+    {
+      "probe": "static",
+      "tflip": 0.0020730653777718544,
+      "motionPenalty": -0.0012041032314300537
+    }
+  ]
+}

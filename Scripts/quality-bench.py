@@ -91,6 +91,21 @@ TECHNIQUES = {
     "rtgi": {"SS_RENDER_GI_MODE": "2", "SS_RENDER_AA": "2"},
     "all-rt": {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2",
                "SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_GI_MODE": "2", "SS_RENDER_AA": "2"},
+
+    # Shadow-technique A/B, the quality counterpart to perf-bench's shadows / shadows-stoch rungs.
+    # Everything else stays off so the only variable is how shadows are computed. The other eight
+    # entries leave render.shadows.mode at its default, so they all render the raster shadow map and
+    # measure nothing about shadowing; all-rt uses the INLINE ray path, since stochastic is opt-in.
+    "rtshadow": {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AA": "2"},
+    # MegaLights-lite: importance-sample one light per pixel, trace one ray, denoise. Constant cost in
+    # light count where inline grows per light, so it is the many-light technique. Shipping config,
+    # which includes the demodulated specular chain.
+    "megalights": {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_SHADOWS_STOCHASTIC": "1", "SS_RENDER_AA": "2"},
+    # The same with the demodulated specular chain off. That chain is a second full denoise the inline
+    # path has no analogue for and is 1.080 ms of the 2.757 ms stochastic costs over rt-off on a
+    # 9070 XT, so its quality contribution is worth pricing separately rather than assuming.
+    "megalights-nospec": {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_SHADOWS_STOCHASTIC": "1",
+                          "SS_RENDER_SHADOWS_SPECULAR_DEMODULATED": "0", "SS_RENDER_AA": "2"},
 }
 
 
