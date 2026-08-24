@@ -105,6 +105,11 @@ namespace Snowstorm
 		// the only structured signal a headless run gets about *where* the GPU died (see VulkanCommon submit).
 		void LogDeviceFaultInfo() const;
 
+		// Log what VMA has allocated: totals plus each heap's usage against its budget. The render graph's
+		// transient-aliasing case rests on how much of the footprint is per-viewport render targets, and that
+		// cannot be judged from descriptors alone since VMA sub-allocates from larger blocks.
+		void LogMemoryStats() const;
+
 		VkExtent2D GetSwapchainExtent() const { return m_SwapchainExtent; }
 
 		std::vector<VkImage> GetSwapchainImages() const { return m_SwapchainImages; }

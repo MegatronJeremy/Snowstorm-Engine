@@ -122,6 +122,17 @@ namespace Snowstorm::CVars
 	// block moves to the async queue, so it stays opt-in until it does.
 	extern CVar<bool> GraphReorder;
 
+	// Let the RT chain's output be consumed one frame late, so the forward pass samples the previous frame's
+	// upscaled result instead of waiting on this frame's trace and denoise. That is what gives an async batch
+	// something to overlap: without it the forward pass depends on the chain and the queues serialize anyway.
+	// Costs a frame of latency on the affected signal, which the temporal denoisers already reproject.
+	extern CVar<bool> RtCrossFrame;
+
+	// Frames of VMA allocation dumps remaining, decremented as each is emitted. Prices the render graph's
+	// transient-aliasing case: aliasing can only recover memory that transient targets actually hold, and
+	// descriptors alone do not show that because VMA sub-allocates from larger blocks.
+	extern CVar<int> MemoryDump;
+
 	// Number of bare Transform+Rotator entities the stress bake ("scene.bake stress") spawns, on top of
 	// the renderable fields. These carry no mesh/material, so they load only RotatorSystem's per-entity
 	// loop: the heavy, pure workload for the parallel-ECS before/after benchmark (#85). 0 (default) = none.

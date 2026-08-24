@@ -994,6 +994,38 @@ namespace Snowstorm
 		vkDestroyInstance(m_Instance, nullptr);
 	}
 
+	void VulkanContext::LogMemoryStats() const
+	{
+		if (!m_Allocator)
+		{
+			return;
+		}
+
+		VmaTotalStatistics stats{};
+		vmaCalculateStatistics(m_Allocator, &stats);
+		const VmaDetailedStatistics& t = stats.total;
+
+		constexpr double kMiB = 1024.0 * 1024.0;
+		SS_CORE_INFO("VMA total: {:.1f} MiB used across {} allocation(s) in {} block(s) ({:.1f} MiB reserved, "
+		             "{:.1f} MiB unused)",
+		             static_cast<double>(t.statistics.allocationBytes) / kMiB, t.statistics.allocationCount,
+		             t.statistics.blockCount, static_cast<double>(t.statistics.blockBytes) / kMiB,
+		             static_cast<double>(t.statistics.blockBytes - t.statistics.allocationBytes) / kMiB);
+
+		VkPhysicalDeviceMemoryProperties memProps{};
+		vkGetPhysicalDeviceMemoryProperties(m_PhysicalDevice, &memProps);
+		std::vector<VmaBudget> budgets(memProps.memoryHeapCount);
+		vmaGetHeapBudgets(m_Allocator, budgets.data());
+		for (uint32_t i = 0; i < memProps.memoryHeapCount; ++i)
+		{
+			const bool deviceLocal = (memProps.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0;
+			SS_CORE_INFO("  heap {}{}: {:.1f} / {:.1f} MiB budget ({:.1f} MiB heap size)", i,
+			             deviceLocal ? " (device-local)" : "", static_cast<double>(budgets[i].usage) / kMiB,
+			             static_cast<double>(budgets[i].budget) / kMiB,
+			             static_cast<double>(memProps.memoryHeaps[i].size) / kMiB);
+		}
+	}
+
 	void VulkanContext::LogDeviceFaultInfo() const
 	{
 		if (!m_DeviceFaultSupported || vkGetDeviceFaultInfoEXT == nullptr)

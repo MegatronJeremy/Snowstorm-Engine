@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/RendererService.hpp" // TonemapParams (value member of ViewportRenderContext)
 
@@ -25,17 +26,34 @@ namespace Snowstorm
 	struct RenderTargetComponent;
 
 	// Shared per-frame handles threaded through the graph-building phases, so each takes one param instead
-	// of five. Bundles only what those phases need in common (the graph they append to, the renderer/context
-	// they record against, the registry they read, the frame-in-flight index). Lives on the stack for one
+	// of five. Bundles only what those phases need in common (the graph they append to, the renderer they
+	// record against, the registry they read, the frame-in-flight index). Lives on the stack for one
 	// Execute; holds references, owns nothing.
+	//
+	// Deliberately carries NO command context. An async fork closes the segment a frame opened with, so a
+	// context captured here would go stale mid-frame and later passes would record into a closed buffer.
+	// Passes record through the context the render graph hands them (see BorrowContext).
 	struct FrameContext
 	{
 		RenderGraph& Graph;
 		RendererService& Renderer;
-		const Ref<CommandContext>& Ctx;
 		TrackedRegistry& Reg;
 		uint32_t FrameIndex;
 	};
+
+	// Which double-buffered RT-output slot the chain writes this frame, and which the forward pass samples.
+	// Identical (both 0) unless render.rt.crossframe is on; then they alternate so the forward pass reads the
+	// previous frame's result and never the slot currently being written, which is what removes the in-frame
+	// dependency an async batch needs gone to overlap anything.
+	[[nodiscard]] inline uint32_t RtWriteSlot(const uint64_t frame)
+	{
+		return CVars::RtCrossFrame.Get() ? static_cast<uint32_t>(frame & 1u) : 0u;
+	}
+
+	[[nodiscard]] inline uint32_t RtReadSlot(const uint64_t frame)
+	{
+		return CVars::RtCrossFrame.Get() ? static_cast<uint32_t>(1u - (frame & 1u)) : 0u;
+	}
 
 	// The camera driving one viewport (resolved once per RenderViewport from the viewport's target link).
 	struct CameraPick

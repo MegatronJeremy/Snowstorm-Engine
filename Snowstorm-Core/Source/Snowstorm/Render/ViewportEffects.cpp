@@ -134,8 +134,8 @@ namespace Snowstorm
 				fc.Graph.AddPass({.Name = "PathTrace" + v.Suffix,
 				                  .IsCompute = true,
 				                  .Writes = {{accumView->GetTexture(), RenderGraph::AccessState::Storage}},
-				                  .Execute = [this, &fc, p, accumView](CommandContext&)
-				                  { m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, p, fc.Renderer.GetFrameData().Lights, accumView); }});
+				                  .Execute = [this, &fc, p, accumView](CommandContext& c)
+				                  { m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, p, fc.Renderer.GetFrameData().Lights, accumView); }});
 
 				st.LastVP = vp;
 				st.EnvNee = envNee;
@@ -202,7 +202,7 @@ namespace Snowstorm
 				                  .Target = gbuf,
 				                  .Execute = [this, &fc, cam, colorFmt, depthFmt, viewProj](CommandContext& c)
 				                  {
-					                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, fc.Ctx, fc.FrameIndex);
+					                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, BorrowContext(c), fc.FrameIndex);
 
 					                  m_Owner.DrawVisibleMeshes(fc, cam,
 					                                            [&](entt::entity, const TransformComponent& tr, const MeshComponent& mesh, const MaterialComponent& mat)
@@ -283,6 +283,7 @@ namespace Snowstorm
 
 				fc.Graph.AddPass({.Name = "SSGI" + v.Suffix,
 				                  .IsCompute = true,
+				                  .Queue = GpuQueue::AsyncCompute,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {prevColorView->GetTexture(), RenderGraph::AccessState::Sampled},
@@ -290,7 +291,7 @@ namespace Snowstorm
 				                  .Writes = {{giView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, viewProj, camPos, giRange, nearPlane, farPlane, giIntensity, iblIntensity, rayCount, frameCounter, prefilteredCubeIndex, gbufView, depthView, prevColorView, velocityView, giView, giW, giH](CommandContext& c)
 				                  {
-					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, viewProj, camPos, giRange, nearPlane, farPlane,
+					                  m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, viewProj, camPos, giRange, nearPlane, farPlane,
 					                                  giIntensity, iblIntensity, rayCount, frameCounter, prefilteredCubeIndex,
 					                                  gbufView, depthView, prevColorView, velocityView, giView, giW, giH);
 				                  }});
@@ -363,12 +364,13 @@ namespace Snowstorm
 				// DepthStencil -> read-only redirect (handled in TransitionLayout).
 				fc.Graph.AddPass({.Name = "GI" + v.Suffix,
 				                  .IsCompute = true,
+				                  .Queue = GpuQueue::AsyncCompute,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Writes = {{giView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, depthView, giView, giW, giH](CommandContext& c)
 				                  {
-					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, frameData, tableAddr, frameCounter,
+					                  m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, frameData, tableAddr, frameCounter,
 					                                  gbufView, depthView, giView, giW, giH);
 				                  }});
 
@@ -502,8 +504,9 @@ namespace Snowstorm
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
+				const Ref<RenderTarget>& slot = v.RT.GIUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())];
 				return v.GBufferNeeded && CVars::GiActive() && v.GIView &&
-				       v.RT.GIUpscaleTarget && !v.RT.GIUpscaleTarget->GetDesc().ColorAttachments.empty();
+				       slot && !slot->GetDesc().ColorAttachments.empty();
 			}
 
 			void Contribute(ViewportRenderContext& v) override
@@ -520,7 +523,7 @@ namespace Snowstorm
 				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
 				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
 				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
-				const Ref<RenderTarget>& dst = v.RT.GIUpscaleTarget;
+				const Ref<RenderTarget>& dst = v.RT.GIUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())];
 				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
 				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
@@ -533,7 +536,7 @@ namespace Snowstorm
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Execute = [this, &fc, giView, gbufView, depthView, giW, giH, nearPlane, farPlane, depthSigma, dstFmt](CommandContext& c)
 				                  {
-					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, giView, gbufView, depthView, giW, giH, nearPlane, farPlane, depthSigma, dstFmt);
+					                  m_Pass.Draw(BorrowContext(c), fc.FrameIndex, giView, gbufView, depthView, giW, giH, nearPlane, farPlane, depthSigma, dstFmt);
 				                  }});
 			}
 
@@ -602,7 +605,7 @@ namespace Snowstorm
 				                  .Writes = {{aoView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, invViewProj, viewProj, radius, intensity, nearPlane, farPlane, bias, gbufView, depthView, aoView, aoW, aoH](CommandContext& c)
 				                  {
-					                  m_Trace.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, viewProj, radius, intensity,
+					                  m_Trace.Dispatch(BorrowContext(c), fc.FrameIndex, invViewProj, viewProj, radius, intensity,
 					                                   nearPlane, farPlane, bias, gbufView, depthView, aoView, aoW, aoH);
 				                  }});
 
@@ -615,7 +618,7 @@ namespace Snowstorm
 				                  .Writes = {{blurView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, aoView, gbufView, depthView, blurView, aoW, aoH, nearPlane, farPlane, depthSigma](CommandContext& c)
 				                  {
-					                  m_Blur.Dispatch(fc.Ctx, fc.FrameIndex, aoView, gbufView, depthView, blurView, aoW, aoH,
+					                  m_Blur.Dispatch(BorrowContext(c), fc.FrameIndex, aoView, gbufView, depthView, blurView, aoW, aoH,
 					                                  nearPlane, farPlane, depthSigma);
 				                  }});
 
@@ -680,12 +683,13 @@ namespace Snowstorm
 
 				fc.Graph.AddPass({.Name = "AO" + v.Suffix,
 				                  .IsCompute = true,
+				                  .Queue = GpuQueue::AsyncCompute,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Writes = {{aoView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, invViewProj, radius, intensity, frameCounter, rayCount, tableAddr, gbufView, depthView, aoView, aoW, aoH](CommandContext& c)
 				                  {
-					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, radius, intensity, frameCounter,
+					                  m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, invViewProj, radius, intensity, frameCounter,
 					                                  rayCount, tableAddr, gbufView, depthView, aoView, aoW, aoH);
 				                  }});
 
@@ -811,7 +815,7 @@ namespace Snowstorm
 				// AoActive(): the shared upsample serves BOTH techniques (SSAO or RT) — v.AOView is whatever the
 				// active AO sub-chain last wrote (SSAO's blur, or the RT trace/temporal/denoise), #151.
 				return v.GBufferNeeded && CVars::AoActive() && v.RT.AOTarget && v.AOView &&
-				       v.RT.AOUpscaleTarget && !v.RT.AOUpscaleTarget->GetDesc().ColorAttachments.empty();
+				       v.RT.AOUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())] && !v.RT.AOUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty();
 			}
 
 			void Contribute(ViewportRenderContext& v) override
@@ -825,7 +829,7 @@ namespace Snowstorm
 				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
 				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
 				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
-				const Ref<RenderTarget>& dst = v.RT.AOUpscaleTarget;
+				const Ref<RenderTarget>& dst = v.RT.AOUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())];
 				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
 				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
@@ -838,7 +842,7 @@ namespace Snowstorm
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Execute = [this, &fc, aoView, gbufView, depthView, aoW, aoH, nearPlane, farPlane, depthSigma, dstFmt](CommandContext& c)
 				                  {
-					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, aoView, gbufView, depthView, aoW, aoH, nearPlane, farPlane, depthSigma, dstFmt);
+					                  m_Pass.Draw(BorrowContext(c), fc.FrameIndex, aoView, gbufView, depthView, aoW, aoH, nearPlane, farPlane, depthSigma, dstFmt);
 				                  }});
 			}
 
@@ -899,6 +903,7 @@ namespace Snowstorm
 
 				fc.Graph.AddPass({.Name = "SSR" + v.Suffix,
 				                  .IsCompute = true,
+				                  .Queue = GpuQueue::AsyncCompute,
 				                  .Reads = {{shadingView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {prevColorView->GetTexture(), RenderGraph::AccessState::Sampled},
@@ -906,7 +911,7 @@ namespace Snowstorm
 				                  .Writes = {{reflView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, viewProj, camPos, reflRange, nearPlane, farPlane, prefilteredCubeIndex, shadingView, depthView, prevColorView, velocityView, reflView, reflW, reflH](CommandContext& c)
 				                  {
-					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, viewProj, camPos, reflRange, nearPlane, farPlane,
+					                  m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, viewProj, camPos, reflRange, nearPlane, farPlane,
 					                                  prefilteredCubeIndex, shadingView, depthView, prevColorView, velocityView,
 					                                  reflView, reflW, reflH);
 				                  }});
@@ -987,6 +992,7 @@ namespace Snowstorm
 
 				fc.Graph.AddPass({.Name = "RTShadow" + v.Suffix,
 				                  .IsCompute = true,
+				                  .Queue = GpuQueue::AsyncCompute,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {shadingView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
@@ -994,7 +1000,7 @@ namespace Snowstorm
 				                             {shadowSpecView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, invViewProj, lights, normalBias, frameCounter, soft, sunCosThetaMax, sourceRadius, rayCount, tableAddr, camPos, gbufView, shadingView, depthView, shadowView, shadowSpecView, shW, shH](CommandContext& c)
 				                  {
-					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, lights, normalBias, frameCounter,
+					                  m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, invViewProj, lights, normalBias, frameCounter,
 					                                  soft, sunCosThetaMax, sourceRadius, rayCount, tableAddr, camPos, gbufView, shadingView, depthView, shadowView, shadowSpecView, shW, shH);
 				                  }});
 
@@ -1120,7 +1126,7 @@ namespace Snowstorm
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
 				return v.GBufferNeeded && CVars::ShadowStochasticActive() && v.RT.ShadowTarget && v.ShadowView &&
-				       v.RT.ShadowUpscaleTarget && !v.RT.ShadowUpscaleTarget->GetDesc().ColorAttachments.empty();
+				       v.RT.ShadowUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())] && !v.RT.ShadowUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty();
 			}
 
 			void Contribute(ViewportRenderContext& v) override
@@ -1134,7 +1140,7 @@ namespace Snowstorm
 				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
 				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
 				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
-				const Ref<RenderTarget>& dst = v.RT.ShadowUpscaleTarget;
+				const Ref<RenderTarget>& dst = v.RT.ShadowUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())];
 				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
 				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
@@ -1147,7 +1153,7 @@ namespace Snowstorm
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Execute = [this, &fc, shadowView, gbufView, depthView, shW, shH, nearPlane, farPlane, depthSigma, dstFmt](CommandContext& c)
 				                  {
-					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, shadowView, gbufView, depthView, shW, shH, nearPlane, farPlane, depthSigma, dstFmt);
+					                  m_Pass.Draw(BorrowContext(c), fc.FrameIndex, shadowView, gbufView, depthView, shW, shH, nearPlane, farPlane, depthSigma, dstFmt);
 				                  }});
 			}
 
@@ -1256,8 +1262,8 @@ namespace Snowstorm
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
 				return v.GBufferNeeded && CVars::ShadowStochasticActive() && CVars::ShadowSpecularDemodulated.Get() &&
-				       v.RT.ShadowSpecTarget && v.ShadowSpecView && v.RT.ShadowSpecUpscaleTarget &&
-				       !v.RT.ShadowSpecUpscaleTarget->GetDesc().ColorAttachments.empty();
+				       v.RT.ShadowSpecTarget && v.ShadowSpecView && v.RT.ShadowSpecUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())] &&
+				       !v.RT.ShadowSpecUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty();
 			}
 
 			void Contribute(ViewportRenderContext& v) override
@@ -1271,7 +1277,7 @@ namespace Snowstorm
 				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
 				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
 				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View;
-				const Ref<RenderTarget>& dst = v.RT.ShadowSpecUpscaleTarget;
+				const Ref<RenderTarget>& dst = v.RT.ShadowSpecUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())];
 				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
 				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
@@ -1284,7 +1290,7 @@ namespace Snowstorm
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Execute = [this, &fc, shadowView, gbufView, depthView, shW, shH, nearPlane, farPlane, depthSigma, dstFmt](CommandContext& c)
 				                  {
-					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, shadowView, gbufView, depthView, shW, shH, nearPlane, farPlane, depthSigma, dstFmt);
+					                  m_Pass.Draw(BorrowContext(c), fc.FrameIndex, shadowView, gbufView, depthView, shW, shH, nearPlane, farPlane, depthSigma, dstFmt);
 				                  }});
 			}
 
@@ -1340,13 +1346,14 @@ namespace Snowstorm
 
 				fc.Graph.AddPass({.Name = "Reflection" + v.Suffix,
 				                  .IsCompute = true,
+				                  .Queue = GpuQueue::AsyncCompute,
 				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {shadingView->GetTexture(), RenderGraph::AccessState::Sampled},
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Writes = {{reflView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, shadingView, depthView, reflView, reflW, reflH](CommandContext& c)
 				                  {
-					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, frameData, tableAddr, frameCounter,
+					                  m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, frameData, tableAddr, frameCounter,
 					                                  gbufView, shadingView, depthView, reflView, reflW, reflH);
 				                  }});
 
@@ -1525,7 +1532,7 @@ namespace Snowstorm
 				                  .Target = velTarget,
 				                  .Execute = [this, &fc, cam, velColorFmt, velDepthFmt, viewProj, prevViewProj](CommandContext& c)
 				                  {
-					                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, fc.Ctx, fc.FrameIndex);
+					                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, BorrowContext(c), fc.FrameIndex);
 
 					                  m_Owner.DrawVisibleMeshes(fc, cam,
 					                                            [&](entt::entity e, const TransformComponent& tr, const MeshComponent& mesh, const MaterialComponent& mat)
@@ -1580,38 +1587,39 @@ namespace Snowstorm
 				// producer actually ran (the same published-view gate shadowIndex/reflIndex use), which replaces
 				// the old RT-only geometry-table check here.
 				uint32_t giIndex = 0;
-				if (v.GBufferNeeded && CVars::GiActive() && v.GIView && v.RT.GIUpscaleTarget &&
-				    !v.RT.GIUpscaleTarget->GetDesc().ColorAttachments.empty())
+				if (const Ref<RenderTarget>& giRead = v.RT.GIUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())];
+				    v.GBufferNeeded && CVars::GiActive() && v.GIView && giRead &&
+				    !giRead->GetDesc().ColorAttachments.empty())
 				{
-					giIndex = v.RT.GIUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
+					giIndex = giRead->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 				}
 
 				// Half-res AO consumption (#126): mirror of the GI index above. 0 = no AO -> ao factor unchanged.
 				// AoActive() so BOTH SSAO and RT AO feed the same forward slot (#151). Independent of GI (AO can run
 				// with GI off), needs no geometry table.
 				uint32_t aoIndex = 0;
-				if (v.GBufferNeeded && CVars::AoActive() && v.RT.AOUpscaleTarget &&
-				    !v.RT.AOUpscaleTarget->GetDesc().ColorAttachments.empty())
+				if (v.GBufferNeeded && CVars::AoActive() && v.RT.AOUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())] &&
+				    !v.RT.AOUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty())
 				{
-					aoIndex = v.RT.AOUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
+					aoIndex = v.RT.AOUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 				}
 
 				// Half-res RT sun-shadow consumption: mirror of the AO index. 0 = no half-res shadow -> DefaultLit
 				// falls back to the inline SampleSunShadow. Gated on the shadow sub-chain having run (v.ShadowView)
 				// so a stale upscale target from a prior frame can't leak in when shadows are off this frame.
 				uint32_t shadowIndex = 0;
-				if (v.GBufferNeeded && CVars::ShadowStochasticActive() && v.ShadowView && v.RT.ShadowUpscaleTarget &&
-				    !v.RT.ShadowUpscaleTarget->GetDesc().ColorAttachments.empty())
+				if (v.GBufferNeeded && CVars::ShadowStochasticActive() && v.ShadowView && v.RT.ShadowUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())] &&
+				    !v.RT.ShadowUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty())
 				{
-					shadowIndex = v.RT.ShadowUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
+					shadowIndex = v.RT.ShadowUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 				}
 
 				// Demodulated specular twin index (0 = no spec buffer -> forward falls back to the grey-vis specular).
 				uint32_t shadowSpecIndex = 0;
 				if (v.GBufferNeeded && CVars::ShadowStochasticActive() && CVars::ShadowSpecularDemodulated.Get() && v.ShadowSpecView &&
-				    v.RT.ShadowSpecUpscaleTarget && !v.RT.ShadowSpecUpscaleTarget->GetDesc().ColorAttachments.empty())
+				    v.RT.ShadowSpecUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())] && !v.RT.ShadowSpecUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty())
 				{
-					shadowSpecIndex = v.RT.ShadowSpecUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
+					shadowSpecIndex = v.RT.ShadowSpecUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 				}
 
 				// RT reflection consumption (#129): the live reflection buffer's bindless index (0 = no RT
@@ -1653,9 +1661,9 @@ namespace Snowstorm
 
 					fc.Graph.AddPass({.Name = "CameraDepthPrepass" + v.Suffix,
 					                  .Target = prepassTarget,
-					                  .Execute = [this, &fc, cam, depthFmt](CommandContext&)
+					                  .Execute = [this, &fc, cam, depthFmt](CommandContext& c)
 					                  {
-						                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, fc.Ctx, fc.FrameIndex, /*jittered*/ true);
+						                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, BorrowContext(c), fc.FrameIndex, /*jittered*/ true);
 						                  m_Owner.DrawVisibleMeshes(fc, cam,
 						                                            [&](entt::entity, const TransformComponent& tr, const MeshComponent& mesh, const MaterialComponent& mat)
 						                                            {
@@ -1807,7 +1815,7 @@ namespace Snowstorm
 					                  .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
 					                  .Execute = [this, &fc, lowResView, upFmt](CommandContext& c)
 					                  {
-						                  m_BilinearPass.Draw(fc.Ctx, fc.FrameIndex, lowResView, upFmt);
+						                  m_BilinearPass.Draw(BorrowContext(c), fc.FrameIndex, lowResView, upFmt);
 					                  }});
 					v.SceneColor.View = upView;
 				}
@@ -1894,7 +1902,7 @@ namespace Snowstorm
 				                            {velView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Execute = [this, &fc, currentView, prevHistView, velView, rcpFrame, historyValid, nearPlane, farPlane, depthReject, depthRejectSlope, histFmt](CommandContext& c)
 				                  {
-					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, currentView, prevHistView, velView,
+					                  m_Pass.Draw(BorrowContext(c), fc.FrameIndex, currentView, prevHistView, velView,
 					                              rcpFrame, historyValid, CVars::TaaBlend.Get(),
 					                              CVars::TaaMaxBlend.Get(), nearPlane, farPlane, depthReject, depthRejectSlope, histFmt);
 				                  }});
@@ -1946,7 +1954,7 @@ namespace Snowstorm
 				                  .Target = dst,
 				                  .Reads = {{srcTex, RenderGraph::AccessState::Sampled}},
 				                  .Execute = [this, &fc, srcView, dstFmt](CommandContext& c)
-				                  { m_Copy.Draw(fc.Ctx, fc.FrameIndex, srcView, dstFmt); }});
+				                  { m_Copy.Draw(BorrowContext(c), fc.FrameIndex, srcView, dstFmt); }});
 			}
 
 		private:
@@ -2011,7 +2019,7 @@ namespace Snowstorm
 					                  .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
 					                  .Execute = [this, &fc, srcView, rcpFrame, dstFmt](CommandContext& c)
 					                  {
-						                  m_FxaaPass.Draw(fc.Ctx, fc.FrameIndex, srcView, rcpFrame, dstFmt);
+						                  m_FxaaPass.Draw(BorrowContext(c), fc.FrameIndex, srcView, rcpFrame, dstFmt);
 					                  }});
 					prevTarget = dst;
 				}
@@ -2029,7 +2037,7 @@ namespace Snowstorm
 					                  .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
 					                  .Execute = [this, &fc, srcView, rcpFrame, sharpness, dstFmt](CommandContext& c)
 					                  {
-						                  m_SharpenPass.Draw(fc.Ctx, fc.FrameIndex, srcView, rcpFrame, sharpness, dstFmt);
+						                  m_SharpenPass.Draw(BorrowContext(c), fc.FrameIndex, srcView, rcpFrame, sharpness, dstFmt);
 					                  }});
 					prevTarget = dst;
 				}
@@ -2162,7 +2170,7 @@ namespace Snowstorm
 						                  // Both present images were left in SHADER_READ by their tonemap pass; the
 						                  // graph now emits the color-write -> compute-read barrier per .Reads entry
 						                  // (this is a compute pass), so no manual barrier is needed.
-						                  m_MetricsPass.Compute(fc.Ctx, fc.FrameIndex, upView, gtView, mw, mh);
+						                  m_MetricsPass.Compute(BorrowContext(c), fc.FrameIndex, upView, gtView, mw, mh);
 						                  fc.Renderer.SetMetrics([this]
 						                                         {
 									                                   const auto& r = m_MetricsPass.GetResult();
