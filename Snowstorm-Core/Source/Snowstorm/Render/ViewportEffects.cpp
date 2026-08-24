@@ -504,8 +504,9 @@ namespace Snowstorm
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
+				const Ref<RenderTarget>& slot = v.RT.GIUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())];
 				return v.GBufferNeeded && CVars::GiActive() && v.GIView &&
-				       v.RT.GIUpscaleTarget && !v.RT.GIUpscaleTarget->GetDesc().ColorAttachments.empty();
+				       slot && !slot->GetDesc().ColorAttachments.empty();
 			}
 
 			void Contribute(ViewportRenderContext& v) override
@@ -522,7 +523,7 @@ namespace Snowstorm
 				const auto& gbDesc = v.RT.GBufferNormalTarget->GetDesc();
 				const Ref<TextureView> gbufView = gbDesc.ColorAttachments[0].View;
 				const Ref<TextureView> depthView = gbDesc.DepthAttachment->View; // fp32 D32 depth
-				const Ref<RenderTarget>& dst = v.RT.GIUpscaleTarget;
+				const Ref<RenderTarget>& dst = v.RT.GIUpscaleTarget[RtWriteSlot(v.Frame.Renderer.GetFrameCounter())];
 				const PixelFormat dstFmt = dst->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 				const float nearPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
 				const float farPlane = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
@@ -1573,10 +1574,11 @@ namespace Snowstorm
 				// producer actually ran (the same published-view gate shadowIndex/reflIndex use), which replaces
 				// the old RT-only geometry-table check here.
 				uint32_t giIndex = 0;
-				if (v.GBufferNeeded && CVars::GiActive() && v.GIView && v.RT.GIUpscaleTarget &&
-				    !v.RT.GIUpscaleTarget->GetDesc().ColorAttachments.empty())
+				if (const Ref<RenderTarget>& giRead = v.RT.GIUpscaleTarget[RtReadSlot(v.Frame.Renderer.GetFrameCounter())];
+				    v.GBufferNeeded && CVars::GiActive() && v.GIView && giRead &&
+				    !giRead->GetDesc().ColorAttachments.empty())
 				{
-					giIndex = v.RT.GIUpscaleTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
+					giIndex = giRead->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 				}
 
 				// Half-res AO consumption (#126): mirror of the GI index above. 0 = no AO -> ao factor unchanged.

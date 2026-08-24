@@ -116,7 +116,7 @@ namespace Snowstorm
 				const auto& rt = reg.Read<RenderTargetComponent>(vpEntity);
 				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget ||
 				                     !rt.GroundTruthTarget || !rt.GroundTruthPresentTarget || !rt.VelocityTarget ||
-				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIDenoiser.Allocated() || !rt.GIUpscaleTarget ||
+				                     !rt.GBufferNormalTarget || !rt.GITarget || !rt.GIDenoiser.Allocated() || !rt.GIUpscaleTarget[0] || !rt.GIUpscaleTarget[1] ||
 				                     !rt.AOTarget || !rt.AOBlurTarget || !rt.AODenoiser.Allocated() || !rt.AOUpscaleTarget ||
 				                     !rt.ShadowTarget || !rt.ShadowDenoiser.Allocated() || !rt.ShadowUpscaleTarget ||
 				                     !rt.ShadowSpecTarget || !rt.ShadowSpecDenoiser.Allocated() || !rt.ShadowSpecUpscaleTarget ||
@@ -181,7 +181,8 @@ namespace Snowstorm
 					AllocateDenoiser(rtW.GIDenoiser, giW, giH, "ViewportGI");
 					// Full-res GI target (#124): the bilateral upsample renders the half-res GI into this, and the
 					// forward pass samples it (by screen UV) as the diffuse GI. Full viewport res.
-					rtW.GIUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale");
+					rtW.GIUpscaleTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale0");
+					rtW.GIUpscaleTarget[1] = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale1");
 					// Half-res AO target (#126): viewport * render.ao.scale. Always allocated; only dispatched
 					// when AO is active. Rebuilt on viewport OR ao.scale change. Independent of GI.
 					rtW.AOTarget = CreateAOTarget(aoW, aoH, "Viewport");

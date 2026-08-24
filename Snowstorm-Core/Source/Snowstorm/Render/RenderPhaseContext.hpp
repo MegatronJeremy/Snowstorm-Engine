@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/RendererService.hpp" // TonemapParams (value member of ViewportRenderContext)
 
@@ -39,6 +40,20 @@ namespace Snowstorm
 		TrackedRegistry& Reg;
 		uint32_t FrameIndex;
 	};
+
+	// Which double-buffered RT-output slot the chain writes this frame, and which the forward pass samples.
+	// Identical (both 0) unless render.rt.crossframe is on; then they alternate so the forward pass reads the
+	// previous frame's result and never the slot currently being written, which is what removes the in-frame
+	// dependency an async batch needs gone to overlap anything.
+	[[nodiscard]] inline uint32_t RtWriteSlot(const uint64_t frame)
+	{
+		return CVars::RtCrossFrame.Get() ? static_cast<uint32_t>(frame & 1u) : 0u;
+	}
+
+	[[nodiscard]] inline uint32_t RtReadSlot(const uint64_t frame)
+	{
+		return CVars::RtCrossFrame.Get() ? static_cast<uint32_t>(1u - (frame & 1u)) : 0u;
+	}
 
 	// The camera driving one viewport (resolved once per RenderViewport from the viewport's target link).
 	struct CameraPick

@@ -35,6 +35,7 @@ namespace Snowstorm::CVars
 	CVar<bool> AsyncCompute{"render.async_compute", false, "Run render-graph passes marked AsyncCompute on an independent compute queue, overlapping graphics (off = inline on the graphics queue). Correct but not profitable in-frame: measured +0.675 ms (+4.1%) on an RX 9060 XT, since fork/join plus the queue-family ownership transfers cost more than the 1.1% of raster work available to overlap."};
 	CVar<int> GraphDumpDeps{"render.graph.dumpdeps", 0, "Dump the render graph's pass dependency edges and per-pass earliest legal slot for this many frames"};
 	CVar<bool> GraphReorder{"render.graph.reorder", false, "Execute render-graph passes in a dependency-derived schedule that groups compute work (off = declaration order)"};
+	CVar<bool> RtCrossFrame{"render.rt.crossframe", false, "Sample the RT chain's upscaled output one frame late so the forward pass does not depend on this frame's trace and denoise, which is what lets an async-compute batch overlap the raster work (off = same-frame, single-buffered)"};
 	CVar<int> MemoryDump{"render.memory.dump", 0, "Log VMA allocation totals and per-heap budget usage for this many frames"};
 
 	CVar<int> StressRotators{"stress.rotators", 0, "Bare Transform+Rotator entities the stress bake spawns (heavy data-parallel ECS workload for the #85 benchmark)", CVarFlags::ReadOnly};

@@ -802,7 +802,8 @@ namespace Snowstorm
 		                              ScaledExtent(windowHeight, CVars::ClampedGIScale()), "Main Viewport");
 		rtc.GITargetView = rtc.GITarget->GetDefaultView();
 		// Full-res GI target (#124), full viewport res; the bilateral upsample renders into it.
-		rtc.GIUpscaleTarget = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport GIUpscale");
+		rtc.GIUpscaleTarget[0] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport GIUpscale0");
+		rtc.GIUpscaleTarget[1] = CreateColorOnlyHDRTarget(windowWidth, windowHeight, "Main Viewport GIUpscale1");
 		// Half-res AO target (#126); ViewportResizeSystem rebuilds it at render.ao.scale on the first frame.
 		rtc.AOTarget = CreateAOTarget(ScaledExtent(windowWidth, CVars::ClampedAOScale()),
 		                              ScaledExtent(windowHeight, CVars::ClampedAOScale()), "Main Viewport");

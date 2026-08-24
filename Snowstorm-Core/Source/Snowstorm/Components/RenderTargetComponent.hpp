@@ -75,7 +75,12 @@ namespace Snowstorm
 		// GITarget into this full-viewport color-only HDR target, which the forward pass then samples (by
 		// screen UV) and multiplies by full-res albedo into the diffuse ambient. A RenderTarget (the upsample
 		// is a fullscreen graphics pass), unlike the half-res GITarget (a compute UAV). Null until allocated.
-		Ref<RenderTarget> GIUpscaleTarget;
+		//
+		// DOUBLE-BUFFERED for render.rt.crossframe: the GI chain writes one slot while the forward pass
+		// samples the other, which removes the in-frame dependency that otherwise forces the forward pass to
+		// wait for the whole trace and denoise chain. With the CVar off both indices resolve to 0 and slot 1
+		// is never allocated, so the single-buffer behaviour is unchanged.
+		Ref<RenderTarget> GIUpscaleTarget[2];
 
 		// Half-res RT AO (#126): the RTAO occlusion trace runs into this Sampled|Storage R16F target at
 		// render.ao.scale. Stores a scalar occlusion FACTOR [0,1] (1 = open). Independent of the GI target —

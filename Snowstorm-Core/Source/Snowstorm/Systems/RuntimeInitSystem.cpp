@@ -125,7 +125,7 @@ namespace Snowstorm
 
 			if (!rtc.Target || !rtc.PresentTarget || !rtc.AAIntermediateTarget || !rtc.SceneUpscaleTarget ||
 			    !rtc.GroundTruthTarget || !rtc.GroundTruthPresentTarget || !rtc.VelocityTarget ||
-			    !rtc.GBufferNormalTarget || !rtc.GITarget || !rtc.GIUpscaleTarget ||
+			    !rtc.GBufferNormalTarget || !rtc.GITarget || !rtc.GIUpscaleTarget[0] || !rtc.GIUpscaleTarget[1] ||
 			    !rtc.AOTarget || !rtc.AOBlurTarget || !rtc.AOUpscaleTarget ||
 			    !rtc.ShadowTarget || !rtc.ShadowUpscaleTarget || !rtc.ShadowSpecTarget || !rtc.ShadowSpecUpscaleTarget ||
 			    !rtc.PathTraceAccumTarget ||
@@ -164,9 +164,13 @@ namespace Snowstorm
 				wRtc.GBufferNormalTarget = CreateDepthNormalTarget(w, h, "Viewport"); // depth+normal G-buffer (#124), full res
 				wRtc.GITarget = CreateGITarget(giW, giH, "Viewport");                 // half-res GI (#124)
 				wRtc.GITargetView = wRtc.GITarget->GetDefaultView();
-				AllocateDenoiser(wRtc.GIDenoiser, giW, giH, "ViewportGI");                  // GI SVGF denoiser buffers (#132)
-				wRtc.GIUpscaleTarget = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale"); // full-res GI (#124)
-				wRtc.AOTarget = CreateAOTarget(aoW, aoH, "Viewport");                       // half-res AO (#126)
+				AllocateDenoiser(wRtc.GIDenoiser, giW, giH, "ViewportGI"); // GI SVGF denoiser buffers (#132)
+				// Both slots always: render.rt.crossframe is runtime-toggleable, and a null second slot would
+				// fault the moment it is turned on. One extra full-res HDR target is trivial against the ~1.2 GiB
+				// the renderer already holds.
+				wRtc.GIUpscaleTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale0"); // full-res GI (#124)
+				wRtc.GIUpscaleTarget[1] = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale1");
+				wRtc.AOTarget = CreateAOTarget(aoW, aoH, "Viewport"); // half-res AO (#126)
 				wRtc.AOTargetView = wRtc.AOTarget->GetDefaultView();
 				wRtc.AOBlurTarget = CreateAOTarget(aoW, aoH, "ViewportAOBlur"); // SSAO bilateral blur output (#151)
 				wRtc.AOBlurTargetView = wRtc.AOBlurTarget->GetDefaultView();
