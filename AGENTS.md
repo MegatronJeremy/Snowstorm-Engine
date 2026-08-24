@@ -255,7 +255,7 @@ cache, that is a real race and a genuine finding.
 `Scripts/rga-occupancy.py` is the static analogue of perf-bench: a golden-file gate on shader
 register/LDS pressure and spills, the determinants of GPU occupancy. It needs no GPU run. It feeds
 every compiled SPIR-V module in `Engine/cache/shaders/` through the Radeon GPU Analyzer offline
-compiler for a target ASIC (default `gfx1100`, the RX 7900 XTX), parses the per-shader stats CSV
+compiler for a target ASIC (default `gfx1100`, the RX 7900 XTX; `--asic gfx1200` for RDNA4), parses the per-shader stats CSV
 (USED_VGPRs/SGPRs, USED_LDS_BYTES, VGPR/SGPR spills, SCRATCH_MEM, ISA_SIZE), collapses each shader's
 permutations to the worst case keyed by base name (so a source edit re-compares the same logical
 shader, not a churning content hash), and diffs against `Scripts/rga-baseline/occupancy-<asic>.json`.
@@ -273,13 +273,27 @@ instruction holding the most live registers, the actionable target for cutting a
 (e.g. GIDenoise.comp peaks at 184 live VGPRs around a `v_cndmask` block).
 
 The **primary gate is VGPR-limited occupancy**: RGA's CLI has no occupancy column, so the script
-derives waves/SIMD from the VGPR count using the RDNA3 (gfx11) model (1536 VGPRs/SIMD, 16 waves max,
-<=96 VGPRs => full 16 waves), verified against AMD's docs. It fails (exit 1) when occupancy drops
-(fewer waves), a spill appears (0 to >0, hard fail), or LDS/ISA rises beyond `--threshold`
-(default 10%). Raw VGPR% is intentionally not gated -- a VGPR rise that doesn't cross a wave boundary
-costs nothing. The occupancy is *theoretical* and VGPR-only (LDS occupancy needs the workgroup size
-RGA offline reports as 0); measure achieved occupancy with RGP. On the current baseline only
-`GIDenoise.comp` (192 VGPR -> 8/16 waves) is occupancy-limited; every other shader hits 16/16.
+derives waves/SIMD from the VGPR count, per architecture family, verified against AMD's docs. RDNA3
+(`gfx11`) and RDNA4 (`gfx12`) desktop parts share a 1536-VGPR (192 KB) file and 16 wave slots, so both
+reach full occupancy at <=96 VGPRs, but allocation granularity differs (16 vs 24), which moves where
+the wave count steps: they disagree at 56 of the 256 possible VGPR counts, so neither model stands in
+for the other. An unmodelled architecture yields no occupancy figure rather than a wrong one, which
+disables the primary gate, so add a model before targeting a new family. It fails (exit 1) when
+occupancy drops (fewer waves), a spill appears (0 to >0, hard fail), or LDS/ISA rises beyond
+`--threshold` (default 10%). Raw VGPR% is intentionally not gated -- a VGPR rise that doesn't cross a
+wave boundary costs nothing. The occupancy is *theoretical* and VGPR-only (LDS occupancy needs the
+workgroup size RGA offline reports as 0); measure achieved occupancy with RGP. Baselines are committed
+for `gfx1100` (RX 7900 XTX) and `gfx1200` (RX 9060 XT); on both, only `GIDenoise.comp` and
+`DefaultLit.frag` are occupancy-limited (8/16 and 10/16 on RDNA4), and the other 40 shaders hit 16/16
+with zero spills.
+
+**RGA is AMD-only**, so this gate cannot cover NVIDIA: its target list is `gfx11xx`/`gfx12xx` and
+nothing else. The Vulkan-native equivalent is `VK_KHR_pipeline_executable_properties`
+(`vkGetPipelineExecutableStatisticsKHR` reports register count and spills once pipelines are created
+with `VK_PIPELINE_CREATE_2_CAPTURE_STATISTICS_BIT_KHR`), which both vendors' drivers implement. That
+is a *runtime* query needing the real device and driver, not a static offline pass, so it would be a
+separate GPU-gated harness rather than an extension of this one, trading CI coverage for numbers that
+reflect the shipping compiler.
 Stage per module is read from the SPIR-V `OpEntryPoint` execution model, not
 the filename, so the stage-less `IBL*.hlsl` shaders resolve correctly. RGA is **pinned** to a version
 + SHA-256 in the script (its stats columns and compiler drift between versions, like the clang-format

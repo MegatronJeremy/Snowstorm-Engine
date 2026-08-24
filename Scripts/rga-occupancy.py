@@ -113,22 +113,32 @@ _HIGHER_IS_WORSE = ("lds", "isa_size")
 # Metrics that must stay at 0; any 0 -> >0 is a hard fail regardless of threshold.
 _SPILL_METRICS = ("scratch", "vgpr_spills", "sgpr_spills")
 
-# RDNA3 (gfx11) wave32 occupancy model. Constants verified against AMD's RDNA3 docs and RGA's own
-# arch-info output: 1536 VGPRs/SIMD (192KB), 16 waves/SIMD max, <=96 VGPRs => full occupancy.
+# Wave32 VGPR-limited occupancy models, per architecture family: (VGPRs/SIMD, wave slots/SIMD,
+# allocation granularity). Constants from AMD's RDNA ISA docs.
+#
+# RDNA3 and RDNA4 desktop parts share a 192 KB register file (1536 VGPRs) and 16 wave slots, so both
+# reach full occupancy at <=96 VGPRs. They differ in allocation granularity: RDNA3 rounds a shader's
+# VGPR count up to a multiple of 16, RDNA4 to a multiple of 24. The wave count therefore steps at
+# different VGPR counts on the two despite the identical file size, which is why one model cannot
+# stand in for the other. (RDNA4 parts with a 128 KB file allocate in blocks of 16; no desktop SKU
+# ships that configuration, so it is not modelled.)
+#
 # SGPRs never limit on RDNA. LDS can, but RGA offline reports THREADS_PER_WORKGROUP=0, so we compute
 # the VGPR-limited theoretical occupancy only (and gate LDS growth separately). Not measured -- see RGP.
-RDNA3_VGPR_FILE = 1536
-RDNA3_MAX_WAVES = 16
-RDNA3_VGPR_GRANULARITY = 16
+_OCCUPANCY_MODELS = {
+    "gfx11": (1536, 16, 16),
+    "gfx12": (1536, 16, 24),
+}
 
 
 def vgpr_occupancy(vgprs: float, asic: str) -> int | None:
-    """VGPR-limited theoretical waves/SIMD (wave32) for a gfx11 ASIC, else None."""
-    if not asic.startswith("gfx11") or vgprs <= 0:
+    """VGPR-limited theoretical waves/SIMD (wave32), or None on an unmodelled architecture."""
+    model = next((m for prefix, m in _OCCUPANCY_MODELS.items() if asic.startswith(prefix)), None)
+    if model is None or vgprs <= 0:
         return None
-    g = RDNA3_VGPR_GRANULARITY
-    allocated = max(g, ((int(vgprs) + g - 1) // g) * g)
-    return min(RDNA3_MAX_WAVES, RDNA3_VGPR_FILE // allocated)
+    vgpr_file, max_waves, granularity = model
+    allocated = max(granularity, ((int(vgprs) + granularity - 1) // granularity) * granularity)
+    return min(max_waves, vgpr_file // allocated)
 
 
 def find_repo_root(script_dir: Path) -> Path:
@@ -389,9 +399,14 @@ def collapse_worst(perm_metrics: list[dict]) -> dict:
     return worst
 
 
+def max_waves_for(asic: str) -> int | None:
+    model = next((m for prefix, m in _OCCUPANCY_MODELS.items() if asic.startswith(prefix)), None)
+    return model[1] if model else None
+
+
 def _occ_str(vgprs: float, asic: str) -> str:
     occ = vgpr_occupancy(vgprs, asic)
-    return f"{occ}/{RDNA3_MAX_WAVES}" if occ is not None else "--"
+    return f"{occ}/{max_waves_for(asic)}" if occ is not None else "--"
 
 
 def compare(name: str, cur: dict, base: dict, threshold_pct: float, asic: str) -> bool:
