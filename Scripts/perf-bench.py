@@ -127,15 +127,32 @@ def aggregate_runs(runs: list[dict]) -> dict:
         n = len(v)
         return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2.0
 
+    def quartiles(vals: list[float]) -> tuple[float, float]:
+        """Inclusive-median quartiles. With the handful of runs a bench does, a percentile method that
+        interpolates would invent precision the sample cannot support, so this just splits the sorted
+        halves and takes their medians."""
+        v = sorted(vals)
+        n = len(v)
+        if n < 4:
+            return v[0], v[-1]  # too few runs to quartile: fall back to the observed range
+        half = n // 2
+        return median(v[:half]), median(v[half + (n % 2):])
+
     merged: dict[str, dict] = {}
     for name in {p for r in runs for p in r.get("passes", {})}:
         samples = [r["passes"][name] for r in runs if name in r.get("passes", {})]
         avgs = [s.get("avgMs", 0.0) for s in samples]
         med = median(avgs)
+        q1, q3 = quartiles(avgs)
         entry = dict(samples[0])
         entry["avgMs"] = med
         entry["minMs"] = median([s.get("minMs", 0.0) for s in samples])
         entry["spreadPct"] = ((max(avgs) - min(avgs)) / med * 100.0) if med > 0 else 0.0
+        # The interval the gate compares. A point estimate cannot say whether a difference is real; two
+        # intervals can, by whether they overlap.
+        entry["q1Ms"] = q1
+        entry["q3Ms"] = q3
+        entry["runs"] = len(avgs)
         merged[name] = entry
 
     base["passes"] = merged
@@ -259,17 +276,33 @@ def compare(name: str, current: dict, baseline: dict, threshold_pct: float) -> b
             continue
         delta = (c - b) / b * 100.0 if b > 0 else 0.0
         flag = ""
-        # A delta smaller than this pass's own run-to-run spread is not a measurement, so do not call it a
-        # regression: that is how a noise-dominated gate manufactures failures (and hides real ones behind
-        # a threshold it cannot resolve). Reported as INCONCLUSIVE, which is not a pass.
-        spread = cur_passes.get(p, {}).get("spreadPct")
-        noisy = spread is not None and abs(delta) <= spread
-        if delta > threshold_pct and not noisy:
-            flag = "  REGRESSION"
-            ok = False
-        elif delta > threshold_pct and noisy:
-            flag = f"  INCONCLUSIVE (spread {spread:.1f}%)"
-            ok = False
+        # Preferred test: do the two INTERVALS overlap? A point delta against a fixed percentage cannot
+        # distinguish a real shift from measurement scatter, which is how a noise-dominated gate both
+        # manufactures failures and hides real ones. Disjoint intervals with the current one higher is a
+        # regression; overlapping intervals mean the runs do not separate, whatever the point delta says.
+        # Falls back to the threshold when either side predates the interval fields (old baseline, or
+        # --repeat 1, which cannot produce one).
+        cq1, cq3 = cur_passes.get(p, {}).get("q1Ms"), cur_passes.get(p, {}).get("q3Ms")
+        bq1, bq3 = base_passes.get(p, {}).get("q1Ms"), base_passes.get(p, {}).get("q3Ms")
+        have_intervals = None not in (cq1, cq3, bq1, bq3)
+        if have_intervals:
+            if cq1 > bq3:  # current entirely above baseline
+                flag = f"  REGRESSION (IQR {cq1:.3f}-{cq3:.3f} vs {bq1:.3f}-{bq3:.3f})"
+                ok = False
+            elif cq3 < bq1:
+                flag = "  improved (intervals disjoint)"
+            elif delta > threshold_pct:
+                flag = "  INCONCLUSIVE (intervals overlap)"
+                ok = False
+        else:
+            spread = cur_passes.get(p, {}).get("spreadPct")
+            noisy = spread is not None and abs(delta) <= spread
+            if delta > threshold_pct and not noisy:
+                flag = "  REGRESSION"
+                ok = False
+            elif delta > threshold_pct and noisy:
+                flag = f"  INCONCLUSIVE (spread {spread:.1f}%)"
+                ok = False
         # FS invocations (overdraw metric, #pipeline-stats). Informational: a graphics pass's fragment-
         # shader invocations; divide by the pass's pixel count for overdraw. Not gated (it's a diagnostic).
         fi = cur_passes.get(p, {}).get("fragInvocations", 0)

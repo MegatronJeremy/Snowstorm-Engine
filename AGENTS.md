@@ -219,9 +219,12 @@ peak briefly in every run but spends progressively more frames throttled, which 
 signature rather than workload variance (every pass moving by the same factor is a clock change, not a
 code change). More `--frames` cannot average that out because it is drift BETWEEN launches, so the script
 runs each config `--repeat` times (default 3) and takes the **median**, which rejects a single throttled
-outlier as a mean cannot. Each pass carries the observed `spreadPct`, and a delta smaller than its own
-spread is reported **INCONCLUSIVE** rather than PASS or REGRESSION: a gate must not rule on a difference
-below its own measurement error. **Check what else is using the GPU before believing any number.** A remote-desktop session
+outlier as a mean cannot. Each pass carries a quartile **interval** (`q1Ms`/`q3Ms`) alongside the median, and the gate compares
+INTERVALS rather than a point delta against a fixed percentage: disjoint with the current run higher is a
+regression, overlapping means the runs do not separate whatever the point delta says, and that reads
+**INCONCLUSIVE** rather than PASS. A gate must not rule on a difference below its own measurement error.
+Baselines predating the interval fields (or `--repeat 1`, which cannot produce one) fall back to the
+threshold plus a range check. **Check what else is using the GPU before believing any number.** A remote-desktop session
 (Parsec/RDP/Steam Link) hardware-encodes the framebuffer on the same adapter, and its load tracks screen
 content and network conditions, which reproduces exactly this signature. So does a browser or Discord with
 GPU acceleration on. Benchmark from the console with the streamer stopped, or accept that only a paired
