@@ -1,0 +1,1386 @@
+{
+ "Entities": [
+  {
+   "Components": {
+    "Snowstorm::EnvironmentComponent": {
+     "Background": "ProceduralSky",
+     "GroundColor": [
+      0.11999999731779099,
+      0.10999999940395355,
+      0.10000000149011612
+     ],
+     "SkyHorizonColor": [
+      0.5199999809265137,
+      0.6200000047683716,
+      0.75
+     ],
+     "SkyIntensity": 1.0,
+     "SkyZenithColor": [
+      0.10000000149011612,
+      0.2199999988079071,
+      0.44999998807907104
+     ]
+    }
+   },
+   "Name": "Environment",
+   "UUID": "1189914827794097555"
+  },
+  {
+   "Components": {
+    "Snowstorm::DirectionalLightComponent": {
+     "CastShadows": true,
+     "Color": [
+      1.0,
+      0.9700000286102295,
+      0.8999999761581421
+     ],
+     "Direction": [
+      -15.0,
+      -90.0,
+      5.0
+     ],
+     "Enabled": true,
+     "Intensity": 8.0
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sun (key)",
+   "UUID": "14740570402552495097"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "18252608572562089750"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "10775407233779663383"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-101",
+   "UUID": "11761030339009984877"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "8302424511842164635"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "5832065272398930637"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-98",
+   "UUID": "5001977286075150979"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "13026309866690785247"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "13078227215737902699"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-95",
+   "UUID": "13178537612394118443"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "4040271266701906521"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "7205460950427829625"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-80",
+   "UUID": "14261456271996786664"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "8571748957980010614"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "7927813937123330620"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-79",
+   "UUID": "1299893318286770595"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "2741182996557846012"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "4091405869459828822"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-70",
+   "UUID": "3376881894535064648"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "8567236743302198087"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "12800378017674087184"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-71",
+   "UUID": "14740522948003929700"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "16544055701099671800"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "10929385969736388707"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-72",
+   "UUID": "13015329797380222114"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "8935939496501527747"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "2033495428678049269"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-60",
+   "UUID": "1375221566900194518"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "3121192196175594304"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "9602043544168953391"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-61",
+   "UUID": "6971968771242208853"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "13066028838277334682"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "4114919225626260598"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-59",
+   "UUID": "9422882582167390782"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "11194328589051197402"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "2783271755489105084"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-62",
+   "UUID": "3012486610628641582"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "1617698807349275783"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "5754354131351941755"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-50",
+   "UUID": "16368210013081519633"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "2770843556057342847"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "13353155638894207671"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-49",
+   "UUID": "7775685831613221333"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "14086680195371146992"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "13730696295135408885"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-42",
+   "UUID": "13711835724403353838"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "1221424205949685414"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "6163564378041380467"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-44",
+   "UUID": "15600793079058296986"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "12123771172042414589"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "15120242575972384252"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-46",
+   "UUID": "17904619711809135725"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "4387445924341059702"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "12863179544685464940"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-47",
+   "UUID": "13692053532409634737"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "10497186200766616415"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "7917909824905164640"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-33",
+   "UUID": "12072941228736033715"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "7694659826518672649"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "2059908101132412812"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-48",
+   "UUID": "18237533128854769677"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "13873447470881818058"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "14816694191572111982"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-102",
+   "UUID": "7787483252563398699"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "6127921637032783438"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "2529431642167338151"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-99",
+   "UUID": "15531188582621883881"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "2357172329091658311"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "18043870780987762981"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-94",
+   "UUID": "15889481616451599490"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "15991929536669576162"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "5974523661310525941"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-93",
+   "UUID": "7270294759146772044"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "17150243090848776623"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "12989859959238708985"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "Sponza/meshes[0]-53",
+   "UUID": "9778334398290059487"
+  },
+  {
+   "Components": {
+    "Snowstorm::PointLightComponent": {
+     "CastShadows": true,
+     "Color": [
+      1.0,
+      0.550000011920929,
+      0.20000000298023224
+     ],
+     "Enabled": true,
+     "Intensity": 18.0,
+     "Range": 9.0
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      2.5,
+      2.5999999046325684,
+      -3.5999999046325684
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 1
+    }
+   },
+   "Name": "Torch Warm D",
+   "UUID": "6001001000000000004"
+  },
+  {
+   "Components": {
+    "Snowstorm::PointLightComponent": {
+     "CastShadows": true,
+     "Color": [
+      1.0,
+      0.550000011920929,
+      0.20000000298023224
+     ],
+     "Enabled": true,
+     "Intensity": 18.0,
+     "Range": 9.0
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      -8.0,
+      2.5999999046325684,
+      -3.5999999046325684
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 1
+    }
+   },
+   "Name": "Torch Warm C",
+   "UUID": "6001001000000000003"
+  },
+  {
+   "Components": {
+    "Snowstorm::PointLightComponent": {
+     "CastShadows": true,
+     "Color": [
+      1.0,
+      0.550000011920929,
+      0.20000000298023224
+     ],
+     "Enabled": true,
+     "Intensity": 18.0,
+     "Range": 9.0
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      -8.0,
+      2.5999999046325684,
+      3.5999999046325684
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 1
+    }
+   },
+   "Name": "Torch Warm A",
+   "UUID": "6001001000000000001"
+  },
+  {
+   "Components": {
+    "Snowstorm::PointLightComponent": {
+     "CastShadows": true,
+     "Color": [
+      1.0,
+      0.550000011920929,
+      0.20000000298023224
+     ],
+     "Enabled": true,
+     "Intensity": 18.0,
+     "Range": 9.0
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      2.5,
+      2.5999999046325684,
+      3.5999999046325684
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 1
+    }
+   },
+   "Name": "Torch Warm B",
+   "UUID": "6001001000000000002"
+  },
+  {
+   "Components": {
+    "Snowstorm::PointLightComponent": {
+     "CastShadows": false,
+     "Color": [
+      1.0,
+      0.6000000238418579,
+      0.2800000011920929
+     ],
+     "Enabled": false,
+     "Intensity": 30.0,
+     "Range": 30.0
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      1.5,
+      -0.35139673948287964
+     ],
+     "Rotation": [
+      -0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 1
+    }
+   },
+   "Name": "Hero Brazier (warm)",
+   "UUID": "6001001000000000009"
+  },
+  {
+   "Components": {
+    "Snowstorm::PointLightComponent": {
+     "CastShadows": false,
+     "Color": [
+      0.6000000238418579,
+      0.699999988079071,
+      0.8999999761581421
+     ],
+     "Enabled": false,
+     "Intensity": 4.0,
+     "Range": 25.0
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      6.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 1
+    }
+   },
+   "Name": "Cool Bounce Fill",
+   "UUID": "6001001000000000008"
+  },
+  {
+   "Components": {
+    "Snowstorm::SpotLightComponent": {
+     "CastShadows": true,
+     "Color": [
+      0.699999988079071,
+      0.800000011920929,
+      1.0
+     ],
+     "Enabled": false,
+     "InnerAngleDeg": 18.0,
+     "Intensity": 120.0,
+     "OuterAngleDeg": 35.0,
+     "Range": 30.0
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      9.0,
+      10.0,
+      0.0
+     ],
+     "Rotation": [
+      -1.5707963705062866,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 1
+    }
+   },
+   "Name": "Window Shaft 3 (cool)",
+   "UUID": "6001001000000000007"
+  },
+  {
+   "Components": {
+    "Snowstorm::SpotLightComponent": {
+     "CastShadows": true,
+     "Color": [
+      0.699999988079071,
+      0.800000011920929,
+      1.0
+     ],
+     "Enabled": false,
+     "InnerAngleDeg": 18.0,
+     "Intensity": 120.0,
+     "OuterAngleDeg": 35.0,
+     "Range": 30.0
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      3.0,
+      10.0,
+      0.0
+     ],
+     "Rotation": [
+      -1.5707963705062866,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 1
+    }
+   },
+   "Name": "Window Shaft 2 (cool)",
+   "UUID": "6001001000000000006"
+  },
+  {
+   "Components": {
+    "Snowstorm::SpotLightComponent": {
+     "CastShadows": true,
+     "Color": [
+      0.699999988079071,
+      0.800000011920929,
+      1.0
+     ],
+     "Enabled": false,
+     "InnerAngleDeg": 18.0,
+     "Intensity": 120.0,
+     "OuterAngleDeg": 35.0,
+     "Range": 30.0
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      -3.0,
+      10.0,
+      0.0
+     ],
+     "Rotation": [
+      -1.5707963705062866,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 1
+    }
+   },
+   "Name": "Window Shaft (cool)",
+   "UUID": "6001001000000000005"
+  },
+  {
+   "Name": "Game Camera",
+   "UUID": "7001001000000000001",
+   "Components": {
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      9.384324073791504,
+      1.2104078531265259,
+      -0.24745261669158936
+     ],
+     "Rotation": [
+      0.01674955151975155,
+      1.586508870124817,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::CameraComponent": {
+     "Projection": "Perspective",
+     "PerspectiveFOV": 0.785398,
+     "PerspectiveNear": 0.1,
+     "PerspectiveFar": 1000.0,
+     "Primary": true
+    }
+   }
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "14863079243352112687"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "5810267832183663728"
+    },
+    "Snowstorm::RotatorComponent": {
+     "Axis": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "SpeedDegPerSec": 47.0
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      2.0,
+      1.5,
+      -0.3
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      0.2,
+      0.2,
+      0.2
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "MotionProp/nave-near",
+   "UUID": "9000000000000000001"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "14863079243352112687"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "5810267832183663728"
+    },
+    "Snowstorm::RotatorComponent": {
+     "Axis": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "SpeedDegPerSec": -31.0
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      -4.0,
+      1.5,
+      -0.3
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      0.2,
+      0.2,
+      0.2
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "MotionProp/nave-far",
+   "UUID": "9000000000000000002"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "14863079243352112687"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "5810267832183663728"
+    },
+    "Snowstorm::RotatorComponent": {
+     "Axis": [
+      0.2,
+      1.0,
+      0.0
+     ],
+     "SpeedDegPerSec": 63.0
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      -1.0,
+      1.5,
+      1.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      0.2,
+      0.2,
+      0.2
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "MotionProp/arcade-mid",
+   "UUID": "9000000000000000003"
+  },
+  {
+   "Components": {
+    "Snowstorm::MaterialComponent": {
+     "$asset": "14863079243352112687"
+    },
+    "Snowstorm::MeshComponent": {
+     "$asset": "5810267832183663728"
+    },
+    "Snowstorm::RotatorComponent": {
+     "Axis": [
+      0.0,
+      1.0,
+      0.3
+     ],
+     "SpeedDegPerSec": -53.0
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      -7.2,
+      1.5,
+      1.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      0.2,
+      0.2,
+      0.2
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   },
+   "Name": "MotionProp/arcade-west",
+   "UUID": "9000000000000000004"
+  }
+ ],
+ "Scene": {
+  "Name": "Untitled",
+  "Version": 1
+ }
+}

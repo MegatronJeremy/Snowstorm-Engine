@@ -32,6 +32,12 @@ namespace Snowstorm::CVars
 	// by EditorLayer::ApplyCameraOverride, where it outranks the per-scene sidecar.
 	extern CVar<std::string> CameraOverride;
 
+	// Replay scripted motion (camera route AND animated objects) to this route frame, then hold. -1 = off.
+	// This is what lets a MOVING frame have a path-traced reference at all: the path tracer needs a still
+	// scene to accumulate, so the reference run replays to frame N and stops. Freezing only the camera
+	// would leave animated props smeared across the accumulation.
+	extern CVar<int> SimFreezeFrame;
+
 	// Parse a camera.override value ("px,py,pz,rx,ry,rz") into a pose. False (leaving the outputs
 	// untouched) if the string is empty or not 6 comma-separated floats. Shared by the runtime and the
 	// editor so both honour one wire format: a benchmark that pins a pose must get the same viewpoint

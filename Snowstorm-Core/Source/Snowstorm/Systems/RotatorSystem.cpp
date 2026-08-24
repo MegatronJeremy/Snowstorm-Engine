@@ -1,5 +1,6 @@
 #include "RotatorSystem.hpp"
 
+#include "Snowstorm/Components/CameraPathComponent.hpp"
 #include "Snowstorm/Components/RotatorComponent.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
@@ -22,13 +23,36 @@ namespace Snowstorm
 		// loop iteration. Logic runs unconditionally while the renderer's counter only moves after a
 		// successful BeginFrame, so a skipped frame would otherwise rotate the props one step further than
 		// the frame they are captured on, permanently.
-		const uint64_t renderFrame = ServiceView<RendererService>().GetFrameCounter();
 		const bool fixedStep = CVars::FixedSimulationStep();
-		if (fixedStep && renderFrame == m_LastFrame)
+
+		// When a scripted route is running, the props advance on ITS frame index, not on a private counter
+		// and not on the renderer's. Tying them together by construction is what makes the two agree:
+		//
+		//  - the route holds at frame 0 until the scene is resident, so props stay at their authored angle
+		//    during loading instead of spinning for however long streaming happened to take;
+		//  - sim.freeze_frame clamps the route's frame, so the props stop on exactly the frame the camera
+		//    does, which is what makes a still path-traced reference match the moving frame it is paired
+		//    with rather than showing the props at an angle that frame never had.
+		//
+		// CameraPathSystem is registered immediately before this system in the Logic phase, so its index is
+		// already current this frame. With no route running, fall back to advancing once per rendered frame.
+		uint64_t clock = ServiceView<RendererService>().GetFrameCounter();
+		bool routeDriven = false;
+		for (const auto view = m_World->GetRegistry().view<const CameraPathComponent>(); const auto e : view)
 		{
-			return;
+			if (const auto& path = view.get<const CameraPathComponent>(e); path.Started)
+			{
+				clock = path.Frame;
+				routeDriven = true;
+				break;
+			}
 		}
-		m_LastFrame = renderFrame;
+
+		if ((fixedStep || routeDriven) && clock == m_LastFrame)
+		{
+			return; // nothing advanced this frame (skipped render, or the route is frozen)
+		}
+		m_LastFrame = clock;
 
 		const float dt = CVars::SimulationStepSeconds(ts.GetSeconds());
 

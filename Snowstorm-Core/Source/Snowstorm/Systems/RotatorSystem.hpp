@@ -25,9 +25,10 @@ namespace Snowstorm
 		[[nodiscard]] bool RunsInEditMode() const override { return false; }
 
 	private:
-		// Renderer frame the rotation was last advanced on. Under a fixed simulation step the rotation
-		// must advance once per RENDERED frame, not once per loop iteration, or a capture's props sit at a
-		// different angle than the frame index implies. UINT64_MAX so the first tick always runs.
+		// Clock value the rotation was last advanced on: the camera route's frame index while a route is
+		// running, otherwise the renderer's frame counter. Rotation must advance once per RENDERED frame,
+		// not once per loop iteration, or a capture's props sit at a different angle than the frame index
+		// implies. UINT64_MAX so the first tick always runs.
 		uint64_t m_LastFrame = UINT64_MAX;
 	};
 }

@@ -78,6 +78,13 @@ namespace Snowstorm
 					}
 				}
 				path.Frame = path.Started ? renderFrame - path.StartFrame : 0;
+				// Replaying to a frame and holding there is what gives a moving frame a still scene to
+				// path-trace as its reference (sim.freeze_frame).
+				if (const int freeze = CVars::SimFreezeFrame.Get();
+				    freeze >= 0 && path.Frame > static_cast<uint64_t>(freeze))
+				{
+					path.Frame = static_cast<uint64_t>(freeze);
+				}
 				path.Time = CameraPathTimeAtFrame(path.Frame);
 			}
 			else

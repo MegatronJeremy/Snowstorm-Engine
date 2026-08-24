@@ -12,9 +12,11 @@ reference, metrics averaged over the sequence):
 
   1. One headless Runtime run per technique, flying camera.path with quality.capture.at_path_frames
      set, which writes the requested route frames plus a manifest of the pose each was taken at.
-  2. Per captured frame, a SEPARATE static path trace pinned to that pose is the ground truth. It
-     has to be separate: the path tracer resets accumulation on any view-projection change, so a
-     moving path trace is a 1-sample noise image and never converges to anything.
+  2. Per captured frame, a SEPARATE path trace of the world REPLAYED to that frame and held there
+     (sim.freeze_frame) is the ground truth. It has to be separate: the path tracer resets
+     accumulation on any view-projection change, so a moving path trace is a 1-sample noise image
+     that never converges. It has to freeze the whole world rather than just pin the camera, or
+     animated props keep spinning through the accumulation and converge to a smear.
   3. Per-frame FLIP/PSNR/SSIM against that reference, plus a temporal term over frame pairs.
 
 Frames are requested in ADJACENT PAIRS. A temporal metric needs consecutive frames, and averaging
@@ -54,6 +56,13 @@ qb = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(qb)
 
 ROUTE = "Projects/Sandbox/assets/camera-paths/sponza-bench.json"
+
+# Sponza plus animated props. The static gates keep using plain Sponza.world, deliberately: adding
+# moving geometry there would invalidate every committed quality-bench and perf baseline, and the
+# props exist for a stressor those gates cannot measure anyway. A camera-only flythrough of static
+# geometry produces no OBJECT disocclusion, and camera-relative and object-relative motion are not
+# equivalent tests: a moving object reveals background against history the camera never disturbed.
+MOTION_SCENE = "Projects/Sandbox/assets/scenes/Sponza-Motion.world"
 
 # Probe points along the committed route, each an ADJACENT frame pair. Frame indices are route-local
 # (see CameraPathComponent::Frame) and map to the route's phases, which is why they are named rather
@@ -161,8 +170,58 @@ def run_motion_capture(tech_env: dict, out_base: Path, exe: Path, repo_root: Pat
     return imgs, poses, device
 
 
+_REF_CACHE_VERSION = 2  # bump to invalidate every cached motion reference
+
+
+def _motion_reference_key(repo_root: Path, exe: Path, scene: str, frame: int, ref_frames: int) -> str:
+    """Cache key for a frozen-frame reference.
+
+    Keyed on the ROUTE FRAME, never on the camera pose. With animated props those are not the same
+    thing: the route parks at its end, so frames 900 and 901 share a pose while the props sit at
+    different angles, and a pose-keyed cache would serve one as the other.
+    """
+    h = qb.hashlib.sha256()
+    h.update(f"v{_REF_CACHE_VERSION}|{scene}|{frame}|{ref_frames}|".encode())
+    for rel in [ROUTE, *qb._PT_SOURCES]:
+        p = repo_root / rel
+        h.update(p.read_bytes() if p.exists() else b"missing")
+    for p in (exe, repo_root / scene):
+        h.update(str(p.stat().st_mtime_ns).encode() if p.exists() else b"0")
+    return h.hexdigest()[:16]
+
+
+def capture_motion_reference(frame: int, ref_frames: int, exe: Path, repo_root: Path, timeout: int,
+                             layer_path: Path, scene: str, tmp: Path, fresh: bool = False):
+    """Converged path trace of the world REPLAYED TO route frame `frame` and held there.
+
+    Not a static capture at the frame's camera pose: that pins the camera and leaves animated props
+    spinning through the accumulation, so the path tracer would converge on a smear of every angle
+    they passed through. sim.freeze_frame advances camera and props together and stops both, which is
+    the only state that is actually ground truth for the moving frame it is paired with.
+
+    Returns (image, device, cached) with image None on failure.
+    """
+    cache_dir = repo_root / "Scripts" / ".quality-ref-cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    key = _motion_reference_key(repo_root, exe, scene, frame, ref_frames)
+    cache_npy = cache_dir / f"motion-f{frame:06d}__{key}.npy"
+
+    if cache_npy.exists() and not fresh:
+        try:
+            return np.load(cache_npy), "", True
+        except Exception as e:
+            print(f"  note: cached reference unreadable ({e}); re-capturing.")
+
+    env = {**qb.REF_ENV, **MOTION_ENV, "SS_SIM_FREEZE_FRAME": str(frame)}
+    img, dev = qb.run_capture(env, tmp / f"ref_f{frame:06d}", ref_frames, exe, repo_root, timeout,
+                              layer_path, scene)
+    if img is not None:
+        np.save(cache_npy, img)
+    return img, dev, False
+
+
 def capture_static_controls(tech_env: dict, out_base: Path, exe: Path, repo_root: Path, timeout: int,
-                            layer_path: Path, scene: str, poses: dict, probe_names) -> dict:
+                            layer_path: Path, scene: str, probe_names) -> dict:
     """Render each probe's pose again with the camera PARKED, same technique. Returns {probe: image}.
 
     This is the control that separates motion cost from content difficulty, and it is not optional:
@@ -170,15 +229,20 @@ def capture_static_controls(tech_env: dict, out_base: Path, exe: Path, repo_root
     is mostly a difference in what is on screen. Subtracting the same viewpoint held still leaves the
     part attributable to motion.
 
-    The static side lets TAA accumulate on a still image, which a moving frame never gets. That is
-    the definition of the measurement (cost versus the camera having stopped), not a confound, and it
-    is empirically small anyway: the `static` probe, which is already parked in the moving run,
-    scores within 0.001 FLIP of its own static control on every technique.
+    Frozen with sim.freeze_frame, the same way the reference is, so all three images describe one
+    world state: the reference path-traces it, the control renders it still, and the moving capture
+    renders it in motion. Pinning only the camera would leave the props spinning in the control, and
+    the penalty would then measure camera motion against a partially-moving baseline.
+
+    The still side lets TAA accumulate longer than a moving frame ever gets. That is the definition
+    of the measurement (cost versus everything having stopped), not a confound, and it is
+    empirically small: the `static` probe, already parked in the moving run, scores within 0.001
+    FLIP of its own control on every technique.
     """
     out = {}
     for name in probe_names:
         f0 = PROBES[name][0]
-        img, _dev = qb.run_capture({**tech_env, **qb.camera_env(poses[f0])},
+        img, _dev = qb.run_capture({**tech_env, **MOTION_ENV, "SS_SIM_FREEZE_FRAME": str(f0)},
                                    out_base.with_name(f"{out_base.name}_static_{name}"),
                                    30, exe, repo_root, timeout, layer_path, scene, max_frames=200)
         if img is None:
@@ -303,7 +367,7 @@ def main() -> int:
     ap.add_argument("--only", default=None, help="Run only this technique (e.g. rtgi, all-rt)")
     ap.add_argument("--probes", default=",".join(PROBES), help="Comma-separated probe names")
     ap.add_argument("--threshold", type=float, default=10.0, help="Regression tolerance %% (default 10)")
-    ap.add_argument("--scene", default=qb.DEFAULT_SCENE, help="Scene to benchmark")
+    ap.add_argument("--scene", default=MOTION_SCENE, help="Scene to benchmark")
     ap.add_argument("--tech-maxframes", type=int, default=4000,
                     help="Hard frame cap per motion capture; must exceed the last probe frame")
     ap.add_argument("--update-baseline", action="store_true", help="Write current metrics as the new baseline")
@@ -339,6 +403,7 @@ def main() -> int:
 
     print(f"Repo root : {repo_root}")
     print(f"Route     : {ROUTE}")
+    print(f"Scene     : {args.scene}")
     print(f"Probes    : {', '.join(probe_names)}  -> route frames {frames}")
     print(f"Mode      : {'UPDATE BASELINE' if args.update_baseline else 'compare vs baseline'}\n")
 
@@ -380,9 +445,8 @@ def main() -> int:
             if f in ref_cache:
                 continue
             print(f"  reference for route frame {f} ...")
-            img, dev, cached = qb.capture_reference(f"motion-f{f:06d}", poses[f], args.ref_frames, exe,
-                                                    repo_root, args.timeout, layer_path, args.scene, tmp,
-                                                    args.fresh_ref)
+            img, dev, cached = capture_motion_reference(f, args.ref_frames, exe, repo_root, args.timeout,
+                                                        layer_path, args.scene, tmp, args.fresh_ref)
             if img is None:
                 print(f"  reference capture failed for frame {f}.")
                 missing_ref = True
@@ -397,7 +461,7 @@ def main() -> int:
             continue
 
         statics = capture_static_controls(tech_env, tmp / f"motion_{tech}", exe, repo_root,
-                                          args.timeout, layer_path, args.scene, poses, probe_names)
+                                          args.timeout, layer_path, args.scene, probe_names)
         result = evaluate(imgs, ref_cache, probe_names, statics)
         result["cvvdpJod"], result["cvvdpPerProbe"] = colorvideovdp(imgs, ref_cache, probe_names)
         ran_any = True
