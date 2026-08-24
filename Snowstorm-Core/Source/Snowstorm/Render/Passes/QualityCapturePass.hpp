@@ -3,6 +3,8 @@
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
+#include <glm/vec3.hpp>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -32,9 +34,40 @@ namespace Snowstorm
 		              uint64_t frame, uint64_t minSettleFrames, float epsilon, uint64_t maxFrame,
 		              const std::string& basePath);
 
+		// Motion capture: write the present at each requested ROUTE frame, with no convergence test (a moving
+		// image has no fixed point to converge to). `wanted` is ascending route-frame indices; each becomes
+		// <basePath>_f<NNNNNN>_ldr.npy, and once every one is written a <basePath>_poses.json manifest records
+		// the pose each was taken at. That manifest is the contract with the reference pass: a per-frame
+		// ground truth is a separate static path trace pinned to exactly these poses, so they must be the
+		// poses the run actually used rather than poses recomputed later from the route.
+		//
+		// Adjacent requests (N, N+1) are the normal case, since a temporal metric needs consecutive frames,
+		// so readbacks overlap and this keeps a small ring of them in flight.
+		uint64_t TickSequence(const Ref<CommandContext>& ctx, const Ref<Texture>& presentImg, bool streamingDone,
+		                      uint64_t frame, uint64_t pathFrame, bool pathActive,
+		                      const std::vector<uint64_t>& wanted, const std::string& basePath,
+		                      const glm::vec3& camPos, const glm::vec3& camRot);
+
 		[[nodiscard]] uint64_t FramesWritten() const { return m_Written; }
+		[[nodiscard]] bool SequenceComplete() const { return m_SequenceComplete; }
 
 	private:
+		// One in-flight present readback: recorded on the frame it belongs to, mapped once retired.
+		struct PendingCopy
+		{
+			Ref<Buffer> Buf;
+			int64_t CopyFrame = -1; // renderer frame the copy was recorded (-1 = slot free)
+			uint64_t PathFrame = 0;
+			uint32_t W = 0;
+			uint32_t H = 0;
+			PixelFormat Fmt = PixelFormat::RGBA8_sRGB;
+			glm::vec3 Pos{};
+			glm::vec3 Rot{};
+		};
+
+		// Write one retired copy to <basePath>_f<NNNNNN>_ldr.npy and record its manifest entry.
+		void WritePending(PendingCopy& slot, const std::string& basePath);
+
 		static constexpr uint64_t kCheckEvery = 16; // frames between convergence checkpoints
 
 		Ref<Buffer> m_Buffer;        // single present readback (recorded, then mapped once retired)
@@ -47,5 +80,11 @@ namespace Snowstorm
 		bool m_PrevValid = false;
 		bool m_WarnedCap = false;
 		uint64_t m_Written = 0;
+
+		// Sequence-mode state.
+		std::vector<PendingCopy> m_Slots;
+		size_t m_NextWanted = 0; // index into `wanted`; entries below it are recorded or skipped
+		std::string m_Manifest;  // accumulated JSON entries, flushed when the sequence completes
+		bool m_SequenceComplete = false;
 	};
 }

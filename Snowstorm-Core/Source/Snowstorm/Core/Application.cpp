@@ -304,10 +304,12 @@ namespace Snowstorm
 			// Quality capture (#153 increment 2): once the single reference/technique frame has been dumped to
 			// disk (a static camera has accumulated the path tracer by then), exit — the headless analogue of the
 			// dataset/perf-bench runs. Scripts/quality-bench.py drives per-(viewpoint, technique) captures.
+			// Completion, not "wrote something": a motion capture writes one image per requested route frame
+			// and is finished only after the last one, so a nonzero count is not a stop condition for it.
 			if (CVars::QualityCaptureFrames.Get() > 0 &&
-			    m_ServiceManager->GetService<RendererService>().GetQualityCaptureWritten() > 0)
+			    m_ServiceManager->GetService<RendererService>().IsQualityCaptureComplete())
 			{
-				SS_CORE_INFO("Quality capture: image written, requesting shutdown.");
+				SS_CORE_INFO("Quality capture: complete, requesting shutdown.");
 				m_Running = false;
 			}
 

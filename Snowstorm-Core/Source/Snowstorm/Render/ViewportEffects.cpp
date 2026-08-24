@@ -2225,10 +2225,41 @@ namespace Snowstorm
 		};
 
 		// Headless image-quality capture (#153 increment 2). Runs last, only when quality.capture.frames > 0
-		// (a Scripts/quality-bench.py run): on the target frame it copies the FINAL present (LDR sRGB) + the HDR
-		// scene color to disk as .npy, so a real-time technique can be diffed (FLIP/PSNR/SSIM) against the
-		// converged path-traced reference offline. Works in BOTH modes (PT and real-time) since both publish the
-		// same present via the shared LDR chain, so it is not gated on compare. Off = zero cost.
+		// (a Scripts/quality-bench.py run): it copies the FINAL present (LDR sRGB) to disk as .npy, so a
+		// real-time technique can be diffed (FLIP/PSNR/SSIM) against the converged path-traced reference
+		// offline. Works in BOTH modes (PT and real-time) since both publish the same present via the shared
+		// LDR chain, so it is not gated on compare. Off = zero cost.
+		//
+		// Two capture modes. With quality.capture.at_path_frames empty it waits for the image to CONVERGE and
+		// writes one frame, which is what a static viewpoint allows. With route frames listed it writes each of
+		// them plus a pose manifest, because a moving image never converges and so has no fixed point to
+		// detect: the reference for a moving frame is a separate static path trace pinned to that frame's pose.
+		// "120,121,420,421" -> {120, 121, 420, 421}. Malformed entries are dropped with a warning rather than
+		// silently ignored: a dropped frame would leave the harness comparing a pair that is not consecutive.
+		std::vector<uint64_t> ParseRouteFrameList(const std::string& csv)
+		{
+			std::vector<uint64_t> out;
+			std::stringstream ss(csv);
+			std::string tok;
+			while (std::getline(ss, tok, ','))
+			{
+				if (tok.find_first_not_of(" \t") == std::string::npos)
+				{
+					continue;
+				}
+				try
+				{
+					out.push_back(static_cast<uint64_t>(std::stoull(tok)));
+				}
+				catch (const std::exception&)
+				{
+					SS_CORE_WARN("quality.capture.at_path_frames: '{}' is not a frame index; ignored.", tok);
+				}
+			}
+			std::ranges::sort(out);
+			return out;
+		}
+
 		class QualityCaptureEffect final : public IViewportEffect
 		{
 		public:
@@ -2259,14 +2290,26 @@ namespace Snowstorm
 				const float epsilon = CVars::QualityCaptureEpsilon.Get();
 				const Ref<Texture> presentImg = v.RT.PresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
 				const std::string basePath = CVars::QualityCapturePath.Get();
+				const std::vector<uint64_t> wanted = ParseRouteFrameList(CVars::QualityCaptureAtPathFrames.Get());
+				const RendererService::FrameViewInfo view = fc.Renderer.GetFrameViewInfo();
 				fc.Graph.AddPass({.Name = "QualityCapture" + v.Suffix,
 				                  .IsCompute = true, // no render target; records the readback copy
 				                  .Reads = {{presentImg, RenderGraph::AccessState::Sampled}},
-				                  .Execute = [this, presentImg, streamingDone, frame, minSettle, epsilon, maxFrame, basePath, &fc](CommandContext& c)
+				                  .Execute = [this, presentImg, streamingDone, frame, minSettle, epsilon, maxFrame, basePath, wanted, view, &fc](CommandContext& c)
 				                  {
 					                  const Ref<CommandContext> cref(&c, [](CommandContext*) {});
-					                  const uint64_t written = m_Pass.Tick(cref, presentImg, streamingDone, frame, minSettle, epsilon, maxFrame, basePath);
+					                  if (wanted.empty())
+					                  {
+						                  const uint64_t written = m_Pass.Tick(cref, presentImg, streamingDone, frame, minSettle, epsilon, maxFrame, basePath);
+						                  fc.Renderer.SetQualityCaptureWritten(written);
+						                  fc.Renderer.SetQualityCaptureComplete(written > 0);
+						                  return;
+					                  }
+					                  const uint64_t written = m_Pass.TickSequence(cref, presentImg, streamingDone, frame,
+					                                                               view.PathFrame, view.PathActive, wanted,
+					                                                               basePath, view.CameraPosition, view.CameraRotation);
 					                  fc.Renderer.SetQualityCaptureWritten(written);
+					                  fc.Renderer.SetQualityCaptureComplete(m_Pass.SequenceComplete());
 				                  }});
 			}
 

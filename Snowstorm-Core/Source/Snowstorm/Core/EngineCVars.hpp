@@ -22,14 +22,14 @@ namespace Snowstorm::CVars
 	extern CVar<std::string> PerfBenchPath;
 	extern CVar<std::string> PerfBenchConfig;
 
-	// Headless quality capture (local image-quality gate, #153 increment 2). When > 0, let the frame render
-	// this many times (so a static camera accumulates the reference path tracer / warms the real-time path),
-	// then copy the final present (LDR sRGB) + HDR scene color to disk as .npy and exit. Scripts/quality-bench.py
-	// drives (viewpoint x technique) runs and diffs FLIP/PSNR/SSIM against a committed baseline. CLI/env-only.
+	// Authored camera route (JSON) the camera.path benchmark flies: waypoints, speed and loop. Empty keeps
+	// the legacy circular orbit, which only suits an open scene. Loaded once by CameraPathSystem.
+	extern CVar<std::string> CameraPathFile;
+
 	// Override the resolved viewport camera pose at startup: "px,py,pz,rx,ry,rz" (world position + Euler
 	// rotation in radians), empty = off. Lets a headless harness (quality-bench, #158) pin a deterministic
-	// viewpoint in the runtime without editing the scene. Applied in RuntimeLayer::ConfigureSceneCamera.
-	extern CVar<std::string> CameraPathFile;
+	// viewpoint without editing the scene. Applied by RuntimeLayer::ConfigureSceneCamera and, in the editor,
+	// by EditorLayer::ApplyCameraOverride, where it outranks the per-scene sidecar.
 	extern CVar<std::string> CameraOverride;
 
 	// Parse a camera.override value ("px,py,pz,rx,ry,rz") into a pose. False (leaving the outputs
@@ -38,10 +38,17 @@ namespace Snowstorm::CVars
 	// whichever host it runs on.
 	[[nodiscard]] bool ParseCameraOverride(const std::string& value, glm::vec3& position, glm::vec3& rotation);
 
-	extern CVar<int> QualityCaptureFrames;       // MIN settle frames after streaming before convergence can trigger
-	extern CVar<int> QualityCaptureMaxFrames;    // hard safety cap on total frames (capture anyway + warn if hit)
-	extern CVar<float> QualityCaptureEpsilon;    // converged when the mean per-channel present delta (/255) drops below this
-	extern CVar<std::string> QualityCapturePath; // output basename; writes <path>_ldr.npy + <path>_hdr.npy
+	// Headless quality capture (local image-quality gate, #153 increment 2). Two modes. With
+	// at_path_frames empty it renders until the image CONVERGES and writes one .npy: what a static viewpoint
+	// allows. With route frames listed it writes each of them plus a pose manifest, because a moving image
+	// never converges, so its ground truth is a separate static path trace pinned to the captured pose.
+	// Scripts/quality-bench.py drives (viewpoint x technique) runs and diffs FLIP/PSNR/SSIM against a
+	// committed baseline. CLI/env-only.
+	extern CVar<int> QualityCaptureFrames;               // MIN settle frames after streaming before convergence can trigger
+	extern CVar<int> QualityCaptureMaxFrames;            // hard safety cap on total frames (capture anyway + warn if hit)
+	extern CVar<float> QualityCaptureEpsilon;            // converged when the mean per-channel present delta (/255) drops below this
+	extern CVar<std::string> QualityCaptureAtPathFrames; // motion capture: route frames to write (empty = converged single shot)
+	extern CVar<std::string> QualityCapturePath;         // output basename; writes <path>_ldr.npy
 
 	// Toggle VSync every N frames (0 = off). A test hook: recreating the swapchain repeatedly under
 	// validation surfaces present/acquire-semaphore reuse bugs that steady-state running never triggers.

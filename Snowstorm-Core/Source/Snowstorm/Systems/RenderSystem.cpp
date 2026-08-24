@@ -1,6 +1,7 @@
 #include "RenderSystem.hpp"
 
 #include "Snowstorm/Components/CameraComponent.hpp"
+#include "Snowstorm/Components/CameraPathComponent.hpp"
 #include "Snowstorm/Components/CameraRuntimeComponent.hpp"
 #include "Snowstorm/Components/CameraTargetComponent.hpp"
 
@@ -207,6 +208,12 @@ namespace Snowstorm
 			{
 				view.CameraPosition = pick.Transform->Position;
 				view.CameraRotation = pick.Transform->Rotation;
+				if (reg.any_of<CameraPathComponent>(pick.Entity))
+				{
+					const auto& path = reg.Read<CameraPathComponent>(pick.Entity);
+					view.PathFrame = path.Frame;
+					view.PathActive = path.Started;
+				}
 			}
 			renderer.SetFrameViewInfo(view);
 		}

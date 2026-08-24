@@ -273,17 +273,22 @@ namespace Snowstorm
 		void SetGpuPassTimes(std::vector<GpuScope> scopes) { m_GpuPassTimes = std::move(scopes); }
 		[[nodiscard]] const std::vector<GpuScope>& GetGpuPassTimes() const { return m_GpuPassTimes; }
 
-		// What the presented viewport rendered this frame: pixel extent and the pose of the camera that
-		// drove it. Set by RenderSystem alongside the pass times; the perf benchmark stamps both into its
-		// JSON so a ms number can be rejected when the baseline was captured at a different size or
-		// viewpoint. Neither is pinnable by a CVar (the render size follows the host's viewport), so
-		// recording is the only way to make the comparison honest.
+		// What the presented viewport rendered this frame: pixel extent, the pose of the camera that drove it,
+		// and where along the scripted route that camera was. Set by RenderSystem alongside the pass times.
+		//
+		// Two consumers, both needing the same answer to "what was actually on screen". The perf benchmark
+		// stamps size and pose into its JSON so a ms number can be rejected when the baseline was captured at
+		// a different size or viewpoint (neither is pinnable by a CVar, since the render size follows the
+		// host's viewport). The motion quality capture keys off PathFrame, because a route frame index is the
+		// only clock a separate reference run can reproduce.
 		struct FrameViewInfo
 		{
 			uint32_t Width = 0;
 			uint32_t Height = 0;
 			glm::vec3 CameraPosition{};
 			glm::vec3 CameraRotation{}; // Euler radians
+			uint64_t PathFrame = 0;     // route-local frame index; meaningless unless PathActive
+			bool PathActive = false;    // the scripted route is on AND has started (scene resident)
 		};
 		void SetFrameViewInfo(const FrameViewInfo& v) { m_FrameViewInfo = v; }
 		[[nodiscard]] const FrameViewInfo& GetFrameViewInfo() const { return m_FrameViewInfo; }
@@ -309,6 +314,12 @@ namespace Snowstorm
 		// by RenderSystem from the QualityCapturePass; read by the app loop to exit after the single capture.
 		void SetQualityCaptureWritten(const uint64_t n) { m_QualityCaptureWritten = n; }
 		[[nodiscard]] uint64_t GetQualityCaptureWritten() const { return m_QualityCaptureWritten; }
+
+		// Whether the capture has produced everything it was asked for, which is when the app may exit. Not
+		// the same as "wrote something": a motion capture writes many frames and is done only after the last
+		// one, so the frame count alone cannot say when to stop.
+		void SetQualityCaptureComplete(const bool c) { m_QualityCaptureComplete = c; }
+		[[nodiscard]] bool IsQualityCaptureComplete() const { return m_QualityCaptureComplete; }
 
 		// --- RT editor picking (#118 follow-up) --------------------------------------------------------
 		// The editor requests a pixel-accurate mesh pick by handing over the camera->cursor WORLD ray; a
@@ -470,6 +481,7 @@ namespace Snowstorm
 
 		// 1 once the headless quality capture (#153) has written its .npy (set by RenderSystem).
 		uint64_t m_QualityCaptureWritten = 0;
+		bool m_QualityCaptureComplete = false;
 
 		// --- RT editor picking (#118 follow-up) ---
 		// One pending ray, latest-wins (RequestPick overwrites). Cleared when RecordPick dispatches it.
