@@ -70,3 +70,10 @@ Dataset/
 *.npy
 __pycache__/
 .pytest_cache/
+
+# Local scratch: investigation logs, ad-hoc drivers, saved diffs. Never part of a build.
+/_t1/
+/_scratch/
+/*.patch
+/*.diff
+/_*.txt
