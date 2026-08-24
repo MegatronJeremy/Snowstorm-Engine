@@ -1,6 +1,10 @@
 #pragma once
 
+#include "Snowstorm/Math/CameraRoute.hpp"
+
 #include <glm/glm.hpp>
+
+#include <cstdint>
 
 namespace Snowstorm
 {
@@ -15,9 +19,24 @@ namespace Snowstorm
 		float Height = 3.0f;                // camera height above Center
 		float SpeedRadPerSec = 0.4f;        // angular speed (~16s per full loop at default)
 
-		// Accumulated path time (seconds). Advanced each frame while the path is active; reset to 0 when the
-		// path is (re)started so a benchmark always begins at the same pose. Deterministic: the pose is a pure
-		// function of this time, so the same time -> the same frame.
+		// Path-local frame index: 0 on the frame the path starts, +1 per RENDERED frame. The pose is a pure
+		// function of it, so a capture can name a frame and a reference run can reproduce that exact viewpoint.
+		uint64_t Frame = 0;
+
+		// Renderer frame counter when the path started, subtracted out to give Frame. The path only starts
+		// once the scene is actually resident (see CameraPathSystem): otherwise the pose at capture time would
+		// depend on how long streaming happened to take, which differs run to run.
+		uint64_t StartFrame = 0;
+		bool Started = false;
+
+		// Path time (seconds) the pose was evaluated at. Derived from Frame under the fixed benchmark step;
+		// only the interactive (camera.path.fixed off) branch accumulates wall-clock into it.
 		float Time = 0.0f;
+
+		// Authored route from camera.path.file. Non-empty means the spline drives the camera and the orbit
+		// fields above are unused. An orbit cannot express a benchmark route through an enclosed hall: it has
+		// one radius and one height, so in Sponza it clips the colonnade and leaves the building.
+		CameraRoute Route;
+		bool RouteLoadAttempted = false;
 	};
 }

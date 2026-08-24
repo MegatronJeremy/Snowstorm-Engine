@@ -30,6 +30,10 @@ target_include_directories(Snowstorm-Tests PRIVATE
     ${CMAKE_SOURCE_DIR}/Snowstorm-Editor/Source
 )
 
+# Absolute repo root, so a test that reads a committed data file (e.g. the benchmark camera route) does not
+# depend on ctest's working directory.
+target_compile_definitions(Snowstorm-Tests PRIVATE SS_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+
 find_package(Catch2 CONFIG REQUIRED)
 
 # Link Core for the code under test (e.g. UUID); Catch2WithMain provides main(). WHOLE_ARCHIVE so the

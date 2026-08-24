@@ -53,6 +53,12 @@ Makefile
 # content now lives in the Sandbox project, so un-ignore its registry there.
 !Projects/Sandbox/assets/AssetRegistry.json
 
+# Authored benchmark camera routes. Committed data, not build output: a missing route file makes the engine
+# fall back to the circular orbit, which still runs, so the failure would show up as quietly wrong numbers
+# rather than as an error.
+!Projects/Sandbox/assets/camera-paths/
+!Projects/Sandbox/assets/camera-paths/**/*.json
+
 # Editor fonts are shipped assets (the NERV theme loads a monospace TTF from here).
 !Engine/Fonts/
 !Engine/Fonts/**

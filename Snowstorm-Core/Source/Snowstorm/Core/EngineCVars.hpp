@@ -29,6 +29,7 @@ namespace Snowstorm::CVars
 	// Override the resolved viewport camera pose at startup: "px,py,pz,rx,ry,rz" (world position + Euler
 	// rotation in radians), empty = off. Lets a headless harness (quality-bench, #158) pin a deterministic
 	// viewpoint in the runtime without editing the scene. Applied in RuntimeLayer::ConfigureSceneCamera.
+	extern CVar<std::string> CameraPathFile;
 	extern CVar<std::string> CameraOverride;
 
 	// Parse a camera.override value ("px,py,pz,rx,ry,rz") into a pose. False (leaving the outputs
