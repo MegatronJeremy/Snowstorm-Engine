@@ -1,0 +1,92 @@
+{
+  "device": "AMD Radeon RX 9070 XT",
+  "technique": "raster",
+  "route": "Projects/Sandbox/assets/camera-paths/sponza-bench.json",
+  "probes": [
+    "dolly",
+    "strafe",
+    "reversal",
+    "static"
+  ],
+  "flip": 0.3416992276906967,
+  "psnr": 17.366405188161572,
+  "ssim": 0.4019963792925216,
+  "tflip": 0.02712608757428825,
+  "cvvdpJod": null,
+  "perFrame": [
+    {
+      "probe": "dolly",
+      "frame": 60,
+      "flip": 0.3594077229499817,
+      "psnr": 16.79692704859511,
+      "ssim": 0.38119832821535826
+    },
+    {
+      "probe": "dolly",
+      "frame": 61,
+      "flip": 0.3577851951122284,
+      "psnr": 16.831308266689547,
+      "ssim": 0.38429268465873256
+    },
+    {
+      "probe": "strafe",
+      "frame": 300,
+      "flip": 0.3468343913555145,
+      "psnr": 17.31972675829191,
+      "ssim": 0.327682035760604
+    },
+    {
+      "probe": "strafe",
+      "frame": 301,
+      "flip": 0.34465786814689636,
+      "psnr": 17.3720698705617,
+      "ssim": 0.3299628172612942
+    },
+    {
+      "probe": "reversal",
+      "frame": 500,
+      "flip": 0.3185651898384094,
+      "psnr": 17.808838481105724,
+      "ssim": 0.35725578620122234
+    },
+    {
+      "probe": "reversal",
+      "frame": 501,
+      "flip": 0.3169684410095215,
+      "psnr": 17.838331922553774,
+      "ssim": 0.3553779469395526
+    },
+    {
+      "probe": "static",
+      "frame": 900,
+      "flip": 0.34469565749168396,
+      "psnr": 17.48148269307204,
+      "ssim": 0.5400557683994033
+    },
+    {
+      "probe": "static",
+      "frame": 901,
+      "flip": 0.3446793556213379,
+      "psnr": 17.482556464422753,
+      "ssim": 0.5401456669040053
+    }
+  ],
+  "perPair": [
+    {
+      "probe": "dolly",
+      "tflip": 0.021912306547164917
+    },
+    {
+      "probe": "strafe",
+      "tflip": 0.04268927872180939
+    },
+    {
+      "probe": "reversal",
+      "tflip": 0.03546765446662903
+    },
+    {
+      "probe": "static",
+      "tflip": 0.008435110561549664
+    }
+  ]
+}

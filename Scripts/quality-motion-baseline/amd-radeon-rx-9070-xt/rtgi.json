@@ -1,0 +1,92 @@
+{
+  "device": "AMD Radeon RX 9070 XT",
+  "technique": "rtgi",
+  "route": "Projects/Sandbox/assets/camera-paths/sponza-bench.json",
+  "probes": [
+    "dolly",
+    "strafe",
+    "reversal",
+    "static"
+  ],
+  "flip": 0.17977825738489628,
+  "psnr": 22.09517755504022,
+  "ssim": 0.5593976118148161,
+  "tflip": 0.007836296688765287,
+  "cvvdpJod": null,
+  "perFrame": [
+    {
+      "probe": "dolly",
+      "frame": 60,
+      "flip": 0.18453572690486908,
+      "psnr": 22.590307219114464,
+      "ssim": 0.5335950202046131
+    },
+    {
+      "probe": "dolly",
+      "frame": 61,
+      "flip": 0.1858319640159607,
+      "psnr": 22.520505652106316,
+      "ssim": 0.5323263341239753
+    },
+    {
+      "probe": "strafe",
+      "frame": 300,
+      "flip": 0.18302953243255615,
+      "psnr": 21.84169998005233,
+      "ssim": 0.4865784038065075
+    },
+    {
+      "probe": "strafe",
+      "frame": 301,
+      "flip": 0.1824467033147812,
+      "psnr": 21.83455447667083,
+      "ssim": 0.48745511635441874
+    },
+    {
+      "probe": "reversal",
+      "frame": 500,
+      "flip": 0.1875898241996765,
+      "psnr": 19.798797190064935,
+      "ssim": 0.5242432063383037
+    },
+    {
+      "probe": "reversal",
+      "frame": 501,
+      "flip": 0.18696480989456177,
+      "psnr": 19.748121064873622,
+      "ssim": 0.5214860197864295
+    },
+    {
+      "probe": "static",
+      "frame": 900,
+      "flip": 0.1639220416545868,
+      "psnr": 24.213184652194073,
+      "ssim": 0.6946661311071508
+    },
+    {
+      "probe": "static",
+      "frame": 901,
+      "flip": 0.16390545666217804,
+      "psnr": 24.214250205245193,
+      "ssim": 0.6948306627971295
+    }
+  ],
+  "perPair": [
+    {
+      "probe": "dolly",
+      "tflip": 0.0024570003151893616
+    },
+    {
+      "probe": "strafe",
+      "tflip": 0.005640134215354919
+    },
+    {
+      "probe": "reversal",
+      "tflip": 0.013935089111328125
+    },
+    {
+      "probe": "static",
+      "tflip": 0.009312963113188744
+    }
+  ]
+}

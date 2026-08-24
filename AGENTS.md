@@ -374,17 +374,94 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   gets its own directory, and `--update-baseline` there cannot overwrite the first one's committed
   numbers. A missing set exits **2** (SKIP) and refuses to gate, as does a directory hand-copied from
   another machine (each JSON also records its device, checked against the running one).
-- **A metric A/B needs a static camera.** Leave `--camera.path` out of any run whose numbers are
-  compared against another run: it desynchronises which frame each side captures and manufactures
-  differences that have nothing to do with the change under test. The gate's fixed viewpoints
-  (`camera.override`, `SS_CAMERA_OVERRIDE`) exist for this reason and pin an arbitrary interior pose
-  headlessly. Both hosts honour it: the Runtime applies it when it builds the authored camera, the
-  Editor when it opens a scene, outranking the `<scene>.world.editor` sidecar.
+- **THIS gate needs a static camera.** Leave `camera.path` out of any run whose numbers are compared
+  against another run of *this* script: it moves the camera while the gate is waiting for a converged
+  fixed point that a moving image never reaches. The fixed viewpoints (`camera.override`,
+  `SS_CAMERA_OVERRIDE`) exist for that reason and pin an arbitrary interior pose headlessly. Both
+  hosts honour it: the Runtime applies it when it builds the authored camera, the Editor when it opens
+  a scene, outranking the `<scene>.world.editor` sidecar. Measuring UNDER motion is a different gate
+  with a different protocol, `quality-motion.py` below; it is not this one with the path switched on.
 
 Every run sets `SS_CONFIG_IGNORE=1`, so a capture is code defaults plus the technique's overrides and
 never this machine's persisted `SnowstormConfig.cfg`. Note that only `all-rt` overrides
 `render.shadows.mode`: every other technique renders with the default shadow map, so shadowing is a
 constant in the matrix rather than something the gate measures.
+
+## Image-quality gate UNDER MOTION (run after any change to TAA, a denoiser, or reprojection)
+
+`Scripts/quality-motion.py` is the temporal counterpart to `quality-bench.py`. A static viewpoint is
+the wrong test for anything temporal: TAA, the SVGF-style denoisers and the stochastic shadow pass
+all exist to exploit motion, and their characteristic failures (ghosting, disocclusion trails,
+history rejection, boiling) appear only while the camera moves. This gate flies a committed camera
+route and measures the frames rendered along it.
+
+```
+py Scripts/quality-motion.py                    # all techniques, diff vs baseline
+py Scripts/quality-motion.py --update-baseline  # capture current metrics as the new baseline
+py Scripts/quality-motion.py --only rtgi        # one technique
+py Scripts/quality-motion.py --probes strafe    # one probe point
+py Scripts/quality-motion.py --fresh-ref        # ignore cached PT references
+```
+
+**Protocol** (BMFR's, Koskela et al. TOG 2019: an animated sequence with a converged per-frame
+reference, metrics averaged over it). One headless Runtime run per technique flies `camera.path` with
+`quality.capture.at_path_frames` set, writing those route frames plus a `_poses.json` manifest of the
+pose each was taken at. Ground truth for each captured frame is then a **separate static path trace
+pinned to that pose**, which is forced rather than chosen: the path tracer resets accumulation on any
+view-projection change, so a moving path trace is a one-sample noise image that never converges.
+
+**Frames come in adjacent pairs** (N, N+1), because averaging per-frame FLIP over a sequence provably
+cannot separate stable distortion from flicker: two techniques with identical mean spatial error rank
+the same whether one is steady and the other strobes. Four probes name route phases rather than
+spacing evenly, since each breaks reconstruction differently: `dolly` (forward translation, mostly
+history length), `strafe` (lateral motion past the colonnade, the canonical disocclusion generator),
+`reversal` (the U-turn; rapid direction change is a documented pathological case), and `static` (past
+the end of the open route, where it parks, so convergence once motion stops is measured too).
+
+**Metrics.** Per-frame FLIP/PSNR/SSIM against that frame's reference, plus **tFLIP**, gated. tFLIP is
+tLP's construction (Chu et al., TecoGAN, TOG 2020) with FLIP substituted for LPIPS: it compares how
+much the technique changed between consecutive frames against how much the **reference** changed over
+the same interval. The subtraction is the point, and it is measurable: on Sponza's dolly probe the
+reference itself moves by FLIP 0.0932 between consecutive frames, so a naive frame-difference metric
+reports 0.1151 as instability when the technique's actual excess is 0.0219, over 4x too high, and it
+would rank a blurrier laggier result as more "stable". Report it as tFLIP, never as tLP: substituting
+FLIP is a deliberate deviation that keeps torch out of the gate. **ColorVideoVDP** (Mantiuk et al.,
+TOG 2024) is reported when `pycvvdp` is importable but never gated, since it is the one metric here
+that models temporal contrast sensitivity directly and is worth citing, although it pulls in torch.
+
+Baselines are keyed by adapter (`Scripts/quality-motion-baseline/<device-slug>/<technique>.json`) for
+the same reason the static ones are: the reference is a path trace on the local card. Exit 0 within
+threshold, 1 on a regression, **2** when nothing was compared. Needs a real GPU, so it is a local
+gate, not CI.
+
+**Every technique must fly the identical route**, or its frames and the cached references are
+different viewpoints. The script re-checks each technique's manifest against the first one's and
+hard-fails on any divergence rather than trusting it, because that determinism is the single
+assumption the whole protocol rests on.
+
+### The benchmark camera route
+
+`camera.path.file` names a JSON route (`Projects/Sandbox/assets/camera-paths/sponza-bench.json`)
+flown as a Catmull-Rom spline with arc-length reparameterisation, so world speed and therefore
+motion-vector magnitude stay uniform regardless of waypoint spacing. Empty falls back to the legacy
+circular orbit, which suits an open scene and nothing else: in Sponza that orbit is outside the clear
+nave for 86.7% of its loop and outside the atrium walls entirely for 58.1%, at a height that
+intersects the upper arcade. Its closest approach to geometry is 0.239 m, inside the west arcade; the
+committed route's worst is 0.967 m.
+
+A waypoint carries a position **and a look-at target**, and both are splined, so orientation comes out
+C1 from the same curve. Interpolating orientations directly instead is C0: angular velocity jumps at
+every waypoint, putting a discontinuity into the motion vectors, in a route whose whole purpose is to
+exercise motion-vector-driven reprojection.
+
+An **open** route parks at its final waypoint once distance exceeds arc length. That is load-bearing,
+not incidental: with a constant world speed there is no other way to express a hold, and it is what
+gives the `static` probe something to measure.
+
+`CameraRouteTests` samples the **curve**, not the waypoints, against the measured interior of the
+nave. Catmull-Rom overshoots outside its control points at a direction reversal and this route has
+one, so checking only the authored points would not prove containment. Changing the route invalidates
+every motion baseline, exactly like `BENCH_CAMERA` does for perf: re-capture in the same commit.
 
 ### Selecting a learned technique (denoiser, upscaler)
 

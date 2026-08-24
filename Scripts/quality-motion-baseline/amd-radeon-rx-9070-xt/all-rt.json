@@ -1,0 +1,92 @@
+{
+  "device": "AMD Radeon RX 9070 XT",
+  "technique": "all-rt",
+  "route": "Projects/Sandbox/assets/camera-paths/sponza-bench.json",
+  "probes": [
+    "dolly",
+    "strafe",
+    "reversal",
+    "static"
+  ],
+  "flip": 0.15593646839261055,
+  "psnr": 23.80000395492317,
+  "ssim": 0.6261330504368333,
+  "tflip": 0.01265496335690841,
+  "cvvdpJod": null,
+  "perFrame": [
+    {
+      "probe": "dolly",
+      "frame": 60,
+      "flip": 0.15251918137073517,
+      "psnr": 24.404196016858762,
+      "ssim": 0.6162469501612823
+    },
+    {
+      "probe": "dolly",
+      "frame": 61,
+      "flip": 0.15389005839824677,
+      "psnr": 24.306819664234975,
+      "ssim": 0.6140726970557032
+    },
+    {
+      "probe": "strafe",
+      "frame": 300,
+      "flip": 0.1662430614233017,
+      "psnr": 22.955722086769136,
+      "ssim": 0.5106753047389231
+    },
+    {
+      "probe": "strafe",
+      "frame": 301,
+      "flip": 0.1657785028219223,
+      "psnr": 22.94899450141942,
+      "ssim": 0.5113626754701966
+    },
+    {
+      "probe": "reversal",
+      "frame": 500,
+      "flip": 0.17118608951568604,
+      "psnr": 19.9937958388242,
+      "ssim": 0.5765996339426968
+    },
+    {
+      "probe": "reversal",
+      "frame": 501,
+      "flip": 0.1706017404794693,
+      "psnr": 19.897013730825797,
+      "ssim": 0.5755690543745149
+    },
+    {
+      "probe": "static",
+      "frame": 900,
+      "flip": 0.13365043699741364,
+      "psnr": 27.944696810235246,
+      "ssim": 0.802108250671962
+    },
+    {
+      "probe": "static",
+      "frame": 901,
+      "flip": 0.1336226761341095,
+      "psnr": 27.948792990217832,
+      "ssim": 0.8024298370793876
+    }
+  ],
+  "perPair": [
+    {
+      "probe": "dolly",
+      "tflip": 0.01269426941871643
+    },
+    {
+      "probe": "strafe",
+      "tflip": 0.02111593633890152
+    },
+    {
+      "probe": "reversal",
+      "tflip": 0.007043078541755676
+    },
+    {
+      "probe": "static",
+      "tflip": 0.009766569128260016
+    }
+  ]
+}

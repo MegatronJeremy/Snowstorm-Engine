@@ -1,0 +1,92 @@
+{
+  "device": "AMD Radeon RX 9070 XT",
+  "technique": "rtrefl",
+  "route": "Projects/Sandbox/assets/camera-paths/sponza-bench.json",
+  "probes": [
+    "dolly",
+    "strafe",
+    "reversal",
+    "static"
+  ],
+  "flip": 0.3184126988053322,
+  "psnr": 17.857633123596727,
+  "ssim": 0.4362231285105992,
+  "tflip": 0.016794296738225967,
+  "cvvdpJod": null,
+  "perFrame": [
+    {
+      "probe": "dolly",
+      "frame": 60,
+      "flip": 0.3401365280151367,
+      "psnr": 17.17919334237684,
+      "ssim": 0.4106415453364283
+    },
+    {
+      "probe": "dolly",
+      "frame": 61,
+      "flip": 0.3382922410964966,
+      "psnr": 17.220362986942494,
+      "ssim": 0.41422138736243497
+    },
+    {
+      "probe": "strafe",
+      "frame": 300,
+      "flip": 0.3195914328098297,
+      "psnr": 18.057816866127318,
+      "ssim": 0.34639222294520733
+    },
+    {
+      "probe": "strafe",
+      "frame": 301,
+      "flip": 0.31756213307380676,
+      "psnr": 18.119011869909887,
+      "ssim": 0.3483815925539122
+    },
+    {
+      "probe": "reversal",
+      "frame": 500,
+      "flip": 0.2916673421859741,
+      "psnr": 18.122856655625665,
+      "ssim": 0.4055796381829823
+    },
+    {
+      "probe": "reversal",
+      "frame": 501,
+      "flip": 0.2896467447280884,
+      "psnr": 18.161460924089223,
+      "ssim": 0.40515615235138946
+    },
+    {
+      "probe": "static",
+      "frame": 900,
+      "flip": 0.32520779967308044,
+      "psnr": 17.999626341137585,
+      "ssim": 0.5796420828206301
+    },
+    {
+      "probe": "static",
+      "frame": 901,
+      "flip": 0.32519736886024475,
+      "psnr": 18.000736002564807,
+      "ssim": 0.5797704065318089
+    }
+  ],
+  "perPair": [
+    {
+      "probe": "dolly",
+      "tflip": 0.015558019280433655
+    },
+    {
+      "probe": "strafe",
+      "tflip": 0.022231563925743103
+    },
+    {
+      "probe": "reversal",
+      "tflip": 0.020784452557563782
+    },
+    {
+      "probe": "static",
+      "tflip": 0.008603151189163327
+    }
+  ]
+}

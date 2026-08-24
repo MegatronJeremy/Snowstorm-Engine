@@ -7,6 +7,7 @@ vcpkg/
 Engine/cache
 # Cached PT references for the image-quality gate (per-machine, regenerated on demand). See Scripts/quality-bench.py.
 Scripts/.quality-ref-cache/
+Scripts/.quality-motion-tmp/
 # Radeon GPU Analyzer, auto-bootstrapped (pinned version, ~238MB) by Scripts/rga-occupancy.py.
 # Downloaded tool, not source: never commit.
 Tools/rga/
@@ -31,6 +32,7 @@ Tools/rdts/
 # Committed golden image-quality baselines for the FLIP/PSNR/SSIM gate. See Scripts/quality-bench.py.
 !Scripts/quality-baseline/
 !Scripts/quality-baseline/**/*.json
+!Scripts/quality-motion-baseline/**/*.json
 *.DotSettings
 *.DotSettings.user
 *.ini

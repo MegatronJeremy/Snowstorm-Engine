@@ -1,0 +1,92 @@
+{
+  "device": "AMD Radeon RX 9070 XT",
+  "technique": "ssgi",
+  "route": "Projects/Sandbox/assets/camera-paths/sponza-bench.json",
+  "probes": [
+    "dolly",
+    "strafe",
+    "reversal",
+    "static"
+  ],
+  "flip": 0.2510672006756067,
+  "psnr": 19.53238716952327,
+  "ssim": 0.47903359527726497,
+  "tflip": 0.018320125353056937,
+  "cvvdpJod": null,
+  "perFrame": [
+    {
+      "probe": "dolly",
+      "frame": 60,
+      "flip": 0.25348541140556335,
+      "psnr": 19.717764682013886,
+      "ssim": 0.45126364819418036
+    },
+    {
+      "probe": "dolly",
+      "frame": 61,
+      "flip": 0.2521003484725952,
+      "psnr": 19.73947208610721,
+      "ssim": 0.4542846398855609
+    },
+    {
+      "probe": "strafe",
+      "frame": 300,
+      "flip": 0.2747228741645813,
+      "psnr": 18.91442041858126,
+      "ssim": 0.3989273996612612
+    },
+    {
+      "probe": "strafe",
+      "frame": 301,
+      "flip": 0.2733314037322998,
+      "psnr": 18.950503436801398,
+      "ssim": 0.40118741152693166
+    },
+    {
+      "probe": "reversal",
+      "frame": 500,
+      "flip": 0.2530321776866913,
+      "psnr": 18.67027448747971,
+      "ssim": 0.43203276290299136
+    },
+    {
+      "probe": "reversal",
+      "frame": 501,
+      "flip": 0.24986304342746735,
+      "psnr": 18.7025876373905,
+      "ssim": 0.4319209336787789
+    },
+    {
+      "probe": "static",
+      "frame": 900,
+      "flip": 0.22603923082351685,
+      "psnr": 20.78041779154319,
+      "ssim": 0.6312529398784306
+    },
+    {
+      "probe": "static",
+      "frame": 901,
+      "flip": 0.22596311569213867,
+      "psnr": 20.783656816269005,
+      "ssim": 0.6313990264899854
+    }
+  ],
+  "perPair": [
+    {
+      "probe": "dolly",
+      "tflip": 0.010819211602210999
+    },
+    {
+      "probe": "strafe",
+      "tflip": 0.02995423972606659
+    },
+    {
+      "probe": "reversal",
+      "tflip": 0.023753121495246887
+    },
+    {
+      "probe": "static",
+      "tflip": 0.008753928588703275
+    }
+  ]
+}

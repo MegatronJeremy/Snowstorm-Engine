@@ -1,0 +1,92 @@
+{
+  "device": "AMD Radeon RX 9070 XT",
+  "technique": "ssao",
+  "route": "Projects/Sandbox/assets/camera-paths/sponza-bench.json",
+  "probes": [
+    "dolly",
+    "strafe",
+    "reversal",
+    "static"
+  ],
+  "flip": 0.32636966556310654,
+  "psnr": 17.770537817813622,
+  "ssim": 0.41791667300775953,
+  "tflip": 0.02603387215640396,
+  "cvvdpJod": null,
+  "perFrame": [
+    {
+      "probe": "dolly",
+      "frame": 60,
+      "flip": 0.340434730052948,
+      "psnr": 17.320995927944807,
+      "ssim": 0.39918864598993925
+    },
+    {
+      "probe": "dolly",
+      "frame": 61,
+      "flip": 0.33886221051216125,
+      "psnr": 17.355458084634925,
+      "ssim": 0.4023638489054752
+    },
+    {
+      "probe": "strafe",
+      "frame": 300,
+      "flip": 0.3335845172405243,
+      "psnr": 17.64622648268814,
+      "ssim": 0.3394680780987433
+    },
+    {
+      "probe": "strafe",
+      "frame": 301,
+      "flip": 0.33193597197532654,
+      "psnr": 17.683610044764656,
+      "ssim": 0.3416455152799426
+    },
+    {
+      "probe": "reversal",
+      "frame": 500,
+      "flip": 0.3088960349559784,
+      "psnr": 17.955685057843226,
+      "ssim": 0.3674871983709728
+    },
+    {
+      "probe": "reversal",
+      "frame": 501,
+      "flip": 0.30686596035957336,
+      "psnr": 17.99054336975386,
+      "ssim": 0.3661102764734228
+    },
+    {
+      "probe": "static",
+      "frame": 900,
+      "flip": 0.32520022988319397,
+      "psnr": 18.105233454863505,
+      "ssim": 0.5634762444552884
+    },
+    {
+      "probe": "static",
+      "frame": 901,
+      "flip": 0.3251776695251465,
+      "psnr": 18.106550120015875,
+      "ssim": 0.563593576488292
+    }
+  ],
+  "perPair": [
+    {
+      "probe": "dolly",
+      "tflip": 0.019823729991912842
+    },
+    {
+      "probe": "strafe",
+      "tflip": 0.04096852242946625
+    },
+    {
+      "probe": "reversal",
+      "tflip": 0.03483706712722778
+    },
+    {
+      "probe": "static",
+      "tflip": 0.008506169077008963
+    }
+  ]
+}
