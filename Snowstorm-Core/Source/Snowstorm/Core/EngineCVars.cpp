@@ -8,6 +8,7 @@
 
 namespace Snowstorm::CVars
 {
+
 	CVar<int> SmokeFrames{"smoke.frames", 0, "Run N frames then exit cleanly (0 = until window closed)", CVarFlags::ReadOnly};
 
 	CVar<int> PerfBenchFrames{"perf.bench.frames", 0, "Headless GPU perf benchmark: run N frames accumulating per-pass GPU timings (past warmup), write averaged JSON to perf.bench.path, then exit (0 = off). Driven by Scripts/perf-bench.py.", CVarFlags::ReadOnly};
@@ -331,9 +332,9 @@ namespace Snowstorm::CVars
 		{
 			return 0;
 		}
-		if (n > 5)
+		if (n > kMaxDenoiseIterations)
 		{
-			return 5;
+			return kMaxDenoiseIterations;
 		}
 		return n;
 	}
@@ -350,9 +351,9 @@ namespace Snowstorm::CVars
 		{
 			return 0;
 		}
-		if (n > 5)
+		if (n > kMaxDenoiseIterations)
 		{
-			return 5;
+			return kMaxDenoiseIterations;
 		}
 		return n;
 	}
@@ -369,9 +370,9 @@ namespace Snowstorm::CVars
 		{
 			return 0;
 		}
-		if (n > 5)
+		if (n > kMaxDenoiseIterations)
 		{
-			return 5;
+			return kMaxDenoiseIterations;
 		}
 		return n;
 	}
@@ -478,9 +479,9 @@ namespace Snowstorm::CVars
 		{
 			return 0;
 		}
-		if (n > 5)
+		if (n > kMaxDenoiseIterations)
 		{
-			return 5;
+			return kMaxDenoiseIterations;
 		}
 		return n;
 	}

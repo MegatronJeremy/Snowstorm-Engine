@@ -1,5 +1,7 @@
 #include "GIDenoisePass.hpp"
 
+#include "Snowstorm/Core/EngineCVars.hpp"
+
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
@@ -43,7 +45,7 @@ namespace Snowstorm
 
 		// Max à-trous iterations per frame = ClampedGIDenoiseIterations() ceiling. Sizes the per-frame set/UBO
 		// pool (one set per iteration, since each iteration binds a different input/output + Step).
-		constexpr uint32_t kMaxSlots = 5;
+		constexpr uint32_t kMaxSlots = static_cast<uint32_t>(CVars::kMaxDenoiseIterations);
 
 		// Normal edge-stop exponent — matches GIUpsample.frag.hlsl so the denoiser and upsample agree on a crease.
 		// The depth sigma is now the render.rt.depthsigma CVar (relative view-space), passed per-Dispatch.

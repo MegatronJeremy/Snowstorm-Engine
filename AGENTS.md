@@ -509,9 +509,46 @@ iterations by JOD, on static geometry versus with animated occluders:
 | 5 | 5.0742 (turns over) | **4.3181** (ceiling) |
 
 On static content the curve peaks at the shipped default and degrades past it; with object
-disocclusion it climbs to the ceiling. So the filter earns its keep precisely where the old scene had
-nothing to measure, and a tuning run on static geometry would have deleted it. AO and reflections
-still clamp to 0 in both, which is a separate open question rather than the same one.
+disocclusion it climbs. So the filter earns its keep precisely where the old scene had nothing to
+measure, and a tuning run on static geometry would have deleted it.
+
+Swept the full 0..5 range on the animated scene, the curve **plateaus at 4** (4 and 5 differ by
+0.0002 JOD), so it does not keep climbing and the ceiling was never the binding constraint. Going
+3 -> 5 buys 0.0076 JOD for 0.221 ms of extra dispatches, +2.2% frame time against a metric where 1
+JOD is roughly a 75% population preference. **The default stays 3.**
+
+`kMaxDenoiseIterations` lives in `EngineCVars.hpp` because `GIDenoisePass`'s per-frame
+descriptor/uniform pool must have one slot per pass. They were separately-written 5s; raising only
+the CVar clamp made iterations 6+ assert at runtime rather than fail to build.
+
+### Why AO and reflections behave differently from GI
+
+They clamp to 0 for unrelated reasons, and only one of them is a defect.
+
+There is only **one** a-trous shader. `GIDenoise.comp.hlsl` filters all three signals through the
+shared `Denoiser`, guided by the **receiver's** geometric normal and depth from G-buffer attachment 0.
+
+**AO is a non-event.** Its only differentiator is `HitDistPhi`, fed by `render.ao.denoise.hitdist`,
+which defaults to 0, so `wH` is identically 1 and AO's filter is bit-identical to GI's. The signal is
+a distance-weighted visibility integral (smooth by construction) that already passes through temporal
+accumulation at 0.97 and a depth/normal bilateral upsample, so the a-trous has nothing left to
+remove. Measured: 0 vs 5 iterations moves the image only 59 dB (GI moves it 42-49 dB) and leaves mean
+FLIP unchanged. The 0..5 JOD span is 0.0054, which is noise, so the optimiser is picking between
+indistinguishable options.
+
+**Reflections is a real defect.** The span is monotonic and 10x AO's, and inside the filter's own
+footprint (the top 5% of pixels it changes) error against the reference *rises* from 23.327 at 0
+iterations to 24.103 at 5. The cause is structural: reflected radiance is view-dependent, so on a
+flat reflective surface the receiver's normal and depth are constant, `wN` and `wD` are both 1, and
+the kernel is wide open exactly where reflected detail lives. The code states the false premise
+outright, that "reflection edges are receiver-surface edges".
+
+No CVar fixes it. `render.reflections.denoise.variance` swept 0..8 is flat and non-monotonic (0.0013
+JOD span), so the luminance term is not the lever either. What is missing is guidance the engine
+already has and already uses elsewhere: `Reflection.comp` writes traced hit distance to `.a`, and AO
+is handed a real hit guide for precisely this reason, while reflections pass the G-buffer as an
+"(ignored) hit guide" with `HitDistPhi` 0. Roughness sits unread in the same G-buffer's `.z`. Fixing
+it means wiring a hit-distance or roughness-driven kernel (the NRD ReBLUR model), not tuning.
 
 ### The benchmark camera route
 

@@ -10,6 +10,17 @@
 // single instance of each. Add new engine flags here rather than reading std::getenv ad hoc.
 namespace Snowstorm::CVars
 {
+	// Upper bound on every denoiser's a-trous pass count, and the size of GIDenoisePass's per-frame
+	// descriptor/uniform pool, which is why it lives here rather than as a literal in either: the pool
+	// must have a slot per pass, and when the two numbers drifted apart the extra passes asserted at
+	// runtime instead of failing to build.
+	//
+	// 5 is measured, not arbitrary. Sweeping GI iterations 0..8 against ColorVideoVDP on the animated
+	// scene, the curve rises to 4 and then flattens (4 and 5 differ by 0.0002 JOD), so nothing above it
+	// is worth the extra dispatches. Raising this grows the pool automatically; the reason to raise it
+	// would be evidence the curve still climbs at 5, which there is not.
+	inline constexpr int kMaxDenoiseIterations = 5;
+
 	// Run this many frames then exit cleanly (0 = run until the window closes). Used by the smoke
 	// test to drive the app headlessly.
 	extern CVar<int> SmokeFrames;
