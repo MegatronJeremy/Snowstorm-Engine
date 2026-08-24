@@ -195,6 +195,7 @@ py Scripts/perf-bench.py --update-baseline  # capture current results as the new
 py Scripts/perf-bench.py --only +gi         # one config (rt-off | shadows | +ao | +refl | +gi | ssgi)
 py Scripts/perf-bench.py --frames 300       # more frames = less noise WITHIN a run
 py Scripts/perf-bench.py --repeat 5         # more independent runs = less noise BETWEEN runs (default 3)
+py Scripts/perf-bench.py --compare-exe <ref-exe>   # interleaved A/B vs another build (measure a CHANGE)
 py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
 ```
 
@@ -213,11 +214,24 @@ code change). More `--frames` cannot average that out because it is drift BETWEE
 runs each config `--repeat` times (default 3) and takes the **median**, which rejects a single throttled
 outlier as a mean cannot. Each pass carries the observed `spreadPct`, and a delta smaller than its own
 spread is reported **INCONCLUSIVE** rather than PASS or REGRESSION: a gate must not rule on a difference
-below its own measurement error. If a comparison is inconclusive, the fix is more repetitions or a
-**stable power state** (AMD via the Radeon Developer Tool Suite, NVIDIA via `nvidia-smi --lock-gpu-clocks`),
-which is what removes the noise at the source rather than averaging over it. For measuring a *change*,
-prefer an interleaved A/B of two builds in one session over a golden file captured under different
-thermal conditions. Like
+below its own measurement error. **Check what else is using the GPU before believing any number.** A remote-desktop session
+(Parsec/RDP/Steam Link) hardware-encodes the framebuffer on the same adapter, and its load tracks screen
+content and network conditions, which reproduces exactly this signature. So does a browser or Discord with
+GPU acceleration on. Benchmark from the console with the streamer stopped, or accept that only a paired
+A/B is trustworthy.
+
+**To measure a CHANGE, use the paired A/B, not the golden baseline.** `--compare-exe <ref-exe>` runs two
+builds interleaved (A,B,A,B,...) in one session and reports the median per-pair delta with the pair-to-pair
+spread. A stored baseline cannot be corrected for drift: it carries whatever clock, thermal and contention
+state existed when it was captured. Alternating inside one session puts both arms under the same
+conditions, so common-mode noise cancels in the difference. A median delta smaller than the spread means
+the pairs disagree and prints `inconclusive`. This needs no baseline, so it also works on an adapter that
+has none. The golden-file path answers a different question ("did this drift from the committed numbers")
+and stays the right tool for regression gating.
+
+Removing the noise at its source still beats averaging over it: a **stable power state** (AMD via the
+Radeon Developer Tool Suite, NVIDIA via `nvidia-smi --lock-gpu-clocks`) is the real fix where the hardware
+and tooling allow it. Like
 smoke, it needs a **real GPU** (Vulkan timestamps) so it's a **local** gate, not CI; on a device
 without timestamp support the JSON sets `timestampsSupported:false` and the script skips rather than
 false-failing.

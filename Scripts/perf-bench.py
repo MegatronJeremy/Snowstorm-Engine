@@ -147,6 +147,81 @@ def aggregate_runs(runs: list[dict]) -> dict:
     return base
 
 
+def paired_ab(name: str, env_overrides: dict, exe_a: Path, exe_b: Path, pairs: int, **kw) -> dict | None:
+    """Interleave two builds A,B,A,B,... and report the per-pair difference.
+
+    A golden baseline cannot be corrected for drift: it was captured under whatever clock, thermal and
+    contention state existed that day. Alternating the two builds inside ONE session puts both arms under
+    the same conditions, so whatever perturbs the machine (a remote-desktop encoder sharing the GPU, a
+    background app, a clock ramp) lands on A and B alike and cancels in the per-pair difference. That is
+    what makes a sub-noise effect measurable without owning the machine's power state, and it is the
+    standard construction for perf CI that cannot pin clocks.
+
+    Reports the MEDIAN paired delta plus the pair-to-pair spread. A median delta smaller than that spread
+    means the pairs disagree about the size (or sign) of the effect, i.e. the measurement resolved nothing.
+    """
+    a_runs, b_runs = [], []
+    for i in range(pairs):
+        # ABBA counterbalancing: alternate which build runs first. Whichever goes SECOND in a pair inherits
+        # a warmed GPU/driver state, and a null A/B of two IDENTICAL binaries measured that as a systematic
+        # -4.9% in favour of the second slot. Plain ABAB would book that warm-up as the change under test.
+        # Alternating the order makes the position effect cancel across pairs instead of accumulating.
+        a_first = (i % 2 == 0)
+        if a_first:
+            a = run_config(name, env_overrides, exe_a, **kw)
+            b = run_config(name, env_overrides, exe_b, **kw)
+        else:
+            b = run_config(name, env_overrides, exe_b, **kw)
+            a = run_config(name, env_overrides, exe_a, **kw)
+        if a is None or b is None:
+            print("  pair {}: run failed, aborting A/B".format(i + 1))
+            return None
+        a_runs.append(a)
+        b_runs.append(b)
+        d = (b["totalGpuMs"] - a["totalGpuMs"]) / a["totalGpuMs"] * 100.0
+        print("  pair {}/{} [{}]: A={:.3f}ms  B={:.3f}ms  delta={:+.2f}%".format(
+            i + 1, pairs, "AB" if a_first else "BA", a["totalGpuMs"], b["totalGpuMs"], d))
+
+    def median(v):
+        v = sorted(v)
+        n = len(v)
+        return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2.0
+
+    rows = []
+    names = sorted({q for r in a_runs + b_runs for q in r.get("passes", {})})
+    for pname in names:
+        deltas, avals = [], []
+        for a, b in zip(a_runs, b_runs):
+            av = a.get("passes", {}).get(pname, {}).get("avgMs")
+            bv = b.get("passes", {}).get(pname, {}).get("avgMs")
+            if av and bv and av > 0:
+                deltas.append((bv - av) / av * 100.0)
+                avals.append(av)
+        if deltas:
+            rows.append((pname, median(avals), median(deltas), max(deltas) - min(deltas)))
+
+    ta = [r["totalGpuMs"] for r in a_runs]
+    tb = [r["totalGpuMs"] for r in b_runs]
+    td = [(y - x) / x * 100.0 for x, y in zip(ta, tb)]
+    return {"rows": rows, "totalA": median(ta), "totalB": median(tb),
+            "totalDelta": median(td), "totalSpread": max(td) - min(td),
+            "device": a_runs[0].get("device", "")}
+
+
+def print_ab(res: dict, min_ms: float) -> None:
+    print("")
+    print("  {:<22}{:>9}{:>9}{:>9}   verdict".format("pass", "A ms", "delta", "spread"))
+    for pname, aval, med, spread in sorted(res["rows"], key=lambda r: -r[1]):
+        if aval < min_ms:
+            continue
+        # The pairs must agree with each other by more than the effect size, or nothing was resolved.
+        verdict = "resolved" if abs(med) > spread else "inconclusive"
+        print("  {:<22}{:>9.3f}{:>+8.2f}%{:>8.2f}%   {}".format(pname, aval, med, spread, verdict))
+    v = "resolved" if abs(res["totalDelta"]) > res["totalSpread"] else "inconclusive"
+    print("  {:<22}{:>9.3f}{:>+8.2f}%{:>8.2f}%   {}".format(
+        "TOTAL gpu", res["totalA"], res["totalDelta"], res["totalSpread"], v))
+
+
 def device_slug(device: str) -> str:
     """Filesystem-safe directory name for an adapter, e.g. 'AMD Radeon RX 9070 XT' -> 'amd-radeon-rx-9070-xt'."""
     slug = re.sub(r"[^a-z0-9]+", "-", device.lower()).strip("-")
@@ -210,6 +285,12 @@ def compare(name: str, current: dict, baseline: dict, threshold_pct: float) -> b
 def main() -> int:
     ap = argparse.ArgumentParser(description="GPU perf benchmark + regression gate.")
     ap.add_argument("--frames", type=int, default=300, help="Frames averaged per config (default 300)")
+    ap.add_argument("--compare-exe", default=None,
+                    help="Path to a REFERENCE Snowstorm-Editor.exe. Runs the two builds interleaved "
+                         "(A,B,A,B,...) in one session and reports the per-pair delta instead of diffing a "
+                         "golden baseline. Use this to measure a CHANGE: it cancels the common-mode drift a "
+                         "stored baseline cannot correct for.")
+    ap.add_argument("--pairs", type=int, default=5, help="A/B pairs for --compare-exe (default 5)")
     ap.add_argument("--repeat", type=int, default=3,
                     help="Independent runs per config, medianed (default 3). Run-level GPU clock drift is the "
                          "dominant noise source and repetition is the only thing that averages it out; 1 "
@@ -246,6 +327,30 @@ def main() -> int:
     print(f"Build dir : {build_dir}  (config: {args.config})")
     print(f"Scene     : {args.scene}   Frames: {args.frames}   Threshold: {args.threshold}%")
     print(f"Mode      : {'UPDATE BASELINE' if args.update_baseline else 'compare vs baseline'}\n")
+
+    # A/B mode short-circuits the golden-baseline path entirely: it measures a DIFFERENCE between two
+    # builds under identical conditions, which is a different question from "did this drift from the
+    # committed numbers" and needs no baseline (so it also works on an adapter that has none).
+    if args.compare_exe:
+        ref_exe = Path(args.compare_exe).resolve()
+        if not ref_exe.is_file():
+            print(f"FAIL: --compare-exe not found: {ref_exe}")
+            return 1
+        print(f"A/B mode: A = {ref_exe}")
+        print(f"          B = {exe}")
+        print(f"          {args.pairs} interleaved pairs per config\n")
+        ab_ok = True
+        for name, env_overrides in configs:
+            print(f"=== {name} ===")
+            res = paired_ab(name, env_overrides, ref_exe, exe, args.pairs,
+                            cwd=repo_root, frames=args.frames, timeout=args.timeout,
+                            layer_path=layer_path, scene=args.scene, gpu=args.gpu)
+            if res is None:
+                ab_ok = False
+                continue
+            print_ab(res, 0.05)  # hide sub-0.05ms passes: timestamp noise, same floor the gate uses
+            print("")
+        return 0 if ab_ok else 1
 
     all_ok = True
     ungated = []
