@@ -425,9 +425,27 @@ the same interval. The subtraction is the point, and it is measurable: on Sponza
 reference itself moves by FLIP 0.0932 between consecutive frames, so a naive frame-difference metric
 reports 0.1151 as instability when the technique's actual excess is 0.0219, over 4x too high, and it
 would rank a blurrier laggier result as more "stable". Report it as tFLIP, never as tLP: substituting
-FLIP is a deliberate deviation that keeps torch out of the gate. **ColorVideoVDP** (Mantiuk et al.,
-TOG 2024) is reported when `pycvvdp` is importable but never gated, since it is the one metric here
-that models temporal contrast sensitivity directly and is worth citing, although it pulls in torch.
+FLIP is a deliberate deviation that keeps torch out of the gate.
+
+**ColorVideoVDP** (Mantiuk et al., TOG 2024) is reported when importable, never gated. It is the one
+metric here that models temporal contrast sensitivity directly rather than inferring it, so it is the
+one worth citing, but it needs torch. It is **not on PyPI**:
+
+```
+pip install git+https://github.com/gfxdisp/ColorVideoVDP.git
+```
+
+It is evaluated **per probe pair**, never over all captured frames at once. The probes sit far apart
+on the route, so concatenating them hands the metric three enormous scene cuts which it reads as real
+temporal content: measured, that inflates `all-rt` by 0.627 JOD, and the paper puts 1 JOD at roughly a
+75% population preference. Two frames is thin temporal context, and thin beats fabricated.
+
+**The two temporal metrics disagree, usefully.** On the 9070 XT baseline `rtgi` has the best tFLIP
+(0.0078 vs `all-rt`'s 0.0126) while `all-rt` has the best JOD (5.090 vs 4.099). No contradiction:
+tFLIP isolates temporal excess alone, ColorVideoVDP is spatio-temporal and `all-rt` is far more
+accurate spatially. Read tFLIP for stability and JOD for overall perceived quality. Per probe, JOD
+ranks `strafe` the hardest and `static` the easiest for every single technique, which is the probe
+design doing what it was built for.
 
 Baselines are keyed by adapter (`Scripts/quality-motion-baseline/<device-slug>/<technique>.json`) for
 the same reason the static ones are: the reference is a path trace on the local card. Exit 0 within

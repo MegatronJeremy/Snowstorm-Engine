@@ -184,12 +184,21 @@ def temporal_flip(g0, g1, r0, r1):
 _CVVDP_STATE = {"tried": False, "fn": None}
 
 
-def colorvideovdp(tech_frames, ref_frames, fps: float = 60.0):
-    """ColorVideoVDP JOD over the captured frames (higher is better, 10 = indistinguishable).
+CVVDP_INSTALL = "pip install git+https://github.com/gfxdisp/ColorVideoVDP.git"
+
+
+def colorvideovdp(imgs, refs, probe_names, fps: float = 60.0):
+    """ColorVideoVDP JOD per probe (higher is better, 10 = indistinguishable). Returns (mean, per-probe).
 
     Mantiuk et al., TOG 2024: a spatio-temporal difference predictor that models temporal contrast
-    sensitivity and so predicts flicker and judder directly, rather than inferring them. Reported
-    but NOT gated, and optional: it pulls in torch, which the other gates do not require.
+    sensitivity, so it predicts flicker and judder directly rather than inferring them from a spatial
+    score. Reported but NOT gated, and optional (it needs torch, which the other gates do not).
+
+    Evaluated PER PROBE PAIR, never over all captured frames at once. The probes are far apart on the
+    route, so concatenating them hands the metric three enormous scene cuts and it reads them as real
+    temporal content: measured, that inflates the result by 0.627 JOD on all-rt, and the paper's own
+    scale puts 1 JOD at roughly a 75% population preference. Two frames is thin temporal context, but
+    thin and honest beats thick and fabricated.
     """
     if not _CVVDP_STATE["tried"]:
         _CVVDP_STATE["tried"] = True
@@ -197,20 +206,24 @@ def colorvideovdp(tech_frames, ref_frames, fps: float = 60.0):
             import pycvvdp
             _CVVDP_STATE["fn"] = pycvvdp
         except Exception:
-            print("  note: ColorVideoVDP unavailable (pip install pycvvdp to enable); reporting without it.")
+            print(f"  note: ColorVideoVDP unavailable ({CVVDP_INSTALL}); reporting without it.")
     mod = _CVVDP_STATE["fn"]
-    if mod is None or len(tech_frames) < 2:
-        return None
+    if mod is None:
+        return None, {}
     try:
-        test = np.stack([f[..., :3].astype(np.uint8) for f in tech_frames])
-        ref = np.stack([f[..., :3].astype(np.uint8) for f in ref_frames])
         metric = mod.cvvdp(display_name="standard_4k", heatmap=None)
-        jod, _ = metric.predict(test, ref, dim_order="FHWC", frames_per_second=fps)
-        return float(jod)
+        per = {}
+        for name in probe_names:
+            pair = PROBES[name]
+            test = np.stack([imgs[f][..., :3].astype(np.uint8) for f in pair])
+            ref = np.stack([refs[f][..., :3].astype(np.uint8) for f in pair])
+            jod, _ = metric.predict(test, ref, dim_order="FHWC", frames_per_second=fps)
+            per[name] = float(jod)
+        return (float(np.mean(list(per.values()))) if per else None), per
     except Exception as e:
         print(f"  note: ColorVideoVDP failed ({e}); reporting without it.")
         _CVVDP_STATE["fn"] = None
-        return None
+        return None, {}
 
 
 def evaluate(imgs, refs, probe_names):
@@ -349,14 +362,16 @@ def main() -> int:
             continue
 
         result = evaluate(imgs, ref_cache, probe_names)
-        result["cvvdpJod"] = colorvideovdp([imgs[f] for f in frames], [ref_cache[f] for f in frames])
+        result["cvvdpJod"], result["cvvdpPerProbe"] = colorvideovdp(imgs, ref_cache, probe_names)
         ran_any = True
 
         for row in result["perFrame"]:
             print(f"    {row['probe']:<9} f{row['frame']:<5} FLIP {fmt(row['flip'])}  "
                   f"PSNR {fmt(row['psnr'])}  SSIM {fmt(row['ssim'])}")
         for row in result["perPair"]:
-            print(f"    {row['probe']:<9} pair  tFLIP {fmt(row['tflip'])}")
+            jod = result["cvvdpPerProbe"].get(row["probe"])
+            print(f"    {row['probe']:<9} pair  tFLIP {fmt(row['tflip'])}"
+                  + (f"  cvvdp {jod:6.3f} JOD" if jod is not None else ""))
         print(f"  MEAN  FLIP {fmt(result['flip'])}  PSNR {fmt(result['psnr'])}  "
               f"SSIM {fmt(result['ssim'])}  tFLIP {fmt(result['tflip'])}"
               + (f"  cvvdp {fmt(result['cvvdpJod'])} JOD" if result["cvvdpJod"] is not None else ""))
@@ -365,6 +380,7 @@ def main() -> int:
         record = {"device": device, "technique": tech, "route": ROUTE, "probes": probe_names,
                   "flip": result["flip"], "psnr": result["psnr"], "ssim": result["ssim"],
                   "tflip": result["tflip"], "cvvdpJod": result["cvvdpJod"],
+                  "cvvdpPerProbe": result["cvvdpPerProbe"],
                   "perFrame": result["perFrame"], "perPair": result["perPair"]}
         if args.update_baseline:
             bp.parent.mkdir(parents=True, exist_ok=True)
