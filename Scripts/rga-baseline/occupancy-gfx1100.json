@@ -21,7 +21,7 @@
       "isa_size": 1652.0,
       "permutations": 2
     },
-    "DefaultLit.frag": {
+    "DefaultLit.frag[inlineshadow]": {
       "vgprs": 132.0,
       "sgprs": 72.0,
       "lds": 4096.0,
@@ -29,6 +29,16 @@
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 31524.0,
+      "permutations": 2
+    },
+    "DefaultLit.frag[noinlineshadow]": {
+      "vgprs": 89.0,
+      "sgprs": 63.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 10232.0,
       "permutations": 2
     },
     "DepthNormal.frag": {
@@ -91,14 +101,34 @@
       "isa_size": 10536.0,
       "permutations": 2
     },
-    "GIDenoise.comp": {
-      "vgprs": 191.0,
-      "sgprs": 53.0,
+    "GIDenoise.comp[ao]": {
+      "vgprs": 72.0,
+      "sgprs": 54.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 12668.0,
+      "isa_size": 3780.0,
+      "permutations": 2
+    },
+    "GIDenoise.comp[gi]": {
+      "vgprs": 70.0,
+      "sgprs": 44.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 3400.0,
+      "permutations": 2
+    },
+    "GIDenoise.comp[shadow]": {
+      "vgprs": 70.0,
+      "sgprs": 50.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 3488.0,
       "permutations": 2
     },
     "GITemporal.comp": {

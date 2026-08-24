@@ -37,6 +37,18 @@ namespace Snowstorm::CVars
 	// the legacy circular orbit, which only suits an open scene. Loaded once by CameraPathSystem.
 	extern CVar<std::string> CameraPathFile;
 
+	// Perf-bench warmup is DETECTED, not assumed: sampling starts once the GPU frame time stops moving
+	// (rolling peak-to-peak spread under this fraction of the mean), so a run cannot average part of the
+	// clock ramp. 0 skips detection and uses the minimum warmup only.
+	extern CVar<float> PerfBenchWarmupEpsilon;
+	// Hard cap on the warmup wait. A machine that never settles (background GPU load) still produces a run,
+	// reported as not-settled rather than silently treated as clean.
+	extern CVar<int> PerfBenchWarmupMaxFrames;
+
+	// Headless quality capture (local image-quality gate, #153 increment 2). When > 0, let the frame render
+	// this many times (so a static camera accumulates the reference path tracer / warms the real-time path),
+	// then copy the final present (LDR sRGB) + HDR scene color to disk as .npy and exit. Scripts/quality-bench.py
+	// drives (viewpoint x technique) runs and diffs FLIP/PSNR/SSIM against a committed baseline. CLI/env-only.
 	// Override the resolved viewport camera pose at startup: "px,py,pz,rx,ry,rz" (world position + Euler
 	// rotation in radians), empty = off. Lets a headless harness (quality-bench, #158) pin a deterministic
 	// viewpoint without editing the scene. Applied by RuntimeLayer::ConfigureSceneCamera and, in the editor,
@@ -132,7 +144,6 @@ namespace Snowstorm::CVars
 	// transient-aliasing case: aliasing can only recover memory that transient targets actually hold, and
 	// descriptors alone do not show that because VMA sub-allocates from larger blocks.
 	extern CVar<int> MemoryDump;
-
 	// Number of bare Transform+Rotator entities the stress bake ("scene.bake stress") spawns, on top of
 	// the renderable fields. These carry no mesh/material, so they load only RotatorSystem's per-entity
 	// loop: the heavy, pure workload for the parallel-ECS before/after benchmark (#85). 0 (default) = none.
@@ -684,4 +695,11 @@ namespace Snowstorm::CVars
 	// helpers, so it's always false on a non-RT GPU. GI and AO are excluded because they moved to compute
 	// passes; this is therefore NOT the TLAS gate, which ORs those plus path tracing (see TlasBuildSystem).
 	[[nodiscard]] bool AnyRTEffectActive();
+
+	// True when DefaultLit must compile its INLINE ray-query shadow path (SampleSunShadow and friends).
+	// Stochastic shadows produce a denoised full-res visibility texture that the forward pass samples
+	// instead, so the inline traversal is dead code there: still register-allocated, never executed.
+	// Dropping it takes DefaultLit.frag from 11/16 to 16/16 waves on gfx1100 (132 -> 89 VGPRs, ISA 31524 ->
+	// 10232), which matters because that shader is the single largest pass in the frame.
+	[[nodiscard]] bool LitInlineRTShadowsActive();
 }

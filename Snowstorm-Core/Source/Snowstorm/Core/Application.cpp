@@ -117,7 +117,17 @@ namespace Snowstorm
 		const int perfBenchFrames = CVars::PerfBenchFrames.Get();
 		const bool perfBenchMode = perfBenchFrames > 0;
 		PerfBenchAccumulator perfBench;
-		constexpr uint64_t kPerfBenchWarmup = 15; // discard pipeline/shader/streaming warmup + the 1-frame scope lag
+		// Warmup ends when the GPU frame time stops moving, not after a fixed count. The old 15 frames was
+		// ~0.25s: too short to reach DVFS steady state, so a run averaged part of the clock ramp and its
+		// result depended on how warm the machine already was. The minimum still covers pipeline/shader
+		// creation, streaming, and the 1-frame timestamp-resolve lag.
+		constexpr uint32_t kPerfBenchMinWarmup = 15;
+		constexpr uint32_t kPerfBenchWarmupWindow = 30;
+		SteadyStateDetector perfBenchWarmup(kPerfBenchWarmupWindow,
+		                                    CVars::PerfBenchWarmupEpsilon.Get(),
+		                                    kPerfBenchMinWarmup,
+		                                    static_cast<uint32_t>(CVars::PerfBenchWarmupMaxFrames.Get()));
+		bool perfBenchSampling = false;
 
 		// VSync-toggle stress (debug.vsync_stress > 0): flip VSync every N frames to force repeated
 		// swapchain recreation. A test hook — surfaces present/acquire-semaphore reuse bugs that only
@@ -249,7 +259,25 @@ namespace Snowstorm
 			// GPU perf benchmark accumulation + exit. GetGpuPassTimes() returns the PREVIOUS frame's resolved
 			// scopes (1-frame lag), so the warmup skip also covers that lag. Accumulate past warmup; once the
 			// budget is met, write the averaged JSON and request shutdown (mirrors smoke mode).
-			if (perfBenchMode && frameNo > kPerfBenchWarmup)
+			if (perfBenchMode && !perfBenchSampling)
+			{
+				// Still warming: feed the detector and start sampling only once it reports steady.
+				if (perfBenchWarmup.Update(Renderer::GetLastGpuFrameMs()))
+				{
+					perfBenchSampling = true;
+					if (perfBenchWarmup.TimedOut())
+					{
+						SS_CORE_WARN("Perf bench: frame time never settled within {} frames; sampling anyway "
+						             "(results are NOT from a steady state).",
+						             perfBenchWarmup.FramesObserved());
+					}
+					else
+					{
+						SS_CORE_INFO("Perf bench: steady state after {} warmup frames.", perfBenchWarmup.FramesObserved());
+					}
+				}
+			}
+			else if (perfBenchMode)
 			{
 				auto& renderer = m_ServiceManager->GetService<RendererService>();
 				perfBench.AddFrame(renderer.GetGpuPassTimes(), Renderer::GetLastGpuFrameMs());

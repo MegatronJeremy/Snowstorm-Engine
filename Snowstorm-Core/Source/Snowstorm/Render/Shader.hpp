@@ -74,15 +74,24 @@ namespace Snowstorm
 		[[nodiscard]] virtual ShaderPermutation GetPermutation() const = 0;
 		virtual void SetPermutation(ShaderPermutation p) = 0;
 
+		// DYNAMIC permutation defines: additive axes whose value is a frame-constant global rather than a
+		// property of the call site, so exactly ONE variant is ever live and swapping it should replace this
+		// shader's SPIR-V in place. That is why these mutate rather than key the library: materials hold a
+		// Ref<Pipeline>, and Pipeline::Reload swaps the module under them, where a new library entry would
+		// force every material to re-resolve. Contrast the immutable call-site set passed to Load(), which
+		// exists for variants that must coexist. Set then Recompile(); the choice keys the .spv cache.
+		[[nodiscard]] virtual ShaderDefines GetDynamicDefines() const = 0;
+		virtual void SetDynamicDefines(ShaderDefines defines) = 0;
+
 		void Recompile()
 		{
 			Compile();
 		}
 
 		// Single-path: a compute shader (one file).
-		static Ref<Shader> Create(const std::string& filepath);
+		static Ref<Shader> Create(const std::string& filepath, ShaderDefines features = {});
 		// Two-path graphics: separate vertex + fragment files (each a plain single-`main` HLSL file).
-		static Ref<Shader> Create(const std::string& vertPath, const std::string& fragPath);
+		static Ref<Shader> Create(const std::string& vertPath, const std::string& fragPath, ShaderDefines features = {});
 
 	protected:
 		virtual void Compile() = 0;
@@ -93,9 +102,15 @@ namespace Snowstorm
 	class ShaderLibrary final : public Service
 	{
 	public:
-		Ref<Shader> Load(const std::string& filepath);
+		// `features` are the CALL SITE's permutation defines, distinct from the device-capability axes
+		// (SS_RAYTRACING / SS_FP16) the backend folds in on top. They are part of the library key, so two
+		// consumers of one file can hold different variants at the same time, and each set is immutable for
+		// the life of its Shader. That is the difference from SetPermutation, which mutates the single
+		// instance every consumer shares. Empty (the default) keys on the bare path, leaving existing call
+		// sites untouched. Cf. Unreal keying its shader map by (type, permutation id).
+		Ref<Shader> Load(const std::string& filepath, ShaderDefines features = {});
 		// Two-path graphics load, keyed on "vert|frag" so vert/frag are hot-reloaded together.
-		Ref<Shader> Load(const std::string& vertPath, const std::string& fragPath);
+		Ref<Shader> Load(const std::string& vertPath, const std::string& fragPath, ShaderDefines features = {});
 		Ref<Shader> Get(const std::string& filepath);
 
 		[[nodiscard]] bool Exists(const std::string& filepath) const;

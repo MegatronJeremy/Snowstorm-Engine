@@ -10,10 +10,40 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <string_view>
 
 namespace Snowstorm
 {
-	Ref<Shader> Shader::Create(const std::string& filepath)
+	namespace
+	{
+		// Library key = source path(s), then the feature defines after a '#'. Mirrors the existing "vert|frag"
+		// composite: a key is parsed back to its file(s) by stripping the suffix, never stored separately.
+		std::string MakeShaderKey(const std::string& base, const ShaderDefines& features)
+		{
+			if (features.empty())
+			{
+				return base; // unpermuted call sites keep their original key, so nothing re-keys
+			}
+			std::string key = base + "#";
+			for (size_t i = 0; i < features.size(); ++i)
+			{
+				if (i != 0)
+				{
+					key += ',';
+				}
+				key += features[i];
+			}
+			return key;
+		}
+
+		// The file-path portion of a library key: everything before the '#' feature suffix.
+		std::string_view SourcePartOfKey(const std::string& key)
+		{
+			return std::string_view(key).substr(0, key.find('#'));
+		}
+	}
+
+	Ref<Shader> Shader::Create(const std::string& filepath, ShaderDefines features)
 	{
 		switch (RendererAPI::GetAPI())
 		{
@@ -26,7 +56,7 @@ namespace Snowstorm
 			return nullptr;
 
 		case RendererAPI::API::Vulkan:
-			return CreateRef<VulkanShader>(filepath);
+			return CreateRef<VulkanShader>(filepath, std::move(features));
 
 		case RendererAPI::API::DX12:
 			SS_CORE_ASSERT(false, "DX12 shader backend not implemented yet.");
@@ -37,7 +67,7 @@ namespace Snowstorm
 		return nullptr;
 	}
 
-	Ref<Shader> Shader::Create(const std::string& vertPath, const std::string& fragPath)
+	Ref<Shader> Shader::Create(const std::string& vertPath, const std::string& fragPath, ShaderDefines features)
 	{
 		switch (RendererAPI::GetAPI())
 		{
@@ -50,7 +80,7 @@ namespace Snowstorm
 			return nullptr;
 
 		case RendererAPI::API::Vulkan:
-			return CreateRef<VulkanShader>(vertPath, fragPath);
+			return CreateRef<VulkanShader>(vertPath, fragPath, std::move(features));
 
 		case RendererAPI::API::DX12:
 			SS_CORE_ASSERT(false, "DX12 shader backend not implemented yet.");
@@ -67,33 +97,34 @@ namespace Snowstorm
 		m_Shaders[filepath] = shader;
 	}
 
-	Ref<Shader> ShaderLibrary::Load(const std::string& filepath)
+	Ref<Shader> ShaderLibrary::Load(const std::string& filepath, ShaderDefines features)
 	{
-		if (Exists(filepath))
-		{
-			return Get(filepath);
-		}
-
-		auto shader = Shader::Create(filepath);
-		Add(shader, filepath);
-		SubmitAsyncCompile(shader);
-
-		m_LastModifications[filepath] = std::filesystem::last_write_time(filepath);
-
-		return shader;
-	}
-
-	Ref<Shader> ShaderLibrary::Load(const std::string& vertPath, const std::string& fragPath)
-	{
-		// Key on the composite so a (vert, frag) pair is one library entry; hot-reload watches the newer
-		// of the two files (editing either re-triggers). See ReloadAll's composite-key handling.
-		const std::string key = vertPath + "|" + fragPath;
+		const std::string key = MakeShaderKey(filepath, features);
 		if (Exists(key))
 		{
 			return Get(key);
 		}
 
-		auto shader = Shader::Create(vertPath, fragPath);
+		auto shader = Shader::Create(filepath, std::move(features));
+		Add(shader, key);
+		SubmitAsyncCompile(shader);
+
+		m_LastModifications[key] = std::filesystem::last_write_time(filepath);
+
+		return shader;
+	}
+
+	Ref<Shader> ShaderLibrary::Load(const std::string& vertPath, const std::string& fragPath, ShaderDefines features)
+	{
+		// Key on the composite so a (vert, frag) pair is one library entry; hot-reload watches the newer
+		// of the two files (editing either re-triggers). See ReloadAll's composite-key handling.
+		const std::string key = MakeShaderKey(vertPath + "|" + fragPath, features);
+		if (Exists(key))
+		{
+			return Get(key);
+		}
+
+		auto shader = Shader::Create(vertPath, fragPath, std::move(features));
 		Add(shader, key);
 		SubmitAsyncCompile(shader);
 
@@ -152,18 +183,21 @@ namespace Snowstorm
 	{
 		for (auto& [key, lastModified] : m_LastModifications)
 		{
-			// A key may be a single path or a composite "vert|frag" (two-path graphics shader). Take the
-			// newest mtime across its constituent file(s) so editing either stage triggers a recompile.
+			// A key is the source path(s) plus an optional '#' feature suffix, and the path part may itself
+			// be a composite "vert|frag". Strip the suffix, then take the newest mtime across the constituent
+			// file(s) so editing either stage triggers a recompile. Two permutations of one file are separate
+			// entries that both recompile, which is what hot-reloading that file should do.
+			const std::string paths(SourcePartOfKey(key));
 			std::filesystem::file_time_type newest{};
-			const size_t sep = key.find('|');
+			const size_t sep = paths.find('|');
 			if (sep == std::string::npos)
 			{
-				newest = std::filesystem::last_write_time(key);
+				newest = std::filesystem::last_write_time(paths);
 			}
 			else
 			{
-				newest = std::max(std::filesystem::last_write_time(key.substr(0, sep)),
-				                  std::filesystem::last_write_time(key.substr(sep + 1)));
+				newest = std::max(std::filesystem::last_write_time(paths.substr(0, sep)),
+				                  std::filesystem::last_write_time(paths.substr(sep + 1)));
 			}
 
 			if (newest > lastModified)

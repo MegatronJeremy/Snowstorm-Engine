@@ -20,6 +20,9 @@ namespace Snowstorm::CVars
 	CVar<std::string> CameraPathFile{"camera.path.file", "", "Authored camera route (JSON) the camera.path benchmark flies, e.g. Projects/Sandbox/assets/camera-paths/sponza-bench.json. Empty = the legacy circular orbit, which only suits an open scene: in an enclosed hall it clips geometry and exits the building. The file carries waypoints (Position + LookAt), Speed and Loop, so the route is fully self-describing and no persisted setting can alter it behind a baseline.", CVarFlags::ReadOnly};
 
 	CVar<int> SimFreezeFrame{"sim.freeze_frame", -1, "Advance all scripted motion (camera route AND animated objects) to this route frame, then HOLD everything there. -1 = off. This is how a moving frame gets a path-traced reference: the path tracer needs a still scene to accumulate, so the reference run replays the world to frame N and stops, giving ground truth for exactly the state the moving run captured. Freezing only the camera would leave animated props smeared across the accumulation.", CVarFlags::ReadOnly};
+	CVar<float> PerfBenchWarmupEpsilon{"perf.bench.warmup.epsilon", 0.05f, "Perf-bench steady-state threshold: sampling begins once the rolling 30-frame GPU-time window peak-to-peak spread falls below this fraction of its mean. Replaces a fixed frame count, which assumed a settling time instead of observing one (15 frames is ~0.25s and does not reach DVFS steady state, so the run averaged part of the clock ramp). 0 = skip detection, use the minimum warmup only.", CVarFlags::ReadOnly};
+
+	CVar<int> PerfBenchWarmupMaxFrames{"perf.bench.warmup.maxframes", 600, "Hard cap on the perf-bench warmup wait. If frame time never settles within this many frames (background GPU load, thermal throttling), sampling starts anyway and the run is logged as not-settled, so a busy machine produces a flagged result rather than hanging.", CVarFlags::ReadOnly};
 
 	CVar<std::string> CameraOverride{"camera.override", "", "Override the viewport camera pose at startup: \"px,py,pz,rx,ry,rz\" (world position + Euler rotation in radians), empty = off. Headless harness hook (#158) to pin a deterministic viewpoint in the runtime without editing the scene.", CVarFlags::ReadOnly};
 
@@ -45,6 +48,8 @@ namespace Snowstorm::CVars
 	CVar<bool> GraphReorder{"render.graph.reorder", false, "Execute render-graph passes in a dependency-derived schedule that groups compute work (off = declaration order)"};
 	CVar<bool> RtCrossFrame{"render.rt.crossframe", false, "Sample the RT chain's upscaled output one frame late so the forward pass does not depend on this frame's trace and denoise, which is what lets an async-compute batch overlap the raster work (off = same-frame, single-buffered)"};
 	CVar<int> MemoryDump{"render.memory.dump", 0, "Log VMA allocation totals and per-heap budget usage for this many frames"};
+	CVar<bool> AsyncCompute{"render.async_compute", true, "Run render-graph passes marked AsyncCompute on an independent compute queue, overlapping graphics (off = inline on the graphics queue)"};
+	CVar<int> GraphDumpDeps{"render.graph.dumpdeps", 0, "Dump the render graph's pass dependency edges and per-pass earliest legal slot for this many frames"};
 
 	CVar<int> StressRotators{"stress.rotators", 0, "Bare Transform+Rotator entities the stress bake spawns (heavy data-parallel ECS workload for the #85 benchmark)", CVarFlags::ReadOnly};
 
@@ -687,5 +692,13 @@ namespace Snowstorm::CVars
 		// scene now compiles the cheap DefaultLit. Their TLAS need is covered by TlasBuildSystem's own gate,
 		// which still ORs in AoRTActive()/GIRTActive().
 		return ShadowsRTActive() || ReflectionsRTActive();
+	}
+
+	bool LitInlineRTShadowsActive()
+	{
+		// Note this is NOT the same condition as FrameCB.RTShadowEnabled, which stays 1 under stochastic
+		// shadows: the shader's own useShadowTex branch is what bypasses the inline path at runtime. The
+		// permutation has to key off the technique instead, or it would keep compiling code nothing calls.
+		return ShadowsRTActive() && !ShadowStochasticActive();
 	}
 }

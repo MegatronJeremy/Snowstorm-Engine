@@ -195,8 +195,11 @@ keeps those passes gated against a real regression rather than excluding them ou
 ```
 py Scripts/perf-bench.py                    # run the matrix, diff vs baseline, PASS/FAIL
 py Scripts/perf-bench.py --update-baseline  # capture current results as the new baseline
-py Scripts/perf-bench.py --only +gi         # one config (see the matrix below)
-py Scripts/perf-bench.py --frames 300       # more frames = less noise, slower
+py Scripts/perf-bench.py --only +gi         # one config (rt-off | shadows | +ao | +refl | +gi | ssgi | shadows-stoch)
+py Scripts/perf-bench.py --frames 300       # more frames = less noise WITHIN a run
+py Scripts/perf-bench.py --repeat 5         # more independent runs = less noise BETWEEN runs (default 3)
+py Scripts/perf-bench.py --compare-exe <ref-exe>   # interleaved A/B vs another build (measure a CHANGE)
+py Scripts/perf-bench.py --canary-pass Editor      # normalise out a global clock shift
 py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
 ```
 
@@ -214,8 +217,50 @@ adds a second denoise chain the inline path has no analogue for. At Sponza's lig
 `rt-off`: 9070 XT inline 2.388, stochastic 2.757 with that chain and 1.677 without; 5070 inline
 1.428, stochastic 3.510 and 2.144. So the shipping configs rank inline first on both adapters, while
 the ray-tracing work alone ranks stochastic first on AMD. The `ShadowSpec*` rows in the per-pass
-table are that chain, priced separately.
-Sub-0.05 ms passes are ignored (timestamp noise). Like
+table are that chain, priced separately. Sub-0.05 ms passes are ignored (timestamp noise).
+
+**Warmup is detected, not assumed.** Sampling begins once the rolling 30-frame GPU-time window's
+peak-to-peak spread drops below `perf.bench.warmup.epsilon` (default 5%) of its mean, capped by
+`perf.bench.warmup.maxframes` (600, after which the run proceeds and logs that it is NOT from a steady
+state). The old fixed 15-frame warmup was ~0.25s and measured on Sponza takes **53 frames** to actually
+settle, so every run before this averaged part of the GPU clock ramp, with the result depending on how
+warm the machine already was and no way to tell from the JSON.
+
+**The dominant noise source is run-level, not frame-level.** Three identical back-to-back runs on an RX
+9060 XT spread **8-12% on every pass**, while each pass's *minimum* moved only ~3%: the GPU still reaches
+peak briefly in every run but spends progressively more frames throttled, which is a DVFS/thermal
+signature rather than workload variance (every pass moving by the same factor is a clock change, not a
+code change). More `--frames` cannot average that out because it is drift BETWEEN launches, so the script
+runs each config `--repeat` times (default 3) and takes the **median**, which rejects a single throttled
+outlier as a mean cannot. Each pass carries a quartile **interval** (`q1Ms`/`q3Ms`) alongside the median, and the gate compares
+INTERVALS rather than a point delta against a fixed percentage: disjoint with the current run higher is a
+regression, overlapping means the runs do not separate whatever the point delta says, and that reads
+**INCONCLUSIVE** rather than PASS. A gate must not rule on a difference below its own measurement error.
+Baselines predating the interval fields (or `--repeat 1`, which cannot produce one) fall back to the
+threshold plus a range check. **Check what else is using the GPU before believing any number.** A remote-desktop session
+(Parsec/RDP/Steam Link) hardware-encodes the framebuffer on the same adapter, and its load tracks screen
+content and network conditions, which reproduces exactly this signature. So does a browser or Discord with
+GPU acceleration on. Benchmark from the console with the streamer stopped, or accept that only a paired
+A/B is trustworthy.
+
+**To measure a CHANGE, use the paired A/B, not the golden baseline.** `--compare-exe <ref-exe>` runs two
+builds interleaved (A,B,A,B,...) in one session and reports the median per-pair delta with the pair-to-pair
+spread. A stored baseline cannot be corrected for drift: it carries whatever clock, thermal and contention
+state existed when it was captured. Alternating inside one session puts both arms under the same
+conditions, so common-mode noise cancels in the difference. A median delta smaller than the spread means
+the pairs disagree and prints `inconclusive`. This needs no baseline, so it also works on an adapter that
+has none. The golden-file path answers a different question ("did this drift from the committed numbers")
+and stays the right tool for regression gating.
+
+`--canary-pass <name>` is the golden path's remaining correction: it scales the run by how much a pass
+the change CANNOT affect moved against the baseline, cancelling a global clock shift that path has no
+other way to see. It has no default on purpose, since naming a pass the change does affect silently
+rescales away the result, and only the caller knows which is safe. It corrects a multiplicative shift
+hitting everything alike, not contention landing unevenly.
+
+Removing the noise at its source still beats averaging over it: a **stable power state** (AMD via the
+Radeon Developer Tool Suite, NVIDIA via `nvidia-smi --lock-gpu-clocks`) is the real fix where the hardware
+and tooling allow it. Like
 smoke, it needs a **real GPU** (Vulkan timestamps) so it's a **local** gate, not CI; on a device
 without timestamp support the JSON sets `timestampsSupported:false` and the run counts as a SKIP
 (exit **2**), never a pass and never a false FAIL.
