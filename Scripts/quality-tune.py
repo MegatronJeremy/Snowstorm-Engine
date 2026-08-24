@@ -155,6 +155,9 @@ MOTION_PARAM_SPACE = {
     "rtrefl": [
         ("SS_RENDER_REFLECTIONS_DENOISE_ITERATIONS", 0, 5, True, 3),
         ("SS_RENDER_REFLECTIONS_DENOISE_VARIANCE", 0.0, 8.0, False, 4.0),
+        # The only edge-stop that can see a REFLECTION edge rather than a receiver-surface edge.
+        # Normalized, so 1.0 means "a full-trace-range hit-distance difference attenuates a tap to 1/e".
+        ("SS_RENDER_REFLECTIONS_DENOISE_HITDIST", 0.0, 4.0, False, 0.0),
         ("SS_RENDER_RT_DEPTH_REJECT", 0.0, 0.2, False, 0.02),
         ("SS_RENDER_TAA_MAXBLEND", 0.80, 0.99, False, 0.97),
     ],

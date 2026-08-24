@@ -543,12 +543,26 @@ flat reflective surface the receiver's normal and depth are constant, `wN` and `
 the kernel is wide open exactly where reflected detail lives. The code states the false premise
 outright, that "reflection edges are receiver-surface edges".
 
-No CVar fixes it. `render.reflections.denoise.variance` swept 0..8 is flat and non-monotonic (0.0013
-JOD span), so the luminance term is not the lever either. What is missing is guidance the engine
-already has and already uses elsewhere: `Reflection.comp` writes traced hit distance to `.a`, and AO
-is handed a real hit guide for precisely this reason, while reflections pass the G-buffer as an
-"(ignored) hit guide" with `HitDistPhi` 0. Roughness sits unread in the same G-buffer's `.z`. Fixing
-it means wiring a hit-distance or roughness-driven kernel (the NRD ReBLUR model), not tuning.
+**Two fixes were tried and both measured flat.** `render.reflections.denoise.variance` swept 0..8 is
+non-monotonic with a 0.0013 JOD span, so the luminance term is not the lever. `Reflection.comp` does
+trace hit distance into `.a`, and AO is handed a real hit guide for precisely this reason while
+reflections passed the G-buffer as an "(ignored) hit guide", so `render.reflections.denoise.hitdist`
+now wires the real one: swept 0..4 it moves 0.0002 JOD, which is noise. The obvious explanation, that
+1 ray/pixel makes the guide too noisy to steer anything, does not survive either: at
+`render.reflections.rays` 8 the span is still 0.0002. Hit-distance guidance is not the lever here.
+
+**What is measurable is that the pass should probably not run.** On the animated scene, `all-rt` with
+`render.reflections.denoise.iterations` 0 versus the default 3: FLIP 0.1742 vs 0.1746, PSNR 21.7513
+vs 21.7047, SSIM 0.6473 vs 0.6419, JOD 4.7933 vs 4.7728, with tFLIP and motion penalty unchanged. All
+four spatial metrics improve, SSIM included, which is what separates this from metric gaming: the
+blur-removal signature is FLIP and PSNR improving while SSIM DROPS. It is also 1.115 ms, 13.5% of the
+frame at the `+refl` rung, since the reflection a-trous is full-res and unlike GI's has no upsample
+after it. The default is unchanged pending eyes-on, because every number here is whole-image and a
+metric can underweight noise that reads badly in motion.
+
+A roughness-driven kernel (the NRD ReBLUR model, using the roughness sitting unread in G-buffer `.z`)
+remains the structurally right fix, but note the bar it now has to clear: filter-off is already
+ahead, so a smarter kernel has to beat OFF, not beat 3.
 
 ### The benchmark camera route
 
