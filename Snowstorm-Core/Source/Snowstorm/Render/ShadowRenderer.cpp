@@ -61,7 +61,7 @@ namespace Snowstorm
 
 			fc.Graph.AddPass({.Name = "Shadow",
 			                  .Target = shadowRT,
-			                  .Execute = [this, &fc, lightViewProj, shadowDepthFmt](CommandContext& /*c*/)
+			                  .Execute = [this, &fc, lightViewProj, shadowDepthFmt](CommandContext& c)
 			                  {
 				                  RendererService& r = fc.Renderer;
 				                  TrackedRegistry& reg = fc.Reg;
@@ -70,7 +70,7 @@ namespace Snowstorm
 				                  CameraRuntimeComponent lightCam{};
 				                  lightCam.ViewProjection = lightViewProj;
 
-				                  r.BeginScene(lightCam, glm::vec3(0.0f), fc.Ctx, fc.FrameIndex);
+				                  r.BeginScene(lightCam, glm::vec3(0.0f), BorrowContext(c), fc.FrameIndex);
 
 				                  // Accumulate ALL renderable meshes as shadow casters (resolved instances).
 				                  for (const auto casters = reg.view<const TransformComponent, const MeshComponent, const MaterialComponent, const VisibilityComponent>();
@@ -136,7 +136,7 @@ namespace Snowstorm
 				                  // depth draw needs beyond the batches — the matrix travels per-draw as a PC).
 				                  CameraRuntimeComponent lightCam{};
 				                  lightCam.ViewProjection = glm::mat4(1.0f);
-				                  r.BeginScene(lightCam, glm::vec3(0.0f), fc.Ctx, fc.FrameIndex);
+				                  r.BeginScene(lightCam, glm::vec3(0.0f), BorrowContext(c), fc.FrameIndex);
 
 				                  for (const auto casters = reg.view<const TransformComponent, const MeshComponent, const MaterialComponent, const VisibilityComponent>();
 				                       const auto e : casters)
@@ -206,7 +206,7 @@ namespace Snowstorm
 			                  // as a push constant, exactly like the spot atlas).
 			                  CameraRuntimeComponent lightCam{};
 			                  lightCam.ViewProjection = glm::mat4(1.0f);
-			                  r.BeginScene(lightCam, glm::vec3(0.0f), fc.Ctx, fc.FrameIndex);
+			                  r.BeginScene(lightCam, glm::vec3(0.0f), BorrowContext(c), fc.FrameIndex);
 
 			                  for (const auto casters = reg.view<const TransformComponent, const MeshComponent, const MaterialComponent, const VisibilityComponent>();
 			                       const auto e : casters)

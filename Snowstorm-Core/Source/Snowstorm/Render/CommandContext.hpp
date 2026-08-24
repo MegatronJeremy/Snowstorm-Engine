@@ -152,4 +152,13 @@ namespace Snowstorm
 		virtual void EndDebugLabel() {}
 		virtual void InsertDebugLabel(const std::string& /*name*/, float /*r*/ = 0.6f, float /*g*/ = 0.6f, float /*b*/ = 0.6f) {}
 	};
+	// Non-owning Ref over a context the renderer owns, for the pass APIs that still take Ref<CommandContext>.
+	// The render graph hands each pass the context for the segment it is recording into, and that changes
+	// across an async fork, so a pass must record through the context it was given rather than one captured
+	// earlier in the frame.
+	inline Ref<CommandContext> BorrowContext(CommandContext& ctx)
+	{
+		return {&ctx, [](CommandContext*) {}};
+	}
+
 }

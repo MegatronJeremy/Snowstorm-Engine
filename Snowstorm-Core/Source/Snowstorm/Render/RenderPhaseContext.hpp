@@ -25,14 +25,17 @@ namespace Snowstorm
 	struct RenderTargetComponent;
 
 	// Shared per-frame handles threaded through the graph-building phases, so each takes one param instead
-	// of five. Bundles only what those phases need in common (the graph they append to, the renderer/context
-	// they record against, the registry they read, the frame-in-flight index). Lives on the stack for one
+	// of five. Bundles only what those phases need in common (the graph they append to, the renderer they
+	// record against, the registry they read, the frame-in-flight index). Lives on the stack for one
 	// Execute; holds references, owns nothing.
+	//
+	// Deliberately carries NO command context. An async fork closes the segment a frame opened with, so a
+	// context captured here would go stale mid-frame and later passes would record into a closed buffer.
+	// Passes record through the context the render graph hands them (see BorrowContext).
 	struct FrameContext
 	{
 		RenderGraph& Graph;
 		RendererService& Renderer;
-		const Ref<CommandContext>& Ctx;
 		TrackedRegistry& Reg;
 		uint32_t FrameIndex;
 	};

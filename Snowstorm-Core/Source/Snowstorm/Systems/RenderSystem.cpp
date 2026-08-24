@@ -121,7 +121,7 @@ namespace Snowstorm
 
 		RenderGraph graph;
 
-		FrameContext fc{.Graph = graph, .Renderer = renderer, .Ctx = ctx, .Reg = reg, .FrameIndex = frameIndex};
+		FrameContext fc{.Graph = graph, .Renderer = renderer, .Reg = reg, .FrameIndex = frameIndex};
 
 		// RT reflections (#118): hand the per-instance geometry-table address (TlasBuildSystem filled it in
 		// PreRender) to the renderer so AcquireFrameSet folds it into FrameCB. 0 when reflections are off ->
@@ -680,7 +680,7 @@ namespace Snowstorm
 			                  fc.Renderer.SetShadowSpecTexture(shadowSpecTextureIndex);
 
 			                  const glm::vec3 camPos = cam.Transform->Position;
-			                  fc.Renderer.BeginScene(*cam.Rt, camPos, fc.Ctx, fc.FrameIndex, jittered, forceRasterShadow);
+			                  fc.Renderer.BeginScene(*cam.Rt, camPos, BorrowContext(c), fc.FrameIndex, jittered, forceRasterShadow);
 
 			                  auto& assets = SingletonView<AssetManagerSingleton>();
 
@@ -744,7 +744,7 @@ namespace Snowstorm
 		                  .Reads = std::move(reads),
 		                  .Execute = [this, &fc, params, dstFmt](CommandContext& c)
 		                  {
-			                  m_PostProcessPass.Draw(fc.Renderer, fc.Ctx, fc.FrameIndex, params, dstFmt);
+			                  m_PostProcessPass.Draw(fc.Renderer, BorrowContext(c), fc.FrameIndex, params, dstFmt);
 		                  }});
 	}
 }

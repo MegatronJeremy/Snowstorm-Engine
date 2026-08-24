@@ -56,7 +56,7 @@ namespace Snowstorm
 		                             {curMomView->GetTexture(), RenderGraph::AccessState::Storage}},
 		                  .Execute = [this, &fc, raw, gbuffer, depth, velocity, prevHistView, curHistView, prevMomView, curMomView, w, h, historyValid, blend, maxBlend, nearPlane, farPlane, depthReject, neighborhoodClamp](CommandContext& c)
 		                  {
-			                  m_Temporal.Dispatch(fc.Ctx, fc.FrameIndex, raw, gbuffer, depth, velocity, prevHistView,
+			                  m_Temporal.Dispatch(BorrowContext(c), fc.FrameIndex, raw, gbuffer, depth, velocity, prevHistView,
 			                                      prevMomView, curMomView, curHistView, w, h, historyValid,
 			                                      blend, maxBlend, nearPlane, farPlane, depthReject, neighborhoodClamp);
 		                  }});
@@ -102,7 +102,7 @@ namespace Snowstorm
 			                  .Writes = {{dstView->GetTexture(), RenderGraph::AccessState::Storage}},
 			                  .Execute = [this, &fc, slot, step, srcView, gbuffer, depth, dstView, hitGuide, w, h, lumaPhi, hitPhi, nearPlane, farPlane, depthSigma, penumbraScale](CommandContext& c)
 			                  {
-				                  m_Atrous.Dispatch(fc.Ctx, fc.FrameIndex, slot, step, srcView, gbuffer, depth, dstView, w, h, lumaPhi, hitGuide, hitPhi, nearPlane, farPlane, depthSigma, penumbraScale);
+				                  m_Atrous.Dispatch(BorrowContext(c), fc.FrameIndex, slot, step, srcView, gbuffer, depth, dstView, w, h, lumaPhi, hitGuide, hitPhi, nearPlane, farPlane, depthSigma, penumbraScale);
 			                  }});
 
 			dst ^= 1;

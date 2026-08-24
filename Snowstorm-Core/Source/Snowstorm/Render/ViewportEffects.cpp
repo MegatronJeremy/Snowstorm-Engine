@@ -134,8 +134,8 @@ namespace Snowstorm
 				fc.Graph.AddPass({.Name = "PathTrace" + v.Suffix,
 				                  .IsCompute = true,
 				                  .Writes = {{accumView->GetTexture(), RenderGraph::AccessState::Storage}},
-				                  .Execute = [this, &fc, p, accumView](CommandContext&)
-				                  { m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, p, fc.Renderer.GetFrameData().Lights, accumView); }});
+				                  .Execute = [this, &fc, p, accumView](CommandContext& c)
+				                  { m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, p, fc.Renderer.GetFrameData().Lights, accumView); }});
 
 				st.LastVP = vp;
 				st.EnvNee = envNee;
@@ -202,7 +202,7 @@ namespace Snowstorm
 				                  .Target = gbuf,
 				                  .Execute = [this, &fc, cam, colorFmt, depthFmt, viewProj](CommandContext& c)
 				                  {
-					                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, fc.Ctx, fc.FrameIndex);
+					                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, BorrowContext(c), fc.FrameIndex);
 
 					                  m_Owner.DrawVisibleMeshes(fc, cam,
 					                                            [&](entt::entity, const TransformComponent& tr, const MeshComponent& mesh, const MaterialComponent& mat)
@@ -291,7 +291,7 @@ namespace Snowstorm
 				                  .Writes = {{giView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, viewProj, camPos, giRange, nearPlane, farPlane, giIntensity, iblIntensity, rayCount, frameCounter, prefilteredCubeIndex, gbufView, depthView, prevColorView, velocityView, giView, giW, giH](CommandContext& c)
 				                  {
-					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, viewProj, camPos, giRange, nearPlane, farPlane,
+					                  m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, viewProj, camPos, giRange, nearPlane, farPlane,
 					                                  giIntensity, iblIntensity, rayCount, frameCounter, prefilteredCubeIndex,
 					                                  gbufView, depthView, prevColorView, velocityView, giView, giW, giH);
 				                  }});
@@ -370,7 +370,7 @@ namespace Snowstorm
 				                  .Writes = {{giView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, depthView, giView, giW, giH](CommandContext& c)
 				                  {
-					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, frameData, tableAddr, frameCounter,
+					                  m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, frameData, tableAddr, frameCounter,
 					                                  gbufView, depthView, giView, giW, giH);
 				                  }});
 
@@ -535,7 +535,7 @@ namespace Snowstorm
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Execute = [this, &fc, giView, gbufView, depthView, giW, giH, nearPlane, farPlane, depthSigma, dstFmt](CommandContext& c)
 				                  {
-					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, giView, gbufView, depthView, giW, giH, nearPlane, farPlane, depthSigma, dstFmt);
+					                  m_Pass.Draw(BorrowContext(c), fc.FrameIndex, giView, gbufView, depthView, giW, giH, nearPlane, farPlane, depthSigma, dstFmt);
 				                  }});
 			}
 
@@ -604,7 +604,7 @@ namespace Snowstorm
 				                  .Writes = {{aoView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, invViewProj, viewProj, radius, intensity, nearPlane, farPlane, bias, gbufView, depthView, aoView, aoW, aoH](CommandContext& c)
 				                  {
-					                  m_Trace.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, viewProj, radius, intensity,
+					                  m_Trace.Dispatch(BorrowContext(c), fc.FrameIndex, invViewProj, viewProj, radius, intensity,
 					                                   nearPlane, farPlane, bias, gbufView, depthView, aoView, aoW, aoH);
 				                  }});
 
@@ -617,7 +617,7 @@ namespace Snowstorm
 				                  .Writes = {{blurView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, aoView, gbufView, depthView, blurView, aoW, aoH, nearPlane, farPlane, depthSigma](CommandContext& c)
 				                  {
-					                  m_Blur.Dispatch(fc.Ctx, fc.FrameIndex, aoView, gbufView, depthView, blurView, aoW, aoH,
+					                  m_Blur.Dispatch(BorrowContext(c), fc.FrameIndex, aoView, gbufView, depthView, blurView, aoW, aoH,
 					                                  nearPlane, farPlane, depthSigma);
 				                  }});
 
@@ -688,7 +688,7 @@ namespace Snowstorm
 				                  .Writes = {{aoView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, invViewProj, radius, intensity, frameCounter, rayCount, tableAddr, gbufView, depthView, aoView, aoW, aoH](CommandContext& c)
 				                  {
-					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, radius, intensity, frameCounter,
+					                  m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, invViewProj, radius, intensity, frameCounter,
 					                                  rayCount, tableAddr, gbufView, depthView, aoView, aoW, aoH);
 				                  }});
 
@@ -841,7 +841,7 @@ namespace Snowstorm
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Execute = [this, &fc, aoView, gbufView, depthView, aoW, aoH, nearPlane, farPlane, depthSigma, dstFmt](CommandContext& c)
 				                  {
-					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, aoView, gbufView, depthView, aoW, aoH, nearPlane, farPlane, depthSigma, dstFmt);
+					                  m_Pass.Draw(BorrowContext(c), fc.FrameIndex, aoView, gbufView, depthView, aoW, aoH, nearPlane, farPlane, depthSigma, dstFmt);
 				                  }});
 			}
 
@@ -910,7 +910,7 @@ namespace Snowstorm
 				                  .Writes = {{reflView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, viewProj, camPos, reflRange, nearPlane, farPlane, prefilteredCubeIndex, shadingView, depthView, prevColorView, velocityView, reflView, reflW, reflH](CommandContext& c)
 				                  {
-					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, viewProj, camPos, reflRange, nearPlane, farPlane,
+					                  m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, viewProj, camPos, reflRange, nearPlane, farPlane,
 					                                  prefilteredCubeIndex, shadingView, depthView, prevColorView, velocityView,
 					                                  reflView, reflW, reflH);
 				                  }});
@@ -999,7 +999,7 @@ namespace Snowstorm
 				                             {shadowSpecView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, invViewProj, lights, normalBias, frameCounter, soft, sunCosThetaMax, sourceRadius, rayCount, tableAddr, camPos, gbufView, shadingView, depthView, shadowView, shadowSpecView, shW, shH](CommandContext& c)
 				                  {
-					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, invViewProj, lights, normalBias, frameCounter,
+					                  m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, invViewProj, lights, normalBias, frameCounter,
 					                                  soft, sunCosThetaMax, sourceRadius, rayCount, tableAddr, camPos, gbufView, shadingView, depthView, shadowView, shadowSpecView, shW, shH);
 				                  }});
 
@@ -1152,7 +1152,7 @@ namespace Snowstorm
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Execute = [this, &fc, shadowView, gbufView, depthView, shW, shH, nearPlane, farPlane, depthSigma, dstFmt](CommandContext& c)
 				                  {
-					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, shadowView, gbufView, depthView, shW, shH, nearPlane, farPlane, depthSigma, dstFmt);
+					                  m_Pass.Draw(BorrowContext(c), fc.FrameIndex, shadowView, gbufView, depthView, shW, shH, nearPlane, farPlane, depthSigma, dstFmt);
 				                  }});
 			}
 
@@ -1289,7 +1289,7 @@ namespace Snowstorm
 				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Execute = [this, &fc, shadowView, gbufView, depthView, shW, shH, nearPlane, farPlane, depthSigma, dstFmt](CommandContext& c)
 				                  {
-					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, shadowView, gbufView, depthView, shW, shH, nearPlane, farPlane, depthSigma, dstFmt);
+					                  m_Pass.Draw(BorrowContext(c), fc.FrameIndex, shadowView, gbufView, depthView, shW, shH, nearPlane, farPlane, depthSigma, dstFmt);
 				                  }});
 			}
 
@@ -1352,7 +1352,7 @@ namespace Snowstorm
 				                  .Writes = {{reflView->GetTexture(), RenderGraph::AccessState::Storage}},
 				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, shadingView, depthView, reflView, reflW, reflH](CommandContext& c)
 				                  {
-					                  m_Pass.Dispatch(fc.Ctx, fc.FrameIndex, frameData, tableAddr, frameCounter,
+					                  m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, frameData, tableAddr, frameCounter,
 					                                  gbufView, shadingView, depthView, reflView, reflW, reflH);
 				                  }});
 
@@ -1518,7 +1518,7 @@ namespace Snowstorm
 				                  .Target = velTarget,
 				                  .Execute = [this, &fc, cam, velColorFmt, velDepthFmt, viewProj, prevViewProj](CommandContext& c)
 				                  {
-					                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, fc.Ctx, fc.FrameIndex);
+					                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, BorrowContext(c), fc.FrameIndex);
 
 					                  m_Owner.DrawVisibleMeshes(fc, cam,
 					                                            [&](entt::entity e, const TransformComponent& tr, const MeshComponent& mesh, const MaterialComponent& mat)
@@ -1646,9 +1646,9 @@ namespace Snowstorm
 
 					fc.Graph.AddPass({.Name = "CameraDepthPrepass" + v.Suffix,
 					                  .Target = prepassTarget,
-					                  .Execute = [this, &fc, cam, depthFmt](CommandContext&)
+					                  .Execute = [this, &fc, cam, depthFmt](CommandContext& c)
 					                  {
-						                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, fc.Ctx, fc.FrameIndex, /*jittered*/ true);
+						                  fc.Renderer.BeginScene(*cam.Rt, cam.Transform->Position, BorrowContext(c), fc.FrameIndex, /*jittered*/ true);
 						                  m_Owner.DrawVisibleMeshes(fc, cam,
 						                                            [&](entt::entity, const TransformComponent& tr, const MeshComponent& mesh, const MaterialComponent& mat)
 						                                            {
@@ -1800,7 +1800,7 @@ namespace Snowstorm
 					                  .Reads = {{lowResView->GetTexture(), RenderGraph::AccessState::Sampled}},
 					                  .Execute = [this, &fc, lowResView, upFmt](CommandContext& c)
 					                  {
-						                  m_BilinearPass.Draw(fc.Ctx, fc.FrameIndex, lowResView, upFmt);
+						                  m_BilinearPass.Draw(BorrowContext(c), fc.FrameIndex, lowResView, upFmt);
 					                  }});
 					v.SceneColor.View = upView;
 				}
@@ -1887,7 +1887,7 @@ namespace Snowstorm
 				                            {velView->GetTexture(), RenderGraph::AccessState::Sampled}},
 				                  .Execute = [this, &fc, currentView, prevHistView, velView, rcpFrame, historyValid, nearPlane, farPlane, depthReject, depthRejectSlope, histFmt](CommandContext& c)
 				                  {
-					                  m_Pass.Draw(fc.Ctx, fc.FrameIndex, currentView, prevHistView, velView,
+					                  m_Pass.Draw(BorrowContext(c), fc.FrameIndex, currentView, prevHistView, velView,
 					                              rcpFrame, historyValid, CVars::TaaBlend.Get(),
 					                              CVars::TaaMaxBlend.Get(), nearPlane, farPlane, depthReject, depthRejectSlope, histFmt);
 				                  }});
@@ -1939,7 +1939,7 @@ namespace Snowstorm
 				                  .Target = dst,
 				                  .Reads = {{srcTex, RenderGraph::AccessState::Sampled}},
 				                  .Execute = [this, &fc, srcView, dstFmt](CommandContext& c)
-				                  { m_Copy.Draw(fc.Ctx, fc.FrameIndex, srcView, dstFmt); }});
+				                  { m_Copy.Draw(BorrowContext(c), fc.FrameIndex, srcView, dstFmt); }});
 			}
 
 		private:
@@ -2004,7 +2004,7 @@ namespace Snowstorm
 					                  .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
 					                  .Execute = [this, &fc, srcView, rcpFrame, dstFmt](CommandContext& c)
 					                  {
-						                  m_FxaaPass.Draw(fc.Ctx, fc.FrameIndex, srcView, rcpFrame, dstFmt);
+						                  m_FxaaPass.Draw(BorrowContext(c), fc.FrameIndex, srcView, rcpFrame, dstFmt);
 					                  }});
 					prevTarget = dst;
 				}
@@ -2022,7 +2022,7 @@ namespace Snowstorm
 					                  .Reads = {{srcImg, RenderGraph::AccessState::Sampled}},
 					                  .Execute = [this, &fc, srcView, rcpFrame, sharpness, dstFmt](CommandContext& c)
 					                  {
-						                  m_SharpenPass.Draw(fc.Ctx, fc.FrameIndex, srcView, rcpFrame, sharpness, dstFmt);
+						                  m_SharpenPass.Draw(BorrowContext(c), fc.FrameIndex, srcView, rcpFrame, sharpness, dstFmt);
 					                  }});
 					prevTarget = dst;
 				}
@@ -2155,7 +2155,7 @@ namespace Snowstorm
 						                  // Both present images were left in SHADER_READ by their tonemap pass; the
 						                  // graph now emits the color-write -> compute-read barrier per .Reads entry
 						                  // (this is a compute pass), so no manual barrier is needed.
-						                  m_MetricsPass.Compute(fc.Ctx, fc.FrameIndex, upView, gtView, mw, mh);
+						                  m_MetricsPass.Compute(BorrowContext(c), fc.FrameIndex, upView, gtView, mw, mh);
 						                  fc.Renderer.SetMetrics([this]
 						                                         {
 									                                   const auto& r = m_MetricsPass.GetResult();
