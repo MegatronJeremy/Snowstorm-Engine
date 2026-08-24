@@ -102,33 +102,33 @@
       "permutations": 2
     },
     "GIDenoise.comp[ao]": {
-      "vgprs": 191.0,
-      "sgprs": 53.0,
+      "vgprs": 72.0,
+      "sgprs": 54.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 12456.0,
+      "isa_size": 3780.0,
       "permutations": 2
     },
     "GIDenoise.comp[gi]": {
-      "vgprs": 167.0,
-      "sgprs": 42.0,
+      "vgprs": 70.0,
+      "sgprs": 44.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 11084.0,
+      "isa_size": 3400.0,
       "permutations": 2
     },
     "GIDenoise.comp[shadow]": {
-      "vgprs": 169.0,
+      "vgprs": 70.0,
       "sgprs": 50.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 11308.0,
+      "isa_size": 3488.0,
       "permutations": 2
     },
     "GITemporal.comp": {

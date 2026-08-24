@@ -55,6 +55,14 @@ cbuffer GIDenoiseCB : register(b4, space0)
 // B3-spline à-trous kernel row {1/16, 4/16, 6/16, 4/16, 1/16}; the 2D weight is the outer product.
 static const float kKernel[5] = {0.0625, 0.25, 0.375, 0.25, 0.0625};
 
+// B3-spline row weight by OFFSET (-2..2), computed rather than indexed. A dynamic index into the array
+// above forces dxc to fully unroll (or spill it to scratch); this lets the outer loop stay rolled.
+float B3Weight(int d)
+{
+	const int a = abs(d);
+	return (a == 2) ? 0.0625 : ((a == 1) ? 0.25 : 0.375);
+}
+
 float Luma(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 
 [numthreads(8, 8, 1)]
@@ -139,7 +147,18 @@ void main(uint3 id : SV_DispatchThreadID)
 	}
 #endif
 
-	[unroll] for (int dy = -2; dy <= 2; ++dy)
+	// The OUTER loop stays rolled on purpose. Unrolling both let the compiler hoist ~60 of the 113 image
+	// loads to the top of the shader and hold their results live, which cost 191 VGPRs and capped this at
+	// 8/16 waves: it was the only occupancy-limited shader in the frame. Rolling the outer loop keeps one
+	// row of taps in flight instead of the whole 5x5 and drops it to 72 VGPRs / 16 waves, no scratch.
+	// The inner loop stays unrolled so dx stays a compile-time constant.
+	//
+	// This trades latency hiding for occupancy, and the trade is NOT uniformly favourable: measured on a
+	// 9060 XT (ABBA-paired, 5 pairs), the full-res chains gain 36-47% and the wide-stride half-res
+	// iteration gains 25%, but the STRIDE-1 iteration loses ~20%, where adjacent taps made the unrolled
+	// batch cache-friendly enough that batching beat occupancy. Net -12.9% frame time, so it stays; the
+	// per-stride refinement is a follow-up, not a reason to keep the 191-VGPR version.
+	[loop] for (int dy = -2; dy <= 2; ++dy)
 	{
 		[unroll] for (int dx = -2; dx <= 2; ++dx)
 		{
@@ -181,7 +200,7 @@ void main(uint3 id : SV_DispatchThreadID)
 				wH = exp(-abs(hitCenter - hitTap) * HitDistPhi);
 			}
 #endif
-			const float wK = kKernel[dx + 2] * kKernel[dy + 2];
+			const float wK = B3Weight(dx) * B3Weight(dy);
 			const float w = wK * wN * wD * wL * wH;
 
 			accum += gi * w;
