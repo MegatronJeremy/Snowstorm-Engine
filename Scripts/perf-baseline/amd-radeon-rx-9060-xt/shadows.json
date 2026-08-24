@@ -1,42 +1,45 @@
 {
   "device": "AMD Radeon RX 9060 XT",
-  "config": "Projects/Sandbox/assets/scenes/Sponza.world",
+  "config": "shadows",
   "frames": 300,
   "timestampsSupported": true,
-  "totalGpuMs": 8.0712,
+  "width": 1717,
+  "height": 979,
+  "camera": [
+    8.5191,
+    1.4949,
+    -0.4308,
+    0.0272,
+    1.4958,
+    0.0
+  ],
+  "totalGpuMs": 10.4131,
   "passes": {
     "CameraDepthPrepass": {
-      "avgMs": 0.0972,
-      "minMs": 0.0918,
-      "maxMs": 0.1588,
-      "fragInvocations": 5235655,
-      "depth": 0
-    },
-    "DepthPrepassBarrier": {
-      "avgMs": 0.0002,
-      "minMs": 0.0001,
-      "maxMs": 0.0006,
-      "fragInvocations": 0,
+      "avgMs": 0.1165,
+      "minMs": 0.0955,
+      "maxMs": 0.2308,
+      "fragInvocations": 5234960,
       "depth": 0
     },
     "Editor": {
-      "avgMs": 0.1017,
-      "minMs": 0.0947,
-      "maxMs": 0.1501,
-      "fragInvocations": 9667874,
+      "avgMs": 0.1102,
+      "minMs": 0.0975,
+      "maxMs": 0.1884,
+      "fragInvocations": 9668456,
       "depth": 0
     },
     "Forward": {
-      "avgMs": 7.4823,
-      "minMs": 7.0948,
-      "maxMs": 12.4099,
-      "fragInvocations": 2529330,
+      "avgMs": 9.7459,
+      "minMs": 7.5257,
+      "maxMs": 20.314,
+      "fragInvocations": 2529406,
       "depth": 0
     },
     "PostProcess": {
-      "avgMs": 0.0357,
-      "minMs": 0.0331,
-      "maxMs": 0.0434,
+      "avgMs": 0.0431,
+      "minMs": 0.0333,
+      "maxMs": 1.8386,
       "fragInvocations": 1680943,
       "depth": 0
     },
@@ -48,17 +51,17 @@
       "depth": 1
     },
     "TemporalResolve": {
-      "avgMs": 0.1728,
-      "minMs": 0.1247,
-      "maxMs": 0.2741,
+      "avgMs": 0.1893,
+      "minMs": 0.1262,
+      "maxMs": 0.4433,
       "fragInvocations": 1680943,
       "depth": 0
     },
     "Velocity": {
-      "avgMs": 0.1808,
-      "minMs": 0.1728,
-      "maxMs": 0.2609,
-      "fragInvocations": 3933713,
+      "avgMs": 0.2074,
+      "minMs": 0.1777,
+      "maxMs": 0.3816,
+      "fragInvocations": 3933714,
       "depth": 0
     }
   }

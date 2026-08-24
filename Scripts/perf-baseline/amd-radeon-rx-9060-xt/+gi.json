@@ -1,190 +1,193 @@
 {
   "device": "AMD Radeon RX 9060 XT",
-  "config": "Projects/Sandbox/assets/scenes/Sponza.world",
+  "config": "+gi",
   "frames": 300,
   "timestampsSupported": true,
-  "totalGpuMs": 16.5193,
+  "width": 1717,
+  "height": 979,
+  "camera": [
+    8.5191,
+    1.4949,
+    -0.4308,
+    0.0272,
+    1.4958,
+    0.0
+  ],
+  "totalGpuMs": 16.7133,
   "passes": {
     "AO": {
-      "avgMs": 0.2615,
-      "minMs": 0.2506,
-      "maxMs": 0.4584,
+      "avgMs": 0.2689,
+      "minMs": 0.2533,
+      "maxMs": 0.4779,
       "fragInvocations": 0,
       "depth": 0
     },
     "AODenoise0": {
-      "avgMs": 0.1761,
-      "minMs": 0.1695,
-      "maxMs": 0.3,
+      "avgMs": 0.1806,
+      "minMs": 0.1717,
+      "maxMs": 0.3153,
       "fragInvocations": 0,
       "depth": 0
     },
     "AODenoise1": {
-      "avgMs": 0.1752,
-      "minMs": 0.1688,
-      "maxMs": 0.2998,
+      "avgMs": 0.1796,
+      "minMs": 0.1707,
+      "maxMs": 0.3142,
       "fragInvocations": 0,
       "depth": 0
     },
     "AODenoise2": {
-      "avgMs": 0.1866,
-      "minMs": 0.1801,
-      "maxMs": 0.3188,
+      "avgMs": 0.1913,
+      "minMs": 0.1814,
+      "maxMs": 0.3374,
       "fragInvocations": 0,
       "depth": 0
     },
     "AOTemporal": {
-      "avgMs": 0.075,
-      "minMs": 0.072,
-      "maxMs": 0.0984,
+      "avgMs": 0.076,
+      "minMs": 0.0727,
+      "maxMs": 0.1029,
       "fragInvocations": 0,
       "depth": 0
     },
     "AOUpsample": {
-      "avgMs": 0.0635,
-      "minMs": 0.0608,
-      "maxMs": 0.1084,
+      "avgMs": 0.0651,
+      "minMs": 0.0615,
+      "maxMs": 0.1139,
       "fragInvocations": 1680943,
       "depth": 0
     },
     "CameraDepthPrepass": {
-      "avgMs": 0.0017,
+      "avgMs": 0.0018,
       "minMs": 0.0003,
       "maxMs": 0.0021,
-      "fragInvocations": 5231579,
+      "fragInvocations": 5231359,
       "depth": 0
     },
     "DepthNormal": {
-      "avgMs": 0.3511,
-      "minMs": 0.3406,
-      "maxMs": 0.3913,
-      "fragInvocations": 5485416,
-      "depth": 0
-    },
-    "DepthPrepassBarrier": {
-      "avgMs": 0.0001,
-      "minMs": 0.0001,
-      "maxMs": 0.0002,
-      "fragInvocations": 0,
+      "avgMs": 0.3488,
+      "minMs": 0.288,
+      "maxMs": 0.4069,
+      "fragInvocations": 5484947,
       "depth": 0
     },
     "Editor": {
-      "avgMs": 0.0981,
-      "minMs": 0.0924,
-      "maxMs": 0.1368,
-      "fragInvocations": 9663593,
+      "avgMs": 0.0994,
+      "minMs": 0.0955,
+      "maxMs": 0.1349,
+      "fragInvocations": 9664176,
       "depth": 0
     },
     "Forward": {
-      "avgMs": 7.6344,
-      "minMs": 7.3384,
-      "maxMs": 12.3829,
-      "fragInvocations": 2530984,
+      "avgMs": 7.6879,
+      "minMs": 7.2301,
+      "maxMs": 10.8252,
+      "fragInvocations": 2531070,
       "depth": 0
     },
     "GI": {
-      "avgMs": 1.7794,
-      "minMs": 1.7162,
-      "maxMs": 2.946,
+      "avgMs": 1.8259,
+      "minMs": 1.7228,
+      "maxMs": 3.1998,
       "fragInvocations": 0,
       "depth": 0
     },
     "GIDenoise0": {
-      "avgMs": 0.1805,
-      "minMs": 0.1737,
-      "maxMs": 0.3176,
+      "avgMs": 0.1855,
+      "minMs": 0.1752,
+      "maxMs": 0.3264,
       "fragInvocations": 0,
       "depth": 0
     },
     "GIDenoise1": {
-      "avgMs": 0.1759,
-      "minMs": 0.169,
-      "maxMs": 0.3007,
+      "avgMs": 0.181,
+      "minMs": 0.1706,
+      "maxMs": 0.321,
       "fragInvocations": 0,
       "depth": 0
     },
     "GIDenoise2": {
-      "avgMs": 0.1869,
-      "minMs": 0.18,
-      "maxMs": 0.3297,
+      "avgMs": 0.192,
+      "minMs": 0.1815,
+      "maxMs": 0.3414,
       "fragInvocations": 0,
       "depth": 0
     },
     "GITemporal": {
-      "avgMs": 0.0942,
-      "minMs": 0.0849,
-      "maxMs": 0.1234,
+      "avgMs": 0.0958,
+      "minMs": 0.0858,
+      "maxMs": 0.118,
       "fragInvocations": 0,
       "depth": 0
     },
     "GIUpsample": {
-      "avgMs": 0.0644,
-      "minMs": 0.0616,
-      "maxMs": 0.1215,
+      "avgMs": 0.066,
+      "minMs": 0.0624,
+      "maxMs": 0.1158,
       "fragInvocations": 1680943,
       "depth": 0
     },
     "PostProcess": {
-      "avgMs": 0.05,
-      "minMs": 0.0323,
-      "maxMs": 1.0859,
+      "avgMs": 0.0341,
+      "minMs": 0.0296,
+      "maxMs": 0.0396,
       "fragInvocations": 1680943,
       "depth": 0
     },
     "Reflection": {
-      "avgMs": 2.4624,
-      "minMs": 2.3973,
-      "maxMs": 4.0243,
+      "avgMs": 2.5077,
+      "minMs": 1.5411,
+      "maxMs": 4.3553,
       "fragInvocations": 0,
       "depth": 0
     },
     "ReflectionDenoise0": {
-      "avgMs": 0.5765,
-      "minMs": 0.5528,
-      "maxMs": 0.9473,
+      "avgMs": 0.5827,
+      "minMs": 0.556,
+      "maxMs": 1.009,
       "fragInvocations": 0,
       "depth": 0
     },
     "ReflectionDenoise1": {
-      "avgMs": 0.6042,
-      "minMs": 0.5783,
-      "maxMs": 0.9788,
+      "avgMs": 0.6108,
+      "minMs": 0.5832,
+      "maxMs": 1.0527,
       "fragInvocations": 0,
       "depth": 0
     },
     "ReflectionDenoise2": {
-      "avgMs": 0.6935,
-      "minMs": 0.6645,
-      "maxMs": 1.0876,
+      "avgMs": 0.6986,
+      "minMs": 0.667,
+      "maxMs": 1.2162,
       "fragInvocations": 0,
       "depth": 0
     },
     "ReflectionTemporal": {
-      "avgMs": 0.2323,
-      "minMs": 0.2222,
-      "maxMs": 0.34,
+      "avgMs": 0.236,
+      "minMs": 0.2238,
+      "maxMs": 0.354,
       "fragInvocations": 0,
       "depth": 0
     },
     "Sky": {
-      "avgMs": 0.0,
+      "avgMs": 0.0018,
       "minMs": 0.0,
-      "maxMs": 0.0,
+      "maxMs": 0.0575,
       "fragInvocations": 0,
       "depth": 1
     },
     "TemporalResolve": {
-      "avgMs": 0.1366,
-      "minMs": 0.1263,
-      "maxMs": 0.1739,
+      "avgMs": 0.1469,
+      "minMs": 0.1256,
+      "maxMs": 0.183,
       "fragInvocations": 1680943,
       "depth": 0
     },
     "Velocity": {
-      "avgMs": 0.1822,
-      "minMs": 0.1762,
-      "maxMs": 0.2613,
-      "fragInvocations": 3933713,
+      "avgMs": 0.1848,
+      "minMs": 0.1773,
+      "maxMs": 0.2789,
+      "fragInvocations": 3933714,
       "depth": 0
     }
   }

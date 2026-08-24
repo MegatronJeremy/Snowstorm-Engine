@@ -1,56 +1,59 @@
 {
   "device": "AMD Radeon RX 9060 XT",
-  "config": "Projects/Sandbox/assets/scenes/Sponza.world",
+  "config": "rt-off",
   "frames": 300,
   "timestampsSupported": true,
-  "totalGpuMs": 3.6369,
+  "width": 1717,
+  "height": 979,
+  "camera": [
+    8.5191,
+    1.4949,
+    -0.4308,
+    0.0272,
+    1.4958,
+    0.0
+  ],
+  "totalGpuMs": 3.629,
   "passes": {
     "CameraDepthPrepass": {
-      "avgMs": 0.1532,
-      "minMs": 0.1475,
-      "maxMs": 0.1565,
-      "fragInvocations": 5235194,
-      "depth": 0
-    },
-    "DepthPrepassBarrier": {
-      "avgMs": 0.0005,
-      "minMs": 0.0002,
-      "maxMs": 0.0006,
-      "fragInvocations": 0,
+      "avgMs": 0.1519,
+      "minMs": 0.1055,
+      "maxMs": 0.2304,
+      "fragInvocations": 5234527,
       "depth": 0
     },
     "Editor": {
-      "avgMs": 0.1457,
-      "minMs": 0.1352,
-      "maxMs": 0.2778,
-      "fragInvocations": 9686363,
+      "avgMs": 0.1419,
+      "minMs": 0.1097,
+      "maxMs": 0.2838,
+      "fragInvocations": 9686536,
       "depth": 0
     },
     "Forward": {
-      "avgMs": 1.0088,
-      "minMs": 0.8587,
-      "maxMs": 1.1232,
-      "fragInvocations": 2531546,
+      "avgMs": 1.0038,
+      "minMs": 0.7814,
+      "maxMs": 1.4472,
+      "fragInvocations": 2530345,
       "depth": 0
     },
     "PointShadows": {
-      "avgMs": 1.6661,
-      "minMs": 1.6334,
-      "maxMs": 1.7004,
+      "avgMs": 1.6718,
+      "minMs": 1.3995,
+      "maxMs": 2.1921,
       "fragInvocations": 0,
       "depth": 0
     },
     "PostProcess": {
-      "avgMs": 0.0432,
-      "minMs": 0.0414,
-      "maxMs": 0.0547,
+      "avgMs": 0.0431,
+      "minMs": 0.0344,
+      "maxMs": 0.0588,
       "fragInvocations": 1680943,
       "depth": 0
     },
     "Shadow": {
-      "avgMs": 0.1914,
-      "minMs": 0.1861,
-      "maxMs": 0.1979,
+      "avgMs": 0.1912,
+      "minMs": 0.1451,
+      "maxMs": 0.2804,
       "fragInvocations": 0,
       "depth": 0
     },
@@ -62,17 +65,17 @@
       "depth": 1
     },
     "TemporalResolve": {
-      "avgMs": 0.1789,
-      "minMs": 0.1689,
-      "maxMs": 0.1964,
+      "avgMs": 0.1791,
+      "minMs": 0.1347,
+      "maxMs": 0.2604,
       "fragInvocations": 1680943,
       "depth": 0
     },
     "Velocity": {
-      "avgMs": 0.2483,
-      "minMs": 0.2407,
-      "maxMs": 0.2513,
-      "fragInvocations": 3933713,
+      "avgMs": 0.2452,
+      "minMs": 0.1792,
+      "maxMs": 0.37,
+      "fragInvocations": 3933714,
       "depth": 0
     }
   }
