@@ -430,7 +430,7 @@ def baseline_path(repo_root: Path, device: str, technique: str) -> Path:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Image-quality gate under camera motion.")
-    ap.add_argument("--ref-frames", type=int, default=400, help="PT settle window per reference (default 400)")
+    ap.add_argument("--ref-frames", type=int, default=qb.REF_FRAMES_DEFAULT, help="PT settle window per reference (default 400)")
     ap.add_argument("--timeout", type=int, default=600, help="Per-capture wall-clock timeout in seconds")
     ap.add_argument("--config", default="Debug", help="Build config dir under build/ (default Debug)")
     ap.add_argument("--build-dir", default="build", help="Build directory (default build)")

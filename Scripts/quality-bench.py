@@ -297,6 +297,13 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
 # mtime (engine C++ PT path) AND the scene-file mtime, so any of those changing re-captures automatically.
 # Known limitation: a material/mesh/texture edit that doesn't touch the .world file or rebuild the exe is
 # NOT detected -- use --fresh-ref after such an edit. Cache dir is gitignored (per-machine, like baselines).
+# Settle window for a path-traced reference, shared by every gate and the tuner. One constant because
+# it is part of the cache key: when the tuner defaulted to 250 and the gates to 400, the two kept
+# entirely separate reference sets, so the tuner paid full path-trace cost for references the gate had
+# already computed, and their absolute JOD/FLIP values were against different ground truth and could
+# not be compared. Rankings within one sweep survived that; nothing across tools did.
+REF_FRAMES_DEFAULT = 400
+
 _REF_CACHE_VERSION = 1  # bump to invalidate all cached references on a format/keying change
 _PT_SOURCES = ["Engine/Shaders/PathTrace.comp.hlsl", "Engine/Shaders/Include/Engine.hlsli"]
 
@@ -421,7 +428,7 @@ def regressed(metric: str, base: float, cur: float, threshold_pct: float) -> boo
 def main() -> int:
     ap = argparse.ArgumentParser(description="Image-quality gate vs the path-traced reference.")
     ap.add_argument("--frames", type=int, default=90, help="Frames per real-time technique capture (default 90)")
-    ap.add_argument("--ref-frames", type=int, default=400, help="PT accumulation frames for the reference (default 400)")
+    ap.add_argument("--ref-frames", type=int, default=REF_FRAMES_DEFAULT, help="PT accumulation frames for the reference (default 400)")
     ap.add_argument("--timeout", type=int, default=300, help="Per-capture wall-clock timeout in seconds")
     ap.add_argument("--config", default="Debug", help="Build config dir under build/ (default Debug)")
     ap.add_argument("--build-dir", default="build", help="Build directory (default build)")

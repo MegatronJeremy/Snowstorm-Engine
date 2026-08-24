@@ -136,8 +136,11 @@ PARAM_SPACE = {
 # removal of a filter that earns its keep under motion and on disocclusion. That is a gap in the
 # measurement, not evidence the knobs do nothing, and the motion objective is what closes it.
 #
-# render.taa.depth_reject is deliberately absent. It is held at 0 by choice; the decoupled
-# render.rt.depth_reject is the one to move for RT-denoiser disocclusion.
+# render.taa.depth_reject IS searched here, and the reason it was previously left out does not hold up.
+# It was excluded on the grounds that it is held at 0 by choice, but the gates all run
+# SS_CONFIG_IGNORE=1, so they take the CODE default of 0.02 and never saw 0 at all. A disocclusion
+# reject also cannot be evaluated on a static viewpoint, which has no disocclusion, so the motion gate
+# is the first thing able to measure it.
 MOTION_PARAM_SPACE = {
     "rtgi": [
         ("SS_RENDER_GI_DENOISE_ITERATIONS", 0, 5, True, 3),      # a-trous passes: each doubles tap stride
@@ -153,6 +156,7 @@ MOTION_PARAM_SPACE = {
         ("SS_RENDER_TAA_MAXBLEND", 0.80, 0.99, False, 0.97),     # the dominant temporal knob for every technique
         ("SS_RENDER_AO_DENOISE_ITERATIONS", 0, 5, True, 3),
         ("SS_RENDER_REFLECTIONS_DENOISE_ITERATIONS", 0, 5, True, 3),
+        ("SS_RENDER_TAA_DEPTH_REJECT", 0.0, 0.08, False, 0.02), # history rejection at disocclusions
     ],
     "megalights": [
         ("SS_RENDER_SHADOWS_DENOISE_ITERATIONS", 0, 5, True, 3),
@@ -197,7 +201,7 @@ def main() -> int:
     ap.add_argument("--rounds", type=int, default=2, help="Coordinate-descent passes over the parameter set")
     ap.add_argument("--samples", type=int, default=5, help="Line-search samples per parameter per round")
     ap.add_argument("--frames", type=int, default=60, help="Settle frames per real-time trial capture")
-    ap.add_argument("--ref-frames", type=int, default=250, help="PT accumulation frames for the (cached) reference")
+    ap.add_argument("--ref-frames", type=int, default=qb.REF_FRAMES_DEFAULT, help="PT accumulation frames for the (cached) reference")
     ap.add_argument("--tech-maxframes", type=int, default=200, help="Hard frame cap for real-time trial captures "
                     "(they never converge; uncapped each burns the 3000-frame safety cap ~100s). Default 200 -> ~7s.")
     ap.add_argument("--param", action="append", metavar="CVAR_ENV",
