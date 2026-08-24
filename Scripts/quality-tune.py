@@ -74,6 +74,14 @@ PARAM_SPACE = {
         ("SS_RENDER_GI_RAYS", 1, 8, True, 2),                  # GI quality (noise/occlusion of indirect)
         ("SS_RENDER_GI_DENOISE_VARIANCE", 0.5, 4.0, False, 2.0), # denoiser strength (bias vs noise)
     ],
+    # The stochastic shadow pass is the one signal with a genuinely noisy input: one importance-sampled
+    # ray per pixel, versus GI's 2 and AO's distance-weighted integral. So its a-trous has the most left
+    # to remove, and is the case where a denoise knob should matter even on a static viewpoint.
+    "megalights": [
+        ("SS_RENDER_SHADOWS_DENOISE_ITERATIONS", 0, 5, True, 3),
+        ("SS_RENDER_SHADOWS_DENOISE_VARIANCE", 0.0, 8.0, False, 4.0),
+        ("SS_RENDER_SHADOWS_DENOISE_PENUMBRA", 0.0, 1.0, False, 0.1),
+    ],
     "all-rt": [
         ("SS_RENDER_GI_RANGE", 4.0, 30.0, False, 17.0),             # indirect gather distance; the seed matches the engine
                                                                      # default, whose description carries the measurement.
@@ -145,6 +153,12 @@ MOTION_PARAM_SPACE = {
         ("SS_RENDER_TAA_MAXBLEND", 0.80, 0.99, False, 0.97),     # the dominant temporal knob for every technique
         ("SS_RENDER_AO_DENOISE_ITERATIONS", 0, 5, True, 3),
         ("SS_RENDER_REFLECTIONS_DENOISE_ITERATIONS", 0, 5, True, 3),
+    ],
+    "megalights": [
+        ("SS_RENDER_SHADOWS_DENOISE_ITERATIONS", 0, 5, True, 3),
+        ("SS_RENDER_SHADOWS_DENOISE_VARIANCE", 0.0, 8.0, False, 4.0),
+        ("SS_RENDER_SHADOWS_DENOISE_PENUMBRA", 0.0, 1.0, False, 0.1),
+        ("SS_RENDER_RT_DEPTH_REJECT", 0.0, 0.2, False, 0.02),
     ],
     "rtao": [
         ("SS_RENDER_AO_DENOISE_ITERATIONS", 0, 5, True, 3),
