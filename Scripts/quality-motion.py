@@ -161,6 +161,33 @@ def run_motion_capture(tech_env: dict, out_base: Path, exe: Path, repo_root: Pat
     return imgs, poses, device
 
 
+def capture_static_controls(tech_env: dict, out_base: Path, exe: Path, repo_root: Path, timeout: int,
+                            layer_path: Path, scene: str, poses: dict, probe_names) -> dict:
+    """Render each probe's pose again with the camera PARKED, same technique. Returns {probe: image}.
+
+    This is the control that separates motion cost from content difficulty, and it is not optional:
+    the probes look at different parts of Sponza, so an absolute score difference between two probes
+    is mostly a difference in what is on screen. Subtracting the same viewpoint held still leaves the
+    part attributable to motion.
+
+    The static side lets TAA accumulate on a still image, which a moving frame never gets. That is
+    the definition of the measurement (cost versus the camera having stopped), not a confound, and it
+    is empirically small anyway: the `static` probe, which is already parked in the moving run,
+    scores within 0.001 FLIP of its own static control on every technique.
+    """
+    out = {}
+    for name in probe_names:
+        f0 = PROBES[name][0]
+        img, _dev = qb.run_capture({**tech_env, **qb.camera_env(poses[f0])},
+                                   out_base.with_name(f"{out_base.name}_static_{name}"),
+                                   30, exe, repo_root, timeout, layer_path, scene, max_frames=200)
+        if img is None:
+            print(f"  static control capture failed for probe '{name}'.")
+            return {}
+        out[name] = img
+    return out
+
+
 def temporal_flip(g0, g1, r0, r1):
     """Temporal error over one adjacent pair. Lower is better; None if FLIP is unavailable.
 
@@ -226,8 +253,8 @@ def colorvideovdp(imgs, refs, probe_names, fps: float = 60.0):
         return None, {}
 
 
-def evaluate(imgs, refs, probe_names):
-    """Per-frame spatial metrics plus the per-pair temporal term, averaged over probes."""
+def evaluate(imgs, refs, probe_names, statics=None):
+    """Per-frame spatial metrics, the per-pair temporal term, and the motion penalty."""
     per_frame, per_pair = [], []
     for name in probe_names:
         f0, f1 = PROBES[name]
@@ -238,7 +265,14 @@ def evaluate(imgs, refs, probe_names):
                 "psnr": qb.psnr(refs[f], imgs[f]),
                 "ssim": qb.ssim(refs[f], imgs[f]),
             })
-        per_pair.append({"probe": name, "tflip": temporal_flip(imgs[f0], imgs[f1], refs[f0], refs[f1])})
+        pen = None
+        if statics and name in statics:
+            moving = qb.flip(refs[f0], imgs[f0])
+            parked = qb.flip(refs[f0], statics[name])
+            pen = (moving - parked) if (moving is not None and parked is not None) else None
+        per_pair.append({"probe": name,
+                         "tflip": temporal_flip(imgs[f0], imgs[f1], refs[f0], refs[f1]),
+                         "motionPenalty": pen})
 
     def mean_of(rows, key):
         vals = [r[key] for r in rows if r[key] is not None]
@@ -249,6 +283,7 @@ def evaluate(imgs, refs, probe_names):
         "psnr": mean_of(per_frame, "psnr"),
         "ssim": mean_of(per_frame, "ssim"),
         "tflip": mean_of(per_pair, "tflip"),
+        "motionPenalty": mean_of(per_pair, "motionPenalty"),
         "perFrame": per_frame,
         "perPair": per_pair,
     }
@@ -361,7 +396,9 @@ def main() -> int:
             print()
             continue
 
-        result = evaluate(imgs, ref_cache, probe_names)
+        statics = capture_static_controls(tech_env, tmp / f"motion_{tech}", exe, repo_root,
+                                          args.timeout, layer_path, args.scene, poses, probe_names)
+        result = evaluate(imgs, ref_cache, probe_names, statics)
         result["cvvdpJod"], result["cvvdpPerProbe"] = colorvideovdp(imgs, ref_cache, probe_names)
         ran_any = True
 
@@ -370,16 +407,19 @@ def main() -> int:
                   f"PSNR {fmt(row['psnr'])}  SSIM {fmt(row['ssim'])}")
         for row in result["perPair"]:
             jod = result["cvvdpPerProbe"].get(row["probe"])
-            print(f"    {row['probe']:<9} pair  tFLIP {fmt(row['tflip'])}"
+            print(f"    {row['probe']:<9} pair  tFLIP {fmt(row['tflip'])}  "
+                  f"motionPen {fmt(row['motionPenalty'])}"
                   + (f"  cvvdp {jod:6.3f} JOD" if jod is not None else ""))
         print(f"  MEAN  FLIP {fmt(result['flip'])}  PSNR {fmt(result['psnr'])}  "
-              f"SSIM {fmt(result['ssim'])}  tFLIP {fmt(result['tflip'])}"
+              f"SSIM {fmt(result['ssim'])}  tFLIP {fmt(result['tflip'])}  "
+              f"motionPen {fmt(result['motionPenalty'])}"
               + (f"  cvvdp {fmt(result['cvvdpJod'])} JOD" if result["cvvdpJod"] is not None else ""))
 
         bp = baseline_path(repo_root, device, tech)
         record = {"device": device, "technique": tech, "route": ROUTE, "probes": probe_names,
                   "flip": result["flip"], "psnr": result["psnr"], "ssim": result["ssim"],
-                  "tflip": result["tflip"], "cvvdpJod": result["cvvdpJod"],
+                  "tflip": result["tflip"], "motionPenalty": result["motionPenalty"],
+                  "cvvdpJod": result["cvvdpJod"],
                   "cvvdpPerProbe": result["cvvdpPerProbe"],
                   "perFrame": result["perFrame"], "perPair": result["perPair"]}
         if args.update_baseline:
@@ -400,8 +440,8 @@ def main() -> int:
                 ungated.append(tech)
                 print(f"  NOT GATED: baseline flew '{base['route']}', this run '{ROUTE}'.")
             else:
-                for metric in ("flip", "psnr", "ssim", "tflip"):
-                    if qb.regressed(metric if metric != "tflip" else "flip",
+                for metric in ("flip", "psnr", "ssim", "tflip", "motionPenalty"):
+                    if qb.regressed("flip" if metric in ("tflip", "motionPenalty") else metric,
                                     base.get(metric), result[metric], args.threshold):
                         print(f"  REGRESSION in {metric}: {fmt(base.get(metric))} -> {fmt(result[metric])}")
                         all_ok = False

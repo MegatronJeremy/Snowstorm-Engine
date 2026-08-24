@@ -443,9 +443,24 @@ temporal content: measured, that inflates `all-rt` by 0.627 JOD, and the paper p
 **The two temporal metrics disagree, usefully.** On the 9070 XT baseline `rtgi` has the best tFLIP
 (0.0078 vs `all-rt`'s 0.0126) while `all-rt` has the best JOD (5.090 vs 4.099). No contradiction:
 tFLIP isolates temporal excess alone, ColorVideoVDP is spatio-temporal and `all-rt` is far more
-accurate spatially. Read tFLIP for stability and JOD for overall perceived quality. Per probe, JOD
-ranks `strafe` the hardest and `static` the easiest for every single technique, which is the probe
-design doing what it was built for.
+accurate spatially. Read tFLIP for stability and JOD for overall perceived quality.
+
+**Do not rank the probes by comparing their scores to each other.** Each probe looks at different
+content, so an absolute FLIP or JOD difference between two probes is mostly a difference in what is
+on screen, not in how hard the motion is. JOD ranks `strafe` worst on every technique, and that is
+NOT evidence that strafing is the hardest motion. Attributing error to motion needs a static control
+at the identical pose, and measured that way (moving capture minus a static capture at the same
+recorded pose, `all-rt`) the order is different: dolly +0.0231, strafe +0.0384, **reversal +0.0439**.
+The `raster` row makes the trap explicit, since its `reversal` FLIP is the BEST of its four probes
+while its motion penalty is the worst.
+
+Velocity REVERSAL is therefore the costliest motion here, and it is not explained by speed or by
+angular rate: arc-length reparameterisation holds translation at 0.0333-0.0340 units/frame across
+every moving probe, and `strafe` carries 24x the yaw rate of `dolly` while costing less than the
+reversal. What is special about the U-turn is that the velocity vector changes sign, which is the
+documented pathological case for history rejection (FSR2 tracks high-velocity ghosting as its own
+bug class). The `static` probe is the control that makes all of this readable: its moving-minus-static
+delta is 0.0000 on every technique, so a parked capture and a static capture agree exactly.
 
 Baselines are keyed by adapter (`Scripts/quality-motion-baseline/<device-slug>/<technique>.json`) for
 the same reason the static ones are: the reference is a path trace on the local card. Exit 0 within
