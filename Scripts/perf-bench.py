@@ -253,10 +253,38 @@ def baseline_path(repo_root: Path, device: str, name: str) -> Path:
     return repo_root / "Scripts" / "perf-baseline" / device_slug(device) / f"{name}.json"
 
 
-def compare(name: str, current: dict, baseline: dict, threshold_pct: float) -> bool:
+def canary_scale(current: dict, baseline: dict, canary: str | None) -> float:
+    """Factor correcting `current` for a global clock shift, from a pass the change under test cannot affect.
+
+    The golden-baseline path cannot pair its runs, so it inherits whatever clock state the baseline was
+    captured under. A canary is the standard escape: pick a pass whose cost the change does not touch, and
+    any movement in it is machine state rather than the change. Scaling the run by
+    baseline_canary / current_canary removes that common-mode factor.
+
+    Honest limits. The caller must pick a genuinely invariant pass; naming one the change DOES affect
+    silently rescales away the very thing being measured, which is why there is no default. It corrects a
+    multiplicative shift that hits everything alike, not contention landing unevenly. A dedicated
+    fixed-work dispatch would be stronger, since no real pass is invariant by construction; this borrows
+    one rather than adding a permanent engine pass for a diagnostic.
+    """
+    if not canary:
+        return 1.0
+    c = current.get("passes", {}).get(canary, {}).get("avgMs")
+    b = baseline.get("passes", {}).get(canary, {}).get("avgMs")
+    if not c or not b or c <= 0.0:
+        print(f"  canary {canary!r}: absent from one side, not normalising")
+        return 1.0
+    scale = b / c
+    print(f"  canary {canary!r}: {b:.3f} -> {c:.3f} ms, scaling current by {scale:.4f} "
+          f"({(scale - 1.0) * 100.0:+.1f}% global correction)")
+    return scale
+
+
+def compare(name: str, current: dict, baseline: dict, threshold_pct: float, canary: str | None = None) -> bool:
     """Print a per-pass table (baseline vs current, Δ%); return True if within threshold."""
     cur_passes = current.get("passes", {})
     base_passes = baseline.get("passes", {})
+    scale = canary_scale(current, baseline, canary)
     all_names = sorted(set(cur_passes) | set(base_passes))
 
     print(f"  {'pass':<18} {'baseline':>10} {'current':>10} {'delta':>9}")
@@ -264,6 +292,8 @@ def compare(name: str, current: dict, baseline: dict, threshold_pct: float) -> b
     for p in all_names:
         b = base_passes.get(p, {}).get("avgMs")
         c = cur_passes.get(p, {}).get("avgMs")
+        if c is not None:
+            c *= scale
         if b is None:
             print(f"  {p:<18} {'--':>10} {c:>10.3f}   (new)")
             continue
@@ -283,6 +313,8 @@ def compare(name: str, current: dict, baseline: dict, threshold_pct: float) -> b
         # Falls back to the threshold when either side predates the interval fields (old baseline, or
         # --repeat 1, which cannot produce one).
         cq1, cq3 = cur_passes.get(p, {}).get("q1Ms"), cur_passes.get(p, {}).get("q3Ms")
+        if cq1 is not None and cq3 is not None:
+            cq1, cq3 = cq1 * scale, cq3 * scale
         bq1, bq3 = base_passes.get(p, {}).get("q1Ms"), base_passes.get(p, {}).get("q3Ms")
         have_intervals = None not in (cq1, cq3, bq1, bq3)
         if have_intervals:
@@ -309,7 +341,7 @@ def compare(name: str, current: dict, baseline: dict, threshold_pct: float) -> b
         frag = f"  frags={fi / 1e6:.1f}M" if fi else ""
         print(f"  {p:<18} {b:>10.3f} {c:>10.3f} {delta:>+8.1f}%{flag}{frag}")
 
-    bt, ct = baseline.get("totalGpuMs", 0.0), current.get("totalGpuMs", 0.0)
+    bt, ct = baseline.get("totalGpuMs", 0.0), current.get("totalGpuMs", 0.0) * scale
     dt = (ct - bt) / bt * 100.0 if bt > 0 else 0.0
     print(f"  {'TOTAL gpu':<18} {bt:>10.3f} {ct:>10.3f} {dt:>+8.1f}%")
     return ok
@@ -324,6 +356,11 @@ def main() -> int:
                          "golden baseline. Use this to measure a CHANGE: it cancels the common-mode drift a "
                          "stored baseline cannot correct for.")
     ap.add_argument("--pairs", type=int, default=5, help="A/B pairs for --compare-exe (default 5)")
+    ap.add_argument("--canary-pass", default=None,
+                    help="Normalise the run by this pass's movement vs the baseline, cancelling a global "
+                         "clock shift the golden path cannot otherwise correct for. Must name a pass the "
+                         "change under test cannot affect (e.g. Editor, Velocity); naming an affected one "
+                         "scales away the result, so there is no default.")
     ap.add_argument("--repeat", type=int, default=3,
                     help="Independent runs per config, medianed (default 3). Run-level GPU clock drift is the "
                          "dominant noise source and repetition is the only thing that averages it out; 1 "
@@ -411,7 +448,7 @@ def main() -> int:
             print(f"  updated baseline: {bp.relative_to(repo_root)}  (device: {device or '?'})")
         elif bp.exists():
             baseline = json.loads(bp.read_text())
-            if not compare(name, current, baseline, args.threshold):
+            if not compare(name, current, baseline, args.threshold, args.canary_pass):
                 all_ok = False
         else:
             ungated.append(name)

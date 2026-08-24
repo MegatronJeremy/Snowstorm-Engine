@@ -196,6 +196,7 @@ py Scripts/perf-bench.py --only +gi         # one config (rt-off | shadows | +ao
 py Scripts/perf-bench.py --frames 300       # more frames = less noise WITHIN a run
 py Scripts/perf-bench.py --repeat 5         # more independent runs = less noise BETWEEN runs (default 3)
 py Scripts/perf-bench.py --compare-exe <ref-exe>   # interleaved A/B vs another build (measure a CHANGE)
+py Scripts/perf-bench.py --canary-pass Editor      # normalise out a global clock shift
 py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
 ```
 
@@ -238,6 +239,12 @@ conditions, so common-mode noise cancels in the difference. A median delta small
 the pairs disagree and prints `inconclusive`. This needs no baseline, so it also works on an adapter that
 has none. The golden-file path answers a different question ("did this drift from the committed numbers")
 and stays the right tool for regression gating.
+
+`--canary-pass <name>` is the golden path's remaining correction: it scales the run by how much a pass
+the change CANNOT affect moved against the baseline, cancelling a global clock shift that path has no
+other way to see. It has no default on purpose, since naming a pass the change does affect silently
+rescales away the result, and only the caller knows which is safe. It corrects a multiplicative shift
+hitting everything alike, not contention landing unevenly.
 
 Removing the noise at its source still beats averaging over it: a **stable power state** (AMD via the
 Radeon Developer Tool Suite, NVIDIA via `nvidia-smi --lock-gpu-clocks`) is the real fix where the hardware
