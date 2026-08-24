@@ -406,9 +406,21 @@ py Scripts/quality-motion.py --fresh-ref        # ignore cached PT references
 **Protocol** (BMFR's, Koskela et al. TOG 2019: an animated sequence with a converged per-frame
 reference, metrics averaged over it). One headless Runtime run per technique flies `camera.path` with
 `quality.capture.at_path_frames` set, writing those route frames plus a `_poses.json` manifest of the
-pose each was taken at. Ground truth for each captured frame is then a **separate static path trace
-pinned to that pose**, which is forced rather than chosen: the path tracer resets accumulation on any
-view-projection change, so a moving path trace is a one-sample noise image that never converges.
+pose each was taken at. Ground truth for each captured frame is then a **separate path trace of the
+world replayed to that frame and held there** (`sim.freeze_frame`), which is forced rather than
+chosen: the path tracer resets accumulation on any view-projection change, so a moving path trace is
+a one-sample noise image that never converges.
+
+Freezing has to stop the whole world, not just pin the camera. `camera.override` holds the viewpoint
+while animated props keep spinning through a 1200-frame accumulation, so the reference converges to a
+smear of every angle they passed rather than the state the captured frame had. For the same reason
+the reference cache is keyed on the ROUTE FRAME, never the pose: the route parks at its end, so
+frames 900 and 901 share a pose while the props sit at different angles.
+
+**The scene is `Sponza-Motion.world`**, Sponza plus four rotating props at eye height between the
+route and the colonnade. The static gates keep plain `Sponza.world` deliberately: animating props
+there would invalidate every committed quality-bench and perf baseline. A frame cap below the freeze
+point silently breaks the control, since reaching route frame N means rendering N frames first.
 
 **Frames come in adjacent pairs** (N, N+1), because averaging per-frame FLIP over a sequence provably
 cannot separate stable distortion from flicker: two techniques with identical mean spatial error rank
@@ -471,6 +483,35 @@ gate, not CI.
 different viewpoints. The script re-checks each technique's manifest against the first one's and
 hard-fails on any divergence rather than trusting it, because that determinism is the single
 assumption the whole protocol rests on.
+
+### Tuning against motion, and why the objective matters
+
+`quality-tune.py --motion` flies the route and scores the probe frames instead of the static
+viewpoints, searching `MOTION_PARAM_SPACE`: the denoiser and temporal-blend knobs the static
+objective is measured blind to. `--objective jod` (default) minimises negated ColorVideoVDP;
+`--objective flip` is kept for comparison and is measurably the wrong choice.
+
+**FLIP is not a usable objective for a denoiser.** Tuning `all-rt`'s temporal knobs against motion
+FLIP boundary-clamped four of six knobs, pinning both `ao.denoise.iterations` and
+`reflections.denoise.iterations` at ZERO. Moving the camera does not fix that: FLIP rewards removing
+blur either way. This is the repo's own DLSS-selection lesson one metric up, where PSNR favours the
+blurry image so LPIPS decides; here FLIP favours the sharp noisy one, so a perceptual spatio-temporal
+metric decides. Never optimise **motion penalty** either: it is moving-minus-static, so an optimiser
+can drive it to zero by degrading the static case.
+
+**A scene without object motion cannot answer the denoiser question at all.** Measured on GI a-trous
+iterations by JOD, on static geometry versus with animated occluders:
+
+| iterations | Sponza.world | Sponza-Motion.world |
+|---|---|---|
+| 0 | 5.0809 | 4.2897 |
+| 3 (default) | **5.0905** | 4.3072 |
+| 5 | 5.0742 (turns over) | **4.3181** (ceiling) |
+
+On static content the curve peaks at the shipped default and degrades past it; with object
+disocclusion it climbs to the ceiling. So the filter earns its keep precisely where the old scene had
+nothing to measure, and a tuning run on static geometry would have deleted it. AO and reflections
+still clamp to 0 in both, which is a separate open question rather than the same one.
 
 ### The benchmark camera route
 

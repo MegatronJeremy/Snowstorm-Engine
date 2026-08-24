@@ -242,9 +242,13 @@ def capture_static_controls(tech_env: dict, out_base: Path, exe: Path, repo_root
     out = {}
     for name in probe_names:
         f0 = PROBES[name][0]
+        # The frame cap has to clear the freeze point: reaching route frame N means actually RENDERING
+        # N frames first, so a cap below it captures the world mid-route instead of frozen. Getting this
+        # wrong inverts the metric, since the control then sits further from the reference than the
+        # moving capture does and the penalty comes out negative.
         img, _dev = qb.run_capture({**tech_env, **MOTION_ENV, "SS_SIM_FREEZE_FRAME": str(f0)},
                                    out_base.with_name(f"{out_base.name}_static_{name}"),
-                                   30, exe, repo_root, timeout, layer_path, scene, max_frames=200)
+                                   30, exe, repo_root, timeout, layer_path, scene, max_frames=f0 + 400)
         if img is None:
             print(f"  static control capture failed for probe '{name}'.")
             return {}
