@@ -1,6 +1,7 @@
 #include "EngineCVars.hpp"
 
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Math/CameraPathMath.hpp" // kCameraPathStepSeconds
 #include "Snowstorm/Render/Renderer.hpp"
 
 #include <cstdio>
@@ -516,6 +517,18 @@ namespace Snowstorm::CVars
 		position = {p[0], p[1], p[2]};
 		rotation = {p[3], p[4], p[5]};
 		return true;
+	}
+
+	bool FixedSimulationStep()
+	{
+		// Dataset export forces it regardless of the toggle: a temporal upscaler trained on the capture's
+		// motion must see the same motion at inference (#98).
+		return DatasetExport.Get() || CameraPathFixedStep.Get();
+	}
+
+	float SimulationStepSeconds(const float wallClockSeconds)
+	{
+		return FixedSimulationStep() ? kCameraPathStepSeconds : wallClockSeconds;
 	}
 
 	bool ShadowsRasterActive()

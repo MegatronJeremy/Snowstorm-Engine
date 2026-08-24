@@ -31,7 +31,7 @@ namespace Snowstorm
 		// #98 train/inference gap). So step by a fixed 60 Hz whenever camera.path.fixed is set (default) or a
 		// dataset export is running (always forced). Only when explicitly turned off do we use wall-clock ts,
 		// for free interactive playback where determinism doesn't matter.
-		const bool fixedStep = CVars::DatasetExport.Get() || CVars::CameraPathFixedStep.Get();
+		const bool fixedStep = CVars::FixedSimulationStep();
 
 		// Two things the pose clock must be welded to, neither of which is elapsed time:
 		//

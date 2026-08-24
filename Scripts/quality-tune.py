@@ -45,6 +45,11 @@ _spec = importlib.util.spec_from_file_location("quality_bench", Path(__file__).r
 qb = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(qb)
 
+# And quality-motion.py for --motion: PROBES, probe_frames, run_motion_capture. Same loading trick.
+_mspec = importlib.util.spec_from_file_location("quality_motion", Path(__file__).resolve().parent / "quality-motion.py")
+qm = importlib.util.module_from_spec(_mspec)
+_mspec.loader.exec_module(qm)
+
 # Per-technique search space: (env var, lo, hi, is_int, start). `start` seeds coordinate descent.
 #
 # OCCLUSION-ONLY, deliberately (#161). The first version let the optimizer tune intensity (gi/ibl/ao),
@@ -114,13 +119,64 @@ PARAM_SPACE = {
 }
 
 
+# Knobs the STATIC objective is measured blind to, searched only under --motion.
+#
+# The static tuner dropped every one of these as flat, and the comment on that drop says exactly why:
+# each technique renders with TAA, render.taa.maxblend 0.97 accumulates over ~33 frames, and a
+# 200-frame static capture therefore converges whatever the denoise chain does. The a-trous ends up
+# filtering an already-clean image, and the static metric then scores it BACKWARDS, rewarding the
+# removal of a filter that earns its keep under motion and on disocclusion. That is a gap in the
+# measurement, not evidence the knobs do nothing, and the motion objective is what closes it.
+#
+# render.taa.depth_reject is deliberately absent. It is held at 0 by choice; the decoupled
+# render.rt.depth_reject is the one to move for RT-denoiser disocclusion.
+MOTION_PARAM_SPACE = {
+    "rtgi": [
+        ("SS_RENDER_GI_DENOISE_ITERATIONS", 0, 5, True, 3),      # a-trous passes: each doubles tap stride
+        ("SS_RENDER_GI_DENOISE_VARIANCE", 0.0, 8.0, False, 4.0), # SVGF variance-guided luminance phi
+        ("SS_RENDER_GI_TEMPORAL_MAXBLEND", 0.80, 0.99, False, 0.97), # history weight ceiling: lag vs noise
+        ("SS_RENDER_RT_DEPTH_REJECT", 0.0, 0.2, False, 0.02),    # disocclusion reject for the RT denoisers
+        ("SS_RENDER_RT_DEPTHSIGMA", 20.0, 100.0, False, 50.0),   # a-trous depth edge-stop
+    ],
+    "all-rt": [
+        ("SS_RENDER_GI_DENOISE_ITERATIONS", 0, 5, True, 3),
+        ("SS_RENDER_GI_TEMPORAL_MAXBLEND", 0.80, 0.99, False, 0.97),
+        ("SS_RENDER_RT_DEPTH_REJECT", 0.0, 0.2, False, 0.02),
+        ("SS_RENDER_TAA_MAXBLEND", 0.80, 0.99, False, 0.97),     # the dominant temporal knob for every technique
+        ("SS_RENDER_AO_DENOISE_ITERATIONS", 0, 5, True, 3),
+        ("SS_RENDER_REFLECTIONS_DENOISE_ITERATIONS", 0, 5, True, 3),
+    ],
+    "rtao": [
+        ("SS_RENDER_AO_DENOISE_ITERATIONS", 0, 5, True, 3),
+        ("SS_RENDER_AO_DENOISE_VARIANCE", 0.0, 8.0, False, 4.0),
+        ("SS_RENDER_RT_DEPTH_REJECT", 0.0, 0.2, False, 0.02),
+        ("SS_RENDER_TAA_MAXBLEND", 0.80, 0.99, False, 0.97),
+    ],
+    "rtrefl": [
+        ("SS_RENDER_REFLECTIONS_DENOISE_ITERATIONS", 0, 5, True, 3),
+        ("SS_RENDER_REFLECTIONS_DENOISE_VARIANCE", 0.0, 8.0, False, 4.0),
+        ("SS_RENDER_RT_DEPTH_REJECT", 0.0, 0.2, False, 0.02),
+        ("SS_RENDER_TAA_MAXBLEND", 0.80, 0.99, False, 0.97),
+    ],
+}
+
+
 def fmt(env: str, val: float, is_int: bool) -> str:
     return str(int(round(val))) if is_int else f"{val:.4f}"
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Auto-tune real-time CVars vs the path-traced reference.")
-    ap.add_argument("--technique", required=True, choices=list(PARAM_SPACE), help="Which technique's CVars to tune")
+    ap.add_argument("--technique", required=True, help="Which technique's CVars to tune")
+    ap.add_argument("--motion", action="store_true",
+                    help="Tune against quality-motion.py: fly the route and minimise mean FLIP over the "
+                         "probe frames, instead of mean FLIP over the static viewpoints. Searches "
+                         "MOTION_PARAM_SPACE, the temporal knobs a static capture cannot see.")
+    ap.add_argument("--probes", default=None, help="Probe subset for --motion (default: all)")
+    ap.add_argument("--objective", default="jod", choices=["jod", "flip"],
+                    help="What --motion minimises. 'jod' (default) = ColorVideoVDP, negated so lower "
+                         "is better. 'flip' = mean FLIP, kept for comparison: it is measurably the "
+                         "WRONG objective for denoiser knobs, which it drives to zero (see below).")
     ap.add_argument("--rounds", type=int, default=2, help="Coordinate-descent passes over the parameter set")
     ap.add_argument("--samples", type=int, default=5, help="Line-search samples per parameter per round")
     ap.add_argument("--frames", type=int, default=60, help="Settle frames per real-time trial capture")
@@ -147,8 +203,13 @@ def main() -> int:
     tmp = Path(tempfile.gettempdir()) / "snowstorm-quality-tune"
     tmp.mkdir(parents=True, exist_ok=True)
 
+    space = MOTION_PARAM_SPACE if args.motion else PARAM_SPACE
+    if args.technique not in space:
+        print(f"FAIL: no {'motion ' if args.motion else ''}parameter space for '{args.technique}'. "
+              f"Known: {list(space)}")
+        return 1
     base_env = dict(qb.TECHNIQUES[args.technique])
-    params = PARAM_SPACE[args.technique]
+    params = space[args.technique]
 
     # --param narrows the SEARCH, not the override set: every parameter still ships its seed to the engine, so
     # a narrowed run and a full run evaluate the same configuration space, just with fewer axes moving.
@@ -162,11 +223,69 @@ def main() -> int:
     print(f"Tuning '{args.technique}' over {[p[0] for p in search]}")
     if len(search) != len(params):
         print(f"  (held at seed: {[p[0] for p in params if p not in search]})")
-    print(f"Viewpoints: {list(qb.VIEWPOINTS)}   rounds={args.rounds} samples={args.samples}\n")
+    objective_desc = (f"moving route frames, {args.objective}" if args.motion
+                      else f"static viewpoints {list(qb.VIEWPOINTS)}, flip")
+    print(f"Objective : {objective_desc}   rounds={args.rounds} samples={args.samples}\n")
 
-    # 1) Capture + cache the PT reference for each viewpoint (once). Runtime + camera.override per viewpoint.
-    refs = {}
-    for vp, pose in qb.VIEWPOINTS.items():
+    # 1) Capture + cache the PT reference (once). Under --motion the references are per ROUTE FRAME, at
+    # the poses the moving run recorded, so a probe frame is compared against ground truth at exactly the
+    # viewpoint it was rendered from.
+    if args.motion:
+        probe_names = [s.strip() for s in args.probes.split(",")] if args.probes else list(qm.PROBES)
+        if unknown := [n for n in probe_names if n not in qm.PROBES]:
+            print(f"FAIL: unknown probe(s) {unknown}. Known: {list(qm.PROBES)}")
+            return 1
+        frames = qm.probe_frames(probe_names)
+        print(f"Probes: {probe_names} -> route frames {frames}")
+
+        # One reference-establishing flight at engine defaults gives the poses. They are technique- and
+        # CVar-independent (the route is), so this is paid once for the whole search.
+        _imgs, poses, _dev = qm.run_motion_capture(base_env, tmp / "tune_poses", exe, ROOT, args.timeout,
+                                                   layer_path, args.scene, frames, 4000)
+        if not poses:
+            print("  FAILED to establish route poses; aborting.")
+            return 1
+        refs = {}
+        for f in frames:
+            img, _d, cached = qb.capture_reference(f"motion-f{f:06d}", poses[f], args.ref_frames, exe, ROOT,
+                                                   max(args.timeout, args.ref_frames // 2 + 60), layer_path,
+                                                   args.scene, tmp)
+            print(f"[ref] route frame {f}: {'cached' if cached else f'path tracer ({args.ref_frames} frames)'}")
+            if img is None:
+                print(f"  reference capture FAILED for frame {f}; aborting.")
+                return 1
+            refs[f] = img
+
+        def objective_motion(overrides: dict) -> float:
+            """Quality under motion for a candidate CVar set. Lower is better.
+
+            Absolute quality, deliberately NOT the motion penalty. Penalty is moving-minus-static, so an
+            optimiser handed it could drive it to zero by making the static case worse.
+
+            The default objective is ColorVideoVDP (negated), not FLIP, and that choice is measured
+            rather than assumed. Tuning all-rt's temporal knobs against motion FLIP drove
+            ao.denoise.iterations and reflections.denoise.iterations to 0 and both blend ceilings to
+            their floors: FLIP rewards removing blur whether or not the camera is moving, so handed a
+            denoiser it deletes it. This is the repo's own DLSS-selection lesson one metric up (PSNR
+            favours the blurry image, so LPIPS decides there); here FLIP favours the sharp noisy image,
+            so a perceptual spatio-temporal metric has to decide instead.
+            """
+            imgs, _p, _d = qm.run_motion_capture({**base_env, **overrides}, tmp / "tune_trial", exe, ROOT,
+                                                 args.timeout, layer_path, args.scene, frames, 4000)
+            if not imgs:
+                return float("inf")
+            if args.objective == "flip":
+                vals = [qb.flip(refs[f], imgs[f]) for f in frames]
+                return float("inf") if any(v is None for v in vals) else float(sum(vals) / len(vals))
+            jod, _per = qm.colorvideovdp(imgs, refs, probe_names)
+            if jod is None:
+                print("  FAIL: ColorVideoVDP unavailable, so the jod objective cannot run. "
+                      f"{qm.CVVDP_INSTALL}, or pass --objective flip.")
+                return float("inf")
+            return -float(jod)  # higher JOD is better, and the optimiser minimises
+
+    refs_static = {}
+    for vp, pose in ({} if args.motion else qb.VIEWPOINTS).items():
         img, _, cached = qb.capture_reference(vp, pose, args.ref_frames, exe, ROOT,
                                               max(args.timeout, args.ref_frames // 2 + 60), layer_path,
                                               args.scene, tmp)
@@ -174,7 +293,7 @@ def main() -> int:
         if img is None:
             print(f"  reference capture FAILED for {vp}; aborting.")
             return 1
-        refs[vp] = img
+        refs_static[vp] = img
 
     # 2) Objective: mean FLIP across viewpoints for a candidate CVar set (cached by value tuple).
     cache: dict = {}
@@ -185,15 +304,20 @@ def main() -> int:
         key = tuple(sorted(overrides.items()))
         if key in cache:
             return cache[key]
+        if args.motion:
+            score = objective_motion(overrides)
+            cache[key] = score
+            evals += 1
+            return score
         flips = []
         for vp, pose in qb.VIEWPOINTS.items():
             env = {**base_env, **overrides, **qb.camera_env(pose)}
             img, _ = qb.run_capture(env, tmp / f"{vp}_trial", args.frames, exe, ROOT, args.timeout, layer_path,
                                     args.scene, max_frames=args.tech_maxframes)
-            if img is None or img.shape != refs[vp].shape:
+            if img is None or img.shape != refs_static[vp].shape:
                 cache[key] = float("inf")
                 return float("inf")
-            flips.append(qb.flip(refs[vp], img))
+            flips.append(qb.flip(refs_static[vp], img))
         score = float(sum(flips) / len(flips)) if all(f is not None for f in flips) else float("inf")
         cache[key] = score
         evals += 1
@@ -205,7 +329,10 @@ def main() -> int:
     best_str = {env: fmt(env, v, best_int[env]) for env, v in best.items()}
     base_score = objective({})  # engine defaults (no overrides) = the number to beat
     best_score = objective(best_str)
-    print(f"\nbaseline (defaults) mean FLIP = {base_score:.4f}")
+    # Label the objective everywhere it is printed: a JOD score is negated so the optimiser can
+    # minimise it, so an unlabelled negative number would read as a broken run.
+    unit = "-JOD" if (args.motion and args.objective == "jod") else "mean FLIP"
+    print(f"\nbaseline (defaults) {unit} = {base_score:.4f}")
     print(f"seed {best_str} -> {best_score:.4f}\n")
 
     for r in range(args.rounds):
@@ -221,12 +348,12 @@ def main() -> int:
                     best_score = s
                     best_str = trial
                     tag = "  <- best"
-                print(f"  r{r} {env}={trial[env]:>8}  meanFLIP={s:.4f}{tag}")
+                print(f"  r{r} {env}={trial[env]:>8}  {unit}={s:.4f}{tag}")
         print()
 
     print("=== Result ===")
     print(f"baseline defaults : {base_score:.4f}")
-    print(f"tuned             : {best_score:.4f}  ({100.0 * (base_score - best_score) / base_score:+.1f}% FLIP)")
+    print(f"tuned             : {best_score:.4f}  ({100.0 * (base_score - best_score) / abs(base_score):+.1f}% {unit})")
     print(f"evals             : {evals}")
     # Env form, not a derived CVar name: the CVar->env mapping (dots -> '_') is not reversible, and several
     # CVars carry underscores of their own (render.gi.bounce_ambient), so a derived name would name nothing.

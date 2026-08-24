@@ -38,6 +38,19 @@ namespace Snowstorm::CVars
 	// whichever host it runs on.
 	[[nodiscard]] bool ParseCameraOverride(const std::string& value, glm::vec3& position, glm::vec3& rotation);
 
+	// Whether scripted motion advances by a fixed step instead of the wall clock. ENGINE-WIDE, not a
+	// camera thing: every source of motion a capture depends on has to agree, or frame N shows the camera
+	// where the harness expects and the animated props somewhere else. Same model as Unreal's
+	// -UseFixedTimeStep and Unity's Time.captureDeltaTime.
+	//
+	// The governing CVar is still named camera.path.fixed because it is Persist and renaming it would
+	// silently discard everyone's saved setting; it predates having a second consumer.
+	[[nodiscard]] bool FixedSimulationStep();
+
+	// Seconds to advance scripted motion this frame: the fixed benchmark step when the above is on,
+	// otherwise the wall-clock delta passed in.
+	[[nodiscard]] float SimulationStepSeconds(float wallClockSeconds);
+
 	// Headless quality capture (local image-quality gate, #153 increment 2). Two modes. With
 	// at_path_frames empty it renders until the image CONVERGES and writes one .npy: what a static viewpoint
 	// allows. With route frames listed it writes each of them plus a pose manifest, because a moving image

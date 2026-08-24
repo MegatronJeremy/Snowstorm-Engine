@@ -2,6 +2,8 @@
 
 #include "Snowstorm/ECS/System.hpp"
 
+#include <cstdint>
+
 namespace Snowstorm
 {
 	// Advances the TransformComponent rotation of every entity with a RotatorComponent each frame.
@@ -21,5 +23,11 @@ namespace Snowstorm
 		void Execute(Timestep ts) override;
 
 		[[nodiscard]] bool RunsInEditMode() const override { return false; }
+
+	private:
+		// Renderer frame the rotation was last advanced on. Under a fixed simulation step the rotation
+		// must advance once per RENDERED frame, not once per loop iteration, or a capture's props sit at a
+		// different angle than the frame index implies. UINT64_MAX so the first tick always runs.
+		uint64_t m_LastFrame = UINT64_MAX;
 	};
 }
