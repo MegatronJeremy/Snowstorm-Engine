@@ -146,6 +146,10 @@ namespace Snowstorm::CVars
 	// the same estimator cost with higher per-frame variance, so it only pays once reuse is wired up.
 	extern CVar<bool> GiReSTIR;
 	extern CVar<bool> GiReSTIRTemporal;
+	extern CVar<bool> GiReSTIRSpatial;
+	extern CVar<float> GiReSTIRSpatialRadius;
+	extern CVar<int> GiReSTIRSpatialCount;
+	extern CVar<bool> GiReSTIRSpatialVisibility;
 
 	// Frames of VMA allocation dumps remaining, decremented as each is emitted. Prices the render graph's
 	// transient-aliasing case: aliasing can only recover memory that transient targets actually hold, and

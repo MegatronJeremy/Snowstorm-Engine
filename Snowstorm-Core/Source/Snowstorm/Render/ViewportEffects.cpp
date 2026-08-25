@@ -30,6 +30,7 @@
 #include "Snowstorm/Render/Passes/SSAOBlurPass.hpp" // #151: SSAO depth+normal bilateral blur
 #include "Snowstorm/Render/Denoiser.hpp"            // #132: shared SVGF processor (owns the GITemporal/GIDenoise passes)
 #include "Snowstorm/Render/Passes/GIPass.hpp"
+#include "Snowstorm/Render/Passes/GISpatialReusePass.hpp"
 #include "Snowstorm/Render/Passes/SSGIPass.hpp" // #151: screen-space GI gather
 #include "Snowstorm/Render/Passes/ReflectionPass.hpp"
 #include "Snowstorm/Render/Passes/SSRPass.hpp" // #151: screen-space reflection trace
@@ -412,6 +413,37 @@ namespace Snowstorm
 					                                  resHistoryValid, resNear, resFar);
 				                  }});
 
+				// Spatial reuse overwrites the GI pass's own resolve: it reads the reservoir that pass just wrote
+				// and re-resolves it against a few neighbours. Separate pass because a single dispatch cannot
+				// read neighbours it is concurrently writing.
+				if (CVars::GiReSTIR.Get() && CVars::GiReSTIRSpatial.Get())
+				{
+					const auto spatialCount = static_cast<uint32_t>(std::max(0, CVars::GiReSTIRSpatialCount.Get()));
+					const float spatialRadius = CVars::GiReSTIRSpatialRadius.Get();
+					const bool spatialVis = CVars::GiReSTIRSpatialVisibility.Get();
+					const glm::mat4 invViewProj = glm::inverse(frameData.ViewProjection);
+					const float giIntensity = CVars::GIIntensity.Get();
+					if (spatialCount > 0)
+					{
+						fc.Graph.AddPass({.Name = "GISpatialReuse" + v.Suffix,
+						                  .IsCompute = true,
+						                  .Queue = GpuQueue::AsyncCompute,
+						                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+						                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled},
+						                            {resSample->GetTexture(), RenderGraph::AccessState::Sampled},
+						                            {resRadiance->GetTexture(), RenderGraph::AccessState::Sampled},
+						                            {resNormal->GetTexture(), RenderGraph::AccessState::Sampled}},
+						                  .Writes = {{giView->GetTexture(), RenderGraph::AccessState::Storage}},
+						                  .Execute = [this, &fc, invViewProj, frameCounter, giIntensity, resNear, resFar, spatialRadius, spatialCount, spatialVis, gbufView, depthView, resSample, resRadiance, resNormal, giView, giW, giH](CommandContext& c)
+						                  {
+							                  m_SpatialPass.Dispatch(BorrowContext(c), fc.FrameIndex, invViewProj, frameCounter,
+							                                         giIntensity, resNear, resFar, spatialRadius, spatialCount, spatialVis,
+							                                         gbufView, depthView, resSample, resRadiance, resNormal,
+							                                         giView, giW, giH);
+						                  }});
+					}
+				}
+
 				v.GBufferNormal = gbufView; // republish (DepthNormalEffect already set it; harmless, keeps intent local)
 				v.GIView = giView;          // the raw trace is the live GI buffer; temporal/denoise republish downstream (#125)
 			}
@@ -419,6 +451,7 @@ namespace Snowstorm
 		private:
 			RenderSystem& m_Owner;
 			GIPass m_Pass; // owned here: the GI compute pass is exclusive to this effect
+			GISpatialReusePass m_SpatialPass;
 		};
 
 		// GI temporal accumulation (#125), the temporal half of SVGF. Runs between GIEffect and GIDenoiseEffect:
