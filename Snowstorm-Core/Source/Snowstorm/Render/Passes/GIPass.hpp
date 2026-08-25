@@ -45,6 +45,7 @@ namespace Snowstorm
 		void EnsureResources();
 
 		Ref<Pipeline> m_Pipeline;
+		bool m_HasReservoirBindings = false; // SS_GI_RESTIR variant only
 		Ref<Sampler> m_Sampler;
 		std::vector<Ref<Buffer>> m_ParamBuffers; // one per frame-in-flight
 		std::vector<Ref<DescriptorSet>> m_Sets;  // one per frame-in-flight

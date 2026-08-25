@@ -21,7 +21,7 @@
       "isa_size": 1692.0,
       "permutations": 2
     },
-    "DefaultLit.frag": {
+    "DefaultLit.frag[inlineshadow]": {
       "vgprs": 127.0,
       "sgprs": 82.0,
       "lds": 4096.0,
@@ -29,6 +29,16 @@
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 30132.0,
+      "permutations": 2
+    },
+    "DefaultLit.frag[noinlineshadow]": {
+      "vgprs": 87.0,
+      "sgprs": 66.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 10496.0,
       "permutations": 2
     },
     "DepthNormal.frag": {
@@ -81,24 +91,64 @@
       "isa_size": 1060.0,
       "permutations": 2
     },
-    "GI.comp": {
+    "GI.comp[norestir]": {
       "vgprs": 83.0,
       "sgprs": 55.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 10688.0,
+      "isa_size": 10704.0,
       "permutations": 2
     },
-    "GIDenoise.comp": {
-      "vgprs": 179.0,
-      "sgprs": 57.0,
+    "GI.comp[restir]": {
+      "vgprs": 103.0,
+      "sgprs": 58.0,
+      "lds": 4096.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 12328.0,
+      "permutations": 2
+    },
+    "GIDenoise.comp[ao]": {
+      "vgprs": 60.0,
+      "sgprs": 64.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 13028.0,
+      "isa_size": 3840.0,
+      "permutations": 2
+    },
+    "GIDenoise.comp[gi]": {
+      "vgprs": 59.0,
+      "sgprs": 49.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 3520.0,
+      "permutations": 2
+    },
+    "GIDenoise.comp[shadow]": {
+      "vgprs": 67.0,
+      "sgprs": 58.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 3464.0,
+      "permutations": 2
+    },
+    "GISpatialReuse.comp": {
+      "vgprs": 71.0,
+      "sgprs": 98.0,
+      "lds": 4096.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 3728.0,
       "permutations": 2
     },
     "GITemporal.comp": {

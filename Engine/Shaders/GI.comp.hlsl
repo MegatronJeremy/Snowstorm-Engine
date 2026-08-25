@@ -29,6 +29,12 @@ Texture2D<float> GBufferDepth : register(t4, space0);    // fp32 NDC depth (D32 
 // ReSTIR reservoir, write slot. Split across three images because one reservoir does not fit in four
 // channels: the sample-point normal is needed by the reconnection Jacobian once reuse is added, so it
 // cannot be dropped to save a binding.
+// The reservoir path is a compile-time permutation, not a runtime branch: -fspv-preserve-bindings keeps
+// these declarations alive whether or not they are read, and the live reservoir state across the ray loop
+// costs registers in every compile. Branching at runtime charged the DEFAULT path 22 VGPRs and two waves of
+// occupancy (85 -> 107, 16/16 -> 14/16) for a feature that is off and measures worse. render.gi.restir is
+// startup-only for the same reason DefaultLit's debug axis is: the variant is keyed into the .spv cache.
+#if defined(SS_GI_RESTIR)
 [[vk::image_format("rgba32f")]] RWTexture2D<float4> ResSampleOut : register(u5, space0);   // .xyz sample pos, .w W
 [[vk::image_format("rgba16f")]] RWTexture2D<float4> ResRadianceOut : register(u6, space0); // .xyz radiance, .w M
 [[vk::image_format("rgba16f")]] RWTexture2D<float4> ResNormalOut : register(u7, space0);   // .xy oct sample normal, .z linear view depth
@@ -36,6 +42,7 @@ Texture2D<float4> ResSamplePrev : register(t8, space0);   // previous frame's re
 Texture2D<float4> ResRadiancePrev : register(t9, space0);
 Texture2D<float4> ResNormalPrev : register(t10, space0);
 Texture2D<float4> VelocityTex : register(t11, space0);    // full-res motion: .xy = curr_uv - prev_uv
+#endif
 
 cbuffer GICB : register(b3, space0)
 {
@@ -85,6 +92,7 @@ cbuffer GICB : register(b3, space0)
 #include "Include/RTHitShading.hlsli"
 #include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky (#129 Inc 1b)
 
+#if defined(SS_GI_RESTIR)
 // Uniform [0,1) from an integer seed (PCG-style bit mix). The reservoir's accept test needs an independent
 // draw per candidate: reusing the interleaved-gradient rotation would correlate the choice with the sample
 // direction and skew which candidate survives.
@@ -110,6 +118,8 @@ float LinearizeDepth(float d)
 static const float kTemporalMCap = 30.0;
 // Relative linear-depth mismatch above which the reprojected reservoir is a different surface.
 static const float kDepthRejectRel = 0.1;
+
+#endif
 
 uint64_t GeoTableAddress()
 {
@@ -179,11 +189,13 @@ void main(uint3 id : SV_DispatchThreadID)
 
 	// Reservoir state for the RIS path. wSum is the running sum of candidate weights; the survivor's own
 	// weight is kept because the unbiased contribution weight W divides by it.
+#if defined(SS_GI_RESTIR)
 	float resWSum = 0.0;
 	float resTargetY = 0.0;
 	float3 resRadiance = float3(0, 0, 0);
 	float3 resHitPos = float3(0, 0, 0);
 	float3 resHitNormal = N;
+#endif
 	[loop] for (uint s = 0; s < rayCount; ++s)
 	{
 		const float u1 = frac((float(s) + ign) / float(rayCount));
@@ -234,6 +246,7 @@ void main(uint3 id : SV_DispatchThreadID)
 		// Weighted reservoir sampling over the same candidates. Target function is the candidate's luminance,
 		// and the candidates are equally likely draws, so the weight IS the target. Selecting with probability
 		// w/wSum leaves E[estimate] equal to the mean, which is what makes this swap-in unbiased.
+#if defined(SS_GI_RESTIR)
 		const float w = RTHitLuminance(candidate);
 		resWSum += w;
 		if (w > 0.0 && GIHash01(uint3(id.xy, FrameCounter * 32u + s)) < w / resWSum)
@@ -243,6 +256,7 @@ void main(uint3 id : SV_DispatchThreadID)
 			resHitPos = hitPos;
 			resHitNormal = hitNormal;
 		}
+#endif
 	}
 
 	// Incoming irradiance, intensity-scaled. NO receiver albedo: that's multiplied at full res in the
@@ -251,6 +265,7 @@ void main(uint3 id : SV_DispatchThreadID)
 	// RIS path: the estimate is the survivor scaled by its unbiased contribution weight
 	// W = wSum / (M * targetY). With every candidate equal this collapses to W = 1 and the survivor IS the
 	// mean, so the two paths agree in the uniform case and differ only in variance.
+#if defined(SS_GI_RESTIR)
 	// Temporal reuse: fold the previous frame's reservoir in as a single extra candidate, weighted by its own
 	// unbiased contribution weight times the sample count it stands for (Ouyang et al. 2021, eq. 6). Motion
 	// vectors reproject to the SAME world surface point, so the reconnection Jacobian is 1 by construction and
@@ -305,9 +320,12 @@ void main(uint3 id : SV_DispatchThreadID)
 	const float3 irradiance = ((UseReSTIR != 0) ? resampled : averaged) * GIIntensity;
 	GIOut[id.xy] = float4(irradiance, 1.0);
 
-	// Persist the reservoir so a later increment can resample it. Written even when the average is what got
-	// output, so the write path is exercised by the same run that validates the estimator.
+	// Persist the reservoir for the spatial pass and for next frame. Written even when the average is what
+	// got output, so the write path is exercised by the same run that validates the estimator.
 	ResSampleOut[id.xy] = float4(resHitPos, W);
 	ResRadianceOut[id.xy] = float4(resRadiance, resM);
 	ResNormalOut[id.xy] = float4(EncodeNormalOct(resHitNormal), LinearizeDepth(depth), 0.0);
+#else
+	GIOut[id.xy] = float4((incoming / float(rayCount)) * GIIntensity, 1.0);
+#endif
 }

@@ -86,7 +86,14 @@ namespace Snowstorm
 			return;
 		}
 
-		Ref<Shader> cs = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load("Engine/Shaders/GI.comp.hlsl");
+		// render.gi.restir is startup-only, so the variant is resolved once and keyed into the .spv cache.
+		// Compiling the reservoir path in unconditionally cost the default path two waves of occupancy.
+		ShaderDefines defines;
+		if (CVars::GiReSTIR.Get())
+		{
+			defines.emplace_back("SS_GI_RESTIR=1");
+		}
+		Ref<Shader> cs = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load("Engine/Shaders/GI.comp.hlsl", defines);
 		SS_CORE_ASSERT(cs, "Failed to load GI compute shader");
 		if (!cs->IsReady())
 		{
@@ -99,6 +106,19 @@ namespace Snowstorm
 		p.DebugName = "GIPipeline";
 		m_Pipeline = Pipeline::Create(p);
 		SS_CORE_ASSERT(m_Pipeline, "Failed to create GI pipeline");
+
+		m_HasReservoirBindings = false;
+		if (const auto& sl = m_Pipeline->GetSetLayouts(); !sl.empty() && sl[0])
+		{
+			for (const auto& b : sl[0]->GetDesc().Bindings)
+			{
+				if (b.Binding == kResSampleBinding)
+				{
+					m_HasReservoirBindings = true;
+					break;
+				}
+			}
+		}
 
 		// Clamp-linear sampler for the bindless albedo / cubemap fetches in the hit shading.
 		SamplerDesc s{};
@@ -195,14 +215,18 @@ namespace Snowstorm
 		m_Sets[frameIndex]->SetTexture(kGBufferBinding, gbuffer); // .xy normal, .z roughness
 		m_Sets[frameIndex]->SetTexture(kDepthBinding, depth);     // fp32 D32 depth SRV
 		m_Sets[frameIndex]->SetTexture(kOutputBinding, output);   // storage image (UAV)
-		m_Sets[frameIndex]->SetTexture(kResSampleBinding, resSample);
-		m_Sets[frameIndex]->SetTexture(kResRadianceBinding, resRadiance);
-		m_Sets[frameIndex]->SetTexture(kResNormalBinding, resNormal);
-		// The descriptor must be populated even with no history; the shader will not read it (UseReSTIR < 2).
-		m_Sets[frameIndex]->SetTexture(kResSamplePrevBinding, resSamplePrev ? resSamplePrev : resSample);
-		m_Sets[frameIndex]->SetTexture(kResRadiancePrevBinding, resRadiancePrev ? resRadiancePrev : resRadiance);
-		m_Sets[frameIndex]->SetTexture(kResNormalPrevBinding, resNormalPrev ? resNormalPrev : resNormal);
-		m_Sets[frameIndex]->SetTexture(kVelocityBinding, velocity ? velocity : depth);
+		// The reservoir bindings exist only in the SS_GI_RESTIR variant; SetTexture asserts on a missing one.
+		if (m_HasReservoirBindings)
+		{
+			m_Sets[frameIndex]->SetTexture(kResSampleBinding, resSample);
+			m_Sets[frameIndex]->SetTexture(kResRadianceBinding, resRadiance);
+			m_Sets[frameIndex]->SetTexture(kResNormalBinding, resNormal);
+			// The descriptor must be populated even with no history; the shader will not read it (UseReSTIR < 2).
+			m_Sets[frameIndex]->SetTexture(kResSamplePrevBinding, resSamplePrev ? resSamplePrev : resSample);
+			m_Sets[frameIndex]->SetTexture(kResRadiancePrevBinding, resRadiancePrev ? resRadiancePrev : resRadiance);
+			m_Sets[frameIndex]->SetTexture(kResNormalPrevBinding, resNormalPrev ? resNormalPrev : resNormal);
+			m_Sets[frameIndex]->SetTexture(kVelocityBinding, velocity ? velocity : depth);
+		}
 		m_Sets[frameIndex]->SetSampler(kSamplerBinding, m_Sampler);
 		const BufferBinding cbBB{.Buffer = m_ParamBuffers[frameIndex], .Offset = 0, .Range = sizeof(GICB)};
 		m_Sets[frameIndex]->SetBuffer(kParamsBinding, cbBB);
