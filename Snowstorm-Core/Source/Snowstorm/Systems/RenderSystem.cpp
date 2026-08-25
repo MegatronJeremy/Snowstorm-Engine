@@ -82,6 +82,7 @@ namespace Snowstorm
 				rtc.GIDenoiser.HistoryValid = false;
 				rtc.ReflectionDenoiser.HistoryValid = false;
 				rtc.AODenoiser.HistoryValid = false; // #130
+				rtc.GIReservoir.HistoryValid = false;
 			}
 		}
 

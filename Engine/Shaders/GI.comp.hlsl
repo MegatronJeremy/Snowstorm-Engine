@@ -31,7 +31,11 @@ Texture2D<float> GBufferDepth : register(t4, space0);    // fp32 NDC depth (D32 
 // cannot be dropped to save a binding.
 [[vk::image_format("rgba32f")]] RWTexture2D<float4> ResSampleOut : register(u5, space0);   // .xyz sample pos, .w W
 [[vk::image_format("rgba16f")]] RWTexture2D<float4> ResRadianceOut : register(u6, space0); // .xyz radiance, .w M
-[[vk::image_format("rgba16f")]] RWTexture2D<float4> ResNormalOut : register(u7, space0);   // .xy oct sample normal
+[[vk::image_format("rgba16f")]] RWTexture2D<float4> ResNormalOut : register(u7, space0);   // .xy oct sample normal, .z linear view depth
+Texture2D<float4> ResSamplePrev : register(t8, space0);   // previous frame's reservoir (parity slot ^ 1)
+Texture2D<float4> ResRadiancePrev : register(t9, space0);
+Texture2D<float4> ResNormalPrev : register(t10, space0);
+Texture2D<float4> VelocityTex : register(t11, space0);    // full-res motion: .xy = curr_uv - prev_uv
 
 cbuffer GICB : register(b3, space0)
 {
@@ -64,8 +68,9 @@ cbuffer GICB : register(b3, space0)
 	// RTHitShading.hlsli's local-light contract. 16 = Snowstorm::kRTHitMaxLights (RTHitLights.hpp), which also
 	// owns the packing; HitLightCount is 0 whenever render.rt.hit_lights is off.
 	uint HitLightCount;
-	uint UseReSTIR;   // 1 = resample the candidates (RIS) instead of averaging them
-	uint2 _PadHitLights;
+	uint UseReSTIR;   // 0 = average, 1 = RIS over this frame's candidates, 2 = RIS + temporal reuse
+	float NearPlane;  // reservoir depth validation only (linearize the stored NDC depth)
+	float FarPlane;
 	float4 HitLightPosRange[16];
 	float4 HitLightColor[16];
 	float4 HitLightDirCos[16];
@@ -93,6 +98,18 @@ float GIHash01(uint3 v)
 	v.x += v.y * v.z;
 	return float(v.x & 0x00FFFFFFu) / float(0x01000000u);
 }
+
+// Identical to GITemporal/TemporalResolve so every disocclusion test in the frame agrees.
+float LinearizeDepth(float d)
+{
+	return (NearPlane * FarPlane) / max(FarPlane - d * (FarPlane - NearPlane), 1e-6);
+}
+
+// Caps how many past samples one reservoir may claim. Without it M grows without bound, the current frame's
+// candidate weight vanishes against it, and the estimate stops responding to lighting changes.
+static const float kTemporalMCap = 30.0;
+// Relative linear-depth mismatch above which the reprojected reservoir is a different surface.
+static const float kDepthRejectRel = 0.1;
 
 uint64_t GeoTableAddress()
 {
@@ -234,10 +251,56 @@ void main(uint3 id : SV_DispatchThreadID)
 	// RIS path: the estimate is the survivor scaled by its unbiased contribution weight
 	// W = wSum / (M * targetY). With every candidate equal this collapses to W = 1 and the survivor IS the
 	// mean, so the two paths agree in the uniform case and differ only in variance.
-	const float M = float(rayCount);
-	const float W = (UseReSTIR != 0 && resTargetY > 0.0) ? (resWSum / (M * resTargetY)) : 0.0;
+	// Temporal reuse: fold the previous frame's reservoir in as a single extra candidate, weighted by its own
+	// unbiased contribution weight times the sample count it stands for (Ouyang et al. 2021, eq. 6). Motion
+	// vectors reproject to the SAME world surface point, so the reconnection Jacobian is 1 by construction and
+	// is deliberately not computed here; the depth test below is what enforces that premise. Spatial reuse
+	// borrows from a genuinely different visible point and DOES need the Jacobian.
+	float resM = float(rayCount);
+	if (UseReSTIR >= 2u)
+	{
+		const float2 velocity = VelocityTex.SampleLevel(LinearSampler, uv, 0).xy;
+		const float2 histUv = uv - velocity;
+		if (histUv.x >= 0.0 && histUv.x <= 1.0 && histUv.y >= 0.0 && histUv.y <= 1.0)
+		{
+			// Point-sample the reservoir: a bilinear tap would average four samples' positions and weights into
+			// a sample that was never drawn, which is not a reservoir and biases the estimator.
+			uint2 resDims;
+			ResRadiancePrev.GetDimensions(resDims.x, resDims.y);
+			const int2 histTexel = clamp(int2(histUv * float2(resDims)), int2(0, 0), int2(resDims) - 1);
 
-	const float3 averaged = incoming / M;
+			const float4 prevRad = ResRadiancePrev.Load(int3(histTexel, 0));
+			const float4 prevSample = ResSamplePrev.Load(int3(histTexel, 0));
+			const float4 prevNormal = ResNormalPrev.Load(int3(histTexel, 0));
+
+			// Same-surface test, same linearized-relative form as GITemporal's disocclusion.
+			const float linCurr = LinearizeDepth(depth);
+			const float rel = abs(linCurr - prevNormal.z) / max(linCurr, 1e-4);
+
+			const float prevM = min(prevRad.w, kTemporalMCap);
+			if (rel < kDepthRejectRel && prevM > 0.0 && prevSample.w > 0.0)
+			{
+				const float3 prevRadiance = prevRad.xyz;
+				const float prevTarget = RTHitLuminance(prevRadiance);
+				// wSum the previous reservoir stands for, reconstructed from W = wSum / (M * targetY).
+				const float prevWeight = prevTarget * prevSample.w * prevM;
+
+				resWSum += prevWeight;
+				resM += prevM;
+				if (prevWeight > 0.0 && GIHash01(uint3(id.xy, FrameCounter * 32u + 31u)) < prevWeight / resWSum)
+				{
+					resTargetY = prevTarget;
+					resRadiance = prevRadiance;
+					resHitPos = prevSample.xyz;
+					resHitNormal = DecodeNormalOct(prevNormal.xy);
+				}
+			}
+		}
+	}
+
+	const float W = (UseReSTIR != 0 && resTargetY > 0.0) ? (resWSum / (resM * resTargetY)) : 0.0;
+
+	const float3 averaged = incoming / float(rayCount);
 	const float3 resampled = resRadiance * W;
 	const float3 irradiance = ((UseReSTIR != 0) ? resampled : averaged) * GIIntensity;
 	GIOut[id.xy] = float4(irradiance, 1.0);
@@ -245,6 +308,6 @@ void main(uint3 id : SV_DispatchThreadID)
 	// Persist the reservoir so a later increment can resample it. Written even when the average is what got
 	// output, so the write path is exercised by the same run that validates the estimator.
 	ResSampleOut[id.xy] = float4(resHitPos, W);
-	ResRadianceOut[id.xy] = float4(resRadiance, M);
-	ResNormalOut[id.xy] = float4(EncodeNormalOct(resHitNormal), 0.0, 0.0);
+	ResRadianceOut[id.xy] = float4(resRadiance, resM);
+	ResNormalOut[id.xy] = float4(EncodeNormalOct(resHitNormal), LinearizeDepth(depth), 0.0);
 }

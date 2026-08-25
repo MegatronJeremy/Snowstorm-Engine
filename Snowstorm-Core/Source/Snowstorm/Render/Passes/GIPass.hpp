@@ -36,7 +36,10 @@ namespace Snowstorm
 		              const Ref<TextureView>& gbuffer, const Ref<TextureView>& depth,
 		              const Ref<TextureView>& output, uint32_t outW, uint32_t outH,
 		              const Ref<TextureView>& resSample, const Ref<TextureView>& resRadiance,
-		              const Ref<TextureView>& resNormal);
+		              const Ref<TextureView>& resNormal, const Ref<TextureView>& resSamplePrev,
+		              const Ref<TextureView>& resRadiancePrev, const Ref<TextureView>& resNormalPrev,
+		              const Ref<TextureView>& velocity, bool reservoirHistoryValid,
+		              float nearPlane, float farPlane);
 
 	private:
 		void EnsureResources();

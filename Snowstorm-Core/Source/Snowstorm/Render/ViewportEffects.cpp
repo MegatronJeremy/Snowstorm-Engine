@@ -362,27 +362,54 @@ namespace Snowstorm
 				// Compute pass: reads the G-buffer + depth (Sampled), writes GITarget (Storage). The graph applies
 				// the layout transitions from these declarations (#129 Inc 4) — including the depth attachment's
 				// DepthStencil -> read-only redirect (handled in TransitionLayout).
-				// Reservoir write slot for this frame. The read slot is the other one, which a later
-				// increment resamples; nothing reads it yet.
+				// Reservoir parity: this frame writes one slot and resamples the other, which the previous frame
+				// wrote. Reuse needs motion vectors, so drop the valid flag when there are none rather than
+				// reprojecting by zero (which would reuse whatever surface now occupies the pixel).
 				const uint32_t resSlot = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
 				const Ref<TextureView> resSample = v.RT.GIReservoir.SampleView[resSlot];
 				const Ref<TextureView> resRadiance = v.RT.GIReservoir.RadianceView[resSlot];
 				const Ref<TextureView> resNormal = v.RT.GIReservoir.NormalView[resSlot];
+				const Ref<TextureView> resVelocity = v.Velocity;
+				const Ref<TextureView> resSamplePrev = v.RT.GIReservoir.SampleView[resSlot ^ 1u];
+				const Ref<TextureView> resRadiancePrev = v.RT.GIReservoir.RadianceView[resSlot ^ 1u];
+				const Ref<TextureView> resNormalPrev = v.RT.GIReservoir.NormalView[resSlot ^ 1u];
+
+				auto& resInst = fc.Reg.Write<RenderTargetComponent>(v.ViewportEntity).GIReservoir;
+				const bool resHistoryValid = resInst.HistoryValid && resVelocity != nullptr;
+				resInst.HistoryValid = resVelocity != nullptr;
+
+				const float resNear = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
+				const float resFar = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+
+				std::vector<RenderGraph::ResourceAccess> giReads{
+				    {gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+				    {depthView->GetTexture(), RenderGraph::AccessState::Sampled}};
+				if (resHistoryValid)
+				{
+					giReads.push_back({resSamplePrev->GetTexture(), RenderGraph::AccessState::Sampled});
+					giReads.push_back({resRadiancePrev->GetTexture(), RenderGraph::AccessState::Sampled});
+					giReads.push_back({resNormalPrev->GetTexture(), RenderGraph::AccessState::Sampled});
+					giReads.push_back({resVelocity->GetTexture(), RenderGraph::AccessState::Sampled});
+				}
 
 				fc.Graph.AddPass({.Name = "GI" + v.Suffix,
 				                  .IsCompute = true,
 				                  .Queue = GpuQueue::AsyncCompute,
-				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
-				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
+				                  .Reads = giReads,
 				                  .Writes = {{giView->GetTexture(), RenderGraph::AccessState::Storage},
 				                             {resSample->GetTexture(), RenderGraph::AccessState::Storage},
 				                             {resRadiance->GetTexture(), RenderGraph::AccessState::Storage},
 				                             {resNormal->GetTexture(), RenderGraph::AccessState::Storage}},
-				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, depthView, giView, giW, giH, resSample, resRadiance, resNormal](CommandContext& c)
+				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, depthView, giView, giW, giH, resSample, resRadiance, resNormal, resSamplePrev, resRadiancePrev, resNormalPrev, resVelocity, resHistoryValid, resNear, resFar](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, frameData, tableAddr, frameCounter,
 					                                  gbufView, depthView, giView, giW, giH,
-					                                  resSample, resRadiance, resNormal);
+					                                  resSample, resRadiance, resNormal,
+					                                  resHistoryValid ? resSamplePrev : nullptr,
+					                                  resHistoryValid ? resRadiancePrev : nullptr,
+					                                  resHistoryValid ? resNormalPrev : nullptr,
+					                                  resHistoryValid ? resVelocity : nullptr,
+					                                  resHistoryValid, resNear, resFar);
 				                  }});
 
 				v.GBufferNormal = gbufView; // republish (DepthNormalEffect already set it; harmless, keeps intent local)
