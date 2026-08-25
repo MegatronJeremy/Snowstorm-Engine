@@ -457,6 +457,41 @@ temporal content: measured, that inflates `all-rt` by 0.627 JOD, and the paper p
 tFLIP isolates temporal excess alone, ColorVideoVDP is spatio-temporal and `all-rt` is far more
 accurate spatially. Read tFLIP for stability and JOD for overall perceived quality.
 
+**The per-frame FLIP/PSNR/SSIM here are a SPATIAL gate measured under motion, not a temporal one.**
+Measured across the technique matrix, this gate's mean FLIP correlates **+0.995** with quality-bench's
+static FLIP: it is almost entirely re-measuring spatial accuracy. That is inherent to the reference,
+not a bug in it. A converged per-frame path trace is a sequence of independent stills with no temporal
+structure, so error against it has no temporal component to carry. The construction itself is the
+field standard (BMFR, NoiseBase and Arm NSS all use per-frame converged references for animated
+sequences, and freezing the world at state N to accumulate is identical to rendering frame N at high
+spp when no shutter is modelled). What the canonical papers do NOT do is call it a temporal result:
+SVGF and A-SVGF both report quality against a reference AND, separately, a reference-free temporal
+number measured with a STATIC camera. k-DOP Clipping (Ikkala et al., SIGGRAPH Asia 2024) states the
+conflation outright, that a supersampled reference "would introduce a constant error by also comparing
+general TAA quality against supersampling".
+
+So read the three families separately: FLIP/PSNR/SSIM for accuracy, **tFLIP** for stability,
+**motionPenalty** for lag. Only the last two carry information the static gate does not.
+
+**Naive frame-difference temporal metrics reward blur, and this is verified twice over.** SVGF says it
+of its own results: EAW has the lowest temporal error while losing significant detail. TecoGAN
+measures it, with ground truth scoring WORSE on T-diff (5.184) than bicubic upsampling (3.152), and
+calls low T-diff from smooth output "an easy, but undesirable avenue for achieving coherency". That is
+exactly why tFLIP subtracts the reference's own inter-frame change, and TecoGAN explicitly licenses
+substituting a different perceptual metric into that construction (they swapped LPIPS for PieAPP and
+got near-identical results), which is what tFLIP is.
+
+**Ghosting has no published metric.** A-SVGF's headline contribution is "a significant reduction of
+lag and ghosting" and the paper contains no lag or ghosting number anywhere; AMD, NVIDIA and Intel all
+describe ghosting qualitatively. motionPenalty is therefore closer to a ghosting number than anything
+shipped, which is a reason to report it carefully rather than confidently.
+
+**Coverage is the weakest part of this gate, by a published standard.** ITU-T P.910 asks for at least
+four source sequences spanning the SI/TI plane plus variety beyond it. This gate is one scene, one
+route (two since #169) and four adjacent frame pairs, against SVGF's 5 scenes, A-SVGF's 4, BMFR's
+7x60 frames and CG-VQD's 15 scenes. Finding an artifact off-route is the predicted consequence, not
+bad luck.
+
 **Do not rank the probes by comparing their scores to each other.** Each probe looks at different
 content, so an absolute FLIP or JOD difference between two probes is mostly a difference in what is
 on screen, not in how hard the motion is. JOD ranks `strafe` worst on every technique, and that is

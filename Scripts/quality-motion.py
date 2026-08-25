@@ -57,6 +57,19 @@ _spec.loader.exec_module(qb)
 
 ROUTE = "Projects/Sandbox/assets/camera-paths/sponza-bench.json"
 
+# A second route through the +z side aisle (#169). The nave route flies the centre-line and never
+# renders the lit aisles, so artifacts around the torch lights sat outside what any gate could
+# measure. Kept SEPARATE rather than folded into the nave route: editing that one would invalidate
+# every committed motion baseline and every cached reference, and it is a good disocclusion test that
+# should not be disturbed. Its probes are named for what they see, not for the motion.
+AISLE_ROUTE = "Projects/Sandbox/assets/camera-paths/sponza-aisle.json"
+AISLE_PROBES = {
+    "underB": (100, 101),   # 1.27 m from Torch Warm B, turning to face the colonnade
+    "overlap": (250, 251),  # between both torches (4.70 m / 6.07 m), where the falloffs meet
+    "underA": (420, 421),   # 1.22 m from Torch Warm A
+    "parked": (520, 521),   # past the end of the open route: the stationary control
+}
+
 # Sponza plus animated props. The static gates keep using plain Sponza.world, deliberately: adding
 # moving geometry there would invalidate every committed quality-bench and perf baseline, and the
 # props exist for a stressor those gates cannot measure anyway. A camera-only flythrough of static
@@ -85,11 +98,23 @@ PROBES = {
     "static": (900, 901),
 }
 
-MOTION_ENV = {
-    "SS_CAMERA_PATH": "1",
-    "SS_CAMERA_PATH_FILE": ROUTE,
-    "SS_CAMERA_PATH_FIXED": "1",  # fixed 60 Hz step; wall-clock would desync pose from frame index
+# name -> (route file, probes). "nave" keeps the original filenames and cache keys so its committed
+# baselines stay valid; any other route namespaces its baselines by route name.
+ROUTES = {
+    "nave": (ROUTE, PROBES),
+    "aisle": (AISLE_ROUTE, AISLE_PROBES),
 }
+
+
+def motion_env(route_file: str) -> dict:
+    return {
+        "SS_CAMERA_PATH": "1",
+        "SS_CAMERA_PATH_FILE": route_file,
+        "SS_CAMERA_PATH_FIXED": "1",  # fixed 60 Hz step; wall-clock would desync pose from frame index
+    }
+
+
+MOTION_ENV = motion_env(ROUTE)
 
 
 def prune_ref_cache(repo_root: Path, keep: int = 2) -> None:
@@ -400,11 +425,26 @@ def evaluate(imgs, refs, probe_names, statics=None):
                 "psnr": qb.psnr(refs[f], imgs[f]),
                 "ssim": qb.ssim(refs[f], imgs[f]),
             })
-        pen = None
-        if statics and name in statics:
-            moving = qb.flip(refs[f0], imgs[f0])
-            parked = qb.flip(refs[f0], statics[name])
-            pen = (moving - parked) if (moving is not None and parked is not None) else None
+        # Motion penalty: how far the moving frame sits from THIS renderer's own converged still at the
+        # identical pose. Measured directly, image against image, with the reference not involved.
+        #
+        # It used to be a difference of two reference-relative errors, flip(ref,moving) minus
+        # flip(ref,still), and that construction is biased by the technique's spatial accuracy. A
+        # technique whose still frame is already far from ground truth has its motion error buried in
+        # error it already had, so it scores as paying LESS for motion. Measured across the matrix, the
+        # differenced form correlated -0.990 with static-gate FLIP and ranked all-rt as the worst
+        # motion performer; the direct form correlates +0.757 and ranks it the best, which is the
+        # sensible answer for the most temporally-stable technique.
+        #
+        # Cancelling the confound by making the comparison share the technique's own bias is the move
+        # k-DOP Clipping (Ikkala et al., SIGGRAPH Asia 2024) makes for ghosting, where they disable
+        # jitter so the reference carries the same aliasing. No published instance compares against the
+        # same renderer's converged still specifically, so treat the construction as ours.
+        #
+        # NEVER optimise this. Like any moving-minus-still measure it goes to zero for an output that
+        # ignores motion entirely, so it is a diagnostic reported beside absolute quality, not an
+        # objective. quality-tune enforces that by refusing to accept it as one.
+        pen = qb.flip(statics[name], imgs[f0]) if (statics and name in statics) else None
         per_pair.append({"probe": name,
                          "tflip": temporal_flip(imgs[f0], imgs[f1], refs[f0], refs[f1]),
                          "motionPenalty": pen})
@@ -424,11 +464,19 @@ def evaluate(imgs, refs, probe_names, statics=None):
     }
 
 
-def baseline_path(repo_root: Path, device: str, technique: str) -> Path:
-    return repo_root / "Scripts" / "quality-motion-baseline" / qb.device_slug(device) / f"{technique}.json"
+def baseline_path(repo_root: Path, device: str, technique: str, route: str = "nave") -> Path:
+    # "nave" keeps the bare <technique>.json it has always used, so the committed baselines for the
+    # original route stay valid; any other route prefixes its own name.
+    stem = technique if route == "nave" else f"{route}__{technique}"
+    return repo_root / "Scripts" / "quality-motion-baseline" / qb.device_slug(device) / f"{stem}.json"
 
 
 def main() -> int:
+    # Rebound below from --route, before anything reads them. The alternative is threading a route
+    # through every capture, cache-key and metric call; this keeps one source of truth and leaves
+    # every call site unchanged.
+    global ROUTE, PROBES, MOTION_ENV
+
     ap = argparse.ArgumentParser(description="Image-quality gate under camera motion.")
     ap.add_argument("--ref-frames", type=int, default=qb.REF_FRAMES_DEFAULT, help="PT settle window per reference (default 400)")
     ap.add_argument("--timeout", type=int, default=600, help="Per-capture wall-clock timeout in seconds")
@@ -436,7 +484,11 @@ def main() -> int:
     ap.add_argument("--build-dir", default="build", help="Build directory (default build)")
     ap.add_argument("--triplet", default="x64-windows", help="vcpkg triplet for the validation-layer path")
     ap.add_argument("--only", default=None, help="Run only this technique (e.g. rtgi, all-rt)")
-    ap.add_argument("--probes", default=",".join(PROBES), help="Comma-separated probe names")
+    ap.add_argument("--route", default="nave", choices=list(ROUTES),
+                    help="Which committed camera route to fly. 'nave' is the original centre-line "
+                         "route; 'aisle' runs the lit side aisle past both torch lights, which the "
+                         "nave route never renders (#169). Each keeps its own baselines.")
+    ap.add_argument("--probes", default="", help="Comma-separated probe names (default: all for the route)")
     ap.add_argument("--threshold", type=float, default=10.0, help="Regression tolerance %% (default 10)")
     ap.add_argument("--scene", default=MOTION_SCENE, help="Scene to benchmark")
     ap.add_argument("--tech-maxframes", type=int, default=4000,
@@ -461,11 +513,13 @@ def main() -> int:
     if not exe.exists():
         print(f"FAIL: executable not found at {exe} (build first, or check --config)")
         return 1
+    ROUTE, PROBES = ROUTES[args.route]
+    MOTION_ENV = motion_env(ROUTE)
     if not (repo_root / ROUTE).exists():
         print(f"FAIL: camera route missing at {ROUTE}")
         return 1
 
-    probe_names = [p.strip() for p in args.probes.split(",") if p.strip()]
+    probe_names = [p.strip() for p in args.probes.split(",") if p.strip()] if args.probes else list(PROBES)
     if unknown := [p for p in probe_names if p not in PROBES]:
         print(f"Unknown probe(s) {unknown}. Known: {list(PROBES)}")
         return 1
@@ -556,7 +610,7 @@ def main() -> int:
               f"motionPen {fmt(result['motionPenalty'])}"
               + (f"  cvvdp {fmt(result['cvvdpJod'])} JOD" if result["cvvdpJod"] is not None else ""))
 
-        bp = baseline_path(repo_root, device, tech)
+        bp = baseline_path(repo_root, device, tech, args.route)
         record = {"device": device, "technique": tech, "route": ROUTE, "probes": probe_names,
                   "flip": result["flip"], "psnr": result["psnr"], "ssim": result["ssim"],
                   "tflip": result["tflip"], "motionPenalty": result["motionPenalty"],
