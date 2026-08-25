@@ -320,8 +320,8 @@ instruction holding the most live registers, the actionable target for cutting a
 The **primary gate is VGPR-limited occupancy**: RGA's CLI has no occupancy column, so the script
 derives waves/SIMD from the VGPR count, per architecture family, verified against AMD's docs. RDNA3
 (`gfx11`) and RDNA4 (`gfx12`) desktop parts share a 1536-VGPR (192 KB) file and 16 wave slots, so both
-reach full occupancy at <=96 VGPRs, but allocation granularity differs (16 vs 24), which moves where
-the wave count steps: they disagree at 56 of the 256 possible VGPR counts, so neither model stands in
+reach full occupancy at <=96 VGPRs, but allocation granularity differs (12 vs 24), which moves where
+the wave count steps: they disagree at 36 of the 256 possible VGPR counts, so neither model stands in
 for the other. An unmodelled architecture yields no occupancy figure rather than a wrong one, which
 disables the primary gate, so add a model before targeting a new family. It fails (exit 1) when
 occupancy drops (fewer waves), a spill appears (0 to >0, hard fail), or LDS/ISA rises beyond
