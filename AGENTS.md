@@ -428,7 +428,19 @@ asks whichever driver actually compiled the pipeline for its own statistics.
 py Scripts/shader-stats.py --compare 9070 5070   # capture both adapters, cross-vendor table
 py Scripts/shader-stats.py --gpu 5070            # one adapter
 py Scripts/shader-stats.py --json <path>         # report an existing capture, no GPU run
+py Scripts/shader-stats.py --compare 9070 5070 --frames 400 --update-baseline
 ```
+
+**Coverage is what the run built, not the shader set.** Pipelines are created lazily, so a capture holds
+only what the app compiled: two identical back-to-back runs on the 9070 XT gave 21 and 22 executables,
+the second additionally creating DefaultLit's `[noinlineshadow]` permutation. RGA cooks every shader and
+permutation offline and is deterministic, so **RGA stays the authority for AMD coverage and for anything
+gated**; use this for NVIDIA, where no offline analyser exists, and for the cross-vendor comparison on
+shaders present in both. `--frames 400` reliably builds the RT and denoise pipelines; the 90 default
+leaves `GI.comp` and `Reflection.comp` out entirely.
+
+`Scripts/shader-stats-baseline/<device-slug>.json` is the committed, citable record. Without it these
+numbers exist only in a gitignored `Engine/cache` file, which no reader can check.
 
 Driven by the `shader.stats` CVar, which gates both the device extension and
 `VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR`; that bit makes the driver retain compiler metadata and

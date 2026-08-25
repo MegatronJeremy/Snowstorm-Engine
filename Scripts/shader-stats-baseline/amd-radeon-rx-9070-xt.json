@@ -1,0 +1,760 @@
+{
+ "device": "AMD Radeon RX 9070 XT",
+ "executables": [
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_VERTEX_BIT ",
+   "executable": "ShaderProperties.gs",
+   "pipeline": "Engine/Shaders/DepthNormal.vert.hlsl|Engine/Shaders/DepthNormal.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 46
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 40
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_FRAGMENT_BIT ",
+   "executable": "ShaderProperties.ps",
+   "pipeline": "Engine/Shaders/DepthNormal.vert.hlsl|Engine/Shaders/DepthNormal.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 34
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 16
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_VERTEX_BIT ",
+   "executable": "ShaderProperties.gs",
+   "pipeline": "Engine/Shaders/Velocity.vert.hlsl|Engine/Shaders/Velocity.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 54
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 39
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_FRAGMENT_BIT ",
+   "executable": "ShaderProperties.ps",
+   "pipeline": "Engine/Shaders/Velocity.vert.hlsl|Engine/Shaders/Velocity.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 2
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 12
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_COMPUTE_BIT ",
+   "executable": "ShaderProperties.cs",
+   "pipeline": "Engine/Shaders/AO.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 4096
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 4096
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 50
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 60
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 64
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_COMPUTE_BIT ",
+   "executable": "ShaderProperties.cs",
+   "pipeline": "Engine/Shaders/GITemporal.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 0
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 34
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 49
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 64
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_COMPUTE_BIT ",
+   "executable": "ShaderProperties.cs",
+   "pipeline": "Engine/Shaders/GIDenoise.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 0
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 49
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 59
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 64
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_VERTEX_BIT ",
+   "executable": "ShaderProperties.gs",
+   "pipeline": "Engine/Shaders/Fullscreen.vert.hlsl|Engine/Shaders/AOUpsample.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 13
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 5
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_FRAGMENT_BIT ",
+   "executable": "ShaderProperties.ps",
+   "pipeline": "Engine/Shaders/Fullscreen.vert.hlsl|Engine/Shaders/AOUpsample.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 41
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 39
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_VERTEX_BIT ",
+   "executable": "ShaderProperties.gs",
+   "pipeline": "Engine/Shaders/DepthNormal.vert.hlsl|Engine/Shaders/DepthPrepass.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 46
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 25
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_FRAGMENT_BIT ",
+   "executable": "ShaderProperties.ps",
+   "pipeline": "Engine/Shaders/DepthNormal.vert.hlsl|Engine/Shaders/DepthPrepass.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 26
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 5
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_VERTEX_BIT ",
+   "executable": "ShaderProperties.gs",
+   "pipeline": "Engine/Shaders/Fullscreen.vert.hlsl|Engine/Shaders/Sky.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 13
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 5
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_FRAGMENT_BIT ",
+   "executable": "ShaderProperties.ps",
+   "pipeline": "Engine/Shaders/Fullscreen.vert.hlsl|Engine/Shaders/Sky.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 30
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 13
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_VERTEX_BIT ",
+   "executable": "ShaderProperties.gs",
+   "pipeline": "Engine/Shaders/Fullscreen.vert.hlsl|Engine/Shaders/Tonemap.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 13
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 5
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_FRAGMENT_BIT ",
+   "executable": "ShaderProperties.ps",
+   "pipeline": "Engine/Shaders/Fullscreen.vert.hlsl|Engine/Shaders/Tonemap.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 24
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 11
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_VERTEX_BIT ",
+   "executable": "ShaderProperties.gs",
+   "pipeline": "Engine/Shaders/Mesh.vert.hlsl|Engine/Shaders/DefaultLit.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 30
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 42
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_FRAGMENT_BIT ",
+   "executable": "ShaderProperties.ps",
+   "pipeline": "Engine/Shaders/Mesh.vert.hlsl|Engine/Shaders/DefaultLit.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 74
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 87
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_VERTEX_BIT ",
+   "executable": "ShaderProperties.gs",
+   "pipeline": "Engine/Shaders/Mesh.vert.hlsl|Engine/Shaders/DefaultLit.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 30
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 42
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_FRAGMENT_BIT ",
+   "executable": "ShaderProperties.ps",
+   "pipeline": "Engine/Shaders/Mesh.vert.hlsl|Engine/Shaders/DefaultLit.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 4096
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 90
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 127
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_COMPUTE_BIT ",
+   "executable": "ShaderProperties.cs",
+   "pipeline": "Engine/Shaders/GITemporal.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 0
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 34
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 49
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 64
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_COMPUTE_BIT ",
+   "executable": "ShaderProperties.cs",
+   "pipeline": "Engine/Shaders/GIDenoise.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 0
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 49
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 59
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 64
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_COMPUTE_BIT ",
+   "executable": "ShaderProperties.cs",
+   "pipeline": "Engine/Shaders/GITemporal.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 0
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 34
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 49
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 64
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_COMPUTE_BIT ",
+   "executable": "ShaderProperties.cs",
+   "pipeline": "Engine/Shaders/GI.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 4096
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 4096
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 59
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 82
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 64
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_VERTEX_BIT ",
+   "executable": "ShaderProperties.gs",
+   "pipeline": "Engine/Shaders/Fullscreen.vert.hlsl|Engine/Shaders/GIUpsample.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 13
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 5
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_FRAGMENT_BIT ",
+   "executable": "ShaderProperties.ps",
+   "pipeline": "Engine/Shaders/Fullscreen.vert.hlsl|Engine/Shaders/GIUpsample.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 65536
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 0
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 41
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 46
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 0
+  },
+  {
+   "description": "Executable handles following Vulkan stages:  VK_SHADER_STAGE_COMPUTE_BIT ",
+   "executable": "ShaderProperties.cs",
+   "pipeline": "Engine/Shaders/Reflection.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "ldsSizePerLocalWorkGroup": {
+     "format": "uint64",
+     "value": 4096
+    },
+    "ldsUsageSizeInBytes": {
+     "format": "uint64",
+     "value": 4096
+    },
+    "numUsedSgprs": {
+     "format": "uint64",
+     "value": 58
+    },
+    "numUsedVgprs": {
+     "format": "uint64",
+     "value": 81
+    },
+    "scratchMemUsageInBytes": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 64
+  }
+ ],
+ "source": "VK_KHR_pipeline_executable_properties"
+}

@@ -1,0 +1,861 @@
+{
+ "device": "NVIDIA GeForce RTX 5070",
+ "executables": [
+  {
+   "description": "Vertex Shader",
+   "executable": "VS",
+   "pipeline": "Engine/Shaders/DepthNormal.vert.hlsl|Engine/Shaders/DepthNormal.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 2176
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 13
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Count": {
+     "format": "uint64",
+     "value": 0
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 35
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Fragment Shader",
+   "executable": "FS",
+   "pipeline": "Engine/Shaders/DepthNormal.vert.hlsl|Engine/Shaders/DepthNormal.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 2944
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 10
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Colors": {
+     "format": "uint64",
+     "value": 2
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 22
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Vertex Shader",
+   "executable": "VS",
+   "pipeline": "Engine/Shaders/Velocity.vert.hlsl|Engine/Shaders/Velocity.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 2432
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 4
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Count": {
+     "format": "uint64",
+     "value": 0
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 38
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Fragment Shader",
+   "executable": "FS",
+   "pipeline": "Engine/Shaders/Velocity.vert.hlsl|Engine/Shaders/Velocity.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 768
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 8
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Colors": {
+     "format": "uint64",
+     "value": 1
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 16
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Compute Shader",
+   "executable": "CS",
+   "pipeline": "Engine/Shaders/AO.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 10368
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 48
+    },
+    "Shared Memory Size": {
+     "format": "uint64",
+     "value": 2304
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Compute Shader",
+   "executable": "CS",
+   "pipeline": "Engine/Shaders/GITemporal.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 13312
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476752
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 64
+    },
+    "Shared Memory Size": {
+     "format": "uint64",
+     "value": 1280
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Compute Shader",
+   "executable": "CS",
+   "pipeline": "Engine/Shaders/GIDenoise.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 10240
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476752
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 48
+    },
+    "Shared Memory Size": {
+     "format": "uint64",
+     "value": 768
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Vertex Shader",
+   "executable": "VS",
+   "pipeline": "Engine/Shaders/Fullscreen.vert.hlsl|Engine/Shaders/AOUpsample.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 768
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 1
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Count": {
+     "format": "uint64",
+     "value": 0
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 16
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Fragment Shader",
+   "executable": "FS",
+   "pipeline": "Engine/Shaders/Fullscreen.vert.hlsl|Engine/Shaders/AOUpsample.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 4608
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 3
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Colors": {
+     "format": "uint64",
+     "value": 1
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 35
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Vertex Shader",
+   "executable": "VS",
+   "pipeline": "Engine/Shaders/DepthNormal.vert.hlsl|Engine/Shaders/DepthPrepass.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 1536
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 6
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Count": {
+     "format": "uint64",
+     "value": 0
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 23
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Fragment Shader",
+   "executable": "FS",
+   "pipeline": "Engine/Shaders/DepthNormal.vert.hlsl|Engine/Shaders/DepthPrepass.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 640
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 3
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Colors": {
+     "format": "uint64",
+     "value": 0
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 16
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Vertex Shader",
+   "executable": "VS",
+   "pipeline": "Engine/Shaders/Fullscreen.vert.hlsl|Engine/Shaders/Sky.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 768
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 1
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Count": {
+     "format": "uint64",
+     "value": 0
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 16
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Fragment Shader",
+   "executable": "FS",
+   "pipeline": "Engine/Shaders/Fullscreen.vert.hlsl|Engine/Shaders/Sky.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 2304
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 3
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Colors": {
+     "format": "uint64",
+     "value": 1
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 18
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Vertex Shader",
+   "executable": "VS",
+   "pipeline": "Engine/Shaders/Fullscreen.vert.hlsl|Engine/Shaders/Tonemap.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 768
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 1
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Count": {
+     "format": "uint64",
+     "value": 0
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 16
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Fragment Shader",
+   "executable": "FS",
+   "pipeline": "Engine/Shaders/Fullscreen.vert.hlsl|Engine/Shaders/Tonemap.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 2048
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 3
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Colors": {
+     "format": "uint64",
+     "value": 1
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 16
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Vertex Shader",
+   "executable": "VS",
+   "pipeline": "Engine/Shaders/Mesh.vert.hlsl|Engine/Shaders/DefaultLit.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 2176
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 13
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Count": {
+     "format": "uint64",
+     "value": 0
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 35
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Fragment Shader",
+   "executable": "FS",
+   "pipeline": "Engine/Shaders/Mesh.vert.hlsl|Engine/Shaders/DefaultLit.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 27264
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 16
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Colors": {
+     "format": "uint64",
+     "value": 1
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 64
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Vertex Shader",
+   "executable": "VS",
+   "pipeline": "Engine/Shaders/Mesh.vert.hlsl|Engine/Shaders/DefaultLit.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 2176
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 13
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Count": {
+     "format": "uint64",
+     "value": 0
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 35
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Fragment Shader",
+   "executable": "FS",
+   "pipeline": "Engine/Shaders/Mesh.vert.hlsl|Engine/Shaders/DefaultLit.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 77056
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 16
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476784
+    },
+    "Output Colors": {
+     "format": "uint64",
+     "value": 1
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 80
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Compute Shader",
+   "executable": "CS",
+   "pipeline": "Engine/Shaders/GITemporal.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 13312
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476752
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 64
+    },
+    "Shared Memory Size": {
+     "format": "uint64",
+     "value": 1280
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Compute Shader",
+   "executable": "CS",
+   "pipeline": "Engine/Shaders/GIDenoise.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 10240
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476752
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 48
+    },
+    "Shared Memory Size": {
+     "format": "uint64",
+     "value": 768
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Compute Shader",
+   "executable": "CS",
+   "pipeline": "Engine/Shaders/GITemporal.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 13312
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476752
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 64
+    },
+    "Shared Memory Size": {
+     "format": "uint64",
+     "value": 1280
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Compute Shader",
+   "executable": "CS",
+   "pipeline": "Engine/Shaders/GI.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 31360
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476768
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 64
+    },
+    "Shared Memory Size": {
+     "format": "uint64",
+     "value": 2816
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Vertex Shader",
+   "executable": "VS",
+   "pipeline": "Engine/Shaders/Fullscreen.vert.hlsl|Engine/Shaders/GIUpsample.frag.hlsl",
+   "stages": "vertex",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 768
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 1
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Count": {
+     "format": "uint64",
+     "value": 0
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 16
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Fragment Shader",
+   "executable": "FS",
+   "pipeline": "Engine/Shaders/Fullscreen.vert.hlsl|Engine/Shaders/GIUpsample.frag.hlsl",
+   "stages": "fragment",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 4864
+    },
+    "Input Count": {
+     "format": "uint64",
+     "value": 3
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Output Colors": {
+     "format": "uint64",
+     "value": 1
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 40
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Compute Shader",
+   "executable": "CS",
+   "pipeline": "Engine/Shaders/Reflection.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 21248
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476768
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 64
+    },
+    "Shared Memory Size": {
+     "format": "uint64",
+     "value": 2816
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  },
+  {
+   "description": "Compute Shader",
+   "executable": "CS",
+   "pipeline": "Engine/Shaders/OmmBake.comp.hlsl",
+   "stages": "compute",
+   "stats": {
+    "Binary Size": {
+     "format": "uint64",
+     "value": 4480
+    },
+    "Local Memory Size": {
+     "format": "uint64",
+     "value": 68719476736
+    },
+    "Register Count": {
+     "format": "uint64",
+     "value": 16
+    },
+    "Shared Memory Size": {
+     "format": "uint64",
+     "value": 0
+    },
+    "Stack Size": {
+     "format": "uint64",
+     "value": 0
+    }
+   },
+   "subgroupSize": 32
+  }
+ ],
+ "source": "VK_KHR_pipeline_executable_properties"
+}

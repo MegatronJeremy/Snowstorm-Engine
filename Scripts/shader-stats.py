@@ -10,6 +10,19 @@ replace RGA.
     py Scripts/shader-stats.py --gpu 5070           # pin the adapter
     py Scripts/shader-stats.py --compare 9070 5070  # capture both, print the cross-vendor table
     py Scripts/shader-stats.py --json <path>        # report an existing capture, no GPU run
+    py Scripts/shader-stats.py --compare 9070 5070 --frames 400 --update-baseline
+
+COVERAGE IS WHAT THE RUN BUILT, not the shader set, and this is the sharpest difference from RGA.
+Pipelines are created lazily, so a capture contains only what the app actually compiled: measured, two
+identical back-to-back runs on the 9070 XT differed (21 vs 22 executables, the second additionally
+creating DefaultLit's [noinlineshadow] permutation). RGA cooks every shader and every permutation
+offline and is deterministic, so RGA stays the authority for AMD coverage and for anything gated. Use
+this for NVIDIA, where no offline analyser exists, and for the cross-vendor comparison on shaders that
+appear in both captures. --frames 400 is what reliably builds the RT and denoise pipelines; the 90
+default leaves GI.comp and Reflection.comp out.
+
+Baselines under Scripts/shader-stats-baseline/<device-slug>.json are the citable record: without them
+these numbers live only in a gitignored Engine/cache file, which no reader can check.
 
 WHAT EACH VENDOR REPORTS DIFFERS, and the tool does not pretend otherwise. AMD gives numUsedVgprs /
 numUsedSgprs / ldsUsageSizeInBytes / scratchMemUsageInBytes; NVIDIA gives Register Count / Binary Size /
@@ -25,6 +38,7 @@ value is suppressed and the column named.
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -47,6 +61,29 @@ CAPTURE_ENV = {
     "SS_RENDER_REFLECTIONS_MODE": "2",
     "SS_RENDER_GI_MODE": "2",
 }
+
+
+def device_slug(device: str) -> str:
+    """Filesystem-safe directory name for an adapter, mirroring perf-bench's scheme."""
+    slug = re.sub(r"[^a-z0-9]+", "-", device.lower()).strip("-")
+    return slug or "unknown-device"
+
+
+def baseline_path(repo_root: Path, device: str) -> Path:
+    return repo_root / "Scripts" / "shader-stats-baseline" / f"{device_slug(device)}.json"
+
+
+def write_baseline(repo_root: Path, doc: dict) -> Path:
+    """Commit the capture so the numbers are a checkable artifact, not just prose.
+
+    Every other gate here has a committed baseline directory; without one these numbers exist only in
+    a gitignored Engine/cache file and whatever was written about them, which is not reproducible by
+    a reader. This is NOT a gate (see the module docstring): it is the citable record.
+    """
+    out = baseline_path(repo_root, doc["device"])
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n", encoding="utf-8", newline="")
+    return out
 
 
 def capture(repo_root: Path, exe: Path, gpu: str, frames: int, timeout: int) -> dict | None:
@@ -243,6 +280,8 @@ def main() -> int:
     ap.add_argument("--frames", type=int, default=90, help="Frames to run so pipelines get built (default 90)")
     ap.add_argument("--timeout", type=int, default=180)
     ap.add_argument("--config", default="Debug")
+    ap.add_argument("--update-baseline", action="store_true",
+                    help="Write each capture to Scripts/shader-stats-baseline/<device-slug>.json")
     args = ap.parse_args()
 
     if args.json:
@@ -261,6 +300,8 @@ def main() -> int:
             d = capture(repo_root, exe, g, args.frames, args.timeout)
             if d is None:
                 return 2
+            if args.update_baseline:
+                print(f"  wrote {write_baseline(repo_root, d).relative_to(repo_root)}")
             docs.append(d)
         for d in docs:
             report(d)
@@ -270,6 +311,8 @@ def main() -> int:
     doc = capture(repo_root, exe, args.gpu, args.frames, args.timeout)
     if doc is None:
         return 2
+    if args.update_baseline:
+        print(f"  wrote {write_baseline(repo_root, doc).relative_to(repo_root)}")
     report(doc)
     return 0
 

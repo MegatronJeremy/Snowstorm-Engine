@@ -33,6 +33,10 @@ Tools/rdts/
 !Scripts/quality-baseline/
 !Scripts/quality-baseline/**/*.json
 !Scripts/quality-motion-baseline/**/*.json
+# Committed driver-reported shader statistics (the cross-vendor citable record, not a gate).
+# See Scripts/shader-stats.py.
+!Scripts/shader-stats-baseline/
+!Scripts/shader-stats-baseline/*.json
 *.DotSettings
 *.DotSettings.user
 *.ini
