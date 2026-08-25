@@ -310,15 +310,6 @@ def view_mismatch(current: dict, baseline: dict) -> str | None:
     return None
 
 
-def compare(name: str, current: dict, baseline: dict, threshold_pct: float, abs_ms: float) -> bool:
-    """Print a per-pass table (baseline vs current, Δ%); return True if within threshold.
-
-    A pass must exceed BOTH thresholds to count as a regression. Percentage alone is meaningless on a
-    sub-ms pass: back-to-back runs of the same binary move TemporalResolve by ~0.08 ms and PostProcess
-    by ~0.02 ms, which reads as +50% and +62% on passes that cost 0.16 ms and 0.04 ms. An absolute
-    floor keeps them gated against a real regression (a 0.2 ms pass doubling still trips it) instead of
-    excluding them the way the sub-0.05 ms noise rule below does.
-    """
 def canary_scale(current: dict, baseline: dict, canary: str | None) -> float:
     """Factor correcting `current` for a global clock shift, from a pass the change under test cannot affect.
 
@@ -346,8 +337,16 @@ def canary_scale(current: dict, baseline: dict, canary: str | None) -> float:
     return scale
 
 
-def compare(name: str, current: dict, baseline: dict, threshold_pct: float, canary: str | None = None) -> bool:
-    """Print a per-pass table (baseline vs current, Δ%); return True if within threshold."""
+def compare(name: str, current: dict, baseline: dict, threshold_pct: float, abs_ms: float,
+            canary: str | None = None) -> bool:
+    """Print a per-pass table (baseline vs current, Δ%); return True if within threshold.
+
+    A regression must clear the absolute floor as well as whichever statistical test applies. Interval
+    separation answers "is this difference real", never "is it worth failing a build over", and with a
+    5-run baseline the intervals are tight enough that a reproducible sub-1% difference separates
+    cleanly: measured, a freshly captured baseline re-gated against itself flagged nine passes, every
+    one of them under 0.07 ms and four of them under 0.002 ms.
+    """
     cur_passes = current.get("passes", {})
     base_passes = baseline.get("passes", {})
     scale = canary_scale(current, baseline, canary)
@@ -383,22 +382,26 @@ def compare(name: str, current: dict, baseline: dict, threshold_pct: float, cana
             cq1, cq3 = cq1 * scale, cq3 * scale
         bq1, bq3 = base_passes.get(p, {}).get("q1Ms"), base_passes.get(p, {}).get("q3Ms")
         have_intervals = None not in (cq1, cq3, bq1, bq3)
+        rise = c - b
         if have_intervals:
             if cq1 > bq3:  # current entirely above baseline
-                flag = f"  REGRESSION (IQR {cq1:.3f}-{cq3:.3f} vs {bq1:.3f}-{bq3:.3f})"
-                ok = False
+                if rise > abs_ms:
+                    flag = f"  REGRESSION (IQR {cq1:.3f}-{cq3:.3f} vs {bq1:.3f}-{bq3:.3f})"
+                    ok = False
+                else:
+                    flag = f"  separated but under floor (+{rise:.3f} ms)"
             elif cq3 < bq1:
                 flag = "  improved (intervals disjoint)"
-            elif delta > threshold_pct:
+            elif delta > threshold_pct and rise > abs_ms:
                 flag = "  INCONCLUSIVE (intervals overlap)"
                 ok = False
         else:
             spread = cur_passes.get(p, {}).get("spreadPct")
             noisy = spread is not None and abs(delta) <= spread
-            if delta > threshold_pct and not noisy:
+            if delta > threshold_pct and rise > abs_ms and not noisy:
                 flag = "  REGRESSION"
                 ok = False
-            elif delta > threshold_pct and noisy:
+            elif delta > threshold_pct and rise > abs_ms and noisy:
                 flag = f"  INCONCLUSIVE (spread {spread:.1f}%)"
                 ok = False
         # FS invocations (overdraw metric, #pipeline-stats). Informational: a graphics pass's fragment-
@@ -527,7 +530,7 @@ def main() -> int:
             if reason := view_mismatch(current, baseline):
                 ungated.append(name)
                 print(f"  NOT GATED: {reason}. Nothing comparable, so no diff was run.")
-            elif not compare(name, current, baseline, args.threshold, args.canary_pass):
+            elif not compare(name, current, baseline, args.threshold, args.abs_threshold, args.canary_pass):
                 all_ok = False
         else:
             ungated.append(name)
