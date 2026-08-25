@@ -122,7 +122,7 @@ namespace Snowstorm
 
 		RenderGraph graph;
 
-		FrameContext fc{.Graph = graph, .Renderer = renderer, .Ctx = ctx, .Reg = reg, .FrameIndex = frameIndex};
+		FrameContext fc{.Graph = graph, .Renderer = renderer, .Reg = reg, .FrameIndex = frameIndex};
 
 		// RT reflections (#118): hand the per-instance geometry-table address (TlasBuildSystem filled it in
 		// PreRender) to the renderer so AcquireFrameSet folds it into FrameCB. 0 when reflections are off ->
@@ -612,11 +612,17 @@ namespace Snowstorm
 		// shader-read before this pass (same as the IBL cubemaps above). Only when GI is fed this pass.
 		if (giTextureIndex != 0)
 		{
-			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
-			    rt && rt->GIUpscaleTarget && !rt->GIUpscaleTarget->GetDesc().ColorAttachments.empty())
+			// The slot the forward pass samples, which under render.rt.crossframe is the one the GI chain
+			// wrote LAST frame. Declaring the read against the written slot instead would reinstate the
+			// dependency this exists to remove.
+			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity); rt)
 			{
-				meshReads.push_back({rt->GIUpscaleTarget->GetDesc().ColorAttachments[0].View->GetTexture(),
-				                     RenderGraph::AccessState::Sampled});
+				if (const Ref<RenderTarget>& giRead = rt->GIUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())];
+				    giRead && !giRead->GetDesc().ColorAttachments.empty())
+				{
+					meshReads.push_back({giRead->GetDesc().ColorAttachments[0].View->GetTexture(),
+					                     RenderGraph::AccessState::Sampled});
+				}
 			}
 		}
 		// Full-res AO target: same screen-UV bindless sample as GI (#126). Declare the Sampled read so the
@@ -624,9 +630,9 @@ namespace Snowstorm
 		if (aoTextureIndex != 0)
 		{
 			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
-			    rt && rt->AOUpscaleTarget && !rt->AOUpscaleTarget->GetDesc().ColorAttachments.empty())
+			    rt && rt->AOUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())] && !rt->AOUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty())
 			{
-				meshReads.push_back({rt->AOUpscaleTarget->GetDesc().ColorAttachments[0].View->GetTexture(),
+				meshReads.push_back({rt->AOUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments[0].View->GetTexture(),
 				                     RenderGraph::AccessState::Sampled});
 			}
 		}
@@ -644,9 +650,9 @@ namespace Snowstorm
 		if (shadowTextureIndex != 0)
 		{
 			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
-			    rt && rt->ShadowUpscaleTarget && !rt->ShadowUpscaleTarget->GetDesc().ColorAttachments.empty())
+			    rt && rt->ShadowUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())] && !rt->ShadowUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty())
 			{
-				meshReads.push_back({rt->ShadowUpscaleTarget->GetDesc().ColorAttachments[0].View->GetTexture(),
+				meshReads.push_back({rt->ShadowUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments[0].View->GetTexture(),
 				                     RenderGraph::AccessState::Sampled});
 			}
 		}
@@ -655,9 +661,9 @@ namespace Snowstorm
 		if (shadowSpecTextureIndex != 0)
 		{
 			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
-			    rt && rt->ShadowSpecUpscaleTarget && !rt->ShadowSpecUpscaleTarget->GetDesc().ColorAttachments.empty())
+			    rt && rt->ShadowSpecUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())] && !rt->ShadowSpecUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty())
 			{
-				meshReads.push_back({rt->ShadowSpecUpscaleTarget->GetDesc().ColorAttachments[0].View->GetTexture(),
+				meshReads.push_back({rt->ShadowSpecUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments[0].View->GetTexture(),
 				                     RenderGraph::AccessState::Sampled});
 			}
 		}
@@ -687,7 +693,7 @@ namespace Snowstorm
 			                  fc.Renderer.SetShadowSpecTexture(shadowSpecTextureIndex);
 
 			                  const glm::vec3 camPos = cam.Transform->Position;
-			                  fc.Renderer.BeginScene(*cam.Rt, camPos, fc.Ctx, fc.FrameIndex, jittered, forceRasterShadow);
+			                  fc.Renderer.BeginScene(*cam.Rt, camPos, BorrowContext(c), fc.FrameIndex, jittered, forceRasterShadow);
 
 			                  auto& assets = SingletonView<AssetManagerSingleton>();
 
@@ -751,7 +757,7 @@ namespace Snowstorm
 		                  .Reads = std::move(reads),
 		                  .Execute = [this, &fc, params, dstFmt](CommandContext& c)
 		                  {
-			                  m_PostProcessPass.Draw(fc.Renderer, fc.Ctx, fc.FrameIndex, params, dstFmt);
+			                  m_PostProcessPass.Draw(fc.Renderer, BorrowContext(c), fc.FrameIndex, params, dstFmt);
 		                  }});
 	}
 }

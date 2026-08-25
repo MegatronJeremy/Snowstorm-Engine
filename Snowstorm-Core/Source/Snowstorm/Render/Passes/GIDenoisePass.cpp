@@ -52,18 +52,34 @@ namespace Snowstorm
 		constexpr float kNormalPow = 8.0f;
 	}
 
-	void GIDenoisePass::EnsureResources()
+	void GIDenoisePass::EnsureResources(const uint32_t features)
 	{
-		if (m_Pipeline)
+		if (m_Pipeline && m_Features == features)
 		{
 			return;
 		}
 
-		Ref<Shader> cs = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load("Engine/Shaders/GIDenoise.comp.hlsl");
+		// Both variants reflect the same set-0 layout: the HitDistGuide declaration is unconditional and
+		// -fspv-preserve-bindings keeps binding 3 even when nothing reads it, so the descriptor code below
+		// is permutation-independent and Dispatch binds either variant identically.
+		ShaderDefines defines;
+		if ((features & FeatureHitDist) != 0)
+		{
+			defines.emplace_back("SS_DENOISE_HITDIST=1");
+		}
+		if ((features & FeaturePenumbra) != 0)
+		{
+			defines.emplace_back("SS_DENOISE_PENUMBRA=1");
+		}
+
+		Ref<Shader> cs = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load("Engine/Shaders/GIDenoise.comp.hlsl", std::move(defines));
 		SS_CORE_ASSERT(cs, "Failed to load GI denoise compute shader");
 		if (!cs->IsReady())
 		{
-			return; // async compile; Dispatch retries
+			// Async compile; Dispatch retries. On a mid-session variant switch (an editor CVar toggle) the
+			// previously built pipeline stays bound until the new variant is ready, so the signal keeps
+			// denoising with the old weights for a frame or two instead of dropping out entirely.
+			return;
 		}
 
 		PipelineDesc p{};
@@ -72,15 +88,21 @@ namespace Snowstorm
 		p.DebugName = "GIDenoisePipeline";
 		m_Pipeline = Pipeline::Create(p);
 		SS_CORE_ASSERT(m_Pipeline, "Failed to create GI denoise pipeline");
+		m_Features = features;
 
 		// #129 Inc 2c: no sampler — the GI input and G-buffer guide are both point-fetched via Load.
 
-		const uint32_t frames = Renderer::GetFramesInFlight();
-		m_ParamBuffers.resize(frames * kMaxSlots);
-		m_Sets.resize(frames * kMaxSlots);
-		for (uint32_t i = 0; i < frames * kMaxSlots; ++i)
+		// Sized once: a variant switch rebuilds only the pipeline, and the per-(frame,slot) UBOs are
+		// permutation-independent (the same GIDenoiseCB either way).
+		if (m_ParamBuffers.empty())
 		{
-			m_ParamBuffers[i] = Buffer::Create(sizeof(GIDenoiseCB), BufferUsage::Uniform, nullptr, true, "GIDenoiseCB");
+			const uint32_t frames = Renderer::GetFramesInFlight();
+			m_ParamBuffers.resize(frames * kMaxSlots);
+			m_Sets.resize(frames * kMaxSlots);
+			for (uint32_t i = 0; i < frames * kMaxSlots; ++i)
+			{
+				m_ParamBuffers[i] = Buffer::Create(sizeof(GIDenoiseCB), BufferUsage::Uniform, nullptr, true, "GIDenoiseCB");
+			}
 		}
 	}
 
@@ -96,7 +118,18 @@ namespace Snowstorm
 			return;
 		}
 
-		EnsureResources();
+		// The signal this instance denoises picks the permutation: AO is the only consumer passing
+		// hitDistPhi > 0, shadows the only one passing penumbraScale > 0.
+		uint32_t features = 0;
+		if (hitDistPhi > 0.0f)
+		{
+			features |= FeatureHitDist;
+		}
+		if (penumbraScale > 0.0f)
+		{
+			features |= FeaturePenumbra;
+		}
+		EnsureResources(features);
 		if (!m_Pipeline)
 		{
 			return; // shader not compiled yet

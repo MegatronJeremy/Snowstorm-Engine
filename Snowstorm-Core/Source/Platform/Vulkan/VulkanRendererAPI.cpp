@@ -309,6 +309,11 @@ namespace Snowstorm
 		// 3. Acquire succeeded — now it's safe to reset the fence and begin recording.
 		vkResetFences(device, 1, &m_InFlightFences[m_CurrentFrameIndex]);
 
+		if (const int dumpFrames = CVars::MemoryDump.Get(); dumpFrames > 0)
+		{
+			context.LogMemoryStats();
+			CVars::MemoryDump.Set(dumpFrames - 1);
+		}
 		// Reset the per-frame recording state: every frame starts on graphics segment 0 with no async batch
 		// open and no submissions queued. Segments/batches allocated by earlier frames stay in the pool.
 		m_CurrentGraphicsSegment = 0;

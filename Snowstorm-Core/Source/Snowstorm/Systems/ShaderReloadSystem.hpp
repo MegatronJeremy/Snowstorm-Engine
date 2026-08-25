@@ -20,5 +20,6 @@ namespace Snowstorm
 		// first ready frame to establish the correct variant even when it matches the device default.
 		bool m_LitInitialized = false;
 		bool m_LastWantRT = false;
+		bool m_LastWantInlineShadows = false;
 	};
 }

@@ -26,6 +26,27 @@ STAGE_PROFILE = {"vert": "vs_6_5", "frag": "ps_6_5", "comp": "cs_6_5"}
 # register/occupancy), which is what the occupancy gate keys on; "base" is the ForceNonRT path.
 VARIANTS = {"base": [], "rt": ["SS_RAYTRACING=1", "SS_FP16=1"]}
 
+# Per-shader FEATURE permutations: axes a CALL SITE picks (ShaderDefines passed to ShaderLibrary::Load),
+# unlike the device-capability axes above. The distinction matters to the occupancy gate: capability
+# variants are alternatives on one device and collapse to the worst case, while feature variants run
+# SIMULTANEOUSLY in one frame, so each is gated on its own instead of hiding behind the heaviest consumer.
+# Only combinations a call site actually requests are listed; cooking the full cross product is how shader
+# variant counts explode. Keep in sync with the call sites that pass defines to Load().
+FEATURE_VARIANTS = {
+    # DefaultLit's inline ray-query shadow path is a DYNAMIC axis (ShaderReloadSystem swaps it in place from
+    # a frame-constant CVar) rather than a call-site one, but the gate still needs both compiled to see the
+    # occupancy difference, and the heavier variant is what runs when inline RT shadows are on.
+    "DefaultLit.frag": [
+        ("inlineshadow", ["SS_LIT_INLINE_RT_SHADOWS=1"]), # shadows.mode=RayTraced without the stochastic pass
+        ("noinlineshadow", []),                           # stochastic shadows / raster / off: traversal is dead
+    ],
+    "GIDenoise.comp": [
+        ("gi", []),                            # GI + reflections: neither extra term
+        ("ao", ["SS_DENOISE_HITDIST=1"]),      # AO: REBLUR-style hit-distance edge-stop
+        ("shadow", ["SS_DENOISE_PENUMBRA=1"]), # shadows (diffuse + demodulated specular): SIGMA penumbra
+    ],
+}
+
 # Exactly the flags CompileStageWithDxc passes (minus -T/-I/-Fo/-D, added per-invocation below).
 BASE_FLAGS = ["-spirv", "-E", "main", "-fspv-target-env=vulkan1.2", "-fvk-use-dx-layout",
               "-Zpr", "-enable-16bit-types", "-fspv-preserve-bindings"]
@@ -61,6 +82,17 @@ def main() -> int:
         return 1
     out.mkdir(parents=True, exist_ok=True)
 
+    # Purge stale .spv before cooking. The cook regenerates everything it owns, so anything left over is
+    # from a previous run with a different shader or variant list, and rga-occupancy.py would analyse it as
+    # a live module: a renamed shader or a changed FEATURE_VARIANTS entry otherwise leaves a phantom that
+    # --update-baseline bakes in permanently. Observed with DefaultLit.frag_{base,rt}.spv surviving the
+    # switch to per-feature variants and reporting an entry the cook no longer produces.
+    stale = list(out.glob("*.spv"))
+    for f in stale:
+        f.unlink()
+    if stale:
+        print(f"cleared {len(stale)} stale .spv from {out.name}")
+
     variants = [v for v in args.variants.split(",") if v in VARIANTS]
     if not variants:
         print(f"FAIL: no valid variants in '{args.variants}' (known: {list(VARIANTS)})")
@@ -75,18 +107,23 @@ def main() -> int:
     for src in srcs:
         stage = stage_for(src)
         profile = STAGE_PROFILE[stage]
-        for vname in variants:
-            out_spv = out / f"{src.stem}_{vname}.spv"  # src.stem keeps the stage token, e.g. Reflection.comp
-            cmd = [str(dxc), str(src), *BASE_FLAGS, "-T", profile,
-                   "-I", str(shaders_dir), "-Fo", str(out_spv)]
-            for d in VARIANTS[vname]:
-                cmd += ["-D", d]
-            proc = subprocess.run(cmd, capture_output=True, text=True)
-            if proc.returncode == 0 and out_spv.exists():
-                ok += 1
-            else:
-                fail += 1
-                print(f"  FAIL {src.name} [{vname}] ({profile}): {proc.stderr.strip()[:180]}")
+        # '__<feature>' marks a call-site permutation; the trailing '_<variant>' is the capability one.
+        # rga-occupancy.py splits on exactly that, keeping the first and folding the second.
+        for ftag, fdefs in FEATURE_VARIANTS.get(src.stem, [("", [])]):
+            for vname in variants:
+                suffix = f"__{ftag}" if ftag else ""
+                out_spv = out / f"{src.stem}{suffix}_{vname}.spv"  # src.stem keeps the stage token
+                cmd = [str(dxc), str(src), *BASE_FLAGS, "-T", profile,
+                       "-I", str(shaders_dir), "-Fo", str(out_spv)]
+                for d in (*fdefs, *VARIANTS[vname]):
+                    cmd += ["-D", d]
+                proc = subprocess.run(cmd, capture_output=True, text=True)
+                if proc.returncode == 0 and out_spv.exists():
+                    ok += 1
+                else:
+                    fail += 1
+                    label = f"{ftag}/{vname}" if ftag else vname
+                    print(f"  FAIL {src.name} [{label}] ({profile}): {proc.stderr.strip()[:180]}")
 
     print(f"\ncooked {ok} ok, {fail} failed -> {out.relative_to(root)}")
     return 1 if fail else 0

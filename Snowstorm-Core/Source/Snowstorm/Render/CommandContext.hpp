@@ -4,6 +4,7 @@
 #include "Snowstorm/Render/RenderTarget.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Render/DescriptorSet.hpp"
+#include "Snowstorm/Render/RenderEnums.hpp"
 
 #include <string>
 #include <vector>
@@ -98,6 +99,18 @@ namespace Snowstorm
 		// so the read sees the completed write. Covers all storage buffers/images touched by compute.
 		virtual void BarrierComputeStorage() = 0;
 
+		// Queue-family ownership transfer for a texture crossing between the graphics and async-compute
+		// queues. Vulkan requires a matched PAIR for a VK_SHARING_MODE_EXCLUSIVE resource: a release
+		// recorded on the source queue and an acquire on the destination, naming the same two families,
+		// the same layout and the same subresource range, with a semaphore ordering release before
+		// acquire. Omitting either half is not a validation error on most drivers, it is silent
+		// corruption, which is why RenderGraph emits both rather than leaving it to passes.
+		//
+		// Both use the texture's CURRENT layout on both sides, so a transfer never doubles as a
+		// transition; the consuming queue transitions afterwards as usual.
+		virtual void ReleaseTextureToQueue(const Ref<Texture>& texture, GpuQueue from, GpuQueue to) = 0;
+		virtual void AcquireTextureFromQueue(const Ref<Texture>& texture, GpuQueue from, GpuQueue to) = 0;
+
 		// GPU->CPU readback: copy ONE subresource (mipLevel, arrayLayer) of a texture into a host-visible buffer
 		// (created with BufferUsage::Readback). Defaults (0, 0) = the base mip of layer 0, the common 2D case.
 		// Transitions the image SHADER_READ_ONLY -> TRANSFER_SRC, does a tightly-packed vkCmdCopyImageToBuffer
@@ -139,4 +152,13 @@ namespace Snowstorm
 		virtual void EndDebugLabel() {}
 		virtual void InsertDebugLabel(const std::string& /*name*/, float /*r*/ = 0.6f, float /*g*/ = 0.6f, float /*b*/ = 0.6f) {}
 	};
+	// Non-owning Ref over a context the renderer owns, for the pass APIs that still take Ref<CommandContext>.
+	// The render graph hands each pass the context for the segment it is recording into, and that changes
+	// across an async fork, so a pass must record through the context it was given rather than one captured
+	// earlier in the frame.
+	inline Ref<CommandContext> BorrowContext(CommandContext& ctx)
+	{
+		return {&ctx, [](CommandContext*) {}};
+	}
+
 }

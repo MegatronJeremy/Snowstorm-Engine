@@ -184,8 +184,9 @@ runs it and a green smoke run says nothing about it.
 `Scripts/perf-bench.py` is the GPU analogue of the smoke test: a golden-file microbenchmark gate.
 It runs the Editor headlessly once per **RT-effect config** (via `perf.bench.frames` /
 `SS_PERF_BENCH_FRAMES`), each of which averages the render graph's per-pass GPU timings over a fixed
-frame budget and writes a JSON (`PerfBench.hpp` builds it; `Application::Run` drives it past a 15-frame
-warmup that also covers the 1-frame timestamp lag). The script parses each JSON, prints a per-pass
+frame budget and writes a JSON (`PerfBench.hpp` builds it; `Application::Run` drives it past a detected
+steady state, which also covers the 1-frame timestamp lag; see "Warmup is detected, not assumed" below).
+The script parses each JSON, prints a per-pass
 table, and **diffs against a committed baseline** in `Scripts/perf-baseline/`, failing (exit 1) if any
 pass regresses beyond **both** `--threshold` (default 15%) and `--abs-threshold` (default 0.10 ms).
 Both apply because a percentage alone is meaningless on a sub-ms pass: back-to-back runs of the same
@@ -195,8 +196,11 @@ keeps those passes gated against a real regression rather than excluding them ou
 ```
 py Scripts/perf-bench.py                    # run the matrix, diff vs baseline, PASS/FAIL
 py Scripts/perf-bench.py --update-baseline  # capture current results as the new baseline
-py Scripts/perf-bench.py --only +gi         # one config (see the matrix below)
-py Scripts/perf-bench.py --frames 300       # more frames = less noise, slower
+py Scripts/perf-bench.py --only +gi         # one config (rt-off | shadows | +ao | +refl | +gi | ssgi | shadows-stoch)
+py Scripts/perf-bench.py --frames 300       # more frames = less noise WITHIN a run
+py Scripts/perf-bench.py --repeat 5         # more independent runs = less noise BETWEEN runs (default 3)
+py Scripts/perf-bench.py --compare-exe <ref-exe>   # interleaved A/B vs another build (measure a CHANGE)
+py Scripts/perf-bench.py --canary-pass Editor      # normalise out a global clock shift
 py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
 ```
 
@@ -221,8 +225,50 @@ adds a second denoise chain the inline path has no analogue for. At Sponza's lig
 `rt-off`: 9070 XT inline 2.388, stochastic 2.757 with that chain and 1.677 without; 5070 inline
 1.428, stochastic 3.510 and 2.144. So the shipping configs rank inline first on both adapters, while
 the ray-tracing work alone ranks stochastic first on AMD. The `ShadowSpec*` rows in the per-pass
-table are that chain, priced separately.
-Sub-0.05 ms passes are ignored (timestamp noise). Like
+table are that chain, priced separately. Sub-0.05 ms passes are ignored (timestamp noise).
+
+**Warmup is detected, not assumed.** Sampling begins once the rolling 30-frame GPU-time window's
+peak-to-peak spread drops below `perf.bench.warmup.epsilon` (default 5%) of its mean, capped by
+`perf.bench.warmup.maxframes` (600, after which the run proceeds and logs that it is NOT from a steady
+state). The old fixed 15-frame warmup was ~0.25s and measured on Sponza takes **53 frames** to actually
+settle, so every run before this averaged part of the GPU clock ramp, with the result depending on how
+warm the machine already was and no way to tell from the JSON.
+
+**The dominant noise source is run-level, not frame-level.** Three identical back-to-back runs on an RX
+9060 XT spread **8-12% on every pass**, while each pass's *minimum* moved only ~3%: the GPU still reaches
+peak briefly in every run but spends progressively more frames throttled, which is a DVFS/thermal
+signature rather than workload variance (every pass moving by the same factor is a clock change, not a
+code change). More `--frames` cannot average that out because it is drift BETWEEN launches, so the script
+runs each config `--repeat` times (default 3) and takes the **median**, which rejects a single throttled
+outlier as a mean cannot. Each pass carries a quartile **interval** (`q1Ms`/`q3Ms`) alongside the median, and the gate compares
+INTERVALS rather than a point delta against a fixed percentage: disjoint with the current run higher is a
+regression, overlapping means the runs do not separate whatever the point delta says, and that reads
+**INCONCLUSIVE** rather than PASS. A gate must not rule on a difference below its own measurement error.
+Baselines predating the interval fields (or `--repeat 1`, which cannot produce one) fall back to the
+threshold plus a range check. **Check what else is using the GPU before believing any number.** A remote-desktop session
+(Parsec/RDP/Steam Link) hardware-encodes the framebuffer on the same adapter, and its load tracks screen
+content and network conditions, which reproduces exactly this signature. So does a browser or Discord with
+GPU acceleration on. Benchmark from the console with the streamer stopped, or accept that only a paired
+A/B is trustworthy.
+
+**To measure a CHANGE, use the paired A/B, not the golden baseline.** `--compare-exe <ref-exe>` runs two
+builds interleaved (A,B,A,B,...) in one session and reports the median per-pair delta with the pair-to-pair
+spread. A stored baseline cannot be corrected for drift: it carries whatever clock, thermal and contention
+state existed when it was captured. Alternating inside one session puts both arms under the same
+conditions, so common-mode noise cancels in the difference. A median delta smaller than the spread means
+the pairs disagree and prints `inconclusive`. This needs no baseline, so it also works on an adapter that
+has none. The golden-file path answers a different question ("did this drift from the committed numbers")
+and stays the right tool for regression gating.
+
+`--canary-pass <name>` is the golden path's remaining correction: it scales the run by how much a pass
+the change CANNOT affect moved against the baseline, cancelling a global clock shift that path has no
+other way to see. It has no default on purpose, since naming a pass the change does affect silently
+rescales away the result, and only the caller knows which is safe. It corrects a multiplicative shift
+hitting everything alike, not contention landing unevenly.
+
+Removing the noise at its source still beats averaging over it: a **stable power state** (AMD via the
+Radeon Developer Tool Suite, NVIDIA via `nvidia-smi --lock-gpu-clocks`) is the real fix where the hardware
+and tooling allow it. Like
 smoke, it needs a **real GPU** (Vulkan timestamps) so it's a **local** gate, not CI; on a device
 without timestamp support the JSON sets `timestampsSupported:false` and the run counts as a SKIP
 (exit **2**), never a pass and never a false FAIL.
@@ -262,7 +308,7 @@ cache, that is a real race and a genuine finding.
 `Scripts/rga-occupancy.py` is the static analogue of perf-bench: a golden-file gate on shader
 register/LDS pressure and spills, the determinants of GPU occupancy. It needs no GPU run. It feeds
 every compiled SPIR-V module in `Engine/cache/shaders/` through the Radeon GPU Analyzer offline
-compiler for a target ASIC (default `gfx1100`, the RX 7900 XTX), parses the per-shader stats CSV
+compiler for a target ASIC (default `gfx1100`, the RX 7900 XTX; `--asic gfx1200` for RDNA4), parses the per-shader stats CSV
 (USED_VGPRs/SGPRs, USED_LDS_BYTES, VGPR/SGPR spills, SCRATCH_MEM, ISA_SIZE), collapses each shader's
 permutations to the worst case keyed by base name (so a source edit re-compares the same logical
 shader, not a churning content hash), and diffs against `Scripts/rga-baseline/occupancy-<asic>.json`.
@@ -280,13 +326,27 @@ instruction holding the most live registers, the actionable target for cutting a
 (e.g. GIDenoise.comp peaks at 184 live VGPRs around a `v_cndmask` block).
 
 The **primary gate is VGPR-limited occupancy**: RGA's CLI has no occupancy column, so the script
-derives waves/SIMD from the VGPR count using the RDNA3 (gfx11) model (1536 VGPRs/SIMD, 16 waves max,
-<=96 VGPRs => full 16 waves), verified against AMD's docs. It fails (exit 1) when occupancy drops
-(fewer waves), a spill appears (0 to >0, hard fail), or LDS/ISA rises beyond `--threshold`
-(default 10%). Raw VGPR% is intentionally not gated -- a VGPR rise that doesn't cross a wave boundary
-costs nothing. The occupancy is *theoretical* and VGPR-only (LDS occupancy needs the workgroup size
-RGA offline reports as 0); measure achieved occupancy with RGP. On the current baseline only
-`GIDenoise.comp` (192 VGPR -> 8/16 waves) is occupancy-limited; every other shader hits 16/16.
+derives waves/SIMD from the VGPR count, per architecture family, verified against AMD's docs. RDNA3
+(`gfx11`) and RDNA4 (`gfx12`) desktop parts share a 1536-VGPR (192 KB) file and 16 wave slots, so both
+reach full occupancy at <=96 VGPRs, but allocation granularity differs (16 vs 24), which moves where
+the wave count steps: they disagree at 56 of the 256 possible VGPR counts, so neither model stands in
+for the other. An unmodelled architecture yields no occupancy figure rather than a wrong one, which
+disables the primary gate, so add a model before targeting a new family. It fails (exit 1) when
+occupancy drops (fewer waves), a spill appears (0 to >0, hard fail), or LDS/ISA rises beyond
+`--threshold` (default 10%). Raw VGPR% is intentionally not gated -- a VGPR rise that doesn't cross a
+wave boundary costs nothing. The occupancy is *theoretical* and VGPR-only (LDS occupancy needs the
+workgroup size RGA offline reports as 0); measure achieved occupancy with RGP. Baselines are committed
+for `gfx1100` (RX 7900 XTX) and `gfx1200` (RX 9060 XT); on both, only `GIDenoise.comp` and
+`DefaultLit.frag` are occupancy-limited (8/16 and 10/16 on RDNA4), and the other 40 shaders hit 16/16
+with zero spills.
+
+**RGA is AMD-only**, so this gate cannot cover NVIDIA: its target list is `gfx11xx`/`gfx12xx` and
+nothing else. The Vulkan-native equivalent is `VK_KHR_pipeline_executable_properties`
+(`vkGetPipelineExecutableStatisticsKHR` reports register count and spills once pipelines are created
+with `VK_PIPELINE_CREATE_2_CAPTURE_STATISTICS_BIT_KHR`), which both vendors' drivers implement. That
+is a *runtime* query needing the real device and driver, not a static offline pass, so it would be a
+separate GPU-gated harness rather than an extension of this one, trading CI coverage for numbers that
+reflect the shipping compiler.
 Stage per module is read from the SPIR-V `OpEntryPoint` execution model, not
 the filename, so the stage-less `IBL*.hlsl` shaders resolve correctly. RGA is **pinned** to a version
 + SHA-256 in the script (its stats columns and compiler drift between versions, like the clang-format

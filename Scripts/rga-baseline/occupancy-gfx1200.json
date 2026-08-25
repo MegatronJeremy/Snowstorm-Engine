@@ -1,44 +1,34 @@
 {
-  "asic": "gfx1100",
+  "asic": "gfx1200",
   "shaders": {
     "AO.comp": {
-      "vgprs": 63.0,
-      "sgprs": 58.0,
+      "vgprs": 60.0,
+      "sgprs": 46.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 3280.0,
+      "isa_size": 3252.0,
       "permutations": 2
     },
     "AOUpsample.frag": {
-      "vgprs": 40.0,
-      "sgprs": 40.0,
+      "vgprs": 39.0,
+      "sgprs": 41.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 1652.0,
+      "isa_size": 1692.0,
       "permutations": 2
     },
-    "DefaultLit.frag[inlineshadow]": {
-      "vgprs": 132.0,
-      "sgprs": 72.0,
+    "DefaultLit.frag": {
+      "vgprs": 127.0,
+      "sgprs": 82.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 31524.0,
-      "permutations": 2
-    },
-    "DefaultLit.frag[noinlineshadow]": {
-      "vgprs": 89.0,
-      "sgprs": 63.0,
-      "lds": 0.0,
-      "scratch": 0.0,
-      "vgpr_spills": 0.0,
-      "sgpr_spills": 0.0,
-      "isa_size": 10232.0,
+      "isa_size": 30132.0,
       "permutations": 2
     },
     "DepthNormal.frag": {
@@ -48,7 +38,7 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 1108.0,
+      "isa_size": 1112.0,
       "permutations": 2
     },
     "DepthNormal.vert": {
@@ -58,7 +48,7 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 616.0,
+      "isa_size": 620.0,
       "permutations": 2
     },
     "DepthPrepass.frag": {
@@ -68,87 +58,67 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 220.0,
+      "isa_size": 232.0,
       "permutations": 2
     },
     "Fullscreen.vert": {
-      "vgprs": 9.0,
+      "vgprs": 5.0,
       "sgprs": 12.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 232.0,
+      "isa_size": 248.0,
       "permutations": 2
     },
     "Fxaa.frag": {
-      "vgprs": 26.0,
+      "vgprs": 24.0,
       "sgprs": 24.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 1048.0,
+      "isa_size": 1060.0,
       "permutations": 2
     },
     "GI.comp": {
-      "vgprs": 85.0,
-      "sgprs": 49.0,
+      "vgprs": 83.0,
+      "sgprs": 55.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 10536.0,
+      "isa_size": 10688.0,
       "permutations": 2
     },
-    "GIDenoise.comp[ao]": {
-      "vgprs": 72.0,
-      "sgprs": 54.0,
+    "GIDenoise.comp": {
+      "vgprs": 179.0,
+      "sgprs": 57.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 3780.0,
-      "permutations": 2
-    },
-    "GIDenoise.comp[gi]": {
-      "vgprs": 70.0,
-      "sgprs": 44.0,
-      "lds": 0.0,
-      "scratch": 0.0,
-      "vgpr_spills": 0.0,
-      "sgpr_spills": 0.0,
-      "isa_size": 3400.0,
-      "permutations": 2
-    },
-    "GIDenoise.comp[shadow]": {
-      "vgprs": 70.0,
-      "sgprs": 50.0,
-      "lds": 0.0,
-      "scratch": 0.0,
-      "vgpr_spills": 0.0,
-      "sgpr_spills": 0.0,
-      "isa_size": 3488.0,
+      "isa_size": 13028.0,
       "permutations": 2
     },
     "GITemporal.comp": {
-      "vgprs": 53.0,
-      "sgprs": 34.0,
+      "vgprs": 49.0,
+      "sgprs": 46.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 4952.0,
+      "isa_size": 4956.0,
       "permutations": 2
     },
     "GIUpsample.frag": {
       "vgprs": 45.0,
-      "sgprs": 40.0,
+      "sgprs": 41.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 1776.0,
+      "isa_size": 1840.0,
       "permutations": 2
     },
     "IBLBRDFLut": {
@@ -158,22 +128,22 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 760.0,
+      "isa_size": 816.0,
       "permutations": 2
     },
     "IBLCapture": {
-      "vgprs": 12.0,
+      "vgprs": 11.0,
       "sgprs": 24.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 952.0,
+      "isa_size": 944.0,
       "permutations": 2
     },
     "IBLIrradiance": {
-      "vgprs": 28.0,
-      "sgprs": 24.0,
+      "vgprs": 24.0,
+      "sgprs": 26.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
@@ -182,13 +152,13 @@
       "permutations": 2
     },
     "IBLPrefilter": {
-      "vgprs": 26.0,
+      "vgprs": 25.0,
       "sgprs": 30.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 1340.0,
+      "isa_size": 1436.0,
       "permutations": 2
     },
     "Mandelbrot.frag": {
@@ -198,7 +168,7 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 852.0,
+      "isa_size": 840.0,
       "permutations": 2
     },
     "Mesh.vert": {
@@ -208,17 +178,17 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 672.0,
+      "isa_size": 680.0,
       "permutations": 2
     },
     "Metrics.comp": {
-      "vgprs": 24.0,
+      "vgprs": 20.0,
       "sgprs": 29.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 5980.0,
+      "isa_size": 6016.0,
       "permutations": 2
     },
     "NeuralConv.comp": {
@@ -228,27 +198,27 @@
       "scratch": 272.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 1152.0,
+      "isa_size": 1088.0,
       "permutations": 2
     },
     "NeuralResidualAdd.comp": {
       "vgprs": 9.0,
+      "sgprs": 18.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 292.0,
+      "permutations": 2
+    },
+    "NeuralUpsampleIn.comp": {
+      "vgprs": 6.0,
       "sgprs": 22.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 272.0,
-      "permutations": 2
-    },
-    "NeuralUpsampleIn.comp": {
-      "vgprs": 7.0,
-      "sgprs": 30.0,
-      "lds": 0.0,
-      "scratch": 0.0,
-      "vgpr_spills": 0.0,
-      "sgpr_spills": 0.0,
-      "isa_size": 260.0,
+      "isa_size": 284.0,
       "permutations": 2
     },
     "NeuralWarpHistory.comp": {
@@ -258,37 +228,37 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 460.0,
+      "isa_size": 484.0,
       "permutations": 2
     },
     "OmmBake.comp": {
-      "vgprs": 12.0,
+      "vgprs": 13.0,
       "sgprs": 30.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 1192.0,
+      "isa_size": 1268.0,
       "permutations": 2
     },
     "PathTrace.comp": {
-      "vgprs": 102.0,
-      "sgprs": 85.0,
+      "vgprs": 94.0,
+      "sgprs": 94.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 21872.0,
+      "isa_size": 22024.0,
       "permutations": 2
     },
     "Pick.comp": {
-      "vgprs": 30.0,
-      "sgprs": 33.0,
+      "vgprs": 19.0,
+      "sgprs": 48.0,
       "lds": 2048.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 1388.0,
+      "isa_size": 1288.0,
       "permutations": 2
     },
     "Present.frag": {
@@ -298,67 +268,67 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 160.0,
+      "isa_size": 164.0,
       "permutations": 2
     },
     "Reflection.comp": {
-      "vgprs": 83.0,
-      "sgprs": 46.0,
+      "vgprs": 81.0,
+      "sgprs": 50.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 6808.0,
+      "isa_size": 6828.0,
       "permutations": 2
     },
     "SSAO.comp": {
-      "vgprs": 36.0,
-      "sgprs": 58.0,
+      "vgprs": 31.0,
+      "sgprs": 56.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 5996.0,
+      "isa_size": 6376.0,
       "permutations": 2
     },
     "SSAOBlur.comp": {
-      "vgprs": 38.0,
+      "vgprs": 29.0,
       "sgprs": 46.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 8712.0,
+      "isa_size": 9056.0,
       "permutations": 2
     },
     "SSGI.comp": {
-      "vgprs": 44.0,
-      "sgprs": 82.0,
+      "vgprs": 39.0,
+      "sgprs": 85.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 3568.0,
+      "isa_size": 3760.0,
       "permutations": 2
     },
     "SSR.comp": {
-      "vgprs": 23.0,
-      "sgprs": 66.0,
+      "vgprs": 20.0,
+      "sgprs": 68.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 2756.0,
+      "isa_size": 2872.0,
       "permutations": 2
     },
     "Shadow.comp": {
-      "vgprs": 88.0,
-      "sgprs": 58.0,
+      "vgprs": 87.0,
+      "sgprs": 50.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 7176.0,
+      "isa_size": 7324.0,
       "permutations": 2
     },
     "Shadow.frag": {
@@ -372,33 +342,33 @@
       "permutations": 2
     },
     "Shadow.vert": {
-      "vgprs": 22.0,
+      "vgprs": 21.0,
       "sgprs": 46.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 400.0,
+      "isa_size": 412.0,
       "permutations": 2
     },
     "Sharpen.frag": {
       "vgprs": 42.0,
-      "sgprs": 22.0,
+      "sgprs": 20.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 964.0,
+      "isa_size": 980.0,
       "permutations": 2
     },
     "Sky.frag": {
-      "vgprs": 16.0,
-      "sgprs": 26.0,
+      "vgprs": 13.0,
+      "sgprs": 33.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 828.0,
+      "isa_size": 776.0,
       "permutations": 2
     },
     "TemporalResolve.frag": {
@@ -408,7 +378,7 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 3620.0,
+      "isa_size": 3604.0,
       "permutations": 2
     },
     "Tonemap.frag": {
@@ -418,7 +388,7 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 744.0,
+      "isa_size": 768.0,
       "permutations": 2
     },
     "Upscale.frag": {
@@ -428,7 +398,7 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 160.0,
+      "isa_size": 164.0,
       "permutations": 2
     },
     "Velocity.frag": {
@@ -438,17 +408,17 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 204.0,
+      "isa_size": 208.0,
       "permutations": 2
     },
     "Velocity.vert": {
-      "vgprs": 38.0,
+      "vgprs": 37.0,
       "sgprs": 54.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 624.0,
+      "isa_size": 628.0,
       "permutations": 2
     }
   }

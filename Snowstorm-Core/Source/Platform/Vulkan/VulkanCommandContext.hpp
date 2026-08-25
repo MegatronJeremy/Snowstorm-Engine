@@ -73,6 +73,8 @@ namespace Snowstorm
 		void TransitionToSampled(const Ref<Texture>& texture) override;
 		void BarrierColorWriteToComputeRead(const Ref<Texture>& texture) override;
 		void BarrierComputeStorage() override;
+		void ReleaseTextureToQueue(const Ref<Texture>& texture, GpuQueue from, GpuQueue to) override;
+		void AcquireTextureFromQueue(const Ref<Texture>& texture, GpuQueue from, GpuQueue to) override;
 		void CopyTextureToBuffer(const Ref<Texture>& texture, const Ref<Buffer>& dst,
 		                         uint32_t mipLevel = 0, uint32_t arrayLayer = 0) override;
 
@@ -87,6 +89,13 @@ namespace Snowstorm
 		void InsertDebugLabel(const std::string& name, float r, float g, float b) override;
 
 	private:
+		// A compute-only queue family rejects graphics pipeline stages outright, and every barrier this
+		// context records is validated against the family its pool came from. Cross-queue ordering is carried
+		// by the timeline semaphore and the ownership transfer, so an intra-queue barrier only has to name a
+		// scope this queue can express: collapse graphics stages onto COMPUTE_SHADER and drop attachment
+		// access bits, which no compute-queue layout can carry anyway. No-op on a graphics context.
+		void ClampScopeToQueue(VkPipelineStageFlags2& stage, VkAccessFlags2& access) const;
+
 		VkCommandBuffer m_CommandBuffer = VK_NULL_HANDLE;
 
 		// Which queue family's pool m_CommandBuffer came from. Fixed at construction; the destructor frees
