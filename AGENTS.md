@@ -208,7 +208,14 @@ producer for the same effect: `ssgi` repeats `+gi` with the screen-space GI prod
 against `+refl`), and `shadows-stoch` repeats `shadows` with the stochastic aggregate pass
 (MegaLights-lite) instead of one inline ray per light (so it diffs against `rt-off`). Read the
 shadow pair as one point on a curve, not a verdict: inline cost grows per light while stochastic is
-constant, so the ranking flips with light count and a fixed scene cannot show that. It also flips on
+constant, so the ranking flips with light count and a fixed scene cannot show that.
+
+**The stochastic producer is EXPERIMENTAL and off by default; inline RT is the supported path.** It
+is more temporally stable on the gate (tFLIP 0.0131 against inline's 0.0154) and constant in light
+count, but it shows artifacts under camera motion where two point lights overlap, consistent with
+per-pixel light selection differing between neighbouring pixels, and it leans on the shadow a-trous
+to hide them (#170). Neither the gate nor perf-bench found this, because the route never renders the
+lit side aisles (#169). Treat its numbers as characterising a prototype, not a shipping technique. It also flips on
 `render.shadows.specular.demodulated`, which the rung leaves at its shipping default (on) and which
 adds a second denoise chain the inline path has no analogue for. At Sponza's light count, in ms over
 `rt-off`: 9070 XT inline 2.388, stochastic 2.757 with that chain and 1.677 without; 5070 inline

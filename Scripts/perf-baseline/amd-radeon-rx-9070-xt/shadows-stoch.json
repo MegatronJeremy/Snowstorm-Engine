@@ -13,75 +13,117 @@
     1.4958,
     0.0
   ],
-  "totalGpuMs": 3.8054,
+  "totalGpuMs": 4.8767,
   "passes": {
     "CameraDepthPrepass": {
-      "avgMs": 0.0682,
-      "minMs": 0.0511,
-      "maxMs": 0.0856,
-      "fragInvocations": 3958322,
+      "avgMs": 0.0511,
+      "minMs": 0.0492,
+      "maxMs": 0.0575,
+      "fragInvocations": 3954156,
       "depth": 0
     },
     "DepthNormal": {
-      "avgMs": 0.1578,
-      "minMs": 0.1332,
-      "maxMs": 0.185,
-      "fragInvocations": 4229930,
+      "avgMs": 0.141,
+      "minMs": 0.1318,
+      "maxMs": 0.1477,
+      "fragInvocations": 4226790,
       "depth": 0
     },
     "Editor": {
-      "avgMs": 0.0543,
-      "minMs": 0.0404,
-      "maxMs": 0.0689,
-      "fragInvocations": 9773047,
+      "avgMs": 0.0414,
+      "minMs": 0.039,
+      "maxMs": 0.0476,
+      "fragInvocations": 9773107,
       "depth": 0
     },
     "Forward": {
-      "avgMs": 0.4503,
-      "minMs": 0.3361,
-      "maxMs": 0.5656,
-      "fragInvocations": 2753976,
+      "avgMs": 0.3452,
+      "minMs": 0.3338,
+      "maxMs": 0.4,
+      "fragInvocations": 2753986,
       "depth": 0
     },
     "PostProcess": {
-      "avgMs": 0.0228,
-      "minMs": 0.0163,
-      "maxMs": 0.0336,
+      "avgMs": 0.0165,
+      "minMs": 0.0158,
+      "maxMs": 0.0362,
       "fragInvocations": 2037560,
       "depth": 0
     },
     "RTShadow": {
-      "avgMs": 2.1771,
-      "minMs": 1.4322,
-      "maxMs": 2.9061,
+      "avgMs": 1.3972,
+      "minMs": 1.3664,
+      "maxMs": 1.7604,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ShadowDenoise0": {
+      "avgMs": 0.3506,
+      "minMs": 0.3396,
+      "maxMs": 0.4237,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ShadowDenoise1": {
+      "avgMs": 0.358,
+      "minMs": 0.3476,
+      "maxMs": 0.4346,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ShadowDenoise2": {
+      "avgMs": 0.4014,
+      "minMs": 0.3913,
+      "maxMs": 0.4913,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ShadowSpecDenoise0": {
+      "avgMs": 0.3484,
+      "minMs": 0.34,
+      "maxMs": 0.4208,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ShadowSpecDenoise1": {
+      "avgMs": 0.3556,
+      "minMs": 0.3471,
+      "maxMs": 0.4362,
+      "fragInvocations": 0,
+      "depth": 0
+    },
+    "ShadowSpecDenoise2": {
+      "avgMs": 0.4004,
+      "minMs": 0.391,
+      "maxMs": 0.4839,
       "fragInvocations": 0,
       "depth": 0
     },
     "ShadowSpecTemporal": {
-      "avgMs": 0.175,
-      "minMs": 0.1232,
-      "maxMs": 0.2251,
+      "avgMs": 0.124,
+      "minMs": 0.1202,
+      "maxMs": 0.1453,
       "fragInvocations": 0,
       "depth": 0
     },
     "ShadowSpecUpsample": {
-      "avgMs": 0.0638,
-      "minMs": 0.0452,
-      "maxMs": 0.0827,
+      "avgMs": 0.0446,
+      "minMs": 0.0416,
+      "maxMs": 0.0514,
       "fragInvocations": 2037560,
       "depth": 0
     },
     "ShadowTemporal": {
-      "avgMs": 0.1761,
-      "minMs": 0.1254,
-      "maxMs": 0.2246,
+      "avgMs": 0.1196,
+      "minMs": 0.1172,
+      "maxMs": 0.144,
       "fragInvocations": 0,
       "depth": 0
     },
     "ShadowUpsample": {
-      "avgMs": 0.063,
-      "minMs": 0.0441,
-      "maxMs": 0.118,
+      "avgMs": 0.043,
+      "minMs": 0.0402,
+      "maxMs": 0.0503,
       "fragInvocations": 2037560,
       "depth": 0
     },
@@ -93,16 +135,16 @@
       "depth": 1
     },
     "TemporalResolve": {
-      "avgMs": 0.0966,
-      "minMs": 0.0738,
-      "maxMs": 0.2075,
+      "avgMs": 0.077,
+      "minMs": 0.0732,
+      "maxMs": 0.154,
       "fragInvocations": 2037560,
       "depth": 0
     },
     "Velocity": {
-      "avgMs": 0.0961,
-      "minMs": 0.0713,
-      "maxMs": 0.1233,
+      "avgMs": 0.0731,
+      "minMs": 0.0705,
+      "maxMs": 0.0843,
       "fragInvocations": 3055753,
       "depth": 0
     }
