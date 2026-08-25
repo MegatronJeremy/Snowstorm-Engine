@@ -204,19 +204,29 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
                 timeout: int, layer_path: Path, scene: str, max_frames: int = 0):
     """Run one headless capture; return (rgb_image[H,W,4] float, device_str) or (None, '').
     Returns (None, RT_UNSUPPORTED) when the adapter cannot run the requested RT technique.
-    max_frames > 0 sets the hard capture cap: for the PT reference leave it 0 (converges via epsilon),
-    but a real-time technique NEVER settles below the auto-stop epsilon (RT GI/AO/TAA keep a per-frame
-    noise floor), so uncapped it burns the full 3000-frame safety cap (~100s/capture). Capping it at a
-    small fixed value force-captures a deterministic settle window in ~7s -- and is more honest than
-    3000 static frames, which over-accumulate TAA/RT beyond any real real-time frame."""
+    max_frames > 0 switches to the EXACT capture window: for the PT reference leave it 0 (converges via
+    epsilon), but a real-time technique NEVER settles below the auto-stop epsilon (RT GI/AO/TAA keep a
+    per-frame noise floor), so uncapped it burns the full 3000-frame safety cap (~100s/capture).
+    Capturing at a fixed offset from steady state takes ~7s and is more honest than 3000 static frames,
+    which over-accumulate TAA/RT beyond any real real-time frame.
+
+    This drives quality.capture.exact, NOT the safety cap. The cap fires on the next 16-frame convergence
+    checkpoint, and those are phased from whichever frame asset streaming happened to finish on, so the
+    captured frame drifts between runs; on an unconverged image that moved FLIP by up to 0.026 across
+    repeats of one config, swamping every effect being measured. The exact window is anchored to steady
+    state instead and reproduces to 0.0003."""
     ldr = out_base.with_name(out_base.name + "_ldr.npy")
     if ldr.exists():
         ldr.unlink()
 
     env = os.environ.copy()
-    env["SS_QUALITY_CAPTURE_FRAMES"] = str(frames)
     if max_frames > 0:
-        env["SS_QUALITY_CAPTURE_MAXFRAMES"] = str(max_frames)
+        # Real-time technique: capture exactly max_frames after steady state. The settle window IS the
+        # capture point here, so it replaces `frames` rather than sitting under it as a minimum.
+        env["SS_QUALITY_CAPTURE_FRAMES"] = str(max_frames)
+        env["SS_QUALITY_CAPTURE_EXACT"] = "1"
+    else:
+        env["SS_QUALITY_CAPTURE_FRAMES"] = str(frames)
     env["SS_QUALITY_CAPTURE_PATH"] = str(out_base)
     env["SS_STARTUP_SCENE"] = scene
     env["SS_VALIDATION_NONFATAL"] = "1"
@@ -265,8 +275,9 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
         if not device and any(v in low for v in ("radeon", "geforce", "nvidia", "intel(r)", "arc ")):
             device = line.split("SNOWSTORM:")[-1].strip()[:64]
     # Which branch ended the capture decides how to read the metrics: "converged" means the epsilon
-    # settle fired, "safety cap" means the frame cap cut it off with the image still moving.
-    if (m := re.search(r"Quality capture: wrote .* at frame (\d+) \((converged|safety cap)\)", proc.stdout)):
+    # settle fired, "fixed window" means it was taken at a set offset from steady state (the real-time
+    # path, which never converges), "safety cap" means the frame cap cut it off with the image moving.
+    if (m := re.search(r"Quality capture: wrote .* at frame (\d+) \((converged|safety cap|fixed window)\)", proc.stdout)):
         print(f"  captured at frame {m.group(1)} ({m.group(2)})")
     # Normalize to the canonical metric resolution so window-size nondeterminism can't cause shape
     # mismatches / non-comparable metrics (see CANON_W/H).
@@ -416,7 +427,7 @@ def main() -> int:
     ap.add_argument("--scene", default=DEFAULT_SCENE, help="Scene to benchmark")
     ap.add_argument("--update-baseline", action="store_true", help="Write current metrics as the new baseline")
     ap.add_argument("--fresh-ref", action="store_true", help="Ignore the cached PT reference and re-capture it")
-    ap.add_argument("--tech-maxframes", type=int, default=200, help="Hard frame cap for real-time technique captures "
+    ap.add_argument("--tech-maxframes", type=int, default=200, help="Frames after steady state at which real-time technique captures are taken "
                     "(they never converge below the auto-stop epsilon; uncapped they burn the full 3000-frame safety "
                     "cap ~100s each). Default 200 -> ~7s/capture. The PT reference is uncapped (converges).")
     args = ap.parse_args()

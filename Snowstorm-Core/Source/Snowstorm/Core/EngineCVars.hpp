@@ -87,6 +87,7 @@ namespace Snowstorm::CVars
 	// Scripts/quality-bench.py drives (viewpoint x technique) runs and diffs FLIP/PSNR/SSIM against a
 	// committed baseline. CLI/env-only.
 	extern CVar<int> QualityCaptureFrames;               // MIN settle frames after streaming before convergence can trigger
+	extern CVar<bool> QualityCaptureExact;               // capture at a fixed offset from steady state, not on convergence
 	extern CVar<int> QualityCaptureMaxFrames;            // hard safety cap on total frames (capture anyway + warn if hit)
 	extern CVar<float> QualityCaptureEpsilon;            // converged when the mean per-channel present delta (/255) drops below this
 	extern CVar<std::string> QualityCaptureAtPathFrames; // motion capture: route frames to write (empty = converged single shot)

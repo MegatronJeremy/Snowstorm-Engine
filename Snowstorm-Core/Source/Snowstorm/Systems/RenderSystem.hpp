@@ -136,6 +136,7 @@ namespace Snowstorm
 		// scene, so each effect's OnSceneCut fires to clear its own cross-frame state and force a clean first
 		// frame. See #161. (The neural-temporal valid-set now lives on UpscaleEffect.)
 		uint64_t m_LastSceneGeneration = 0;
+		bool m_WasStreaming = false; // steady-state edge, for the quality-capture history reset
 
 		// The environment the IBL maps were last baked from. When the live environment differs (e.g. a scene
 		// finished loading after the deferred startup load, so the first bake saw an empty/default world), we

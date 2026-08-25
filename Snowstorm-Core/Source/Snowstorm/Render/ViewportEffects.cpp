@@ -2380,6 +2380,7 @@ namespace Snowstorm
 				const int maxCVar = CVars::QualityCaptureMaxFrames.Get();
 				const uint64_t maxFrame = maxCVar > 0 ? static_cast<uint64_t>(maxCVar) : UINT64_MAX;
 				const float epsilon = CVars::QualityCaptureEpsilon.Get();
+				const bool exactWindow = CVars::QualityCaptureExact.Get();
 				const Ref<Texture> presentImg = v.RT.PresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
 				const std::string basePath = CVars::QualityCapturePath.Get();
 				const std::vector<uint64_t> wanted = ParseRouteFrameList(CVars::QualityCaptureAtPathFrames.Get());
@@ -2387,12 +2388,12 @@ namespace Snowstorm
 				fc.Graph.AddPass({.Name = "QualityCapture" + v.Suffix,
 				                  .IsCompute = true, // no render target; records the readback copy
 				                  .Reads = {{presentImg, RenderGraph::AccessState::Sampled}},
-				                  .Execute = [this, presentImg, streamingDone, frame, minSettle, epsilon, maxFrame, basePath, wanted, view, &fc](CommandContext& c)
+				                  .Execute = [this, presentImg, streamingDone, frame, minSettle, epsilon, maxFrame, exactWindow, basePath, wanted, view, &fc](CommandContext& c)
 				                  {
 					                  const Ref<CommandContext> cref(&c, [](CommandContext*) {});
 					                  if (wanted.empty())
 					                  {
-						                  const uint64_t written = m_Pass.Tick(cref, presentImg, streamingDone, frame, minSettle, epsilon, maxFrame, basePath);
+						                  const uint64_t written = m_Pass.Tick(cref, presentImg, streamingDone, frame, minSettle, epsilon, maxFrame, exactWindow, basePath);
 						                  fc.Renderer.SetQualityCaptureWritten(written);
 						                  fc.Renderer.SetQualityCaptureComplete(written > 0);
 						                  return;

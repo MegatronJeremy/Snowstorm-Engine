@@ -185,7 +185,8 @@ namespace Snowstorm
 
 	uint64_t QualityCapturePass::Tick(const Ref<CommandContext>& ctx, const Ref<Texture>& presentImg,
 	                                  const bool streamingDone, const uint64_t frame, const uint64_t minSettleFrames,
-	                                  const float epsilon, const uint64_t maxFrame, const std::string& basePath)
+	                                  const float epsilon, const uint64_t maxFrame, const bool exactWindow,
+	                                  const std::string& basePath)
 	{
 		if (!ctx || !presentImg || m_Written > 0)
 		{
@@ -196,6 +197,7 @@ namespace Snowstorm
 		if (!streamingDone)
 		{
 			m_StreamDoneFrame = UINT64_MAX;
+			m_ExactRecorded = false;
 			return m_Written;
 		}
 		if (m_StreamDoneFrame == UINT64_MAX)
@@ -214,7 +216,8 @@ namespace Snowstorm
 			const size_t bytes = pixels * bpp;
 			const auto* cur = static_cast<const uint8_t*>(m_Buffer->Map());
 
-			const bool forced = frame >= maxFrame;
+			// Exact mode captures the copy it recorded, which is the only one it takes.
+			const bool forced = exactWindow || frame >= maxFrame;
 			bool settled = false;
 			if (m_PrevValid && m_Prev.size() == bytes)
 			{
@@ -237,9 +240,17 @@ namespace Snowstorm
 					            cur + (static_cast<size_t>(m_H) - 1 - r) * rowBytes, rowBytes);
 				}
 				WriteNpy(path, flipped.data(), bytes, {m_H, m_W, kChannels}, NpyDType::UInt8);
-				SS_CORE_INFO("Quality capture: wrote {} ({}x{}) at frame {} ({}).", path, m_W, m_H, frame,
-				             forced && !settled ? "safety cap" : "converged");
-				if (forced && !settled && !m_WarnedCap)
+				const char* reason = "converged";
+				if (exactWindow)
+				{
+					reason = "fixed window";
+				}
+				else if (forced && !settled)
+				{
+					reason = "safety cap";
+				}
+				SS_CORE_INFO("Quality capture: wrote {} ({}x{}) at frame {} ({}).", path, m_W, m_H, frame, reason);
+				if (forced && !settled && !exactWindow && !m_WarnedCap)
 				{
 					m_WarnedCap = true;
 					SS_CORE_WARN("Quality capture: hit the {}-frame cap before convergence; captured anyway.", maxFrame);
@@ -257,9 +268,15 @@ namespace Snowstorm
 			m_LastCheckFrame = frame;
 		}
 
-		// No copy in flight and it's time for the next checkpoint -> record one.
-		if (m_CopyFrame < 0 && frame >= m_LastCheckFrame + kCheckEvery)
+		// Exact mode takes a single copy at a fixed offset from steady state. The periodic checkpoints below
+		// exist only to detect convergence, and their phase is anchored to whichever frame streaming happened
+		// to finish on, so using them as a capture trigger makes the captured frame drift between runs.
+		const bool recordNow = exactWindow
+		                           ? (!m_ExactRecorded && frame >= m_StreamDoneFrame + minSettleFrames)
+		                           : (frame >= m_LastCheckFrame + kCheckEvery);
+		if (m_CopyFrame < 0 && recordNow)
 		{
+			m_ExactRecorded = true;
 			const uint32_t pw = presentImg->GetWidth();
 			const uint32_t ph = presentImg->GetHeight();
 			const PixelFormat pf = presentImg->GetDesc().Format;
