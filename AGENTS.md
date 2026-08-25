@@ -272,6 +272,21 @@ the pairs disagree and prints `inconclusive`. This needs no baseline, so it also
 has none. The golden-file path answers a different question ("did this drift from the committed numbers")
 and stays the right tool for regression gating.
 
+**The A/B is an instrument, not a gate: it never fails on a regression.** `--compare-exe` short-circuits
+before any baseline logic and exits non-zero only when a RUN fails, so a green exit code from it means
+"the runs completed", never "perf is fine". Do not wire it into CI expecting a gate. Reach for it when the
+golden path reports something surprising, which is the case it settles and the golden path cannot: a
+config whose numbers move with machine state reads as a 20% regression against a stored baseline and as
+`inconclusive` under pairing, and only the second is true.
+
+**The two readouts use different verdict rules on purpose.** `compare` gates, so a finding must clear
+`--abs-threshold` as well as the statistical test: materiality. `print_ab` measures, so it asks only
+whether the pairs agree on size and sign: resolution. Giving the A/B a materiality floor would delete what
+it exists to find. d74cb76's stride tradeoff is +0.034 ms on GIDenoise0 and -0.047 ms on GIDenoise2, both
+under a 0.10 ms floor, and those two numbers ARE the finding; the full-res chains that survive such a
+floor needed no A/B to see. Both readouts do share the 0.05 ms `NOISE_FLOOR_MS`, below which a percentage
+means nothing either way.
+
 `--canary-pass <name>` is the golden path's remaining correction: it scales the run by how much a pass
 the change CANNOT affect moved against the baseline, cancelling a global clock shift that path has no
 other way to see. It has no default on purpose, since naming a pass the change does affect silently

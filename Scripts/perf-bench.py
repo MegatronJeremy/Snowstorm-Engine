@@ -84,6 +84,17 @@ BENCH_CAMERA = "8.519127,1.494902,-0.430814,0.027222,1.495751,0.0"
 # differently: a device that cannot be measured is a SKIP (2), never a FAIL (1).
 NO_TIMESTAMPS = object()
 
+# Below this, a pass is timestamp noise and no percentage computed from it means anything. Shared by
+# both readouts so they hide the same passes; distinct from --abs-threshold, which is a materiality
+# floor applied only where a verdict can fail the run.
+NOISE_FLOOR_MS = 0.05
+
+
+def median(vals: list[float]) -> float:
+    v = sorted(vals)
+    n = len(v)
+    return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2.0
+
 
 def find_repo_root(script_dir: Path) -> Path:
     return script_dir.parent
@@ -154,11 +165,6 @@ def aggregate_runs(runs: list[dict]) -> dict:
     base = dict(runs[0])
     if len(runs) == 1:
         return base
-
-    def median(vals: list[float]) -> float:
-        v = sorted(vals)
-        n = len(v)
-        return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2.0
 
     def quartiles(vals: list[float]) -> tuple[float, float]:
         """Inclusive-median quartiles. With the handful of runs a bench does, a percentile method that
@@ -232,11 +238,6 @@ def paired_ab(name: str, env_overrides: dict, exe_a: Path, exe_b: Path, pairs: i
         print("  pair {}/{} [{}]: A={:.3f}ms  B={:.3f}ms  delta={:+.2f}%".format(
             i + 1, pairs, "AB" if a_first else "BA", a["totalGpuMs"], b["totalGpuMs"], d))
 
-    def median(v):
-        v = sorted(v)
-        n = len(v)
-        return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2.0
-
     rows = []
     names = sorted({q for r in a_runs + b_runs for q in r.get("passes", {})})
     for pname in names:
@@ -255,19 +256,37 @@ def paired_ab(name: str, env_overrides: dict, exe_a: Path, exe_b: Path, pairs: i
     td = [(y - x) / x * 100.0 for x, y in zip(ta, tb)]
     return {"rows": rows, "totalA": median(ta), "totalB": median(tb),
             "totalDelta": median(td), "totalSpread": max(td) - min(td),
-            "device": a_runs[0].get("device", "")}
+            "pairs": len(a_runs), "device": a_runs[0].get("device", "")}
 
 
 def print_ab(res: dict, min_ms: float) -> None:
+    """Print the paired A/B table. Deliberately NOT the gate's verdict rule.
+
+    `compare` asks whether a difference is worth failing a run over, so it needs --abs-threshold.
+    This asks only whether the pairs agree on the effect's size and sign, which is a resolution
+    question, and applying a materiality floor here would delete the results the A/B exists to find:
+    d74cb76's stride tradeoff is GIDenoise0 +19% and AODenoise0 +20% against GIDenoise2 -25%, worth
+    +0.034, +0.035 and -0.047 ms, so a 0.10 ms floor would have hidden all three and left only the
+    full-res chains, which is the half of that measurement that needed no A/B to see.
+    """
+    # One pair yields a zero spread by construction, so every nonzero delta would clear it and a build
+    # A/B'd against ITSELF reads "resolved" on every pass. Agreement needs at least two pairs to exist.
+    enough_pairs = res.get("pairs", 0) >= 2
+
+    def resolve(med: float, spread: float) -> str:
+        if not enough_pairs:
+            return "n/a (needs >=2 pairs)"
+        return "resolved" if abs(med) > spread else "inconclusive"
+
     print("")
     print("  {:<22}{:>9}{:>9}{:>9}   verdict".format("pass", "A ms", "delta", "spread"))
     for pname, aval, med, spread in sorted(res["rows"], key=lambda r: -r[1]):
         if aval < min_ms:
             continue
         # The pairs must agree with each other by more than the effect size, or nothing was resolved.
-        verdict = "resolved" if abs(med) > spread else "inconclusive"
+        verdict = resolve(med, spread)
         print("  {:<22}{:>9.3f}{:>+8.2f}%{:>8.2f}%   {}".format(pname, aval, med, spread, verdict))
-    v = "resolved" if abs(res["totalDelta"]) > res["totalSpread"] else "inconclusive"
+    v = resolve(res["totalDelta"], res["totalSpread"])
     print("  {:<22}{:>9.3f}{:>+8.2f}%{:>8.2f}%   {}".format(
         "TOTAL gpu", res["totalA"], res["totalDelta"], res["totalSpread"], v))
 
@@ -365,8 +384,8 @@ def compare(name: str, current: dict, baseline: dict, threshold_pct: float, abs_
         if c is None:
             print(f"  {p:<18} {b:>10.3f} {'--':>10}   (gone)")
             continue
-        # Ignore sub-0.05ms passes: timestamp noise there swamps any % and would false-fail.
-        if b < 0.05 and c < 0.05:
+        # Ignore sub-noise-floor passes: timestamp noise there swamps any % and would false-fail.
+        if b < NOISE_FLOOR_MS and c < NOISE_FLOOR_MS:
             print(f"  {p:<18} {b:>10.3f} {c:>10.3f}   ~0")
             continue
         delta = (c - b) / b * 100.0 if b > 0 else 0.0
@@ -489,7 +508,7 @@ def main() -> int:
             if res is None:
                 ab_ok = False
                 continue
-            print_ab(res, 0.05)  # hide sub-0.05ms passes: timestamp noise, same floor the gate uses
+            print_ab(res, NOISE_FLOOR_MS)
             print("")
         return 0 if ab_ok else 1
 
