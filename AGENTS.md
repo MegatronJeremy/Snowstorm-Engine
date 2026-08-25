@@ -251,6 +251,18 @@ content and network conditions, which reproduces exactly this signature. So does
 GPU acceleration on. Benchmark from the console with the streamer stopped, or accept that only a paired
 A/B is trustworthy.
 
+**Interval separation is not a magnitude test, so a regression must also clear `--abs-threshold`.** With a
+`--repeat 5` baseline the intervals get tight enough that any reproducible sub-1% difference separates
+cleanly: without the floor, a baseline re-gated minutes later against the binary that captured it fails on
+both adapters, on differences as small as 0.000 ms. Separation below the floor still prints, as `separated
+but under floor`, so a small real shift stays visible without failing the run.
+
+**`rt-off` on the 9070 XT is noise-dominated and its absolute numbers are not portable.** It is the only
+config light enough (~2 ms/frame) to leave the GPU idle between frames in a Debug build, so the adapter
+downclocks and every pass inflates together. Measured: 8.3% run spread at `--repeat 5` against 0.2-2.2% for
+every other config, and the same config on the 5070 spreads 2.8%. A ~20% swing there is the config, not the
+change, and an interleaved `--compare-exe` A/B is the only way to read it; the golden-baseline path cannot.
+
 **To measure a CHANGE, use the paired A/B, not the golden baseline.** `--compare-exe <ref-exe>` runs two
 builds interleaved (A,B,A,B,...) in one session and reports the median per-pair delta with the pair-to-pair
 spread. A stored baseline cannot be corrected for drift: it carries whatever clock, thermal and contention
