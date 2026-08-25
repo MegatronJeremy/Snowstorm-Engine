@@ -132,6 +132,43 @@ def classify(doc: dict) -> tuple[set, set, dict]:
     return zero, suspect, notes
 
 
+# Theoretical, VGPR/register-limited occupancy. Reported as an ESTIMATE, never gated.
+#
+# AMD: the model Scripts/rga-occupancy.py documents and validates against AMD's docs (1536 VGPRs per
+# SIMD, 16 waves max, 8-VGPR allocation granularity). Kept in step with that file by hand.
+#
+# NVIDIA: compute capability 12.0 (RTX 50 consumer) per the CUDA Programming Guide's per-compute-
+# capability table: 48 warps/SM and a 64K 32-bit register file per SM. Note what that ratio implies,
+# since it is the whole cross-vendor story here: 65536 registers over 48*32 = 1536 threads is ~42
+# registers per thread for full occupancy, so register pressure bites EARLIER on NVIDIA than the raw
+# register counts suggest.
+#
+# THE NVIDIA NUMBER IS AN UPPER BOUND, not a measurement. The register allocation granularity for
+# 12.0 could not be verified from NVIDIA's published table, and rounding registers up to an allocation
+# unit can only ever LOWER the warp count. Real occupancy also depends on limits this ignores
+# (shared memory, warp allocation granularity, pixel-shader attribute storage). Measure achieved
+# occupancy with Nsight Graphics GPU Trace; there is no NVIDIA offline analyser, because register
+# allocation happens inside the driver JIT, which is exactly why this tool reads it back from the
+# driver instead.
+AMD_VGPRS_PER_SIMD, AMD_MAX_WAVES, AMD_GRANULARITY = 1536, 16, 8
+NV_REGS_PER_SM, NV_MAX_WARPS, NV_WARP_SIZE = 65536, 48, 32
+
+
+def occupancy(regs, is_amd: bool) -> tuple[int, int]:
+    """(waves_or_warps, max). AMD is the gated model; NVIDIA is an upper bound (see above)."""
+    if regs is None or regs <= 0:
+        return 0, 0
+    if is_amd:
+        alloc = max(AMD_GRANULARITY, -(-int(regs) // AMD_GRANULARITY) * AMD_GRANULARITY)
+        return min(AMD_MAX_WAVES, AMD_VGPRS_PER_SIMD // alloc), AMD_MAX_WAVES
+    return min(NV_MAX_WARPS, NV_REGS_PER_SM // (int(regs) * NV_WARP_SIZE)), NV_MAX_WARPS
+
+
+def is_amd_device(doc: dict) -> bool:
+    d = doc["device"].lower()
+    return "amd" in d or "radeon" in d
+
+
 def val(e: dict, key: str):
     s = e["stats"].get(key)
     return None if s is None else s.get("value")
@@ -178,14 +215,22 @@ def compare(a: dict, b: dict) -> None:
             print(f"  {cname}: zero on both adapters for every shader (nothing to compare, and that is the result)")
             continue
         print(f"  --- {cname} ({ka} vs {kb}) ---")
-        print(f"    {'shader':<34}{'stage':<14}{'A':>8}{'B':>8}{'B-A':>8}")
+        hdr = f"    {'shader':<34}{'stage':<14}{'A':>8}{'B':>8}{'B-A':>8}"
+        if cname == "registers":
+            hdr += "   occupancy A   occupancy B (NVIDIA = upper bound)"
+        print(hdr)
         for (name, stage), (ea, eb) in sorted(idx.items()):
             if ea is None or eb is None:
                 continue
             va, vb = val(ea, ka), val(eb, kb)
             if va is None or vb is None:
                 continue
-            print(f"    {name[:33]:<34}{stage[:13]:<14}{va:>8}{vb:>8}{vb - va:>+8}")
+            extra = ""
+            if cname == "registers":
+                wa, ma = occupancy(va, is_amd_device(a))
+                wb, mb = occupancy(vb, is_amd_device(b))
+                extra = f"   {wa:>2}/{ma:<2} {wa / ma * 100:>3.0f}%   {wb:>2}/{mb:<2} {wb / mb * 100:>3.0f}%"
+            print(f"    {name[:33]:<34}{stage[:13]:<14}{va:>8}{vb:>8}{vb - va:>+8}{extra}")
     print()
 
 
