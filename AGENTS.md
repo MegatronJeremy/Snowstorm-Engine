@@ -418,6 +418,37 @@ expected the old `#type` split and silently compiled nothing).
 static and needs no GPU, so hosted CI cooks the shaders and runs the occupancy gate on every shader
 change. RGA is cached across runs (actions/cache) so only the first pays the download.
 
+### Cross-vendor shader statistics (driver-reported, not a gate)
+
+RGA is the *Radeon* GPU Analyzer, so the occupancy gate is structurally AMD-only and cannot see half of a
+cross-vendor comparison. `Scripts/shader-stats.py` is the other half: `VK_KHR_pipeline_executable_properties`
+asks whichever driver actually compiled the pipeline for its own statistics.
+
+```
+py Scripts/shader-stats.py --compare 9070 5070   # capture both adapters, cross-vendor table
+py Scripts/shader-stats.py --gpu 5070            # one adapter
+py Scripts/shader-stats.py --json <path>         # report an existing capture, no GPU run
+```
+
+Driven by the `shader.stats` CVar, which gates both the device extension and
+`VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR`; that bit makes the driver retain compiler metadata and
+slows pipeline creation, so a normal run never sets it and is unaffected (verified: perf `+gi` PASSes
+unchanged). It needs the device, so it is local, and it does **not** replace RGA, which is static, gated,
+and runs in CI on no GPU.
+
+**Vendors report different things, and only registers survive the comparison.** AMD gives
+`numUsedVgprs`/`numUsedSgprs`/`ldsUsageSizeInBytes`/`scratchMemUsageInBytes`; NVIDIA gives `Register
+Count`/`Binary Size`/`Local Memory Size`/`Stack Size`. Only the register count and the spill indicator
+mean the same thing, so only those are put side by side.
+
+**A driver statistic can be wrong, so the tool classifies before reporting.** Constant-and-zero across
+every executable is a real result (nothing spilled) and is noted. Constant-and-non-zero carries no
+information. Constant non-zero HIGH 32 bits with varying low bits is a 32-bit value written into the
+64-bit union without clearing the upper half, which the RTX 5070 does for `Local Memory Size`: every
+value is `0x10_00000000 + {0,16,32,48}`. The low half is very likely the real spill size, and the column
+is still **withheld** rather than masked, because the mask is inference and a plausible fabricated number
+is worse than a missing one.
+
 ## Image-quality gate vs the path tracer (run after any change to a lighting technique)
 
 `Scripts/quality-bench.py` is the correctness counterpart to perf-bench: perf-bench answers "how

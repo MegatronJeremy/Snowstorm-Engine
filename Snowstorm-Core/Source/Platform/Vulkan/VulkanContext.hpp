@@ -98,6 +98,7 @@ namespace Snowstorm
 		// True when VK_EXT_device_fault is enabled: on a VK_ERROR_DEVICE_LOST we can query vendor fault info
 		// (faulting addresses + vendor description) via LogDeviceFaultInfo. Debug-only diagnostic.
 		[[nodiscard]] bool SupportsDeviceFault() const { return m_DeviceFaultSupported; }
+		[[nodiscard]] bool SupportsPipelineStats() const { return m_PipelineStatsSupported; }
 
 		// On a VK_ERROR_DEVICE_LOST, dump whatever VK_EXT_device_fault can tell us about the GPU fault (address
 		// records + a vendor-specific binary/description) at [error] level. No-op if the extension isn't
@@ -165,6 +166,7 @@ namespace Snowstorm
 		// True when VK_EXT_device_fault is supported on the picked device and was enabled at device creation.
 		// Debug-only (a diagnostic, not a runtime feature). Gates LogDeviceFaultInfo.
 		bool m_DeviceFaultSupported = false;
+		bool m_PipelineStatsSupported = false;
 
 		// Query the picked physical device for inline ray-tracing support: the rayQuery + accelerationStructure
 		// feature bits AND the three device extensions (acceleration_structure, ray_query, deferred_host_operations).

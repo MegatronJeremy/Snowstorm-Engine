@@ -1,0 +1,8 @@
+{
+  "device": "NVIDIA GeForce RTX 5070",
+  "viewpoint": "atrium",
+  "technique": "rtao",
+  "flip": 0.3375948965549469,
+  "psnr": 17.459598118038244,
+  "ssim": 0.4933363609457567
+}

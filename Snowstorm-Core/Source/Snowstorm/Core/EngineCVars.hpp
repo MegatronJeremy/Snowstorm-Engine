@@ -246,6 +246,8 @@ namespace Snowstorm::CVars
 	// (e.g. "9070", "NVIDIA") or by candidate index ("0","1"); empty = auto (prefer a discrete GPU). Resolved
 	// once at device creation (VulkanContext), which logs every candidate so the indices are discoverable.
 	extern CVar<std::string> GpuSelect;
+	extern CVar<bool> ShaderStats;
+	extern CVar<std::string> ShaderStatsPath;
 
 	// Use opacity micromaps for RT cutout geometry when the device supports them (VK_EXT_opacity_micromap):
 	// the hardware resolves coverage per-microtriangle so the any-hit alpha test runs only on UNKNOWN edges.

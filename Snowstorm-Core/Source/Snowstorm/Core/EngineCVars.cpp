@@ -98,6 +98,17 @@ namespace Snowstorm::CVars
 
 	CVar<std::string> GpuSelect{"render.gpu", "", "Select the physical GPU by case-insensitive name substring (e.g. \"9070\", \"NVIDIA\") or candidate index (\"0\",\"1\"); empty = auto (rank by device type: discrete > integrated > virtual > cpu). Read once at device creation, so a change applies on the next launch. Persisted; the editor's GPU picker writes it.", CVarFlags::Persist};
 
+	CVar<bool> ShaderStats{"shader.stats", false,
+	                       "Dump per-shader statistics reported by the DRIVER compiler (registers, spills, LDS, and on AMD the "
+	                       "occupancy) via VK_KHR_pipeline_executable_properties, to shader.stats.path, then exit. Vendor-neutral, "
+	                       "so it covers the NVIDIA side that Scripts/rga-occupancy.py (Radeon GPU Analyzer, AMD-only) cannot. Read "
+	                       "once at device creation: it gates both the extension and the per-pipeline capture flag, which slows "
+	                       "pipeline creation and so is off for normal runs.",
+	                       CVarFlags::ReadOnly};
+
+	CVar<std::string> ShaderStatsPath{"shader.stats.path", "Engine/cache/shader-stats.json",
+	                                  "Output path for shader.stats.", CVarFlags::ReadOnly};
+
 	CVar<bool> OmmEnabled{"render.omm", true, "Use opacity micromaps (VK_EXT_opacity_micromap) for RT cutout geometry when supported; off = the inline any-hit alpha test alone. Read at TLAS build (change forces a rebuild).", CVarFlags::Persist};
 
 	CVar<float> Exposure{"render.exposure", 1.0f, "Linear exposure multiplier applied before tonemapping (1.0 = neutral)", CVarFlags::Persist};

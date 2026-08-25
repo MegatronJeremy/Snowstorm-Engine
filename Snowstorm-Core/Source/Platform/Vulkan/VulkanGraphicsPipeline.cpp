@@ -1,6 +1,9 @@
 #include "VulkanGraphicsPipeline.hpp"
 
 #include "Snowstorm/Core/Log.hpp"
+#include "VulkanPipelineStats.hpp"
+#include "VulkanContext.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 
 #include <array>
 #include <fstream>
@@ -621,11 +624,20 @@ namespace Snowstorm
 		pipeCI.renderPass = VK_NULL_HANDLE; // dynamic rendering
 		pipeCI.subpass = 0;
 
+		// shader.stats: the driver only keeps compiler metadata when asked at creation time, and keeping it
+		// costs compile time, so this bit is never set on a normal run.
+		if (CVars::ShaderStats.Get() && VulkanContext::Get().SupportsPipelineStats())
+		{
+			pipeCI.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
+		}
+
 		res = vkCreateGraphicsPipelines(m_Device, VK_NULL_HANDLE, 1, &pipeCI, nullptr, &m_Pipeline);
 		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to create Vulkan graphics pipeline");
 
 		vkDestroyShaderModule(m_Device, fragModule, nullptr);
 		vkDestroyShaderModule(m_Device, vertModule, nullptr);
+
+		VulkanPipelineStats::Record(m_Device, m_Pipeline, m_Desc.Shader->GetPath());
 
 		m_BuiltShaderVersion = m_Desc.Shader->GetVersion();
 	}

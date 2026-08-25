@@ -1,0 +1,8 @@
+{
+  "device": "NVIDIA GeForce RTX 5070",
+  "viewpoint": "floor",
+  "technique": "ssao",
+  "flip": 0.3948550224304199,
+  "psnr": 16.78230136515291,
+  "ssim": 0.4217935201204835
+}

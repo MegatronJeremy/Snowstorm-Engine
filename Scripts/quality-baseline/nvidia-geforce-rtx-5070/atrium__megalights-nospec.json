@@ -1,0 +1,8 @@
+{
+  "device": "NVIDIA GeForce RTX 5070",
+  "viewpoint": "atrium",
+  "technique": "megalights-nospec",
+  "flip": 0.3399948477745056,
+  "psnr": 17.371289828248287,
+  "ssim": 0.48570436059889166
+}

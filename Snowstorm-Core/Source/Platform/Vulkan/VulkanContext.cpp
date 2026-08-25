@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "VulkanPipelineStats.hpp"
 
 //-- compile the actual implementation in this file
 #define VOLK_IMPLEMENTATION
@@ -554,6 +555,34 @@ namespace Snowstorm
 		}
 #endif
 
+		// VK_KHR_pipeline_executable_properties (shader.stats): the DRIVER's own per-shader statistics --
+		// register counts, spills, LDS, and on AMD the occupancy -- read back from the compiled pipeline. This is
+		// the vendor-neutral counterpart to Scripts/rga-occupancy.py, which is Radeon GPU Analyzer and so cannot
+		// see the NVIDIA half of a cross-vendor comparison. Gated on the CVar rather than always-on because the
+		// matching VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR makes the driver keep compiler metadata and slows
+		// pipeline creation; a normal run should be bit-identical to one built without this.
+		if (CVars::ShaderStats.Get())
+		{
+			uint32_t extCount = 0;
+			vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extCount, nullptr);
+			std::vector<VkExtensionProperties> avail(extCount);
+			vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extCount, avail.data());
+			for (const auto& e : avail)
+			{
+				if (std::strcmp(e.extensionName, VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME) == 0)
+				{
+					m_PipelineStatsSupported = true;
+					deviceExtensions.push_back(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
+					break;
+				}
+			}
+			if (!m_PipelineStatsSupported)
+			{
+				SS_CORE_WARN("shader.stats: {} not supported by this driver; no statistics will be written.",
+				             VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
+			}
+		}
+
 		VkDeviceCreateInfo devInfo{};
 		devInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 		devInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreates.size());
@@ -659,6 +688,17 @@ namespace Snowstorm
 			ommFeatures.micromap = VK_TRUE;
 			ommFeatures.pNext = features13.pNext;
 			features13.pNext = &ommFeatures;
+		}
+
+		// Pipeline-statistics feature. pipelineExecutableInfo must be enabled for the query to work; storage
+		// outside the if so it outlives vkCreateDevice, tail preserves whatever the chain already had.
+		VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR pipelineStatsFeatures{
+		    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
+		if (m_PipelineStatsSupported)
+		{
+			pipelineStatsFeatures.pipelineExecutableInfo = VK_TRUE;
+			pipelineStatsFeatures.pNext = features13.pNext;
+			features13.pNext = &pipelineStatsFeatures;
 		}
 
 		VK_CHECK(vkCreateDevice(m_PhysicalDevice, &devInfo, nullptr, &m_Device));
@@ -955,6 +995,9 @@ namespace Snowstorm
 
 	void VulkanContext::Shutdown() const
 	{
+		// Flush driver-reported shader statistics while the device is still alive; the query needs it.
+		VulkanPipelineStats::Write();
+
 		DestroySwapchain();
 		vkDestroySurfaceKHR(m_Instance, m_Surface, nullptr);
 

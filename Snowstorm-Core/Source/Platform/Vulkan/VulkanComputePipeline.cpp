@@ -9,6 +9,9 @@
 #include <spirv_reflect.h>
 
 #include "VulkanBindlessManager.hpp"
+#include "VulkanPipelineStats.hpp"
+#include "VulkanContext.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "VulkanDescriptorSetLayout.hpp"
 
 namespace Snowstorm
@@ -208,10 +211,19 @@ namespace Snowstorm
 		pipeCI.stage = stage;
 		pipeCI.layout = m_PipelineLayout;
 
+		// shader.stats: the driver only keeps compiler metadata when asked at creation time, and keeping it
+		// costs compile time, so this bit is never set on a normal run.
+		if (CVars::ShaderStats.Get() && VulkanContext::Get().SupportsPipelineStats())
+		{
+			pipeCI.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
+		}
+
 		SS_CORE_VERIFY(vkCreateComputePipelines(m_Device, VK_NULL_HANDLE, 1, &pipeCI, nullptr, &m_Pipeline) == VK_SUCCESS,
 		               "Failed to create Vulkan compute pipeline");
 
 		vkDestroyShaderModule(m_Device, module, nullptr);
+
+		VulkanPipelineStats::Record(m_Device, m_Pipeline, m_Desc.Shader->GetPath());
 
 		m_BuiltShaderVersion = m_Desc.Shader->GetVersion();
 	}
