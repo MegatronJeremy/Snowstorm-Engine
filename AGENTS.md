@@ -363,9 +363,17 @@ occupancy drops (fewer waves), a spill appears (0 to >0, hard fail), or LDS/ISA 
 `--threshold` (default 10%). Raw VGPR% is intentionally not gated -- a VGPR rise that doesn't cross a
 wave boundary costs nothing. The occupancy is *theoretical* and VGPR-only (LDS occupancy needs the
 workgroup size RGA offline reports as 0); measure achieved occupancy with RGP. Baselines are committed
-for `gfx1100` (RX 7900 XTX) and `gfx1200` (RX 9060 XT); on both, only `GIDenoise.comp` and
-`DefaultLit.frag` are occupancy-limited (8/16 and 10/16 on RDNA4), and the other 40 shaders hit 16/16
-with zero spills.
+for `gfx1100` (RX 7900 XTX) and `gfx1200` (RX 9060 XT). On `gfx1200` exactly two of 47 shaders are
+occupancy-limited, `DefaultLit.frag[inlineshadow]` (127 VGPRs, 10/16) and `GI.comp[restir]` (103, 12/16);
+every other shader hits 16/16, and only `NeuralConv.comp` carries any scratch (272 bytes), off the render
+path. `GIDenoise.comp` was the worst offender at 191 VGPRs / 8 waves until d74cb76 rolled its outer
+a-trous loop.
+
+**Occupancy is defined once, in `vgpr_occupancy()` here, and imported by anything else that needs it.**
+`Scripts/shader-stats.py` briefly carried its own copy with an 8-VGPR granularity, which disagreed with
+this model (12 on gfx11, 24 on gfx12) and scored `DefaultLit.frag[inlineshadow]` 12/16 against the gate's
+10/16. Two tools disagreeing about the same hardware is worse than either being wrong on its own, and a
+count near an allocation boundary is exactly where it shows: 127 sits one above `6*24 = 144`.
 
 **RGA is AMD-only**, so this gate cannot cover NVIDIA: its target list is `gfx11xx`/`gfx12xx` and
 nothing else. The Vulkan-native equivalent is `VK_KHR_pipeline_executable_properties`

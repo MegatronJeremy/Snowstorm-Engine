@@ -24,6 +24,14 @@ default leaves GI.comp and Reflection.comp out.
 Baselines under Scripts/shader-stats-baseline/<device-slug>.json are the citable record: without them
 these numbers live only in a gitignored Engine/cache file, which no reader can check.
 
+PERMUTATIONS ARE NOT LABELLED HERE, and cannot be. The driver reports an executable against the pipeline
+it belongs to, and every permutation of a shader shares one source path, so DefaultLit's [inlineshadow]
+and [noinlineshadow] variants both appear as "DefaultLit.frag.hlsl" with only their register counts (127
+and 87 on gfx1200) telling them apart. GIDenoise.comp likewise has three permutations ([ao], [gi],
+[shadow]) that are indistinguishable by name. RGA cooks each permutation separately and labels it, so
+carrying RGA's labels onto these rows is only justified because the AMD register counts agree between the
+two tools; do not carry them onto NVIDIA rows, where there is nothing to cross-check against.
+
 WHAT EACH VENDOR REPORTS DIFFERS, and the tool does not pretend otherwise. AMD gives numUsedVgprs /
 numUsedSgprs / ldsUsageSizeInBytes / scratchMemUsageInBytes; NVIDIA gives Register Count / Binary Size /
 Local Memory Size / Stack Size. Only the register count and the spill indicator have a common meaning,
@@ -36,6 +44,7 @@ artifact rather than a 64 GiB spill. Reading it as a spill figure would be a fab
 value is suppressed and the column named.
 """
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -169,35 +178,64 @@ def classify(doc: dict) -> tuple[set, set, dict]:
     return zero, suspect, notes
 
 
-# Theoretical, VGPR/register-limited occupancy. Reported as an ESTIMATE, never gated.
+# Theoretical, register-limited occupancy. Reported as an ESTIMATE, never gated.
 #
-# AMD: the model Scripts/rga-occupancy.py documents and validates against AMD's docs (1536 VGPRs per
-# SIMD, 16 waves max, 8-VGPR allocation granularity). Kept in step with that file by hand.
+# AMD: NOT reimplemented here. The model is imported from rga-occupancy.py, which is the GATED one, so
+# there is exactly one definition of AMD occupancy in the repo. This file previously carried its own
+# copy with an 8-VGPR allocation granularity, which disagreed with the gated model (12 on gfx11, 24 on
+# gfx12) and with AGENTS.md, and produced 12/16 for a shader the gate scores 10/16. Two tools disagreeing
+# about the same hardware is worse than either being wrong, so the duplicate is gone.
+#
+# Granularity matters most exactly where it is least visible: DefaultLit.frag[inlineshadow] at 127 VGPRs
+# sits one count above the 6*24 = 144 allocation boundary on gfx12, so the wave count is model-dependent
+# there. rga-occupancy.py's own comment flags gfx12's 24 as documentation-derived and unconfirmed per
+# compile, unlike gfx11's 12 which RGA reports directly. Treat a count near a boundary accordingly.
 #
 # NVIDIA: compute capability 12.0 (RTX 50 consumer) per the CUDA Programming Guide's per-compute-
-# capability table: 48 warps/SM and a 64K 32-bit register file per SM. Note what that ratio implies,
-# since it is the whole cross-vendor story here: 65536 registers over 48*32 = 1536 threads is ~42
-# registers per thread for full occupancy, so register pressure bites EARLIER on NVIDIA than the raw
-# register counts suggest.
-#
-# THE NVIDIA NUMBER IS AN UPPER BOUND, not a measurement. The register allocation granularity for
-# 12.0 could not be verified from NVIDIA's published table, and rounding registers up to an allocation
-# unit can only ever LOWER the warp count. Real occupancy also depends on limits this ignores
-# (shared memory, warp allocation granularity, pixel-shader attribute storage). Measure achieved
-# occupancy with Nsight Graphics GPU Trace; there is no NVIDIA offline analyser, because register
-# allocation happens inside the driver JIT, which is exactly why this tool reads it back from the
-# driver instead.
-AMD_VGPRS_PER_SIMD, AMD_MAX_WAVES, AMD_GRANULARITY = 1536, 16, 8
+# capability table: 48 warps/SM and a 64K 32-bit register file per SM. 65536 registers over 48*32 = 1536
+# threads is ~42 registers per thread for full occupancy, so register pressure bites EARLIER on NVIDIA
+# than the raw counts suggest. This IS an upper bound: the allocation granularity for 12.0 is not in the
+# published table, and rounding up can only lower the warp count. It also ignores shared memory, warp
+# allocation granularity and pixel-shader attribute storage. Measure achieved occupancy with Nsight
+# Graphics GPU Trace.
 NV_REGS_PER_SM, NV_MAX_WARPS, NV_WARP_SIZE = 65536, 48, 32
 
+# Device name substring -> RGA ASIC target, for adapters this repo actually evaluates. An unrecognised
+# AMD adapter yields NO occupancy figure rather than a wrong one, matching rga-occupancy.py's stance on
+# unmodelled architectures. Override with --asic.
+AMD_ASIC_BY_DEVICE = {"9070": "gfx1200", "9060": "gfx1200", "7900": "gfx1100"}
 
-def occupancy(regs, is_amd: bool) -> tuple[int, int]:
-    """(waves_or_warps, max). AMD is the gated model; NVIDIA is an upper bound (see above)."""
+_rga_module = None
+
+
+def rga_model():
+    """Lazily import rga-occupancy.py for vgpr_occupancy(). Its bootstrap lives inside functions, so
+    importing it runs no RGA download."""
+    global _rga_module
+    if _rga_module is None:
+        spec = importlib.util.spec_from_file_location(
+            "rga_occupancy", Path(__file__).resolve().parent / "rga-occupancy.py")
+        _rga_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_rga_module)
+    return _rga_module
+
+
+def amd_asic(device: str, override: str = "") -> str | None:
+    if override:
+        return override
+    d = device.lower()
+    return next((a for sub, a in AMD_ASIC_BY_DEVICE.items() if sub in d), None)
+
+
+def occupancy(regs, is_amd: bool, asic: str | None = None) -> tuple[int, int] | None:
+    """(waves_or_warps, max), or None when no model applies. AMD delegates to the gated model."""
     if regs is None or regs <= 0:
-        return 0, 0
+        return None
     if is_amd:
-        alloc = max(AMD_GRANULARITY, -(-int(regs) // AMD_GRANULARITY) * AMD_GRANULARITY)
-        return min(AMD_MAX_WAVES, AMD_VGPRS_PER_SIMD // alloc), AMD_MAX_WAVES
+        if asic is None:
+            return None
+        waves = rga_model().vgpr_occupancy(float(regs), asic)
+        return None if waves is None else (waves, 16)
     return min(NV_MAX_WARPS, NV_REGS_PER_SM // (int(regs) * NV_WARP_SIZE)), NV_MAX_WARPS
 
 
@@ -228,7 +266,7 @@ def report(doc: dict) -> None:
     print()
 
 
-def compare(a: dict, b: dict) -> None:
+def compare(a: dict, b: dict, asic_a: str = "", asic_b: str = "") -> None:
     def keyof(doc, common_idx):
         amd = "amd" in doc["device"].lower() or "radeon" in doc["device"].lower()
         return COMMON[common_idx][1] if amd else COMMON[common_idx][2]
@@ -264,9 +302,10 @@ def compare(a: dict, b: dict) -> None:
                 continue
             extra = ""
             if cname == "registers":
-                wa, ma = occupancy(va, is_amd_device(a))
-                wb, mb = occupancy(vb, is_amd_device(b))
-                extra = f"   {wa:>2}/{ma:<2} {wa / ma * 100:>3.0f}%   {wb:>2}/{mb:<2} {wb / mb * 100:>3.0f}%"
+                oa = occupancy(va, is_amd_device(a), amd_asic(a["device"], asic_a))
+                ob = occupancy(vb, is_amd_device(b), amd_asic(b["device"], asic_b))
+                fmt = lambda o: "      n/a" if o is None else f"{o[0]:>2}/{o[1]:<2} {o[0] / o[1] * 100:>3.0f}%"
+                extra = f"   {fmt(oa)}   {fmt(ob)}"
             print(f"    {name[:33]:<34}{stage[:13]:<14}{va:>8}{vb:>8}{vb - va:>+8}{extra}")
     print()
 
@@ -280,6 +319,8 @@ def main() -> int:
     ap.add_argument("--frames", type=int, default=90, help="Frames to run so pipelines get built (default 90)")
     ap.add_argument("--timeout", type=int, default=180)
     ap.add_argument("--config", default="Debug")
+    ap.add_argument("--asic", default="",
+                    help="Override the AMD ASIC target for occupancy (e.g. gfx1200); default maps from device name")
     ap.add_argument("--update-baseline", action="store_true",
                     help="Write each capture to Scripts/shader-stats-baseline/<device-slug>.json")
     args = ap.parse_args()
@@ -305,7 +346,7 @@ def main() -> int:
             docs.append(d)
         for d in docs:
             report(d)
-        compare(docs[0], docs[1])
+        compare(docs[0], docs[1], args.asic, args.asic)
         return 0
 
     doc = capture(repo_root, exe, args.gpu, args.frames, args.timeout)
