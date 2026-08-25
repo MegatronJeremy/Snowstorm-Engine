@@ -65,6 +65,8 @@ namespace Snowstorm
 		static const std::vector<MaterialOverrideSpec> specs = {
 		    {"BaseColor", MaterialOverrideType::Color},
 		    {"AlbedoTexture", MaterialOverrideType::Texture},
+		    {"Roughness", MaterialOverrideType::Float},
+		    {"Metallic", MaterialOverrideType::Float},
 		};
 		return specs;
 	}

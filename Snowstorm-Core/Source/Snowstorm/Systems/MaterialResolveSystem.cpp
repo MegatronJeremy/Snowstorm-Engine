@@ -47,6 +47,14 @@ namespace Snowstorm
 				{
 					mi.SetBaseColor(o.Color);
 				}
+				else if (o.Name == "Roughness" && o.Type == MaterialOverrideType::Float)
+				{
+					mi.SetRoughness(o.Scalar);
+				}
+				else if (o.Name == "Metallic" && o.Type == MaterialOverrideType::Float)
+				{
+					mi.SetMetallic(o.Scalar);
+				}
 			}
 		}
 	}

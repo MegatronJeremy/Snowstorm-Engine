@@ -34,6 +34,11 @@ namespace Snowstorm
 
 		// Per-instance overrides
 		void SetBaseColor(const glm::vec4& color);
+		// glTF factors: the MR texture MULTIPLIES these, so a value below 1 dampens the sampled map
+		// rather than replacing it. That is what lets one override turn an existing textured material
+		// specular without authoring a second material asset.
+		void SetRoughness(float roughness);
+		void SetMetallic(float metallic);
 		[[nodiscard]] const glm::vec4& GetBaseColor() const { return m_Constants.BaseColor; }
 
 		// Full resolved material constants (base color, bindless texture indices, metallic/roughness, ...).

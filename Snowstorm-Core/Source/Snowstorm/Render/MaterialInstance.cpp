@@ -97,6 +97,18 @@ namespace Snowstorm
 		MarkDirty();
 	}
 
+	void MaterialInstance::SetRoughness(const float roughness)
+	{
+		m_Constants.Roughness = roughness;
+		MarkDirty();
+	}
+
+	void MaterialInstance::SetMetallic(const float metallic)
+	{
+		m_Constants.Metallic = metallic;
+		MarkDirty();
+	}
+
 	void MaterialInstance::SetSampler(const Ref<Sampler>& sampler)
 	{
 		m_Sampler = sampler;
