@@ -1,0 +1,8 @@
+{
+  "device": "AMD Radeon RX 9060 XT",
+  "viewpoint": "atrium",
+  "technique": "rtgi",
+  "flip": 0.15366321802139282,
+  "psnr": 23.29425532782384,
+  "ssim": 0.7292418136214314
+}

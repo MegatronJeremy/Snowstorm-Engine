@@ -40,6 +40,12 @@ FEATURE_VARIANTS = {
         ("inlineshadow", ["SS_LIT_INLINE_RT_SHADOWS=1"]), # shadows.mode=RayTraced without the stochastic pass
         ("noinlineshadow", []),                           # stochastic shadows / raster / off: traversal is dead
     ],
+    # render.gi.restir selects a permutation at startup; the reservoir path is compiled out when it is off,
+    # which is what keeps the default path at full occupancy.
+    "GI.comp": [
+        ("restir", ["SS_GI_RESTIR=1"]), # experimental ReSTIR path: reservoir state is live across the ray loop
+        ("norestir", []),               # default: no reservoir code, no reservoir bindings
+    ],
     "GIDenoise.comp": [
         ("gi", []),                            # GI + reflections: neither extra term
         ("ao", ["SS_DENOISE_HITDIST=1"]),      # AO: REBLUR-style hit-distance edge-stop

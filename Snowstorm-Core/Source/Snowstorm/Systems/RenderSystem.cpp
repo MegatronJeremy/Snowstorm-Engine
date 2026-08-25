@@ -64,7 +64,19 @@ namespace Snowstorm
 		// the PREVIOUS scene. Notify each effect on the cut so it drops its own cross-frame temporal state
 		// (TemporalEffect / UpscaleEffect clear their valid-sets); the first frame of the new scene then
 		// reprojects against nothing (clean) instead of ghosting the old scene for one frame.
-		if (const uint64_t gen = m_World->SceneGeneration(); gen != m_LastSceneGeneration)
+		// A headless quality capture measures a fixed settle window after asset streaming completes, but the
+		// frames rendered BEFORE that point still accumulate half-loaded content into the TAA and denoiser
+		// history, and how many of them there are moves with disk and driver timing (measured on Sponza: the
+		// steady-state frame ranged over ~28 frames across runs of one config, which moved FLIP by up to
+		// 0.026). Clearing that history on the transition makes the window start from a known state, so the
+		// capture depends on the window length alone. Gated on the capture being active: normal rendering
+		// wants the accumulation it has.
+		const bool streaming = SingletonView<AssetManagerSingleton>().PendingLoadCount() > 0;
+		const bool steadyStateEntered = m_WasStreaming && !streaming;
+		m_WasStreaming = streaming;
+
+		if (const uint64_t gen = m_World->SceneGeneration();
+		    gen != m_LastSceneGeneration || (steadyStateEntered && CVars::QualityCaptureFrames.Get() > 0))
 		{
 			m_LastSceneGeneration = gen;
 			// Effects that don't exist yet (before the first RenderViewport, e.g. the initial startup load) hold
@@ -82,6 +94,7 @@ namespace Snowstorm
 				rtc.GIDenoiser.HistoryValid = false;
 				rtc.ReflectionDenoiser.HistoryValid = false;
 				rtc.AODenoiser.HistoryValid = false; // #130
+				rtc.GIReservoir.HistoryValid = false;
 			}
 		}
 

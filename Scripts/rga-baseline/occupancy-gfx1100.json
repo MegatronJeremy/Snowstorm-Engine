@@ -91,14 +91,24 @@
       "isa_size": 1048.0,
       "permutations": 2
     },
-    "GI.comp": {
+    "GI.comp[norestir]": {
       "vgprs": 85.0,
       "sgprs": 49.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 10536.0,
+      "isa_size": 10548.0,
+      "permutations": 2
+    },
+    "GI.comp[restir]": {
+      "vgprs": 107.0,
+      "sgprs": 51.0,
+      "lds": 4096.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 12172.0,
       "permutations": 2
     },
     "GIDenoise.comp[ao]": {
@@ -129,6 +139,16 @@
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 3488.0,
+      "permutations": 2
+    },
+    "GISpatialReuse.comp": {
+      "vgprs": 76.0,
+      "sgprs": 91.0,
+      "lds": 4096.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 3880.0,
       "permutations": 2
     },
     "GITemporal.comp": {

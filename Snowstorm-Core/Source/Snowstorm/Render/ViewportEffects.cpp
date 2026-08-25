@@ -30,6 +30,7 @@
 #include "Snowstorm/Render/Passes/SSAOBlurPass.hpp" // #151: SSAO depth+normal bilateral blur
 #include "Snowstorm/Render/Denoiser.hpp"            // #132: shared SVGF processor (owns the GITemporal/GIDenoise passes)
 #include "Snowstorm/Render/Passes/GIPass.hpp"
+#include "Snowstorm/Render/Passes/GISpatialReusePass.hpp"
 #include "Snowstorm/Render/Passes/SSGIPass.hpp" // #151: screen-space GI gather
 #include "Snowstorm/Render/Passes/ReflectionPass.hpp"
 #include "Snowstorm/Render/Passes/SSRPass.hpp" // #151: screen-space reflection trace
@@ -362,17 +363,86 @@ namespace Snowstorm
 				// Compute pass: reads the G-buffer + depth (Sampled), writes GITarget (Storage). The graph applies
 				// the layout transitions from these declarations (#129 Inc 4) — including the depth attachment's
 				// DepthStencil -> read-only redirect (handled in TransitionLayout).
+				// Reservoir parity: this frame writes one slot and resamples the other, which the previous frame
+				// wrote. Reuse needs motion vectors, so drop the valid flag when there are none rather than
+				// reprojecting by zero (which would reuse whatever surface now occupies the pixel).
+				const uint32_t resSlot = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
+				const Ref<TextureView> resSample = v.RT.GIReservoir.SampleView[resSlot];
+				const Ref<TextureView> resRadiance = v.RT.GIReservoir.RadianceView[resSlot];
+				const Ref<TextureView> resNormal = v.RT.GIReservoir.NormalView[resSlot];
+				const Ref<TextureView> resVelocity = v.Velocity;
+				const Ref<TextureView> resSamplePrev = v.RT.GIReservoir.SampleView[resSlot ^ 1u];
+				const Ref<TextureView> resRadiancePrev = v.RT.GIReservoir.RadianceView[resSlot ^ 1u];
+				const Ref<TextureView> resNormalPrev = v.RT.GIReservoir.NormalView[resSlot ^ 1u];
+
+				auto& resInst = fc.Reg.Write<RenderTargetComponent>(v.ViewportEntity).GIReservoir;
+				const bool resHistoryValid = resInst.HistoryValid && resVelocity != nullptr;
+				resInst.HistoryValid = resVelocity != nullptr;
+
+				const float resNear = v.Cam.Cam ? v.Cam.Cam->PerspectiveNear : 0.1f;
+				const float resFar = v.Cam.Cam ? v.Cam.Cam->PerspectiveFar : 500.0f;
+
+				std::vector<RenderGraph::ResourceAccess> giReads{
+				    {gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+				    {depthView->GetTexture(), RenderGraph::AccessState::Sampled}};
+				if (resHistoryValid)
+				{
+					giReads.push_back({resSamplePrev->GetTexture(), RenderGraph::AccessState::Sampled});
+					giReads.push_back({resRadiancePrev->GetTexture(), RenderGraph::AccessState::Sampled});
+					giReads.push_back({resNormalPrev->GetTexture(), RenderGraph::AccessState::Sampled});
+					giReads.push_back({resVelocity->GetTexture(), RenderGraph::AccessState::Sampled});
+				}
+
 				fc.Graph.AddPass({.Name = "GI" + v.Suffix,
 				                  .IsCompute = true,
 				                  .Queue = GpuQueue::AsyncCompute,
-				                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
-				                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled}},
-				                  .Writes = {{giView->GetTexture(), RenderGraph::AccessState::Storage}},
-				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, depthView, giView, giW, giH](CommandContext& c)
+				                  .Reads = giReads,
+				                  .Writes = {{giView->GetTexture(), RenderGraph::AccessState::Storage},
+				                             {resSample->GetTexture(), RenderGraph::AccessState::Storage},
+				                             {resRadiance->GetTexture(), RenderGraph::AccessState::Storage},
+				                             {resNormal->GetTexture(), RenderGraph::AccessState::Storage}},
+				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, depthView, giView, giW, giH, resSample, resRadiance, resNormal, resSamplePrev, resRadiancePrev, resNormalPrev, resVelocity, resHistoryValid, resNear, resFar](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, frameData, tableAddr, frameCounter,
-					                                  gbufView, depthView, giView, giW, giH);
+					                                  gbufView, depthView, giView, giW, giH,
+					                                  resSample, resRadiance, resNormal,
+					                                  resHistoryValid ? resSamplePrev : nullptr,
+					                                  resHistoryValid ? resRadiancePrev : nullptr,
+					                                  resHistoryValid ? resNormalPrev : nullptr,
+					                                  resHistoryValid ? resVelocity : nullptr,
+					                                  resHistoryValid, resNear, resFar);
 				                  }});
+
+				// Spatial reuse overwrites the GI pass's own resolve: it reads the reservoir that pass just wrote
+				// and re-resolves it against a few neighbours. Separate pass because a single dispatch cannot
+				// read neighbours it is concurrently writing.
+				if (CVars::GiReSTIR.Get() && CVars::GiReSTIRSpatial.Get())
+				{
+					const auto spatialCount = static_cast<uint32_t>(std::max(0, CVars::GiReSTIRSpatialCount.Get()));
+					const float spatialRadius = CVars::GiReSTIRSpatialRadius.Get();
+					const bool spatialVis = CVars::GiReSTIRSpatialVisibility.Get();
+					const glm::mat4 invViewProj = glm::inverse(frameData.ViewProjection);
+					const float giIntensity = CVars::GIIntensity.Get();
+					if (spatialCount > 0)
+					{
+						fc.Graph.AddPass({.Name = "GISpatialReuse" + v.Suffix,
+						                  .IsCompute = true,
+						                  .Queue = GpuQueue::AsyncCompute,
+						                  .Reads = {{gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
+						                            {depthView->GetTexture(), RenderGraph::AccessState::Sampled},
+						                            {resSample->GetTexture(), RenderGraph::AccessState::Sampled},
+						                            {resRadiance->GetTexture(), RenderGraph::AccessState::Sampled},
+						                            {resNormal->GetTexture(), RenderGraph::AccessState::Sampled}},
+						                  .Writes = {{giView->GetTexture(), RenderGraph::AccessState::Storage}},
+						                  .Execute = [this, &fc, invViewProj, frameCounter, giIntensity, resNear, resFar, spatialRadius, spatialCount, spatialVis, gbufView, depthView, resSample, resRadiance, resNormal, giView, giW, giH](CommandContext& c)
+						                  {
+							                  m_SpatialPass.Dispatch(BorrowContext(c), fc.FrameIndex, invViewProj, frameCounter,
+							                                         giIntensity, resNear, resFar, spatialRadius, spatialCount, spatialVis,
+							                                         gbufView, depthView, resSample, resRadiance, resNormal,
+							                                         giView, giW, giH);
+						                  }});
+					}
+				}
 
 				v.GBufferNormal = gbufView; // republish (DepthNormalEffect already set it; harmless, keeps intent local)
 				v.GIView = giView;          // the raw trace is the live GI buffer; temporal/denoise republish downstream (#125)
@@ -381,6 +451,7 @@ namespace Snowstorm
 		private:
 			RenderSystem& m_Owner;
 			GIPass m_Pass; // owned here: the GI compute pass is exclusive to this effect
+			GISpatialReusePass m_SpatialPass;
 		};
 
 		// GI temporal accumulation (#125), the temporal half of SVGF. Runs between GIEffect and GIDenoiseEffect:
@@ -2309,6 +2380,7 @@ namespace Snowstorm
 				const int maxCVar = CVars::QualityCaptureMaxFrames.Get();
 				const uint64_t maxFrame = maxCVar > 0 ? static_cast<uint64_t>(maxCVar) : UINT64_MAX;
 				const float epsilon = CVars::QualityCaptureEpsilon.Get();
+				const bool exactWindow = CVars::QualityCaptureExact.Get();
 				const Ref<Texture> presentImg = v.RT.PresentTarget->GetDesc().ColorAttachments[0].View->GetTexture();
 				const std::string basePath = CVars::QualityCapturePath.Get();
 				const std::vector<uint64_t> wanted = ParseRouteFrameList(CVars::QualityCaptureAtPathFrames.Get());
@@ -2316,12 +2388,12 @@ namespace Snowstorm
 				fc.Graph.AddPass({.Name = "QualityCapture" + v.Suffix,
 				                  .IsCompute = true, // no render target; records the readback copy
 				                  .Reads = {{presentImg, RenderGraph::AccessState::Sampled}},
-				                  .Execute = [this, presentImg, streamingDone, frame, minSettle, epsilon, maxFrame, basePath, wanted, view, &fc](CommandContext& c)
+				                  .Execute = [this, presentImg, streamingDone, frame, minSettle, epsilon, maxFrame, exactWindow, basePath, wanted, view, &fc](CommandContext& c)
 				                  {
 					                  const Ref<CommandContext> cref(&c, [](CommandContext*) {});
 					                  if (wanted.empty())
 					                  {
-						                  const uint64_t written = m_Pass.Tick(cref, presentImg, streamingDone, frame, minSettle, epsilon, maxFrame, basePath);
+						                  const uint64_t written = m_Pass.Tick(cref, presentImg, streamingDone, frame, minSettle, epsilon, maxFrame, exactWindow, basePath);
 						                  fc.Renderer.SetQualityCaptureWritten(written);
 						                  fc.Renderer.SetQualityCaptureComplete(written > 0);
 						                  return;

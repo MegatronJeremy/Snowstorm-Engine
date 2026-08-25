@@ -87,6 +87,7 @@ namespace Snowstorm::CVars
 	// Scripts/quality-bench.py drives (viewpoint x technique) runs and diffs FLIP/PSNR/SSIM against a
 	// committed baseline. CLI/env-only.
 	extern CVar<int> QualityCaptureFrames;               // MIN settle frames after streaming before convergence can trigger
+	extern CVar<bool> QualityCaptureExact;               // capture at a fixed offset from steady state, not on convergence
 	extern CVar<int> QualityCaptureMaxFrames;            // hard safety cap on total frames (capture anyway + warn if hit)
 	extern CVar<float> QualityCaptureEpsilon;            // converged when the mean per-channel present delta (/255) drops below this
 	extern CVar<std::string> QualityCaptureAtPathFrames; // motion capture: route frames to write (empty = converged single shot)
@@ -139,6 +140,17 @@ namespace Snowstorm::CVars
 	// something to overlap: without it the forward pass depends on the chain and the queues serialize anyway.
 	// Costs a frame of latency on the affected signal, which the temporal denoisers already reproject.
 	extern CVar<bool> RtCrossFrame;
+
+	// Resample the GI hemisphere samples instead of averaging them (ReSTIR GI, Ouyang et al. HPG 2021). The
+	// gather keeps ONE sample chosen by RIS and carries its unbiased contribution weight, which is what lets a
+	// later increment reuse the sample a pixel kept last frame or a neighbour kept this one. On its own it is
+	// the same estimator cost with higher per-frame variance, so it only pays once reuse is wired up.
+	extern CVar<bool> GiReSTIR;
+	extern CVar<bool> GiReSTIRTemporal;
+	extern CVar<bool> GiReSTIRSpatial;
+	extern CVar<float> GiReSTIRSpatialRadius;
+	extern CVar<int> GiReSTIRSpatialCount;
+	extern CVar<bool> GiReSTIRSpatialVisibility;
 
 	// Frames of VMA allocation dumps remaining, decremented as each is emitted. Prices the render graph's
 	// transient-aliasing case: aliasing can only recover memory that transient targets actually hold, and

@@ -15,14 +15,29 @@ _spec.loader.exec_module(rga)
 
 
 def test_vgpr_occupancy_matches_amd_model():
-    # AMD's documented gfx11 wave32 examples: <=96 => 16 waves; 120 => 12; and the wave boundaries.
+    # gfx11 wave32, allocation granularity 12. These expectations previously encoded the granularity of 16
+    # the public ISA documentation implies; RGA's own per-compile report ("VGPR allocation granularity: 12",
+    # and 167 requested allocating 168 rather than 176) says 12, which is what rga-occupancy.py models.
+    # Only 97, 128 and 256 below can tell the two apart: 96 and 120 give the same wave count either way.
     assert rga.vgpr_occupancy(1, "gfx1100") == 16
     assert rga.vgpr_occupancy(96, "gfx1100") == 16      # threshold: 1536/96 = 16
-    assert rga.vgpr_occupancy(97, "gfx1100") == 13      # round up to 112 => 1536/112 = 13.7 -> 13
-    assert rga.vgpr_occupancy(120, "gfx1100") == 12     # AMD example: 128-alloc => 1536/128 = 12
-    assert rga.vgpr_occupancy(128, "gfx1100") == 12
+    assert rga.vgpr_occupancy(97, "gfx1100") == 14      # round up to 108 => 1536/108 = 14.2 -> 14
+    assert rga.vgpr_occupancy(120, "gfx1100") == 12     # 120 is already a multiple of 12 => 1536/120 -> 12
+    assert rga.vgpr_occupancy(128, "gfx1100") == 11     # round up to 132 => 1536/132 = 11.6 -> 11
     assert rga.vgpr_occupancy(192, "gfx1100") == 8      # GIDenoise: the one occupancy-limited shader
-    assert rga.vgpr_occupancy(256, "gfx1100") == 6      # 1536/256 = 6
+    assert rga.vgpr_occupancy(256, "gfx1100") == 5      # round up to 264 => 1536/264 = 5.8 -> 5
+
+
+def test_vgpr_occupancy_gfx12_differs_from_gfx11():
+    # RDNA4 shares the register file and wave slots but allocates in blocks of 24, so the wave count steps
+    # at different VGPR counts. Pinned because the two models are interchangeable at a glance and are not:
+    # collapsing them would silently mis-report occupancy on whichever family lost.
+    assert rga.vgpr_occupancy(96, "gfx1200") == 16      # multiple of 24 => 1536/96 = 16
+    assert rga.vgpr_occupancy(97, "gfx1200") == 12      # round up to 120 => 1536/120 = 12.8 -> 12
+    assert rga.vgpr_occupancy(192, "gfx1200") == 8      # multiple of 24 => 1536/192 = 8
+    disagreements = sum(1 for v in range(1, 257)
+                        if rga.vgpr_occupancy(v, "gfx1100") != rga.vgpr_occupancy(v, "gfx1200"))
+    assert disagreements > 0, "gfx11 and gfx12 occupancy models collapsed to the same curve"
 
 
 def test_vgpr_occupancy_guards():

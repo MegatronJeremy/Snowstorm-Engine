@@ -118,14 +118,13 @@ _SPILL_METRICS = ("scratch", "vgpr_spills", "sgpr_spills")
 #
 # RDNA3 and RDNA4 desktop parts share a 192 KB register file (1536 VGPRs) and 16 wave slots, so both
 # reach full occupancy at <=96 VGPRs. They differ in allocation granularity: RDNA3 rounds a shader's
-# VGPR count up to a multiple of 16, RDNA4 to a multiple of 24. The wave count therefore steps at
-# different VGPR counts on the two despite the identical file size, which is why one model cannot
-# stand in for the other. (RDNA4 parts with a 128 KB file allocate in blocks of 16; no desktop SKU
-# ships that configuration, so it is not modelled.)
+# VGPR count up to a multiple of 12, RDNA4 to a multiple of 24. The wave count therefore steps at
+# different VGPR counts on the two despite the identical file size (they disagree at 36 of the 256
+# possible counts), which is why one model cannot stand in for the other. (RDNA4 parts with a 128 KB
+# file allocate in blocks of 16; no desktop SKU ships that configuration, so it is not modelled.)
 #
 # SGPRs never limit on RDNA. LDS can, but RGA offline reports THREADS_PER_WORKGROUP=0, so we compute
 # the VGPR-limited theoretical occupancy only (and gate LDS growth separately). Not measured -- see RGP.
-# (VGPRs/SIMD, wave slots/SIMD, allocation granularity) per architecture family.
 #
 # Granularity is not cosmetic: it decides which side of a wave boundary a shader lands on, and occupancy
 # is this gate's primary metric, so an error here hides the crossings it exists to catch. RGA reports the

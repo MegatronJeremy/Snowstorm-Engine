@@ -34,12 +34,18 @@ namespace Snowstorm
 		void Dispatch(const Ref<CommandContext>& ctx, uint32_t frameIndex, const FrameData& frame,
 		              uint64_t tableAddr, uint32_t frameCounter,
 		              const Ref<TextureView>& gbuffer, const Ref<TextureView>& depth,
-		              const Ref<TextureView>& output, uint32_t outW, uint32_t outH);
+		              const Ref<TextureView>& output, uint32_t outW, uint32_t outH,
+		              const Ref<TextureView>& resSample, const Ref<TextureView>& resRadiance,
+		              const Ref<TextureView>& resNormal, const Ref<TextureView>& resSamplePrev,
+		              const Ref<TextureView>& resRadiancePrev, const Ref<TextureView>& resNormalPrev,
+		              const Ref<TextureView>& velocity, bool reservoirHistoryValid,
+		              float nearPlane, float farPlane);
 
 	private:
 		void EnsureResources();
 
 		Ref<Pipeline> m_Pipeline;
+		bool m_HasReservoirBindings = false; // SS_GI_RESTIR variant only
 		Ref<Sampler> m_Sampler;
 		std::vector<Ref<Buffer>> m_ParamBuffers; // one per frame-in-flight
 		std::vector<Ref<DescriptorSet>> m_Sets;  // one per frame-in-flight

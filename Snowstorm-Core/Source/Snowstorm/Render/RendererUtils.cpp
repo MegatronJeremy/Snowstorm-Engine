@@ -412,6 +412,33 @@ namespace Snowstorm
 		inst.HistoryValid = false; // fresh buffers: no accumulated history to reproject against
 	}
 
+	void AllocateReservoir(ReservoirInstance& inst, const uint32_t w, const uint32_t h, const char* debugPrefix)
+	{
+		const std::string prefix(debugPrefix);
+		for (uint32_t i = 0; i < 2; ++i)
+		{
+			// fp16 cannot carry a world position at scene scale, and W spans a wide range once reuse starts
+			// concentrating weight, so the sample slot is fp32 while radiance and normal stay RGBA16F.
+			TextureDesc sd{};
+			sd.Dimension = TextureDimension::Texture2D;
+			sd.Format = PixelFormat::RGBA32_SFloat;
+			sd.Usage = TextureUsage::Sampled | TextureUsage::Storage;
+			sd.Width = w;
+			sd.Height = h;
+			sd.DebugName = prefix + "_ResSample" + std::to_string(i);
+			inst.Sample[i] = Texture::Create(sd);
+			inst.SampleView[i] = inst.Sample[i]->GetDefaultView();
+
+			inst.Radiance[i] = CreateGITarget(w, h, (prefix + "_ResRadiance" + std::to_string(i)).c_str());
+			inst.RadianceView[i] = inst.Radiance[i]->GetDefaultView();
+			inst.Normal[i] = CreateGITarget(w, h, (prefix + "_ResNormal" + std::to_string(i)).c_str());
+			inst.NormalView[i] = inst.Normal[i]->GetDefaultView();
+		}
+		inst.Width = w;
+		inst.Height = h;
+		inst.HistoryValid = false;
+	}
+
 	Ref<Texture> CreateAOTarget(uint32_t w, uint32_t h, const char* debugPrefix)
 	{
 		// Half-res AO factor (#126): compute writes it (Storage/UAV), the bilateral upsample samples it. Scalar

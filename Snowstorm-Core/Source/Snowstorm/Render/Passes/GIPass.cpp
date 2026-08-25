@@ -51,7 +51,9 @@ namespace Snowstorm
 			// starts a float4 array on a 16-byte boundary, so the shader has 12 bytes there whether or not
 			// this struct names them.
 			uint32_t HitLightCount = 0;
-			glm::uvec3 _PadHitLights{0, 0, 0};
+			uint32_t UseReSTIR = 0; // 0 = average, 1 = RIS this frame, 2 = RIS + temporal reuse
+			float NearPlane = 0.0f; // reservoir depth validation only
+			float FarPlane = 0.0f;
 			glm::vec4 HitLightPosRange[kRTHitMaxLights]{};
 			glm::vec4 HitLightColor[kRTHitMaxLights]{};
 			glm::vec4 HitLightDirCos[kRTHitMaxLights]{};
@@ -67,7 +69,14 @@ namespace Snowstorm
 		constexpr uint32_t kOutputBinding = 1;
 		constexpr uint32_t kSamplerBinding = 2;
 		constexpr uint32_t kParamsBinding = 3;
-		constexpr uint32_t kDepthBinding = 4; // fp32 D32 depth SRV (was packed in the G-buffer .w)
+		constexpr uint32_t kDepthBinding = 4;         // fp32 D32 depth SRV (was packed in the G-buffer .w)
+		constexpr uint32_t kResSampleBinding = 5;     // reservoir .xyz sample pos, .w W  (RGBA32F UAV)
+		constexpr uint32_t kResRadianceBinding = 6;   // reservoir .xyz radiance, .w M    (RGBA16F UAV)
+		constexpr uint32_t kResNormalBinding = 7;     // reservoir .xy oct sample normal, .z linear depth
+		constexpr uint32_t kResSamplePrevBinding = 8; // previous frame's reservoir (parity slot ^ 1)
+		constexpr uint32_t kResRadiancePrevBinding = 9;
+		constexpr uint32_t kResNormalPrevBinding = 10;
+		constexpr uint32_t kVelocityBinding = 11;
 	}
 
 	void GIPass::EnsureResources()
@@ -77,7 +86,14 @@ namespace Snowstorm
 			return;
 		}
 
-		Ref<Shader> cs = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load("Engine/Shaders/GI.comp.hlsl");
+		// render.gi.restir is startup-only, so the variant is resolved once and keyed into the .spv cache.
+		// Compiling the reservoir path in unconditionally cost the default path two waves of occupancy.
+		ShaderDefines defines;
+		if (CVars::GiReSTIR.Get())
+		{
+			defines.emplace_back("SS_GI_RESTIR=1");
+		}
+		Ref<Shader> cs = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load("Engine/Shaders/GI.comp.hlsl", defines);
 		SS_CORE_ASSERT(cs, "Failed to load GI compute shader");
 		if (!cs->IsReady())
 		{
@@ -90,6 +106,19 @@ namespace Snowstorm
 		p.DebugName = "GIPipeline";
 		m_Pipeline = Pipeline::Create(p);
 		SS_CORE_ASSERT(m_Pipeline, "Failed to create GI pipeline");
+
+		m_HasReservoirBindings = false;
+		if (const auto& sl = m_Pipeline->GetSetLayouts(); !sl.empty() && sl[0])
+		{
+			for (const auto& b : sl[0]->GetDesc().Bindings)
+			{
+				if (b.Binding == kResSampleBinding)
+				{
+					m_HasReservoirBindings = true;
+					break;
+				}
+			}
+		}
 
 		// Clamp-linear sampler for the bindless albedo / cubemap fetches in the hit shading.
 		SamplerDesc s{};
@@ -115,7 +144,12 @@ namespace Snowstorm
 	void GIPass::Dispatch(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const FrameData& frame,
 	                      const uint64_t tableAddr, const uint32_t frameCounter,
 	                      const Ref<TextureView>& gbuffer, const Ref<TextureView>& depth,
-	                      const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH)
+	                      const Ref<TextureView>& output, const uint32_t outW, const uint32_t outH,
+	                      const Ref<TextureView>& resSample, const Ref<TextureView>& resRadiance,
+	                      const Ref<TextureView>& resNormal, const Ref<TextureView>& resSamplePrev,
+	                      const Ref<TextureView>& resRadiancePrev, const Ref<TextureView>& resNormalPrev,
+	                      const Ref<TextureView>& velocity, const bool reservoirHistoryValid,
+	                      const float nearPlane, const float farPlane)
 	{
 		if (!ctx || !gbuffer || !depth || !output || outW == 0 || outH == 0)
 		{
@@ -159,6 +193,13 @@ namespace Snowstorm
 		if (CVars::RTHitLights.Get())
 		{
 			cb.HitLightCount = PackRTHitLights(frame.Lights, cb.HitLightPosRange, cb.HitLightColor, cb.HitLightDirCos);
+			// Reuse needs BOTH a valid history and a velocity buffer: without motion vectors the reprojection
+			// degrades to a same-pixel fetch, which reuses the wrong surface under any camera motion.
+			const bool restir = CVars::GiReSTIR.Get();
+			const bool reuse = restir && CVars::GiReSTIRTemporal.Get() && reservoirHistoryValid && velocity != nullptr;
+			cb.UseReSTIR = restir ? (reuse ? 2u : 1u) : 0u;
+			cb.NearPlane = nearPlane;
+			cb.FarPlane = farPlane;
 		}
 
 		m_ParamBuffers[frameIndex]->SetData(&cb, sizeof(GICB), 0);
@@ -174,6 +215,18 @@ namespace Snowstorm
 		m_Sets[frameIndex]->SetTexture(kGBufferBinding, gbuffer); // .xy normal, .z roughness
 		m_Sets[frameIndex]->SetTexture(kDepthBinding, depth);     // fp32 D32 depth SRV
 		m_Sets[frameIndex]->SetTexture(kOutputBinding, output);   // storage image (UAV)
+		// The reservoir bindings exist only in the SS_GI_RESTIR variant; SetTexture asserts on a missing one.
+		if (m_HasReservoirBindings)
+		{
+			m_Sets[frameIndex]->SetTexture(kResSampleBinding, resSample);
+			m_Sets[frameIndex]->SetTexture(kResRadianceBinding, resRadiance);
+			m_Sets[frameIndex]->SetTexture(kResNormalBinding, resNormal);
+			// The descriptor must be populated even with no history; the shader will not read it (UseReSTIR < 2).
+			m_Sets[frameIndex]->SetTexture(kResSamplePrevBinding, resSamplePrev ? resSamplePrev : resSample);
+			m_Sets[frameIndex]->SetTexture(kResRadiancePrevBinding, resRadiancePrev ? resRadiancePrev : resRadiance);
+			m_Sets[frameIndex]->SetTexture(kResNormalPrevBinding, resNormalPrev ? resNormalPrev : resNormal);
+			m_Sets[frameIndex]->SetTexture(kVelocityBinding, velocity ? velocity : depth);
+		}
 		m_Sets[frameIndex]->SetSampler(kSamplerBinding, m_Sampler);
 		const BufferBinding cbBB{.Buffer = m_ParamBuffers[frameIndex], .Offset = 0, .Range = sizeof(GICB)};
 		m_Sets[frameIndex]->SetBuffer(kParamsBinding, cbBB);

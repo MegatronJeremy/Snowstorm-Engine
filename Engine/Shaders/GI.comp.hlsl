@@ -26,6 +26,24 @@ Texture2D<float4> GBufferNormal : register(t0, space0); // .xy = oct GEOMETRIC n
 SamplerState LinearSampler : register(s2, space0);       // bindless albedo / cubemap sampling
 Texture2D<float> GBufferDepth : register(t4, space0);    // fp32 NDC depth (D32 attachment), sampled directly
 
+// ReSTIR reservoir, write slot. Split across three images because one reservoir does not fit in four
+// channels: the sample-point normal is needed by the reconnection Jacobian once reuse is added, so it
+// cannot be dropped to save a binding.
+// The reservoir path is a compile-time permutation, not a runtime branch: -fspv-preserve-bindings keeps
+// these declarations alive whether or not they are read, and the live reservoir state across the ray loop
+// costs registers in every compile. Branching at runtime charged the DEFAULT path 22 VGPRs and two waves of
+// occupancy (85 -> 107, 16/16 -> 14/16) for a feature that is off and measures worse. render.gi.restir is
+// startup-only for the same reason DefaultLit's debug axis is: the variant is keyed into the .spv cache.
+#if defined(SS_GI_RESTIR)
+[[vk::image_format("rgba32f")]] RWTexture2D<float4> ResSampleOut : register(u5, space0);   // .xyz sample pos, .w W
+[[vk::image_format("rgba16f")]] RWTexture2D<float4> ResRadianceOut : register(u6, space0); // .xyz radiance, .w M
+[[vk::image_format("rgba16f")]] RWTexture2D<float4> ResNormalOut : register(u7, space0);   // .xy oct sample normal, .z linear view depth
+Texture2D<float4> ResSamplePrev : register(t8, space0);   // previous frame's reservoir (parity slot ^ 1)
+Texture2D<float4> ResRadiancePrev : register(t9, space0);
+Texture2D<float4> ResNormalPrev : register(t10, space0);
+Texture2D<float4> VelocityTex : register(t11, space0);    // full-res motion: .xy = curr_uv - prev_uv
+#endif
+
 cbuffer GICB : register(b3, space0)
 {
 	float4x4 InvViewProj; // clip -> world, for depth->world-position reconstruction
@@ -57,7 +75,9 @@ cbuffer GICB : register(b3, space0)
 	// RTHitShading.hlsli's local-light contract. 16 = Snowstorm::kRTHitMaxLights (RTHitLights.hpp), which also
 	// owns the packing; HitLightCount is 0 whenever render.rt.hit_lights is off.
 	uint HitLightCount;
-	uint3 _PadHitLights;
+	uint UseReSTIR;   // 0 = average, 1 = RIS over this frame's candidates, 2 = RIS + temporal reuse
+	float NearPlane;  // reservoir depth validation only (linearize the stored NDC depth)
+	float FarPlane;
 	float4 HitLightPosRange[16];
 	float4 HitLightColor[16];
 	float4 HitLightDirCos[16];
@@ -71,6 +91,35 @@ cbuffer GICB : register(b3, space0)
 #define RTHIT_LOCAL_LIGHTS // the CB above carries HitLightCount + the three packed arrays
 #include "Include/RTHitShading.hlsli"
 #include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky (#129 Inc 1b)
+
+#if defined(SS_GI_RESTIR)
+// Uniform [0,1) from an integer seed (PCG-style bit mix). The reservoir's accept test needs an independent
+// draw per candidate: reusing the interleaved-gradient rotation would correlate the choice with the sample
+// direction and skew which candidate survives.
+float GIHash01(uint3 v)
+{
+	v = v * 1664525u + 1013904223u;
+	v.x += v.y * v.z;
+	v.y += v.z * v.x;
+	v.z += v.x * v.y;
+	v ^= v >> 16u;
+	v.x += v.y * v.z;
+	return float(v.x & 0x00FFFFFFu) / float(0x01000000u);
+}
+
+// Identical to GITemporal/TemporalResolve so every disocclusion test in the frame agrees.
+float LinearizeDepth(float d)
+{
+	return (NearPlane * FarPlane) / max(FarPlane - d * (FarPlane - NearPlane), 1e-6);
+}
+
+// Caps how many past samples one reservoir may claim. Without it M grows without bound, the current frame's
+// candidate weight vanishes against it, and the estimate stops responding to lighting changes.
+static const float kTemporalMCap = 30.0;
+// Relative linear-depth mismatch above which the reprojected reservoir is a different surface.
+static const float kDepthRejectRel = 0.1;
+
+#endif
 
 uint64_t GeoTableAddress()
 {
@@ -137,6 +186,16 @@ void main(uint3 id : SV_DispatchThreadID)
 	// C++ clamp, so the /rayCount normalization below never divides by zero.
 	const uint rayCount = max(RayCount, 1u);
 	float3 incoming = float3(0, 0, 0);
+
+	// Reservoir state for the RIS path. wSum is the running sum of candidate weights; the survivor's own
+	// weight is kept because the unbiased contribution weight W divides by it.
+#if defined(SS_GI_RESTIR)
+	float resWSum = 0.0;
+	float resTargetY = 0.0;
+	float3 resRadiance = float3(0, 0, 0);
+	float3 resHitPos = float3(0, 0, 0);
+	float3 resHitNormal = N;
+#endif
 	[loop] for (uint s = 0; s < rayCount; ++s)
 	{
 		const float u1 = frac((float(s) + ign) / float(rayCount));
@@ -165,20 +224,108 @@ void main(uint3 id : SV_DispatchThreadID)
 			}
 		}
 
+		// One candidate's contribution in the estimator's own convention: the tail divides the SUM by
+		// rayCount, so a candidate's value is its radiance, with the cosine and its pdf already cancelling
+		// under cosine-weighted sampling.
+		float3 candidate = float3(0, 0, 0);
+		float3 hitPos = origin + dir * GIRange; // sky miss: a far point along the ray
+		float3 hitNormal = -dir;                // faces the receiver, which is all the Jacobian needs
+
 		if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT && tableAddr != 0)
 		{
-			const float3 hitPos = origin + dir * q.CommittedRayT();
-			incoming += ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos, GIBounceAmbient);
+			hitPos = origin + dir * q.CommittedRayT();
+			candidate = ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos, GIBounceAmbient);
 		}
 		else if (PrefilteredCubeIndex != 0)
 		{
-			incoming += Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, dir, 0).rgb * IBLIntensity;
+			candidate = Cubemaps[NonUniformResourceIndex(PrefilteredCubeIndex)].SampleLevel(LinearSampler, dir, 0).rgb * IBLIntensity;
 		}
+
+		incoming += candidate;
+
+		// Weighted reservoir sampling over the same candidates. Target function is the candidate's luminance,
+		// and the candidates are equally likely draws, so the weight IS the target. Selecting with probability
+		// w/wSum leaves E[estimate] equal to the mean, which is what makes this swap-in unbiased.
+#if defined(SS_GI_RESTIR)
+		const float w = RTHitLuminance(candidate);
+		resWSum += w;
+		if (w > 0.0 && GIHash01(uint3(id.xy, FrameCounter * 32u + s)) < w / resWSum)
+		{
+			resTargetY = w;
+			resRadiance = candidate;
+			resHitPos = hitPos;
+			resHitNormal = hitNormal;
+		}
+#endif
 	}
 
 	// Incoming irradiance, intensity-scaled. NO receiver albedo: that's multiplied at full res in the
 	// forward pass after the bilateral upsample, so half-res GI never blurs albedo edges. GIIntensity is a
 	// linear scalar (no effect on edges), applied here so the debug view shows the tuned signal.
-	const float3 irradiance = (incoming / float(rayCount)) * GIIntensity;
+	// RIS path: the estimate is the survivor scaled by its unbiased contribution weight
+	// W = wSum / (M * targetY). With every candidate equal this collapses to W = 1 and the survivor IS the
+	// mean, so the two paths agree in the uniform case and differ only in variance.
+#if defined(SS_GI_RESTIR)
+	// Temporal reuse: fold the previous frame's reservoir in as a single extra candidate, weighted by its own
+	// unbiased contribution weight times the sample count it stands for (Ouyang et al. 2021, eq. 6). Motion
+	// vectors reproject to the SAME world surface point, so the reconnection Jacobian is 1 by construction and
+	// is deliberately not computed here; the depth test below is what enforces that premise. Spatial reuse
+	// borrows from a genuinely different visible point and DOES need the Jacobian.
+	float resM = float(rayCount);
+	if (UseReSTIR >= 2u)
+	{
+		const float2 velocity = VelocityTex.SampleLevel(LinearSampler, uv, 0).xy;
+		const float2 histUv = uv - velocity;
+		if (histUv.x >= 0.0 && histUv.x <= 1.0 && histUv.y >= 0.0 && histUv.y <= 1.0)
+		{
+			// Point-sample the reservoir: a bilinear tap would average four samples' positions and weights into
+			// a sample that was never drawn, which is not a reservoir and biases the estimator.
+			uint2 resDims;
+			ResRadiancePrev.GetDimensions(resDims.x, resDims.y);
+			const int2 histTexel = clamp(int2(histUv * float2(resDims)), int2(0, 0), int2(resDims) - 1);
+
+			const float4 prevRad = ResRadiancePrev.Load(int3(histTexel, 0));
+			const float4 prevSample = ResSamplePrev.Load(int3(histTexel, 0));
+			const float4 prevNormal = ResNormalPrev.Load(int3(histTexel, 0));
+
+			// Same-surface test, same linearized-relative form as GITemporal's disocclusion.
+			const float linCurr = LinearizeDepth(depth);
+			const float rel = abs(linCurr - prevNormal.z) / max(linCurr, 1e-4);
+
+			const float prevM = min(prevRad.w, kTemporalMCap);
+			if (rel < kDepthRejectRel && prevM > 0.0 && prevSample.w > 0.0)
+			{
+				const float3 prevRadiance = prevRad.xyz;
+				const float prevTarget = RTHitLuminance(prevRadiance);
+				// wSum the previous reservoir stands for, reconstructed from W = wSum / (M * targetY).
+				const float prevWeight = prevTarget * prevSample.w * prevM;
+
+				resWSum += prevWeight;
+				resM += prevM;
+				if (prevWeight > 0.0 && GIHash01(uint3(id.xy, FrameCounter * 32u + 31u)) < prevWeight / resWSum)
+				{
+					resTargetY = prevTarget;
+					resRadiance = prevRadiance;
+					resHitPos = prevSample.xyz;
+					resHitNormal = DecodeNormalOct(prevNormal.xy);
+				}
+			}
+		}
+	}
+
+	const float W = (UseReSTIR != 0 && resTargetY > 0.0) ? (resWSum / (resM * resTargetY)) : 0.0;
+
+	const float3 averaged = incoming / float(rayCount);
+	const float3 resampled = resRadiance * W;
+	const float3 irradiance = ((UseReSTIR != 0) ? resampled : averaged) * GIIntensity;
 	GIOut[id.xy] = float4(irradiance, 1.0);
+
+	// Persist the reservoir for the spatial pass and for next frame. Written even when the average is what
+	// got output, so the write path is exercised by the same run that validates the estimator.
+	ResSampleOut[id.xy] = float4(resHitPos, W);
+	ResRadianceOut[id.xy] = float4(resRadiance, resM);
+	ResNormalOut[id.xy] = float4(EncodeNormalOct(resHitNormal), LinearizeDepth(depth), 0.0);
+#else
+	GIOut[id.xy] = float4((incoming / float(rayCount)) * GIIntensity, 1.0);
+#endif
 }

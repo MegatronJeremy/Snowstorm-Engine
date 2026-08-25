@@ -31,8 +31,7 @@ namespace Snowstorm
 		// Captures when the present delta < `epsilon` after `minSettleFrames` past streaming, or when `frame`
 		// reaches `maxFrame` (safety, logs a warning). Returns the running count written (0, then 1).
 		uint64_t Tick(const Ref<CommandContext>& ctx, const Ref<Texture>& presentImg, bool streamingDone,
-		              uint64_t frame, uint64_t minSettleFrames, float epsilon, uint64_t maxFrame,
-		              const std::string& basePath);
+		              uint64_t frame, uint64_t minSettleFrames, float epsilon, uint64_t maxFrame, bool exactWindow, const std::string& basePath);
 
 		// Motion capture: write the present at each requested ROUTE frame, with no convergence test (a moving
 		// image has no fixed point to converge to). `wanted` is ascending route-frame indices; each becomes
@@ -69,6 +68,7 @@ namespace Snowstorm
 		void WritePending(PendingCopy& slot, const std::string& basePath);
 
 		static constexpr uint64_t kCheckEvery = 16; // frames between convergence checkpoints
+		bool m_ExactRecorded = false;               // exact mode records one copy, not a checkpoint series
 
 		Ref<Buffer> m_Buffer;        // single present readback (recorded, then mapped once retired)
 		std::vector<uint8_t> m_Prev; // previous checkpoint's bytes (CPU), for the delta

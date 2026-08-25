@@ -179,6 +179,7 @@ namespace Snowstorm
 					rtW.GITargetView = rtW.GITarget->GetDefaultView();
 					// GI SVGF denoiser buffers (#132): half-res, rebuilt on viewport OR gi.scale change (tracks GITarget).
 					AllocateDenoiser(rtW.GIDenoiser, giW, giH, "ViewportGI");
+					AllocateReservoir(rtW.GIReservoir, giW, giH, "ViewportGI");
 					// Full-res GI target (#124): the bilateral upsample renders the half-res GI into this, and the
 					// forward pass samples it (by screen UV) as the diffuse GI. Full viewport res.
 					rtW.GIUpscaleTarget[0] = CreateColorOnlyHDRTarget(w, h, "ViewportGIUpscale0");
