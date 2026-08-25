@@ -590,8 +590,8 @@ bad luck.
 content, so an absolute FLIP or JOD difference between two probes is mostly a difference in what is
 on screen, not in how hard the motion is. JOD ranks `strafe` worst on every technique, and that is
 NOT evidence that strafing is the hardest motion. Attributing error to motion needs a static control
-at the identical pose, and measured that way (moving capture minus a static capture at the same
-recorded pose, `all-rt`) the order is different: dolly +0.0231, strafe +0.0384, **reversal +0.0439**.
+at the identical pose, and measured that way (the moving frame against a static capture at the same
+recorded pose, `all-rt`) the order is different: dolly 0.0887, strafe 0.1377, **reversal 0.1656**.
 The `raster` row makes the trap explicit, since its `reversal` FLIP is the BEST of its four probes
 while its motion penalty is the worst.
 
@@ -600,8 +600,16 @@ angular rate: arc-length reparameterisation holds translation at 0.0333-0.0340 u
 every moving probe, and `strafe` carries 24x the yaw rate of `dolly` while costing less than the
 reversal. What is special about the U-turn is that the velocity vector changes sign, which is the
 documented pathological case for history rejection (FSR2 tracks high-velocity ghosting as its own
-bug class). The `static` probe is the control that makes all of this readable: its moving-minus-static
-delta is 0.0000 on every technique, so a parked capture and a static capture agree exactly.
+bug class). The `static` probe is the control that makes all of this readable: its penalty is an order
+of magnitude below every moving probe (`all-rt` 0.0244 against 0.0887-0.1656), so the moving probes are
+reporting motion rather than a protocol artifact.
+
+**The `static` probe does NOT read zero, and should not be expected to.** Two reasons, both measured.
+The camera parks but `Sponza-Motion.world`'s props keep rotating, so the world is still moving there
+while the control freezes it. And the control accumulates while frozen whereas the parked capture only
+recently stopped, which is worth ~0.002 of the residual: sweeping the control's accumulation over
+25/100/400 frames moves `raster`'s static penalty 0.0132 -> 0.0152 -> 0.0156, saturating. Treat the
+residual as the metric's noise floor, not as a validity check that must hit 0.
 
 Baselines are keyed by adapter (`Scripts/quality-motion-baseline/<device-slug>/<technique>.json`) for
 the same reason the static ones are: the reference is a path trace on the local card. Exit 0 within
@@ -625,8 +633,18 @@ FLIP boundary-clamped four of six knobs, pinning both `ao.denoise.iterations` an
 `reflections.denoise.iterations` at ZERO. Moving the camera does not fix that: FLIP rewards removing
 blur either way. This is the repo's own DLSS-selection lesson one metric up, where PSNR favours the
 blurry image so LPIPS decides; here FLIP favours the sharp noisy one, so a perceptual spatio-temporal
-metric decides. Never optimise **motion penalty** either: it is moving-minus-static, so an optimiser
-can drive it to zero by degrading the static case.
+metric decides. Never optimise **motion penalty** either: it is the moving frame measured against this
+renderer's own still, so an optimiser can drive it to zero by degrading the still.
+
+**Its absolute scale is protocol-dependent, so never mix numbers across a capture-protocol change.**
+60d154d clears temporal history on entering steady state whenever `quality.capture.frames > 0`, and
+`run_motion_capture` sets that to 1 purely to arm sequence mode, so the clear applies to the moving
+capture too. Before it, those frames inherited TAA and denoiser accumulation built up while assets were
+still streaming, which made them artificially smooth and therefore artificially close to a converged
+still; the penalty was suppressed roughly 4-10x as a result (`raster` dolly 0.0114 against 0.1197
+after). The frozen control was unaffected, since it converges over 400 held frames either way. The
+ORDERING across probes and techniques survived the rescale unchanged, which is what the metric is read
+for; the absolute values did not.
 
 **A scene without object motion cannot answer the denoiser question at all.** Measured on GI a-trous
 iterations by JOD, on static geometry versus with animated occluders:

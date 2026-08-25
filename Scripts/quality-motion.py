@@ -310,9 +310,14 @@ def capture_static_controls(tech_env: dict, out_base: Path, exe: Path, repo_root
     the penalty would then measure camera motion against a partially-moving baseline.
 
     The still side lets TAA accumulate longer than a moving frame ever gets. That is the definition
-    of the measurement (cost versus everything having stopped), not a confound, and it is
-    empirically small: the `static` probe, already parked in the moving run, scores within 0.001
-    FLIP of its own control on every technique.
+    of the measurement (cost versus everything having stopped), not a confound, and it saturates:
+    sweeping the control's accumulation over 25/100/400 frames moves `raster`'s static penalty
+    0.0132 -> 0.0152 -> 0.0156.
+
+    The `static` probe therefore does NOT read zero. It is parked in the moving run, but this scene's
+    props keep rotating while the control freezes them, so a residual is expected there (`raster`
+    0.0157, `all-rt` 0.0244, against 0.09-0.19 on the moving probes). Read it as the metric's noise
+    floor rather than as a check that must reach 0.
     """
     cache_dir = repo_root / "Scripts" / ".quality-ref-cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
