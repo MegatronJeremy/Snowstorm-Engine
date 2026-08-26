@@ -221,11 +221,12 @@ per-pixel light selection differing between neighbouring pixels, and it leans on
 to hide them (#170). Neither the gate nor perf-bench found this, because the route never renders the
 lit side aisles (#169). Treat its numbers as characterising a prototype, not a shipping technique. It also flips on
 `render.shadows.specular.demodulated`, which the rung leaves at its shipping default (on) and which
-adds a second denoise chain the inline path has no analogue for. At Sponza's light count, in ms over
-`rt-off`: 9070 XT inline 2.388, stochastic 2.757 with that chain and 1.677 without; 5070 inline
-1.428, stochastic 3.510 and 2.144. So the shipping configs rank inline first on both adapters, while
-the ray-tracing work alone ranks stochastic first on AMD. The `ShadowSpec*` rows in the per-pass
-table are that chain, priced separately. Sub-0.05 ms passes are ignored (timestamp noise).
+adds a second denoise chain (the `ShadowSpec*` rows) the inline path has no analogue for. At Sponza's
+light count, in ms over `rt-off` from the committed baselines: 9070 XT inline 2.272, stochastic 1.723
+with that chain and 0.895 without; 5070 inline 1.294, stochastic 3.362 and 2.109. So the ranking
+inverts across vendors rather than across configs: on AMD stochastic wins outright, on NVIDIA inline
+wins by 2.6x. The spec chain alone is 0.828 ms on the 9070 XT and 1.253 ms on the 5070. Sub-0.05 ms
+passes are ignored (timestamp noise).
 
 **Warmup is detected, not assumed.** Sampling begins once the rolling 30-frame GPU-time window's
 peak-to-peak spread drops below `perf.bench.warmup.epsilon` (default 5%) of its mean, capped by
