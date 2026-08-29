@@ -100,7 +100,7 @@ float SampleShadowFactor(uint texIndex, float4x4 lightViewProj, float4 atlasRect
 // Record + any-hit cutout alpha test, shared with the AO/GI/reflection passes. Engine.hlsli already declared
 // Textures[] (t0, space3), satisfying RTGeometry's contract, so this include must follow it.
 #include "Include/RTGeometry.hlsli"
-#include "Include/LightSampling.hlsli" // SampleCone / LightConeCos, shared with the path tracer
+#include "Include/LightSampling.hlsli" // SampleCone / LightConeCos / IGN / STBN, shared with the path tracer
 
 // Reassemble the geometry-table device address from FrameCB's lo/hi halves (0 = table not published yet ->
 // the any-hit test falls back to treating hits as solid).
@@ -159,11 +159,15 @@ float RayTraceShadow(float3 positionWS, float3 Ng, float3 L, float tMax)
 // path tracer's NEE at any cone width, not only in the small-angle limit. The frame-rotated IGN hash picks
 // different directions each frame so TAA smooths the noise. coneCos == 1 reduces exactly to the hard single
 // ray. RT permutation only.
-float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, float coneCos, float2 pixelPos)
+// `dimBase` reserves this light two STBN dimensions, so two lights shading the same pixel draw decorrelated
+// jitter instead of the same scalar (correlated error does not average down, however many lights there are).
+float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, float coneCos, float2 pixelPos, uint dimBase)
 {
-	// Per-pixel + per-frame rotation seed (same interleaved-gradient-noise hash RTAO uses).
-	const float2 px = pixelPos + float2(FrameCounter * 5.588238, FrameCounter * 3.539418);
-	const float ign = frac(52.9829189 * frac(dot(px, float2(0.06711056, 0.00583715))));
+	const uint2 px = uint2(pixelPos);
+	// Two decorrelated spatiotemporal blue-noise draws: one offsets the stratified polar stratum, one the
+	// azimuth. Shadow.comp draws the same two per traced ray.
+	const float jTheta = STBN(px, FrameCounter, dimBase);
+	const float jPhi = STBN(px, FrameCounter, dimBase + 1u);
 
 	const float3 origin = positionWS + Ng * 0.02 + L * 0.01;
 	const uint64_t tableAddr = GeoTableAddress();
@@ -171,9 +175,10 @@ float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, flo
 	float visSum = 0.0;
 	[unroll] for (int s = 0; s < SHADOW_RAY_COUNT; ++s)
 	{
-		// Cone sample (stratified by ray index, jittered by the hash).
-		const float u1 = frac((float(s) + ign) / float(SHADOW_RAY_COUNT));
-		const float u2 = frac(ign + float(s) * 0.61803398875); // golden-ratio decorrelation
+		// Cone sample: polar stratified by ray index (one sample per equal-solid-angle stratum, which the
+		// blue-noise offset only jitters WITHIN), azimuth golden-ratio rotated off its own draw.
+		const float u1 = (float(s) + jTheta) / float(SHADOW_RAY_COUNT);
+		const float u2 = frac(jPhi + float(s) * 0.61803398875);
 		const float3 dir = SampleCone(L, coneCos, u1, u2);
 
 		// Part of the light's disk sits below the GEOMETRIC horizon near the terminator; the surface itself
@@ -218,7 +223,10 @@ float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, flo
 
 // Directional-sun shadow: RT ray query (when RTShadowEnabled) or the raster shadow map (dedicated map,
 // gated by ShadowMapIndex; 0 = no shadows). `Ng`/`L`/`pixelPos` are only used by the RT path.
-float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL, float2 pixelPos)
+//
+// The three Sample*Shadow entry points take a `lightIdx` that is unique across ALL lights in the frame (sun 0,
+// point 1 + p, spot 1 + MAX_POINT_LIGHTS + s), used only to hand each light its own STBN dimension pair.
+float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL, float2 pixelPos, uint lightIdx)
 {
 #if defined(SS_RAYTRACING) && defined(SS_LIT_INLINE_RT_SHADOWS)
 	if (RTShadowEnabled != 0)
@@ -227,7 +235,7 @@ float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL, float
 		// cosine, so it feeds the cone sampler directly. Else the hard single ray. Sun is at infinity.
 		if (ShadowSoft != 0)
 		{
-			return RayTraceSoftShadow(positionWS, Ng, L, 1e30, SunCosThetaMax, pixelPos);
+			return RayTraceSoftShadow(positionWS, Ng, L, 1e30, SunCosThetaMax, pixelPos, lightIdx * 2u);
 		}
 		return RayTraceShadow(positionWS, Ng, L, 1e30);
 	}
@@ -243,7 +251,7 @@ float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL, float
 // spot's tile. `Ng` = geometric normal (ray offset), `L` = direction to the light, `distToLight` = ray
 // length for the RT path. Raster path gated by the atlas index being bound AND the spot having a tile
 // (ShadowIndex >= 0); RT path gated by ShadowIndex >= 0 alone (the "this light casts" sentinel).
-float SampleSpotShadow(SpotLight spot, float3 positionWS, float3 Ng, float3 L, float distToLight, float NdotL, float2 pixelPos)
+float SampleSpotShadow(SpotLight spot, float3 positionWS, float3 Ng, float3 L, float distToLight, float NdotL, float2 pixelPos, uint lightIdx)
 {
 #if defined(SS_RAYTRACING) && defined(SS_LIT_INLINE_RT_SHADOWS)
 	if (RTShadowEnabled != 0)
@@ -258,7 +266,7 @@ float SampleSpotShadow(SpotLight spot, float3 positionWS, float3 Ng, float3 L, f
 		// sine (radius / distance), so a bigger or closer source gives a wider penumbra.
 		if (ShadowSoft != 0)
 		{
-			return RayTraceSoftShadow(positionWS, Ng, L, tMax, LightConeCos(LightSourceRadius, distToLight), pixelPos);
+			return RayTraceSoftShadow(positionWS, Ng, L, tMax, LightConeCos(LightSourceRadius, distToLight), pixelPos, lightIdx * 2u);
 		}
 		return RayTraceShadow(positionWS, Ng, L, tMax);
 	}
@@ -292,7 +300,7 @@ int PointShadowFace(float3 dir)
 // `Ng` = geometric normal (ray offset), `L` = direction to the light, `distToLight` = ray length for RT.
 // Raster path picks the cube face the surface lies on and PCF-samples that face's tile, gated by the atlas
 // being bound AND a shadow slot assigned (ShadowSlot >= 0); RT path gated by ShadowSlot >= 0 alone.
-float SamplePointShadow(PointLight light, float3 positionWS, float3 Ng, float3 L, float distToLight, float NdotL, float2 pixelPos)
+float SamplePointShadow(PointLight light, float3 positionWS, float3 Ng, float3 L, float distToLight, float NdotL, float2 pixelPos, uint lightIdx)
 {
 #if defined(SS_RAYTRACING) && defined(SS_LIT_INLINE_RT_SHADOWS)
 	if (RTShadowEnabled != 0)
@@ -304,7 +312,7 @@ float SamplePointShadow(PointLight light, float3 positionWS, float3 Ng, float3 L
 		const float tMax = max(distToLight - 0.05, 0.0);
 		if (ShadowSoft != 0)
 		{
-			return RayTraceSoftShadow(positionWS, Ng, L, tMax, LightConeCos(LightSourceRadius, distToLight), pixelPos);
+			return RayTraceSoftShadow(positionWS, Ng, L, tMax, LightConeCos(LightSourceRadius, distToLight), pixelPos, lightIdx * 2u);
 		}
 		return RayTraceShadow(positionWS, Ng, L, tMax);
 	}
@@ -631,7 +639,7 @@ float4 main(PSInput i) : SV_Target0
 		}
 		else
 		{
-			const float shadow = (l == 0) ? SampleSunShadow(i.PositionWS, N, L, ndl, i.PositionCS.xy) : 1.0;
+			const float shadow = (l == 0) ? SampleSunShadow(i.PositionWS, N, L, ndl, i.PositionCS.xy, 0u) : 1.0;
 			Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * shadow;
 		}
 	}
@@ -663,7 +671,7 @@ float4 main(PSInput i) : SV_Target0
 		}
 		else
 		{
-			const float pointShadow = SamplePointShadow(PointLights[p], i.PositionWS, N, L, dist, ndl, i.PositionCS.xy);
+			const float pointShadow = SamplePointShadow(PointLights[p], i.PositionWS, N, L, dist, ndl, i.PositionCS.xy, uint(1 + p));
 			Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * pointShadow;
 		}
 	}
@@ -703,7 +711,7 @@ float4 main(PSInput i) : SV_Target0
 		}
 		else
 		{
-			const float spotShadow = SampleSpotShadow(SpotLights[s], i.PositionWS, N, L, dist, ndl, i.PositionCS.xy);
+			const float spotShadow = SampleSpotShadow(SpotLights[s], i.PositionWS, N, L, dist, ndl, i.PositionCS.xy, uint(1 + MAX_POINT_LIGHTS + s));
 			Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * spotShadow;
 		}
 	}

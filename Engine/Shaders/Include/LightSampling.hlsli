@@ -13,6 +13,29 @@
 
 static const float SS_TWO_PI = 6.28318530718;
 
+// Interleaved-gradient noise in [0,1), FIXED per pixel: its power spectrum is blue-ish in screen space
+// (Jimenez), so neighbouring pixels get well-separated values that a spatial filter (a-trous, or TAA's
+// neighbourhood clamp) averages cleanly. Spatial base for the sampler below.
+float IGN(uint2 px)
+{
+	return frac(52.9829189 * frac(0.06711056 * float(px.x) + 0.00583715 * float(px.y)));
+}
+
+// Spatiotemporal blue-noise sample in [0,1): the fixed IGN spatial pattern advanced by a golden-ratio (R1
+// low-discrepancy) increment per FRAME and decorrelated per DIMENSION. Animating blue noise by the golden
+// ratio keeps the screen-space blue-noise property while making successive frames low-discrepancy IN TIME
+// (Wolfe, "Animating Noise for Integration Over Time"; MegaLights/NRD both stress blue + low-discrepancy at
+// 1-4 rpp). Translating the IGN input by frame instead re-rolls the whole spatial pattern every frame, which
+// is white in time and defeats temporal accumulation. `dim` separates the independent draws a single pixel
+// makes in one frame (per light, per sample, per axis).
+// 0.6180339887 = 1/phi (temporal); 0.7548776662 = the plastic-number R2 additive constant (per-dimension).
+float STBN(uint2 px, uint frame, uint dim)
+{
+	// Wrap the frame to a 64-frame period: keeps float(frame) exact over arbitrarily long runs AND matches NRD's
+	// "limited animated frames" guidance for blue noise. dim stays O(100) so it is exact too.
+	return frac(IGN(px) + float(frame & 63u) * 0.61803398875 + float(dim) * 0.75487766624);
+}
+
 // Branchless orthonormal basis (Duff et al. 2017, "Building an Orthonormal Basis, Revisited").
 void OnbFromNormal(float3 n, out float3 t, out float3 b)
 {

@@ -127,36 +127,13 @@ RaytracingAccelerationStructure SceneTLAS : register(t2, space3);
 // Textures[] above satisfies RTGeometry's contract, so this include must follow it.
 #include "Include/RTGeometry.hlsli"
 #include "Include/GBufferEncode.hlsli"  // oct-normal decode + IsSky
-#include "Include/LightSampling.hlsli"  // SampleCone / LightConeCos, shared with the path tracer
+#include "Include/LightSampling.hlsli"  // SampleCone / LightConeCos / IGN / STBN, shared with the path tracer
 
 // Reassemble the geometry-table device address from the CB lo/hi halves (0 = table not published this frame ->
 // the any-hit test treats every hit as solid, matching AO's fallback).
 uint64_t GeoTableAddress()
 {
 	return (uint64_t(ReflGeoTableAddrHi) << 32) | uint64_t(ReflGeoTableAddrLo);
-}
-
-// Interleaved-gradient noise in [0,1), FIXED per pixel — its power spectrum is blue-ish in screen space
-// (Jimenez), so neighbouring pixels get well-separated values that the spatial (à-trous) denoiser averages
-// cleanly. This is the spatial base for the spatiotemporal blue-noise sampler below.
-float IGN(uint2 px)
-{
-	return frac(52.9829189 * frac(0.06711056 * float(px.x) + 0.00583715 * float(px.y)));
-}
-
-// Spatiotemporal blue-noise sample in [0,1): the fixed IGN spatial pattern advanced by a golden-ratio (R1
-// low-discrepancy) increment per FRAME and decorrelated per DIMENSION. Animating blue noise by the golden
-// ratio keeps the screen-space blue-noise property while making successive frames low-discrepancy IN TIME
-// (Wolfe, "Animating Noise for Integration Over Time"; MegaLights/NRD both stress blue + low-discrepancy at
-// 1-4 rpp) — far better temporal convergence and far less shimmer than the previous white-noise-in-time hash,
-// which re-rolled the whole pattern every frame. `dim` separates the per-frame draws (each light in the
-// reservoir stream + the two soft-jitter axes). 0.6180339887 = 1/φ (temporal); 0.7548776662 = the plastic-
-// number R2 additive constant (per-dimension decorrelation).
-float STBN(uint2 px, uint frame, uint dim)
-{
-	// Wrap the frame to a 64-frame period: keeps float(frame) exact over arbitrarily long runs AND matches NRD's
-	// "limited animated frames" guidance for blue noise. dim is small (<= ~50) so it stays exact too.
-	return frac(IGN(px) + float(frame & 63u) * 0.61803398875 + float(dim) * 0.75487766624);
 }
 
 // Windowed inverse-square attenuation, matching DefaultLit's point/spot falloff exactly.
