@@ -211,7 +211,7 @@ namespace Snowstorm::CVars
 
 	CVar<float> IBLIntensity{"render.ibl.intensity", 0.75f, "Multiplier on the IBL ambient contribution", CVarFlags::Persist};
 
-	CVar<float> GISpecAmbientFade{"render.gi.spec_ambient_fade", 1.0f, "#163: when RT GI is active, fade the un-occluded env-cube SPECULAR ambient by roughness (0 = off/old behavior, 1 = full linear roughness fade). Rough surfaces' wide env-specular lobe otherwise acts as a second un-occluded ambient overlapping the occluded diffuse GI, over-filling shadows vs the path-traced reference.", CVarFlags::Persist};
+	CVar<float> GISpecAmbientFade{"render.gi.spec_ambient_fade", 1.0f, "When RT GI is active, fade the un-occluded env-cube SPECULAR ambient by roughness (0 = off/old behavior, 1 = full linear roughness fade). Rough surfaces' wide env-specular lobe otherwise acts as a second un-occluded ambient overlapping the occluded diffuse GI, over-filling shadows vs the path-traced reference.", CVarFlags::Persist};
 
 	CVar<float> GIBounceAmbient{"render.gi.bounce_ambient", 0.5f, "#39: scale on the un-occluded IBL ambient added at each RT-GI secondary hit (0..1; 1 = old behavior). The GI gather is itself the indirect-diffuse estimator, so a full un-occluded ambient at every bounce double-counts the sky and floods shadowed nooks (residual over-brightness vs the path-traced reference after #163). Default 0.5 measured to improve FLIP AND SSIM on all viewpoints vs the reference; the path tracer injects no free ambient per bounce.", CVarFlags::Persist};
 
