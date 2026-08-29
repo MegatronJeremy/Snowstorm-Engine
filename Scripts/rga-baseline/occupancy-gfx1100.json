@@ -22,13 +22,13 @@
       "permutations": 2
     },
     "DefaultLit.frag[inlineshadow]": {
-      "vgprs": 132.0,
+      "vgprs": 135.0,
       "sgprs": 72.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 31524.0,
+      "isa_size": 31604.0,
       "permutations": 2
     },
     "DefaultLit.frag[noinlineshadow]": {
