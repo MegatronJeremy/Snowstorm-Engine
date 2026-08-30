@@ -131,7 +131,6 @@ void main(uint3 id : SV_DispatchThreadID)
 	float3 accum = float3(0, 0, 0);
 	float wsum = 0.0;
 	float varAccum = 0.0; // #129 Inc 3c part 2: filter the variance through the à-trous with SQUARED weights
-	float varWsum = 0.0;
 
 	// SIGMA-style penumbra-aware kernel sizing (shadows only; PenumbraScale == 0 => identity for GI/AO/reflections,
 	// so their output stays bit-identical). Scale the à-trous tap stride by the receiver's occluder distance
@@ -207,11 +206,14 @@ void main(uint3 id : SV_DispatchThreadID)
 			wsum += w;
 			// Variance filters with the SQUARE of the weights (variance of a weighted sum), per SVGF.
 			varAccum += (w * w) * max(tapIn.a, 0.0);
-			varWsum += w * w;
 		}
 	}
 
 	// wsum is always >= the center tap's weight (wN=wD=wL=1 there), so it never underflows — no fallback needed.
-	const float outVar = (varWsum > 1e-12) ? (varAccum / varWsum) : centerVar;
+	// Var[sum(w*c)/sum(w)] = sum(w^2*Var)/ (sum w)^2: the denominator is the SQUARE OF THE SUM, not the
+	// sum of squares. Dividing by varWsum = sum(w^2) instead returns a weighted MEAN of the input
+	// variances, which for N equal weights is N times too large and never decays across iterations, so
+	// lumaDenom stays wide and the luminance edge-stop is inert after the first pass.
+	const float outVar = (wsum > 1e-12) ? (varAccum / (wsum * wsum)) : centerVar;
 	GIOut[centerPx] = float4(accum / wsum, outVar);
 }
