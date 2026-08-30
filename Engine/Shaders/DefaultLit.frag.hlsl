@@ -156,9 +156,9 @@ float RayTraceShadow(float3 positionWS, float3 Ng, float3 L, float tMax)
 // modelling the light's AREA. Averaging the hits gives a visibility in [0,1] (a penumbra) instead of {0,1}.
 // Sharp where the caster is close (small subtended angle), softening with distance, which is the physical
 // behaviour. Sampling by SOLID ANGLE rather than in a tangent-plane disk is what makes this agree with the
-// path tracer's NEE at any cone width, not only in the small-angle limit. The frame-rotated IGN hash picks
-// different directions each frame so TAA smooths the noise. coneCos == 1 reduces exactly to the hard single
-// ray. RT permutation only.
+// path tracer's NEE at any cone width, not only in the small-angle limit. STBN advances the directions per
+// frame low-discrepancy in time, so TAA averages them down rather than re-rolling noise. coneCos == 1 reduces
+// exactly to the hard single ray. RT permutation only.
 // `dimBase` reserves this light two STBN dimensions, so two lights shading the same pixel draw decorrelated
 // jitter instead of the same scalar (correlated error does not average down, however many lights there are).
 float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, float coneCos, float2 pixelPos, uint dimBase)
