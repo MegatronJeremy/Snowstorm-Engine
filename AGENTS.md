@@ -93,6 +93,25 @@ debugger environment) pointing at the vcpkg `bin` dir.
 
 The first run is slow: vcpkg compiles every dependency from source.
 
+### Embedded Doom (`SS_ENABLE_DOOM`, off)
+
+`Projects/Sandbox/assets/scenes/Doom.world` plays Doom on a textured quad, as a demo of the dynamic
+texture path (`RendererService::EnqueueTextureUpload`). It is off because it is not part of the
+engine and because **doomgeneric is GPL-2.0 while this project is public domain**: a build with it on
+is a combined work that cannot be redistributed under `UNLICENSE.txt`. Nothing GPL is committed here;
+`Vendor/doomgeneric/CMakeLists.txt` clones it into the build tree at configure time instead.
+
+```
+cmake -S . -B build -DSS_ENABLE_DOOM=ON && cmake --build build --config Debug
+build/Snowstorm-Editor/Debug/Snowstorm-Editor.exe \
+  --startup.scene=Projects/Sandbox/assets/scenes/Doom.world --doom.enabled --doom.wad=<path to an IWAD>
+```
+
+No IWAD ships with the repo (`*.wad` is gitignored); Freedoom is the freely licensed one. Doom runs on
+its own thread because it drives a 35 Hz tic loop and blocks waiting for it, which would otherwise cap
+the frame rate. It also has no shutdown entry point, so that thread is detached and dies with the
+process, and the state it shares is deliberately leaked rather than destroyed under it.
+
 ### New box (one time)
 
 A clone plus these commands reproduces the full workflow. There is deliberately no setup script:

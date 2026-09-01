@@ -88,6 +88,11 @@ __pycache__/
 # ones are large binaries that belong next to the build, not in this history.
 *.wad
 *.WAD
+# doomgeneric writes its config and savegames to the working directory, which for the editor is the
+# repo root, and this fork hardcodes that (GetDefaultConfigDir returns "."), so there is no flag to
+# redirect it.
+.default.cfg
+.savegame/
 
 # Local scratch: investigation logs, ad-hoc drivers, saved diffs. Never part of a build.
 /_t1/
