@@ -9,6 +9,7 @@
 #include <limits>
 
 #include "Examples/MandelbrotSet/MandelbrotControllerComponent.hpp"
+#include "Examples/Doom/DoomSystem.hpp"
 #include "Examples/MandelbrotSet/MandelbrotControllerSystem.hpp"
 #include "Singletons/EditorNotificationsSingleton.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
@@ -762,8 +763,9 @@ namespace Snowstorm
 		systemManager.RegisterSystem<CVarPanelSystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<ConsoleSystem>(SystemPhase::UI);
 
-		// Editor example
+		// Editor examples
 		systemManager.RegisterSystem<MandelbrotControllerSystem>(SystemPhase::PreRender);
+		systemManager.RegisterSystem<DoomSystem>(SystemPhase::PreRender);
 	}
 
 	void EditorLayer::CreateMainViewportEntity()
