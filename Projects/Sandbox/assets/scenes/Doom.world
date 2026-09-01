@@ -1,0 +1,105 @@
+{
+  "Entities": [
+    {
+      "Components": {
+        "Snowstorm::EnvironmentComponent": {
+          "Background": "ProceduralSky",
+          "GroundColor": [
+            0.05,
+            0.05,
+            0.06
+          ],
+          "SkyHorizonColor": [
+            0.12,
+            0.12,
+            0.16
+          ],
+          "SkyIntensity": 0.15,
+          "SkyZenithColor": [
+            0.03,
+            0.03,
+            0.06
+          ]
+        }
+      },
+      "Name": "Environment",
+      "UUID": "3605136202097357629"
+    },
+    {
+      "Components": {
+        "Snowstorm::DirectionalLightComponent": {
+          "CastShadows": true,
+          "Color": [
+            1.0,
+            0.95,
+            0.9
+          ],
+          "Direction": [
+            0.3,
+            -0.8,
+            -0.5
+          ],
+          "Intensity": 1.0
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0.0,
+            6.0,
+            0.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Directional Light",
+      "UUID": "8708766006567845313"
+    },
+    {
+      "Components": {
+        "DoomComponent": {
+          "Material": "4027182892066702612"
+        },
+        "Snowstorm::MaterialComponent": {
+          "$asset": "4027182892066702612"
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "12112538743247314239"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0.0,
+            2.0,
+            0.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            4.0,
+            2.5,
+            1.0
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Doom Screen",
+      "UUID": "17186199741245529003"
+    }
+  ],
+  "Scene": "Doom"
+}

@@ -71,6 +71,16 @@
       "isa_size": 232.0,
       "permutations": 2
     },
+    "Doom.frag": {
+      "vgprs": 7.0,
+      "sgprs": 18.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 248.0,
+      "permutations": 2
+    },
     "Fullscreen.vert": {
       "vgprs": 5.0,
       "sgprs": 12.0,

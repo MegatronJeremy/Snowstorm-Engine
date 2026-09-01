@@ -774,6 +774,11 @@
       "Handle": "3817608278670245211",
       "Path": "assets/Shaders/Velocity.vert.hlsl",
       "Type": "Shader"
+    },
+    {
+      "Handle": "4027182892066702612",
+      "Path": "assets/materials/Doom.ssmat",
+      "Type": "Material"
     }
   ]
 }
