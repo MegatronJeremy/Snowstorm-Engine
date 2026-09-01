@@ -6,10 +6,13 @@
 // integrates many independent 2-ray noise realizations -> the static/slow-motion shimmer a spatial-only
 // filter can't touch converges away.
 //
-// Why no neighborhood color-clamp (unlike the TAA resolve): the à-trous filter that runs right after IS the
-// spatial outlier/variance handler — clamping here too would double-denoise (the issue's explicit warning)
-// and fight the à-trous. Ghosting is instead controlled structurally by the depth-disocclusion reject +
-// velocity-aware blend, which is what SVGF's temporal stage does. Irradiance-only, like the trace.
+// The neighborhood color-clamp (`NeighborhoodClamp`) is ON for GI, AO and reflections and OFF only for the
+// stochastic shadow chains, which pass it through `render.shadows.denoise.clamp`. It was originally left out
+// here on the grounds that the a-trous running right after is already the spatial outlier handler, so
+// clamping in both would double-denoise; in practice the depth-disocclusion reject and velocity-aware blend
+// alone left moving-edge ghosts that only the clamp removed. It is wrong for shadows for a different reason:
+// that signal's per-frame estimate is bimodal, so a 3x3 box at a multi-light overlap clamps the history dark.
+// Irradiance-only, like the trace.
 //
 // Reference: SVGF temporal integration (Schied et al. 2017); the reproject + LinearizeDepth disocclusion is
 // lifted from TemporalResolve.frag.hlsl (#44/#127) so the two agree on what a disocclusion is.
