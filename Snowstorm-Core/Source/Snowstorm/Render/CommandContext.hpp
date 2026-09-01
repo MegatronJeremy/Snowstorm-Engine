@@ -123,6 +123,21 @@ namespace Snowstorm
 		virtual void CopyTextureToBuffer(const Ref<Texture>& texture, const Ref<Buffer>& dst,
 		                                 uint32_t mipLevel = 0, uint32_t arrayLayer = 0) = 0;
 
+		// CPU->GPU: copy a host-visible buffer into ONE subresource (mipLevel, arrayLayer) of a texture,
+		// recorded into the CURRENT frame's command buffer. The inverse of CopyTextureToBuffer, and the
+		// per-frame-safe alternative to Texture::SetData, which allocates a staging buffer, submits on its
+		// own, and blocks on a fence per call — fine for asset load, a full CPU/GPU serialisation if done
+		// every frame. This is the engine's dynamic-texture path (cf. Unity Texture2D.Apply, Unreal
+		// UpdateTextureRegions): the caller owns a buffer per frame-in-flight and has already written it.
+		//
+		// Copies tightly packed (bytes = mipWidth*mipHeight*bytesPerPixel, no row padding), so the source
+		// must hold exactly that. Transitions to TRANSFER_DST and restores the layout the texture had, so
+		// sampling later in the SAME frame is valid without a further barrier. A texture that has never
+		// been used has no layout to restore, so it is left in its ready (sampled) layout instead. Color
+		// textures only; a mipped texture gets only the level named here (no mip chain regeneration).
+		virtual void CopyBufferToTexture(const Ref<Buffer>& src, const Ref<Texture>& texture,
+		                                 uint32_t mipLevel = 0, uint32_t arrayLayer = 0) = 0;
+
 		// Reset the internal state between passes if the backend needs it
 		virtual void ResetState() = 0;
 

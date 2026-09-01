@@ -77,6 +77,8 @@ namespace Snowstorm
 		void AcquireTextureFromQueue(const Ref<Texture>& texture, GpuQueue from, GpuQueue to) override;
 		void CopyTextureToBuffer(const Ref<Texture>& texture, const Ref<Buffer>& dst,
 		                         uint32_t mipLevel = 0, uint32_t arrayLayer = 0) override;
+		void CopyBufferToTexture(const Ref<Buffer>& src, const Ref<Texture>& texture,
+		                         uint32_t mipLevel = 0, uint32_t arrayLayer = 0) override;
 
 		void ResetState() override;
 
