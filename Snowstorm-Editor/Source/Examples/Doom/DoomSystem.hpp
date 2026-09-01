@@ -28,7 +28,7 @@ namespace Snowstorm
 	private:
 		// Creates the screen texture on first use and keeps the material's albedo pointed at it. Returns
 		// false while the material's shader is still compiling.
-		bool EnsureResources(AssetHandle material);
+		bool EnsureResources(entt::entity entity, AssetHandle material);
 
 		Ref<Texture> m_Screen;
 		Ref<TextureView> m_ScreenView;

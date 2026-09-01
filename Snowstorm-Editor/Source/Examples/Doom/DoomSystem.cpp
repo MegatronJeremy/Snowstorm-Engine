@@ -3,6 +3,7 @@
 #include "DoomComponent.hpp"
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
+#include "Snowstorm/Components/MaterialComponent.hpp"
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/KeyCodes.hpp"
 #include "Snowstorm/Core/Log.hpp"
@@ -329,7 +330,7 @@ namespace Snowstorm
 
 	DoomSystem::~DoomSystem() = default;
 
-	bool DoomSystem::EnsureResources(const AssetHandle material)
+	bool DoomSystem::EnsureResources(const entt::entity entity, const AssetHandle material)
 	{
 #ifdef SS_HAS_DOOM
 		auto& assets = SingletonView<AssetManagerSingleton>();
@@ -362,6 +363,13 @@ namespace Snowstorm
 		if (instance->GetConstants().AlbedoTextureIndex != m_ScreenView->GetGlobalBindlessIndex())
 		{
 			instance->SetAlbedoTexture(m_ScreenView);
+
+			// The RT geometry table caches each instance's albedo index and is only rebuilt when the ECS
+			// reports a change (TlasBuildSystem::IsSceneDirtyThisFrame), which a MaterialInstance mutation
+			// does not do. Without this, ray-traced hits keep shading the quad with the default white:
+			// measured as a flat grey screen under render.pathtrace. Touching the component marks it
+			// changed for one frame, and the index check above stops this repeating.
+			m_World->GetRegistry().Write<MaterialComponent>(entity);
 		}
 
 		return true;
@@ -415,7 +423,7 @@ namespace Snowstorm
 		for (const auto entity : doomView)
 		{
 			const auto& doom = reg.Read<DoomComponent>(entity);
-			if (!EnsureResources(doom.Material))
+			if (!EnsureResources(entity, doom.Material))
 			{
 				continue;
 			}
