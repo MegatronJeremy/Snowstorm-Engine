@@ -33,7 +33,11 @@ namespace Snowstorm
 
 		Ref<Texture> m_Screen;
 		Ref<TextureView> m_ScreenView;
-		std::vector<Ref<Buffer>> m_Staging; // indexed by frame-in-flight
+
+		// The Doom thread rewrites its published frame at 35 Hz, so the bytes handed to the upload queue
+		// have to be a snapshot this system owns, not a pointer into the shared block.
+		std::vector<uint32_t> m_Latest;
+
 		bool m_Initialized = false;
 		bool m_Reported = false; // one-shot guard for the "enabled but unavailable" messages
 

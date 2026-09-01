@@ -359,24 +359,33 @@ namespace Snowstorm
 		[[nodiscard]] std::optional<uint32_t> TryConsumePickResult();
 
 		// Dynamic textures: a system that regenerates texels on the CPU each frame (video, a procedural
-		// surface, an embedded interpreter's framebuffer) queues the copy here instead of calling
+		// surface, an embedded interpreter's framebuffer) queues the bytes here instead of calling
 		// Texture::SetData, which submits and blocks on a fence per call. Drained into one transfer pass at
 		// the top of the frame graph, so the texels are in place before any pass samples them. Same
 		// request/record split as the pick above, and for the same reason: a system runs outside the graph
 		// and has no command buffer of its own.
 		//
-		// The caller owns `src` and must not overwrite it until this frame's fence has retired, which means
-		// one buffer per frame-in-flight. Queued entries are consumed every frame, so a texture that should
-		// keep updating must be re-queued every frame.
-		void EnqueueTextureUpload(const Ref<Buffer>& src, const Ref<Texture>& dst);
+		// This takes CPU bytes rather than a caller-owned staging buffer on purpose. Systems run in
+		// PreRender, which is BEFORE Renderer::BeginFrame() waits on this slot's fence, so anything a
+		// system writes into GPU-visible memory can still be under a copy recorded two frames ago. Staging
+		// is therefore owned here and filled at RECORD time, past that wait. `data` need only stay valid
+		// until the graph executes, later in the same frame on the same thread.
+		//
+		// `bytes` must be the subresource's tightly packed size (width*height*bytesPerPixel). Queued
+		// entries are consumed every frame, so a texture that keeps changing must be queued every frame.
+		void EnqueueTextureUpload(const void* data, size_t bytes, const Ref<Texture>& dst);
 
 		// True when any upload is queued. RenderSystem checks this to decide whether to add the pass at all.
 		[[nodiscard]] bool HasPendingTextureUploads() const { return !m_PendingTextureUploads.empty(); }
 
-		// Record every queued copy into this frame's command buffer and clear the queue. Called by
-		// RenderSystem inside a graph pass. Takes the context the graph handed the pass, not
-		// Renderer::GetGraphicsCommandContext(), for the reason RecordPick documents above.
-		void RecordTextureUploads(CommandContext& commandContext);
+		// Drop every queued upload without recording it. For the frame-skip path (BeginFrame failed, e.g.
+		// minimized): without this the queue would grow by one entry per skipped frame.
+		void DiscardTextureUploads() { m_PendingTextureUploads.clear(); }
+
+		// Copy every queued blob into this frame-in-flight's staging buffer, record the copies, and clear
+		// the queue. Called by RenderSystem inside a graph pass. Takes the context the graph handed the
+		// pass, not Renderer::GetGraphicsCommandContext(), for the reason RecordPick documents above.
+		void RecordTextureUploads(CommandContext& commandContext, uint32_t frameIndex);
 
 	private:
 		// Create the pick compute pipeline + per-frame-in-flight result/param buffers on first use. The result
@@ -523,9 +532,11 @@ namespace Snowstorm
 
 		struct TextureUpload
 		{
-			Ref<Buffer> Src;
+			const void* Data;
+			size_t Bytes;
 			Ref<Texture> Dst;
 		};
 		std::vector<TextureUpload> m_PendingTextureUploads;
+		std::vector<Ref<Buffer>> m_UploadStaging; // per frame-in-flight, grown to the largest frame so far
 	};
 }

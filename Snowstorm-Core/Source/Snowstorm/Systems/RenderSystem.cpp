@@ -119,6 +119,9 @@ namespace Snowstorm
 		// EndFrame must not run if BeginFrame didn't start a frame.
 		if (!Renderer::BeginFrame())
 		{
+			// No graph will run this frame, so nothing would consume what PreRender queued and the queue
+			// would grow by one entry per skipped frame while minimized.
+			renderer.DiscardTextureUploads();
 			return;
 		}
 
@@ -145,9 +148,9 @@ namespace Snowstorm
 		{
 			graph.AddPass({.Name = "TextureUploads",
 			               .IsCompute = true,
-			               .Execute = [&renderer](CommandContext& c)
+			               .Execute = [&renderer, frameIndex](CommandContext& c)
 			               {
-				               renderer.RecordTextureUploads(c);
+				               renderer.RecordTextureUploads(c, frameIndex);
 			               }});
 		}
 

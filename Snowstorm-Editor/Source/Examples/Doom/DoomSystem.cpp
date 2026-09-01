@@ -337,15 +337,7 @@ namespace Snowstorm
 		m_Screen = Texture::Create(desc);
 		m_ScreenView = m_Screen->GetDefaultView();
 
-		// One staging buffer per frame-in-flight: the copy recorded this frame reads its buffer until the
-		// frame's fence retires, so a single shared buffer would be rewritten while the GPU was reading it.
-		const uint32_t framesInFlight = Renderer::GetFramesInFlight();
-		m_Staging.reserve(framesInFlight);
-		for (uint32_t i = 0; i < framesInFlight; ++i)
-		{
-			m_Staging.push_back(Buffer::Create(kDoomBytes, BufferUsage::None, nullptr, true,
-			                                   "DoomStaging" + std::to_string(i)));
-		}
+		m_Latest.assign(kDoomPixels, 0);
 
 		// Bindless indices are assigned once at view creation and never recycled, so this is a one-shot
 		// takeover, not a per-frame write. The MaterialInstance is cached per handle and MaterialResolveSystem
@@ -399,7 +391,6 @@ namespace Snowstorm
 
 		auto& reg = m_World->GetRegistry();
 		auto& renderer = ServiceView<RendererService>();
-		const uint32_t frameIndex = Renderer::GetCurrentFrameIndex();
 
 		for (const auto entity : doomView)
 		{
@@ -415,10 +406,12 @@ namespace Snowstorm
 				{
 					continue; // Doom has not produced a frame yet (it is still loading the WAD)
 				}
-				m_Staging[frameIndex]->SetData(g_Doom->Frame.data(), kDoomBytes);
+				std::memcpy(m_Latest.data(), g_Doom->Frame.data(), kDoomBytes);
 			}
 
-			renderer.EnqueueTextureUpload(m_Staging[frameIndex], m_Screen);
+			// m_Latest outlives this phase and is only rewritten here, so it stays valid until the graph
+			// records the copy later this frame.
+			renderer.EnqueueTextureUpload(m_Latest.data(), kDoomBytes, m_Screen);
 
 			// One interpreter, one screen: a second DoomComponent would upload the same frame to the same
 			// texture, so stop after the first.

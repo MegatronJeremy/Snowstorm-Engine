@@ -856,22 +856,60 @@ namespace Snowstorm
 		return r;
 	}
 
-	void RendererService::EnqueueTextureUpload(const Ref<Buffer>& src, const Ref<Texture>& dst)
+	void RendererService::EnqueueTextureUpload(const void* data, const size_t bytes, const Ref<Texture>& dst)
 	{
-		if (!src || !dst)
+		if (!data || bytes == 0 || !dst)
 		{
-			SS_CORE_WARN("EnqueueTextureUpload: null buffer or texture, ignoring");
+			SS_CORE_WARN("EnqueueTextureUpload: null data, zero size, or null texture, ignoring");
 			return;
 		}
-		m_PendingTextureUploads.push_back({src, dst});
+		m_PendingTextureUploads.push_back({data, bytes, dst});
 	}
 
-	void RendererService::RecordTextureUploads(CommandContext& commandContext)
+	void RendererService::RecordTextureUploads(CommandContext& commandContext, const uint32_t frameIndex)
 	{
-		for (const auto& [src, dst] : m_PendingTextureUploads)
+		if (m_PendingTextureUploads.empty())
 		{
-			commandContext.CopyBufferToTexture(src, dst);
+			return;
 		}
+
+		// vkCmdCopyBufferToImage requires bufferOffset to be a multiple of 4 and of the texel block size;
+		// 16 covers every format the engine uploads this way, so pad each blob's start rather than
+		// tracking per-format alignment here.
+		constexpr size_t kOffsetAlign = 16;
+		const auto alignUp = [](const size_t v)
+		{ return (v + kOffsetAlign - 1) & ~(kOffsetAlign - 1); };
+
+		size_t total = 0;
+		for (const auto& up : m_PendingTextureUploads)
+		{
+			total = alignUp(total) + up.Bytes;
+		}
+
+		if (m_UploadStaging.size() < Renderer::GetFramesInFlight())
+		{
+			m_UploadStaging.resize(Renderer::GetFramesInFlight());
+		}
+
+		Ref<Buffer>& staging = m_UploadStaging[frameIndex];
+
+		// Grown, never shrunk: a scratch buffer sized to the high-water mark of one frame's uploads.
+		// Shrinking would destroy a Buffer, and ~VulkanBuffer waits on the whole device.
+		if (!staging || staging->GetSize() < total)
+		{
+			staging = Buffer::Create(total, BufferUsage::None, nullptr, true,
+			                         "TextureUploadStaging" + std::to_string(frameIndex));
+		}
+
+		size_t offset = 0;
+		for (const auto& [data, bytes, dst] : m_PendingTextureUploads)
+		{
+			offset = alignUp(offset);
+			staging->SetData(data, bytes, offset);
+			commandContext.CopyBufferToTexture(staging, dst, 0, 0, offset);
+			offset += bytes;
+		}
+
 		m_PendingTextureUploads.clear();
 	}
 }

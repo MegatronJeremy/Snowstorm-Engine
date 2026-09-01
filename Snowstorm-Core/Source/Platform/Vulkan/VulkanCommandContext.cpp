@@ -770,7 +770,8 @@ namespace Snowstorm
 	}
 
 	void VulkanCommandContext::CopyBufferToTexture(const Ref<Buffer>& src, const Ref<Texture>& texture,
-	                                               const uint32_t mipLevel, const uint32_t arrayLayer)
+	                                               const uint32_t mipLevel, const uint32_t arrayLayer,
+	                                               const uint64_t srcOffset)
 	{
 		SS_CORE_ASSERT(src && texture, "CopyBufferToTexture: null buffer or texture");
 		auto vkTex = std::static_pointer_cast<VulkanTexture>(texture);
@@ -787,7 +788,7 @@ namespace Snowstorm
 		const uint32_t mipW = std::max(1u, d.Width >> mipLevel);
 		const uint32_t mipH = std::max(1u, d.Height >> mipLevel);
 		const VkDeviceSize needed = static_cast<VkDeviceSize>(mipW) * mipH * bpp;
-		SS_CORE_ASSERT(src->GetSize() >= needed, "CopyBufferToTexture: source buffer too small");
+		SS_CORE_ASSERT(src->GetSize() >= srcOffset + needed, "CopyBufferToTexture: source buffer too small");
 
 		// A texture that has never been transitioned is UNDEFINED, which is not a legal destination layout,
 		// so there is nothing to restore on the first upload — leave it sampled instead. (The readback path
@@ -798,7 +799,7 @@ namespace Snowstorm
 		TransitionLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
 		VkBufferImageCopy region{};
-		region.bufferOffset = 0;
+		region.bufferOffset = srcOffset;
 		region.bufferRowLength = 0;   // tightly packed, no row padding
 		region.bufferImageHeight = 0; // tightly packed
 		region.imageSubresource.aspectMask = vkTex->GetAspectMask();
