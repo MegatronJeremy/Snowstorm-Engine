@@ -812,11 +812,34 @@ namespace Snowstorm
 		vkCmdCopyBufferToImage(m_CommandBuffer, vkBuf->GetHandle(), vkTex->GetImage(),
 		                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-		// This transition is also the visibility barrier: its src scope comes from TRANSFER_DST (transfer
-		// write) and its dst from the sampled layout (shader read), so a pass sampling the texture later in
-		// this same frame needs nothing further. No host barrier is needed on the source, unlike the readback
-		// path: the host access here is a WRITE that happened before submit, ordered by the frame fence.
-		TransitionLayout(texture, restore);
+		// Restore the layout AND make the transfer write visible, in one barrier. TransitionLayout is not
+		// used here because it derives its dst scope from the layout, and SHADER_READ_ONLY maps to
+		// FRAGMENT_SHADER alone (VulkanCommon.cpp LayoutStageAccess). A texture uploaded this way is also
+		// read from COMPUTE in the same command buffer (the path tracer and the RT passes sample material
+		// albedo through the bindless table), and nothing downstream would repair that: the layout ends up
+		// unchanged, so a later TransitionLayout early-outs, and a graph barrier is only derived for
+		// textures a pass declares in Reads. So name both consumer stages explicitly.
+		//
+		// No host barrier on the source, unlike the readback path: the host access here is a WRITE that
+		// happened before submit, ordered by the frame fence.
+		VkImageMemoryBarrier2 barrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+		barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+		barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+		barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+		barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+		ClampScopeToQueue(barrier.srcStageMask, barrier.srcAccessMask);
+		ClampScopeToQueue(barrier.dstStageMask, barrier.dstAccessMask);
+		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		barrier.newLayout = restore;
+		barrier.image = vkTex->GetImage();
+		barrier.subresourceRange = {vkTex->GetAspectMask(), 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
+
+		VkDependencyInfo dep{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+		dep.imageMemoryBarrierCount = 1;
+		dep.pImageMemoryBarriers = &barrier;
+		vkCmdPipelineBarrier2(m_CommandBuffer, &dep);
+
+		vkTex->SetCurrentLayout(restore);
 	}
 
 	void VulkanCommandContext::ResetState()

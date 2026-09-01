@@ -20,14 +20,13 @@ float4 main(PSInput i) : SV_Target0
 		return float4(0.0, 0.0, 0.0, 1.0);
 	}
 
-	// Doom writes row 0 at the TOP of its framebuffer, while quad.obj puts uv (0,0) on the BOTTOM-left
-	// vertex and nothing flips UVs on import, so V runs the wrong way for this one texture.
-	const float2 uv = float2(i.TexCoord.x, 1.0 - i.TexCoord.y);
-
+	// No V flip: MeshLibrary.cpp stores 1-v at import, so V=0 is the quad's TOP edge, and stb loads
+	// texel row 0 as the image top. Doom also writes row 0 at the top, so the two already agree.
+	//
 	// SampleBindless lives in DefaultLit.frag.hlsl, not the shared header, so the fetch is spelled out
 	// here. NonUniformResourceIndex is still mandatory: instanced draws sample garbage without it.
 	// SampleLevel(0) rather than SampleBias: the texture is a single mip, and a 640x400 image on a quad
 	// wants nearest-to-source texels, not a TAA mip bias meant for scene geometry.
-	const float3 screen = Textures[NonUniformResourceIndex(AlbedoTextureIndex)].SampleLevel(ClampSampler, uv, 0).rgb;
+	const float3 screen = Textures[NonUniformResourceIndex(AlbedoTextureIndex)].SampleLevel(ClampSampler, i.TexCoord, 0).rgb;
 	return float4(screen, 1.0);
 }

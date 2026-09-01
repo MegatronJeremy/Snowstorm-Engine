@@ -20,7 +20,7 @@
 #include <chrono>
 #include <cstring>
 #include <deque>
-#include <memory>
+#include <fstream>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -62,10 +62,8 @@ namespace Snowstorm
 			unsigned char Key;
 		};
 
-		// Everything the Doom thread and the engine share. Held by shared_ptr and captured by the thread,
-		// so a World teardown that outlives nothing else cannot pull it out from under a thread that is
-		// still ticking: Doom has no shutdown entry point, so the thread is detached and only dies with the
-		// process.
+		// Everything the Doom thread and the engine share, including the argv strings, because doomgeneric
+		// stores the argv POINTERS rather than copying them (doomgeneric.c: myargv = argv).
 		struct DoomShared
 		{
 			std::mutex FrameMutex;
@@ -76,9 +74,19 @@ namespace Snowstorm
 			std::deque<KeyEventRecord> Keys;
 
 			std::chrono::steady_clock::time_point Start = std::chrono::steady_clock::now();
+
+			std::string ExeArg = "snowstorm";
+			std::string IwadFlag = "-iwad";
+			std::string WadArg;
+			std::array<char*, 3> Argv{};
 		};
 
-		std::shared_ptr<DoomShared> g_Doom;
+		// Leaked on purpose, and this is load-bearing. Doom has no shutdown entry point, so its thread is
+		// detached and runs until the process dies; it is still calling DG_GetTicksMs and DG_DrawFrame
+		// while the CRT runs static destructors on the main thread. A shared_ptr or any object with a
+		// destructor here would be torn down under that thread. Nothing this block owns is ever freed, so
+		// there is nothing for the thread to read after its lifetime ends.
+		DoomShared* g_Doom = nullptr;
 
 		// doomgeneric holds its state in globals and D_DoomMain runs once, so a second create would corrupt
 		// it. One interpreter per process, deliberately outliving any World.
@@ -238,25 +246,35 @@ namespace Snowstorm
 {
 	namespace
 	{
+		// An IWAD that merely exists is not enough: D_FindWADByName accepts any existing file, and w_wad.c
+		// then I_Errors on a bad header, which on Windows pops a modal MessageBox and calls exit(-1) from
+		// the Doom thread, taking the editor with it. Checking the 4-byte magic here keeps the common
+		// mistakes (a truncated download, a renamed archive, a PK3) a warning instead of a process kill.
+		bool LooksLikeWad(const std::filesystem::path& path)
+		{
+			std::ifstream f(path, std::ios::binary);
+			char magic[4] = {};
+			if (!f.read(magic, 4))
+			{
+				return false;
+			}
+			return std::memcmp(magic, "IWAD", 4) == 0 || std::memcmp(magic, "PWAD", 4) == 0;
+		}
+
 		void StartDoomThread(const std::string& wadPath)
 		{
-			g_Doom = std::make_shared<DoomShared>();
+			g_Doom = new DoomShared();
 			g_Doom->Frame.assign(kDoomPixels, 0);
+			g_Doom->WadArg = wadPath;
+			g_Doom->Argv = {g_Doom->ExeArg.data(), g_Doom->IwadFlag.data(), g_Doom->WadArg.data()};
 
-			// M_ArgV keeps the pointers rather than copying, so these must outlive the interpreter.
-			static std::string exeArg = "snowstorm";
-			static std::string iwadFlag = "-iwad";
-			static std::string wadArg = wadPath;
-			static std::array<char*, 3> argv{exeArg.data(), iwadFlag.data(), wadArg.data()};
-
-			// Detached: doomgeneric_Tick never returns control permanently and there is no shutdown entry
-			// point, so the thread ends with the process. It only touches g_Doom (kept alive by the
-			// shared_ptr it captures) and doomgeneric's own globals, so nothing it can reach is destroyed
-			// before it.
+			// Detached: doomgeneric_Tick never returns and there is no shutdown entry point, so the thread
+			// ends with the process. Everything it touches is either doomgeneric's own globals or the
+			// leaked block above, so nothing it can reach is destroyed while it runs.
 			std::thread(
-			    [shared = g_Doom]
+			    []
 			    {
-				    doomgeneric_Create(static_cast<int>(argv.size()), argv.data());
+				    doomgeneric_Create(static_cast<int>(g_Doom->Argv.size()), g_Doom->Argv.data());
 				    while (true)
 				    {
 					    doomgeneric_Tick();
@@ -314,11 +332,6 @@ namespace Snowstorm
 	bool DoomSystem::EnsureResources(const AssetHandle material)
 	{
 #ifdef SS_HAS_DOOM
-		if (m_Initialized)
-		{
-			return true;
-		}
-
 		auto& assets = SingletonView<AssetManagerSingleton>();
 		const auto& instance = assets.GetMaterialInstance(material);
 		if (!instance)
@@ -326,25 +339,31 @@ namespace Snowstorm
 			return false; // expected transient while the material's shader compiles
 		}
 
-		TextureDesc desc{};
-		desc.Format = PixelFormat::BGRA8_sRGB; // doomgeneric writes XRGB8888, which is B,G,R,X in memory
-		desc.Usage = TextureUsage::Sampled | TextureUsage::TransferDst;
-		desc.Width = kDoomWidth;
-		desc.Height = kDoomHeight;
-		desc.MipLevels = 1;
-		desc.DebugName = "DoomScreen";
+		if (!m_Screen)
+		{
+			TextureDesc desc{};
+			desc.Format = PixelFormat::BGRA8_sRGB; // doomgeneric writes XRGB8888, which is B,G,R,X in memory
+			desc.Usage = TextureUsage::Sampled | TextureUsage::TransferDst;
+			desc.Width = kDoomWidth;
+			desc.Height = kDoomHeight;
+			desc.MipLevels = 1;
+			desc.DebugName = "DoomScreen";
 
-		m_Screen = Texture::Create(desc);
-		m_ScreenView = m_Screen->GetDefaultView();
+			m_Screen = Texture::Create(desc);
+			m_ScreenView = m_Screen->GetDefaultView();
+			m_Latest.assign(kDoomPixels, 0);
+		}
 
-		m_Latest.assign(kDoomPixels, 0);
+		// Checked against the instance every frame rather than latched once. Saving the material in the
+		// inspector calls ReloadMaterial, which evicts the cached instance; the rebuilt one gets albedo 0
+		// from the .ssmat (which declares no texture) and the quad would go black forever. Comparing the
+		// bindless index re-applies the takeover instead. Cheap: bindless slots are assigned once at view
+		// creation and never recycled, so this is an integer compare in the steady state.
+		if (instance->GetConstants().AlbedoTextureIndex != m_ScreenView->GetGlobalBindlessIndex())
+		{
+			instance->SetAlbedoTexture(m_ScreenView);
+		}
 
-		// Bindless indices are assigned once at view creation and never recycled, so this is a one-shot
-		// takeover, not a per-frame write. The MaterialInstance is cached per handle and MaterialResolveSystem
-		// re-assigns that same pointer, so the change survives a re-resolve.
-		instance->SetAlbedoTexture(m_ScreenView);
-
-		m_Initialized = true;
 		return true;
 #else
 		(void)material;
@@ -375,13 +394,14 @@ namespace Snowstorm
 		if (!g_DoomStarted)
 		{
 			const std::string wad = DoomWad.Get();
-			if (wad.empty() || !std::filesystem::exists(wad))
+			if (wad.empty() || !std::filesystem::exists(wad) || !LooksLikeWad(wad))
 			{
 				if (!m_Reported)
 				{
 					m_Reported = true;
-					SS_WARN("doom.enabled is set but the IWAD '{}' does not exist: set doom.wad to a valid IWAD path. "
-					        "Doom aborts the process on a bad IWAD, so it is not started.",
+					SS_WARN("doom.enabled is set but '{}' is not a readable IWAD/PWAD: set doom.wad to a valid "
+					        "IWAD path (e.g. freedoom1.wad). Doom aborts the process on a bad IWAD, so it is "
+					        "not started.",
 					        wad);
 				}
 				return;
@@ -402,14 +422,16 @@ namespace Snowstorm
 
 			{
 				std::lock_guard lock(g_Doom->FrameMutex);
-				if (!g_Doom->HasFrame)
+				if (g_Doom->HasFrame)
 				{
-					continue; // Doom has not produced a frame yet (it is still loading the WAD)
+					std::memcpy(m_Latest.data(), g_Doom->Frame.data(), kDoomBytes);
 				}
-				std::memcpy(m_Latest.data(), g_Doom->Frame.data(), kDoomBytes);
 			}
 
-			// m_Latest outlives this phase and is only rewritten here, so it stays valid until the graph
+			// Uploaded even before Doom's first frame, when m_Latest is still zeros. The albedo takeover
+			// happens as soon as the material resolves, which is well before the WAD finishes loading, and
+			// a freshly created image has undefined contents: without this the quad samples garbage for
+			// that window. m_Latest is only written here, on this thread, so it stays valid until the graph
 			// records the copy later this frame.
 			renderer.EnqueueTextureUpload(m_Latest.data(), kDoomBytes, m_Screen);
 

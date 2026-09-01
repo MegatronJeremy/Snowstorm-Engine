@@ -132,10 +132,11 @@ namespace Snowstorm
 		//
 		// Copies tightly packed (bytes = mipWidth*mipHeight*bytesPerPixel, no row padding) starting at
 		// srcOffset, so several subresources can share one staging buffer. Transitions to TRANSFER_DST and
-		// restores the layout the texture had, so sampling later in the SAME frame is valid without a
-		// further barrier. A texture that has never been used has no layout to restore, so it is left in
-		// its ready (sampled) layout instead. Color textures only; a mipped texture gets only the level
-		// named here (no mip chain regeneration).
+		// restores the layout the texture had, making the write visible to both FRAGMENT and COMPUTE
+		// reads, so a pass sampling it later in the SAME frame needs nothing further whichever stage it
+		// runs in. A texture that has never been used has no layout to restore, so it is left in its ready
+		// (sampled) layout instead. Color textures only; a mipped texture gets only the level named here
+		// (no mip chain regeneration).
 		virtual void CopyBufferToTexture(const Ref<Buffer>& src, const Ref<Texture>& texture,
 		                                 uint32_t mipLevel = 0, uint32_t arrayLayer = 0,
 		                                 uint64_t srcOffset = 0) = 0;

@@ -2,7 +2,6 @@
 
 #include "Snowstorm/ECS/System.hpp"
 #include "Snowstorm/Events/EventBus.hpp"
-#include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
 #include <vector>
@@ -27,8 +26,8 @@ namespace Snowstorm
 		void Execute(Timestep ts) override;
 
 	private:
-		// Creates the screen texture, the per-frame-in-flight staging buffers, and takes over the material's
-		// albedo. Returns false while the material's shader is still compiling.
+		// Creates the screen texture on first use and keeps the material's albedo pointed at it. Returns
+		// false while the material's shader is still compiling.
 		bool EnsureResources(AssetHandle material);
 
 		Ref<Texture> m_Screen;
@@ -38,7 +37,6 @@ namespace Snowstorm
 		// have to be a snapshot this system owns, not a pointer into the shared block.
 		std::vector<uint32_t> m_Latest;
 
-		bool m_Initialized = false;
 		bool m_Reported = false; // one-shot guard for the "enabled but unavailable" messages
 
 		EventBus::Connection m_KeyDown;

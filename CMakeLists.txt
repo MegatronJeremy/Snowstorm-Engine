@@ -17,7 +17,7 @@ endif()
 # Embedded Doom (Vendor/doomgeneric). OFF because it is not part of the engine: it is a demo of the
 # dynamic-texture upload path, it needs an IWAD the repo does not ship, and doomgeneric is GPL-2.0
 # against this project's public domain, so a build with it ON is a combined work that cannot be
-# redistributed under UNLICENSE.txt. ON also fetches ~40 MB from GitHub at configure time.
+# redistributed under UNLICENSE.txt. ON also clones ~6 MB from GitHub at configure time.
 option(SS_ENABLE_DOOM "Fetch and build the embedded doomgeneric interpreter (GPL-2.0)" OFF)
 
 # 1. Add subdirectories for core and the executables

@@ -78,7 +78,7 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 244.0,
+      "isa_size": 240.0,
       "permutations": 2
     },
     "Fullscreen.vert": {
