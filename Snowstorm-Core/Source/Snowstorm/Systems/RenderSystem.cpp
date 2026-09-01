@@ -137,6 +137,20 @@ namespace Snowstorm
 
 		FrameContext fc{.Graph = graph, .Renderer = renderer, .Reg = reg, .FrameIndex = frameIndex};
 
+		// Dynamic-texture uploads queued by systems this frame (EnqueueTextureUpload). First pass in the
+		// graph so the texels land before anything samples them, including the shadow and IBL passes below.
+		// A no-target compute pass: it records only copies and barriers, and a barrier cannot be recorded
+		// inside a dynamic-rendering instance.
+		if (renderer.HasPendingTextureUploads())
+		{
+			graph.AddPass({.Name = "TextureUploads",
+			               .IsCompute = true,
+			               .Execute = [&renderer](CommandContext& c)
+			               {
+				               renderer.RecordTextureUploads(c);
+			               }});
+		}
+
 		// RT reflections (#118): hand the per-instance geometry-table address (TlasBuildSystem filled it in
 		// PreRender) to the renderer so AcquireFrameSet folds it into FrameCB. 0 when reflections are off ->
 		// the shader's reflection trace falls back to the sky cube.

@@ -855,4 +855,23 @@ namespace Snowstorm
 		m_PickResult.reset();
 		return r;
 	}
+
+	void RendererService::EnqueueTextureUpload(const Ref<Buffer>& src, const Ref<Texture>& dst)
+	{
+		if (!src || !dst)
+		{
+			SS_CORE_WARN("EnqueueTextureUpload: null buffer or texture, ignoring");
+			return;
+		}
+		m_PendingTextureUploads.push_back({src, dst});
+	}
+
+	void RendererService::RecordTextureUploads(CommandContext& commandContext)
+	{
+		for (const auto& [src, dst] : m_PendingTextureUploads)
+		{
+			commandContext.CopyBufferToTexture(src, dst);
+		}
+		m_PendingTextureUploads.clear();
+	}
 }
