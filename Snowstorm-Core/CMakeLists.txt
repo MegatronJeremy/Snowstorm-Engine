@@ -69,3 +69,11 @@ target_link_libraries(Snowstorm-Core PUBLIC
     nlohmann_json::nlohmann_json
     Tracy::TracyClient
 )
+
+# Embedded Doom (root option SS_ENABLE_DOOM, default OFF). Source/Snowstorm/Examples/Doom compiles
+# either way; without this target its SS_HAS_DOOM define is absent and DoomSystem is a no-op, so the
+# GPL-2.0 dependency stays out of a default build entirely. On Core rather than an executable so both
+# the Editor and the Runtime get it from RegisterCoreSystems.
+if(SS_ENABLE_DOOM)
+    target_link_libraries(Snowstorm-Core PUBLIC doomgeneric)
+endif()

@@ -103,14 +103,22 @@ is a combined work that cannot be redistributed under `UNLICENSE.txt`. Nothing G
 
 ```
 cmake -S . -B build -DSS_ENABLE_DOOM=ON && cmake --build build --config Debug
-build/Snowstorm-Editor/Debug/Snowstorm-Editor.exe \
-  --startup.scene=Projects/Sandbox/assets/scenes/Doom.world --doom.enabled --doom.wad=<path to an IWAD>
+build/Snowstorm-Runtime/Debug/Snowstorm-Runtime.exe \
+  --startup.scene=Projects/Sandbox/assets/scenes/Doom.world \
+  --doom.enabled --doom.wad=<path to an IWAD> --display.fullscreen
 ```
 
-No IWAD ships with the repo (`*.wad` is gitignored); Freedoom is the freely licensed one. Doom runs on
-its own thread because it drives a 35 Hz tic loop and blocks waiting for it, which would otherwise cap
-the frame rate. It also has no shutdown entry point, so that thread is detached and dies with the
-process, and the state it shares is deliberately leaked rather than destroyed under it.
+No IWAD ships with the repo (`*.wad` is gitignored); Freedoom is the freely licensed one. The Editor
+runs it too (drop `--display.fullscreen`); `DoomSystem` is registered by `RegisterCoreSystems`, so both
+hosts get it.
+
+The scene frames the quad to the vertical FOV, so it fills the height at any window size and
+pillarboxes against a backdrop quad on anything wider than Doom's 8:5. Camera look and movement are
+both gated on holding the right mouse button, so every key reaches Doom unless you are holding it.
+
+Doom runs on its own thread because it drives a 35 Hz tic loop and blocks waiting for it, which would
+otherwise cap the frame rate. It has no shutdown entry point, so that thread is detached and dies with
+the process, and the state it shares is deliberately leaked rather than destroyed under it.
 
 ### New box (one time)
 

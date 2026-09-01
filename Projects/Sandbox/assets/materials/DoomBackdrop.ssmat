@@ -1,0 +1,6 @@
+{
+  "Type": "SnowstormMaterial",
+  "Version": 3,
+  "Shader": "Engine/Shaders/Doom.frag.hlsl",
+  "BaseColor": [0.0, 0.0, 0.0, 1.0]
+}

@@ -1,5 +1,6 @@
 #include "WindowsWindow.hpp"
 
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Debug/Instrumentor.hpp"
 #include "Snowstorm/Events/ApplicationEvent.hpp"
 #include "Snowstorm/Events/KeyEvent.hpp"
@@ -97,17 +98,57 @@ namespace Snowstorm
 			glfwSetErrorCallback(GlfwErrorCallback);
 		}
 
-		if (props.Maximized)
+		// Borderless fullscreen rather than exclusive (no glfwCreateWindow monitor argument): an undecorated
+		// window at the monitor's CURRENT mode changes no display mode, so alt-tab is instant and a crash
+		// cannot strand the desktop at the wrong resolution. This is what shipping games default to.
+		const bool fullscreen = CVars::Fullscreen.Get();
+		if (fullscreen)
+		{
+			if (GLFWmonitor* monitor = glfwGetPrimaryMonitor())
+			{
+				if (const GLFWvidmode* mode = glfwGetVideoMode(monitor))
+				{
+					m_Data.Width = static_cast<uint32_t>(mode->width);
+					m_Data.Height = static_cast<uint32_t>(mode->height);
+					glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
+					glfwWindowHint(GLFW_RED_BITS, mode->redBits);
+					glfwWindowHint(GLFW_GREEN_BITS, mode->greenBits);
+					glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
+					glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
+					SS_CORE_INFO("display.fullscreen: borderless {0}x{1} @ {2} Hz", m_Data.Width, m_Data.Height, mode->refreshRate);
+				}
+				else
+				{
+					SS_CORE_WARN("display.fullscreen: no video mode for the primary monitor; using a windowed {0}x{1}", m_Data.Width, m_Data.Height);
+				}
+			}
+			else
+			{
+				SS_CORE_WARN("display.fullscreen: no primary monitor; using a windowed {0}x{1}", m_Data.Width, m_Data.Height);
+			}
+		}
+		else if (props.Maximized)
 		{
 			glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
 		}
 
 		{
 			SS_PROFILE_SCOPE("glfwCreateWindow");
-			m_Window = glfwCreateWindow(static_cast<int>(props.Width), static_cast<int>(props.Height),
+			m_Window = glfwCreateWindow(static_cast<int>(m_Data.Width), static_cast<int>(m_Data.Height),
 			                            m_Data.Title.c_str(),
 			                            nullptr, nullptr);
 			s_GLFWWindowCount++;
+		}
+
+		if (fullscreen && m_Window)
+		{
+			// Undecorated windows are not placed by the window manager, so pin it to the monitor origin.
+			int mx = 0, my = 0;
+			if (GLFWmonitor* monitor = glfwGetPrimaryMonitor())
+			{
+				glfwGetMonitorPos(monitor, &mx, &my);
+			}
+			glfwSetWindowPos(m_Window, mx, my);
 		}
 
 		if (props.Maximized)

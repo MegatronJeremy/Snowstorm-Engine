@@ -90,6 +90,8 @@ namespace Snowstorm::CVars
 	// CVarFlags::ReadOnly: CLI/env/startup-config-driven, resolved once at launch, never runtime-editable.
 	CVar<bool> VSync{"display.vsync", true, "VSync on (FIFO, locked to refresh) or off (uncapped present)", CVarFlags::Persist};
 
+	CVar<bool> Fullscreen{"display.fullscreen", false, "Create the window borderless at the primary monitor's current video mode (no mode switch, so alt-tab stays instant) instead of a decorated 1280x720. Startup-only: the window is created once.", CVarFlags::Persist | CVarFlags::ReadOnly};
+
 	// startup.* select what boots and are read once during application startup (before the editor exists), so
 	// they're ReadOnly: change them in SnowstormStartup.cfg / CLI and relaunch.
 	CVar<std::string> StartupProject{"startup.project", "Projects/Sandbox/Sandbox.ssproj", "Path to the .ssproj loaded at startup (relative to the working directory = repo root). The engine boots this real project instead of synthesizing an implicit one at the CWD. If the file is missing/unreadable, falls back to an implicit CWD-rooted project so the engine still runs. Point --startup.project elsewhere to boot a different project.", CVarFlags::ReadOnly};

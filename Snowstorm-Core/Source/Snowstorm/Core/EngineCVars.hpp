@@ -232,6 +232,10 @@ namespace Snowstorm::CVars
 	// (MAILBOX/IMMEDIATE). Runtime-toggleable from the editor's Settings panel.
 	extern CVar<bool> VSync;
 
+	// Borderless fullscreen: create the window undecorated at the primary monitor's current video mode
+	// instead of a decorated 1280x720. Startup-only (the window is created once).
+	extern CVar<bool> Fullscreen;
+
 	// The .ssproj loaded at startup (default Projects/Sandbox/Sandbox.ssproj): the engine boots this real
 	// project instead of synthesizing an implicit one at the CWD. Falls back to a CWD-rooted implicit
 	// project if the file is missing, so the engine still runs. Editor + Runtime both honor it.

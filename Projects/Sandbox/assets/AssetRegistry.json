@@ -779,6 +779,11 @@
       "Handle": "4027182892066702612",
       "Path": "assets/materials/Doom.ssmat",
       "Type": "Material"
+    },
+    {
+      "Handle": "13267832174249364684",
+      "Path": "assets/materials/DoomBackdrop.ssmat",
+      "Type": "Material"
     }
   ]
 }

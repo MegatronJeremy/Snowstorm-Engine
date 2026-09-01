@@ -3,22 +3,22 @@
     {
       "Components": {
         "Snowstorm::EnvironmentComponent": {
-          "Background": "ProceduralSky",
+          "Background": "SolidColor",
           "GroundColor": [
-            0.05,
-            0.05,
-            0.06
+            0.0,
+            0.0,
+            0.0
           ],
           "SkyHorizonColor": [
-            0.12,
-            0.12,
-            0.16
+            0.0,
+            0.0,
+            0.0
           ],
-          "SkyIntensity": 0.15,
+          "SkyIntensity": 0.0,
           "SkyZenithColor": [
-            0.03,
-            0.03,
-            0.06
+            0.0,
+            0.0,
+            0.0
           ]
         }
       },
@@ -28,24 +28,24 @@
     {
       "Components": {
         "Snowstorm::DirectionalLightComponent": {
-          "CastShadows": true,
+          "CastShadows": false,
           "Color": [
             1.0,
-            0.95,
-            0.9
+            1.0,
+            1.0
           ],
           "Direction": [
-            0.3,
-            -0.8,
-            -0.5
+            0.0,
+            -0.3,
+            -1.0
           ],
           "Intensity": 1.0
         },
         "Snowstorm::TransformComponent": {
           "Position": [
             0.0,
-            6.0,
-            0.0
+            4.0,
+            4.0
           ],
           "Rotation": [
             0.0,
@@ -79,7 +79,7 @@
         "Snowstorm::TransformComponent": {
           "Position": [
             0.0,
-            2.0,
+            0.0,
             0.0
           ],
           "Rotation": [
@@ -99,6 +99,68 @@
       },
       "Name": "Doom Screen",
       "UUID": "17186199741245529003"
+    },
+    {
+      "Components": {
+        "Snowstorm::CameraComponent": {
+          "Projection": "Perspective",
+          "PerspectiveFOV": 0.785398,
+          "PerspectiveNear": 0.1,
+          "PerspectiveFar": 100.0,
+          "Primary": true
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0.0,
+            0.0,
+            3.017768
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "Name": "Main Camera",
+      "UUID": "17204482619306394903"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "13267832174249364684"
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "12112538743247314239"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            13.3137,
+            3.6613,
+            1.0
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Backdrop",
+      "UUID": "7300100100000000002"
     }
   ],
   "Scene": "Doom"

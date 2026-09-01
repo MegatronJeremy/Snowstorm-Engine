@@ -9,7 +9,6 @@
 #include <limits>
 
 #include "Examples/MandelbrotSet/MandelbrotControllerComponent.hpp"
-#include "Examples/Doom/DoomSystem.hpp"
 #include "Examples/MandelbrotSet/MandelbrotControllerSystem.hpp"
 #include "Singletons/EditorNotificationsSingleton.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
@@ -763,15 +762,8 @@ namespace Snowstorm
 		systemManager.RegisterSystem<CVarPanelSystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<ConsoleSystem>(SystemPhase::UI);
 
-		// Editor examples
+		// Editor example
 		systemManager.RegisterSystem<MandelbrotControllerSystem>(SystemPhase::PreRender);
-
-		// Resolve, not PreRender: DoomSystem repoints the material's albedo and has to mark the component
-		// changed so TlasBuildSystem rebuilds the RT geometry table with the new bindless index. That table
-		// caches it, and the change map is cleared at the end of the whole frame, so a mark set after
-		// TlasBuildSystem (PreRender) has already run is never observed by anything. Resolve runs after
-		// MaterialResolveSystem, which is what makes the instance available in the first place.
-		systemManager.RegisterSystem<DoomSystem>(SystemPhase::Resolve);
 	}
 
 	void EditorLayer::CreateMainViewportEntity()
