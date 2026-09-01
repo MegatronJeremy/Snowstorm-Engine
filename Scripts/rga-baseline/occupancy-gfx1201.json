@@ -112,33 +112,33 @@
       "permutations": 2
     },
     "GIDenoise.comp[ao]": {
-      "vgprs": 60.0,
+      "vgprs": 59.0,
       "sgprs": 64.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 3840.0,
+      "isa_size": 3820.0,
       "permutations": 2
     },
     "GIDenoise.comp[gi]": {
-      "vgprs": 59.0,
+      "vgprs": 58.0,
       "sgprs": 49.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 3520.0,
+      "isa_size": 3508.0,
       "permutations": 2
     },
     "GIDenoise.comp[shadow]": {
-      "vgprs": 67.0,
+      "vgprs": 59.0,
       "sgprs": 58.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 3464.0,
+      "isa_size": 3516.0,
       "permutations": 2
     },
     "GISpatialReuse.comp": {
