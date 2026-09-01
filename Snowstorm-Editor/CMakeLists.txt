@@ -37,6 +37,13 @@ target_link_libraries(Snowstorm-Editor PUBLIC
     imguizmo::imguizmo
 )
 
+# Embedded Doom (root option SS_ENABLE_DOOM, default OFF). Source/Examples/Doom compiles either way;
+# without this target its SS_HAS_DOOM define is absent and the system compiles to a no-op, so the
+# GPL-2.0 dependency stays out of a default build entirely.
+if(SS_ENABLE_DOOM)
+    target_link_libraries(Snowstorm-Editor PRIVATE doomgeneric)
+endif()
+
 # Copy every runtime DLL this exe depends on next to it after build. vcpkg's automatic applocal deploy
 # covers most (assimp, etc.) but missed TracyClient.dll, so launching outside the vcpkg bin dir (e.g. the
 # smoke harness) failed with STATUS_DLL_NOT_FOUND. TARGET_RUNTIME_DLLS is the CMake-blessed, complete

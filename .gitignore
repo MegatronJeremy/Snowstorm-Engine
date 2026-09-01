@@ -83,6 +83,12 @@ Dataset/
 __pycache__/
 .pytest_cache/
 
+# Doom IWADs (doom.wad, freedoom1.wad, ...) for the optional SS_ENABLE_DOOM build. Game data, not
+# engine source: the commercial ones cannot be redistributed at all, and even the freely licensed
+# ones are large binaries that belong next to the build, not in this history.
+*.wad
+*.WAD
+
 # Local scratch: investigation logs, ad-hoc drivers, saved diffs. Never part of a build.
 /_t1/
 /_scratch/

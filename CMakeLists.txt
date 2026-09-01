@@ -14,8 +14,21 @@ if(MSVC)
     add_compile_options(/MP)
 endif()
 
+# Embedded Doom (Vendor/doomgeneric). OFF because it is not part of the engine: it is a demo of the
+# dynamic-texture upload path, it needs an IWAD the repo does not ship, and doomgeneric is GPL-2.0
+# against this project's public domain, so a build with it ON is a combined work that cannot be
+# redistributed under UNLICENSE.txt. ON also fetches ~40 MB from GitHub at configure time.
+option(SS_ENABLE_DOOM "Fetch and build the embedded doomgeneric interpreter (GPL-2.0)" OFF)
+
 # 1. Add subdirectories for core and the executables
 # This must happen before setting target properties
+if(SS_ENABLE_DOOM)
+    # Only when needed: enabling C unconditionally would make every configure look for a C compiler
+    # for a target that usually is not built.
+    enable_language(C)
+    add_subdirectory(Vendor/doomgeneric)
+endif()
+
 add_subdirectory(Snowstorm-Core)
 add_subdirectory(Snowstorm-Editor)
 add_subdirectory(Snowstorm-Runtime)
