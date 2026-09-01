@@ -65,6 +65,13 @@ CONFIGS = [
     ("+ao",      {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2", "SS_RENDER_REFLECTIONS_MODE": "0", "SS_RENDER_GI_MODE": "0"}),
     ("+refl",    {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2", "SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_GI_MODE": "0"}),
     ("+gi",      {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2", "SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_GI_MODE": "2"}),
+    # Three screen-space alternatives, each repeating one rung with mode 1 (screen-space) instead of
+    # mode 2 (ray-traced) and therefore diffed against the rung BELOW it, not accumulated. They are
+    # what makes the screen-space-versus-ray-traced comparison a tradeoff rather than half of one:
+    # the quality gate finds SSAO/RTAO and SSR/RT reflections within 0.01 FLIP of each other, and
+    # when quality ties, cost decides, so the cost has to exist.
+    ("ssao",     {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "1", "SS_RENDER_REFLECTIONS_MODE": "0", "SS_RENDER_GI_MODE": "0"}),
+    ("ssr",      {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2", "SS_RENDER_REFLECTIONS_MODE": "1", "SS_RENDER_GI_MODE": "0"}),
     ("ssgi",     {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "2", "SS_RENDER_REFLECTIONS_MODE": "2", "SS_RENDER_GI_MODE": "1"}),
     ("shadows-stoch", {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_AO_MODE": "0", "SS_RENDER_REFLECTIONS_MODE": "0", "SS_RENDER_GI_MODE": "0",
                        "SS_RENDER_SHADOWS_STOCHASTIC": "1"}),

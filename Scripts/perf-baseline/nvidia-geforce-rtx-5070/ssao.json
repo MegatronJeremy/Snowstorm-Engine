@@ -1,0 +1,142 @@
+{
+  "device": "NVIDIA GeForce RTX 5070",
+  "config": "ssao",
+  "frames": 300,
+  "timestampsSupported": true,
+  "width": 1915,
+  "height": 1064,
+  "camera": [
+    8.5191,
+    1.4949,
+    -0.4308,
+    0.0272,
+    1.4958,
+    0.0
+  ],
+  "totalGpuMs": 3.0435,
+  "passes": {
+    "CameraDepthPrepass": {
+      "avgMs": 0.0402,
+      "minMs": 0.0388,
+      "maxMs": 0.041,
+      "fragInvocations": 3553904,
+      "depth": 0,
+      "spreadPct": 0.9950248756218845,
+      "q1Ms": 0.0398,
+      "q3Ms": 0.0402,
+      "runs": 3
+    },
+    "TemporalResolve": {
+      "avgMs": 0.0895,
+      "minMs": 0.0879,
+      "maxMs": 0.0912,
+      "fragInvocations": 2037560,
+      "depth": 0,
+      "spreadPct": 0.2234636871508289,
+      "q1Ms": 0.0893,
+      "q3Ms": 0.0895,
+      "runs": 3
+    },
+    "Velocity": {
+      "avgMs": 0.0573,
+      "minMs": 0.0561,
+      "maxMs": 0.0587,
+      "fragInvocations": 3055742,
+      "depth": 0,
+      "spreadPct": 0.3490401396160659,
+      "q1Ms": 0.0573,
+      "q3Ms": 0.0575,
+      "runs": 3
+    },
+    "SSAOBlur": {
+      "avgMs": 0.1004,
+      "minMs": 0.0999,
+      "maxMs": 0.102,
+      "fragInvocations": 0,
+      "depth": 0,
+      "spreadPct": 0.4980079681274905,
+      "q1Ms": 0.1,
+      "q3Ms": 0.1005,
+      "runs": 3
+    },
+    "DepthNormal": {
+      "avgMs": 0.1276,
+      "minMs": 0.1256,
+      "maxMs": 0.1298,
+      "fragInvocations": 3728280,
+      "depth": 0,
+      "spreadPct": 0.7053291536050033,
+      "q1Ms": 0.1269,
+      "q3Ms": 0.1278,
+      "runs": 3
+    },
+    "Editor": {
+      "avgMs": 0.0574,
+      "minMs": 0.057,
+      "maxMs": 0.0579,
+      "fragInvocations": 9534692,
+      "depth": 0,
+      "spreadPct": 0.5226480836236963,
+      "q1Ms": 0.0572,
+      "q3Ms": 0.0575,
+      "runs": 3
+    },
+    "AOUpsample": {
+      "avgMs": 0.0422,
+      "minMs": 0.0418,
+      "maxMs": 0.0425,
+      "fragInvocations": 2037560,
+      "depth": 0,
+      "spreadPct": 0.4739336492890966,
+      "q1Ms": 0.0421,
+      "q3Ms": 0.0423,
+      "runs": 3
+    },
+    "Sky": {
+      "avgMs": 0.0002,
+      "minMs": 0.0001,
+      "maxMs": 0.0004,
+      "fragInvocations": 0,
+      "depth": 1,
+      "spreadPct": 0.0,
+      "q1Ms": 0.0002,
+      "q3Ms": 0.0002,
+      "runs": 3
+    },
+    "SSAO": {
+      "avgMs": 0.0845,
+      "minMs": 0.0831,
+      "maxMs": 0.0859,
+      "fragInvocations": 0,
+      "depth": 0,
+      "spreadPct": 0.4733727810650859,
+      "q1Ms": 0.0844,
+      "q3Ms": 0.0848,
+      "runs": 3
+    },
+    "PostProcess": {
+      "avgMs": 0.0145,
+      "minMs": 0.0142,
+      "maxMs": 0.0148,
+      "fragInvocations": 2037560,
+      "depth": 0,
+      "spreadPct": 0.0,
+      "q1Ms": 0.0145,
+      "q3Ms": 0.0145,
+      "runs": 3
+    },
+    "Forward": {
+      "avgMs": 2.4254,
+      "minMs": 2.3182,
+      "maxMs": 2.528,
+      "fragInvocations": 2683019,
+      "depth": 0,
+      "spreadPct": 0.507132844066948,
+      "q1Ms": 2.415,
+      "q3Ms": 2.4273,
+      "runs": 3
+    }
+  },
+  "totalSpreadPct": 0.476425168391653,
+  "runs": 3
+}
