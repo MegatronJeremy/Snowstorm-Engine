@@ -1,7 +1,9 @@
 #include "AudioSystem.hpp"
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
+#include "Snowstorm/Components/AudioListenerComponent.hpp"
 #include "Snowstorm/Components/AudioSourceComponent.hpp"
+#include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/World/SimulationStateSingleton.hpp"
@@ -30,6 +32,56 @@ namespace Snowstorm
 		m_Voices.clear();
 	}
 
+	void AudioSystem::UpdateListener(AudioService& audio)
+	{
+		auto& reg = m_World->GetRegistry();
+
+		entt::entity listener = entt::null;
+		uint32_t count = 0;
+		for (const entt::entity entity : reg.view<AudioListenerComponent, TransformComponent>())
+		{
+			if (!reg.Read<AudioListenerComponent>(entity).Enabled)
+			{
+				continue;
+			}
+			if (listener == entt::null)
+			{
+				listener = entity;
+			}
+			++count;
+		}
+
+		if (listener == entt::null)
+		{
+			// Spatial sounds still play, panned against a listener sitting at the origin facing -Z. Said
+			// once rather than per frame, and only when something actually depends on it.
+			if (!m_WarnedNoListener)
+			{
+				m_WarnedNoListener = true;
+				SS_CORE_WARN("Audio: no entity has an AudioListenerComponent; spatial sounds are panned "
+				             "against the world origin. Add one to the camera.");
+			}
+			return;
+		}
+
+		if (count > 1 && !m_WarnedManyListeners)
+		{
+			m_WarnedManyListeners = true;
+			SS_CORE_WARN("Audio: {} enabled AudioListenerComponents; using the first. There is one ear.", count);
+		}
+
+		// Orientation comes from the transform MATRIX, not from re-deriving pitch/yaw: the matrix applies
+		// the component's own Y->X->Z rotation order and so accounts for roll, which a pitch/yaw pair
+		// silently drops. Column 2 is the local +Z axis and the engine looks down -Z; column 1 is up.
+		// Normalised because a scaled transform would otherwise hand miniaudio a non-unit direction.
+		const auto& transform = reg.Read<TransformComponent>(listener);
+		const glm::mat4 m = transform.GetTransformMatrix();
+		const glm::vec3 forward = glm::normalize(-glm::vec3(m[2]));
+		const glm::vec3 up = glm::normalize(glm::vec3(m[1]));
+
+		audio.SetListener(transform.Position, forward, up);
+	}
+
 	void AudioSystem::Execute(Timestep)
 	{
 		auto& audio = ServiceView<AudioService>();
@@ -50,6 +102,8 @@ namespace Snowstorm
 			ReleaseAll(audio);
 			return;
 		}
+
+		UpdateListener(audio);
 
 		auto& assets = SingletonView<AssetManagerSingleton>();
 
@@ -91,6 +145,18 @@ namespace Snowstorm
 			audio.SetInstanceVolume(voice.Instance, source.Volume);
 			audio.SetInstancePitch(voice.Instance, source.Pitch);
 			audio.SetInstanceLooping(voice.Instance, source.Loop);
+
+			audio.SetInstanceSpatial(voice.Instance, source.Spatial);
+			if (source.Spatial)
+			{
+				audio.SetInstanceDistances(voice.Instance, source.MinDistance, source.MaxDistance);
+				// An emitter without a transform has no position to be at, so it stays wherever it was
+				// last put rather than snapping to the origin.
+				if (const auto* transform = reg.try_get<TransformComponent>(entity))
+				{
+					audio.SetInstancePosition(voice.Instance, transform->Position);
+				}
+			}
 
 			if (source.PlayOnStart && !voice.Started)
 			{

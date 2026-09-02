@@ -17,7 +17,10 @@ namespace Snowstorm
 		    .property("Volume", &AudioSourceComponent::Volume)
 		    .property("Pitch", &AudioSourceComponent::Pitch)
 		    .property("Loop", &AudioSourceComponent::Loop)
-		    .property("PlayOnStart", &AudioSourceComponent::PlayOnStart);
+		    .property("PlayOnStart", &AudioSourceComponent::PlayOnStart)
+		    .property("Spatial", &AudioSourceComponent::Spatial)
+		    .property("MinDistance", &AudioSourceComponent::MinDistance)
+		    .property("MaxDistance", &AudioSourceComponent::MaxDistance);
 	}
 
 	AUTO_REGISTER_COMPONENT(AudioSourceComponent);

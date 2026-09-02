@@ -3,6 +3,8 @@
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Service/Service.hpp"
 
+#include <glm/vec3.hpp>
+
 #include <cstdint>
 #include <filesystem>
 
@@ -57,6 +59,20 @@ namespace Snowstorm
 		void SetInstanceVolume(InstanceId id, float volume);
 		void SetInstancePitch(InstanceId id, float pitch);
 		void SetInstanceLooping(InstanceId id, bool loop);
+
+		// --- 3D spatialisation ---
+		// The ear. One listener, because the engine renders one view; miniaudio supports several and this
+		// wraps index 0. Forward and up are the engine's convention (-Z forward, +Y up), which is also
+		// miniaudio's default listener orientation, so no handedness conversion happens anywhere.
+		void SetListener(const glm::vec3& position, const glm::vec3& forward, const glm::vec3& up);
+
+		// Off = the sound plays flat at its own volume (music, UI). On = it is positioned in the world and
+		// attenuated and panned against the listener.
+		void SetInstanceSpatial(InstanceId id, bool enabled);
+		void SetInstancePosition(InstanceId id, const glm::vec3& position);
+		// Inside minDistance the sound is at full volume; past maxDistance it stops attenuating further.
+		// miniaudio's default inverse-distance model is used, which is the usual game default.
+		void SetInstanceDistances(InstanceId id, float minDistance, float maxDistance);
 
 	private:
 		// miniaudio.h is ~90k lines, so it is not dragged into every TU that touches audio: the engine

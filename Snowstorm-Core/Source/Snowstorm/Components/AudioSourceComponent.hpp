@@ -24,6 +24,15 @@ namespace Snowstorm
 		// case for ambience and music beds; one-shots want it off.
 		bool PlayOnStart = true;
 
+		// Off = the clip plays flat at its own volume, which is what music, UI and narration want. On =
+		// it is placed at this entity's transform and panned/attenuated against the AudioListener. Unity
+		// calls this Spatial Blend and defaults it to 2D for the same reason.
+		bool Spatial = false;
+		// Full volume within MinDistance, no further attenuation past MaxDistance. Metres, matching the
+		// scene's units.
+		float MinDistance = 1.0f;
+		float MaxDistance = 50.0f;
+
 		AudioSourceComponent() = default;
 	};
 

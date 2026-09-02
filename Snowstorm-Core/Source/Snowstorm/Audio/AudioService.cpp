@@ -166,6 +166,43 @@ namespace Snowstorm
 		}
 	}
 
+	void AudioService::SetListener(const glm::vec3& position, const glm::vec3& forward, const glm::vec3& up)
+	{
+		if (!m_Impl)
+		{
+			return;
+		}
+		constexpr ma_uint32 listenerIndex = 0;
+		ma_engine_listener_set_position(&m_Impl->Engine, listenerIndex, position.x, position.y, position.z);
+		ma_engine_listener_set_direction(&m_Impl->Engine, listenerIndex, forward.x, forward.y, forward.z);
+		ma_engine_listener_set_world_up(&m_Impl->Engine, listenerIndex, up.x, up.y, up.z);
+	}
+
+	void AudioService::SetInstanceSpatial(const InstanceId id, const bool enabled)
+	{
+		if (ma_sound* sound = m_Impl ? m_Impl->Find(id) : nullptr)
+		{
+			ma_sound_set_spatialization_enabled(sound, enabled ? MA_TRUE : MA_FALSE);
+		}
+	}
+
+	void AudioService::SetInstancePosition(const InstanceId id, const glm::vec3& position)
+	{
+		if (ma_sound* sound = m_Impl ? m_Impl->Find(id) : nullptr)
+		{
+			ma_sound_set_position(sound, position.x, position.y, position.z);
+		}
+	}
+
+	void AudioService::SetInstanceDistances(const InstanceId id, const float minDistance, const float maxDistance)
+	{
+		if (ma_sound* sound = m_Impl ? m_Impl->Find(id) : nullptr)
+		{
+			ma_sound_set_min_distance(sound, minDistance);
+			ma_sound_set_max_distance(sound, maxDistance);
+		}
+	}
+
 	void AudioService::OnUpdate(Timestep)
 	{
 		if (const float cvarVolume = CVars::AudioMasterVolume.Get(); cvarVolume != m_MasterVolume)

@@ -43,5 +43,14 @@ namespace Snowstorm
 
 		// Stops and forgets every voice. Used on teardown and whenever playback should stop wholesale.
 		void ReleaseAll(AudioService& audio);
+
+		// Pushes the AudioListener entity's pose to the service, so spatial sounds have an ear to be
+		// panned against.
+		void UpdateListener(AudioService& audio);
+
+		// One-shot guards: a missing or duplicated listener is an authoring mistake worth saying once,
+		// not every frame.
+		bool m_WarnedNoListener = false;
+		bool m_WarnedManyListeners = false;
 	};
 }
