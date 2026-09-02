@@ -38,6 +38,11 @@ set(DOOMGENERIC_SOURCES
     r_bsp.c r_data.c r_draw.c r_main.c r_plane.c r_segs.c r_sky.c r_things.c
     sha1.c sounds.c statdump.c st_lib.c st_stuff.c s_sound.c tables.c v_video.c wi_stuff.c
     w_checksum.c w_file.c w_file_stdc.c w_main.c w_wad.c z_zone.c
+    # Audio, exactly what upstream's Makefile.sdl adds over the list above. i_sdlsound.c defines
+    # DG_sound_module and i_sdlmusic.c DG_music_module; mus2mid.c converts Doom's MUS lumps to the MIDI
+    # SDL_mixer plays. All three are dead code without FEATURE_SOUND, which is why they are not in the
+    # base list.
+    mus2mid.c i_sdlmusic.c i_sdlsound.c
 )
 list(TRANSFORM DOOMGENERIC_SOURCES PREPEND "${doomgeneric_SOURCE_DIR}/doomgeneric/")
 
@@ -51,12 +56,30 @@ set_target_properties(doomgeneric PROPERTIES
 
 target_include_directories(doomgeneric PUBLIC "${doomgeneric_SOURCE_DIR}/doomgeneric")
 
+# PRIVATE, and only reachable by this target: compat/ holds a stub <strings.h> that MSVC lacks and
+# SDL's headers ask for. See the file for why.
+target_include_directories(doomgeneric PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/compat")
+
 if(MSVC)
     # 1993 C built by a 2022 compiler: the warnings are upstream's to fix, and burying our own under
     # thousands of theirs is worse than not seeing theirs. Excluded from clang-format for the same reason.
     target_compile_options(doomgeneric PRIVATE /W0)
     target_compile_definitions(doomgeneric PRIVATE _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_DEPRECATE)
 endif()
+
+# Audio. FEATURE_SOUND is what compiles the sound/music module tables in i_sound.c at all; without it
+# doomgeneric references neither DG_sound_module nor DG_music_module and plays silence.
+#
+# Music is MIDI, and it only works because Scripts/vcpkg-overlays/sdl2-mixer flips on SDL_mixer's native
+# MIDI backend: the stock vcpkg port hardcodes it off and offers MIDI only through fluidsynth/timidity,
+# which need a soundfont or patch set shipped alongside. Sound effects are PCM and need none of that.
+find_package(SDL2 CONFIG REQUIRED)
+find_package(SDL2_mixer CONFIG REQUIRED)
+target_compile_definitions(doomgeneric PRIVATE FEATURE_SOUND)
+target_link_libraries(doomgeneric PRIVATE
+    $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+    $<IF:$<TARGET_EXISTS:SDL2_mixer::SDL2_mixer>,SDL2_mixer::SDL2_mixer,SDL2_mixer::SDL2_mixer-static>
+)
 
 # Marks the availability of the DG_* entry points for the engine-side glue, which is compiled
 # unconditionally and inert without it.
