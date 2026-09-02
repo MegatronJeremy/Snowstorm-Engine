@@ -90,6 +90,10 @@ namespace Snowstorm::CVars
 	// CVarFlags::ReadOnly: CLI/env/startup-config-driven, resolved once at launch, never runtime-editable.
 	CVar<bool> VSync{"display.vsync", true, "VSync on (FIFO, locked to refresh) or off (uncapped present)", CVarFlags::Persist};
 
+	CVar<bool> AudioEnabled{"audio.enabled", true, "Open an audio output device at startup. Off = the engine runs silently (every AudioService call no-ops) and no device is claimed. Startup-only: the device is opened once.", CVarFlags::Persist | CVarFlags::ReadOnly};
+
+	CVar<float> AudioMasterVolume{"audio.volume", 1.0f, "Master volume over the whole mix: 0 = silence, 1 = unattenuated. Read every frame, so an edit from the CVar panel is audible immediately. Above 1 amplifies and can clip.", CVarFlags::Persist};
+
 	// startup.* select what boots and are read once during application startup (before the editor exists), so
 	// they're ReadOnly: change them in SnowstormStartup.cfg / CLI and relaunch.
 	CVar<std::string> StartupProject{"startup.project", "Projects/Sandbox/Sandbox.ssproj", "Path to the .ssproj loaded at startup (relative to the working directory = repo root). The engine boots this real project instead of synthesizing an implicit one at the CWD. If the file is missing/unreadable, falls back to an implicit CWD-rooted project so the engine still runs. Point --startup.project elsewhere to boot a different project.", CVarFlags::ReadOnly};

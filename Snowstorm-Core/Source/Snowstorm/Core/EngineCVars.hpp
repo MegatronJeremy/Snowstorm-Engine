@@ -232,6 +232,12 @@ namespace Snowstorm::CVars
 	// (MAILBOX/IMMEDIATE). Runtime-toggleable from the editor's Settings panel.
 	extern CVar<bool> VSync;
 
+	// Open an audio output device at startup. Off = the engine runs silently and every AudioService call
+	// is a no-op; nothing else changes.
+	extern CVar<bool> AudioEnabled;
+	// Master volume applied to the whole mix. Read every frame, so an edit is audible immediately.
+	extern CVar<float> AudioMasterVolume;
+
 	// The .ssproj loaded at startup (default Projects/Sandbox/Sandbox.ssproj): the engine boots this real
 	// project instead of synthesizing an implicit one at the CWD. Falls back to a CWD-rooted implicit
 	// project if the file is missing, so the engine still runs. Editor + Runtime both honor it.
