@@ -1,6 +1,6 @@
 # doomgeneric (https://github.com/ozkl/doomgeneric): Doom reduced to an embeddable interpreter, driven
 # by doomgeneric_Create/doomgeneric_Tick with the whole platform layer behind six DG_* callbacks. The
-# engine implements those in Snowstorm-Editor/Source/Examples/Doom.
+# engine implements those in Snowstorm-Core/Source/Snowstorm/Examples/Doom.
 #
 # Fetched at configure time rather than checked in, deliberately. doomgeneric is GPL-2.0 (inherited
 # from id Software's 1999 relicense of the Doom source) and Snowstorm is public domain, so committing

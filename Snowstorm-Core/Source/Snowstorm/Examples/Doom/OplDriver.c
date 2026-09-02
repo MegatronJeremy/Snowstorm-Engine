@@ -204,6 +204,22 @@ int OPL_Init(unsigned int port_base)
 	Chip__Chip(&s_Chip);
 	Chip__Setup(&s_Chip, opl_sample_rate);
 
+	// Chip__Setup ends by clearing every register to 0, and dbopl derives waveFormMask from bit 5 of
+	// register 0x01: with it clear, Operator__WriteE0 masks every waveform select down to 0, so the whole
+	// 0xE0..0xF5 bank the sequencer writes is discarded and every operator plays a sine. Measured against
+	// Freedoom's GENMIDI, 303 of 700 operators change with this write, so it carries much of the
+	// instrument character. The real chip reached it through OPL_InitRegisters, in the opl.c driver layer
+	// this file replaces.
+	//
+	// The count is 303 rather than the 337 that request a non-zero waveform because this is OPL2:
+	// opl3Active stays 0, so the select is masked to two bits and the 34 operators asking for waveform 4
+	// land back on the sine. That is the real chip's behaviour, not a shortcut here.
+	//
+	// 0x08 is NOTE-SEL, which picks how the envelope rate scales across the keyboard. Doom's driver sets
+	// it, so it is set here for the same behaviour rather than left at the power-on default.
+	Chip__WriteReg(&s_Chip, 0x01, 0x20);
+	Chip__WriteReg(&s_Chip, 0x08, 0x40);
+
 	s_CurrentTime = 0;
 	s_PauseOffset = 0;
 	s_Paused = 0;

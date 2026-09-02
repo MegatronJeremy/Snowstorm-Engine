@@ -329,7 +329,7 @@ namespace Snowstorm
 		// Doom's own thread is unaffected and keeps running; it simply generates music nobody consumes.
 		// A scene reload therefore leaves the game running without music, which matches the existing
 		// one-shot limitation (g_DoomStarted means the interpreter is never restarted either).
-		SS_DoomAudio_StopMusic();
+		SS_DoomAudio_ShutdownMusic();
 
 		if (g_Doom != nullptr && g_Doom->MusicStream != nullptr)
 		{
@@ -456,6 +456,11 @@ namespace Snowstorm
 					g_Doom->ChannelActive[channel].store(false, std::memory_order_relaxed);
 					break;
 				}
+				// Doom has already done the spatialisation: it hands over a volume and a stereo separation
+				// computed from the listener, and expects them applied verbatim. Left spatial, the voice
+				// would also be a 3D emitter sitting at the world origin, so any scene carrying an audio
+				// listener would attenuate and re-pan it underneath Doom's own mix.
+				audio.SetInstanceSpatial(id, false);
 				audio.SetInstanceVolume(id, cmd.Volume);
 				audio.SetInstancePan(id, cmd.Pan);
 				audio.Play(id);

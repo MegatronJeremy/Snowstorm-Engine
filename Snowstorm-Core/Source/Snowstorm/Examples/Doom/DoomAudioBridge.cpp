@@ -28,6 +28,13 @@ namespace
 	std::atomic<bool> g_Running{false};
 	std::thread g_Producer;
 
+	// Start and stop are driven from two different threads (Doom's, via OPL_Init/OPL_Shutdown, and the
+	// main thread at teardown), so they are serialised rather than merely atomic. g_Disabled is the
+	// one-way latch: once the engine has torn the stream down, a later OPL_Init must not resurrect the
+	// producer, which would write into freed memory.
+	std::mutex g_MusicMutex;
+	bool g_Disabled = false;
+
 	// How much audio to keep queued ahead of the mixer. 8192 frames at 48 kHz is ~170 ms, which is
 	// enough to ride out a frame hitch or a Doom tic that runs long, and short enough that a music
 	// change is not audibly late.
@@ -52,9 +59,23 @@ namespace
 				continue;
 			}
 
-			const uint32_t frames = writable < kChunkFrames ? writable : kChunkFrames;
-			SS_Opl_Generate(scratch.data(), frames);
-			audio->StreamWrite(stream, scratch.data(), frames);
+			SS_Opl_Generate(scratch.data(), kChunkFrames);
+			audio->StreamWrite(stream, scratch.data(), kChunkFrames);
+		}
+	}
+
+	// Caller holds g_MusicMutex.
+	void StopLocked()
+	{
+		if (!g_Running.exchange(false, std::memory_order_relaxed))
+		{
+			return;
+		}
+		// Joined, unlike Doom's own thread: this one the engine created and can therefore end, and it
+		// must be gone before the driver frees the state SS_Opl_Generate reads.
+		if (g_Producer.joinable())
+		{
+			g_Producer.join();
 		}
 	}
 }
@@ -97,7 +118,9 @@ extern "C"
 	{
 		using namespace Snowstorm::DoomInternal;
 
-		if (g_Running.load(std::memory_order_relaxed) || g_Doom == nullptr)
+		const std::lock_guard lock(g_MusicMutex);
+
+		if (g_Disabled || g_Running.load(std::memory_order_relaxed) || g_Doom == nullptr)
 		{
 			return;
 		}
@@ -126,16 +149,15 @@ extern "C"
 
 	void SS_DoomAudio_StopMusic(void)
 	{
-		if (!g_Running.exchange(false, std::memory_order_relaxed))
-		{
-			return;
-		}
-		// Joined, unlike Doom's own thread: this one the engine created and can therefore end, and it
-		// must be gone before the driver frees the state SS_Opl_Generate reads.
-		if (g_Producer.joinable())
-		{
-			g_Producer.join();
-		}
+		const std::lock_guard lock(g_MusicMutex);
+		StopLocked();
+	}
+
+	void SS_DoomAudio_ShutdownMusic(void)
+	{
+		const std::lock_guard lock(g_MusicMutex);
+		g_Disabled = true;
+		StopLocked();
 	}
 }
 

@@ -33,6 +33,10 @@ extern "C"
 	void SS_DoomAudio_StartMusic(unsigned int sampleRate);
 	void SS_DoomAudio_StopMusic(void);
 
+	// Stop, and latch music off permanently. The engine calls this as it tears the stream down, so a
+	// later OPL_Init on Doom's thread cannot restart a producer that would write into freed memory.
+	void SS_DoomAudio_ShutdownMusic(void);
+
 	// Implemented by the driver, called by the producer thread: exactly `frames` stereo 16-bit frames.
 	void SS_Opl_Generate(int16_t* buffer, unsigned int frames);
 

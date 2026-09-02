@@ -102,11 +102,16 @@ is a combined work that cannot be redistributed under `UNLICENSE.txt`. Nothing G
 `Vendor/doomgeneric/CMakeLists.txt` clones it into the build tree at configure time instead.
 
 ```
-cmake -S . -B build -DSS_ENABLE_DOOM=ON && cmake --build build --config Debug
+py Scripts/Generate-Solution.py --with-doom && cmake --build build --config Debug
 build/Snowstorm-Runtime/Debug/Snowstorm-Runtime.exe \
   --startup.scene=Projects/Sandbox/assets/scenes/Doom.world \
   --doom.enabled --doom.wad=<path to an IWAD> --display.fullscreen
 ```
+
+Use `--with-doom` rather than a bare `cmake -DSS_ENABLE_DOOM=ON`: `Generate-Solution.py` passes
+`-DSS_ENABLE_DOOM=OFF` whenever the flag is absent, so the next ordinary re-generate silently turns a
+Doom build back off. A bare `cmake` also skips the vcpkg toolchain file and the pinned MSVC toolset
+that every `find_package` here depends on.
 
 No IWAD ships with the repo (`*.wad` is gitignored); Freedoom is the freely licensed one. The Editor
 runs it too (drop `--display.fullscreen`); `DoomSystem` is registered by `RegisterCoreSystems`, so both
@@ -126,7 +131,9 @@ second, SDL-owned one; nothing here needs SDL2 or SDL2_mixer. Effects are DMX lu
 Music is **OPL2 FM synthesis**, not MIDI: miniaudio has no synthesiser, General MIDI would need a
 soundfont this repo cannot ship, and the OPL instrument bank (`GENMIDI`) already lives inside the
 IWAD. Chocolate Doom 2.1.0 supplies the sequencer and `dbopl`, fetched (never vendored) for the same
-licence reason; `OplDriver.c` replaces its `opl_sdl.c` backend and feeds an `AudioService` stream.
+licence reason; `OplDriver.c` supplies the `OPL_*` entry points that Chocolate Doom's `opl.c` and
+`opl_sdl.c` provided (neither is built: `opl.c` drags in the Win32 hardware-port backend and both
+reach SDL) and feeds an `AudioService` stream.
 
 Two lifetime rules hold that together, and both were bugs first. Doom triggers sounds from ITS thread
 while `AudioService` is main-thread-only, so effects are marshalled through a command queue that
@@ -965,8 +972,9 @@ see, so treat it as part of the feature, not an afterthought.
 
 ## Dependencies (vcpkg, x64-windows)
 
-assimp, EnTT, fmt, glew, glfw3, glm, imgui (vulkan+glfw bindings, docking), rttr, spdlog, stb,
-Vulkan SDK, vulkan-memory-allocator, gli, volk, spirv-reflect, nlohmann-json. The canonical list
+assimp, EnTT, fmt, glew, glfw3, glm, imgui (vulkan+glfw bindings, docking), imguizmo, rttr, spdlog,
+stb, Vulkan SDK, vulkan-memory-allocator, gli, volk, spirv-reflect, nlohmann-json, catch2, tracy,
+miniaudio. The canonical list
 is `PACKAGES` in `Scripts/Generate-Solution.py`; the linkage is in `Snowstorm-Core/CMakeLists.txt`.
 Keep those two in sync when adding a dependency.
 
