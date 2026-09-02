@@ -94,8 +94,14 @@ namespace
 	}
 
 	// Doom's volume is 0..127 and its stereo separation 0..254 with 128 centre.
-	float ToVolume(const int vol) { return static_cast<float>(vol) / 127.0f; }
-	float ToPan(const int sep) { return (static_cast<float>(sep) - 127.0f) / 127.0f; }
+	float ToVolume(const int vol)
+	{
+		return static_cast<float>(vol) / 127.0f;
+	}
+	float ToPan(const int sep)
+	{
+		return (static_cast<float>(sep) - 127.0f) / 127.0f;
+	}
 
 	boolean SS_InitSound(boolean)
 	{

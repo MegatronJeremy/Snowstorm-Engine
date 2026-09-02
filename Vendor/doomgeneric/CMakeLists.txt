@@ -22,6 +22,21 @@ FetchContent_Declare(doomgeneric
 # doomgeneric_SOURCE_DIR without adding a subdirectory.
 FetchContent_MakeAvailable(doomgeneric)
 
+# Chocolate Doom, for the OPL music path only. doomgeneric stripped it: i_sound.h still declares
+# music_opl_module but ships no implementation, no opl/ directory and no midifile.c.
+#
+# Pinned to the 2.1.0 TAG rather than master on purpose. That is doomgeneric's fork point, so
+# i_sound.h matches and music_module_t needs no adaptation; master has since changed opl.h's API and
+# swapped the synth for Nuked-OPL3, which would be a port rather than a drop-in. 2.1.0's dbopl.c (the
+# DOSBox core) is also markedly cheaper to run, which matters when it renders inside a mixer callback.
+#
+# Also GPL-2.0, so fetched rather than vendored for exactly the reason above.
+FetchContent_Declare(chocolatedoom
+    GIT_REPOSITORY https://github.com/chocolate-doom/chocolate-doom.git
+    GIT_TAG chocolate-doom-2.1.0
+)
+FetchContent_MakeAvailable(chocolatedoom)
+
 # SRC_DOOM from upstream's Makefile, minus doomgeneric_xlib.c: that is the X11 backend's copy of the
 # DG_* callbacks plus its main(). Every other doomgeneric_<platform>.c is a sibling of it. Taking
 # upstream's own manifest rather than globbing keeps this honest about which files are actually part
@@ -44,9 +59,20 @@ set(DOOMGENERIC_SOURCES
     # Both are dead code without FEATURE_SOUND, which is why they are not in the base list.
     mus2mid.c i_sdlmusic.c
 )
+# The OPL music path, from Chocolate Doom. Deliberately NOT opl.c: it reaches SDL (OPL_Delay waits on
+# an SDL condvar) and builds a driver table that drags in the Win32 hardware-port backend. The engine
+# provides those entry points itself instead, so only the synth, the callback queue and the MIDI parser
+# come from upstream unmodified.
+set(CHOCOLATE_OPL_SOURCES
+    opl/dbopl.c
+    opl/opl_queue.c
+    src/midifile.c
+)
+list(TRANSFORM CHOCOLATE_OPL_SOURCES PREPEND "${chocolatedoom_SOURCE_DIR}/")
+
 list(TRANSFORM DOOMGENERIC_SOURCES PREPEND "${doomgeneric_SOURCE_DIR}/doomgeneric/")
 
-add_library(doomgeneric STATIC ${DOOMGENERIC_SOURCES})
+add_library(doomgeneric STATIC ${DOOMGENERIC_SOURCES} ${CHOCOLATE_OPL_SOURCES})
 
 set_target_properties(doomgeneric PROPERTIES
     C_STANDARD 11
@@ -54,7 +80,13 @@ set_target_properties(doomgeneric PROPERTIES
     FOLDER Vendor
 )
 
-target_include_directories(doomgeneric PUBLIC "${doomgeneric_SOURCE_DIR}/doomgeneric")
+target_include_directories(doomgeneric PUBLIC
+    "${doomgeneric_SOURCE_DIR}/doomgeneric"
+    "${chocolatedoom_SOURCE_DIR}/opl"
+)
+# PRIVATE: only the OPL sources need Chocolate Doom's src/, and putting it on the PUBLIC path would
+# let its headers shadow doomgeneric's identically-named forks for every other consumer.
+target_include_directories(doomgeneric PRIVATE "${chocolatedoom_SOURCE_DIR}/src")
 
 # PRIVATE, and only reachable by this target: compat/ holds a stub <strings.h> that MSVC lacks and
 # SDL's headers ask for. See the file for why.
