@@ -1,6 +1,7 @@
 #include "DoomSystem.hpp"
 
 #include "DoomComponent.hpp"
+#include "DoomShared.hpp"
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Components/MaterialComponent.hpp"
@@ -10,6 +11,7 @@
 #include "Snowstorm/Events/KeyEvent.hpp"
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
+#include "Snowstorm/Audio/AudioService.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Utility/CVar.hpp"
 
@@ -55,39 +57,15 @@ namespace Snowstorm
 	}
 
 #ifdef SS_HAS_DOOM
+	using namespace DoomInternal;
+
+	namespace DoomInternal
+	{
+		DoomShared* g_Doom = nullptr;
+	}
+
 	namespace
 	{
-		struct KeyEventRecord
-		{
-			bool Pressed;
-			unsigned char Key;
-		};
-
-		// Everything the Doom thread and the engine share, including the argv strings, because doomgeneric
-		// stores the argv POINTERS rather than copying them (doomgeneric.c: myargv = argv).
-		struct DoomShared
-		{
-			std::mutex FrameMutex;
-			std::vector<uint32_t> Frame;
-			bool HasFrame = false;
-
-			std::mutex KeyMutex;
-			std::deque<KeyEventRecord> Keys;
-
-			std::chrono::steady_clock::time_point Start = std::chrono::steady_clock::now();
-
-			std::string ExeArg = "snowstorm";
-			std::string IwadFlag = "-iwad";
-			std::string WadArg;
-			std::array<char*, 3> Argv{};
-		};
-
-		// Leaked on purpose, and this is load-bearing. Doom has no shutdown entry point, so its thread is
-		// detached and runs until the process dies; it is still calling DG_GetTicksMs and DG_DrawFrame
-		// while the CRT runs static destructors on the main thread. A shared_ptr or any object with a
-		// destructor here would be torn down under that thread. Nothing this block owns is ever freed, so
-		// there is nothing for the thread to read after its lifetime ends.
-		DoomShared* g_Doom = nullptr;
 
 		// doomgeneric holds its state in globals and D_DoomMain runs once, so a second create would corrupt
 		// it. One interpreter per process, deliberately outliving any World.
@@ -379,6 +357,98 @@ namespace Snowstorm
 #endif
 	}
 
+	void DoomSystem::PumpSound()
+	{
+#ifdef SS_HAS_DOOM
+		if (g_Doom == nullptr)
+		{
+			return;
+		}
+
+		auto& audio = ServiceView<AudioService>();
+		if (!audio.IsAvailable())
+		{
+			return;
+		}
+
+		// Reap finished one-shots first, so a channel Doom is about to reuse is already free and its
+		// ChannelActive flag reflects reality rather than lagging a frame behind.
+		for (int channel = 0; channel < kNumChannels; ++channel)
+		{
+			const AudioService::InstanceId id = m_Channels[channel];
+			if (id != AudioService::NullInstance && !audio.IsPlaying(id))
+			{
+				audio.DestroyInstance(id);
+				m_Channels[channel] = AudioService::NullInstance;
+				g_Doom->ChannelActive[channel].store(false, std::memory_order_relaxed);
+			}
+		}
+
+		std::deque<SoundCommand> commands;
+		{
+			// Swapped out under the lock rather than drained in place: creating instances below can take
+			// long enough that holding the lock would stall Doom's thread mid-tic.
+			std::lock_guard lock(g_Doom->SoundMutex);
+			commands.swap(g_Doom->SoundCommands);
+		}
+
+		for (const SoundCommand& cmd : commands)
+		{
+			const int channel = cmd.Channel;
+			if (channel < 0 || channel >= kNumChannels)
+			{
+				continue;
+			}
+
+			switch (cmd.What)
+			{
+			case SoundCommand::Kind::Start:
+			{
+				// One instance per trigger, so a channel restarting mid-sound replaces rather than
+				// overlaps. Doom already decides voice stealing; this only honours it.
+				if (m_Channels[channel] != AudioService::NullInstance)
+				{
+					audio.DestroyInstance(m_Channels[channel]);
+					m_Channels[channel] = AudioService::NullInstance;
+				}
+				if (!cmd.Pcm || cmd.Pcm->empty())
+				{
+					break;
+				}
+				const AudioService::InstanceId id = audio.CreateInstanceFromPcm(
+				    cmd.Pcm->data(), cmd.Pcm->size(), AudioService::PcmFormat::U8, 1, cmd.SampleRate);
+				if (id == AudioService::NullInstance)
+				{
+					g_Doom->ChannelActive[channel].store(false, std::memory_order_relaxed);
+					break;
+				}
+				audio.SetInstanceVolume(id, cmd.Volume);
+				audio.SetInstancePan(id, cmd.Pan);
+				audio.Play(id);
+				m_Channels[channel] = id;
+				break;
+			}
+			case SoundCommand::Kind::Stop:
+				if (m_Channels[channel] != AudioService::NullInstance)
+				{
+					audio.DestroyInstance(m_Channels[channel]);
+					m_Channels[channel] = AudioService::NullInstance;
+				}
+				g_Doom->ChannelActive[channel].store(false, std::memory_order_relaxed);
+				break;
+
+			case SoundCommand::Kind::Params:
+				if (m_Channels[channel] != AudioService::NullInstance)
+				{
+					audio.SetInstanceVolume(m_Channels[channel], cmd.Volume);
+					audio.SetInstancePan(m_Channels[channel], cmd.Pan);
+				}
+				break;
+			}
+		}
+#endif
+	}
+
 	void DoomSystem::Execute(Timestep)
 	{
 		if (!DoomEnabled.Get())
@@ -416,6 +486,8 @@ namespace Snowstorm
 			}
 			StartDoomThread(wad);
 		}
+
+		PumpSound();
 
 		auto& reg = m_World->GetRegistry();
 		auto& renderer = ServiceView<RendererService>();

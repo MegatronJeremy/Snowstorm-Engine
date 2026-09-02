@@ -62,6 +62,13 @@ target_include_directories(Snowstorm-Core PRIVATE ${MINIAUDIO_INCLUDE_DIRS})
 set_source_files_properties(Source/Snowstorm/Audio/MiniaudioImpl.cpp PROPERTIES
     SKIP_PRECOMPILE_HEADERS ON
 )
+
+# Doom's sound backend includes doomtype.h, which in C++ typedefs `boolean` as unsigned int while
+# Windows' rpcndr.h typedefs it as unsigned char. pch.h force-includes Windows.h everywhere else, so
+# this one TU has to be built without it.
+set_source_files_properties(Source/Snowstorm/Examples/Doom/DoomSound.cpp PROPERTIES
+    SKIP_PRECOMPILE_HEADERS ON
+)
 if(MSVC)
     set_source_files_properties(Source/Snowstorm/Audio/MiniaudioImpl.cpp PROPERTIES
         COMPILE_OPTIONS "/W0"

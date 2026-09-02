@@ -2,7 +2,10 @@
 
 #include "Snowstorm/ECS/System.hpp"
 #include "Snowstorm/Events/EventBus.hpp"
+#include "Snowstorm/Audio/AudioService.hpp"
 #include "Snowstorm/Render/Texture.hpp"
+
+#include <array>
 
 #include <vector>
 
@@ -38,6 +41,14 @@ namespace Snowstorm
 		std::vector<uint32_t> m_Latest;
 
 		bool m_Reported = false; // one-shot guard for the "enabled but unavailable" messages
+
+		// Drains the sound requests Doom's thread posted and turns them into AudioService voices. Runs on
+		// the main thread because AudioService is main-thread-only.
+		void PumpSound();
+
+		// The voice currently on each of Doom's channels, owned here. Sized to Doom's fixed channel count;
+		// the literal is checked against DoomInternal::kNumChannels in the .cpp.
+		std::array<AudioService::InstanceId, 16> m_Channels{};
 
 		EventBus::Connection m_KeyDown;
 		EventBus::Connection m_KeyUp;

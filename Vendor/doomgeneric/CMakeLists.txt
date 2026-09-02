@@ -38,11 +38,11 @@ set(DOOMGENERIC_SOURCES
     r_bsp.c r_data.c r_draw.c r_main.c r_plane.c r_segs.c r_sky.c r_things.c
     sha1.c sounds.c statdump.c st_lib.c st_stuff.c s_sound.c tables.c v_video.c wi_stuff.c
     w_checksum.c w_file.c w_file_stdc.c w_main.c w_wad.c z_zone.c
-    # Audio, exactly what upstream's Makefile.sdl adds over the list above. i_sdlsound.c defines
-    # DG_sound_module and i_sdlmusic.c DG_music_module; mus2mid.c converts Doom's MUS lumps to the MIDI
-    # SDL_mixer plays. All three are dead code without FEATURE_SOUND, which is why they are not in the
-    # base list.
-    mus2mid.c i_sdlmusic.c i_sdlsound.c
+    # Audio. i_sdlmusic.c defines DG_music_module and mus2mid.c converts Doom's MUS lumps to the MIDI
+    # SDL_mixer plays. i_sdlsound.c is deliberately ABSENT: DG_sound_module is now implemented by the
+    # engine (Examples/Doom/DoomSound.cpp) against AudioService, so effects go through the engine's mixer.
+    # Both are dead code without FEATURE_SOUND, which is why they are not in the base list.
+    mus2mid.c i_sdlmusic.c
 )
 list(TRANSFORM DOOMGENERIC_SOURCES PREPEND "${doomgeneric_SOURCE_DIR}/doomgeneric/")
 
