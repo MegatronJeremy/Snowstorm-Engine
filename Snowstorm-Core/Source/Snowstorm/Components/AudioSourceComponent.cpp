@@ -11,7 +11,9 @@ namespace Snowstorm
 	RTTR_REGISTRATION
 	{
 		registration::class_<AudioSourceComponent>("AudioSourceComponent")
-		    .property("Clip", &AudioSourceComponent::Clip)
+		    .property("Clip", &AudioSourceComponent::Clip)(
+		        metadata("AssetType", static_cast<int>(AssetType::Audio)) // inspector asset picker filter
+		        )
 		    .property("Volume", &AudioSourceComponent::Volume)
 		    .property("Pitch", &AudioSourceComponent::Pitch)
 		    .property("Loop", &AudioSourceComponent::Loop)

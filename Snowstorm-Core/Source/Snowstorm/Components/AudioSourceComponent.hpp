@@ -5,8 +5,11 @@
 namespace Snowstorm
 {
 	// An emitter: this entity plays a clip. The scene-authored half of the audio system, mirroring Unity's
-	// AudioSource and Godot's AudioStreamPlayer. Everything here serializes; the playing sound itself is
-	// runtime state and lives in AudioSourceRuntimeComponent.
+	// AudioSource and Godot's AudioStreamPlayer.
+	//
+	// Every field here serializes, and that is the whole component: the playing sound is owned by
+	// AudioSystem, not stored per entity. It has to outlive this component, which entity deletion and
+	// scene loads destroy without notice.
 	struct AudioSourceComponent
 	{
 		// Explicitly zero: UUID's default constructor GENERATES a random id, so `AssetHandle Clip{}` would
@@ -24,16 +27,4 @@ namespace Snowstorm
 		AudioSourceComponent() = default;
 	};
 
-	// Runtime-only, deliberately NOT registered for reflection: it holds an AudioService instance id,
-	// which is meaningless in a saved scene and must not survive into one.
-	struct AudioSourceRuntimeComponent
-	{
-		uint64_t Instance = 0; // AudioService::NullInstance
-
-		// The clip this instance was created from. A different handle here means the authored clip
-		// changed (an inspector edit), so the instance is rebuilt.
-		AssetHandle LoadedClip{0};
-
-		bool StartRequested = false; // PlayOnStart consumed once, not every frame
-	};
 }

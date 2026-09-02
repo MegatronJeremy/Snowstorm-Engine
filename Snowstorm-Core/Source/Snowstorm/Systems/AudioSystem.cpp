@@ -1,28 +1,33 @@
 #include "AudioSystem.hpp"
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
-#include "Snowstorm/Audio/AudioService.hpp"
 #include "Snowstorm/Components/AudioSourceComponent.hpp"
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/World/SimulationStateSingleton.hpp"
 
 namespace Snowstorm
 {
 	AudioSystem::~AudioSystem()
 	{
-		// AudioService outlives this World (it is application-scoped), so its sounds do not go away when
-		// the scene does. Without this, every scene load would leak one decoded clip per emitter.
+		// AudioService is application-scoped and outlives this World, so its sounds are not reclaimed just
+		// because the World went away. In a packaged runtime this destructor is the whole story; in the
+		// editor it almost never runs, because a scene load reuses the same World. That case is handled by
+		// the sweep in Execute, not here.
 		if (!Application::Exists() || !Application::Get().GetServiceManager().ServiceRegistered<AudioService>())
 		{
 			return;
 		}
+		ReleaseAll(Application::Get().GetServiceManager().GetService<AudioService>());
+	}
 
-		auto& audio = Application::Get().GetServiceManager().GetService<AudioService>();
-		auto& reg = m_World->GetRegistry();
-		for (const entt::entity entity : reg.view<AudioSourceRuntimeComponent>())
+	void AudioSystem::ReleaseAll(AudioService& audio)
+	{
+		for (auto& [entity, voice] : m_Voices)
 		{
-			audio.DestroyInstance(reg.Read<AudioSourceRuntimeComponent>(entity).Instance);
+			audio.DestroyInstance(voice.Instance);
 		}
+		m_Voices.clear();
 	}
 
 	void AudioSystem::Execute(Timestep)
@@ -34,27 +39,35 @@ namespace Snowstorm
 		}
 
 		auto& reg = m_World->GetRegistry();
+
+		// Authoring a scene should be silent. Like RotatorSystem's animation or the Mandelbrot zoom, the
+		// sound is part of the simulation, so it only runs in Play mode; a packaged runtime has no
+		// SimulationStateSingleton and always plays. Stopping on the transition (rather than just not
+		// starting) is what makes the editor's Stop button actually stop the audio.
+		if (m_World->HasSingleton<SimulationStateSingleton>() &&
+		    !m_World->GetSingleton<SimulationStateSingleton>().IsPlaying())
+		{
+			ReleaseAll(audio);
+			return;
+		}
+
 		auto& assets = SingletonView<AssetManagerSingleton>();
 
 		for (const auto view = View<AudioSourceComponent>(); const entt::entity entity : view)
 		{
 			const auto& source = reg.Read<AudioSourceComponent>(entity);
-			reg.Ensure<AudioSourceRuntimeComponent>(entity);
-			// Untracked get, not Write: nothing observes this component, and marking it changed every
-			// frame would grow the change map for every emitter for no reader.
-			auto& runtime = reg.get<AudioSourceRuntimeComponent>(entity);
+			Voice& voice = m_Voices[entity];
 
-			// (Re)build the instance when the authored clip changes, which covers both the first frame and
-			// an inspector edit swapping the clip out from under a playing sound.
-			if (runtime.LoadedClip != source.Clip)
+			// Rebuild on a clip change, which covers both the first sighting of this entity and an
+			// inspector edit swapping the clip out from under a playing sound.
+			if (voice.Clip != source.Clip)
 			{
-				audio.DestroyInstance(runtime.Instance);
-				runtime.Instance = AudioService::NullInstance;
-				runtime.LoadedClip = source.Clip;
-				runtime.StartRequested = false;
+				audio.DestroyInstance(voice.Instance);
+				voice = Voice{};
+				voice.Clip = source.Clip;
 
-				// Zero is "no clip assigned", which is a normal authoring state and not worth a warning.
-				// A non-zero handle the registry does not know IS worth one: it means a broken reference.
+				// Zero is "no clip assigned", a normal authoring state. A non-zero handle the registry
+				// does not know is a broken reference and worth saying so.
 				if (source.Clip != 0)
 				{
 					if (const std::filesystem::path path = assets.GetAbsolutePath(source.Clip); path.empty())
@@ -63,27 +76,41 @@ namespace Snowstorm
 					}
 					else
 					{
-						runtime.Instance = audio.CreateInstance(path);
+						voice.Instance = audio.CreateInstance(path);
 					}
 				}
 			}
 
-			if (runtime.Instance == AudioService::NullInstance)
+			if (voice.Instance == AudioService::NullInstance)
 			{
 				continue;
 			}
 
 			// Pushed every frame rather than on change: these are cheap setters, and it keeps an inspector
-			// edit audible immediately without the system having to track which field moved.
-			audio.SetInstanceVolume(runtime.Instance, source.Volume);
-			audio.SetInstancePitch(runtime.Instance, source.Pitch);
-			audio.SetInstanceLooping(runtime.Instance, source.Loop);
+			// edit audible immediately without tracking which field moved.
+			audio.SetInstanceVolume(voice.Instance, source.Volume);
+			audio.SetInstancePitch(voice.Instance, source.Pitch);
+			audio.SetInstanceLooping(voice.Instance, source.Loop);
 
-			if (source.PlayOnStart && !runtime.StartRequested)
+			if (source.PlayOnStart && !voice.Started)
 			{
-				runtime.StartRequested = true;
-				audio.Play(runtime.Instance);
+				voice.Started = true;
+				audio.Play(voice.Instance);
 			}
+		}
+
+		// Sweep: destroy voices whose entity no longer exists or no longer emits. Nothing signals component
+		// destruction, so without this an entity delete, a scene load or a Play/Stop cycle would strand a
+		// playing sound that no id remains to reach, and repeating it would stack copies without bound.
+		for (auto it = m_Voices.begin(); it != m_Voices.end();)
+		{
+			if (reg.valid(it->first) && reg.any_of<AudioSourceComponent>(it->first))
+			{
+				++it;
+				continue;
+			}
+			audio.DestroyInstance(it->second.Instance);
+			it = m_Voices.erase(it);
 		}
 	}
 }
