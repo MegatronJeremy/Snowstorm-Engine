@@ -1,5 +1,6 @@
 #include "CoreServices.hpp"
 
+#include "Snowstorm/Audio/AudioService.hpp"
 #include "Snowstorm/Service/ServiceManager.hpp"
 
 #include "Snowstorm/Core/JobSystem.hpp"
@@ -14,6 +15,8 @@ namespace Snowstorm
 		// Job system first: it's the off-main-thread work pool the others may eventually submit to (async
 		// asset loading), and it's device-independent so it can exist before the Vulkan-bound services.
 		services.RegisterService<JobSystem>();
+		// Opens the output device. Registered for both hosts; a machine with no device just runs silently.
+		services.RegisterService<AudioService>();
 
 		// Device-bound, application-scoped subsystems. Registered after Renderer::Init so the Vulkan device
 		// exists. Order among these is not significant (none tick, none depend on another at construction).

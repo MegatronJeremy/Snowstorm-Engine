@@ -41,6 +41,11 @@ namespace Snowstorm
 			{
 				return AssetType::Scene;
 			}
+			// What miniaudio decodes without an extra decoder dependency.
+			if (ext == ".wav" || ext == ".flac" || ext == ".mp3")
+			{
+				return AssetType::Audio;
+			}
 			return AssetType::None;
 		}
 
@@ -58,6 +63,8 @@ namespace Snowstorm
 				return {0.85f, 0.40f, 0.85f, 1.0f}; // magenta
 			case AssetType::Scene:
 				return {0.95f, 0.85f, 0.30f, 1.0f}; // yellow
+			case AssetType::Audio:
+				return {0.45f, 0.80f, 0.90f, 1.0f}; // cyan
 			default:
 				return {0.6f, 0.6f, 0.6f, 1.0f};
 			}
@@ -222,6 +229,7 @@ namespace Snowstorm
 			    {"Materials", AssetType::Material},
 			    {"Shaders", AssetType::Shader},
 			    {"Scenes", AssetType::Scene},
+			    {"Audio", AssetType::Audio},
 			};
 			for (const auto& [label, type] : tabs)
 			{

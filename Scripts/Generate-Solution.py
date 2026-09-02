@@ -26,6 +26,7 @@ PACKAGES = [
     "nlohmann-json",
     "catch2",
     "tracy",  # real-time frame/sampling profiler (client lib); connect the Tracy GUI to a running build
+    "miniaudio",  # audio playback/mixing (header-only, Unlicense OR MIT-0)
 ]
 
 # Extra packages for --with-doom only (SS_ENABLE_DOOM). Deliberately NOT in PACKAGES: the embedded Doom

@@ -1,0 +1,80 @@
+{
+  "Entities": [
+    {
+      "Components": {
+        "Snowstorm::EnvironmentComponent": {
+          "Background": "ProceduralSky"
+        }
+      },
+      "Name": "Environment",
+      "UUID": "1890737631752908943"
+    },
+    {
+      "Components": {
+        "AudioSourceComponent": {
+          "Clip": "12636449860268571349",
+          "Volume": 1.0,
+          "Pitch": 1.0,
+          "Loop": true,
+          "PlayOnStart": true,
+          "Spatial": true,
+          "MinDistance": 1.0,
+          "MaxDistance": 20.0
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            -4.0,
+            1.0,
+            5.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "Name": "Spatial Emitter",
+      "UUID": "3315919591895771827"
+    },
+    {
+      "Components": {
+        "Snowstorm::CameraComponent": {
+          "Projection": "Perspective",
+          "PerspectiveFOV": 0.785398,
+          "PerspectiveNear": 0.1,
+          "PerspectiveFar": 100.0,
+          "Primary": true
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0.0,
+            1.0,
+            5.0
+          ],
+          "Rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "AudioListenerComponent": {
+          "Enabled": true
+        }
+      },
+      "Name": "Main Camera",
+      "UUID": "9637640040016312718"
+    }
+  ],
+  "Scene": "Audio"
+}

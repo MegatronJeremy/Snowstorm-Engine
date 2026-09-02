@@ -8,6 +8,7 @@
 #include "Snowstorm/Lighting/EnvironmentSystem.hpp"
 #include "Snowstorm/Lighting/LightingSystem.hpp"
 #include "Snowstorm/Systems/AssetLoadSystem.hpp"
+#include "Snowstorm/Systems/AudioSystem.hpp"
 #include "Snowstorm/Systems/CameraControllerSystem.hpp"
 #include "Snowstorm/Systems/CameraJitterSystem.hpp"
 #include "Snowstorm/Systems/CameraPathSystem.hpp"
@@ -54,6 +55,10 @@ namespace Snowstorm
 		// the albedo index it swaps; the change map is cleared at the end of the whole frame, so a mark set
 		// after TlasBuildSystem has run is never observed.
 		sm.RegisterSystem<DoomSystem>(SystemPhase::Resolve);
+
+		// After the asset manager is populated (it resolves clip handles to paths) and before anything
+		// gameplay-side would want to trigger a sound.
+		sm.RegisterSystem<AudioSystem>(SystemPhase::Resolve);
 
 		sm.RegisterSystem<EnvironmentSystem>(SystemPhase::PreRender);
 		sm.RegisterSystem<LightingSystem>(SystemPhase::PreRender);
