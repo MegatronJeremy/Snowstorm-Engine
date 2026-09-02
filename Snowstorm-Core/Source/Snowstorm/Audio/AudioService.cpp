@@ -5,11 +5,26 @@
 
 #include <miniaudio.h>
 
+#include <string>
+#include <unordered_map>
+
 namespace Snowstorm
 {
 	struct AudioService::Impl
 	{
 		ma_engine Engine{};
+
+		// ma_sound is not movable (the engine holds pointers into it once started), so each one is owned
+		// through a stable heap allocation rather than living inside the map's value.
+		std::unordered_map<InstanceId, Scope<ma_sound>> Sounds;
+
+		// Lives on Impl rather than being a private member of AudioService so it can return ma_sound*
+		// without that type appearing in the header.
+		[[nodiscard]] ma_sound* Find(const InstanceId id) const
+		{
+			const auto it = Sounds.find(id);
+			return it != Sounds.end() ? it->second.get() : nullptr;
+		}
 	};
 
 	AudioService::AudioService()
@@ -46,11 +61,108 @@ namespace Snowstorm
 
 	AudioService::~AudioService()
 	{
-		if (m_Impl)
+		if (!m_Impl)
 		{
-			// Stops the callback thread and joins it before the mixing graph goes away, so nothing is
-			// still reading a sound while it is destroyed.
-			ma_engine_uninit(&m_Impl->Engine);
+			return;
+		}
+
+		// Order matters: every sound must be torn down before the engine that mixes it. ma_engine_uninit
+		// stops and joins the callback thread, so doing it the other way round would leave that thread
+		// walking sounds as they are freed.
+		for (auto& [id, sound] : m_Impl->Sounds)
+		{
+			ma_sound_uninit(sound.get());
+		}
+		m_Impl->Sounds.clear();
+
+		ma_engine_uninit(&m_Impl->Engine);
+	}
+
+	AudioService::InstanceId AudioService::CreateInstance(const std::filesystem::path& path)
+	{
+		if (!m_Impl)
+		{
+			return NullInstance;
+		}
+
+		auto sound = CreateScope<ma_sound>();
+
+		// MA_SOUND_FLAG_DECODE decodes up front rather than streaming: a sound effect is small and
+		// re-triggered often, and decoding on the audio thread is what causes dropouts. Long music beds
+		// are the case for streaming, which is a flag change here when something needs it.
+		const std::string pathStr = path.string();
+		if (const ma_result result = ma_sound_init_from_file(&m_Impl->Engine, pathStr.c_str(),
+		                                                     MA_SOUND_FLAG_DECODE, nullptr, nullptr, sound.get());
+		    result != MA_SUCCESS)
+		{
+			SS_CORE_ERROR("Audio: cannot load '{}' ({})", pathStr, ma_result_description(result));
+			return NullInstance;
+		}
+
+		const InstanceId id = m_NextInstanceId++;
+		m_Impl->Sounds.emplace(id, std::move(sound));
+		return id;
+	}
+
+	void AudioService::DestroyInstance(const InstanceId id)
+	{
+		if (!m_Impl)
+		{
+			return;
+		}
+		if (const auto it = m_Impl->Sounds.find(id); it != m_Impl->Sounds.end())
+		{
+			ma_sound_uninit(it->second.get());
+			m_Impl->Sounds.erase(it);
+		}
+	}
+
+	void AudioService::Play(const InstanceId id)
+	{
+		if (ma_sound* sound = m_Impl ? m_Impl->Find(id) : nullptr)
+		{
+			// Restart from the beginning rather than resuming: a re-trigger is what a caller asking to
+			// play a stopped one-shot means. ma_sound_start alone would continue from where Stop left off.
+			ma_sound_seek_to_pcm_frame(sound, 0);
+			ma_sound_start(sound);
+		}
+	}
+
+	void AudioService::Stop(const InstanceId id)
+	{
+		if (ma_sound* sound = m_Impl ? m_Impl->Find(id) : nullptr)
+		{
+			ma_sound_stop(sound);
+		}
+	}
+
+	bool AudioService::IsPlaying(const InstanceId id) const
+	{
+		const ma_sound* sound = m_Impl ? m_Impl->Find(id) : nullptr;
+		return sound != nullptr && ma_sound_is_playing(sound) == MA_TRUE;
+	}
+
+	void AudioService::SetInstanceVolume(const InstanceId id, const float volume)
+	{
+		if (ma_sound* sound = m_Impl ? m_Impl->Find(id) : nullptr)
+		{
+			ma_sound_set_volume(sound, volume);
+		}
+	}
+
+	void AudioService::SetInstancePitch(const InstanceId id, const float pitch)
+	{
+		if (ma_sound* sound = m_Impl ? m_Impl->Find(id) : nullptr)
+		{
+			ma_sound_set_pitch(sound, pitch);
+		}
+	}
+
+	void AudioService::SetInstanceLooping(const InstanceId id, const bool loop)
+	{
+		if (ma_sound* sound = m_Impl ? m_Impl->Find(id) : nullptr)
+		{
+			ma_sound_set_looping(sound, loop ? MA_TRUE : MA_FALSE);
 		}
 	}
 
