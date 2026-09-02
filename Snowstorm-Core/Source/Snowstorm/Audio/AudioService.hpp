@@ -50,6 +50,22 @@ namespace Snowstorm
 		// The caller owns the lifetime and must DestroyInstance it: an emitter is expected to outlive
 		// individual plays, so nothing is reclaimed automatically.
 		[[nodiscard]] InstanceId CreateInstance(const std::filesystem::path& path);
+
+		// Sample format of a raw PCM block handed to CreateInstanceFromPcm. Named here rather than
+		// exposing miniaudio's enum, for the same reason the engine type is pimpl'd away.
+		enum class PcmFormat : uint8_t
+		{
+			U8,  // unsigned 8-bit, what Doom's DMX sound lumps are
+			S16, // signed 16-bit, the usual PCM interchange format
+			F32,
+		};
+
+		// Same as CreateInstance, but from PCM already in memory: a decoded lump, a generated buffer,
+		// anything not on disk. The bytes are COPIED, so the caller may free them on return. The service
+		// resamples to the device rate, so sampleRate is whatever the data actually is (Doom's effects are
+		// around 11 kHz against a 48 kHz device).
+		[[nodiscard]] InstanceId CreateInstanceFromPcm(const void* frames, uint64_t frameCount,
+		                                               PcmFormat format, uint32_t channels, uint32_t sampleRate);
 		void DestroyInstance(InstanceId id);
 
 		void Play(InstanceId id);
@@ -59,6 +75,9 @@ namespace Snowstorm
 		void SetInstanceVolume(InstanceId id, float volume);
 		void SetInstancePitch(InstanceId id, float pitch);
 		void SetInstanceLooping(InstanceId id, bool loop);
+		// Stereo placement for a NON-spatial sound: -1 hard left, 0 centre, +1 hard right. Ignored once
+		// the instance is spatialised, since the listener geometry decides panning then.
+		void SetInstancePan(InstanceId id, float pan);
 
 		// --- 3D spatialisation ---
 		// The ear. One listener, because the engine renders one view; miniaudio supports several and this

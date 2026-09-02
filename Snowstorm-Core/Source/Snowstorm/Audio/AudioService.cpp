@@ -5,8 +5,10 @@
 
 #include <miniaudio.h>
 
+#include <cstring>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace Snowstorm
 {
@@ -14,16 +16,23 @@ namespace Snowstorm
 	{
 		ma_engine Engine{};
 
-		// ma_sound is not movable (the engine holds pointers into it once started), so each one is owned
-		// through a stable heap allocation rather than living inside the map's value.
-		std::unordered_map<InstanceId, Scope<ma_sound>> Sounds;
+		// A sound, plus (for the in-memory case) the buffer it reads from. ma_sound is not movable once
+		// started and ma_audio_buffer holds a pointer into Pcm, so all three are owned together through
+		// stable heap allocations rather than as map values that could move or fall out of step.
+		struct Entry
+		{
+			Scope<ma_sound> Sound;
+			Scope<ma_audio_buffer> Buffer; // null for file-backed sounds
+			std::vector<uint8_t> Pcm;      // the copy Buffer points into; empty for file-backed sounds
+		};
+		std::unordered_map<InstanceId, Entry> Sounds;
 
 		// Lives on Impl rather than being a private member of AudioService so it can return ma_sound*
 		// without that type appearing in the header.
 		[[nodiscard]] ma_sound* Find(const InstanceId id) const
 		{
 			const auto it = Sounds.find(id);
-			return it != Sounds.end() ? it->second.get() : nullptr;
+			return it != Sounds.end() ? it->second.Sound.get() : nullptr;
 		}
 	};
 
@@ -69,9 +78,13 @@ namespace Snowstorm
 		// Order matters: every sound must be torn down before the engine that mixes it. ma_engine_uninit
 		// stops and joins the callback thread, so doing it the other way round would leave that thread
 		// walking sounds as they are freed.
-		for (auto& [id, sound] : m_Impl->Sounds)
+		for (auto& [id, entry] : m_Impl->Sounds)
 		{
-			ma_sound_uninit(sound.get());
+			ma_sound_uninit(entry.Sound.get());
+			if (entry.Buffer)
+			{
+				ma_audio_buffer_uninit(entry.Buffer.get());
+			}
 		}
 		m_Impl->Sounds.clear();
 
@@ -100,7 +113,7 @@ namespace Snowstorm
 		}
 
 		const InstanceId id = m_NextInstanceId++;
-		m_Impl->Sounds.emplace(id, std::move(sound));
+		m_Impl->Sounds.emplace(id, Impl::Entry{std::move(sound), nullptr, {}});
 		return id;
 	}
 
@@ -112,7 +125,13 @@ namespace Snowstorm
 		}
 		if (const auto it = m_Impl->Sounds.find(id); it != m_Impl->Sounds.end())
 		{
-			ma_sound_uninit(it->second.get());
+			// Sound before buffer: the sound reads from the buffer, so tearing the buffer down first
+			// would leave a live reader pointing at freed memory.
+			ma_sound_uninit(it->second.Sound.get());
+			if (it->second.Buffer)
+			{
+				ma_audio_buffer_uninit(it->second.Buffer.get());
+			}
 			m_Impl->Sounds.erase(it);
 		}
 	}
@@ -163,6 +182,70 @@ namespace Snowstorm
 		if (ma_sound* sound = m_Impl ? m_Impl->Find(id) : nullptr)
 		{
 			ma_sound_set_looping(sound, loop ? MA_TRUE : MA_FALSE);
+		}
+	}
+
+	AudioService::InstanceId AudioService::CreateInstanceFromPcm(const void* frames, const uint64_t frameCount,
+	                                                             const PcmFormat format, const uint32_t channels,
+	                                                             const uint32_t sampleRate)
+	{
+		if (!m_Impl || frames == nullptr || frameCount == 0 || channels == 0 || sampleRate == 0)
+		{
+			return NullInstance;
+		}
+
+		ma_format maFormat = ma_format_u8;
+		uint32_t bytesPerSample = 1;
+		switch (format)
+		{
+		case PcmFormat::U8:
+			maFormat = ma_format_u8;
+			bytesPerSample = 1;
+			break;
+		case PcmFormat::S16:
+			maFormat = ma_format_s16;
+			bytesPerSample = 2;
+			break;
+		case PcmFormat::F32:
+			maFormat = ma_format_f32;
+			bytesPerSample = 4;
+			break;
+		}
+
+		Impl::Entry entry{};
+		entry.Pcm.resize(static_cast<size_t>(frameCount) * channels * bytesPerSample);
+		std::memcpy(entry.Pcm.data(), frames, entry.Pcm.size());
+
+		entry.Buffer = CreateScope<ma_audio_buffer>();
+		ma_audio_buffer_config bufferConfig =
+		    ma_audio_buffer_config_init(maFormat, channels, frameCount, entry.Pcm.data(), nullptr);
+		bufferConfig.sampleRate = sampleRate; // miniaudio resamples to the device rate on playback
+		if (const ma_result result = ma_audio_buffer_init(&bufferConfig, entry.Buffer.get()); result != MA_SUCCESS)
+		{
+			SS_CORE_ERROR("Audio: cannot wrap PCM ({})", ma_result_description(result));
+			return NullInstance;
+		}
+
+		entry.Sound = CreateScope<ma_sound>();
+		if (const ma_result result = ma_sound_init_from_data_source(&m_Impl->Engine, entry.Buffer.get(),
+		                                                            0, nullptr, entry.Sound.get());
+		    result != MA_SUCCESS)
+		{
+			ma_audio_buffer_uninit(entry.Buffer.get());
+			SS_CORE_ERROR("Audio: cannot create a sound from PCM ({})", ma_result_description(result));
+			return NullInstance;
+		}
+
+		const InstanceId id = m_NextInstanceId++;
+		m_Impl->Sounds.emplace(id, std::move(entry));
+		return id;
+	}
+
+	void AudioService::SetInstancePan(const InstanceId id, const float pan)
+	{
+		if (ma_sound* sound = m_Impl ? m_Impl->Find(id) : nullptr)
+		{
+			ma_sound_set_pan(sound, pan);
 		}
 	}
 
