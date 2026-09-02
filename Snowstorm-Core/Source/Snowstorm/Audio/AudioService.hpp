@@ -79,6 +79,32 @@ namespace Snowstorm
 		// the instance is spatialised, since the listener geometry decides panning then.
 		void SetInstancePan(InstanceId id, float pan);
 
+		// --- Continuously generated audio ---
+		// A stream is for sound that does not exist ahead of time: a synthesiser, a decoder, a network
+		// voice feed. The producer pushes frames as it makes them and the mixer pulls them as it needs
+		// them; an underrun plays silence rather than ending the sound, which is what a generator wants.
+		//
+		// Opaque and handed back by pointer rather than by InstanceId on purpose. The producer writes from
+		// its OWN thread, and resolving an id would mean touching the instance table, which is main-thread
+		// only. Writing through the handle touches nothing but the stream's own lock-free ring buffer.
+		struct StreamHandle;
+
+		// capacityFrames is the whole latency budget: the mixer can run this far ahead of the producer
+		// before it hears silence. Starts playing immediately. Null if the device is unavailable.
+		[[nodiscard]] StreamHandle* CreateStream(PcmFormat format, uint32_t channels,
+		                                         uint32_t sampleRate, uint32_t capacityFrames);
+		void DestroyStream(StreamHandle* stream);
+
+		// Both callable from the producer thread, and from ONE producer thread only: the ring buffer is
+		// single-producer/single-consumer. Neither blocks. StreamWrite returns how many frames it actually
+		// took, which is fewer than asked when the buffer is full, so the caller keeps the remainder.
+		uint32_t StreamWrite(StreamHandle* stream, const void* frames, uint32_t frameCount);
+		[[nodiscard]] uint32_t StreamWritableFrames(const StreamHandle* stream) const;
+
+		// The device's own rate, or 0 while unavailable. A generator should produce at this rate: anything
+		// else is resampled, and a synth can usually just generate at the target for free.
+		[[nodiscard]] uint32_t GetSampleRate() const;
+
 		// --- 3D spatialisation ---
 		// The ear. One listener, because the engine renders one view; miniaudio supports several and this
 		// wraps index 0. Forward and up are the engine's convention (-Z forward, +Y up), which is also
@@ -100,6 +126,9 @@ namespace Snowstorm
 		Scope<Impl> m_Impl;
 
 		float m_MasterVolume = 1.0f;
+
+		// Shared by DestroyStream and the destructor; tears one down without touching the tracking list.
+		static void DestroyStreamObject(StreamHandle* stream);
 
 		// Monotonic, never reused. A stale id from a destroyed instance therefore misses the lookup and
 		// no-ops, instead of aliasing whatever took its slot.

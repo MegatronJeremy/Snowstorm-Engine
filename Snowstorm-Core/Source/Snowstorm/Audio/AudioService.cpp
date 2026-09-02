@@ -27,6 +27,10 @@ namespace Snowstorm
 		};
 		std::unordered_map<InstanceId, Entry> Sounds;
 
+		// Streams are not in the instance table: their producers hold raw pointers and never look them up
+		// by id. Tracked here only so the destructor can reclaim any the caller did not.
+		std::vector<StreamHandle*> Streams;
+
 		// Lives on Impl rather than being a private member of AudioService so it can return ma_sound*
 		// without that type appearing in the header.
 		[[nodiscard]] ma_sound* Find(const InstanceId id) const
@@ -87,6 +91,12 @@ namespace Snowstorm
 			}
 		}
 		m_Impl->Sounds.clear();
+
+		for (StreamHandle* stream : m_Impl->Streams)
+		{
+			DestroyStreamObject(stream);
+		}
+		m_Impl->Streams.clear();
 
 		ma_engine_uninit(&m_Impl->Engine);
 	}
@@ -247,6 +257,243 @@ namespace Snowstorm
 		{
 			ma_sound_set_pan(sound, pan);
 		}
+	}
+
+	// A generator-backed source. The vtable is hand-rolled rather than using ma_pcm_rb directly as a
+	// data source because the underrun policy matters: an empty ring must read as SILENCE, not as
+	// end-of-stream, or the first time the producer falls behind the sound stops for good.
+	struct AudioService::StreamHandle
+	{
+		ma_data_source_base Base{};
+		ma_pcm_rb Ring{};
+		ma_sound Sound{};
+		ma_format Format = ma_format_f32;
+		uint32_t Channels = 2;
+		uint32_t SampleRate = 48000;
+		uint32_t BytesPerFrame = 8;
+		bool RingReady = false;
+		bool SoundReady = false;
+	};
+
+	namespace
+	{
+		AudioService::StreamHandle* AsStream(ma_data_source* ds)
+		{
+			return static_cast<AudioService::StreamHandle*>(ds);
+		}
+
+		ma_result StreamRead(ma_data_source* ds, void* framesOut, const ma_uint64 frameCount, ma_uint64* framesRead)
+		{
+			auto* stream = AsStream(ds);
+			auto* out = static_cast<uint8_t*>(framesOut);
+			ma_uint64 done = 0;
+
+			// Drained in as many passes as the ring's wrap needs, then padded. Always reports frameCount so
+			// the engine keeps pulling: reporting short would let miniaudio treat this as a finished sound.
+			while (done < frameCount)
+			{
+				ma_uint32 want = static_cast<ma_uint32>(frameCount - done);
+				void* src = nullptr;
+				if (ma_pcm_rb_acquire_read(&stream->Ring, &want, &src) != MA_SUCCESS || want == 0)
+				{
+					break;
+				}
+				std::memcpy(out + done * stream->BytesPerFrame, src, static_cast<size_t>(want) * stream->BytesPerFrame);
+				ma_pcm_rb_commit_read(&stream->Ring, want);
+				done += want;
+			}
+
+			if (done < frameCount)
+			{
+				// Underrun. Silence is format-dependent: unsigned 8-bit is centred at 128, the rest at 0.
+				const int fill = stream->Format == ma_format_u8 ? 0x80 : 0;
+				std::memset(out + done * stream->BytesPerFrame, fill,
+				            static_cast<size_t>(frameCount - done) * stream->BytesPerFrame);
+			}
+
+			if (framesRead != nullptr)
+			{
+				*framesRead = frameCount;
+			}
+			return MA_SUCCESS;
+		}
+
+		ma_result StreamSeek(ma_data_source*, ma_uint64)
+		{
+			return MA_SUCCESS; // a live stream has no position; succeed so nothing treats it as an error
+		}
+
+		ma_result StreamGetFormat(ma_data_source* ds, ma_format* format, ma_uint32* channels,
+		                          ma_uint32* sampleRate, ma_channel*, size_t)
+		{
+			const auto* stream = AsStream(ds);
+			if (format != nullptr)
+			{
+				*format = stream->Format;
+			}
+			if (channels != nullptr)
+			{
+				*channels = stream->Channels;
+			}
+			if (sampleRate != nullptr)
+			{
+				*sampleRate = stream->SampleRate;
+			}
+			return MA_SUCCESS;
+		}
+
+		constexpr ma_data_source_vtable kStreamVTable = {
+		    StreamRead,
+		    StreamSeek,
+		    StreamGetFormat,
+		    nullptr, // no cursor: a stream has no absolute position
+		    nullptr, // no length: it is endless by definition
+		    nullptr,
+		    0,
+		};
+
+		uint32_t BytesPerSampleFor(const AudioService::PcmFormat format)
+		{
+			switch (format)
+			{
+			case AudioService::PcmFormat::U8:
+				return 1;
+			case AudioService::PcmFormat::S16:
+				return 2;
+			case AudioService::PcmFormat::F32:
+				return 4;
+			}
+			return 1;
+		}
+
+		ma_format ToMaFormat(const AudioService::PcmFormat format)
+		{
+			switch (format)
+			{
+			case AudioService::PcmFormat::U8:
+				return ma_format_u8;
+			case AudioService::PcmFormat::S16:
+				return ma_format_s16;
+			case AudioService::PcmFormat::F32:
+				return ma_format_f32;
+			}
+			return ma_format_u8;
+		}
+	}
+
+	AudioService::StreamHandle* AudioService::CreateStream(const PcmFormat format, const uint32_t channels,
+	                                                       const uint32_t sampleRate, const uint32_t capacityFrames)
+	{
+		if (!m_Impl || channels == 0 || sampleRate == 0 || capacityFrames == 0)
+		{
+			return nullptr;
+		}
+
+		auto stream = CreateScope<StreamHandle>();
+		stream->Format = ToMaFormat(format);
+		stream->Channels = channels;
+		stream->SampleRate = sampleRate;
+		stream->BytesPerFrame = BytesPerSampleFor(format) * channels;
+
+		ma_data_source_config dsConfig = ma_data_source_config_init();
+		dsConfig.vtable = &kStreamVTable;
+		if (ma_data_source_init(&dsConfig, &stream->Base) != MA_SUCCESS)
+		{
+			SS_CORE_ERROR("Audio: cannot create a stream data source");
+			return nullptr;
+		}
+
+		if (const ma_result result =
+		        ma_pcm_rb_init(stream->Format, channels, capacityFrames, nullptr, nullptr, &stream->Ring);
+		    result != MA_SUCCESS)
+		{
+			ma_data_source_uninit(&stream->Base);
+			SS_CORE_ERROR("Audio: cannot create a stream ring buffer ({})", ma_result_description(result));
+			return nullptr;
+		}
+		stream->RingReady = true;
+
+		if (const ma_result result =
+		        ma_sound_init_from_data_source(&m_Impl->Engine, &stream->Base, 0, nullptr, &stream->Sound);
+		    result != MA_SUCCESS)
+		{
+			ma_pcm_rb_uninit(&stream->Ring);
+			ma_data_source_uninit(&stream->Base);
+			SS_CORE_ERROR("Audio: cannot create a stream sound ({})", ma_result_description(result));
+			return nullptr;
+		}
+		stream->SoundReady = true;
+		ma_sound_start(&stream->Sound);
+
+		StreamHandle* raw = stream.release();
+		m_Impl->Streams.emplace_back(raw);
+		return raw;
+	}
+
+	void AudioService::DestroyStream(StreamHandle* stream)
+	{
+		if (!m_Impl || stream == nullptr)
+		{
+			return;
+		}
+		std::erase_if(m_Impl->Streams, [stream](const StreamHandle* s)
+		              { return s == stream; });
+		DestroyStreamObject(stream);
+	}
+
+	void AudioService::DestroyStreamObject(StreamHandle* stream)
+	{
+		// Sound first: it is the reader, and tearing the ring down under a live reader is the one ordering
+		// that corrupts rather than merely stops.
+		if (stream->SoundReady)
+		{
+			ma_sound_uninit(&stream->Sound);
+		}
+		if (stream->RingReady)
+		{
+			ma_pcm_rb_uninit(&stream->Ring);
+		}
+		ma_data_source_uninit(&stream->Base);
+		delete stream;
+	}
+
+	uint32_t AudioService::StreamWrite(StreamHandle* stream, const void* frames, const uint32_t frameCount)
+	{
+		if (stream == nullptr || frames == nullptr || frameCount == 0)
+		{
+			return 0;
+		}
+
+		const auto* in = static_cast<const uint8_t*>(frames);
+		uint32_t done = 0;
+		while (done < frameCount)
+		{
+			ma_uint32 want = frameCount - done;
+			void* dst = nullptr;
+			if (ma_pcm_rb_acquire_write(&stream->Ring, &want, &dst) != MA_SUCCESS || want == 0)
+			{
+				break; // full; the caller keeps the rest
+			}
+			std::memcpy(dst, in + static_cast<size_t>(done) * stream->BytesPerFrame,
+			            static_cast<size_t>(want) * stream->BytesPerFrame);
+			ma_pcm_rb_commit_write(&stream->Ring, want);
+			done += want;
+		}
+		return done;
+	}
+
+	uint32_t AudioService::StreamWritableFrames(const StreamHandle* stream) const
+	{
+		if (stream == nullptr)
+		{
+			return 0;
+		}
+		return ma_pcm_rb_available_write(const_cast<ma_pcm_rb*>(&stream->Ring));
+	}
+
+	uint32_t AudioService::GetSampleRate() const
+	{
+		return m_Impl ? ma_engine_get_sample_rate(&m_Impl->Engine) : 0;
 	}
 
 	void AudioService::SetListener(const glm::vec3& position, const glm::vec3& forward, const glm::vec3& up)
