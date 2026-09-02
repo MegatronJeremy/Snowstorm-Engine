@@ -5,6 +5,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <atomic>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -65,6 +66,11 @@ namespace Snowstorm::DoomInternal
 		// reaps voices. Atomic rather than mutexed because Doom polls it constantly and only needs a
 		// recent answer to decide whether to reuse a channel.
 		std::array<std::atomic<bool>, kNumChannels> ChannelActive{};
+
+		// Captured on the main thread before Doom starts, used by the OPL producer thread. Held as void*
+		// so this header stays free of AudioService, which the plain-C driver side must not see.
+		void* Audio = nullptr;
+		void* MusicStream = nullptr;
 
 		std::chrono::steady_clock::time_point Start = std::chrono::steady_clock::now();
 

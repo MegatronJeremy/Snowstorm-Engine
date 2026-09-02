@@ -120,6 +120,21 @@ Doom runs on its own thread because it drives a 35 Hz tic loop and blocks waitin
 otherwise cap the frame rate. It has no shutdown entry point, so that thread is detached and dies with
 the process, and the state it shares is deliberately leaked rather than destroyed under it.
 
+**Doom's audio is the engine's audio.** Both `DG_sound_module` and `DG_music_module` are implemented
+against `AudioService` (`Examples/Doom/`), so there is one output device and one mixer rather than a
+second, SDL-owned one; nothing here needs SDL2 or SDL2_mixer. Effects are DMX lumps decoded to PCM.
+Music is **OPL2 FM synthesis**, not MIDI: miniaudio has no synthesiser, General MIDI would need a
+soundfont this repo cannot ship, and the OPL instrument bank (`GENMIDI`) already lives inside the
+IWAD. Chocolate Doom 2.1.0 supplies the sequencer and `dbopl`, fetched (never vendored) for the same
+licence reason; `OplDriver.c` replaces its `opl_sdl.c` backend and feeds an `AudioService` stream.
+
+Two lifetime rules hold that together, and both were bugs first. Doom triggers sounds from ITS thread
+while `AudioService` is main-thread-only, so effects are marshalled through a command queue that
+`DoomSystem` drains: the unjoinable thread means a direct call would be a use-after-free at shutdown
+no matter how thread-safe the service was. And the OPL producer thread (engine-created, so joinable)
+is stopped in `~DoomSystem`, which `Application` runs before the service manager, so it cannot outlive
+the stream it writes into.
+
 ### New box (one time)
 
 A clone plus these commands reproduces the full workflow. There is deliberately no setup script:

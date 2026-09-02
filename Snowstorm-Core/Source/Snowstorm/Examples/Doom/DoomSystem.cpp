@@ -1,5 +1,6 @@
 #include "DoomSystem.hpp"
 
+#include "DoomAudioBridge.h"
 #include "DoomComponent.hpp"
 #include "DoomShared.hpp"
 
@@ -247,6 +248,17 @@ namespace Snowstorm
 			g_Doom->WadArg = wadPath;
 			g_Doom->Argv = {g_Doom->ExeArg.data(), g_Doom->IwadFlag.data(), g_Doom->WadArg.data()};
 
+			// The OPL synth runs on its own producer thread and cannot create this itself: AudioService's
+			// instance table is main-thread-only. Created here, before the interpreter exists, so the
+			// driver only ever has to use a handle it was handed.
+			if (auto& audio = Application::Get().GetServiceManager().GetService<AudioService>(); audio.IsAvailable())
+			{
+				constexpr uint32_t musicBufferFrames = 8192; // ~170 ms at 48 kHz
+				g_Doom->Audio = &audio;
+				g_Doom->MusicStream = audio.CreateStream(AudioService::PcmFormat::S16, 2,
+				                                         audio.GetSampleRate(), musicBufferFrames);
+			}
+
 			// Detached: doomgeneric_Tick never returns and there is no shutdown entry point, so the thread
 			// ends with the process. Everything it touches is either doomgeneric's own globals or the
 			// leaked block above, so nothing it can reach is destroyed while it runs.
@@ -306,7 +318,29 @@ namespace Snowstorm
 #endif
 	}
 
-	DoomSystem::~DoomSystem() = default;
+	DoomSystem::~DoomSystem()
+	{
+#ifdef SS_HAS_DOOM
+		// The OPL producer thread writes into an AudioService stream, and Application tears down the layer
+		// stack (so this system) before the service manager, making this the one point that runs while the
+		// service is still alive. Without it the producer keeps writing into a destroyed stream: the run
+		// completes every frame and then segfaults in shutdown.
+		//
+		// Doom's own thread is unaffected and keeps running; it simply generates music nobody consumes.
+		// A scene reload therefore leaves the game running without music, which matches the existing
+		// one-shot limitation (g_DoomStarted means the interpreter is never restarted either).
+		SS_DoomAudio_StopMusic();
+
+		if (g_Doom != nullptr && g_Doom->MusicStream != nullptr)
+		{
+			if (auto* audio = static_cast<AudioService*>(g_Doom->Audio))
+			{
+				audio->DestroyStream(static_cast<AudioService::StreamHandle*>(g_Doom->MusicStream));
+			}
+			g_Doom->MusicStream = nullptr;
+		}
+#endif
+	}
 
 	bool DoomSystem::EnsureResources(const entt::entity entity, const AssetHandle material)
 	{

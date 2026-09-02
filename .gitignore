@@ -2,6 +2,7 @@
 .vs/
 .venv/
 build/
+build-*/
 Vendor/Binaries
 vcpkg/
 Engine/cache

@@ -29,15 +29,6 @@ PACKAGES = [
     "miniaudio",  # audio playback/mixing (header-only, Unlicense OR MIT-0)
 ]
 
-# Extra packages for --with-doom only (SS_ENABLE_DOOM). Deliberately NOT in PACKAGES: the embedded Doom
-# is an off-by-default example, so a normal generate should not spend time installing an audio stack it
-# will never link. SDL_mixer is what gives doomgeneric sound effects and music (FEATURE_SOUND); the MIDI
-# backend for the music comes from the sdl2-mixer overlay in Scripts/vcpkg-overlays/.
-DOOM_PACKAGES = [
-    "sdl2",
-    "sdl2-mixer",
-]
-
 # The toolset must resolve to one concrete MSVC version, the same on both sides. vcpkg takes the
 # latest installed minor version, a bare "-T v143" takes the VS instance default
 # (Microsoft.VCToolsVersion.default.txt), and when those diverge the engine compiles with one
@@ -143,9 +134,9 @@ def main():
     ap.add_argument("--fresh", action="store_true", help="Also delete vcpkg installed/buildtrees (forces full reinstall)")
     ap.add_argument("--generator", default=None, help='Optional CMake generator, e.g. "Visual Studio 17 2022"')
     ap.add_argument("--with-doom", action="store_true",
-                    help="Also install the embedded Doom's audio dependencies and configure with "
-                         "SS_ENABLE_DOOM=ON. Note doomgeneric is GPL-2.0: such a build cannot be "
-                         "redistributed under this project's UNLICENSE.")
+                    help="Configure with SS_ENABLE_DOOM=ON. Needs no extra packages: Doom's audio goes "
+                         "through the engine's own AudioService. Note doomgeneric is GPL-2.0, so such a "
+                         "build cannot be redistributed under this project's UNLICENSE.")
     args = ap.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -196,8 +187,7 @@ def main():
         print(f"Using overlay ports: {overlay_ports}")
 
     print("Installing vcpkg packages...")
-    packages = PACKAGES + (DOOM_PACKAGES if args.with_doom else [])
-    run([str(vcpkg_exe), "install", *packages, "--recurse", "--triplet", args.triplet], env=env, cwd=project_root)
+    run([str(vcpkg_exe), "install", *PACKAGES, "--recurse", "--triplet", args.triplet], env=env, cwd=project_root)
 
     print("Configuring CMake...")
     build_dir.mkdir(parents=True, exist_ok=True)
