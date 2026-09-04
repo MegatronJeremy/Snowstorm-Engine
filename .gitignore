@@ -2,6 +2,10 @@
 .vs/
 .venv/
 build/
+# Any sibling configure directory: Generate-Solution.py writes build/, but a second one under
+# another name (a no-Doom tree, a second toolset) is an ordinary thing to have and must not be
+# committable by accident. These run to gigabytes.
+build-*/
 Vendor/Binaries
 vcpkg/
 Engine/cache

@@ -2,114 +2,113 @@
 
 [![build](https://github.com/MegatronJeremy/Snowstorm-Engine/actions/workflows/build.yml/badge.svg)](https://github.com/MegatronJeremy/Snowstorm-Engine/actions/workflows/build.yml)
 
-<img width="2558" height="1368" alt="image" src="https://github.com/user-attachments/assets/87f8e9a1-2145-47b6-93fc-c0a009738ed0" />
+![Sponza rendered with ray-traced shadows, ambient occlusion, reflections and global illumination](docs/images/hero-sponza-rt.jpg)
 
-A 3D game engine with a backend-agnostic renderer, an EnTT-based ECS, and a Dear ImGui editor. The
-render abstraction targets **Vulkan** (DirectX 12 planned). Its focus is a **hybrid ray-traced
-lighting pipeline** and a **neural super-resolution upscaler**, both benchmarked against
-raster/analytic baselines by a built-in metrics harness.
+A 3D engine built around a **hybrid renderer**: a rasterized forward pass with shadows, ambient
+occlusion, reflections and global illumination added as inline Vulkan ray queries, reconstructed from
+one or two samples per pixel by an SVGF denoiser. Written in C++20 against a backend-agnostic
+renderer interface, with an EnTT entity-component system and a Dear ImGui editor.
 
-> **Work in progress.** Windows-only for now.
+Windows and Vulkan. Public domain.
 
-## Features
+## Rasterization against ray tracing
 
-- **Rendering.** Backend-agnostic interfaces (`Renderer`, `Pipeline`, `Shader`, `Material`,
-  `RenderGraph`) with a Vulkan backend on volk, Vulkan Memory Allocator, and SPIR-V reflection.
-  Bindless textures, a render graph with automatic resource barriers, a dedicated transfer queue,
-  GPU-timestamped passes, and an HDR (RGBA16F) target with ACES tonemapping.
-- **Hybrid ray tracing (hardware ray query).** TLAS/BLAS driving ray-traced shadows, ambient
-  occlusion, reflections, and global illumination, each with temporal accumulation and an SVGF
-  edge-avoiding à-trous denoiser. Falls back to raster/analytic baselines on non-RT GPUs.
-- **Neural super-resolution.** Spatial and temporal CNN refiners running as Vulkan compute passes
-  (fp16 or fp32) over an internal-resolution render. PyTorch harness (`Tools/neural/`) exports
-  byte-parity `.ssnn` weights.
-- **Anti-aliasing and upscaling.** TAA (camera jitter, velocity pass, temporal resolve) with a
-  post-tonemap contrast-adaptive sharpen; FXAA as an alternative.
-- **Evaluation harness.** Split-screen A/B (upscaled vs full-res), a GPU PSNR/SSIM pass, a
-  deterministic benchmark camera path, and a training-dataset exporter.
-- **PBR and lighting.** Metallic-roughness materials with normal/AO/emissive maps, a procedural
-  sky, compute-baked IBL (irradiance, prefilter, BRDF LUT), and directional/point/spot shadow maps
-  with hardware PCF.
-- **ECS.** EnTT-based, split into phased Systems, Singletons, and Services, with RTTR component
-  reflection, native C++ scripting, and an opt-in data-parallel path (`ParallelForEach` /
-  `ParallelGather`) over the job system.
-- **Editor.** ImGui dockspace with scene hierarchy, inspector, viewport (ImGuizmo gizmos,
-  click-to-select, camera framing), content browser, undo/redo, a performance panel (per-system CPU
-  and per-pass GPU timings), a live CVar panel, and a developer console with autocomplete.
-- **Projects, assets, scenes.** `.ssproj` projects; mesh/material/texture assets (assimp, stb)
-  cooked to binary caches and loaded asynchronously off the main thread; JSON scene serialization;
-  HLSL shaders compiled to SPIR-V (`dxc`) async, cached, and hot-reloaded.
-- **Console variables.** Typed CVar registry resolved from defaults, config file
-  (`SnowstormConfig.cfg`), env, and CLI, live-editable in the editor; gates shadows, RT effects, the
-  upscaler, IBL, exposure, and validation.
-- **Foundations.** Layer stack, event bus, input, a job-system thread pool, spdlog logging, and
-  Tracy profiling (live) with a headless Chrome-tracing JSON fallback.
-- **Tested and CI'd.** Catch2 unit tests, a headless smoke-test harness, a golden-file GPU
-  perf-benchmark gate, and GitHub Actions for build, clang-format lint, and shader compilation.
+The same frame, same camera, same exposure. On the left the forward pass alone, where a constant
+ambient term stands in for everything light does after its first bounce. On the right the same pass
+with the four ray-traced effects enabled and denoised.
 
-## Tech stack
+| Rasterized | Ray traced |
+| --- | --- |
+| ![Rasterized forward pass with shadow maps and a constant ambient term](docs/images/compare-raster.jpg) | ![The same frame with ray-traced shadows, AO, reflections and GI](docs/images/compare-raytraced.jpg) |
 
-C++20 · CMake · vcpkg · Vulkan (ray query) · GLFW · GLM · EnTT · Dear ImGui (+ ImGuizmo) · spdlog ·
-assimp · RTTR · Vulkan Memory Allocator · volk · SPIRV-Reflect · nlohmann/json · stb · Tracy ·
-Catch2 · PyTorch (neural training)
+The left image is the brighter of the two, which is the point: its ambient lifts every surface
+equally whether or not light could reach it, so the vaults and the recesses behind the columns are as
+bright as the open floor. On the right that fill is replaced by light that actually travelled.
 
-## Getting started
+Enabling all four effects costs 8.62 ms per frame on a Radeon RX 9070 XT and 6.01 ms on a GeForce RTX
+5070, measured at 1915x1064 against a converged path trace of the same scene.
 
-### Prerequisites
+## Looking inside a frame
 
-- Windows, Visual Studio 2022 (toolset `v143`)
-- CMake 3.16+, Python 3, Git
+Every intermediate buffer is inspectable live from the editor through the `render.debugview` console
+variable, which is how the renderer gets debugged and how the figures above were produced.
 
-vcpkg and all dependencies are bootstrapped by the generation script. The first run is slow because
-vcpkg builds every dependency from source.
+| Ambient occlusion | Global illumination |
+| --- | --- |
+| ![The isolated ambient occlusion term](docs/images/debug-ao.jpg) | ![The isolated indirect lighting term](docs/images/debug-gi.jpg) |
+| **Reflections** | **G-buffer normals** |
+| ![The raw reflection buffer](docs/images/debug-reflections.jpg) | ![World-space normals from the depth and normal prepass](docs/images/debug-normals.jpg) |
 
-### Build & run
+## What is in it
 
-```bat
-:: from the repository root; --clean wipes build/ first, --fresh also reinstalls vcpkg packages
-py Scripts\Generate-Solution.py
+**Renderer.** Backend-agnostic interfaces (`Renderer`, `Pipeline`, `Shader`, `Material`,
+`RenderGraph`) over a Vulkan 1.3 backend on volk, Vulkan Memory Allocator and SPIR-V reflection. The
+render graph derives its own barriers from resource reads and writes rather than having them placed
+by hand. Bindless textures, a dedicated transfer queue, per-pass GPU timestamps, and an HDR target
+through ACES tonemapping.
+
+**Hybrid ray tracing.** TLAS and BLAS driving shadows, ambient occlusion, reflections and diffuse
+global illumination through `VK_KHR_ray_query`, so each effect drops into an ordinary compute or
+fragment pass instead of requiring a ray-tracing pipeline and its binding table. One hit-shading
+routine resolves any mesh in the scene through a bindless geometry table. Falls back to raster and
+analytic baselines where the extension is missing.
+
+**Reconstruction.** One SVGF implementation (temporal accumulation with variance estimation, then a
+variance-guided à-trous filter) shared by every signal that needs it, over half-resolution traces
+with a depth-aware bilateral upsample. Temporal anti-aliasing with camera jitter, a velocity pass and
+a post-tonemap contrast-adaptive sharpen.
+
+**Neural super-resolution.** Spatial and temporal CNN refiners as Vulkan compute passes in fp16 or
+fp32 over an internal-resolution render, with a PyTorch harness in `Tools/neural/` exporting
+byte-parity `.ssnn` weights.
+
+**Entity-component system.** EnTT-backed, split into phased Systems, Singletons and Services, with
+RTTR component reflection, native C++ scripting, and an opt-in data-parallel path
+(`ParallelForEach`, `ParallelGather`) over the job system that preserves bit-identical output.
+
+**Editor.** ImGui dockspace with scene hierarchy, inspector, ImGuizmo gizmos, click-to-select,
+content browser, undo and redo, a performance panel showing per-system CPU and per-pass GPU time, a
+live console-variable panel, and a developer console.
+
+**Assets and scenes.** `.ssproj` projects, meshes and textures cooked to binary caches and loaded off
+the main thread, JSON scene serialization, and HLSL compiled to SPIR-V through `dxc` asynchronously,
+cached and hot-reloaded.
+
+**Measurement.** The renderer is built to be measured rather than eyeballed: a golden-file GPU
+benchmark that reports medians and quartile intervals over repeated runs, an image-quality gate
+against a converged path trace using FLIP, PSNR and SSIM, a gate for quality under camera motion, and
+a static shader occupancy gate. Each refuses to report a pass when it could not actually compare
+anything.
+
+## Running it
+
+```
+py Scripts/Generate-Solution.py
 ```
 
-The script bootstraps vcpkg into `vcpkg/`, installs dependencies, and configures CMake into
-`build/`. Open `build/Snowstorm.sln` and build. **Snowstorm-Editor** is the default startup project;
-the debugger working directory is the repo root so relative `Engine/...` and `Projects/...` paths
-resolve. Vulkan validation layers are wired via `VK_ADD_LAYER_PATH`.
+That bootstraps vcpkg, installs every dependency and writes `build/Snowstorm.sln`. Open it and build;
+**Snowstorm-Editor** is the startup project. The first run is slow because vcpkg compiles the
+dependencies from source. Requires Windows, Visual Studio 2022 and a Vulkan-capable GPU; no Vulkan
+SDK installation is needed, since the loader, headers and validation layers all come from vcpkg.
 
-## Project structure
-
-| Project | Output | Description |
+| Target | Output | |
 | --- | --- | --- |
-| **Snowstorm-Core** | static library | All engine code: platform-independent under `Source/Snowstorm/`, backend under `Source/Platform/` (Vulkan, Windows). |
-| **Snowstorm-Editor** | executable | The editor (ImGui dockspace, hierarchy, viewport); default startup project. |
-| **Snowstorm-Runtime** | executable | Editor-free player: runs the same systems without tooling and blits the primary camera to the swapchain. |
-| **Snowstorm-Tests** | executable | Catch2 unit tests (run via CTest). |
+| Snowstorm-Core | static library | all engine code, platform-independent under `Source/Snowstorm/` and backend under `Source/Platform/` |
+| Snowstorm-Editor | executable | the editor, and the default startup project |
+| Snowstorm-Runtime | executable | editor-free player running the same systems |
+| Snowstorm-Tests | executable | Catch2 unit tests, run through CTest |
 
-```
-Engine/            engine-owned runtime assets: Shaders/ (HLSL), Fonts/, cooked caches
-Projects/Sandbox/  the default project (.ssproj) with its own assets/ (Meshes, Materials, Scenes)
-Scripts/           Generate-Solution.py/.bat, smoke-test.py, perf-bench.py
-Tools/dxc/         DirectX Shader Compiler (HLSL -> SPIR-V)
-Tools/neural/      PyTorch training harness for the neural upscaler (exports .ssnn weights)
-Tools/tracy/       Tracy profiler GUI (connect to a running Debug build)
-```
+## Also here
 
-Executables link the Core static library and add its `Source/` directory to their include path.
-
-## Testing
-
-```bat
-build\Snowstorm-Tests\Debug\Snowstorm-Tests.exe   :: Catch2 unit tests
-py Scripts\smoke-test.py                           :: boots each exe for N frames, checks crashes/errors
-py Scripts\perf-bench.py                           :: averages per-pass GPU timings, diffs vs baseline
-```
-
-The smoke test and perf benchmark need a real GPU/display (Vulkan), so they are local gates, not CI
-jobs (hosted CI only compiles).
+Sponza plays Doom on a textured quad, off by default, as a demonstration of the dynamic-texture
+upload path. See the Embedded Doom section of [`AGENTS.md`](AGENTS.md) for why it is not built unless
+asked for.
 
 ## Documentation
 
-Architecture, conventions, and the full build/debug workflow are in [`AGENTS.md`](AGENTS.md). The
-roadmap lives in [GitHub issues](https://github.com/MegatronJeremy/Snowstorm-Engine/issues).
+Architecture, conventions, and the full build, debug and benchmarking workflow are in
+[`AGENTS.md`](AGENTS.md). The roadmap is in
+[issues](https://github.com/MegatronJeremy/Snowstorm-Engine/issues).
 
 ## License
 
