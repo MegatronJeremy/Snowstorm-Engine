@@ -28,6 +28,15 @@ bright as the open floor. On the right that fill is replaced by light that actua
 Enabling all four effects costs 8.62 ms per frame on a Radeon RX 9070 XT and 6.01 ms on a GeForce RTX
 5070, measured at 1915x1064 against a converged path trace of the same scene.
 
+## The editor
+
+![The Snowstorm editor: settings panel, scene viewport, console and performance readout](docs/images/editor.jpg)
+
+Every knob in the left panel is a console variable read per frame, so shadow technique, ray counts,
+denoiser iterations, upscaler and debug view all change the running frame without a restart. The same
+variables are what the benchmark scripts set from the command line, which is why a configuration
+found by hand in the editor is reproducible by a headless run.
+
 ## Looking inside a frame
 
 Every intermediate buffer is inspectable live from the editor through the `render.debugview` console
