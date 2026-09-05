@@ -125,6 +125,14 @@ Doom runs on its own thread because it drives a 35 Hz tic loop and blocks waitin
 otherwise cap the frame rate. It has no shutdown entry point, so that thread is detached and dies with
 the process, and the state it shares is deliberately leaked rather than destroyed under it.
 
+`.github/workflows/build.yml` carries a second job, `windows-doom`, that configures with
+`--with-doom` and links `Snowstorm-Runtime`. It exists because the default job builds `SS_ENABLE_DOOM=OFF`
+and every TU under `Examples/Doom` sits inside `#ifdef SS_HAS_DOOM`, so without it CI compiles none of
+this code. It is a compile-and-link gate only: it resolves every `DG_*`/`OPL_*`/`SS_DoomAudio_*` symbol
+and proves nothing about behaviour, since no tic runs and no device is opened. It links the Runtime
+rather than Core because Core is a static library, so building Core alone would compile the code without
+ever resolving it.
+
 **Doom's audio is the engine's audio.** Both `DG_sound_module` and `DG_music_module` are implemented
 against `AudioService` (`Examples/Doom/`), so there is one output device and one mixer rather than a
 second, SDL-owned one; nothing here needs SDL2 or SDL2_mixer. Effects are DMX lumps decoded to PCM.
@@ -849,6 +857,45 @@ Two selection traps, both of which produced a wrong verdict here before being ca
   network beats bilinear by 0.0314; under PSNR selection the same network looks like a loss.
 
 Report both anyway. The point is which one decides.
+
+## Audio
+
+`AudioService` (miniaudio) owns the device and the mixer; `AudioSystem` turns `AudioSourceComponent`
+into playing voices and pushes the `AudioListenerComponent` pose. miniaudio was chosen over OpenAL Soft
+on licence: it is `Unlicense OR MIT-0`, OpenAL Soft is LGPL, and this repo is public domain.
+
+**The service is main-thread-only, with exactly two documented exceptions**, both on the same grounds:
+they touch a stream's own lock-free ring or a single atomic inside its handle, never the instance table.
+`StreamWrite`/`StreamWritableFrames` are callable from ONE producer thread, and `StreamFlush` from any
+thread. Everything else (create, destroy, play, the per-instance setters) is main thread. Doom is what
+forced the rule: it triggers sounds from its own unjoinable thread, so its effects are marshalled through
+a command queue instead of calling in.
+
+**A stream flush runs on the consumer, not the caller.** `ma_pcm_rb`'s two cursors are updated by
+load-compute-exchange with no CAS, so only the thread that reads may move the read cursor. `StreamFlush`
+therefore just sets an atomic and the mixer callback does the discard on its next pull. Calling
+`ma_pcm_rb_reset` or `seek_read` from a game thread does not merely lose a flush: it can leave the write
+cursor an arbitrary distance ahead of the read cursor, and the reader treats what lies between as PCM.
+
+**Pan law is per instance and defaults to miniaudio's balance.** `PanLaw::Balance` attenuates only the
+channel you pan away from, so a centred sound is 6 dB louder than a hard-panned one; `PanLaw::ConstantSum`
+moves energy across and keeps L+R fixed, which is what a mono point source needs and what Doom's own
+backend does. ConstantSum reaches a gain of 2 at hard pan, the only place a single sound exceeds its own
+volume setting, so a caller opting in leaves the headroom (Doom does, by scaling its 0..127 volume by
+1/255 rather than 1/127, which reproduces the SDL_mixer gains exactly). Unreal makes this a project
+setting and miniaudio makes it per sound; per instance follows the backend and lets Doom's voices differ
+from a future UI or music source.
+
+**Starting a voice at runtime is a request on the component.** `PlayRequested`/`StopRequested` are set
+by the editor's transport buttons or by a script and consumed by `AudioSystem` the same frame. They are
+deliberately absent from `AudioSourceComponent.cpp`'s RTTR registration, and that omission is the whole
+mechanism keeping them transient: that one property list is simultaneously the serialization set and the
+inspector set, so registering them to get a checkbox would write `"PlayRequested": true` into the
+`.world` file and re-trigger the sound on every load.
+
+Voices are owned by `AudioSystem`, never by the entity: entity deletion, scene load and the editor's
+Play/Stop snapshot restore all destroy components without notice, so a per-entity id would strand a
+playing sound nothing can reach. `Execute` sweeps voices whose entity is gone.
 
 ## Console variables (CVars)
 

@@ -93,10 +93,17 @@ namespace
 		g_Doom->SoundCommands.push_back(std::move(command));
 	}
 
-	// Doom's volume is 0..127 and its stereo separation 0..254 with 128 centre.
+	// Doom's volume is 0..127 and its stereo separation 0..254, centred on 127.
+	//
+	// The 255 is not a typo for 127. Doom's own backend hands SDL_mixer per-channel gains
+	// left = ((254 - sep) * vol) / 127 and right = (sep * vol) / 127, on a scale where 255 is unity.
+	// Substituting sep = 127 * (1 + pan) makes both sides collapse to (vol/255) * (1 - pan, 1 + pan),
+	// which is exactly what a ConstantSum-panned voice at volume vol/255 produces. Dividing by 127 here
+	// instead would be the same pan image 2x hot, and would clip at hard pan, where ConstantSum's gain
+	// reaches 2.
 	float ToVolume(const int vol)
 	{
-		return static_cast<float>(vol) / 127.0f;
+		return static_cast<float>(vol) / 255.0f;
 	}
 	float ToPan(const int sep)
 	{

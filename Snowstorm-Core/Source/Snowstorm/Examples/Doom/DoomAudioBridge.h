@@ -33,6 +33,11 @@ extern "C"
 	void SS_DoomAudio_StartMusic(unsigned int sampleRate);
 	void SS_DoomAudio_StopMusic(void);
 
+	// Throw away music already synthesised but not yet heard. The producer runs ~170 ms ahead of the
+	// mixer, so without this a pause or a change of tune keeps playing the old one for that long.
+	// Best-effort: it is skipped rather than blocked if teardown is in progress.
+	void SS_DoomAudio_FlushMusic(void);
+
 	// Stop, and latch music off permanently. The engine calls this as it tears the stream down, so a
 	// later OPL_Init on Doom's thread cannot restart a producer that would write into freed memory.
 	void SS_DoomAudio_ShutdownMusic(void);

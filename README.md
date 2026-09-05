@@ -33,6 +33,9 @@ raster/analytic baselines by a built-in metrics harness.
 - **ECS.** EnTT-based, split into phased Systems, Singletons, and Services, with RTTR component
   reflection, native C++ scripting, and an opt-in data-parallel path (`ParallelForEach` /
   `ParallelGather`) over the job system.
+- **Audio.** miniaudio-backed mixer service with per-voice volume/pitch/loop/pan, an authorable
+  `AudioSource`/`AudioListener` pair with 3D spatialisation and distance attenuation, a selectable
+  pan law, and a streaming source for continuously generated audio.
 - **Editor.** ImGui dockspace with scene hierarchy, inspector, viewport (ImGuizmo gizmos,
   click-to-select, camera framing), content browser, undo/redo, a performance panel (per-system CPU
   and per-pass GPU timings), a live CVar panel, and a developer console with autocomplete.
@@ -50,8 +53,8 @@ raster/analytic baselines by a built-in metrics harness.
 ## Tech stack
 
 C++20 · CMake · vcpkg · Vulkan (ray query) · GLFW · GLM · EnTT · Dear ImGui (+ ImGuizmo) · spdlog ·
-assimp · RTTR · Vulkan Memory Allocator · volk · SPIRV-Reflect · nlohmann/json · stb · Tracy ·
-Catch2 · PyTorch (neural training)
+assimp · RTTR · Vulkan Memory Allocator · volk · SPIRV-Reflect · nlohmann/json · stb · miniaudio ·
+Tracy · Catch2 · PyTorch (neural training)
 
 ## Getting started
 

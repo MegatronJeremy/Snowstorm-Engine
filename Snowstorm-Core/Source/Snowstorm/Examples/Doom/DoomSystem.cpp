@@ -461,6 +461,10 @@ namespace Snowstorm
 				// would also be a 3D emitter sitting at the world origin, so any scene carrying an audio
 				// listener would attenuate and re-pan it underneath Doom's own mix.
 				audio.SetInstanceSpatial(id, false);
+				// Doom's law is constant-sum: its two channel gains always add to the same total, so
+				// panning moves a sound without changing how loud it is. miniaudio's default balance law
+				// would instead leave a centred sound 6 dB above a hard-panned one.
+				audio.SetInstancePanLaw(id, AudioService::PanLaw::ConstantSum);
 				audio.SetInstanceVolume(id, cmd.Volume);
 				audio.SetInstancePan(id, cmd.Pan);
 				audio.Play(id);

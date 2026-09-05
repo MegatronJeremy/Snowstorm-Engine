@@ -147,6 +147,28 @@ extern "C"
 		g_Producer = std::thread(ProducerMain, audio, stream);
 	}
 
+	void SS_DoomAudio_FlushMusic(void)
+	{
+		using namespace Snowstorm::DoomInternal;
+
+		// try_to_lock, not lock, and that is load-bearing. StopLocked holds g_MusicMutex across the
+		// producer join, while the producer can be blocked on g_CallbackMutex, which Doom's thread already
+		// holds when it reaches OPL_ClearCallbacks. Blocking here would close that cycle into a deadlock.
+		// Skipping a flush during teardown costs nothing: the stream is about to go away.
+		std::unique_lock lock(g_MusicMutex, std::try_to_lock);
+		if (!lock.owns_lock() || g_Disabled || g_Doom == nullptr)
+		{
+			return;
+		}
+
+		auto* audio = static_cast<AudioService*>(g_Doom->Audio);
+		auto* stream = static_cast<AudioService::StreamHandle*>(g_Doom->MusicStream);
+		if (audio != nullptr && stream != nullptr)
+		{
+			audio->StreamFlush(stream);
+		}
+	}
+
 	void SS_DoomAudio_StopMusic(void)
 	{
 		const std::lock_guard lock(g_MusicMutex);

@@ -5,6 +5,7 @@
 
 #include <miniaudio.h>
 
+#include <atomic>
 #include <cstring>
 #include <string>
 #include <unordered_map>
@@ -251,6 +252,14 @@ namespace Snowstorm
 		return id;
 	}
 
+	void AudioService::SetInstancePanLaw(const InstanceId id, const PanLaw law)
+	{
+		if (ma_sound* sound = m_Impl ? m_Impl->Find(id) : nullptr)
+		{
+			ma_sound_set_pan_mode(sound, law == PanLaw::ConstantSum ? ma_pan_mode_pan : ma_pan_mode_balance);
+		}
+	}
+
 	void AudioService::SetInstancePan(const InstanceId id, const float pan)
 	{
 		if (ma_sound* sound = m_Impl ? m_Impl->Find(id) : nullptr)
@@ -273,6 +282,10 @@ namespace Snowstorm
 		uint32_t BytesPerFrame = 8;
 		bool RingReady = false;
 		bool SoundReady = false;
+
+		// Set by StreamFlush on any thread, consumed by the read callback. The only cross-thread state
+		// here, and deliberately the only thing StreamFlush touches.
+		std::atomic<bool> FlushRequested{false};
 	};
 
 	namespace
@@ -287,6 +300,30 @@ namespace Snowstorm
 			auto* stream = AsStream(ds);
 			auto* out = static_cast<uint8_t*>(framesOut);
 			ma_uint64 done = 0;
+
+			// The flush happens HERE, on the consumer, rather than in StreamFlush on the caller's thread.
+			// ma_pcm_rb's cursors are two words updated by load-compute-exchange with no CAS, so the only
+			// thread that may move the read cursor is the one that reads. Calling ma_pcm_rb_reset or
+			// seek_read from elsewhere does not merely lose a flush: it can leave the write cursor an
+			// arbitrary distance ahead of the read cursor, and the reader then treats whatever lies between
+			// as valid PCM.
+			//
+			// Before the drain, not after, or this callback emits one last block it has already decided to
+			// discard. Seeded from available_read because acquire_read converts frames to bytes in 32-bit
+			// arithmetic, so a large sentinel count overflows.
+			if (stream->FlushRequested.exchange(false, std::memory_order_acquire))
+			{
+				for (ma_uint32 avail = ma_pcm_rb_available_read(&stream->Ring); avail > 0;
+				     avail = ma_pcm_rb_available_read(&stream->Ring))
+				{
+					void* src = nullptr;
+					if (ma_pcm_rb_acquire_read(&stream->Ring, &avail, &src) != MA_SUCCESS || avail == 0)
+					{
+						break;
+					}
+					ma_pcm_rb_commit_read(&stream->Ring, avail);
+				}
+			}
 
 			// Drained in as many passes as the ring's wrap needs, then padded. Always reports frameCount so
 			// the engine keeps pulling: reporting short would let miniaudio treat this as a finished sound.
@@ -480,6 +517,14 @@ namespace Snowstorm
 			done += want;
 		}
 		return done;
+	}
+
+	void AudioService::StreamFlush(StreamHandle* stream)
+	{
+		if (stream != nullptr)
+		{
+			stream->FlushRequested.store(true, std::memory_order_release);
+		}
 	}
 
 	uint32_t AudioService::StreamWritableFrames(const StreamHandle* stream) const

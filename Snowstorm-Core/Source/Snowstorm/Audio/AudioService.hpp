@@ -79,6 +79,21 @@ namespace Snowstorm
 		// the instance is spatialised, since the listener geometry decides panning then.
 		void SetInstancePan(InstanceId id, float pan);
 
+		// How pan maps to channel gain. Balance (the default) only attenuates the channel you pan AWAY
+		// from, so a centred sound is 6 dB louder than a hard-panned one; it suits a stereo recording
+		// whose image you want to lean. ConstantSum moves energy across instead, keeping L+R fixed, which
+		// is what a mono point source panned around a listener needs. miniaudio models this per sound, so
+		// this mirrors where the backend already puts the decision rather than adding a project-wide one.
+		//
+		// ConstantSum reaches a gain of 2 at hard pan, the only place a single sound exceeds its own
+		// volume setting, so a caller opting in must leave the headroom for it.
+		enum class PanLaw : uint8_t
+		{
+			Balance,
+			ConstantSum,
+		};
+		void SetInstancePanLaw(InstanceId id, PanLaw law);
+
 		// --- Continuously generated audio ---
 		// A stream is for sound that does not exist ahead of time: a synthesiser, a decoder, a network
 		// voice feed. The producer pushes frames as it makes them and the mixer pulls them as it needs
@@ -100,6 +115,16 @@ namespace Snowstorm
 		// took, which is fewer than asked when the buffer is full, so the caller keeps the remainder.
 		uint32_t StreamWrite(StreamHandle* stream, const void* frames, uint32_t frameCount);
 		[[nodiscard]] uint32_t StreamWritableFrames(const StreamHandle* stream) const;
+
+		// Discards frames queued but not yet mixed, so a generator can cut its own latency when what it
+		// already produced became wrong (a pause, a stop, a change of tune). Callable from ANY thread,
+		// the second documented exception to this class being main-thread-only, because it sets one
+		// atomic and nothing else; the discard itself runs on the mixer.
+		//
+		// Takes effect the next time the mixer pulls, so up to one device period of queued audio can
+		// still be heard, and frames the producer writes in that window are discarded too. Exactness
+		// would need a producer-side watermark and is not worth the surface area.
+		void StreamFlush(StreamHandle* stream);
 
 		// The device's own rate, or 0 while unavailable. A generator should produce at this rate: anything
 		// else is resampled, and a synth can usually just generate at the target for free.

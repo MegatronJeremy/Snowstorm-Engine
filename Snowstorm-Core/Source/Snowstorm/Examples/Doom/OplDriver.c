@@ -280,6 +280,11 @@ void OPL_ClearCallbacks(void)
 	SS_DoomAudio_LockQueue();
 	OPL_Queue_Clear(s_Queue);
 	SS_DoomAudio_UnlockQueue();
+
+	// I_OPL_StopSong is the only caller, and S_ChangeMusic stops before it starts the next tune, so this
+	// covers stop, shutdown and every song change in one place. Without it the buffer keeps playing the
+	// tune that was just stopped.
+	SS_DoomAudio_FlushMusic();
 }
 
 void OPL_AdjustCallbacks(float factor)
@@ -302,6 +307,13 @@ void OPL_Unlock(void)
 void OPL_SetPaused(int paused)
 {
 	s_Paused = paused;
+
+	// Only on the way in. Pausing must silence now rather than after the buffer drains; resuming does not
+	// need it, since the ring is already empty and the producer refills it within one wake-up.
+	if (paused)
+	{
+		SS_DoomAudio_FlushMusic();
+	}
 }
 
 #endif

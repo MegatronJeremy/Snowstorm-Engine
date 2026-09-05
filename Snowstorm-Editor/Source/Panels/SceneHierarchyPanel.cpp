@@ -7,6 +7,7 @@
 
 #include "SceneHierarchyPanel.hpp"
 
+#include "Snowstorm/Components/AudioSourceComponent.hpp"
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Components/CameraRuntimeComponent.hpp"
 #include "Snowstorm/Components/ComponentRegistry.hpp"
@@ -20,6 +21,7 @@
 #include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Components/VisibilityComponents.hpp"
 #include "Snowstorm/Core/KeyCodes.hpp"
+#include "Snowstorm/World/SimulationStateSingleton.hpp"
 #include "Snowstorm/Lighting/LightingComponents.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Input/InputStateSingleton.hpp"
@@ -557,6 +559,39 @@ namespace Snowstorm
 				}
 			}
 			ImGui::EndDisabled();
+		}
+
+		// AudioSource transport. PlayRequested/StopRequested are not in the component's RTTR registration
+		// (so they neither serialize nor draw as checkboxes), which is exactly why they need an explicit
+		// action here. Disabled outside Play mode, since AudioSystem releases every voice and returns in
+		// Edit mode, so the button would look broken and the flag would sit latched until Play.
+		if (entity.HasComponent<AudioSourceComponent>())
+		{
+			const auto world = entity.GetWorld();
+			const bool playing = !world->HasSingleton<SimulationStateSingleton>() ||
+			                     world->GetSingleton<SimulationStateSingleton>().IsPlaying();
+
+			ImGui::Spacing();
+			auto& reg = world->GetRegistry();
+
+			ImGui::BeginDisabled(!playing);
+			if (ImGui::Button("Play Sound", ImVec2(-FLT_MIN, 0.0f)))
+			{
+				reg.patch<AudioSourceComponent>(entity.Handle(),
+				                                [](AudioSourceComponent& s)
+				                                { s.PlayRequested = true; });
+			}
+			if (ImGui::Button("Stop Sound", ImVec2(-FLT_MIN, 0.0f)))
+			{
+				reg.patch<AudioSourceComponent>(entity.Handle(),
+				                                [](AudioSourceComponent& s)
+				                                { s.StopRequested = true; });
+			}
+			ImGui::EndDisabled();
+			if (!playing)
+			{
+				ImGui::TextDisabled("Enter Play mode to audition.");
+			}
 		}
 
 		ImGui::Spacing();

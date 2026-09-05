@@ -33,6 +33,18 @@ namespace Snowstorm
 		float MinDistance = 1.0f;
 		float MaxDistance = 50.0f;
 
+		// Runtime requests, consumed and cleared by AudioSystem in the frame they are raised. This is how
+		// anything other than PlayOnStart starts or stops a source: the editor's transport buttons and
+		// scripts both just set one of these. Godot's AudioStreamPlayer.play()/stop() modelled as a
+		// request, because the voice lives in AudioSystem and the component cannot reach it.
+		//
+		// Deliberately ABSENT from the RTTR registration in AudioSourceComponent.cpp, and that omission is
+		// the entire mechanism keeping them transient: that one property list is both the serialization set
+		// and the inspector set. Registering these to get a checkbox would write "PlayRequested": true into
+		// the .world file and re-trigger the sound on every load.
+		bool PlayRequested = false;
+		bool StopRequested = false;
+
 		AudioSourceComponent() = default;
 	};
 

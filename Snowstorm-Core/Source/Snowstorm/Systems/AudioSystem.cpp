@@ -130,8 +130,25 @@ namespace Snowstorm
 				}
 			}
 
+			const auto clearRequests = [&reg, entity]
+			{
+				reg.patch<AudioSourceComponent>(entity,
+				                                [](AudioSourceComponent& s)
+				                                {
+					                                s.PlayRequested = false;
+					                                s.StopRequested = false;
+				                                });
+			};
+
 			if (voice.Instance == AudioService::NullInstance)
 			{
+				// No voice to act on, so a request is DROPPED rather than left set. Latching it would fire
+				// the sound later, at whatever unrelated moment the clip finally resolved. Unity's Play()
+				// on a clipless AudioSource does nothing for the same reason.
+				if (source.PlayRequested || source.StopRequested)
+				{
+					clearRequests();
+				}
 				continue;
 			}
 
@@ -162,10 +179,29 @@ namespace Snowstorm
 				}
 			}
 
-			if (source.PlayOnStart && !voice.Started)
+			// An explicit request outranks the PlayOnStart latch. Stop also sets Started, so stopping a
+			// source that had not started yet is not immediately undone by the latch below.
+			if (source.StopRequested)
+			{
+				voice.Started = true;
+				audio.Stop(voice.Instance);
+			}
+			if (source.PlayRequested)
 			{
 				voice.Started = true;
 				audio.Play(voice.Instance);
+			}
+			else if (source.PlayOnStart && !voice.Started)
+			{
+				voice.Started = true;
+				audio.Play(voice.Instance);
+			}
+
+			// Cleared only when one was actually set: an unconditional write would mark every audio entity
+			// Changed every frame. `source` is a reference into storage and must not be used after this.
+			if (source.PlayRequested || source.StopRequested)
+			{
+				clearRequests();
 			}
 		}
 
