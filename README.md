@@ -81,7 +81,7 @@ resolve. Vulkan validation layers are wired via `VK_ADD_LAYER_PATH`.
 | --- | --- | --- |
 | **Snowstorm-Core** | static library | All engine code: platform-independent under `Source/Snowstorm/`, backend under `Source/Platform/` (Vulkan, Windows). |
 | **Snowstorm-Editor** | executable | The editor (ImGui dockspace, hierarchy, viewport); default startup project. |
-| **Snowstorm-Runtime** | executable | Editor-free player: runs the same systems without tooling and blits the primary camera to the swapchain. |
+| **Snowstorm-Runtime** | executable | Editor-free player: pushes Core's `RuntimeLayer` bare, which runs the same systems without tooling and blits the primary camera to the swapchain. A game executable pushes the same layer with its `IGameModule` (`Snowstorm/Game/`), called once the world is ready and every frame before the systems run. |
 | **Snowstorm-Tests** | executable | Catch2 unit tests (run via CTest). |
 
 ```
