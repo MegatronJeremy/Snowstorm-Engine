@@ -28,6 +28,11 @@ namespace Snowstorm
 		// invents a main camera by grabbing an arbitrary one (Unity Camera.main / Unreal model).
 		void ConfigureSceneCamera(UUID viewportId) const;
 
+		// debug.sprite_test: spawn two overlapping sprites from an image so the sprite pass renders something
+		// in a headless run. Opaque copy at the canvas top-left, then a tinted half-transparent copy offset
+		// over it on a higher layer, so one capture shows orientation, blending and layer order at once.
+		void SpawnSpriteTest(const std::string& imagePath) const;
+
 		Ref<World> m_World;
 		std::string m_ScenePath;
 	};

@@ -14,12 +14,14 @@
 #include "Snowstorm/Components/CameraTargetComponent.hpp"
 #include "Snowstorm/Components/IDComponent.hpp"
 #include "Snowstorm/Components/RenderTargetComponent.hpp"
+#include "Snowstorm/Components/SpriteComponent.hpp"
 #include "Snowstorm/Components/TagComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Components/VisibilityComponents.hpp"
 
 #include "Snowstorm/Render/RendererUtils.hpp"
+#include "Snowstorm/Render/Texture.hpp"
 
 namespace Snowstorm
 {
@@ -91,6 +93,11 @@ namespace Snowstorm
 		// Bind a camera to the viewport AFTER the scene is loaded: use the scene's authored camera if it has
 		// one, else fall back to a default. Must be after Deserialize so an authored camera is visible here.
 		ConfigureSceneCamera(viewportId);
+
+		if (const std::string& spriteImage = CVars::SpriteTest.Get(); !spriteImage.empty())
+		{
+			SpawnSpriteTest(spriteImage);
+		}
 
 		// The scene renders into an offscreen RenderTarget; with no ImGui backend, RenderSystem's
 		// PresentPass blits the primary viewport onto the swapchain (#4). The viewport is fixed-size for
@@ -171,6 +178,35 @@ namespace Snowstorm
 
 		SS_CORE_INFO("Runtime: using authored scene camera '{}'.",
 		             reg.any_of<TagComponent>(authored) ? reg.Read<TagComponent>(authored).Tag : std::string("<camera>"));
+	}
+
+	void RuntimeLayer::SpawnSpriteTest(const std::string& imagePath) const
+	{
+		const Ref<Texture> texture = Texture::Create(std::filesystem::path(imagePath), true);
+		if (!texture)
+		{
+			SS_CORE_ERROR("Runtime: debug.sprite_test could not load '{}'; no test sprites spawned.", imagePath);
+			return;
+		}
+		const Ref<TextureView> view = texture->GetDefaultView();
+		const glm::vec2 size{static_cast<float>(texture->GetWidth()), static_cast<float>(texture->GetHeight())};
+
+		auto base = m_World->CreateEntity("Sprite test (opaque)");
+		auto& baseSprite = base.AddComponent<SpriteComponent>();
+		baseSprite.TextureInstance = view;
+		baseSprite.Position = {64.0f, 64.0f};
+		baseSprite.Size = size;
+		baseSprite.Layer = 0;
+
+		auto over = m_World->CreateEntity("Sprite test (tinted overlay)");
+		auto& overSprite = over.AddComponent<SpriteComponent>();
+		overSprite.TextureInstance = view;
+		overSprite.Position = {64.0f + size.x * 0.5f, 64.0f + size.y * 0.5f};
+		overSprite.Size = size;
+		overSprite.TintColor = {1.0f, 0.4f, 0.4f, 0.5f};
+		overSprite.Layer = 1;
+
+		SS_CORE_INFO("Runtime: debug.sprite_test spawned two {}x{} sprites from '{}'.", texture->GetWidth(), texture->GetHeight(), imagePath);
 	}
 
 	void RuntimeLayer::OnUpdate(const Timestep ts)

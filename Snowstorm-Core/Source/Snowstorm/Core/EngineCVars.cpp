@@ -27,6 +27,8 @@ namespace Snowstorm::CVars
 
 	CVar<int> VSyncStress{"debug.vsync_stress", 0, "Toggle VSync every N frames (0 = off) to exercise swapchain recreation under validation: it surfaces present-semaphore reuse bugs the steady-state smoke misses"};
 
+	CVar<std::string> SpriteTest{"debug.sprite_test", "", "Image path; when set, the runtime spawns two overlapping test sprites from it on the 2D canvas (one opaque at the top-left, one tinted half-transparent offset over it) so the sprite pass can be verified headlessly with quality.capture.frames", CVarFlags::ReadOnly};
+
 	CVar<int> MaxFrameMs{"debug.max_frame_ms", 0, "Frame-time watchdog: log [error] when a frame exceeds this many ms (0 = off)"};
 
 	CVar<bool> FrameStats{"debug.frame_stats", false, "Log a once-per-second frame breakdown (total / GPU-wait / GPU-frame / CPU-submit)"};

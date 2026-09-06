@@ -46,6 +46,11 @@ namespace Snowstorm::CVars
 	// validation surfaces present/acquire-semaphore reuse bugs that steady-state running never triggers.
 	extern CVar<int> VSyncStress;
 
+	// Image path; when set, the runtime spawns two overlapping test sprites from it on the 2D canvas. A
+	// test hook: no shipped scene carries a sprite yet, so this is how the sprite pass gets exercised
+	// headlessly (with quality.capture.frames) and its canvas orientation checked against a known image.
+	extern CVar<std::string> SpriteTest;
+
 	// Profiler capture (headless-driveable). When > 0, capture this many frames of the chrome-tracing
 	// timeline starting a few frames in (past one-time warmup), write it to profile.capture.path, then
 	// keep running. Lets the profiler be exercised without the editor button (e.g. the smoke harness can
