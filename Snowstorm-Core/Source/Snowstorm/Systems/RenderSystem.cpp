@@ -327,6 +327,30 @@ namespace Snowstorm
 		const CameraPick cam = FindCameraForViewport(fc.Reg, vpEntity);
 		if (cam.Entity == entt::null || !cam.Rt || !cam.Transform || !cam.Visibility)
 		{
+			// No camera means nothing 3D to render, but the viewport still presents: a 2D-only game (sprites,
+			// and the UI that will sit on them) has no scene to look at. Clear the present target, then run
+			// only the effects that draw on the finished image; everything camera-driven is skipped.
+			if (!vpRT.PresentTarget)
+			{
+				return;
+			}
+			if (m_ViewportEffects.empty())
+			{
+				BuildViewportEffects();
+			}
+			ViewportRenderContext v{.Frame = fc, .RT = vpRT, .ViewportEntity = vpEntity, .Suffix = passSuffix};
+			v.PathTraceSceneSettling = SingletonView<AssetManagerSingleton>().PendingLoadCount() > 0;
+			// The present target's colour attachment is LoadOp Clear, so beginning it with no draws clears it.
+			fc.Graph.AddPass({.Name = "ClearPresent" + passSuffix,
+			                  .Target = vpRT.PresentTarget,
+			                  .Execute = [](CommandContext&) {}});
+			for (const auto& effect : m_ViewportEffects)
+			{
+				if (effect->RunsWithoutCamera() && effect->ShouldRun(v))
+				{
+					effect->Contribute(v);
+				}
+			}
 			return;
 		}
 

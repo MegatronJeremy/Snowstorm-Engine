@@ -34,8 +34,9 @@ namespace Snowstorm
 
 		// After the scene loads, bind the runtime viewport to the scene's Primary camera (#147): retarget it at
 		// `viewportId` and ensure it has the controller/visibility/target it needs to be driven + cull the Game
-		// layer. No Primary camera → a defined no-render state (clear color + one warn); the runtime never
-		// invents a main camera by grabbing an arbitrary one (Unity Camera.main / Unreal model).
+		// layer. No Primary camera → the viewport presents the clear colour and 2D overlays only (expected for
+		// a 2D game module, warned once in the bare player); the runtime never invents a main camera by
+		// grabbing an arbitrary one (Unity Camera.main / Unreal model).
 		void ConfigureSceneCamera(UUID viewportId) const;
 
 		Ref<World> m_World;

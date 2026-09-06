@@ -2054,6 +2054,9 @@ namespace Snowstorm
 
 			[[nodiscard]] const char* Name() const override { return "Sprites"; }
 
+			// Sprites are screen-space, so a viewport with no camera (a 2D-only game) still draws them.
+			[[nodiscard]] bool RunsWithoutCamera() const override { return true; }
+
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
 				if (v.Comparing || !v.RT.PresentTarget)
@@ -2364,6 +2367,9 @@ namespace Snowstorm
 			}
 
 			[[nodiscard]] const char* Name() const override { return "QualityCapture"; }
+
+			// Captures whatever was presented, so the camera-less 2D path can be verified headlessly too.
+			[[nodiscard]] bool RunsWithoutCamera() const override { return true; }
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{

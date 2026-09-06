@@ -191,5 +191,9 @@ namespace Snowstorm
 		[[nodiscard]] virtual bool ShouldRun(const ViewportRenderContext& ctx) const = 0;
 		virtual void Contribute(ViewportRenderContext& ctx) = 0;
 		virtual void OnSceneCut() {}
+		// True for effects that draw on the presented image without a camera (sprites, quality capture). A
+		// viewport that resolves no camera runs only these over a cleared present target, so a 2D-only game
+		// still presents; the scene-driven effects never see ctx.Cam unset.
+		[[nodiscard]] virtual bool RunsWithoutCamera() const { return false; }
 	};
 }

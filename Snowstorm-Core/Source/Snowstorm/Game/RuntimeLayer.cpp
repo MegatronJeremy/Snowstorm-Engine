@@ -151,12 +151,20 @@ namespace Snowstorm
 
 		if (authored == entt::null)
 		{
-			// No Primary camera → a defined, safe no-camera state: nothing renders to the swapchain, so the
-			// window shows the clear color (RenderSystem adds no Present pass when no viewport resolves a
-			// camera). Deleting the Primary camera lands here rather than hijacking to a random camera or
-			// crashing. Warn once so the empty view is diagnosable, not silent. Set a Primary camera to fix.
-			SS_CORE_WARN("Runtime: scene has no Primary camera; nothing to render (clear color). "
-			             "Mark a camera Primary in the editor to give the runtime a view.");
+			// No Primary camera → a defined no-camera state: RenderSystem clears the viewport and draws only the
+			// 2D overlays (sprites), so a pure-2D game runs here by design, and a deleted Primary camera lands
+			// here rather than hijacking a random camera or crashing. With a game module attached that is the
+			// expected shape of a 2D game; in the bare player it is almost certainly an authoring mistake, so
+			// warn once there to keep the empty view diagnosable.
+			if (m_Module)
+			{
+				SS_CORE_INFO("Runtime: scene has no Primary camera; presenting the clear colour and 2D sprites only.");
+			}
+			else
+			{
+				SS_CORE_WARN("Runtime: scene has no Primary camera; presenting the clear colour and 2D sprites only. "
+				             "Mark a camera Primary in the editor to give the runtime a 3D view.");
+			}
 			return;
 		}
 
