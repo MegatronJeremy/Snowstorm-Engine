@@ -136,6 +136,9 @@ namespace Snowstorm::CVars
 
 	CVar<float> Sharpen{"render.sharpen", 0.0f, "Post-tonemap contrast-adaptive sharpen (AMD CAS) strength, 0..1 (0 = off). Display-space + hue-safe; counters TAA/upscale softening, runs after tonemap like FXAA. Guidance: ~0.3 for native+TAA, ~0.5 when upscaling (render.scale<1); >0.7 over-sharpens and re-introduces aliasing TAA removed, so keep it light (#44)", CVarFlags::Persist};
 
+	CVar<int> SpriteCanvasWidth{"render.sprite.canvas.width", 1920, "Design width of the 2D sprite canvas in canvas units; the sprite pass letterboxes it into the present target", CVarFlags::Persist};
+	CVar<int> SpriteCanvasHeight{"render.sprite.canvas.height", 1080, "Design height of the 2D sprite canvas in canvas units; the sprite pass letterboxes it into the present target", CVarFlags::Persist};
+
 	CVar<int> ShadowsMode{"render.shadows.mode", 1, "Shadow technique: 0 = Off, 1 = Shadow Map (raster depth maps + PCF), 2 = Ray Traced (hardware ray query, requires an RT GPU; falls back to Off on a non-RT device). Mode 2 skips the raster shadow passes entirely. Replaces the old render.shadows/render.shadows.rt toggles (#118)", CVarFlags::Persist};
 
 	CVar<int> ShadowResolution{"render.shadow.resolution", 2048, "Shadow-map resolution (square); changing it rebuilds the shadow target", CVarFlags::Persist};

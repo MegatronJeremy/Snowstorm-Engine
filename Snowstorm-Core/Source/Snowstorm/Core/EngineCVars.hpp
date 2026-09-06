@@ -255,6 +255,12 @@ namespace Snowstorm::CVars
 	// + TAA, ~0.5 when upscaling; >0.7 over-sharpens and re-introduces aliasing. Read per-frame by SharpenPass.
 	extern CVar<float> Sharpen;
 
+	// Design resolution of the 2D sprite canvas (SpriteComponent placement units). The sprite pass fits the
+	// canvas into the present target with a uniform scale, centred, so a differently shaped window
+	// letterboxes instead of stretching.
+	extern CVar<int> SpriteCanvasWidth;
+	extern CVar<int> SpriteCanvasHeight;
+
 	// Internal render scale (#43): the scene renders into a target sized at this fraction of the viewport,
 	// then an upscale pass brings it back to full res. 1.0 = native (upscale skipped); 0.5 = quarter the
 	// pixels. The seam the neural super-resolution upscaler plugs into. Clamp with ClampedRenderScale().

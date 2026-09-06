@@ -22,6 +22,7 @@
 #include "Snowstorm/Render/Passes/PathTracePass.hpp" // #153: reference path tracer
 #include "Snowstorm/Render/RendererUtils.hpp"
 
+#include <algorithm>
 #include <unordered_map> // #153: per-viewport path-trace accumulation state
 #include "Snowstorm/Render/Passes/FxaaPass.hpp"
 #include "Snowstorm/Render/Passes/AOPass.hpp"
@@ -39,6 +40,9 @@
 #include "Snowstorm/Render/Passes/QualityCapturePass.hpp" // #153: headless FLIP/PSNR/SSIM capture
 #include "Snowstorm/Render/Passes/NeuralUpscalePass.hpp"
 #include "Snowstorm/Render/Passes/SharpenPass.hpp"
+#include "Snowstorm/Render/Passes/SpritePass.hpp"
+#include "Snowstorm/Components/SpriteComponent.hpp"
+#include "Snowstorm/Render/SpriteCanvas.hpp"
 #include "Snowstorm/Render/Passes/TemporalResolvePass.hpp"
 #include "Snowstorm/Render/Passes/UpscalePass.hpp"
 #include "Snowstorm/Render/Renderer.hpp" // Renderer::WaitIdle when recreating the lazy SSAA GT target
@@ -2036,6 +2040,120 @@ namespace Snowstorm
 			SharpenPass m_SharpenPass; // CAS sharpen post filter; exclusive to this effect
 		};
 
+		// 2D sprite overlay: every visible SpriteComponent composited over the viewport's final LDR image in
+		// one instanced, alpha-blended draw, back to front by Layer. Runs after the LDR chain so it lands on
+		// the presented image, and before Compare so the metrics and quality capture keep comparing the 3D
+		// result only. Draws through an overlay RenderTarget aliasing the present target's colour view with
+		// LoadOp Load: the present target itself clears on begin, which would wipe the tonemapped frame.
+		class SpriteEffect final : public IViewportEffect
+		{
+		public:
+			explicit SpriteEffect(RenderSystem&)
+			{
+			}
+
+			[[nodiscard]] const char* Name() const override { return "Sprites"; }
+
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				if (v.Comparing || !v.RT.PresentTarget)
+				{
+					return false;
+				}
+				for (const auto view = v.Frame.Reg.view<SpriteComponent>(); const entt::entity e : view)
+				{
+					const SpriteComponent& s = view.get<SpriteComponent>(e);
+					if (s.Visible && s.TextureInstance)
+					{
+						return true;
+					}
+				}
+				return false;
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+				const Ref<RenderTarget> present = v.RT.PresentTarget;
+
+				struct Entry
+				{
+					int Layer;
+					entt::entity Entity;
+					SpriteInstance Instance;
+				};
+				std::vector<Entry> entries;
+				for (const auto view = fc.Reg.view<SpriteComponent>(); const entt::entity e : view)
+				{
+					const SpriteComponent& s = view.get<SpriteComponent>(e);
+					if (!s.Visible || !s.TextureInstance)
+					{
+						continue;
+					}
+					const Ref<Texture>& tex = s.TextureInstance->GetTexture();
+					const glm::vec2 size = (s.Size.x > 0.0f && s.Size.y > 0.0f)
+					                           ? s.Size
+					                           : glm::vec2{static_cast<float>(tex->GetWidth()), static_cast<float>(tex->GetHeight())};
+					SpriteInstance inst{};
+					inst.Rect = {s.Position, size};
+					inst.UVRect = s.UVRect;
+					inst.Tint = s.TintColor;
+					inst.TextureIndex = s.TextureInstance->GetGlobalBindlessIndex();
+					inst.Rotation = glm::radians(s.RotationDeg);
+					entries.push_back({s.Layer, e, inst});
+				}
+				// Entity id breaks layer ties so two overlapping sprites on one layer never swap order between
+				// frames as the view's internal order shifts.
+				std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b)
+				          { return a.Layer != b.Layer ? a.Layer < b.Layer : entt::to_integral(a.Entity) < entt::to_integral(b.Entity); });
+				std::vector<SpriteInstance> instances;
+				instances.reserve(entries.size());
+				for (const Entry& entry : entries)
+				{
+					instances.push_back(entry.Instance);
+				}
+
+				const Ref<RenderTarget> overlay = OverlayFor(present);
+				const SpriteCanvasConstants canvas = MakeCanvasConstants(
+				    present->GetWidth(), present->GetHeight(),
+				    {static_cast<float>(CVars::SpriteCanvasWidth.Get()), static_cast<float>(CVars::SpriteCanvasHeight.Get())});
+				const PixelFormat fmt = present->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+				const uint32_t frameIndex = fc.FrameIndex;
+
+				fc.Graph.AddPass({.Name = "Sprites" + v.Suffix,
+				                  .Target = overlay,
+				                  .Execute = [this, frameIndex, instances = std::move(instances), canvas, fmt](CommandContext& c)
+				                  {
+					                  m_Pass.Draw(c, frameIndex, instances, canvas, fmt);
+				                  }});
+			}
+
+		private:
+			Ref<RenderTarget> OverlayFor(const Ref<RenderTarget>& present)
+			{
+				const RenderTargetDesc& desc = present->GetDesc();
+				const Ref<TextureView>& view = desc.ColorAttachments[0].View;
+				if (m_Overlay && m_OverlayView == view && m_Overlay->GetWidth() == desc.Width && m_Overlay->GetHeight() == desc.Height)
+				{
+					return m_Overlay;
+				}
+				RenderTargetDesc d{};
+				d.Width = desc.Width;
+				d.Height = desc.Height;
+				RenderTargetAttachment a = desc.ColorAttachments[0];
+				a.LoadOp = RenderTargetLoadOp::Load;
+				a.StoreOp = RenderTargetStoreOp::Store;
+				d.ColorAttachments = {a};
+				m_Overlay = RenderTarget::Create(d);
+				m_OverlayView = view;
+				return m_Overlay;
+			}
+
+			SpritePass m_Pass;
+			Ref<RenderTarget> m_Overlay;
+			Ref<TextureView> m_OverlayView;
+		};
+
 		// Compare / ground-truth path (#45/#46/#98): runs last, only in compare mode. Renders a 2nd full-res
 		// unjittered forward + tonemap into the GT present target (both via the shared builders), then the
 		// PSNR/SSIM metrics reduction and the dataset-export readback (each further gated on its own CVar). Runs
@@ -2320,6 +2438,7 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<TemporalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<PrevColorSnapshotEffect>(*this)); // #151: snapshot HDR color for next frame's SSR
 		m_ViewportEffects.push_back(CreateScope<LdrChainEffect>(*this));
+		m_ViewportEffects.push_back(CreateScope<SpriteEffect>(*this)); // 2D overlay on the presented image
 		m_ViewportEffects.push_back(CreateScope<CompareEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<QualityCaptureEffect>(*this)); // #153: last — captures the final present
 	}
