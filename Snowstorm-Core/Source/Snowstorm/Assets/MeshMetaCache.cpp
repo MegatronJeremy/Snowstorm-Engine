@@ -1,4 +1,6 @@
-﻿#include "MeshMetaCache.hpp"
+﻿#include "Snowstorm/Core/EnginePaths.hpp"
+
+#include "MeshMetaCache.hpp"
 
 #include "Snowstorm/Utility/JsonUtils.hpp"
 
@@ -10,7 +12,7 @@ namespace Snowstorm
 	std::filesystem::path MeshMetaCacheIO::GetCachePath(const AssetHandle handle)
 	{
 		// Engine/cache/mesh/<handle>.json
-		std::filesystem::path p = "Engine/cache/mesh";
+		std::filesystem::path p = EngineCacheDir("mesh");
 		p /= handle.ToString();
 		p += ".json";
 		return p;

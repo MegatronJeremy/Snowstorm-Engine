@@ -4,15 +4,32 @@
 
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/JobSystem.hpp"
+#include "Snowstorm/Core/EnginePaths.hpp"
 #include "Snowstorm/Core/Log.hpp"
 
 #include "RendererAPI.hpp"
 
 #include <algorithm>
 #include <filesystem>
+#include <system_error>
 
 namespace Snowstorm
 {
+	namespace
+	{
+		// Shader source paths are engine-relative ("Engine/Shaders/Foo.hlsl"), and the engine's own files
+		// resolve against the EXECUTABLE, not the working directory, so a game launched from its own
+		// directory still finds them. The error_code overload matters as much as the root: a shader the
+		// hot-reload scan cannot stat is a reason to skip that entry, not to throw out of the frame loop.
+		// It did throw, and an uncaught filesystem_error kills the process with no message at all.
+		std::filesystem::file_time_type SourceWriteTime(const std::string& path)
+		{
+			std::error_code ec;
+			const auto stamp = std::filesystem::last_write_time(EngineRoot() / path, ec);
+			return ec ? std::filesystem::file_time_type{} : stamp;
+		}
+	}
+
 	Ref<Shader> Shader::Create(const std::string& filepath)
 	{
 		switch (RendererAPI::GetAPI())
@@ -78,7 +95,7 @@ namespace Snowstorm
 		Add(shader, filepath);
 		SubmitAsyncCompile(shader);
 
-		m_LastModifications[filepath] = std::filesystem::last_write_time(filepath);
+		m_LastModifications[filepath] = SourceWriteTime(filepath);
 
 		return shader;
 	}
@@ -97,8 +114,8 @@ namespace Snowstorm
 		Add(shader, key);
 		SubmitAsyncCompile(shader);
 
-		m_LastModifications[key] = std::max(std::filesystem::last_write_time(vertPath),
-		                                    std::filesystem::last_write_time(fragPath));
+		m_LastModifications[key] = std::max(SourceWriteTime(vertPath),
+		                                    SourceWriteTime(fragPath));
 
 		return shader;
 	}
@@ -158,12 +175,12 @@ namespace Snowstorm
 			const size_t sep = key.find('|');
 			if (sep == std::string::npos)
 			{
-				newest = std::filesystem::last_write_time(key);
+				newest = SourceWriteTime(key);
 			}
 			else
 			{
-				newest = std::max(std::filesystem::last_write_time(key.substr(0, sep)),
-				                  std::filesystem::last_write_time(key.substr(sep + 1)));
+				newest = std::max(SourceWriteTime(key.substr(0, sep)),
+				                  SourceWriteTime(key.substr(sep + 1)));
 			}
 
 			if (newest > lastModified)

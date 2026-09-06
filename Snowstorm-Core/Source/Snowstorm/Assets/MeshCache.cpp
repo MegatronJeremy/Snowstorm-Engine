@@ -1,3 +1,5 @@
+#include "Snowstorm/Core/EnginePaths.hpp"
+
 #include "MeshCache.hpp"
 
 #include "Snowstorm/Core/Log.hpp"
@@ -26,7 +28,7 @@ namespace Snowstorm
 
 	std::filesystem::path MeshCacheIO::GetCachePath(const AssetHandle handle)
 	{
-		std::filesystem::path p = "Engine/cache/mesh";
+		std::filesystem::path p = EngineCacheDir("mesh");
 		p /= handle.ToString();
 		p += ".ssmesh";
 		return p;

@@ -1,3 +1,5 @@
+#include "Snowstorm/Core/EnginePaths.hpp"
+
 #include "IBLCache.hpp"
 
 #include "Snowstorm/Core/Log.hpp"
@@ -87,7 +89,7 @@ namespace Snowstorm
 	{
 		char name[17];
 		std::snprintf(name, sizeof(name), "%016llx", static_cast<unsigned long long>(envHash));
-		std::filesystem::path p = "Engine/cache/ibl";
+		std::filesystem::path p = EngineCacheDir("ibl");
 		p /= name;
 		p += ".ssibl";
 		return p;
