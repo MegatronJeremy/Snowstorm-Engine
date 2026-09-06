@@ -5,13 +5,46 @@
 #include "Snowstorm/Utility/CVar.hpp"
 
 #include <cstdlib>
+#include <exception>
 #include <string_view>
 
 #ifdef SS_PLATFORM_WINDOWS
 
+namespace Snowstorm::Detail
+{
+	// An uncaught exception reaches std::terminate, which calls abort(): the process dies with exit code 3
+	// and prints nothing at all, so the only evidence is the exit code. Rethrowing the in-flight exception
+	// here recovers its what() and logs it. Without this, diagnosing a throw from anywhere in startup or
+	// shutdown means bisecting the code by hand.
+	inline void LogUncaughtException()
+	{
+		if (const std::exception_ptr active = std::current_exception())
+		{
+			try
+			{
+				std::rethrow_exception(active);
+			}
+			catch (const std::exception& e)
+			{
+				SS_CORE_CRITICAL("Uncaught {}: {}", typeid(e).name(), e.what());
+			}
+			catch (...)
+			{
+				SS_CORE_CRITICAL("Uncaught exception of a non-std type.");
+			}
+		}
+		else
+		{
+			SS_CORE_CRITICAL("std::terminate called with no active exception.");
+		}
+		std::abort();
+	}
+}
+
 inline int main(int argc, char** argv)
 {
 	Snowstorm::Log::Init();
+	std::set_terminate(&Snowstorm::Detail::LogUncaughtException);
 
 	// Make Vulkan validation layers discoverable regardless of how the app was launched. The vcpkg layer
 	// path is baked in as a Debug-only compile definition (SS_VULKAN_LAYER_PATH, see root CMakeLists). VS
