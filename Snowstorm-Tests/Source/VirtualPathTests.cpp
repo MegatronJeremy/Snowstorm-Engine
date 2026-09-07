@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "Snowstorm/Assets/VirtualPath.hpp"
+#include "Snowstorm/Render/Shader.hpp"
 #include "Snowstorm/Utility/EnginePaths.hpp"
 
 #include <filesystem>
@@ -79,4 +80,26 @@ TEST_CASE("The comparison key folds case and separators but not content", "[vpat
 
 	// Distinct assets stay distinct.
 	CHECK(VirtualPath::NormalizeKey("/Game/meshes/cube.obj") != VirtualPath::NormalizeKey("/Game/meshes/quad.obj"));
+}
+
+// The bug this collapses: a render pass loads "Engine/Shaders/DefaultLit.frag.hlsl" while
+// AssetManagerSingleton::GetShader loads the same file by absolute path, and keying on the raw string
+// made them two library entries with two compiles and a hot-reload that refreshed only one.
+TEST_CASE("One shader file is one library key however it is spelled", "[vpath]")
+{
+	const std::string relative = "Engine/Shaders/DefaultLit.frag.hlsl";
+	const std::string absolute = (GetEngineRoot() / "Engine" / "Shaders" / "DefaultLit.frag.hlsl").string();
+	const std::string mounted = "/Engine/Shaders/DefaultLit.frag.hlsl";
+
+	CHECK(ShaderLibrary::MakeKey(relative) == ShaderLibrary::MakeKey(absolute));
+	CHECK(ShaderLibrary::MakeKey(relative) == ShaderLibrary::MakeKey(mounted));
+
+	// Two-path keys collapse the same way, and still distinguish a different pairing.
+	CHECK(ShaderLibrary::MakeKey("Engine/Shaders/Mesh.vert.hlsl", relative) ==
+	      ShaderLibrary::MakeKey("Engine/Shaders/Mesh.vert.hlsl", absolute));
+	CHECK(ShaderLibrary::MakeKey("Engine/Shaders/Mesh.vert.hlsl", relative) !=
+	      ShaderLibrary::MakeKey("Engine/Shaders/Mesh.vert.hlsl", "Engine/Shaders/Fxaa.frag.hlsl"));
+
+	// A permutation is still a distinct entry, which is the property the key already had.
+	CHECK(ShaderLibrary::MakeKey(relative) != ShaderLibrary::MakeKey(relative, ShaderDefines{"SS_RAYTRACING"}));
 }

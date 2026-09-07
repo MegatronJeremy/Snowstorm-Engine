@@ -113,6 +113,16 @@ namespace Snowstorm
 		Ref<Shader> Load(const std::string& vertPath, const std::string& fragPath, ShaderDefines features = {});
 		Ref<Shader> Get(const std::string& filepath);
 
+		// The library key for a shader, exposed because it is NOT just the path any more: each source is
+		// canonicalised to its virtual path first, so the same file reached by a relative path (every
+		// render pass) and by an absolute one (AssetManagerSingleton::GetShader) is one entry rather than
+		// two. Anything that looks a shader up without going through Load must build its key with this,
+		// or it silently misses.
+		[[nodiscard]] static std::string MakeKey(const std::string& vertPath, const std::string& fragPath,
+		                                         const ShaderDefines& features = {});
+		[[nodiscard]] static std::string MakeKey(const std::string& filepath,
+		                                         const ShaderDefines& features = {});
+
 		[[nodiscard]] bool Exists(const std::string& filepath) const;
 
 		void ReloadAll();

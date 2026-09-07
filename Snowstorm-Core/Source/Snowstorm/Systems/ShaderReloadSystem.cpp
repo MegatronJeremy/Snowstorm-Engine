@@ -19,7 +19,9 @@ namespace Snowstorm
 		// so ReloadAll below won't catch it — drive it explicitly here. Checked every frame (a cheap CVar read)
 		// so toggling an RT effect swaps promptly. The key is the composite the mesh pipeline loads.
 		{
-			const std::string litKey = std::string("Engine/Shaders/Mesh.vert.hlsl|") + kDefaultFragmentShader;
+			// Built through the library's own key function, not concatenated: keys are canonicalised now,
+			// so a hand-built string would silently miss and this reload would quietly stop working.
+			const std::string litKey = ShaderLibrary::MakeKey("Engine/Shaders/Mesh.vert.hlsl", kDefaultFragmentShader);
 			if (shaderLibrary.Exists(litKey))
 			{
 				const Ref<Shader>& lit = shaderLibrary.Get(litKey);
