@@ -22,7 +22,7 @@ target_sources(Snowstorm-Runtime PRIVATE ${RUNTIME_SOURCES})
 # Include directories
 target_include_directories(Snowstorm-Runtime PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
-    ${CMAKE_SOURCE_DIR}/Snowstorm-Core/Source
+    ${SS_ENGINE_SOURCE_DIR}/Snowstorm-Core/Source
 )
 
 # Link libraries.

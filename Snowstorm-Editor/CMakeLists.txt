@@ -22,7 +22,7 @@ target_sources(Snowstorm-Editor PRIVATE ${EDITOR_SOURCES})
 # Include directories
 target_include_directories(Snowstorm-Editor PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
-    ${CMAKE_SOURCE_DIR}/Snowstorm-Core/Source
+    ${SS_ENGINE_SOURCE_DIR}/Snowstorm-Core/Source
 )
 
 # ImGuizmo: editor-only transform gizmos drawn over the viewport.
