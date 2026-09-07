@@ -62,13 +62,6 @@ target_include_directories(Snowstorm-Core PRIVATE ${MINIAUDIO_INCLUDE_DIRS})
 set_source_files_properties(Source/Snowstorm/Audio/MiniaudioImpl.cpp PROPERTIES
     SKIP_PRECOMPILE_HEADERS ON
 )
-
-# Doom's sound backend includes doomtype.h, which in C++ typedefs `boolean` as unsigned int while
-# Windows' rpcndr.h typedefs it as unsigned char. pch.h force-includes Windows.h everywhere else, so
-# this one TU has to be built without it.
-set_source_files_properties(Source/Snowstorm/Examples/Doom/DoomSound.cpp PROPERTIES
-    SKIP_PRECOMPILE_HEADERS ON
-)
 if(MSVC)
     set_source_files_properties(Source/Snowstorm/Audio/MiniaudioImpl.cpp PROPERTIES
         COMPILE_OPTIONS "/W0"
@@ -95,11 +88,3 @@ target_link_libraries(Snowstorm-Core PUBLIC
     nlohmann_json::nlohmann_json
     Tracy::TracyClient
 )
-
-# Embedded Doom (root option SS_ENABLE_DOOM, default OFF). Source/Snowstorm/Examples/Doom compiles
-# either way; without this target its SS_HAS_DOOM define is absent and DoomSystem is a no-op, so the
-# GPL-2.0 dependency stays out of a default build entirely. On Core rather than an executable so both
-# the Editor and the Runtime get it from RegisterCoreSystems.
-if(SS_ENABLE_DOOM)
-    target_link_libraries(Snowstorm-Core PUBLIC doomgeneric)
-endif()

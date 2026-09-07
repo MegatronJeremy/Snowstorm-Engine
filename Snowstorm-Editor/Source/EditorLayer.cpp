@@ -42,6 +42,8 @@
 #include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
 #include "Snowstorm/Systems/CoreSystems.hpp"
+
+#include "DoomGame.hpp"
 #include "Singletons/EditorCommandsSingleton.hpp"
 #include "Singletons/EditorHistorySingleton.hpp"
 #include "Singletons/EditorSelectionSingleton.hpp"
@@ -293,7 +295,12 @@ namespace Snowstorm
 		}
 
 		RegisterCoreSystems(*m_ActiveWorld); // engine systems (shared with a future runtime)
-		RegisterEditorSystems();             // editor-only systems on top
+
+		// Games the editor can author and play. The editor links the game library and registers its
+		// systems, the same shape as Unreal's editor loading the game module. After RegisterCoreSystems
+		// on purpose; see DoomGame.hpp for why the order is load-bearing.
+		RegisterDoomSystems(*m_ActiveWorld);
+		RegisterEditorSystems(); // editor-only systems on top
 
 		// Create the editor's persistent Scene-view camera + viewport BEFORE any scene loads. They are
 		// tagged DoNotSerialize (see CreateMainViewportEntity/CreateCameraEntities), so they survive scene

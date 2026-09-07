@@ -1,6 +1,6 @@
 # doomgeneric (https://github.com/ozkl/doomgeneric): Doom reduced to an embeddable interpreter, driven
 # by doomgeneric_Create/doomgeneric_Tick with the whole platform layer behind six DG_* callbacks. The
-# engine implements those in Snowstorm-Core/Source/Snowstorm/Examples/Doom.
+# Doom game implements those in Games/Doom/Source.
 #
 # Fetched at configure time rather than checked in, deliberately. doomgeneric is GPL-2.0 (inherited
 # from id Software's 1999 relicense of the Doom source) and Snowstorm is public domain, so committing
@@ -73,10 +73,10 @@ list(TRANSFORM CHOCOLATE_OPL_SOURCES PREPEND "${chocolatedoom_SOURCE_DIR}/")
 
 list(TRANSFORM DOOMGENERIC_SOURCES PREPEND "${doomgeneric_SOURCE_DIR}/doomgeneric/")
 
-# The replacement for opl_sdl.c. It lives with its siblings in the engine tree but compiles HERE,
-# because it is the one engine file that needs Chocolate Doom's opl/ headers, and because Core globs
-# only *.cpp. Its C++ half (threads, mutexes, AudioService) is DoomAudioBridge.cpp, in Core.
-set(SS_OPL_DRIVER "${CMAKE_SOURCE_DIR}/Snowstorm-Core/Source/Snowstorm/Examples/Doom/OplDriver.c")
+# The replacement for opl_sdl.c. It lives with its siblings in the Doom game but compiles HERE, because
+# it is the one file needing Chocolate Doom's opl/ headers, which are PUBLIC on this target while src/
+# is PRIVATE. Its C++ half (threads, mutexes, AudioService) is DoomAudioBridge.cpp, in the game.
+set(SS_OPL_DRIVER "${CMAKE_SOURCE_DIR}/Games/Doom/Source/OplDriver.c")
 
 add_library(doomgeneric STATIC ${DOOMGENERIC_SOURCES} ${CHOCOLATE_OPL_SOURCES} ${SS_OPL_DRIVER})
 

@@ -1,5 +1,7 @@
 #include "RuntimeLayer.hpp"
 
+#include "DoomGame.hpp"
+
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
@@ -67,6 +69,11 @@ namespace Snowstorm
 
 		// The SAME engine systems the editor runs, minus the editor/UI systems on top.
 		RegisterCoreSystems(*m_World);
+
+		// Games this host can run. After RegisterCoreSystems, which is what orders DoomSystem correctly
+		// inside SystemPhase::Resolve; see DoomGame.hpp. Inert unless the build has SS_HAS_DOOM and
+		// doom.enabled is set, so it costs nothing in an ordinary run.
+		RegisterDoomSystems(*m_World);
 
 		// The viewport is host-owned (window-sized), so create it before the scene loads. The CAMERA, in
 		// contrast, is scene-owned (#147): a scene can author a gameplay camera, and the runtime uses it.

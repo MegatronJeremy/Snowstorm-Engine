@@ -96,8 +96,29 @@ The first run is slow: vcpkg compiles every dependency from source.
 ### Embedded Doom (`SS_ENABLE_DOOM`, off)
 
 `Projects/Sandbox/assets/scenes/Doom.world` plays Doom on a textured quad, as a demo of the dynamic
-texture path (`RendererService::EnqueueTextureUpload`). It is off because it is not part of the
-engine and because **doomgeneric is GPL-2.0 while this project is public domain**: a build with it on
+texture path (`RendererService::EnqueueTextureUpload`).
+
+**Doom is a game, not engine code.** It lives in `Games/Doom/`, links `Snowstorm-Core` the way any
+game would, and offers hosts exactly one entry point, `RegisterDoomSystems(World&)` in `DoomGame.hpp`.
+The engine has no knowledge of it: nothing under `Snowstorm-Core/` names Doom outside two explanatory
+comments. The Editor and the Runtime each link the game and call that function after
+`RegisterCoreSystems`, which is what orders `DoomSystem` behind `MaterialResolveSystem` and ahead of
+`TlasBuildSystem`; registering it first silently breaks the material takeover. `Snowstorm-Doom` is the
+shipping game executable. This mirrors how Unreal's editor loads the game module rather than the
+engine owning the game.
+
+Hosts link the game **`WHOLE_ARCHIVE`**, and that is load-bearing. `DoomComponent.cpp`'s registration
+is a static initializer in a TU nothing references, so a plain link drops it, and every symptom is
+silent: the component vanishes from the inspector, `SceneSerializer` skips it with a bare `continue`,
+and a subsequent save deletes the block from `Doom.world`. `DoomRegistrationTests` asserts it survived,
+and that test was verified to FAIL without the flag.
+
+**The game library builds unconditionally; only the GPL `doomgeneric` link is gated on
+`SS_ENABLE_DOOM`.** That keeps `DoomComponent` registered in a stock build, so an ordinary editor
+round-trips `Doom.world` losslessly instead of quietly stripping it. Nothing GPL is fetched or linked
+without the flag and every TU is inert behind `SS_HAS_DOOM`, so the licence property is unchanged.
+
+It is off by default because it is not part of the engine and because **doomgeneric is GPL-2.0 while this project is public domain**: a build with it on
 is a combined work that cannot be redistributed under `UNLICENSE.txt`. Nothing GPL is committed here;
 `Vendor/doomgeneric/CMakeLists.txt` clones it into the build tree at configure time instead.
 
@@ -931,6 +952,7 @@ Snowstorm-Core/      # STATIC library: all engine code (the only place most work
 Snowstorm-Editor/    # Editor EXECUTABLE, links Core; ImGui dockspace, panels, viewport
 Snowstorm-Runtime/   # Editor-free runtime EXECUTABLE, links Core; shares RegisterCoreSystems
 Snowstorm-Tests/     # Catch2 unit tests (GPU-free; run by ctest, gated in CI)
+Games/Doom/          # a GAME built on the engine, not part of it; hosts link it and call RegisterDoomSystems
 Engine/              # engine-owned runtime data: Shaders/, Fonts/, and the gitignored cache/
 Projects/Sandbox/    # the sample project: assets/ (scenes, meshes, materials, textures, registry)
 Dataset/             # gitignored capture output + trained weights

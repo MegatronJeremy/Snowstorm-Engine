@@ -4,7 +4,6 @@
 #include "Snowstorm/ECS/SystemPhase.hpp"
 #include "Snowstorm/World/World.hpp"
 
-#include "Snowstorm/Examples/Doom/DoomSystem.hpp"
 #include "Snowstorm/Lighting/EnvironmentSystem.hpp"
 #include "Snowstorm/Lighting/LightingSystem.hpp"
 #include "Snowstorm/Systems/AssetLoadSystem.hpp"
@@ -49,13 +48,6 @@ namespace Snowstorm
 		sm.RegisterSystem<CameraRuntimeUpdateSystem>(SystemPhase::Resolve);
 		sm.RegisterSystem<MeshResolveSystem>(SystemPhase::Resolve);
 		sm.RegisterSystem<MaterialResolveSystem>(SystemPhase::Resolve);
-		// Inert unless the build has SS_ENABLE_DOOM and the doom.enabled CVar is on. Registered here rather
-		// than by a host so the Editor and the Runtime both get it. Must run AFTER MaterialResolveSystem
-		// (which creates the instance it takes over) and BEFORE TlasBuildSystem in PreRender, which caches
-		// the albedo index it swaps; the change map is cleared at the end of the whole frame, so a mark set
-		// after TlasBuildSystem has run is never observed.
-		sm.RegisterSystem<DoomSystem>(SystemPhase::Resolve);
-
 		// After the asset manager is populated (it resolves clip handles to paths) and before anything
 		// gameplay-side would want to trigger a sound.
 		sm.RegisterSystem<AudioSystem>(SystemPhase::Resolve);
