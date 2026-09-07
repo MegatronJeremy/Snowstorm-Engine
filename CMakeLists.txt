@@ -129,10 +129,16 @@ endfunction()
 
 # This repository's own contributions: the editor, the generic player, the example game, and the sample
 # project they all load.
-snowstorm_stage_executable(Snowstorm-Editor)
-snowstorm_stage_executable(Snowstorm-Runtime)
-snowstorm_stage_executable(Snowstorm-Pong)
-snowstorm_stage_project("${SS_ENGINE_SOURCE_DIR}/Projects/Sandbox")
+#
+# Only when the engine IS the build, never when a game is consuming it. A game packaging itself should
+# not find the engine's editor, its Pong and its 54 MB sample project in the result; before this guard,
+# staging Snowstorm-Doom produced exactly that.
+if(CMAKE_SOURCE_DIR STREQUAL SS_ENGINE_SOURCE_DIR)
+    snowstorm_stage_executable(Snowstorm-Editor)
+    snowstorm_stage_executable(Snowstorm-Runtime)
+    snowstorm_stage_executable(Snowstorm-Pong)
+    snowstorm_stage_project("${SS_ENGINE_SOURCE_DIR}/Projects/Sandbox")
+endif()
 
 enable_testing()
 add_subdirectory(Snowstorm-Tests)
