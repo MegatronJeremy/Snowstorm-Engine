@@ -8,6 +8,10 @@
 
 namespace Snowstorm::CVars
 {
+	CVar<std::string> EngineRoot{"engine.root", "",
+	                             "Directory holding Engine/Shaders, Engine/cache and Tools/dxc. Empty = "
+	                             "derived from the executable's location. Set it when consuming Snowstorm "
+	                             "from another repository, where the exe is outside the engine tree."};
 
 	CVar<int> SmokeFrames{"smoke.frames", 0, "Run N frames then exit cleanly (0 = until window closed)", CVarFlags::ReadOnly};
 

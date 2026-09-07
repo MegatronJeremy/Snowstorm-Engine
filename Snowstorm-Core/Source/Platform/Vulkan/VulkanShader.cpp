@@ -1,5 +1,7 @@
 #include "VulkanShader.hpp"
 
+#include "Snowstorm/Utility/EnginePaths.hpp"
+
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
@@ -51,45 +53,6 @@ namespace Snowstorm
 			char buf[17]{};
 			std::snprintf(buf, sizeof(buf), "%016llx", static_cast<unsigned long long>(v));
 			return {buf};
-		}
-
-		// Directory of the running executable (…/build/<target>/<config>/Foo.exe → that folder).
-		fs::path GetExeDir()
-		{
-			wchar_t buf[MAX_PATH]{};
-			const DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
-			if (n == 0 || n == MAX_PATH)
-			{
-				return fs::current_path(); // fall back to CWD if the query fails/truncates
-			}
-			return fs::path(buf).parent_path();
-		}
-
-		// Root that holds the engine's own assets (Engine/Shaders, Engine/cache) and Tools/dxc. Engine
-		// assets are NOT project content (that lives under Projects/*/assets, resolved via Project) — they
-		// ship with the engine, so they resolve relative to the EXECUTABLE, not the working directory: a
-		// moved/packaged exe still finds its shaders. Walk up from the exe dir until an "Engine" folder is
-		// found (repo root in dev: …/build/<t>/<cfg>/exe → repo root; a shipped layout puts Engine/ next to
-		// the exe). Falls back to the CWD if no marker is found (the old behavior), so nothing hard-breaks.
-		const fs::path& GetEngineRoot()
-		{
-			static const fs::path root = []
-			{
-				std::error_code ec;
-				for (fs::path dir = GetExeDir(); !dir.empty(); dir = dir.parent_path())
-				{
-					if (fs::exists(dir / "Engine" / "Shaders", ec))
-					{
-						return dir;
-					}
-					if (dir == dir.root_path())
-					{
-						break;
-					}
-				}
-				return fs::current_path();
-			}();
-			return root;
 		}
 
 		fs::path GetDxcExePath()

@@ -1,5 +1,7 @@
 #include "Shader.hpp"
 
+#include "Snowstorm/Utility/EnginePaths.hpp"
+
 #include "Platform/Vulkan/VulkanShader.hpp"
 
 #include "Snowstorm/Core/Application.hpp"
@@ -97,6 +99,22 @@ namespace Snowstorm
 		m_Shaders[filepath] = shader;
 	}
 
+	namespace
+	{
+		// Shader paths are ENGINE-RELATIVE ("Engine/Shaders/Foo.hlsl"), so they only resolve against the
+		// working directory when the app happens to be run from the engine root. Resolve them the same way
+		// the compiler does, and never throw: std::filesystem::last_write_time without an error_code throws
+		// on a missing file, which terminated the process (exit 3, no log line) the first time anything ran
+		// from another directory. A missing source reads as epoch, which makes it look older than the
+		// cached build rather than triggering an endless recompile.
+		std::filesystem::file_time_type ShaderSourceWriteTime(const std::string& path)
+		{
+			std::error_code ec;
+			const auto t = std::filesystem::last_write_time(EngineAssetPath(path), ec);
+			return ec ? std::filesystem::file_time_type{} : t;
+		}
+	}
+
 	Ref<Shader> ShaderLibrary::Load(const std::string& filepath, ShaderDefines features)
 	{
 		const std::string key = MakeShaderKey(filepath, features);
@@ -109,7 +127,7 @@ namespace Snowstorm
 		Add(shader, key);
 		SubmitAsyncCompile(shader);
 
-		m_LastModifications[key] = std::filesystem::last_write_time(filepath);
+		m_LastModifications[key] = ShaderSourceWriteTime(filepath);
 
 		return shader;
 	}
@@ -128,8 +146,7 @@ namespace Snowstorm
 		Add(shader, key);
 		SubmitAsyncCompile(shader);
 
-		m_LastModifications[key] = std::max(std::filesystem::last_write_time(vertPath),
-		                                    std::filesystem::last_write_time(fragPath));
+		m_LastModifications[key] = std::max(ShaderSourceWriteTime(vertPath), ShaderSourceWriteTime(fragPath));
 
 		return shader;
 	}
@@ -192,12 +209,12 @@ namespace Snowstorm
 			const size_t sep = paths.find('|');
 			if (sep == std::string::npos)
 			{
-				newest = std::filesystem::last_write_time(paths);
+				newest = ShaderSourceWriteTime(paths);
 			}
 			else
 			{
-				newest = std::max(std::filesystem::last_write_time(paths.substr(0, sep)),
-				                  std::filesystem::last_write_time(paths.substr(sep + 1)));
+				newest = std::max(ShaderSourceWriteTime(paths.substr(0, sep)),
+				                  ShaderSourceWriteTime(paths.substr(sep + 1)));
 			}
 
 			if (newest > lastModified)
