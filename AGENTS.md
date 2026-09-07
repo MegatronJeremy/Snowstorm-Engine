@@ -16,6 +16,15 @@ an ImGui editor.
 How to work in this repo. These rules live here rather than in a personal config so that a clone on
 any machine, driven by any agent, behaves the same.
 
+- **Every change goes on a feature branch and reaches `master` through a pull request.** Never commit
+  to `master` directly and never push to it, including a fast-forward of work that was already
+  reviewed in chat: the PR is the durable record of what changed and why, and it is where CI actually
+  runs the gates (lint, tests, shader occupancy). Branch names are `feat/<topic>`, `fix/<topic>` or
+  `chore/<topic>`. Open the PR with `gh pr create`, let the checks finish, and leave the merge itself
+  to a human. A PR whose branch has diverged gets `master` merged INTO it and the conflicts resolved
+  on the branch, never the reverse. The pre-push hook refuses a direct push to `master`, so this is
+  enforced rather than remembered, but the hook is opt-in per clone
+  (`git config core.hooksPath .githooks`) and the rule holds whether or not it is armed.
 - **Review in chat before push, and push is gated on explicit approval.** For every change, show the
   diff or the key snippets with enough surrounding context to read like a real PR: what changed, why
   it was done that way, the tradeoffs, non-obvious invariants, and what remains unverified. A local
@@ -100,7 +109,7 @@ this is six commands, and each is documented in its own section below.
 
 ```
 git clone https://github.com/MegatronJeremy/Snowstorm-Engine && cd Snowstorm-Engine
-git config core.hooksPath .githooks              # arms the format pre-push hook (committed but inert until set)
+git config core.hooksPath .githooks              # arms the pre-push hook: format check + no direct master pushes
 pip install clang-format==22.1.5 numpy flip-evaluator==1.7
 py Scripts/Generate-Solution.py                  # bootstraps vcpkg; the first run compiles every dependency
 cmake --build build --config Debug
@@ -930,6 +939,7 @@ Keep those two in sync when adding a dependency.
 
 ## Git hygiene
 
+Work on a branch, merge through a pull request; see the branch/PR rule under Agent collaboration.
 `.gitignore` excludes everything generated: `build/`, `vcpkg/`, `.vs/`, `Engine/cache`, the local
 config files (`SnowstormConfig.cfg`, `SnowstormStartup.cfg`), captures and weights (`Dataset/`,
 `*.npy`, `*.ssnn`), downloaded tooling (`Tools/rga/`, `Tools/rdts/`), the PT reference cache
