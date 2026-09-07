@@ -1,5 +1,6 @@
 #include "Snowstorm/Core/GameLayer.hpp"
 
+#include "Snowstorm/Assets/AssetCook.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
@@ -116,7 +117,9 @@ namespace Snowstorm
 		if (CVars::CookAssets.Get())
 		{
 			m_Cooking = true;
-			CookAllAssets();
+			const CookRequest requested = CookAllRegistryAssets(*m_World);
+			SS_CORE_INFO("Cook: requested {} mesh(es), {} texture(s), {} material(s); waiting for the queue.",
+			             requested.Meshes, requested.Textures, requested.Materials);
 		}
 
 		// Bind a camera to the viewport AFTER the scene is loaded: use the scene's authored camera if it has
@@ -221,53 +224,4 @@ namespace Snowstorm
 		}
 	}
 
-	void GameLayer::CookAllAssets() const
-	{
-		auto& assets = m_World->GetSingleton<AssetManagerSingleton>();
-
-		// A cooked artifact is written as a side effect of loading, so cooking IS loading everything the
-		// registry names. That is deliberate: a separate cook path would be a second implementation of
-		// import, free to disagree with the one that actually runs, which is the standing complaint about
-		// cook-shaders.py duplicating dxc's flags.
-		uint32_t meshes = 0, textures = 0, materials = 0;
-		std::vector<AssetHandle> textureHandles;
-		std::vector<AssetHandle> materialHandles;
-
-		assets.IterateAssets(
-		    [&](const AssetMetadata& meta)
-		    {
-			    switch (meta.Type)
-			    {
-			    case AssetType::Mesh:
-				    // Synchronous on purpose: this writes the .ssmesh before returning.
-				    (void)assets.GetMesh(meta.Handle);
-				    ++meshes;
-				    break;
-			    case AssetType::Texture:
-				    textureHandles.push_back(meta.Handle);
-				    break;
-			    case AssetType::Material:
-				    materialHandles.push_back(meta.Handle);
-				    break;
-			    default:
-				    break;
-			    }
-		    });
-
-		// Deferred out of the iteration: both of these can register new assets, and mutating the registry
-		// while walking it is how a container invalidates its own iterator.
-		for (const AssetHandle h : textureHandles)
-		{
-			(void)assets.GetTextureViewAsync(h);
-			++textures;
-		}
-		for (const AssetHandle h : materialHandles)
-		{
-			(void)assets.GetMaterialInstance(h);
-			++materials;
-		}
-
-		SS_CORE_INFO("Cook: requested {} mesh(es), {} texture(s), {} material(s); waiting for the queue.",
-		             meshes, textures, materials);
-	}
 }

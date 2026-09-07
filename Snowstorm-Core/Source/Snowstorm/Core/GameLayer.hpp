@@ -48,10 +48,6 @@ namespace Snowstorm
 		// invents a main camera by grabbing an arbitrary one (Unity Camera.main / Unreal model).
 		void ConfigureSceneCamera(UUID viewportId) const;
 
-		// Loads every asset the registry names so each one's cooked artifact exists, then exits once the
-		// async queue drains. Driven by the cook.assets CVar.
-		void CookAllAssets() const;
-
 		Ref<World> m_World;
 		bool m_Cooking = false;
 		std::string m_ScenePath;

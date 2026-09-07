@@ -904,6 +904,12 @@ game packaging itself does not find the engine's editor, Pong and 54 MB sample p
 The stage is added to, never pruned (`copy_directory_if_different` does not remove), so content deleted
 from the source lingers until `build/stage` is deleted.
 
+**Cooking has an editor surface, packaging deliberately does not.** *File > Cook Assets* runs
+`CookAllRegistryAssets`, the same function `--cook.assets` runs, so the two cannot disagree. Producing a
+stage stays a CMake target: it copies build output, so a button for it would have to guess which build
+directory produced the running executable and shell out to a generator that may not be installed.
+Unreal can offer *File > Package Project* because UAT is a first-class shipped tool; nothing here is.
+
 **Gate the package, not just the build**: `py Scripts/smoke-test.py --staged` runs the executables out
 of the stage with the stage as the working directory. It is the only check that the PACKAGE works. The
 bug that motivated it built, linked and passed every other gate: stale stamps left a stage with an empty
