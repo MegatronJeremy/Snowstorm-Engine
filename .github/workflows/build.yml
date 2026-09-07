@@ -42,7 +42,7 @@ jobs:
         run: ctest --test-dir build -C Debug --output-on-failure
 
   # Compile-and-link gate for the optional embedded Doom path. The job above configures with
-  # SS_ENABLE_DOOM=OFF, and every translation unit under Examples/Doom is wrapped in #ifdef SS_HAS_DOOM,
+  # SS_ENABLE_DOOM=OFF, and every translation unit under Games/Doom is wrapped in #ifdef SS_HAS_DOOM,
   # so the OPL driver, the audio bridge and the DMX effect decoder are compiled by nothing in CI without
   # this. Kept as its own job rather than flipping the one above: OFF is what release.yml ships, so it
   # must stay the gated default, and a fetch failure from a third-party repo then reads as "Doom", not

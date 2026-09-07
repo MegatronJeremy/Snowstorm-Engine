@@ -138,8 +138,8 @@ Doom build back off. A bare `cmake` also skips the vcpkg toolchain file and the 
 that every `find_package` here depends on.
 
 No IWAD ships with the repo (`*.wad` is gitignored); Freedoom is the freely licensed one. The Editor
-runs it too (drop `--display.fullscreen`); `DoomSystem` is registered by `RegisterCoreSystems`, so both
-hosts get it.
+runs it too (drop `--display.fullscreen`); both hosts link the game and call `RegisterDoomSystems`,
+so both get it, and `Snowstorm-Doom` is the game executable that does the same.
 
 The scene frames the quad to the vertical FOV, so it fills the height at any window size and
 pillarboxes against a backdrop quad on anything wider than Doom's 8:5. Camera look and movement are
@@ -151,14 +151,14 @@ the process, and the state it shares is deliberately leaked rather than destroye
 
 `.github/workflows/build.yml` carries a second job, `windows-doom`, that configures with
 `--with-doom` and links `Snowstorm-Runtime`. It exists because the default job builds `SS_ENABLE_DOOM=OFF`
-and every TU under `Examples/Doom` sits inside `#ifdef SS_HAS_DOOM`, so without it CI compiles none of
+and every TU under `Games/Doom` sits inside `#ifdef SS_HAS_DOOM`, so without it CI compiles none of
 this code. It is a compile-and-link gate only: it resolves every `DG_*`/`OPL_*`/`SS_DoomAudio_*` symbol
 and proves nothing about behaviour, since no tic runs and no device is opened. It links the Runtime
 rather than Core because Core is a static library, so building Core alone would compile the code without
 ever resolving it.
 
 **Doom's audio is the engine's audio.** Both `DG_sound_module` and `DG_music_module` are implemented
-against `AudioService` (`Examples/Doom/`), so there is one output device and one mixer rather than a
+against `AudioService` (`Games/Doom/Source/`), so there is one output device and one mixer rather than a
 second, SDL-owned one; nothing here needs SDL2 or SDL2_mixer. Effects are DMX lumps decoded to PCM.
 Music is **OPL2 FM synthesis**, not MIDI: miniaudio has no synthesiser, General MIDI would need a
 soundfont this repo cannot ship, and the OPL instrument bank (`GENMIDI`) already lives inside the
