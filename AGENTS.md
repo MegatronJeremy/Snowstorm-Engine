@@ -887,6 +887,22 @@ cmake --build build --config Debug --target stage
 cd build/stage/Debug && ./Snowstorm-Pong.exe --startup.scene=Projects/Sandbox/assets/scenes/Pong.world
 ```
 
+A GAME adds its own executable and project through two functions the engine exposes, which is what
+makes `stage` package a game rather than only this repository's sample:
+
+```cmake
+snowstorm_stage_executable(Snowstorm-Doom)
+snowstorm_stage_project("${CMAKE_CURRENT_SOURCE_DIR}/Projects/Doom")
+```
+
+Functions rather than a list the engine reads, because a consuming game's targets and project only
+exist AFTER `add_subdirectory(Snowstorm-Engine)`, so nothing evaluated there could name them. This
+repository declares its own contributions the same way, guarded on being the top-level project so a
+game packaging itself does not find the engine's editor, Pong and 54 MB sample project in its build.
+
+The stage is added to, never pruned (`copy_directory_if_different` does not remove), so content deleted
+from the source lingers until `build/stage` is deleted.
+
 **Not part of the default build, on purpose.** The payload is ~140 MB and packaging is a step you ask
 for, the way Unreal stages on package rather than on compile. It also leaves every existing path alone,
 so smoke, perf and quality keep finding executables where they always have.
