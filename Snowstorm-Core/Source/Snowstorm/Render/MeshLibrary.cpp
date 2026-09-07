@@ -68,8 +68,14 @@ namespace Snowstorm
 		}
 
 		Assimp::Importer importer;
+		// The SAME flags the per-submesh path uses. They used to differ by PreTransformVertices, so a file
+		// loaded whole kept every part in its own node's local space while the same file loaded per-part
+		// had the hierarchy baked in. Merging those local-space parts into one buffer, which the loop
+		// below does, stacks them at the origin: a multi-node model came out as a jumble. Nothing in the
+		// project hit it, because the only whole-file meshes actually referenced by a scene are .obj,
+		// which has no node hierarchy for the flag to bake.
 		const aiScene* scene = importer.ReadFile(filepath,
-		                                         aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_JoinIdenticalVertices | aiProcess_CalcTangentSpace);
+		                                         aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_JoinIdenticalVertices | aiProcess_PreTransformVertices | aiProcess_CalcTangentSpace);
 
 		if (!scene || !scene->mRootNode || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE)
 		{
