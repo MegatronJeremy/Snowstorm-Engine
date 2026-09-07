@@ -156,6 +156,7 @@ py Scripts/smoke-test.py                 # 120 frames, 60s timeout/app, Debug bu
 py Scripts/smoke-test.py --frames 300    # longer soak
 py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime | Pong)
 py Scripts/smoke-test.py --warnings-fail # treat [warning] lines as failures too
+py Scripts/smoke-test.py --staged        # run the PACKAGE in build/stage/<config>, not the build tree
 py Scripts/smoke-test.py --strict        # enable deeper Vulkan validation (see below)
 ```
 
@@ -902,6 +903,12 @@ game packaging itself does not find the engine's editor, Pong and 54 MB sample p
 
 The stage is added to, never pruned (`copy_directory_if_different` does not remove), so content deleted
 from the source lingers until `build/stage` is deleted.
+
+**Gate the package, not just the build**: `py Scripts/smoke-test.py --staged` runs the executables out
+of the stage with the stage as the working directory. It is the only check that the PACKAGE works. The
+bug that motivated it built, linked and passed every other gate: stale stamps left a stage with an empty
+`Projects/`, and it failed only when run from there. Verified to catch exactly that, by removing
+`Projects/` from a stage and watching the gate go FAIL.
 
 **Not part of the default build, on purpose.** The payload is ~140 MB and packaging is a step you ask
 for, the way Unreal stages on package rather than on compile. It also leaves every existing path alone,

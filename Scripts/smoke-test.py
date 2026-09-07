@@ -185,6 +185,10 @@ def main() -> int:
     ap.add_argument("--only", default=None, help="Run only this target by name (e.g. Editor)")
     ap.add_argument("--warnings-fail", action="store_true", help="Treat [warning] lines as failures")
     ap.add_argument("--strict", action="store_true", help="Enable extra Vulkan validation (synchronization + best-practices)")
+    ap.add_argument("--staged", action="store_true",
+                    help="Run the executables from build/stage/<config> instead of the build tree, with "
+                         "the stage as the working directory. Checks that the PACKAGE works, which no "
+                         "other gate does. Build the 'stage' target first.")
     ap.add_argument("--scene", default=None, help="Boot directly into this scene (sets SS_STARTUP_SCENE), e.g. Projects/Sandbox/assets/scenes/Sponza.world")
     ap.add_argument("--cold", action="store_true", help="Delete cooked-asset caches first, to exercise the cold first-import path")
     ap.add_argument("--max-frame-ms", type=int, default=0, help="Fail if any single frame exceeds this many ms (0 = off). Catches per-frame stalls/freezes.")
@@ -210,13 +214,33 @@ def main() -> int:
     if args.cold:
         clear_cook_caches(repo_root)
 
+    # A staged run is a different thing from a build-tree run and worth gating separately: it is the only
+    # check that the PACKAGE works. The empty-Projects/ bug (stale stamps left a stage with no content)
+    # produced executables that built, linked and passed every other gate, and failed only when run out
+    # of the stage.
+    stage_dir = build_dir / "stage" / args.config
+    if args.staged:
+        if not stage_dir.is_dir():
+            print(f"  FAIL: no stage at {stage_dir}")
+            print("        (build the 'stage' target first)")
+            return 1
+        print(f"Stage dir : {stage_dir}")
+
     results = {}
     for name, rel, default_scene in targets:
-        exe = build_dir / rel.format(config=args.config)
+        if args.staged:
+            # The stage is flat, and the working directory has to be the stage itself: a package resolves
+            # Projects/... against the CWD, so running it from the repo root would silently read the
+            # source tree's content and prove nothing about the package.
+            exe = stage_dir / Path(rel.format(config=args.config)).name
+            cwd = stage_dir
+        else:
+            exe = build_dir / rel.format(config=args.config)
+            cwd = repo_root
         scene = args.scene or default_scene
-        results[name] = run_target(name, exe, repo_root, args.frames, args.timeout,
-                                    args.warnings_fail, layer_path, args.strict, scene, args.max_frame_ms,
-                                    args.vsync_stress)
+        results[name] = run_target(name, exe, cwd, args.frames, args.timeout,
+                                   args.warnings_fail, layer_path, args.strict, scene, args.max_frame_ms,
+                                   args.vsync_stress)
 
     print("\n=== Summary ===")
     all_ok = True
