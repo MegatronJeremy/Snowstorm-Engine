@@ -1,6 +1,7 @@
 #include "EnginePaths.hpp"
 
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Project/Project.hpp"
 #include "Snowstorm/Core/PlatformDetection.hpp"
 
 #ifdef SS_PLATFORM_WINDOWS
@@ -54,6 +55,31 @@ namespace Snowstorm
 			return fs::current_path();
 		}();
 		return root;
+	}
+
+	fs::path ResolveShaderSource(const std::string_view path)
+	{
+		fs::path p(path);
+		if (p.is_absolute())
+		{
+			return p;
+		}
+
+		std::error_code ec;
+		if (fs::path engineSide = GetEngineRoot() / p; fs::exists(engineSide, ec))
+		{
+			return engineSide;
+		}
+
+		if (const Ref<Project> project = Project::GetActive())
+		{
+			if (fs::path projectSide = project->GetProjectDirectory() / p; fs::exists(projectSide, ec))
+			{
+				return projectSide;
+			}
+		}
+
+		return GetEngineRoot() / p;
 	}
 
 	fs::path EngineAssetPath(const std::string_view relative)

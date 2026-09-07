@@ -110,7 +110,7 @@ namespace Snowstorm
 		std::filesystem::file_time_type ShaderSourceWriteTime(const std::string& path)
 		{
 			std::error_code ec;
-			const auto t = std::filesystem::last_write_time(EngineAssetPath(path), ec);
+			const auto t = std::filesystem::last_write_time(ResolveShaderSource(path), ec);
 			return ec ? std::filesystem::file_time_type{} : t;
 		}
 	}

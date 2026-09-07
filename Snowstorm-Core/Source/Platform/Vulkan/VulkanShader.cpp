@@ -354,11 +354,9 @@ namespace Snowstorm
 			// Shader load paths are engine-relative (e.g. "Engine/Shaders/Foo.hlsl"). Resolve against the
 			// engine root (exe-relative) so a moved/packaged exe still finds them; an absolute path (rare)
 			// passes through unchanged.
-			fs::path srcPath(sourcePath);
-			if (srcPath.is_relative())
-			{
-				srcPath = GetEngineRoot() / srcPath;
-			}
+			// Engine shaders live under the engine root; a game's shaders live in its own project. See
+			// ResolveShaderSource.
+			const fs::path srcPath = ResolveShaderSource(sourcePath);
 			const fs::path dxcExe = GetDxcExePath();
 			const fs::path cacheDir = GetShaderCacheDir();
 
