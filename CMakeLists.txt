@@ -162,6 +162,7 @@ if(CMAKE_SOURCE_DIR STREQUAL SS_ENGINE_SOURCE_DIR)
     snowstorm_stage_executable(Snowstorm-Runtime)
     snowstorm_stage_executable(Snowstorm-Pong)
     snowstorm_stage_project("${SS_ENGINE_SOURCE_DIR}/Projects/Sandbox")
+    snowstorm_stage_project("${SS_ENGINE_SOURCE_DIR}/Projects/Pong")
 endif()
 
 enable_testing()

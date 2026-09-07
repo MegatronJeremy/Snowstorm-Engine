@@ -25,8 +25,9 @@
 
 namespace Snowstorm
 {
-	GameLayer::GameLayer(std::function<void(World&)> registerGameSystems)
-	    : Layer("GameLayer"), m_RegisterGameSystems(std::move(registerGameSystems))
+	GameLayer::GameLayer(std::function<void(World&)> registerGameSystems, std::string defaultProject)
+	    : Layer("GameLayer"), m_RegisterGameSystems(std::move(registerGameSystems)),
+	      m_DefaultProject(std::move(defaultProject))
 	{
 	}
 
@@ -39,7 +40,19 @@ namespace Snowstorm
 		// Fall back to a CWD-rooted implicit project if the .ssproj is missing (fail-soft).
 		if (!Project::GetActive())
 		{
-			const std::filesystem::path ssproj = CVars::StartupProject.Get();
+			// A game boots ITS OWN project unless told otherwise, which is what separates a game
+			// executable from the generic player. Snowstorm-Pong used to load Sandbox/Sponza and run no
+			// Pong at all, because startup.project defaults to the engine's sample.
+			//
+			// "Told otherwise" is detected by comparing against the CVar's compiled default, since CVars
+			// are resolved before CreateApplication runs and a game therefore cannot change the default
+			// itself. The one ambiguity: passing --startup.project with exactly the engine default is
+			// indistinguishable from not passing it, and yields the game's project.
+			std::filesystem::path ssproj = CVars::StartupProject.Get();
+			if (!m_DefaultProject.empty() && ssproj == std::filesystem::path(CVars::StartupProject.GetDefault()))
+			{
+				ssproj = m_DefaultProject;
+			}
 			Ref<Project> project = CreateRef<Project>();
 			if (!ssproj.empty() && std::filesystem::exists(ssproj) && ProjectSerializer::Deserialize(*project, ssproj))
 			{

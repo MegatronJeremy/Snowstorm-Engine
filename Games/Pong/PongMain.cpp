@@ -15,8 +15,11 @@ namespace Snowstorm
 		PongApplication()
 		    : Application("Snowstorm-Pong")
 		{
+			// Its own project, so running this executable runs Pong. Without it the engine's default
+			// startup.project applies and the game boots the engine's sample scene instead of its own.
 			PushLayer(new GameLayer([](World& world)
-			                        { RegisterPongSystems(world); }));
+			                        { RegisterPongSystems(world); },
+			                        "Projects/Pong/Pong.ssproj"));
 		}
 	};
 

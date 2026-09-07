@@ -27,7 +27,11 @@ namespace Snowstorm
 		// is the seam a game uses to add its own systems, and the ordering is deliberate: systems run in
 		// registration order within a phase, so a game system registered here lands behind every engine
 		// system in the same phase.
-		explicit GameLayer(std::function<void(World&)> registerGameSystems = {});
+		// defaultProject is the .ssproj this host boots when startup.project was not given, so a game
+		// executable runs its own content instead of the engine's sample. Leave it empty for a generic
+		// player, which is exactly what Snowstorm-Runtime is.
+		explicit GameLayer(std::function<void(World&)> registerGameSystems = {},
+		                   std::string defaultProject = {});
 		~GameLayer() override = default;
 
 		void OnAttach() override;
@@ -52,5 +56,6 @@ namespace Snowstorm
 		bool m_Cooking = false;
 		std::string m_ScenePath;
 		std::function<void(World&)> m_RegisterGameSystems;
+		std::string m_DefaultProject;
 	};
 }

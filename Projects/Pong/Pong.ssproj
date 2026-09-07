@@ -1,0 +1,8 @@
+{
+  "Project": {
+    "AssetDirectory": "assets",
+    "AssetRegistryPath": "assets/AssetRegistry.json",
+    "Name": "Pong",
+    "StartScene": "assets/scenes/Pong.world"
+  }
+}

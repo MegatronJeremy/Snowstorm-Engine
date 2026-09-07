@@ -40,13 +40,13 @@ from pathlib import Path
 # Targets: (display name, path under build/ to the exe, working dir relative to repo root).
 # Working dir is the repo root so relative Assets/... paths resolve (matches the VS
 # debugger working-directory setting).
-# The third element is a scene this target needs in order to do anything, or None to boot whatever the
-# startup project names. Pong is a game, so booting it into the Sandbox startup world would launch it
-# with no ball and prove nothing; --scene overrides this for every target.
+# The third element is a scene this target needs in order to do anything, or None to boot whatever its
+# startup project names. All three are None now that Pong boots its own project: a game executable that
+# needs its scene named on the command line is not really shipping a game. --scene overrides all of them.
 TARGETS = [
     ("Editor", "Snowstorm-Editor/{config}/Snowstorm-Editor.exe", None),
     ("Runtime", "Snowstorm-Runtime/{config}/Snowstorm-Runtime.exe", None),
-    ("Pong", "Games/Pong/{config}/Snowstorm-Pong.exe", "Projects/Sandbox/assets/scenes/Pong.world"),
+    ("Pong", "Games/Pong/{config}/Snowstorm-Pong.exe", None),
 ]
 
 # Substrings that mark a failure in captured output. Case-insensitive.
