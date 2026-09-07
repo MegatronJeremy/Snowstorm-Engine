@@ -127,3 +127,8 @@ Architecture, conventions, and the full build, debug and benchmarking workflow a
 ## License
 
 Public domain, see [`UNLICENSE.txt`](UNLICENSE.txt).
+
+One exception: [`Games/Doom/`](Games/Doom/LICENSE) is a game built on the engine, not part of it, and
+is offered under GPL-2.0-or-later because it is written against doomgeneric's and Chocolate Doom's
+GPL headers. Nothing there is needed to build or use the engine, and a default build compiles against
+no GPL code.

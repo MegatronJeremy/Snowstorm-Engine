@@ -125,6 +125,12 @@ It is off by default because it is not part of the engine and because **doomgene
 is a combined work that cannot be redistributed under `UNLICENSE.txt`. Nothing GPL is committed here;
 `Vendor/doomgeneric/CMakeLists.txt` clones it into the build tree at configure time instead.
 
+`Games/Doom/` is carved out of the repo's public-domain dedication and offered under GPL-2.0-or-later
+(`Games/Doom/LICENSE`). Not because anything GPL is committed, which it is not, but because three of
+its files implement interfaces declared in GPL headers, and the Unlicense dedicates "this software"
+with no scope limit: dedicating something that may not be solely ours to dedicate is an over-claim in
+our own licence file, independent of whether a distribution question ever arises.
+
 ```
 py Scripts/Generate-Solution.py --with-doom && cmake --build build --config Debug
 build/Snowstorm-Runtime/Debug/Snowstorm-Runtime.exe \

@@ -1,3 +1,18 @@
+SCOPE OF THIS DEDICATION
+
+This dedication covers the whole repository EXCEPT the directory Games/Doom/,
+which carries its own terms in Games/Doom/LICENSE.
+
+That directory is a game built on this engine rather than part of it, and three
+of its files are written against GPL-2.0 headers (doomgeneric, Chocolate Doom)
+and implement interfaces those projects declare. Whether that makes them
+separable is not a question this project can answer on its own, so rather than
+dedicate to the public domain something that may not be solely ours to dedicate,
+it is carved out. Nothing under Games/Doom/ is needed to build or use the engine,
+and the default build compiles against no GPL code at all.
+
+--------------------------------------------------------------------------------
+
 This is free and unencumbered software released into the public domain.
 
 Anyone is free to copy, modify, publish, use, compile, sell, or
