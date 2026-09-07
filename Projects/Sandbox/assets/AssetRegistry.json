@@ -1,9 +1,14 @@
 {
   "Assets": [
     {
-      "Handle": "5198740052287897578",
-      "Path": "assets/meshes/Sponza/13196865903111448057.jpg",
-      "Type": "Texture"
+      "Handle": "18252608572562089750",
+      "Path": "/Game/meshes/Sponza/Sponza_mat24.ssmat",
+      "Type": "Material"
+    },
+    {
+      "Handle": "14863079243352112687",
+      "Path": "/Game/materials/White.ssmat",
+      "Type": "Material"
     },
     {
       "Handle": "4040271266701906521",
@@ -16,43 +21,8 @@
       "Type": "Mesh"
     },
     {
-      "Handle": "3761047338403440484",
-      "Path": "assets/meshes/Sponza/Sponza_mat5.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "18252608572562089750",
-      "Path": "/Game/meshes/Sponza/Sponza_mat24.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "7312621181270895524",
-      "Path": "assets/meshes/Sponza/white.png",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "14863079243352112687",
-      "Path": "/Game/materials/White.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "16292580859381048991",
-      "Path": "/Game/meshes/Sponza/9288698199695299068.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "9293922685243759942",
-      "Path": "/Game/materials/Mandelbrot.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "12417613921254838551",
-      "Path": "assets/meshes/Sponza/Sponza_mat23.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "9175963807494124942",
-      "Path": "/Game/meshes/Sponza/15722799267630235092.jpg",
+      "Handle": "12465655103903380530",
+      "Path": "/Game/textures/Checkerboard.png",
       "Type": "Texture"
     },
     {
@@ -61,9 +31,9 @@
       "Type": "Mesh"
     },
     {
-      "Handle": "12465655103903380530",
-      "Path": "/Game/textures/Checkerboard.png",
-      "Type": "Texture"
+      "Handle": "8935939496501527747",
+      "Path": "/Game/meshes/Sponza/Sponza_mat16.ssmat",
+      "Type": "Material"
     },
     {
       "Handle": "12112538743247314239",
@@ -71,18 +41,8 @@
       "Type": "Mesh"
     },
     {
-      "Handle": "8935939496501527747",
-      "Path": "/Game/meshes/Sponza/Sponza_mat16.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "9496730424453785457",
-      "Path": "/Game/materials/Blue.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "16940509397973570980",
-      "Path": "/Game/meshes/Sponza/759203620573749278.jpg",
+      "Handle": "12318720224327598958",
+      "Path": "/Game/meshes/Sponza/8481240838833932244.jpg",
       "Type": "Texture"
     },
     {
@@ -91,9 +51,14 @@
       "Type": "Texture"
     },
     {
-      "Handle": "12318720224327598958",
-      "Path": "/Game/meshes/Sponza/8481240838833932244.jpg",
-      "Type": "Texture"
+      "Handle": "9496730424453785457",
+      "Path": "/Game/materials/Blue.ssmat",
+      "Type": "Material"
+    },
+    {
+      "Handle": "15991929536669576162",
+      "Path": "/Game/meshes/Sponza/Sponza_mat1.ssmat",
+      "Type": "Material"
     },
     {
       "Handle": "13869174114393927166",
@@ -101,13 +66,8 @@
       "Type": "Material"
     },
     {
-      "Handle": "9739802001228014154",
-      "Path": "/Game/meshes/Sponza/4675343432951571524.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "15991929536669576162",
-      "Path": "/Game/meshes/Sponza/Sponza_mat1.ssmat",
+      "Handle": "1959958777634542758",
+      "Path": "/Game/meshes/Sponza/Sponza_mat25.ssmat",
       "Type": "Material"
     },
     {
@@ -116,23 +76,13 @@
       "Type": "Texture"
     },
     {
-      "Handle": "1959958777634542758",
-      "Path": "/Game/meshes/Sponza/Sponza_mat25.ssmat",
-      "Type": "Material"
-    },
-    {
       "Handle": "15489220767351234531",
       "Path": "/Game/Textures/RPGpack_sheet_2X.png",
       "Type": "Texture"
     },
     {
-      "Handle": "4098444733576884815",
-      "Path": "/Game/Textures/skybox.dds",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "11991982609298560049",
-      "Path": "assets/meshes/Sponza/3371964815757888145.jpg",
+      "Handle": "11661949683790239459",
+      "Path": "/Game/meshes/Sponza/2969916736137545357.jpg",
       "Type": "Texture"
     },
     {
@@ -146,24 +96,14 @@
       "Type": "Texture"
     },
     {
-      "Handle": "5879909057890565794",
-      "Path": "assets/meshes/Sponza/6151467286084645207.jpg",
+      "Handle": "4098444733576884815",
+      "Path": "/Game/Textures/skybox.dds",
       "Type": "Texture"
     },
     {
-      "Handle": "11579721483151026457",
-      "Path": "/Game/meshes/Sponza/Sponza_mat7.ssmat",
+      "Handle": "8567236743302198087",
+      "Path": "/Game/meshes/Sponza/Sponza_mat18.ssmat",
       "Type": "Material"
-    },
-    {
-      "Handle": "11661949683790239459",
-      "Path": "/Game/meshes/Sponza/2969916736137545357.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "14631892035834102598",
-      "Path": "/Game/meshes/Sponza/16885566240357350108.jpg",
-      "Type": "Texture"
     },
     {
       "Handle": "2749595319910868537",
@@ -176,34 +116,9 @@
       "Type": "Shader"
     },
     {
-      "Handle": "8567236743302198087",
-      "Path": "/Game/meshes/Sponza/Sponza_mat18.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "6837091091081434674",
-      "Path": "assets/meshes/Sponza/Sponza_mat13.ssmat",
-      "Type": "Material"
-    },
-    {
       "Handle": "11495008595649888680",
       "Path": "/Game/Shaders/Mandelbrot.hlsl",
       "Type": "Shader"
-    },
-    {
-      "Handle": "13384042819138552953",
-      "Path": "/Game/meshes/Sponza/5061699253647017043.png",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "17458500226727702466",
-      "Path": "/Game/meshes/Sponza/3827035219084910048.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "10406720828815333887",
-      "Path": "/Game/meshes/Sponza/4675343432951571524.jpg",
-      "Type": "Texture"
     },
     {
       "Handle": "7951364885023909511",
@@ -216,14 +131,19 @@
       "Type": "Texture"
     },
     {
+      "Handle": "10406720828815333887",
+      "Path": "/Game/meshes/Sponza/4675343432951571524.jpg",
+      "Type": "Texture"
+    },
+    {
+      "Handle": "13384042819138552953",
+      "Path": "/Game/meshes/Sponza/5061699253647017043.png",
+      "Type": "Texture"
+    },
+    {
       "Handle": "17150243090848776623",
       "Path": "/Game/meshes/Sponza/Sponza_mat0.ssmat",
       "Type": "Material"
-    },
-    {
-      "Handle": "10797819153622319001",
-      "Path": "/Game/meshes/Sponza/6593109234861095314.jpg",
-      "Type": "Texture"
     },
     {
       "Handle": "2894891529048937010",
@@ -231,18 +151,13 @@
       "Type": "Texture"
     },
     {
-      "Handle": "3804372396317928093",
-      "Path": "assets/meshes/Sponza/16885566240357350108.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "10328097905945515394",
-      "Path": "/Game/meshes/Sponza/8051790464816141987.jpg",
-      "Type": "Texture"
-    },
-    {
       "Handle": "3641821619692069890",
       "Path": "/Game/meshes/Sponza/7268504077753552595.jpg",
+      "Type": "Texture"
+    },
+    {
+      "Handle": "16705337165401600330",
+      "Path": "/Game/meshes/Sponza/2775690330959970771.jpg",
       "Type": "Texture"
     },
     {
@@ -256,13 +171,8 @@
       "Type": "Material"
     },
     {
-      "Handle": "16705337165401600330",
-      "Path": "/Game/meshes/Sponza/2775690330959970771.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "15797880397594332253",
-      "Path": "/Game/meshes/Sponza/Sponza_mat12.ssmat",
+      "Handle": "13873447470881818058",
+      "Path": "/Game/meshes/Sponza/Sponza_mat4.ssmat",
       "Type": "Material"
     },
     {
@@ -271,44 +181,9 @@
       "Type": "Texture"
     },
     {
-      "Handle": "10931727977785998594",
-      "Path": "assets/meshes/Sponza/11474523244911310074.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "13873447470881818058",
-      "Path": "/Game/meshes/Sponza/Sponza_mat4.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "11605397103383545626",
-      "Path": "/Game/meshes/Sponza/white.png",
-      "Type": "Texture"
-    },
-    {
       "Handle": "6127921637032783438",
       "Path": "/Game/meshes/Sponza/Sponza_mat3.ssmat",
       "Type": "Material"
-    },
-    {
-      "Handle": "13261941225913152830",
-      "Path": "/Game/meshes/Sponza/8783994986360286082.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "3755654948551996847",
-      "Path": "/Game/meshes/Sponza/5792855332885324923.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "3111930797756734910",
-      "Path": "/Game/meshes/Sponza/8747919177698443163.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "3081371784471540464",
-      "Path": "/Game/meshes/Sponza/3455394979645218238.jpg",
-      "Type": "Texture"
     },
     {
       "Handle": "2770843556057342847",
@@ -316,13 +191,8 @@
       "Type": "Material"
     },
     {
-      "Handle": "10166392558227027016",
-      "Path": "/Game/meshes/Sponza/2185409758123873465.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "17098017312760058951",
-      "Path": "/Game/meshes/Sponza/14650633544276105767.jpg",
+      "Handle": "3755654948551996847",
+      "Path": "/Game/meshes/Sponza/5792855332885324923.jpg",
       "Type": "Texture"
     },
     {
@@ -331,14 +201,14 @@
       "Type": "Material"
     },
     {
+      "Handle": "17098017312760058951",
+      "Path": "/Game/meshes/Sponza/14650633544276105767.jpg",
+      "Type": "Texture"
+    },
+    {
       "Handle": "10497186200766616415",
       "Path": "/Game/meshes/Sponza/Sponza_mat6.ssmat",
       "Type": "Material"
-    },
-    {
-      "Handle": "10156408791162302089",
-      "Path": "/Game/meshes/Sponza/6047387724914829168.jpg",
-      "Type": "Texture"
     },
     {
       "Handle": "6648297974668034722",
@@ -346,23 +216,8 @@
       "Type": "Texture"
     },
     {
-      "Handle": "16615583751872810620",
-      "Path": "/Game/meshes/Sponza/6151467286084645207.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "17987874206648232074",
-      "Path": "/Game/meshes/Sponza/7815564343179553343.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4387445924341059702",
-      "Path": "/Game/meshes/Sponza/Sponza_mat7.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "2033266891578132920",
-      "Path": "/Game/meshes/Sponza/8773302468495022225.jpg",
+      "Handle": "10156408791162302089",
+      "Path": "/Game/meshes/Sponza/6047387724914829168.jpg",
       "Type": "Texture"
     },
     {
@@ -371,13 +226,18 @@
       "Type": "Material"
     },
     {
-      "Handle": "16125167875323892627",
-      "Path": "/Game/meshes/Sponza/5823059166183034438.jpg",
+      "Handle": "4387445924341059702",
+      "Path": "/Game/meshes/Sponza/Sponza_mat7.ssmat",
+      "Type": "Material"
+    },
+    {
+      "Handle": "16615583751872810620",
+      "Path": "/Game/meshes/Sponza/6151467286084645207.jpg",
       "Type": "Texture"
     },
     {
-      "Handle": "17578678559776363041",
-      "Path": "/Game/meshes/Sponza/10381718147657362067.jpg",
+      "Handle": "16125167875323892627",
+      "Path": "/Game/meshes/Sponza/5823059166183034438.jpg",
       "Type": "Texture"
     },
     {
@@ -389,11 +249,6 @@
       "Handle": "12123771172042414589",
       "Path": "/Game/meshes/Sponza/Sponza_mat8.ssmat",
       "Type": "Material"
-    },
-    {
-      "Handle": "4108041715289840989",
-      "Path": "assets/meshes/Sponza/2411100444841994089.jpg",
-      "Type": "Texture"
     },
     {
       "Handle": "17765683191476266175",
@@ -411,23 +266,13 @@
       "Type": "Material"
     },
     {
-      "Handle": "16582920833045588119",
-      "Path": "assets/materials/Mandelbrot.ssmat",
-      "Type": "Material"
-    },
-    {
       "Handle": "1221424205949685414",
       "Path": "/Game/meshes/Sponza/Sponza_mat9.ssmat",
       "Type": "Material"
     },
     {
-      "Handle": "1594851394920529895",
-      "Path": "/Game/meshes/Sponza/14650633544276105767.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "14975203378481293704",
-      "Path": "/Game/meshes/Sponza/7815564343179553343.jpg",
+      "Handle": "3425047777464207449",
+      "Path": "/Game/Meshes/Sponza/6667038893015345571.jpg",
       "Type": "Texture"
     },
     {
@@ -436,34 +281,9 @@
       "Type": "Texture"
     },
     {
-      "Handle": "3425047777464207449",
-      "Path": "/Game/Meshes/Sponza/6667038893015345571.jpg",
+      "Handle": "8140202052764798210",
+      "Path": "/Game/meshes/Sponza/755318871556304029.jpg",
       "Type": "Texture"
-    },
-    {
-      "Handle": "3472347376847576756",
-      "Path": "/Game/meshes/Sponza/8481240838833932244.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "14086680195371146992",
-      "Path": "/Game/meshes/Sponza/Sponza_mat10.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "6751479041032616357",
-      "Path": "/Game/meshes/Sponza/16299174074766089871.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "17747714032303991907",
-      "Path": "/Game/meshes/cube.obj",
-      "Type": "Mesh"
-    },
-    {
-      "Handle": "11194328589051197402",
-      "Path": "/Game/meshes/Sponza/Sponza_mat13.ssmat",
-      "Type": "Material"
     },
     {
       "Handle": "15742691972444872497",
@@ -471,33 +291,13 @@
       "Type": "Texture"
     },
     {
-      "Handle": "7680184102935637578",
-      "Path": "assets/meshes/Sponza/7441062115984513793.jpg",
-      "Type": "Texture"
+      "Handle": "11194328589051197402",
+      "Path": "/Game/meshes/Sponza/Sponza_mat13.ssmat",
+      "Type": "Material"
     },
     {
-      "Handle": "1493198412761507863",
-      "Path": "/Game/meshes/Sponza/7268504077753552595.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "16476450975673391964",
-      "Path": "/Game/meshes/Sponza/14170708867020035030.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "8140202052764798210",
-      "Path": "/Game/meshes/Sponza/755318871556304029.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "5685295163649426330",
-      "Path": "/Game/meshes/Sponza/8773302468495022225.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "461517407100484138",
-      "Path": "/Game/meshes/Sponza/Sponza_mat12.ssmat",
+      "Handle": "14086680195371146992",
+      "Path": "/Game/meshes/Sponza/Sponza_mat10.ssmat",
       "Type": "Material"
     },
     {
@@ -506,24 +306,9 @@
       "Type": "Texture"
     },
     {
-      "Handle": "14434296482124420591",
-      "Path": "assets/meshes/Sponza/Sponza_mat15.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "1110353844888239668",
-      "Path": "assets/meshes/Sponza/466164707995436622.jpg",
-      "Type": "Texture"
-    },
-    {
       "Handle": "1617698807349275783",
       "Path": "/Game/meshes/Sponza/Sponza_mat12.ssmat",
       "Type": "Material"
-    },
-    {
-      "Handle": "15346650681094062425",
-      "Path": "assets/meshes/Sponza/8773302468495022225.jpg",
-      "Type": "Texture"
     },
     {
       "Handle": "9922499833740590653",
@@ -536,16 +321,6 @@
       "Type": "Texture"
     },
     {
-      "Handle": "12026787877348963707",
-      "Path": "/Game/meshes/Sponza/8006627369776289000.png",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "2464128399073928824",
-      "Path": "/Game/meshes/Sponza/Sponza_mat5.ssmat",
-      "Type": "Material"
-    },
-    {
       "Handle": "3121192196175594304",
       "Path": "/Game/meshes/Sponza/Sponza_mat15.ssmat",
       "Type": "Material"
@@ -556,24 +331,9 @@
       "Type": "Material"
     },
     {
-      "Handle": "17794464373584257082",
-      "Path": "/Game/meshes/Sponza/8750083169368950601.jpg",
-      "Type": "Texture"
-    },
-    {
       "Handle": "8571748957980010614",
       "Path": "/Game/meshes/Sponza/Sponza_mat20.ssmat",
       "Type": "Material"
-    },
-    {
-      "Handle": "7081325990780247291",
-      "Path": "assets/meshes/Sponza/14650633544276105767.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "11222909414200608523",
-      "Path": "assets/meshes/Sponza/13824894030729245199.jpg",
-      "Type": "Texture"
     },
     {
       "Handle": "15959252288217107692",
@@ -586,19 +346,9 @@
       "Type": "Material"
     },
     {
-      "Handle": "6417172081120733800",
-      "Path": "assets/meshes/Sponza/Sponza_mat11.ssmat",
-      "Type": "Material"
-    },
-    {
       "Handle": "12989859959238708985",
       "Path": "/Game/meshes/Sponza/Sponza.gltf?submesh=0",
       "Type": "Mesh"
-    },
-    {
-      "Handle": "12586853340162128915",
-      "Path": "/Game/meshes/Sponza/4910669866631290573.jpg",
-      "Type": "Texture"
     },
     {
       "Handle": "5974523661310525941",
@@ -608,11 +358,6 @@
     {
       "Handle": "18043870780987762981",
       "Path": "/Game/meshes/Sponza/Sponza.gltf?submesh=2",
-      "Type": "Mesh"
-    },
-    {
-      "Handle": "13119039878805456628",
-      "Path": "/Game/meshes/girl.obj",
       "Type": "Mesh"
     },
     {
@@ -626,9 +371,9 @@
       "Type": "Mesh"
     },
     {
-      "Handle": "6031965579586120195",
-      "Path": "assets/textures/Checkerboard.png",
-      "Type": "Texture"
+      "Handle": "7917909824905164640",
+      "Path": "/Game/meshes/Sponza/Sponza.gltf?submesh=6",
+      "Type": "Mesh"
     },
     {
       "Handle": "9880180171084872264",
@@ -636,14 +381,9 @@
       "Type": "Texture"
     },
     {
-      "Handle": "7917909824905164640",
-      "Path": "/Game/meshes/Sponza/Sponza.gltf?submesh=6",
+      "Handle": "12863179544685464940",
+      "Path": "/Game/meshes/Sponza/Sponza.gltf?submesh=7",
       "Type": "Mesh"
-    },
-    {
-      "Handle": "13429940391427707443",
-      "Path": "assets/textures/RPGpack_sheet_2X.png",
-      "Type": "Texture"
     },
     {
       "Handle": "18182727218010783182",
@@ -651,19 +391,9 @@
       "Type": "Shader"
     },
     {
-      "Handle": "12863179544685464940",
-      "Path": "/Game/meshes/Sponza/Sponza.gltf?submesh=7",
-      "Type": "Mesh"
-    },
-    {
       "Handle": "15120242575972384252",
       "Path": "/Game/meshes/Sponza/Sponza.gltf?submesh=8",
       "Type": "Mesh"
-    },
-    {
-      "Handle": "12677482198526835282",
-      "Path": "/Game/meshes/Sponza/Sponza_mat13.ssmat",
-      "Type": "Material"
     },
     {
       "Handle": "6163564378041380467",
@@ -671,29 +401,14 @@
       "Type": "Mesh"
     },
     {
-      "Handle": "2168243727036379379",
-      "Path": "/Game/meshes/Sponza/2051777328469649772.jpg",
-      "Type": "Texture"
-    },
-    {
       "Handle": "13730696295135408885",
       "Path": "/Game/meshes/Sponza/Sponza.gltf?submesh=10",
       "Type": "Mesh"
     },
     {
-      "Handle": "12981120562960692261",
-      "Path": "/Game/meshes/Sponza/Sponza_mat17.ssmat",
-      "Type": "Material"
-    },
-    {
       "Handle": "13353155638894207671",
       "Path": "/Game/meshes/Sponza/Sponza.gltf?submesh=11",
       "Type": "Mesh"
-    },
-    {
-      "Handle": "2081693209833276523",
-      "Path": "/Game/textures/RPGpack_sheet_2X.png",
-      "Type": "Texture"
     },
     {
       "Handle": "5754354131351941755",
@@ -706,24 +421,9 @@
       "Type": "Mesh"
     },
     {
-      "Handle": "16333645238360920554",
-      "Path": "/Game/meshes/Sponza/Sponza_mat17.ssmat",
-      "Type": "Material"
-    },
-    {
       "Handle": "9602043544168953391",
       "Path": "/Game/meshes/Sponza/Sponza.gltf?submesh=15",
       "Type": "Mesh"
-    },
-    {
-      "Handle": "13429691739111480684",
-      "Path": "assets/meshes/Sponza/Sponza_mat1.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "11330582997322754749",
-      "Path": "/Game/meshes/Sponza/Sponza_mat4.ssmat",
-      "Type": "Material"
     },
     {
       "Handle": "2033495428678049269",
@@ -741,34 +441,14 @@
       "Type": "Mesh"
     },
     {
-      "Handle": "3732937587107876892",
-      "Path": "assets/meshes/Sponza/3827035219084910048.jpg",
-      "Type": "Texture"
-    },
-    {
       "Handle": "4091405869459828822",
       "Path": "/Game/meshes/Sponza/Sponza.gltf?submesh=19",
       "Type": "Mesh"
     },
     {
-      "Handle": "390387696351857346",
-      "Path": "/Game/meshes/Sponza/715093869573992647.jpg",
-      "Type": "Texture"
-    },
-    {
       "Handle": "7927813937123330620",
       "Path": "/Game/meshes/Sponza/Sponza.gltf?submesh=20",
       "Type": "Mesh"
-    },
-    {
-      "Handle": "18029760085517260540",
-      "Path": "/Game/meshes/Sponza/3628158980083700836.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "6520542455083101718",
-      "Path": "assets/meshes/Sponza/8114461559286000061.jpg",
-      "Type": "Texture"
     },
     {
       "Handle": "7205460950427829625",
@@ -786,14 +466,9 @@
       "Type": "Mesh"
     },
     {
-      "Handle": "8167113972148071471",
-      "Path": "/Game/meshes/Sponza/7441062115984513793.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "9860591368701587823",
-      "Path": "/Game/meshes/Sponza/4871783166746854860.jpg",
-      "Type": "Texture"
+      "Handle": "10775407233779663383",
+      "Path": "/Game/meshes/Sponza/Sponza.gltf?submesh=24",
+      "Type": "Mesh"
     },
     {
       "Handle": "3840352612902975418",
@@ -801,29 +476,9 @@
       "Type": "Texture"
     },
     {
-      "Handle": "10775407233779663383",
-      "Path": "/Game/meshes/Sponza/Sponza.gltf?submesh=24",
-      "Type": "Mesh"
-    },
-    {
       "Handle": "53097782574330492",
       "Path": "/Game/Meshes/Sponza/10381718147657362067.jpg",
       "Type": "Texture"
-    },
-    {
-      "Handle": "4609031818633498531",
-      "Path": "/Game/meshes/Sponza/Sponza_mat22.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "15422149044922416612",
-      "Path": "assets/meshes/Sponza/Sponza_mat14.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "10979386009379891182",
-      "Path": "assets/meshes/cube.obj",
-      "Type": "Mesh"
     },
     {
       "Handle": "16924084106792534047",
@@ -833,16 +488,6 @@
     {
       "Handle": "15371842190740822666",
       "Path": "/Game/Meshes/Sponza/11872827283454512094.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "18130751703523524499",
-      "Path": "assets/meshes/Sponza/Sponza_mat10.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "11469150738409620177",
-      "Path": "/Game/textures/Checkerboard.png",
       "Type": "Texture"
     },
     {
@@ -856,28 +501,8 @@
       "Type": "Texture"
     },
     {
-      "Handle": "1983928606466021935",
-      "Path": "/Game/meshes/Sponza/10381718147657362067.jpg",
-      "Type": "Texture"
-    },
-    {
       "Handle": "15641344068730412736",
       "Path": "/Game/Meshes/Sponza/13824894030729245199.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "13370350961758739759",
-      "Path": "/Game/meshes/Sponza/16275776544635328252.png",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "10337714763334175470",
-      "Path": "/Game/meshes/Sponza/Sponza_mat20.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "2510077946462102811",
-      "Path": "/Game/Meshes/Sponza/16885566240357350108.jpg",
       "Type": "Texture"
     },
     {
@@ -886,14 +511,9 @@
       "Type": "Texture"
     },
     {
-      "Handle": "7997194140023910323",
-      "Path": "/Game/meshes/Sponza/2051777328469649772.jpg",
+      "Handle": "2510077946462102811",
+      "Path": "/Game/Meshes/Sponza/16885566240357350108.jpg",
       "Type": "Texture"
-    },
-    {
-      "Handle": "4843612309716008972",
-      "Path": "/Game/meshes/Sponza/Sponza_mat21.ssmat",
-      "Type": "Material"
     },
     {
       "Handle": "9944843222276312743",
@@ -913,16 +533,6 @@
     {
       "Handle": "18199948937578302864",
       "Path": "/Game/Meshes/Sponza/16299174074766089871.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "13994383292867218175",
-      "Path": "/Game/meshes/quad.obj",
-      "Type": "Mesh"
-    },
-    {
-      "Handle": "5082590747784985128",
-      "Path": "/Game/meshes/Sponza/5061699253647017043.png",
       "Type": "Texture"
     },
     {
@@ -946,18 +556,8 @@
       "Type": "Texture"
     },
     {
-      "Handle": "12321346701939603553",
-      "Path": "/Game/meshes/Sponza/Sponza_mat23.ssmat",
-      "Type": "Material"
-    },
-    {
       "Handle": "1739135843696311111",
       "Path": "/Game/Meshes/Sponza/2411100444841994089.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "10809814631518630330",
-      "Path": "/Game/Meshes/Sponza/4477655471536070370.jpg",
       "Type": "Texture"
     },
     {
@@ -966,18 +566,13 @@
       "Type": "Texture"
     },
     {
+      "Handle": "10809814631518630330",
+      "Path": "/Game/Meshes/Sponza/4477655471536070370.jpg",
+      "Type": "Texture"
+    },
+    {
       "Handle": "11124168691379961239",
       "Path": "/Game/Meshes/Sponza/3371964815757888145.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "1334666739515507360",
-      "Path": "/Game/meshes/Sponza/13824894030729245199.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "13764344673282006431",
-      "Path": "/Game/Meshes/Sponza/4910669866631290573.jpg",
       "Type": "Texture"
     },
     {
@@ -986,13 +581,13 @@
       "Type": "Texture"
     },
     {
-      "Handle": "8746041173642698933",
-      "Path": "/Game/Meshes/Sponza/3628158980083700836.jpg",
+      "Handle": "13764344673282006431",
+      "Path": "/Game/Meshes/Sponza/4910669866631290573.jpg",
       "Type": "Texture"
     },
     {
-      "Handle": "14818224152509283344",
-      "Path": "assets/meshes/Sponza/2969916736137545357.jpg",
+      "Handle": "8746041173642698933",
+      "Path": "/Game/Meshes/Sponza/3628158980083700836.jpg",
       "Type": "Texture"
     },
     {
@@ -1006,28 +601,13 @@
       "Type": "Texture"
     },
     {
-      "Handle": "16744407799008359709",
-      "Path": "/Game/meshes/Sponza/6047387724914829168.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "6447266520819636595",
-      "Path": "/Game/Meshes/Sponza/466164707995436622.jpg",
-      "Type": "Texture"
-    },
-    {
       "Handle": "7227917395068939805",
       "Path": "/Game/Shaders/Shadow.vert.hlsl",
       "Type": "Shader"
     },
     {
-      "Handle": "8337362459459236749",
-      "Path": "/Game/meshes/Sponza/Sponza_mat11.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "7350239849788969348",
-      "Path": "/Game/meshes/Sponza/12501374198249454378.jpg",
+      "Handle": "6447266520819636595",
+      "Path": "/Game/Meshes/Sponza/466164707995436622.jpg",
       "Type": "Texture"
     },
     {
@@ -1046,33 +626,13 @@
       "Type": "Texture"
     },
     {
-      "Handle": "10392210744762456825",
-      "Path": "/Game/meshes/Sponza/3827035219084910048.jpg",
-      "Type": "Texture"
-    },
-    {
       "Handle": "8628040113734121831",
       "Path": "/Game/Meshes/Sponza/715093869573992647.jpg",
       "Type": "Texture"
     },
     {
-      "Handle": "13657043427314167414",
-      "Path": "/Game/meshes/Sponza/Sponza_mat25.ssmat",
-      "Type": "Material"
-    },
-    {
       "Handle": "18155149303504475861",
       "Path": "/Game/Meshes/Sponza/759203620573749278.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "12879150543867389445",
-      "Path": "/Game/meshes/girl.obj",
-      "Type": "Mesh"
-    },
-    {
-      "Handle": "4523956605600099188",
-      "Path": "/Game/Meshes/Sponza/8051790464816141987.jpg",
       "Type": "Texture"
     },
     {
@@ -1081,8 +641,8 @@
       "Type": "Texture"
     },
     {
-      "Handle": "17634280302789940008",
-      "Path": "/Game/meshes/Sponza/466164707995436622.jpg",
+      "Handle": "4523956605600099188",
+      "Path": "/Game/Meshes/Sponza/8051790464816141987.jpg",
       "Type": "Texture"
     },
     {
@@ -1101,19 +661,9 @@
       "Type": "Texture"
     },
     {
-      "Handle": "6852259375092540692",
-      "Path": "/Game/meshes/Sponza/Sponza_mat24.ssmat",
-      "Type": "Material"
-    },
-    {
       "Handle": "10572871250847997774",
       "Path": "/Game/Meshes/Sponza/8773302468495022225.jpg",
       "Type": "Texture"
-    },
-    {
-      "Handle": "9301656336315030349",
-      "Path": "assets/meshes/Sponza/Sponza_mat20.ssmat",
-      "Type": "Material"
     },
     {
       "Handle": "7780229093317190753",
@@ -1131,19 +681,9 @@
       "Type": "Shader"
     },
     {
-      "Handle": "1929734664960888013",
-      "Path": "/Game/meshes/Sponza/Sponza_mat10.ssmat",
-      "Type": "Material"
-    },
-    {
       "Handle": "15305555068409883075",
       "Path": "/Game/Shaders/IBLCapture.hlsl",
       "Type": "Shader"
-    },
-    {
-      "Handle": "6697190850110472914",
-      "Path": "/Game/meshes/Sponza/17876391417123941155.jpg",
-      "Type": "Texture"
     },
     {
       "Handle": "11114380813668395638",
@@ -1151,19 +691,9 @@
       "Type": "Shader"
     },
     {
-      "Handle": "17071478192955543337",
-      "Path": "assets/meshes/Sponza/7645212358685992005.jpg",
-      "Type": "Texture"
-    },
-    {
       "Handle": "3766129556625970298",
       "Path": "/Game/Shaders/Shadow.hlsl",
       "Type": "Shader"
-    },
-    {
-      "Handle": "14719980166430541250",
-      "Path": "assets/meshes/girl.obj",
-      "Type": "Mesh"
     },
     {
       "Handle": "15195640344185446400",
@@ -1171,19 +701,9 @@
       "Type": "Shader"
     },
     {
-      "Handle": "10993536498689005565",
-      "Path": "/Game/meshes/Sponza/2374361008830720677.jpg",
-      "Type": "Texture"
-    },
-    {
       "Handle": "488750427285843633",
       "Path": "/Game/Shaders/Shadow.frag.hlsl",
       "Type": "Shader"
-    },
-    {
-      "Handle": "12730661909390997168",
-      "Path": "/Game/meshes/Sponza/Sponza_mat25.ssmat",
-      "Type": "Material"
     },
     {
       "Handle": "193176983517595641",
@@ -1201,11 +721,6 @@
       "Type": "Shader"
     },
     {
-      "Handle": "6191829402283132767",
-      "Path": "/Game/meshes/Sponza/Sponza_mat21.ssmat",
-      "Type": "Material"
-    },
-    {
       "Handle": "9891563901042276918",
       "Path": "/Game/Shaders/Mesh.vert.hlsl",
       "Type": "Shader"
@@ -1221,11 +736,6 @@
       "Type": "Shader"
     },
     {
-      "Handle": "6920039919043532065",
-      "Path": "assets/meshes/Sponza/755318871556304029.jpg",
-      "Type": "Texture"
-    },
-    {
       "Handle": "17449574729398890521",
       "Path": "/Game/Shaders/Metrics.comp.hlsl",
       "Type": "Shader"
@@ -1234,11 +744,6 @@
       "Handle": "7309198489704476927",
       "Path": "/Game/Shaders/NeuralConv.comp.hlsl",
       "Type": "Shader"
-    },
-    {
-      "Handle": "12209149311148121527",
-      "Path": "/Game/meshes/Sponza/11872827283454512094.jpg",
-      "Type": "Texture"
     },
     {
       "Handle": "12120362242161939648",
@@ -1266,11 +771,6 @@
       "Type": "Shader"
     },
     {
-      "Handle": "13792907414344720710",
-      "Path": "/Game/materials/White.ssmat",
-      "Type": "Material"
-    },
-    {
       "Handle": "3817608278670245211",
       "Path": "/Game/Shaders/Velocity.vert.hlsl",
       "Type": "Shader"
@@ -1279,1111 +779,6 @@
       "Handle": "12636449860268571349",
       "Path": "/Game/audio/test-tone.wav",
       "Type": "Audio"
-    },
-    {
-      "Handle": "2636726178703184623",
-      "Path": "/Game/meshes/Sponza/Sponza.gltf",
-      "Type": "Mesh"
-    },
-    {
-      "Handle": "5445095706925049033",
-      "Path": "/Game/meshes/Sponza/4477655471536070370.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "5023029804947020563",
-      "Path": "assets/meshes/Sponza/Sponza_mat17.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "18384907566451478057",
-      "Path": "/Game/meshes/Sponza/Sponza_mat5.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "7264953545839404987",
-      "Path": "/Game/meshes/quad.obj",
-      "Type": "Mesh"
-    },
-    {
-      "Handle": "10391151246919754762",
-      "Path": "/Game/meshes/Sponza/3371964815757888145.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "11074353514530636739",
-      "Path": "/Game/meshes/Sponza/13196865903111448057.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "13612394327424487499",
-      "Path": "/Game/meshes/Sponza/10388182081421875623.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "18260116261683064739",
-      "Path": "/Game/meshes/Sponza/Sponza_mat16.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "4678620676019075136",
-      "Path": "/Game/meshes/Sponza/11474523244911310074.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "6572375239257806663",
-      "Path": "/Game/meshes/Sponza/11490520546946913238.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "1334377499743110055",
-      "Path": "/Game/meshes/Sponza/11968150294050148237.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "2214768396681077242",
-      "Path": "/Game/meshes/Sponza/1219024358953944284.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "8152698298292318434",
-      "Path": "/Game/meshes/Sponza/13982482287905699490.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "1728765734639157172",
-      "Path": "/Game/meshes/Sponza/14118779221266351425.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "9409975846580510677",
-      "Path": "/Game/meshes/Sponza/14267839433702832875.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "11653686999073797490",
-      "Path": "/Game/meshes/Sponza/15295713303328085182.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "1570374105672969830",
-      "Path": "assets/meshes/Sponza/332936164838540657.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "9110073577283532061",
-      "Path": "/Game/meshes/Sponza/15722799267630235092.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "14139693818480073932",
-      "Path": "assets/meshes/Sponza/17876391417123941155.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "5034423696131719997",
-      "Path": "/Game/meshes/Sponza/16275776544635328252.png",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "11068510905252454285",
-      "Path": "/Game/meshes/Sponza/16885566240357350108.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "3228137812685999423",
-      "Path": "assets/meshes/Sponza/11968150294050148237.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "18334582705358548980",
-      "Path": "/Game/meshes/Sponza/17556969131407844942.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "7882718822577587302",
-      "Path": "/Game/meshes/Sponza/17876391417123941155.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "14358663921033457236",
-      "Path": "/Game/meshes/Sponza/13982482287905699490.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "16586411518648583783",
-      "Path": "/Game/meshes/Sponza/2185409758123873465.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "2868216722190298974",
-      "Path": "/Game/meshes/Sponza/2299742237651021498.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "15010216843842474019",
-      "Path": "/Game/meshes/Sponza/2411100444841994089.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "9053618241419481938",
-      "Path": "/Game/meshes/Sponza/8006627369776289000.png",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "8900485174494691817",
-      "Path": "/Game/meshes/Sponza/2775690330959970771.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4384208041907126966",
-      "Path": "/Game/meshes/Sponza/2969916736137545357.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "11879509018545538185",
-      "Path": "assets/meshes/Sponza/13982482287905699490.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "5288442902291071698",
-      "Path": "/Game/meshes/Sponza/332936164838540657.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "16475801579070151909",
-      "Path": "/Game/meshes/Sponza/3628158980083700836.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "9097925451961416409",
-      "Path": "/Game/meshes/Sponza/11968150294050148237.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4387145167231057455",
-      "Path": "/Game/meshes/Sponza/Sponza_mat2.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "3844218747931271523",
-      "Path": "/Game/meshes/Sponza/4477655471536070370.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "2611965665654614835",
-      "Path": "assets/meshes/Sponza/2299742237651021498.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "10371145071685627844",
-      "Path": "/Game/meshes/Sponza/4601176305987539675.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "11432709968677994345",
-      "Path": "/Game/meshes/Sponza/4675343432951571524.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "12162055975883710613",
-      "Path": "/Game/meshes/Sponza/4975155472559461469.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4816821811794073025",
-      "Path": "assets/meshes/Sponza/4477655471536070370.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "788454366256949501",
-      "Path": "/Game/meshes/Sponza/755318871556304029.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "562162852350230546",
-      "Path": "/Game/meshes/Sponza/5792855332885324923.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "3686329569183156714",
-      "Path": "/Game/meshes/Sponza/5823059166183034438.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "950157969436319877",
-      "Path": "assets/meshes/Sponza/5792855332885324923.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "6262944014467480119",
-      "Path": "assets/meshes/Sponza/15722799267630235092.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "12011108688784142097",
-      "Path": "/Game/meshes/Sponza/6047387724914829168.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "17278616281358623888",
-      "Path": "assets/meshes/Sponza/Sponza_mat12.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "11889188178708256748",
-      "Path": "/Game/meshes/Sponza/6151467286084645207.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "17157384175457937656",
-      "Path": "/Game/meshes/Sponza/6593109234861095314.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "5244725055597384393",
-      "Path": "/Game/meshes/Sponza/6667038893015345571.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "5174933020479806268",
-      "Path": "/Game/meshes/Sponza/6772804448157695701.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "10647535408942324433",
-      "Path": "/Game/meshes/Sponza/7056944414013900257.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "14004564308710372318",
-      "Path": "/Game/meshes/Sponza/7645212358685992005.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "15679724319577767397",
-      "Path": "/Game/meshes/Sponza/8114461559286000061.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4337871558725232787",
-      "Path": "/Game/meshes/Sponza/8503262930880235456.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "103639936010018556",
-      "Path": "/Game/meshes/Sponza/8747919177698443163.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "7197459252551578399",
-      "Path": "/Game/meshes/Sponza/8750083169368950601.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "14905506037918571216",
-      "Path": "/Game/meshes/Sponza/10388182081421875623.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "2530831034028297907",
-      "Path": "/Game/meshes/Sponza/9288698199695299068.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "8915951435796496980",
-      "Path": "/Game/meshes/Sponza/9916269861720640319.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4621757880308411065",
-      "Path": "/Game/textures/ChernoLogo.png",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "12800686296735890727",
-      "Path": "assets/meshes/Sponza/6667038893015345571.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "14906190239148305700",
-      "Path": "/Game/textures/skybox.dds",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "1273952489106331526",
-      "Path": "/Game/meshes/Sponza/white.png",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "11819486107011102714",
-      "Path": "/Game/meshes/Sponza/15295713303328085182.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "6080694249749914037",
-      "Path": "/Game/materials/Blue.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "9229172078410559925",
-      "Path": "/Game/materials/Mandelbrot.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "7554752270475996765",
-      "Path": "/Game/meshes/Sponza/5823059166183034438.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4273101094708654670",
-      "Path": "assets/meshes/Sponza/2775690330959970771.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "5011937760482577933",
-      "Path": "/Game/meshes/Sponza/Sponza_mat0.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "686906522290289416",
-      "Path": "/Game/meshes/Sponza/Sponza_mat1.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "8841415785916047263",
-      "Path": "/Game/meshes/Sponza/Sponza_mat10.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "11036959096968392641",
-      "Path": "/Game/meshes/Sponza/Sponza_mat11.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "1379054914206139731",
-      "Path": "/Game/meshes/Sponza/Sponza_mat14.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "8600488804408976174",
-      "Path": "/Game/meshes/Sponza/7441062115984513793.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "15584853070656397533",
-      "Path": "/Game/meshes/Sponza/Sponza_mat15.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "3699415071843871563",
-      "Path": "/Game/meshes/Sponza/Sponza_mat18.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "7926636559051242134",
-      "Path": "assets/meshes/Sponza/Sponza_mat8.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "16555978327459798359",
-      "Path": "/Game/meshes/Sponza/Sponza_mat19.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "16501056181704974510",
-      "Path": "/Game/meshes/Sponza/Sponza_mat20.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "10152772676706606752",
-      "Path": "/Game/meshes/Sponza/Sponza_mat22.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "8844396747277018901",
-      "Path": "/Game/meshes/Sponza/Sponza_mat23.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "7436012168898960463",
-      "Path": "/Game/meshes/Sponza/Sponza_mat3.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "16674795119056374502",
-      "Path": "assets/meshes/Sponza/4871783166746854860.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "6915849320560132118",
-      "Path": "/Game/meshes/Sponza/Sponza_mat6.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "3371327885305010540",
-      "Path": "/Game/meshes/Sponza/Sponza_mat7.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "11311691507283953511",
-      "Path": "/Game/meshes/Sponza/Sponza_mat8.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "10797088518635548697",
-      "Path": "/Game/meshes/Sponza/Sponza_mat9.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "10831398359245121597",
-      "Path": "/Game/materials/White.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "2984098996676108858",
-      "Path": "/Game/audio/test-tone.wav",
-      "Type": "Audio"
-    },
-    {
-      "Handle": "549410303902894744",
-      "Path": "/Game/meshes/Sponza/Sponza.gltf",
-      "Type": "Mesh"
-    },
-    {
-      "Handle": "8601968604213423772",
-      "Path": "assets/meshes/Sponza/Sponza_mat16.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "1843881153122632507",
-      "Path": "assets/meshes/Sponza/6772804448157695701.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "10155806137441263439",
-      "Path": "assets/meshes/Sponza/4975155472559461469.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "3245314282313870630",
-      "Path": "/Game/meshes/cube.obj",
-      "Type": "Mesh"
-    },
-    {
-      "Handle": "15013060852131000016",
-      "Path": "/Game/meshes/Sponza/11474523244911310074.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4852562958185033216",
-      "Path": "/Game/meshes/Sponza/5061699253647017043.png",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "17401988589889544015",
-      "Path": "/Game/meshes/Sponza/11490520546946913238.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "16996681105720217282",
-      "Path": "assets/meshes/Sponza/7056944414013900257.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "12086649016229561943",
-      "Path": "/Game/meshes/Sponza/11872827283454512094.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "17609790175402196060",
-      "Path": "/Game/meshes/Sponza/1219024358953944284.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "9426115151974803098",
-      "Path": "/Game/meshes/Sponza/5792855332885324923.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "5258330735666894584",
-      "Path": "assets/meshes/Sponza/5061699253647017043.png",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "7508056460312520072",
-      "Path": "/Game/meshes/Sponza/12501374198249454378.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "13399317544648065764",
-      "Path": "/Game/meshes/Sponza/13196865903111448057.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "2928601655531282929",
-      "Path": "/Game/meshes/Sponza/13824894030729245199.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "16490214486855579863",
-      "Path": "/Game/meshes/Sponza/14118779221266351425.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "434748660376464168",
-      "Path": "assets/meshes/Sponza/6047387724914829168.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "7434400212512714804",
-      "Path": "/Game/meshes/Sponza/14170708867020035030.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4997234561782671924",
-      "Path": "/Game/meshes/Sponza/14267839433702832875.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4586064440519580765",
-      "Path": "assets/meshes/Sponza/Sponza_mat7.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "13501186607514479077",
-      "Path": "/Game/meshes/Sponza/14650633544276105767.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "6938994226137343659",
-      "Path": "assets/meshes/Sponza/8006627369776289000.png",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4892358471879375136",
-      "Path": "/Game/meshes/Sponza/16299174074766089871.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "1357751782844480556",
-      "Path": "/Game/meshes/Sponza/17556969131407844942.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "16305998336415332962",
-      "Path": "/Game/textures/skybox.dds",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "11655143104056484583",
-      "Path": "/Game/meshes/Sponza/2299742237651021498.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "7548491999493859815",
-      "Path": "/Game/meshes/Sponza/2374361008830720677.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "16048288401051853821",
-      "Path": "/Game/meshes/Sponza/2411100444841994089.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "17351686760669054270",
-      "Path": "/Game/meshes/Sponza/2775690330959970771.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "8076544172164406934",
-      "Path": "/Game/meshes/Sponza/2969916736137545357.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "17339473756995900203",
-      "Path": "assets/meshes/Sponza/8503262930880235456.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "13177912209365459980",
-      "Path": "/Game/meshes/Sponza/332936164838540657.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "8799712454202727582",
-      "Path": "assets/meshes/Sponza/14118779221266351425.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "14913230518459803454",
-      "Path": "assets/meshes/Sponza/10381718147657362067.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "15616074321251432632",
-      "Path": "/Game/meshes/Sponza/3371964815757888145.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "1539061791130680855",
-      "Path": "/Game/meshes/Sponza/3455394979645218238.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "14798544077593251493",
-      "Path": "/Game/meshes/Sponza/4601176305987539675.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "2461403404524921709",
-      "Path": "/Game/meshes/Sponza/466164707995436622.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4887839422372007805",
-      "Path": "assets/meshes/Sponza/715093869573992647.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "17050443108435684810",
-      "Path": "/Game/meshes/Sponza/4871783166746854860.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "8159735012578612783",
-      "Path": "/Game/meshes/Sponza/4910669866631290573.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "17181605717123705660",
-      "Path": "/Game/meshes/Sponza/4975155472559461469.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "1666434274682886999",
-      "Path": "assets/audio/test-tone.wav",
-      "Type": "Audio"
-    },
-    {
-      "Handle": "17117572995713892724",
-      "Path": "/Game/meshes/Sponza/6151467286084645207.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "8930913933847418154",
-      "Path": "assets/meshes/Sponza/9916269861720640319.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4287462628242711621",
-      "Path": "/Game/meshes/Sponza/6667038893015345571.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4323033849481561497",
-      "Path": "/Game/meshes/Sponza/Sponza_mat9.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "1033688451541089787",
-      "Path": "/Game/meshes/Sponza/6772804448157695701.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "17853992097195536844",
-      "Path": "assets/meshes/Sponza/16275776544635328252.png",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "2741414942393569028",
-      "Path": "/Game/meshes/Sponza/7056944414013900257.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "15634962427343716031",
-      "Path": "/Game/meshes/Sponza/715093869573992647.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "7200977750665376179",
-      "Path": "/Game/meshes/Sponza/7268504077753552595.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4139323623252659932",
-      "Path": "/Game/meshes/Sponza/755318871556304029.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "12167045362589204309",
-      "Path": "/Game/meshes/Sponza/759203620573749278.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "6937620070720008910",
-      "Path": "/Game/meshes/Sponza/7645212358685992005.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "3970697946720539901",
-      "Path": "/Game/meshes/Sponza/8051790464816141987.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "8755064395286719628",
-      "Path": "/Game/meshes/Sponza/8114461559286000061.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "7837697231365416053",
-      "Path": "/Game/meshes/Sponza/8481240838833932244.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "11016333944457971037",
-      "Path": "/Game/meshes/Sponza/Sponza_mat0.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "5183678174462975421",
-      "Path": "/Game/meshes/Sponza/8503262930880235456.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "14548209173747582464",
-      "Path": "/Game/meshes/Sponza/8783994986360286082.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4810894629284639346",
-      "Path": "/Game/meshes/Sponza/9916269861720640319.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "13886235860781987873",
-      "Path": "/Game/textures/Checkerboard.png",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "17736218999926623445",
-      "Path": "assets/textures/skybox.dds",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "14298813842194170748",
-      "Path": "/Game/textures/ChernoLogo.png",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "9461220008031127845",
-      "Path": "/Game/textures/RPGpack_sheet_2X.png",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "18201495548589838690",
-      "Path": "/Game/materials/Blue.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "17284331790918364046",
-      "Path": "/Game/meshes/Sponza/Sponza_mat1.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "1434470007569358403",
-      "Path": "assets/meshes/Sponza/2185409758123873465.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "9819737095868678208",
-      "Path": "/Game/meshes/Sponza/Sponza_mat13.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "12428875779312777899",
-      "Path": "/Game/meshes/Sponza/Sponza_mat14.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "8254050229320577527",
-      "Path": "/Game/meshes/Sponza/Sponza_mat15.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "14706927861516116984",
-      "Path": "/Game/meshes/Sponza/Sponza_mat16.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "1501372273482627310",
-      "Path": "assets/meshes/Sponza/10388182081421875623.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "13682836070959651369",
-      "Path": "/Game/meshes/Sponza/Sponza_mat18.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "167234682682730256",
-      "Path": "/Game/meshes/Sponza/Sponza_mat19.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "17403677019581218647",
-      "Path": "/Game/meshes/Sponza/Sponza_mat2.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "211072092484908560",
-      "Path": "assets/meshes/Sponza/Sponza_mat24.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "3159394401434266780",
-      "Path": "/Game/meshes/Sponza/Sponza_mat24.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "4806604952761862986",
-      "Path": "/Game/meshes/Sponza/Sponza_mat3.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "8485799059866645397",
-      "Path": "/Game/meshes/Sponza/Sponza_mat4.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "7303168186677814635",
-      "Path": "assets/meshes/Sponza/4675343432951571524.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "12361697014118915443",
-      "Path": "/Game/meshes/Sponza/Sponza_mat6.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "10369039347430434544",
-      "Path": "/Game/audio/test-tone.wav",
-      "Type": "Audio"
-    },
-    {
-      "Handle": "970405384022834269",
-      "Path": "/Game/meshes/Sponza/Sponza_mat8.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "16506694556977041069",
-      "Path": "assets/meshes/Sponza/Sponza.gltf",
-      "Type": "Mesh"
-    },
-    {
-      "Handle": "8797712357339857664",
-      "Path": "assets/meshes/quad.obj",
-      "Type": "Mesh"
-    },
-    {
-      "Handle": "1271902025744079371",
-      "Path": "assets/meshes/Sponza/11490520546946913238.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "14231468319193976986",
-      "Path": "assets/meshes/Sponza/11872827283454512094.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "15761448096292743191",
-      "Path": "assets/meshes/Sponza/1219024358953944284.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "10454391972074498845",
-      "Path": "assets/meshes/Sponza/12501374198249454378.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "5765550038547665509",
-      "Path": "assets/meshes/Sponza/14170708867020035030.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "10779533073825244231",
-      "Path": "assets/meshes/Sponza/14267839433702832875.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "4235550290205705822",
-      "Path": "assets/meshes/Sponza/15295713303328085182.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "8881801864620474349",
-      "Path": "assets/meshes/Sponza/16299174074766089871.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "15550503669157773025",
-      "Path": "assets/meshes/Sponza/17556969131407844942.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "12128248439127269488",
-      "Path": "assets/meshes/Sponza/2051777328469649772.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "16866629854035570447",
-      "Path": "assets/meshes/Sponza/Sponza_mat19.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "14779210313229313746",
-      "Path": "assets/meshes/Sponza/2374361008830720677.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "9629103288500358764",
-      "Path": "assets/meshes/Sponza/3455394979645218238.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "16132317283141523600",
-      "Path": "assets/meshes/Sponza/3628158980083700836.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "7639306296751258438",
-      "Path": "assets/meshes/Sponza/4601176305987539675.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "13556746385850114141",
-      "Path": "assets/meshes/Sponza/4910669866631290573.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "1906766148901476931",
-      "Path": "assets/meshes/Sponza/Sponza_mat2.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "13881496383354710777",
-      "Path": "assets/meshes/Sponza/5823059166183034438.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "10613840974745198726",
-      "Path": "assets/meshes/Sponza/6593109234861095314.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "663028092462020485",
-      "Path": "assets/meshes/Sponza/7268504077753552595.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "14343331531483170715",
-      "Path": "assets/meshes/Sponza/759203620573749278.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "9448622656371255908",
-      "Path": "assets/meshes/Sponza/7815564343179553343.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "6202611100000673601",
-      "Path": "assets/meshes/Sponza/8051790464816141987.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "8064607990366846094",
-      "Path": "assets/meshes/Sponza/8481240838833932244.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "3406264416564135759",
-      "Path": "assets/meshes/Sponza/8747919177698443163.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "11441988405807749023",
-      "Path": "assets/meshes/Sponza/8750083169368950601.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "6450686496505314088",
-      "Path": "assets/meshes/Sponza/8783994986360286082.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "15090805778815251839",
-      "Path": "assets/meshes/Sponza/9288698199695299068.jpg",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "2725080285150815619",
-      "Path": "assets/textures/ChernoLogo.png",
-      "Type": "Texture"
-    },
-    {
-      "Handle": "575619678985246889",
-      "Path": "assets/materials/Blue.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "16204739116503366868",
-      "Path": "assets/meshes/Sponza/Sponza_mat0.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "15083117435597854701",
-      "Path": "assets/meshes/Sponza/Sponza_mat18.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "14949952207732719259",
-      "Path": "assets/meshes/Sponza/Sponza_mat21.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "18141219711433821447",
-      "Path": "assets/meshes/Sponza/Sponza_mat22.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "1759247862355293788",
-      "Path": "assets/meshes/Sponza/Sponza_mat25.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "1197210716454973977",
-      "Path": "assets/meshes/Sponza/Sponza_mat3.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "4368814802465082872",
-      "Path": "assets/meshes/Sponza/Sponza_mat4.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "4411608182597293833",
-      "Path": "assets/meshes/Sponza/Sponza_mat6.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "36707527444647764",
-      "Path": "assets/meshes/Sponza/Sponza_mat9.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "12882966312216131006",
-      "Path": "assets/materials/White.ssmat",
-      "Type": "Material"
     }
   ]
 }
