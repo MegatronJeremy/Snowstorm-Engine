@@ -40,9 +40,13 @@ from pathlib import Path
 # Targets: (display name, path under build/ to the exe, working dir relative to repo root).
 # Working dir is the repo root so relative Assets/... paths resolve (matches the VS
 # debugger working-directory setting).
+# The third element is a scene this target needs in order to do anything, or None to boot whatever the
+# startup project names. Pong is a game, so booting it into the Sandbox startup world would launch it
+# with no ball and prove nothing; --scene overrides this for every target.
 TARGETS = [
-    ("Editor", "Snowstorm-Editor/{config}/Snowstorm-Editor.exe"),
-    ("Runtime", "Snowstorm-Runtime/{config}/Snowstorm-Runtime.exe"),
+    ("Editor", "Snowstorm-Editor/{config}/Snowstorm-Editor.exe", None),
+    ("Runtime", "Snowstorm-Runtime/{config}/Snowstorm-Runtime.exe", None),
+    ("Pong", "Games/Pong/{config}/Snowstorm-Pong.exe", "Projects/Sandbox/assets/scenes/Pong.world"),
 ]
 
 # Substrings that mark a failure in captured output. Case-insensitive.
@@ -207,10 +211,11 @@ def main() -> int:
         clear_cook_caches(repo_root)
 
     results = {}
-    for name, rel in targets:
+    for name, rel, default_scene in targets:
         exe = build_dir / rel.format(config=args.config)
+        scene = args.scene or default_scene
         results[name] = run_target(name, exe, repo_root, args.frames, args.timeout,
-                                    args.warnings_fail, layer_path, args.strict, args.scene, args.max_frame_ms,
+                                    args.warnings_fail, layer_path, args.strict, scene, args.max_frame_ms,
                                     args.vsync_stress)
 
     print("\n=== Summary ===")

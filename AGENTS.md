@@ -135,7 +135,9 @@ the commit, or move the reference machine deliberately.
 ## Smoke test (run after non-trivial changes)
 
 `Scripts/smoke-test.py` boots each executable headlessly and checks it doesn't crash or log
-errors. It launches every app with `SS_SMOKE_FRAMES` set (the engine then runs that many frames
+errors. The example game is one of those executables, which is what keeps it from rotting: a target in
+`TARGETS` may name a scene it needs, and `Pong` boots `Pong.world` so it runs actual gameplay rather
+than whatever the startup project points at. It launches every app with `SS_SMOKE_FRAMES` set (the engine then runs that many frames
 and exits cleanly), captures stdout/stderr, enforces a per-app wall-clock timeout (a hang/deadlock
 becomes a failure instead of blocking), checks the exit code, and scans the log for error markers
 (`[error]`/`[critical]`, Vulkan validation, assertion text). Exit 0 = all pass.
@@ -143,7 +145,7 @@ becomes a failure instead of blocking), checks the exit code, and scans the log 
 ```
 py Scripts/smoke-test.py                 # 120 frames, 60s timeout/app, Debug build
 py Scripts/smoke-test.py --frames 300    # longer soak
-py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime)
+py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime | Pong)
 py Scripts/smoke-test.py --warnings-fail # treat [warning] lines as failures too
 py Scripts/smoke-test.py --strict        # enable deeper Vulkan validation (see below)
 ```
