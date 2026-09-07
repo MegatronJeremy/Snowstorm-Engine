@@ -1,13 +1,37 @@
 #!/usr/bin/env bash
-# Pre-push gate: block a push that CI's `lint` workflow would fail on.
+# Pre-push gate. Two checks, in increasing cost order.
 #
-# Runs Scripts/check-format.py in its default (format-on-touch) mode, which
-# checks the C++ files this branch changes vs master plus any uncommitted edits
-# -- the same set CI's clang-format check gates on. A dirty file aborts the push.
+# 1. Refuse a direct push to master. Work goes on a feature branch and reaches master through a pull
+#    request, which is where CI runs the gates and where the record of what changed lives.
+# 2. Block a push that CI's `lint` workflow would fail on, by running Scripts/check-format.py in its
+#    default (format-on-touch) mode: the C++ files this branch changes vs master plus any uncommitted
+#    edits, the same set CI's clang-format check gates on.
 #
 # Enable (once per clone):   git config core.hooksPath .githooks
-# Bypass for one push:       git push --no-verify   (or SKIP_FORMAT_HOOK=1 git push)
+# Bypass everything:         git push --no-verify
+# Bypass one check:          SKIP_FORMAT_HOOK=1 git push   /   ALLOW_MASTER_PUSH=1 git push
 set -euo pipefail
+
+# git feeds "<local ref> <local sha> <remote ref> <remote sha>" per ref on stdin. Read it before the
+# format check, which does not consume stdin, so the cheap check fails first.
+if [ "${ALLOW_MASTER_PUSH:-}" != "1" ]; then
+    while read -r _local_ref _local_sha remote_ref _remote_sha; do
+        case "$remote_ref" in
+        refs/heads/master | refs/heads/main)
+            branch="${remote_ref#refs/heads/}"
+            echo "pre-push: refusing to push directly to '$branch'." >&2
+            echo >&2
+            echo "  Work belongs on a feature branch and reaches '$branch' through a pull request," >&2
+            echo "  which is where CI runs the gates and where the review is recorded." >&2
+            echo >&2
+            echo "  Branch it:  git switch -c feat/<topic> && git push -u origin feat/<topic>" >&2
+            echo "  Then:       gh pr create --base $branch" >&2
+            echo "  Bypass:     ALLOW_MASTER_PUSH=1 git push   (or git push --no-verify)" >&2
+            exit 1
+            ;;
+        esac
+    done
+fi
 
 if [ "${SKIP_FORMAT_HOOK:-}" = "1" ]; then
     echo "pre-push: format check skipped (SKIP_FORMAT_HOOK=1)."
