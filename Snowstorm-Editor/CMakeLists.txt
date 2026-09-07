@@ -44,6 +44,7 @@ target_link_libraries(Snowstorm-Editor PUBLIC
 # as a link error.
 target_link_libraries(Snowstorm-Editor PRIVATE
     $<LINK_LIBRARY:WHOLE_ARCHIVE,DoomGame>
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,PongGame>
 )
 
 # Copy every runtime DLL this exe depends on next to it after build. vcpkg's automatic applocal deploy

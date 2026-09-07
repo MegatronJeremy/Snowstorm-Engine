@@ -3,6 +3,7 @@
 #include <Snowstorm/Core/GameLayer.hpp>
 
 #include "DoomGame.hpp"
+#include "PongGame.hpp"
 
 namespace Snowstorm
 {
@@ -17,8 +18,12 @@ namespace Snowstorm
 		SnowstormRuntime()
 		    : Application("Snowstorm-Runtime")
 		{
-			PushLayer(new GameLayer([](World& world)
-			                        { RegisterDoomSystems(world); }));
+			PushLayer(new GameLayer(
+			    [](World& world)
+			    {
+				    RegisterDoomSystems(world);
+				    RegisterPongSystems(world);
+			    }));
 		}
 	};
 

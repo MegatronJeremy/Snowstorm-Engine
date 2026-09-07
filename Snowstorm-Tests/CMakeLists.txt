@@ -44,6 +44,7 @@ target_link_libraries(Snowstorm-Tests PRIVATE
     # referenced by nothing, so a plain link drops its registration and the failure is silent. Linked
     # here so DoomRegistrationTests can assert that it did not, in the default (Doom-OFF) build CI runs.
     $<LINK_LIBRARY:WHOLE_ARCHIVE,DoomGame>
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,PongGame>
     Catch2::Catch2WithMain
 )
 

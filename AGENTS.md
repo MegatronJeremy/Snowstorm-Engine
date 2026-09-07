@@ -927,6 +927,30 @@ Voices are owned by `AudioSystem`, never by the entity: entity deletion, scene l
 Play/Stop snapshot restore all destroy components without notice, so a per-entity id would strand a
 playing sound nothing can reach. `Execute` sweeps voices whose entity is gone.
 
+## Games
+
+`Games/` holds games built on the engine, not parts of it. The engine has no knowledge of anything
+there; a host opts in by linking a game and calling its one registration function, and both
+`Snowstorm-Editor` and `Snowstorm-Runtime` link both games so either scene can be authored and played.
+
+**`Games/Pong` is the example, and the one to read first.** It is the whole of what building on
+Snowstorm takes: two components (`PongComponents.cpp`, registered exactly as an engine component is),
+one system in `SystemPhase::Logic` with `RunsInEditMode() == false` so the scene stays still while it
+is authored, a `RegisterPongSystems(World&)` seam, a hand-authored `Pong.world`, and a ~25-line
+executable over `GameLayer`. No third-party dependency, no build flag, no licence carve-out. It
+self-plays (an unattended paddle tracks the ball), which is what makes it verifiable headlessly: a
+`SS_SMOKE_FRAMES` run logs rallies and scores with no keyboard attached.
+
+`Games/Doom` is the serious one and a poor teaching artifact: most of its 1550 lines are emulator
+plumbing rather than engine API.
+
+**A host must link a game `WHOLE_ARCHIVE` even if it never calls into it.** Component registrations are
+static initializers in TUs nothing references, and the failure is silent in every direction: the
+component vanishes from the inspector, `SceneSerializer` skips it with a bare `continue`, and the next
+save deletes the block from the `.world`. That is why the editor links both games, not just the one it
+is running. `DoomRegistrationTests` asserts both games' components survived, and was verified to fail
+without the flag.
+
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc
@@ -961,7 +985,8 @@ Snowstorm-Core/      # STATIC library: all engine code (the only place most work
 Snowstorm-Editor/    # Editor EXECUTABLE, links Core; ImGui dockspace, panels, viewport
 Snowstorm-Runtime/   # Editor-free player EXECUTABLE; a ~25-line shell over GameLayer
 Snowstorm-Tests/     # Catch2 unit tests (GPU-free; run by ctest, gated in CI)
-Games/Doom/          # a GAME built on the engine, not part of it; hosts link it and call RegisterDoomSystems
+Games/Pong/          # the small example GAME: what building on the engine actually takes, ~300 lines
+Games/Doom/          # a second GAME, GPL-carved-out; hosts link it and call RegisterDoomSystems
 Engine/              # engine-owned runtime data: Shaders/, Fonts/, and the gitignored cache/
 Projects/Sandbox/    # the sample project: assets/ (scenes, meshes, materials, textures, registry)
 Dataset/             # gitignored capture output + trained weights

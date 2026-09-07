@@ -37,6 +37,15 @@ TEST_CASE("Doom game components survive the link into a host", "[doom]")
 	CHECK(IsComponentRegistered("DoomComponent"));
 }
 
+// Same mechanism, for the example game. This is the one that matters long term: Pong has no GPL
+// surface and no optional build flag, so it is the durable guard on "a game outside the engine can
+// register components", independent of whether Doom is present.
+TEST_CASE("Example game components survive the link into a host", "[doom]")
+{
+	CHECK(IsComponentRegistered("PongPaddleComponent"));
+	CHECK(IsComponentRegistered("PongBallComponent"));
+}
+
 TEST_CASE("Engine components are still registered alongside a linked game", "[doom]")
 {
 	// Guards against the assertion above passing for the wrong reason, i.e. a registry that matches

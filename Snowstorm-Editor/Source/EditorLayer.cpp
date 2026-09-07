@@ -44,6 +44,7 @@
 #include "Snowstorm/Systems/CoreSystems.hpp"
 
 #include "DoomGame.hpp"
+#include "PongGame.hpp"
 #include "Singletons/EditorCommandsSingleton.hpp"
 #include "Singletons/EditorHistorySingleton.hpp"
 #include "Singletons/EditorSelectionSingleton.hpp"
@@ -300,6 +301,7 @@ namespace Snowstorm
 		// systems, the same shape as Unreal's editor loading the game module. After RegisterCoreSystems
 		// on purpose; see DoomGame.hpp for why the order is load-bearing.
 		RegisterDoomSystems(*m_ActiveWorld);
+		RegisterPongSystems(*m_ActiveWorld);
 		RegisterEditorSystems(); // editor-only systems on top
 
 		// Create the editor's persistent Scene-view camera + viewport BEFORE any scene loads. They are

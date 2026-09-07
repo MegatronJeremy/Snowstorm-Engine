@@ -124,6 +124,19 @@ Architecture, conventions, and the full build, debug and benchmarking workflow a
 [`AGENTS.md`](AGENTS.md). The roadmap is in
 [issues](https://github.com/MegatronJeremy/Snowstorm-Engine/issues).
 
+## Games
+
+`Games/Pong` is a small example game: two components, one system, a scene, and a ~25-line executable
+over the engine's `GameLayer`. It is the readable answer to "what does building on this take".
+
+```
+build/Games/Pong/Debug/Snowstorm-Pong.exe --startup.scene=Projects/Sandbox/assets/scenes/Pong.world
+```
+
+`Games/Doom` runs Doom on a textured quad through the same seam, with its sound effects and OPL music
+going through the engine's own mixer. It is off by default and separately licensed; see
+[`Games/Doom/LICENSE`](Games/Doom/LICENSE).
+
 ## License
 
 Public domain, see [`UNLICENSE.txt`](UNLICENSE.txt).

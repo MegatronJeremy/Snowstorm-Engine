@@ -34,6 +34,7 @@ add_subdirectory(Snowstorm-Core)
 # Games built on the engine. Not part of it: the engine has no knowledge of anything under Games/, and
 # a host opts in by linking the game and calling its one registration function.
 add_subdirectory(Games/Doom)
+add_subdirectory(Games/Pong)
 add_subdirectory(Snowstorm-Editor)
 add_subdirectory(Snowstorm-Runtime)
 

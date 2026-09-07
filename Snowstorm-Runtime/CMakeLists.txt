@@ -33,6 +33,7 @@ target_link_libraries(Snowstorm-Runtime PUBLIC
     # The Doom game, for the same reason the editor links it: so a generic player can run Doom.world.
     # WHOLE_ARCHIVE because its component registration and CVars are unreferenced static initializers.
     $<LINK_LIBRARY:WHOLE_ARCHIVE,DoomGame>
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,PongGame>
 )
 
 # Copy dependent runtime DLLs next to the exe (see Snowstorm-Editor/CMakeLists.txt for the rationale).
