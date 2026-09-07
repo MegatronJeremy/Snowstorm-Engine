@@ -45,16 +45,20 @@ add_subdirectory(Snowstorm-Runtime)
 #
 # Engine/cache is deliberately NOT staged: it is generated, and the stage dir must stay writable so a
 # cold run can populate it in place.
-set(SS_STAGE_DIR "${CMAKE_BINARY_DIR}/stage/$<CONFIG>")
-set(SS_STAGE_STAMP "${CMAKE_BINARY_DIR}/stage/stage-$<CONFIG>.stamp")
+#
+# CACHE INTERNAL, not a plain set(), because a game consuming this engine via add_subdirectory needs to
+# see it: variables set here live in the engine's directory scope and do not reach the consumer's.
+set(SS_STAGE_DIR "${CMAKE_BINARY_DIR}/stage/$<CONFIG>" CACHE INTERNAL "Snowstorm stage output directory")
 
-# CONFIGURE_DEPENDS so adding a shader or a scene re-runs the glob instead of silently staging a stale
-# set. The stamp gives the copy a real output for CMake to track: a POST_BUILD copy would only fire when
-# an executable RELINKS, so editing a scene and rebuilding would stage the old one.
+# The ENGINE half of the payload: what every game needs regardless of which game it is.
+set(SS_STAGE_STAMP "${CMAKE_BINARY_DIR}/stage/stage-engine-$<CONFIG>.stamp")
+
+# CONFIGURE_DEPENDS so adding a shader re-runs the glob instead of silently staging a stale set. The
+# stamp gives the copy a real output for CMake to track: a POST_BUILD copy would only fire when an
+# executable RELINKS, so editing content and rebuilding would stage the old copy.
 file(GLOB_RECURSE SS_STAGE_INPUTS CONFIGURE_DEPENDS
     "${SS_ENGINE_SOURCE_DIR}/Engine/Shaders/*"
     "${SS_ENGINE_SOURCE_DIR}/Engine/Fonts/*"
-    "${SS_ENGINE_SOURCE_DIR}/Projects/Sandbox/*"
 )
 
 add_custom_command(
@@ -68,29 +72,67 @@ add_custom_command(
     # a cold shader elsewhere.
     COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
             "${SS_ENGINE_SOURCE_DIR}/Tools/dxc" "${SS_STAGE_DIR}/Tools/dxc"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-            "${SS_ENGINE_SOURCE_DIR}/Projects/Sandbox" "${SS_STAGE_DIR}/Projects/Sandbox"
     COMMAND ${CMAKE_COMMAND} -E touch "${SS_STAGE_STAMP}"
     DEPENDS ${SS_STAGE_INPUTS}
-    COMMENT "Staging engine and project content"
+    COMMENT "Staging engine content"
     VERBATIM
 )
 
 add_custom_target(stage DEPENDS "${SS_STAGE_STAMP}")
-add_dependencies(stage Snowstorm-Editor Snowstorm-Runtime Snowstorm-Pong)
 
-# The built artifacts. Each executable's whole output DIRECTORY is copied, rather than the exe plus
-# $<TARGET_RUNTIME_DLLS>, because that generator expression only names DLLs of directly linked imported
-# targets: it misses assimp's own transitive dependencies (minizip, pugixml, poly2tri, zlib), which
-# vcpkg's applocal deployment is what actually puts next to the exe. Staging 7 of the 18 DLLs produced a
-# stage whose executables would not start at all.
-foreach(SS_STAGED_EXE Snowstorm-Editor Snowstorm-Runtime Snowstorm-Pong)
-    add_custom_command(TARGET stage POST_BUILD
+# What a GAME adds to the stage. Functions rather than a list the engine reads, because a consuming
+# game's executable and project only exist AFTER add_subdirectory(Snowstorm-Engine) has run, so nothing
+# the engine evaluates at that point could name them. Each contributes its own target that `stage`
+# depends on, which also keeps it legal across directories: add_custom_command(TARGET) may not be used
+# on a target defined in another directory, but add_dependencies may.
+#
+#     snowstorm_stage_executable(Snowstorm-Doom)
+#     snowstorm_stage_project("${CMAKE_CURRENT_SOURCE_DIR}/Projects/Doom")
+
+# The built artifacts. The executable's whole output DIRECTORY is copied, rather than the exe plus
+# $<TARGET_RUNTIME_DLLS>, because that generator expression names only DLLs of directly linked imported
+# targets: it misses assimp's transitive dependencies (minizip, pugixml, poly2tri, zlib), which vcpkg's
+# applocal deployment is what actually puts next to the exe. Staging 7 of 18 DLLs produced a stage whose
+# executables would not start.
+function(snowstorm_stage_executable SS_TARGET)
+    add_custom_target(stage-exe-${SS_TARGET}
         COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-                "$<TARGET_FILE_DIR:${SS_STAGED_EXE}>" "${SS_STAGE_DIR}"
+                "$<TARGET_FILE_DIR:${SS_TARGET}>" "${SS_STAGE_DIR}"
+        COMMENT "Staging ${SS_TARGET}"
         VERBATIM
     )
-endforeach()
+    add_dependencies(stage-exe-${SS_TARGET} ${SS_TARGET})
+    add_dependencies(stage stage-exe-${SS_TARGET})
+endfunction()
+
+# A project directory (the one holding assets/ and the .ssproj). Staged under Projects/<name>/ so the
+# relative paths a game passes on the command line resolve from the stage root exactly as they do from
+# the repo root.
+function(snowstorm_stage_project SS_PROJECT_DIR)
+    get_filename_component(SS_PROJECT_NAME "${SS_PROJECT_DIR}" NAME)
+    set(SS_PROJECT_STAMP "${CMAKE_BINARY_DIR}/stage/stage-project-${SS_PROJECT_NAME}-$<CONFIG>.stamp")
+
+    file(GLOB_RECURSE SS_PROJECT_INPUTS CONFIGURE_DEPENDS "${SS_PROJECT_DIR}/*")
+
+    add_custom_command(
+        OUTPUT "${SS_PROJECT_STAMP}"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+                "${SS_PROJECT_DIR}" "${SS_STAGE_DIR}/Projects/${SS_PROJECT_NAME}"
+        COMMAND ${CMAKE_COMMAND} -E touch "${SS_PROJECT_STAMP}"
+        DEPENDS ${SS_PROJECT_INPUTS}
+        COMMENT "Staging project ${SS_PROJECT_NAME}"
+        VERBATIM
+    )
+    add_custom_target(stage-project-${SS_PROJECT_NAME} DEPENDS "${SS_PROJECT_STAMP}")
+    add_dependencies(stage stage-project-${SS_PROJECT_NAME})
+endfunction()
+
+# This repository's own contributions: the editor, the generic player, the example game, and the sample
+# project they all load.
+snowstorm_stage_executable(Snowstorm-Editor)
+snowstorm_stage_executable(Snowstorm-Runtime)
+snowstorm_stage_executable(Snowstorm-Pong)
+snowstorm_stage_project("${SS_ENGINE_SOURCE_DIR}/Projects/Sandbox")
 
 enable_testing()
 add_subdirectory(Snowstorm-Tests)
