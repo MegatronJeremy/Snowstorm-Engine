@@ -97,7 +97,7 @@ namespace Snowstorm
 		std::vector<uint8_t> CompressLevel(const std::vector<uint8_t>& rgba, const uint32_t w, const uint32_t h,
 		                                   const bool alpha)
 		{
-			const int flags = (alpha ? squish::kDxt5 : squish::kDxt1) | squish::kColourRangeFit;
+			const int flags = (alpha ? squish::kDxt5 : squish::kDxt1) | squish::kColourIterativeClusterFit;
 			const int bytes = squish::GetStorageRequirements(static_cast<int>(w), static_cast<int>(h), flags);
 
 			std::vector<uint8_t> out(static_cast<size_t>(bytes));
