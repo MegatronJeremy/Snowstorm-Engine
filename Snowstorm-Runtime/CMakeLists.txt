@@ -22,7 +22,7 @@ target_sources(Snowstorm-Runtime PRIVATE ${RUNTIME_SOURCES})
 # Include directories
 target_include_directories(Snowstorm-Runtime PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
-    ${CMAKE_SOURCE_DIR}/Snowstorm-Core/Source
+    ${SS_ENGINE_SOURCE_DIR}/Snowstorm-Core/Source
 )
 
 # Link libraries.
@@ -30,6 +30,9 @@ target_include_directories(Snowstorm-Runtime PUBLIC
 # those TUs instead of dropping the unreferenced ones (see Snowstorm-Editor/CMakeLists.txt).
 target_link_libraries(Snowstorm-Runtime PUBLIC
     $<LINK_LIBRARY:WHOLE_ARCHIVE,Snowstorm-Core>
+    # Games this player can run, for the same reason the editor links them. WHOLE_ARCHIVE because a
+    # game's component registrations are unreferenced static initializers.
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,PongGame>
 )
 
 # Copy dependent runtime DLLs next to the exe (see Snowstorm-Editor/CMakeLists.txt for the rationale).

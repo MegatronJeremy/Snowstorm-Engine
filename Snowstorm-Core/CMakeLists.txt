@@ -37,6 +37,9 @@ find_package(gli CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
 find_package(unofficial-spirv-reflect CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+
+# Header-only, so there is no package config and no library to link: just an include path.
+find_path(MINIAUDIO_INCLUDE_DIRS "miniaudio.h" REQUIRED)
 find_package(Tracy CONFIG REQUIRED)
 
 # Tracy is only compiled in when TRACY_ENABLE is defined; otherwise every Tracy macro is a no-op (zero
@@ -44,10 +47,32 @@ find_package(Tracy CONFIG REQUIRED)
 # is a deliberate opt-in you'd do by adding this define to that config, not the default.
 target_compile_definitions(Snowstorm-Core PUBLIC $<$<CONFIG:Debug>:TRACY_ENABLE>)
 
+# The engine's own tree, baked in as a DEV-ONLY fallback for finding Engine/Shaders and Tools/dxc.
+# It is what makes a game in its own repository work with no setup step: there the executable lives in
+# the game's build tree, so walking up from it never reaches the engine. See Utility/EnginePaths.hpp,
+# which deliberately ranks this BELOW the walk-up.
+target_compile_definitions(Snowstorm-Core PRIVATE SS_ENGINE_SOURCE_DIR="${SS_ENGINE_SOURCE_DIR}")
+
 target_include_directories(Snowstorm-Core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
     ${Stb_INCLUDE_DIR}
 )
+
+# PRIVATE: miniaudio is an implementation detail of AudioService, whose header deliberately hides it
+# (~90k lines) behind a pimpl, so nothing downstream should be able to include it by accident.
+target_include_directories(Snowstorm-Core PRIVATE ${MINIAUDIO_INCLUDE_DIRS})
+
+# The single TU that compiles miniaudio. Skipping the PCH matters: pch.h is force-included into every
+# Core source, and miniaudio expects to be the first thing in its own translation unit. /W0 because its
+# warnings are upstream's and would bury the engine's own.
+set_source_files_properties(Source/Snowstorm/Audio/MiniaudioImpl.cpp PROPERTIES
+    SKIP_PRECOMPILE_HEADERS ON
+)
+if(MSVC)
+    set_source_files_properties(Source/Snowstorm/Audio/MiniaudioImpl.cpp PROPERTIES
+        COMPILE_OPTIONS "/W0"
+    )
+endif()
 
 target_link_libraries(Snowstorm-Core PUBLIC
     assimp::assimp

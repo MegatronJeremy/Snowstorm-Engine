@@ -3,7 +3,7 @@
 .venv/
 build/
 # Any sibling configure directory: Generate-Solution.py writes build/, but a second one under
-# another name (a no-Doom tree, a second toolset) is an ordinary thing to have and must not be
+# another name (a second toolset, a one-off experiment) is an ordinary thing to have and must not be
 # committable by accident. These run to gigabytes.
 build-*/
 Vendor/Binaries
@@ -86,6 +86,8 @@ Dataset/
 *.npy
 __pycache__/
 .pytest_cache/
+
+.savegame/
 
 # Local scratch: investigation logs, ad-hoc drivers, saved diffs. Never part of a build.
 /_t1/

@@ -774,6 +774,11 @@
       "Handle": "3817608278670245211",
       "Path": "assets/Shaders/Velocity.vert.hlsl",
       "Type": "Shader"
+    },
+    {
+      "Handle": "12636449860268571349",
+      "Path": "assets/audio/test-tone.wav",
+      "Type": "Audio"
     }
   ]
 }

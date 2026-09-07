@@ -75,6 +75,11 @@ byte-parity `.ssnn` weights.
 RTTR component reflection, native C++ scripting, and an opt-in data-parallel path
 (`ParallelForEach`, `ParallelGather`) over the job system that preserves bit-identical output.
 
+**Audio.** A miniaudio-backed mixer service owning one output device, with per-voice volume, pitch,
+looping and panning, and a choice of pan law. Scene-authored `AudioSource` and `AudioListener`
+components give 3D spatialisation with distance attenuation, and a streaming source feeds audio that
+is generated rather than loaded.
+
 **Editor.** ImGui dockspace with scene hierarchy, inspector, ImGuizmo gizmos, click-to-select,
 content browser, undo and redo, a performance panel showing per-system CPU and per-pass GPU time, a
 live console-variable panel, and a developer console.
@@ -107,17 +112,24 @@ SDK installation is needed, since the loader, headers and validation layers all 
 | Snowstorm-Runtime | executable | editor-free player running the same systems |
 | Snowstorm-Tests | executable | Catch2 unit tests, run through CTest |
 
-## Also here
-
-Sponza plays Doom on a textured quad, off by default, as a demonstration of the dynamic-texture
-upload path. See the Embedded Doom section of [`AGENTS.md`](AGENTS.md) for why it is not built unless
-asked for.
-
 ## Documentation
 
 Architecture, conventions, and the full build, debug and benchmarking workflow are in
 [`AGENTS.md`](AGENTS.md). The roadmap is in
 [issues](https://github.com/MegatronJeremy/Snowstorm-Engine/issues).
+
+## Games
+
+`Games/Pong` is a small example game: two components, one system, a scene, and a ~25-line executable
+over the engine's `GameLayer`. It is the readable answer to "what does building on this take".
+
+```
+build/Games/Pong/Debug/Snowstorm-Pong.exe --startup.scene=Projects/Sandbox/assets/scenes/Pong.world
+```
+
+Doom runs on it too, in [its own repository](https://github.com/MegatronJeremy/Snowstorm-Doom): the
+engine is consumed as a submodule there rather than the game living here, because doomgeneric is
+GPL-2.0 and this repo is public domain.
 
 ## License
 

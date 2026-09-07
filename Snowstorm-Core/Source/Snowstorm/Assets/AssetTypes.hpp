@@ -16,7 +16,8 @@ namespace Snowstorm
 		Texture,
 		Shader,
 		Material,
-		Scene
+		Scene,
+		Audio
 	};
 
 	inline std::string AssetTypeToString(const AssetType t)
@@ -33,6 +34,8 @@ namespace Snowstorm
 			return "Material";
 		case AssetType::Scene:
 			return "Scene";
+		case AssetType::Audio:
+			return "Audio";
 		default:
 			return "None";
 		}
@@ -50,6 +53,8 @@ namespace Snowstorm
 			return AssetType::Material;
 		if (s == "Scene")
 			return AssetType::Scene;
+		if (s == "Audio")
+			return AssetType::Audio;
 		return AssetType::None;
 	}
 

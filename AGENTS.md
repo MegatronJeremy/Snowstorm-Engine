@@ -144,7 +144,9 @@ the commit, or move the reference machine deliberately.
 ## Smoke test (run after non-trivial changes)
 
 `Scripts/smoke-test.py` boots each executable headlessly and checks it doesn't crash or log
-errors. It launches every app with `SS_SMOKE_FRAMES` set (the engine then runs that many frames
+errors. The example game is one of those executables, which is what keeps it from rotting: a target in
+`TARGETS` may name a scene it needs, and `Pong` boots `Pong.world` so it runs actual gameplay rather
+than whatever the startup project points at. It launches every app with `SS_SMOKE_FRAMES` set (the engine then runs that many frames
 and exits cleanly), captures stdout/stderr, enforces a per-app wall-clock timeout (a hang/deadlock
 becomes a failure instead of blocking), checks the exit code, and scans the log for error markers
 (`[error]`/`[critical]`, Vulkan validation, assertion text). Exit 0 = all pass.
@@ -152,7 +154,7 @@ becomes a failure instead of blocking), checks the exit code, and scans the log 
 ```
 py Scripts/smoke-test.py                 # 120 frames, 60s timeout/app, Debug build
 py Scripts/smoke-test.py --frames 300    # longer soak
-py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime)
+py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime | Pong)
 py Scripts/smoke-test.py --warnings-fail # treat [warning] lines as failures too
 py Scripts/smoke-test.py --strict        # enable deeper Vulkan validation (see below)
 ```
@@ -810,6 +812,71 @@ Two selection traps, both of which produced a wrong verdict here before being ca
 
 Report both anyway. The point is which one decides.
 
+## Audio
+
+`AudioService` (miniaudio) owns the device and the mixer; `AudioSystem` turns `AudioSourceComponent`
+into playing voices and pushes the `AudioListenerComponent` pose. miniaudio was chosen over OpenAL Soft
+on licence: it is `Unlicense OR MIT-0`, OpenAL Soft is LGPL, and this repo is public domain.
+
+**The service is main-thread-only, with exactly two documented exceptions**, both on the same grounds:
+they touch a stream's own lock-free ring or a single atomic inside its handle, never the instance table.
+`StreamWrite`/`StreamWritableFrames` are callable from ONE producer thread, and `StreamFlush` from any
+thread. Everything else (create, destroy, play, the per-instance setters) is main thread. Doom is what
+forced the rule: it triggers sounds from its own unjoinable thread, so its effects are marshalled through
+a command queue instead of calling in.
+
+**A stream flush runs on the consumer, not the caller.** `ma_pcm_rb`'s two cursors are updated by
+load-compute-exchange with no CAS, so only the thread that reads may move the read cursor. `StreamFlush`
+therefore just sets an atomic and the mixer callback does the discard on its next pull. Calling
+`ma_pcm_rb_reset` or `seek_read` from a game thread does not merely lose a flush: it can leave the write
+cursor an arbitrary distance ahead of the read cursor, and the reader treats what lies between as PCM.
+
+**Pan law is per instance and defaults to miniaudio's balance.** `PanLaw::Balance` attenuates only the
+channel you pan away from, so a centred sound is 6 dB louder than a hard-panned one; `PanLaw::ConstantSum`
+moves energy across and keeps L+R fixed, which is what a mono point source needs and what Doom's own
+backend does. ConstantSum reaches a gain of 2 at hard pan, the only place a single sound exceeds its own
+volume setting, so a caller opting in leaves the headroom (Doom does, by scaling its 0..127 volume by
+1/255 rather than 1/127, which reproduces the SDL_mixer gains exactly). Unreal makes this a project
+setting and miniaudio makes it per sound; per instance follows the backend and lets Doom's voices differ
+from a future UI or music source.
+
+**Starting a voice at runtime is a request on the component.** `PlayRequested`/`StopRequested` are set
+by the editor's transport buttons or by a script and consumed by `AudioSystem` the same frame. They are
+deliberately absent from `AudioSourceComponent.cpp`'s RTTR registration, and that omission is the whole
+mechanism keeping them transient: that one property list is simultaneously the serialization set and the
+inspector set, so registering them to get a checkbox would write `"PlayRequested": true` into the
+`.world` file and re-trigger the sound on every load.
+
+Voices are owned by `AudioSystem`, never by the entity: entity deletion, scene load and the editor's
+Play/Stop snapshot restore all destroy components without notice, so a per-entity id would strand a
+playing sound nothing can reach. `Execute` sweeps voices whose entity is gone.
+
+## Games
+
+`Games/` holds games built on the engine, not parts of it. The engine has no knowledge of anything
+there; a host opts in by linking a game and calling its one registration function, and both
+`Snowstorm-Editor` and `Snowstorm-Runtime` link both games so either scene can be authored and played.
+
+**`Games/Pong` is the example.** It is the whole of what building on
+Snowstorm takes: two components (`PongComponents.cpp`, registered exactly as an engine component is),
+one system in `SystemPhase::Logic` with `RunsInEditMode() == false` so the scene stays still while it
+is authored, a `RegisterPongSystems(World&)` seam, a hand-authored `Pong.world`, and a ~25-line
+executable over `GameLayer`. No third-party dependency, no build flag, no licence carve-out. It
+self-plays (an unattended paddle tracks the ball), which is what makes it verifiable headlessly: a
+`SS_SMOKE_FRAMES` run logs rallies and scores with no keyboard attached.
+
+Doom runs on the engine too, but from [its own repository](https://github.com/MegatronJeremy/Snowstorm-Doom),
+which consumes Snowstorm as a submodule. It lives there rather than here because doomgeneric is GPL-2.0
+against this project's public domain, and because it is a poor teaching artifact: most of its 1550 lines
+are emulator plumbing rather than engine API.
+
+**A host must link a game `WHOLE_ARCHIVE` even if it never calls into it.** Component registrations are
+static initializers in TUs nothing references, and the failure is silent in every direction: the
+component vanishes from the inspector, `SceneSerializer` skips it with a bare `continue`, and the next
+save deletes the block from the `.world`. That is why the editor links both games, not just the one it
+is running. `GameRegistrationTests` asserts a game's components survived, and was verified to fail
+without the flag.
+
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc
@@ -842,8 +909,9 @@ Snowstorm-Core/      # STATIC library: all engine code (the only place most work
   Source/Snowstorm/  #   platform-independent engine (Core, ECS, Render, Systems, ...)
   Source/Platform/   #   Vulkan/ (RHI implementation, ~28 files) and Windows/
 Snowstorm-Editor/    # Editor EXECUTABLE, links Core; ImGui dockspace, panels, viewport
-Snowstorm-Runtime/   # Editor-free runtime EXECUTABLE, links Core; shares RegisterCoreSystems
+Snowstorm-Runtime/   # Editor-free player EXECUTABLE; a ~25-line shell over GameLayer
 Snowstorm-Tests/     # Catch2 unit tests (GPU-free; run by ctest, gated in CI)
+Games/Pong/          # the small example GAME: what building on the engine actually takes, ~300 lines
 Engine/              # engine-owned runtime data: Shaders/, Fonts/, and the gitignored cache/
 Projects/Sandbox/    # the sample project: assets/ (scenes, meshes, materials, textures, registry)
 Dataset/             # gitignored capture output + trained weights
@@ -864,6 +932,12 @@ see, so treat it as part of the feature, not an afterthought.
 
 ## Architecture (Core)
 
+- **Game bootstrap:** `Core/GameLayer.hpp` is the layer a non-editor host pushes. It builds the `World`,
+  boots the active project, calls `RegisterCoreSystems`, loads the startup scene, and makes the viewport
+  and camera. A game passes its own `void(World&)` registration to the constructor, which runs
+  immediately after `RegisterCoreSystems` so its systems land behind every engine system in the same
+  phase. It is engine code rather than one executable's private layer because every shipping game needs
+  exactly this bootstrap; `Snowstorm-Runtime` and `Snowstorm-Doom` are both thin shells over it.
 - **Entry point:** clients define `Snowstorm::CreateApplication()`; `Core/EntryPoint.hpp` provides
   `main` (inits logging, wraps `Run()` in profiler sessions). `Application` owns the window, the
   `LayerStack`, the `EventBus`, and the `ServiceManager` (singleton via `Application::Get()`).
@@ -932,8 +1006,9 @@ see, so treat it as part of the feature, not an afterthought.
 
 ## Dependencies (vcpkg, x64-windows)
 
-assimp, EnTT, fmt, glew, glfw3, glm, imgui (vulkan+glfw bindings, docking), rttr, spdlog, stb,
-Vulkan SDK, vulkan-memory-allocator, gli, volk, spirv-reflect, nlohmann-json. The canonical list
+assimp, EnTT, fmt, glew, glfw3, glm, imgui (vulkan+glfw bindings, docking), imguizmo, rttr, spdlog,
+stb, Vulkan SDK, vulkan-memory-allocator, gli, volk, spirv-reflect, nlohmann-json, catch2, tracy,
+miniaudio. The canonical list
 is `PACKAGES` in `Scripts/Generate-Solution.py`; the linkage is in `Snowstorm-Core/CMakeLists.txt`.
 Keep those two in sync when adding a dependency.
 

@@ -81,6 +81,12 @@ namespace Snowstorm
 		}
 	}
 
+	std::filesystem::path AssetManagerSingleton::GetAbsolutePath(const AssetHandle handle) const
+	{
+		const AssetMetadata* meta = m_Registry.GetMetadata(handle);
+		return meta != nullptr ? ResolveAssetPath(meta->Path) : std::filesystem::path{};
+	}
+
 	bool AssetManagerSingleton::LoadRegistry(const std::filesystem::path& filePath)
 	{
 		return m_Registry.LoadFromFile(filePath);

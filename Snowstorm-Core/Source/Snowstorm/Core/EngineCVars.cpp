@@ -8,6 +8,10 @@
 
 namespace Snowstorm::CVars
 {
+	CVar<std::string> EngineRoot{"engine.root", "",
+	                             "Directory holding Engine/Shaders, Engine/cache and Tools/dxc. Empty = "
+	                             "derived from the executable's location. Set it when consuming Snowstorm "
+	                             "from another repository, where the exe is outside the engine tree."};
 
 	CVar<int> SmokeFrames{"smoke.frames", 0, "Run N frames then exit cleanly (0 = until window closed)", CVarFlags::ReadOnly};
 
@@ -89,6 +93,12 @@ namespace Snowstorm::CVars
 	// survive an editor restart. One-shot/dev CVars above (smoke/bake/validation/benchmark) are tagged
 	// CVarFlags::ReadOnly: CLI/env/startup-config-driven, resolved once at launch, never runtime-editable.
 	CVar<bool> VSync{"display.vsync", true, "VSync on (FIFO, locked to refresh) or off (uncapped present)", CVarFlags::Persist};
+
+	CVar<bool> Fullscreen{"display.fullscreen", false, "Create the window borderless at the primary monitor's current video mode (no mode switch, so alt-tab stays instant) instead of a decorated 1280x720. Startup-only: the window is created once.", CVarFlags::Persist | CVarFlags::ReadOnly};
+
+	CVar<bool> AudioEnabled{"audio.enabled", true, "Open an audio output device at startup. Off = the engine runs silently (every AudioService call no-ops) and no device is claimed. Startup-only: the device is opened once.", CVarFlags::Persist | CVarFlags::ReadOnly};
+
+	CVar<float> AudioMasterVolume{"audio.volume", 1.0f, "Master volume over the whole mix: 0 = silence, 1 = unattenuated. Read every frame, so an edit from the CVar panel is audible immediately. Above 1 amplifies and can clip.", CVarFlags::Persist};
 
 	// startup.* select what boots and are read once during application startup (before the editor exists), so
 	// they're ReadOnly: change them in SnowstormStartup.cfg / CLI and relaunch.

@@ -20,19 +20,19 @@ file(GLOB_RECURSE TEST_SOURCES
 # just those two TUs into the test binary — the alternative (linking the whole Editor executable) would
 # drag in ImGui/Vulkan and is wrong for a headless logic test.
 set(EDITOR_UNDO_SOURCES
-    ${CMAKE_SOURCE_DIR}/Snowstorm-Editor/Source/Singletons/EditorCommands.cpp
-    ${CMAKE_SOURCE_DIR}/Snowstorm-Editor/Source/Singletons/EditorHistorySingleton.cpp
+    ${SS_ENGINE_SOURCE_DIR}/Snowstorm-Editor/Source/Singletons/EditorCommands.cpp
+    ${SS_ENGINE_SOURCE_DIR}/Snowstorm-Editor/Source/Singletons/EditorHistorySingleton.cpp
 )
 target_sources(Snowstorm-Tests PRIVATE ${TEST_SOURCES} ${EDITOR_UNDO_SOURCES})
 
 target_include_directories(Snowstorm-Tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/Snowstorm-Core/Source
-    ${CMAKE_SOURCE_DIR}/Snowstorm-Editor/Source
+    ${SS_ENGINE_SOURCE_DIR}/Snowstorm-Core/Source
+    ${SS_ENGINE_SOURCE_DIR}/Snowstorm-Editor/Source
 )
 
 # Absolute repo root, so a test that reads a committed data file (e.g. the benchmark camera route) does not
 # depend on ctest's working directory.
-target_compile_definitions(Snowstorm-Tests PRIVATE SS_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+target_compile_definitions(Snowstorm-Tests PRIVATE SS_REPO_ROOT="${SS_ENGINE_SOURCE_DIR}")
 
 find_package(Catch2 CONFIG REQUIRED)
 
@@ -40,6 +40,10 @@ find_package(Catch2 CONFIG REQUIRED)
 # component self-registration static initializers run (SceneSerializer round-trip needs the reflection).
 target_link_libraries(Snowstorm-Tests PRIVATE
     $<LINK_LIBRARY:WHOLE_ARCHIVE,Snowstorm-Core>
+    # A game, WHOLE_ARCHIVE for the reason the hosts link it that way: a game's component registration
+    # lives in a TU nothing references, so a plain link drops it and the failure is silent. Linked here
+    # so GameRegistrationTests can assert that it did not.
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,PongGame>
     Catch2::Catch2WithMain
 )
 

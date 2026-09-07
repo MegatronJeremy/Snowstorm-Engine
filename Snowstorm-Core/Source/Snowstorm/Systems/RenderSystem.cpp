@@ -119,6 +119,9 @@ namespace Snowstorm
 		// EndFrame must not run if BeginFrame didn't start a frame.
 		if (!Renderer::BeginFrame())
 		{
+			// No graph will run this frame, so nothing would consume what PreRender queued and the queue
+			// would grow by one entry per skipped frame while minimized.
+			renderer.DiscardTextureUploads();
 			return;
 		}
 
@@ -136,6 +139,20 @@ namespace Snowstorm
 		RenderGraph graph;
 
 		FrameContext fc{.Graph = graph, .Renderer = renderer, .Reg = reg, .FrameIndex = frameIndex};
+
+		// Dynamic-texture uploads queued by systems this frame (EnqueueTextureUpload). First pass in the
+		// graph so the texels land before anything samples them, including the shadow and IBL passes below.
+		// A no-target compute pass: it records only copies and barriers, and a barrier cannot be recorded
+		// inside a dynamic-rendering instance.
+		if (renderer.HasPendingTextureUploads())
+		{
+			graph.AddPass({.Name = "TextureUploads",
+			               .IsCompute = true,
+			               .Execute = [&renderer, frameIndex](CommandContext& c)
+			               {
+				               renderer.RecordTextureUploads(c, frameIndex);
+			               }});
+		}
 
 		// RT reflections (#118): hand the per-instance geometry-table address (TlasBuildSystem filled it in
 		// PreRender) to the renderer so AcquireFrameSet folds it into FrameCB. 0 when reflections are off ->

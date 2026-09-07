@@ -105,6 +105,13 @@ namespace Snowstorm
 
 		const AssetMetadata* GetMetadata(AssetHandle handle) const { return m_Registry.GetMetadata(handle); }
 
+		// Absolute path on disk for a handle, or an empty path if the handle is unknown. Registry paths
+		// are stored project-relative (portable, and that is what AssetRegistry.json commits), so a
+		// consumer doing its own file I/O must resolve them against the active project rather than the
+		// process CWD. Exposed because the asset manager cannot own every loader: AudioSystem hands the
+		// path to miniaudio itself.
+		[[nodiscard]] std::filesystem::path GetAbsolutePath(AssetHandle handle) const;
+
 		// Visit every registered asset (editor UI: asset picker, content browser).
 		void IterateAssets(const std::function<void(const AssetMetadata&)>& fn) const { m_Registry.Iterate(fn); }
 

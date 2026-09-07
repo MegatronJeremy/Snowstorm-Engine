@@ -22,7 +22,7 @@ target_sources(Snowstorm-Editor PRIVATE ${EDITOR_SOURCES})
 # Include directories
 target_include_directories(Snowstorm-Editor PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
-    ${CMAKE_SOURCE_DIR}/Snowstorm-Core/Source
+    ${SS_ENGINE_SOURCE_DIR}/Snowstorm-Core/Source
 )
 
 # ImGuizmo: editor-only transform gizmos drawn over the viewport.
@@ -35,6 +35,14 @@ find_package(imguizmo CONFIG REQUIRED)
 target_link_libraries(Snowstorm-Editor PUBLIC
     $<LINK_LIBRARY:WHOLE_ARCHIVE,Snowstorm-Core>  # keep self-registration TUs (see note above)
     imguizmo::imguizmo
+)
+
+# Games this editor can author and play. Linked exactly as Unreal's editor loads the game module.
+# WHOLE_ARCHIVE for the same reason Core needs it: a game's component registrations are static
+# initializers in TUs nothing references, and dropping them fails SILENTLY (the component vanishes from
+# the inspector and the serializer skips it), never as a link error.
+target_link_libraries(Snowstorm-Editor PRIVATE
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,PongGame>
 )
 
 # Copy every runtime DLL this exe depends on next to it after build. vcpkg's automatic applocal deploy

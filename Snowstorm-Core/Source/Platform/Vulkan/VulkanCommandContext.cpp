@@ -769,6 +769,79 @@ namespace Snowstorm
 		TransitionLayout(texture, prev);
 	}
 
+	void VulkanCommandContext::CopyBufferToTexture(const Ref<Buffer>& src, const Ref<Texture>& texture,
+	                                               const uint32_t mipLevel, const uint32_t arrayLayer,
+	                                               const uint64_t srcOffset)
+	{
+		SS_CORE_ASSERT(src && texture, "CopyBufferToTexture: null buffer or texture");
+		auto vkTex = std::static_pointer_cast<VulkanTexture>(texture);
+		const auto vkBuf = std::static_pointer_cast<VulkanBuffer>(src);
+
+		const TextureDesc& d = texture->GetDesc();
+		const uint32_t bpp = BytesPerPixel(d.Format);
+		SS_CORE_ASSERT(bpp > 0, "CopyBufferToTexture: unsupported format for upload");
+		SS_CORE_ASSERT(mipLevel < d.MipLevels, "CopyBufferToTexture: mipLevel out of range");
+		SS_CORE_ASSERT(arrayLayer < d.ArrayLayers, "CopyBufferToTexture: arrayLayer out of range");
+		SS_CORE_ASSERT(HasUsage(d.Usage, TextureUsage::TransferDst),
+		               "CopyBufferToTexture: texture must include TextureUsage::TransferDst");
+
+		const uint32_t mipW = std::max(1u, d.Width >> mipLevel);
+		const uint32_t mipH = std::max(1u, d.Height >> mipLevel);
+		const VkDeviceSize needed = static_cast<VkDeviceSize>(mipW) * mipH * bpp;
+		SS_CORE_ASSERT(src->GetSize() >= srcOffset + needed, "CopyBufferToTexture: source buffer too small");
+
+		// A texture that has never been transitioned is UNDEFINED, which is not a legal destination layout,
+		// so there is nothing to restore on the first upload — leave it sampled instead. (The readback path
+		// above never hits this: its source is always a render target a pass has already written.)
+		const VkImageLayout current = vkTex->GetCurrentLayout();
+		const VkImageLayout restore = (current == VK_IMAGE_LAYOUT_UNDEFINED) ? vkTex->GetReadyLayout() : current;
+
+		TransitionLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+		VkBufferImageCopy region{};
+		region.bufferOffset = srcOffset;
+		region.bufferRowLength = 0;   // tightly packed, no row padding
+		region.bufferImageHeight = 0; // tightly packed
+		region.imageSubresource.aspectMask = vkTex->GetAspectMask();
+		region.imageSubresource.mipLevel = mipLevel;
+		region.imageSubresource.baseArrayLayer = arrayLayer;
+		region.imageSubresource.layerCount = 1;
+		region.imageOffset = {0, 0, 0};
+		region.imageExtent = {mipW, mipH, 1};
+
+		vkCmdCopyBufferToImage(m_CommandBuffer, vkBuf->GetHandle(), vkTex->GetImage(),
+		                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+		// Restore the layout AND make the transfer write visible, in one barrier. TransitionLayout is not
+		// used here because it derives its dst scope from the layout, and SHADER_READ_ONLY maps to
+		// FRAGMENT_SHADER alone (VulkanCommon.cpp LayoutStageAccess). A texture uploaded this way is also
+		// read from COMPUTE in the same command buffer (the path tracer and the RT passes sample material
+		// albedo through the bindless table), and nothing downstream would repair that: the layout ends up
+		// unchanged, so a later TransitionLayout early-outs, and a graph barrier is only derived for
+		// textures a pass declares in Reads. So name both consumer stages explicitly.
+		//
+		// No host barrier on the source, unlike the readback path: the host access here is a WRITE that
+		// happened before submit, ordered by the frame fence.
+		VkImageMemoryBarrier2 barrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+		barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+		barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+		barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+		barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+		ClampScopeToQueue(barrier.srcStageMask, barrier.srcAccessMask);
+		ClampScopeToQueue(barrier.dstStageMask, barrier.dstAccessMask);
+		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		barrier.newLayout = restore;
+		barrier.image = vkTex->GetImage();
+		barrier.subresourceRange = {vkTex->GetAspectMask(), 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
+
+		VkDependencyInfo dep{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+		dep.imageMemoryBarrierCount = 1;
+		dep.pImageMemoryBarriers = &barrier;
+		vkCmdPipelineBarrier2(m_CommandBuffer, &dep);
+
+		vkTex->SetCurrentLayout(restore);
+	}
+
 	void VulkanCommandContext::ResetState()
 	{
 		m_IsRendering = false;
