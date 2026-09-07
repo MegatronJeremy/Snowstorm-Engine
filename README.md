@@ -112,12 +112,6 @@ SDK installation is needed, since the loader, headers and validation layers all 
 | Snowstorm-Runtime | executable | editor-free player running the same systems |
 | Snowstorm-Tests | executable | Catch2 unit tests, run through CTest |
 
-## Also here
-
-Sponza plays Doom on a textured quad, off by default, as a demonstration of the dynamic-texture
-upload path. See the Embedded Doom section of [`AGENTS.md`](AGENTS.md) for why it is not built unless
-asked for.
-
 ## Documentation
 
 Architecture, conventions, and the full build, debug and benchmarking workflow are in
@@ -133,15 +127,10 @@ over the engine's `GameLayer`. It is the readable answer to "what does building 
 build/Games/Pong/Debug/Snowstorm-Pong.exe --startup.scene=Projects/Sandbox/assets/scenes/Pong.world
 ```
 
-`Games/Doom` runs Doom on a textured quad through the same seam, with its sound effects and OPL music
-going through the engine's own mixer. It is off by default and separately licensed; see
-[`Games/Doom/LICENSE`](Games/Doom/LICENSE).
+Doom runs on it too, in [its own repository](https://github.com/MegatronJeremy/Snowstorm-Doom): the
+engine is consumed as a submodule there rather than the game living here, because doomgeneric is
+GPL-2.0 and this repo is public domain.
 
 ## License
 
 Public domain, see [`UNLICENSE.txt`](UNLICENSE.txt).
-
-One exception: [`Games/Doom/`](Games/Doom/LICENSE) is a game built on the engine, not part of it, and
-is offered under GPL-2.0-or-later because it is written against doomgeneric's and Chocolate Doom's
-GPL headers. Nothing there is needed to build or use the engine, and a default build compiles against
-no GPL code.

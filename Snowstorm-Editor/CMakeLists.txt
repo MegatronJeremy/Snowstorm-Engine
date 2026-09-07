@@ -37,13 +37,11 @@ target_link_libraries(Snowstorm-Editor PUBLIC
     imguizmo::imguizmo
 )
 
-# The Doom game. Linked so Doom.world can be authored and played in the editor, exactly as Unreal's
-# editor loads the game module. WHOLE_ARCHIVE for the same reason Core needs it: DoomComponent's
-# registration and DoomSystem's CVars are static initializers in TUs nothing references, and dropping
-# them fails SILENTLY (the component vanishes from the inspector and the serializer skips it), never
-# as a link error.
+# Games this editor can author and play. Linked exactly as Unreal's editor loads the game module.
+# WHOLE_ARCHIVE for the same reason Core needs it: a game's component registrations are static
+# initializers in TUs nothing references, and dropping them fails SILENTLY (the component vanishes from
+# the inspector and the serializer skips it), never as a link error.
 target_link_libraries(Snowstorm-Editor PRIVATE
-    $<LINK_LIBRARY:WHOLE_ARCHIVE,DoomGame>
     $<LINK_LIBRARY:WHOLE_ARCHIVE,PongGame>
 )
 

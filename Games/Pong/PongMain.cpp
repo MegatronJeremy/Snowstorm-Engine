@@ -1,5 +1,5 @@
-// The Pong game executable. Together with Games/Doom it is the proof that a game consumes this engine
-// rather than living inside it: two independent games, neither of which the engine knows about.
+// The Pong game executable: the proof that a game consumes this engine rather than living inside it.
+// The engine knows nothing about this target; it links Snowstorm-Core the way any game would.
 
 #include <Snowstorm.h>
 #include <Snowstorm/Core/EntryPoint.hpp>

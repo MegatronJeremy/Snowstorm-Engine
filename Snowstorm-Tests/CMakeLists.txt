@@ -40,10 +40,9 @@ find_package(Catch2 CONFIG REQUIRED)
 # component self-registration static initializers run (SceneSerializer round-trip needs the reflection).
 target_link_libraries(Snowstorm-Tests PRIVATE
     $<LINK_LIBRARY:WHOLE_ARCHIVE,Snowstorm-Core>
-    # The Doom game, WHOLE_ARCHIVE for the reason the hosts link it that way: DoomComponent.cpp is
-    # referenced by nothing, so a plain link drops its registration and the failure is silent. Linked
-    # here so DoomRegistrationTests can assert that it did not, in the default (Doom-OFF) build CI runs.
-    $<LINK_LIBRARY:WHOLE_ARCHIVE,DoomGame>
+    # A game, WHOLE_ARCHIVE for the reason the hosts link it that way: a game's component registration
+    # lives in a TU nothing references, so a plain link drops it and the failure is silent. Linked here
+    # so GameRegistrationTests can assert that it did not.
     $<LINK_LIBRARY:WHOLE_ARCHIVE,PongGame>
     Catch2::Catch2WithMain
 )

@@ -3,7 +3,7 @@
 .venv/
 build/
 # Any sibling configure directory: Generate-Solution.py writes build/, but a second one under
-# another name (a no-Doom tree, a second toolset) is an ordinary thing to have and must not be
+# another name (a second toolset, a one-off experiment) is an ordinary thing to have and must not be
 # committable by accident. These run to gigabytes.
 build-*/
 Vendor/Binaries
@@ -87,15 +87,6 @@ Dataset/
 __pycache__/
 .pytest_cache/
 
-# Doom IWADs (doom.wad, freedoom1.wad, ...) for the optional SS_ENABLE_DOOM build. Game data, not
-# engine source: the commercial ones cannot be redistributed at all, and even the freely licensed
-# ones are large binaries that belong next to the build, not in this history.
-*.wad
-*.WAD
-# doomgeneric writes its config and savegames to the working directory, which for the editor is the
-# repo root, and this fork hardcodes that (GetDefaultConfigDir returns "."), so there is no flag to
-# redirect it.
-.default.cfg
 .savegame/
 
 # Local scratch: investigation logs, ad-hoc drivers, saved diffs. Never part of a build.

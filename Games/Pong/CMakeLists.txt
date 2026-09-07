@@ -1,10 +1,9 @@
-# Pong: the small example game, and the reason Games/ is a directory rather than a special case for
-# Doom. It exists to show, in a few hundred readable lines, the whole of what building on Snowstorm
-# takes: link Snowstorm-Core, declare a couple of components, register one system through the same
-# RegisterPongSystems seam Doom uses, and author a scene.
+# Pong: the example game. It exists to show, in a few hundred readable lines, the whole of what
+# building on Snowstorm takes: link Snowstorm-Core, declare a couple of components, register one system through the same
+# RegisterPongSystems seam any game uses, and author a scene.
 #
-# Unlike Doom it has no third-party dependency, no licence carve-out, no IWAD and no network fetch, so
-# it is always built and can be run by anything, including the headless smoke harness.
+# It has no third-party dependency and no network fetch, so it is always built and can be run by
+# anything, including the headless smoke harness.
 cmake_minimum_required(VERSION 3.15)
 project(PongGame VERSION 1.0 LANGUAGES CXX)
 

@@ -776,16 +776,6 @@
       "Type": "Shader"
     },
     {
-      "Handle": "4027182892066702612",
-      "Path": "assets/materials/Doom.ssmat",
-      "Type": "Material"
-    },
-    {
-      "Handle": "13267832174249364684",
-      "Path": "assets/materials/DoomBackdrop.ssmat",
-      "Type": "Material"
-    },
-    {
       "Handle": "12636449860268571349",
       "Path": "assets/audio/test-tone.wav",
       "Type": "Audio"

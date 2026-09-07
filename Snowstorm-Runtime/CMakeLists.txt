@@ -30,9 +30,8 @@ target_include_directories(Snowstorm-Runtime PUBLIC
 # those TUs instead of dropping the unreferenced ones (see Snowstorm-Editor/CMakeLists.txt).
 target_link_libraries(Snowstorm-Runtime PUBLIC
     $<LINK_LIBRARY:WHOLE_ARCHIVE,Snowstorm-Core>
-    # The Doom game, for the same reason the editor links it: so a generic player can run Doom.world.
-    # WHOLE_ARCHIVE because its component registration and CVars are unreferenced static initializers.
-    $<LINK_LIBRARY:WHOLE_ARCHIVE,DoomGame>
+    # Games this player can run, for the same reason the editor links them. WHOLE_ARCHIVE because a
+    # game's component registrations are unreferenced static initializers.
     $<LINK_LIBRARY:WHOLE_ARCHIVE,PongGame>
 )
 
