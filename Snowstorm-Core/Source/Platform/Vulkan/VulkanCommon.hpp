@@ -105,6 +105,14 @@ namespace Snowstorm
 			return VK_FORMAT_B8G8R8A8_UNORM;
 		case PixelFormat::BGRA8_sRGB:
 			return VK_FORMAT_B8G8R8A8_SRGB;
+		case PixelFormat::BC1_RGB_UNorm:
+			return VK_FORMAT_BC1_RGB_UNORM_BLOCK;
+		case PixelFormat::BC1_RGB_sRGB:
+			return VK_FORMAT_BC1_RGB_SRGB_BLOCK;
+		case PixelFormat::BC3_RGBA_UNorm:
+			return VK_FORMAT_BC3_UNORM_BLOCK;
+		case PixelFormat::BC3_RGBA_sRGB:
+			return VK_FORMAT_BC3_SRGB_BLOCK;
 		case PixelFormat::RGBA16_SFloat:
 			return VK_FORMAT_R16G16B16A16_SFLOAT;
 		case PixelFormat::RGBA32_SFloat:
@@ -123,6 +131,23 @@ namespace Snowstorm
 
 	// Bytes per texel for the (uncompressed) color formats the engine uses. Used to size a tightly-packed
 	// image->buffer readback. Depth formats are not readback targets here, so they map to their raw size too.
+	// Block-compressed formats have no bytes-PER-PIXEL: 16 texels share one block. Callers of this are
+	// linear-layout paths (buffer<->image copies of uncompressed images), so a block format reaching here
+	// is a bug rather than a case to handle, and returning 4 would silently compute a wrong size.
+	inline bool IsBlockCompressed(const PixelFormat fmt)
+	{
+		switch (fmt)
+		{
+		case PixelFormat::BC1_RGB_UNorm:
+		case PixelFormat::BC1_RGB_sRGB:
+		case PixelFormat::BC3_RGBA_UNorm:
+		case PixelFormat::BC3_RGBA_sRGB:
+			return true;
+		default:
+			return false;
+		}
+	}
+
 	inline uint32_t BytesPerPixel(const PixelFormat fmt)
 	{
 		switch (fmt)

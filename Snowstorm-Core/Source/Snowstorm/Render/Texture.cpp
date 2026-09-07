@@ -1,5 +1,9 @@
 #include "Texture.hpp"
 
+#include <squish.h>
+
+#include "Snowstorm/Core/EngineCVars.hpp"
+
 #include "RendererAPI.hpp"
 #include "Snowstorm/Assets/AssetFileTime.hpp"
 #include "Snowstorm/Assets/TextureCache.hpp"
@@ -74,6 +78,33 @@ namespace Snowstorm
 			}
 			return dst;
 		}
+
+		// True if any texel has alpha < 255. BC1 has no usable alpha (1 bit, and squish's encoder treats it
+		// as opaque), so this is what decides BC1 vs BC3: getting it wrong makes a cut-out texture opaque.
+		bool UsesAlpha(const std::vector<uint8_t>& rgba)
+		{
+			for (size_t i = 3; i < rgba.size(); i += 4)
+			{
+				if (rgba[i] != 255)
+					return true;
+			}
+			return false;
+		}
+
+		// RGBA8 -> BC1/BC3 for one mip. squish works in 4x4 blocks and handles a partial edge block itself,
+		// so a mip smaller than 4 texels still encodes; the GPU reads the full block and samples the valid
+		// region, which is how every block-compressed mip chain works.
+		std::vector<uint8_t> CompressLevel(const std::vector<uint8_t>& rgba, const uint32_t w, const uint32_t h,
+		                                   const bool alpha)
+		{
+			const int flags = (alpha ? squish::kDxt5 : squish::kDxt1) | squish::kColourRangeFit;
+			const int bytes = squish::GetStorageRequirements(static_cast<int>(w), static_cast<int>(h), flags);
+
+			std::vector<uint8_t> out(static_cast<size_t>(bytes));
+			// squish reads 4 bytes per texel and expects a full w*h image; our levels are exactly that.
+			squish::CompressImage(rgba.data(), static_cast<int>(w), static_cast<int>(h), out.data(), flags);
+			return out;
+		}
 	}
 
 	std::optional<CookedTexture> Texture::DecodeCPU(const std::filesystem::path& filePath, const AssetHandle handle, const uint64_t sourceWriteTime)
@@ -123,6 +154,21 @@ namespace Snowstorm
 			ph = nh;
 		}
 
+		// Block-compress AFTER the mip chain is built, never before: downsampling decompressed blocks
+		// compounds the error, which is why every cooker mips first and compresses each level.
+		if (CVars::CompressTextures.Get())
+		{
+			const bool alpha = UsesAlpha(cooked.Levels[0]);
+			uint32_t lw = cooked.Width, lh = cooked.Height;
+			for (uint32_t i = 0; i < mipCount; ++i)
+			{
+				cooked.Levels[i] = CompressLevel(cooked.Levels[i], lw, lh, alpha);
+				lw = std::max(1u, lw / 2u);
+				lh = std::max(1u, lh / 2u);
+			}
+			cooked.Format = alpha ? CookedTexture::Encoding::BC3 : CookedTexture::Encoding::BC1;
+		}
+
 		if (useCache)
 		{
 			(void)TextureCacheIO::Save(handle, filePath, cooked); // decode+mip once; next load reads the blob
@@ -148,7 +194,21 @@ namespace Snowstorm
 		// decoded to linear on sample (srgb=true); normal/metallic-roughness/AO are data maps whose values
 		// are NOT gamma-encoded and must be read verbatim (srgb=false). Sampling a normal map as sRGB skews
 		// every channel and breaks lighting — the caller picks the flag per slot (see GetTextureView).
-		desc.Format = srgb ? PixelFormat::RGBA8_sRGB : PixelFormat::RGBA8_UNorm;
+		// The cook decides the encoding; srgb decides only the color space, which is orthogonal. A BC blob
+		// uploaded as RGBA8 would be read as garbage, so this must follow the artifact rather than assume.
+		switch (cooked.Format)
+		{
+		case CookedTexture::Encoding::BC1:
+			desc.Format = srgb ? PixelFormat::BC1_RGB_sRGB : PixelFormat::BC1_RGB_UNorm;
+			break;
+		case CookedTexture::Encoding::BC3:
+			desc.Format = srgb ? PixelFormat::BC3_RGBA_sRGB : PixelFormat::BC3_RGBA_UNorm;
+			break;
+		case CookedTexture::Encoding::RGBA8:
+		default:
+			desc.Format = srgb ? PixelFormat::RGBA8_sRGB : PixelFormat::RGBA8_UNorm;
+			break;
+		}
 		desc.DebugName = debugName;
 
 		auto texture = Texture::Create(desc);

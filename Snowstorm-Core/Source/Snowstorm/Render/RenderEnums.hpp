@@ -45,6 +45,15 @@ namespace Snowstorm
 		BGRA8_UNorm, // Important for Windows Swapchains
 		BGRA8_sRGB,
 
+		// Block-compressed color, 4x4 blocks. BC1 is 8 bytes per block (4 bpp, 8:1 against RGBA8) and has
+		// no usable alpha; BC3 is 16 bytes per block (8 bpp, 4:1) and stores alpha separately. The cook
+		// picks between them by whether a texture actually uses alpha. Both need the device's
+		// textureCompressionBC feature, which every desktop GPU has.
+		BC1_RGB_UNorm,
+		BC1_RGB_sRGB,
+		BC3_RGBA_UNorm,
+		BC3_RGBA_sRGB,
+
 		// Color (HDR float) — needed for IBL env/irradiance/prefilter maps and an HDR scene target (#54)
 		RGBA16_SFloat,
 		R11G11B10_UFloat,

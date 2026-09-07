@@ -27,6 +27,18 @@ namespace Snowstorm
 		// of size max(1,W>>i) * max(1,H>>i) * 4. A single-level texture (e.g. the 1x1 defaults) has one entry.
 		std::vector<std::vector<uint8_t>> Levels;
 
+		// What Levels actually holds. RGBA8 is the uncompressed path; the BC variants are 4x4-block data
+		// produced by the cook, which is what makes a shipped texture cache a quarter to an eighth of its
+		// uncompressed size. Stored in the artifact rather than re-derived, so a cache written by a build
+		// with compression on still loads correctly on one with it off.
+		enum class Encoding : uint8_t
+		{
+			RGBA8 = 0,
+			BC1 = 1, // opaque, 8:1
+			BC3 = 2, // has alpha, 4:1
+		};
+		Encoding Format = Encoding::RGBA8;
+
 		[[nodiscard]] uint32_t MipLevels() const { return static_cast<uint32_t>(Levels.size()); }
 	};
 

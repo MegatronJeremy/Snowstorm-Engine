@@ -15,7 +15,7 @@ namespace Snowstorm
 		constexpr uint32_t kMagic = 0x58455453; // "STEX"
 		// v2: stores the full precomputed mip chain (v1 stored only the base level). Bumping forces a
 		// re-cook, which is fine — .sstex is a derived cache.
-		constexpr uint32_t kVersion = 3; // +SourceHash
+		constexpr uint32_t kVersion = 4; // +Encoding
 
 		struct Header
 		{
@@ -23,6 +23,8 @@ namespace Snowstorm
 			uint32_t Version = kVersion;
 			uint64_t SourceWriteTime = 0;
 			uint64_t SourceHash = 0;
+			uint32_t Encoding = 0; // CookedTexture::Encoding
+			uint32_t Pad = 0;      // keep the header 8-byte aligned
 			uint32_t Width = 0;
 			uint32_t Height = 0;
 			uint32_t MipLevels = 0;
@@ -61,6 +63,8 @@ namespace Snowstorm
 		tex.Height = h.Height;
 		tex.Levels.resize(h.MipLevels);
 
+		tex.Format = static_cast<CookedTexture::Encoding>(h.Encoding);
+
 		// Each level is length-prefixed (u64) so a malformed file can't be mistaken for valid data.
 		for (uint32_t i = 0; i < h.MipLevels; ++i)
 		{
@@ -96,6 +100,7 @@ namespace Snowstorm
 		h.Width = tex.Width;
 		h.Height = tex.Height;
 		h.MipLevels = tex.MipLevels();
+		h.Encoding = static_cast<uint32_t>(tex.Format);
 
 		const auto tmp = path.string() + ".tmp";
 		{

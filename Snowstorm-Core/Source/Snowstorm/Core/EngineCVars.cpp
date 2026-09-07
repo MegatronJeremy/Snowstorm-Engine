@@ -8,6 +8,12 @@
 
 namespace Snowstorm::CVars
 {
+	CVar<bool> CompressTextures{"cook.textures.compress", false,
+	                            "Block-compress cooked textures (BC1 opaque, BC3 with alpha), shrinking the "
+	                            "texture cache 4-8x. OFF by default: this changes pixels, and block "
+	                            "compression artifacts are exactly what a headless run cannot see. Turn it "
+	                            "on, re-cook, and look at the result before relying on it."};
+
 	CVar<bool> CookAssets{"cook.assets", false,
 	                      "Load every mesh, texture and material named by the project's asset registry so "
 	                      "each one's cooked artifact is written, then exit. Use before staging, so a "
