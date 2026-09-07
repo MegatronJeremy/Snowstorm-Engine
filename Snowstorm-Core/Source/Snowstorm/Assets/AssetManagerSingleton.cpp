@@ -49,6 +49,15 @@ namespace Snowstorm
 				return p;
 			}
 
+			// A mounted path says where it lives, so it needs no project context and can name engine
+			// content as easily as game content. Checked on the native string, not generic_string(),
+			// because either spelling reaches here and VirtualPath accepts both.
+			if (const std::string s = p.string(); VirtualPath::IsVirtual(s))
+			{
+				return VirtualPath::Resolve(s);
+			}
+
+			// Legacy: project-relative, and therefore unable to refer to anything outside the project.
 			const Ref<Project> project = Project::GetActive();
 			SS_CORE_VERIFY(project, "Cannot resolve relative asset path '{}' without an active project", p.string());
 			if (!project)

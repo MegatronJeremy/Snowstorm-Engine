@@ -126,3 +126,19 @@ TEST_CASE("Sub-resource split and join round-trip", "[vpath]")
 	CHECK(rejoinedWhole.Path == "/Game/x.gltf");
 	CHECK(rejoinedWhole.SubResource == -1);
 }
+
+// std::filesystem::path::string() returns NATIVE separators on Windows, so a mounted path that has been
+// through a fs::path comes back as "\Game\x". A forward-slash-only prefix test misses it, and every
+// mesh load failed with "Unable to open file \Game\meshes\quad.obj" the first time the registry
+// stored mounted paths.
+TEST_CASE("A mounted path is recognised with native separators too", "[vpath]")
+{
+	CHECK(VirtualPath::IsVirtual("\\Engine\\Shaders\\DefaultLit.frag.hlsl"));
+	CHECK(VirtualPath::Resolve("\\Engine\\Shaders\\DefaultLit.frag.hlsl") ==
+	      VirtualPath::Resolve("/Engine/Shaders/DefaultLit.frag.hlsl"));
+
+	// Round-tripping through fs::path, which is what the asset registry actually does.
+	const std::filesystem::path stored("/Engine/Shaders/DefaultLit.frag.hlsl");
+	CHECK(VirtualPath::IsVirtual(stored.string()));
+	CHECK(VirtualPath::Resolve(stored.string()) == VirtualPath::Resolve("/Engine/Shaders/DefaultLit.frag.hlsl"));
+}

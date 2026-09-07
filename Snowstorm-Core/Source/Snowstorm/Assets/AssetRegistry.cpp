@@ -16,6 +16,33 @@ namespace Snowstorm
 			return p.lexically_normal();
 		}
 
+		// Registry paths used to be stored relative to the PROJECT directory ("assets/meshes/x.obj").
+		// A mounted path says the same thing without needing to know which project is active, and can also
+		// name engine content, which a project-relative path structurally cannot.
+		//
+		// The conversion is textual and needs no filesystem: "assets/" is the project's asset directory,
+		// which is what /Game/ mounts. Anything already mounted passes through, so this is idempotent and
+		// a registry written by a newer build loads unchanged on an older one that still understands the
+		// legacy form.
+		std::string MigrateToVirtual(const std::string& stored)
+		{
+			if (stored.empty() || VirtualPath::IsVirtual(stored))
+				return stored;
+
+			// The sub-resource suffix is not part of the path and must survive the rewrite.
+			const auto ref = VirtualPath::SplitSubResource(stored);
+			std::string path = ref.Path;
+
+			constexpr std::string_view assets = "assets/";
+			std::string lowered = VirtualPath::NormalizeKey(path);
+			if (lowered.starts_with(assets))
+				path = "/Game/" + path.substr(assets.size());
+			else
+				return stored; // outside the asset directory: leave it alone rather than guess a mount
+
+			return ref.SubResource >= 0 ? VirtualPath::JoinSubResource(path, ref.SubResource) : path;
+		}
+
 		// Key used to decide whether two paths refer to the same asset. The filesystem is
 		// case-insensitive on Windows (assets/Meshes/x.obj == assets/meshes/x.obj), so compare
 		// lower-cased generic strings — otherwise the same file gets two handles and shows up
@@ -58,7 +85,7 @@ namespace Snowstorm
 			AssetMetadata m{};
 			m.Handle = UUID::FromString(handleStr);
 			m.Type = AssetTypeFromString(typeStr);
-			m.Path = NormalizePath(pathStr);
+			m.Path = NormalizePath(MigrateToVirtual(pathStr));
 
 			if (m.Type == AssetType::None || m.Handle == 0)
 			{

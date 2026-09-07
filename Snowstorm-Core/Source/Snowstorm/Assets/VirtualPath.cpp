@@ -17,11 +17,15 @@ namespace Snowstorm::VirtualPath
 		// active and /Engine/ follows the engine root, neither of which is known at static-init time.
 		constexpr std::array kPrefixes{"/engine/", "/game/", "/cache/"};
 
+		// Lower-cased AND forward-slashed. Both matter: Windows paths are case-insensitive, and a virtual
+		// path that has been through std::filesystem::path::string() comes back with native separators, so
+		// "/Game/x" arrives as "\Game\x" and a forward-slash-only prefix test misses it entirely. That
+		// exact case broke every mesh load the first time the registry stored mounted paths.
 		std::string Lower(const std::string_view s)
 		{
 			std::string out(s);
 			std::ranges::transform(out, out.begin(), [](const unsigned char c)
-			                       { return static_cast<char>(std::tolower(c)); });
+			                       { return c == '\\' ? '/' : static_cast<char>(std::tolower(c)); });
 			return out;
 		}
 
@@ -84,7 +88,9 @@ namespace Snowstorm::VirtualPath
 
 		// Take the tail from the ORIGINAL string: only the prefix match is case-insensitive, because on a
 		// case-sensitive filesystem the rest is not ours to fold.
-		return root / fs::path(std::string(virtualPath.substr(prefix.size()))).lexically_normal();
+		std::string tail(virtualPath.substr(prefix.size()));
+		std::ranges::replace(tail, '\\', '/');
+		return root / fs::path(tail).lexically_normal();
 	}
 
 	std::optional<std::string> Virtualize(const fs::path& absolute)

@@ -106,11 +106,14 @@ namespace Snowstorm
 		// so the serializer stays engine-neutral and old .ssmat still load.
 		if (root.contains("Shader") && root["Shader"].is_string())
 		{
+			// Stored mounted ("/Engine/Shaders/X.frag.hlsl") since the virtual path namespace landed. An
+			// unqualified string is a pre-namespace file and still resolves, through the probe in
+			// ResolveShaderSource, which is the only reason that probe still exists.
 			outAsset.FragmentShader = root["Shader"].get<std::string>();
 		}
 		else if (root.contains("PipelinePreset") && root["PipelinePreset"].is_string())
 		{
-			outAsset.FragmentShader = "Engine/Shaders/" + root["PipelinePreset"].get<std::string>() + ".frag.hlsl";
+			outAsset.FragmentShader = "/Engine/Shaders/" + root["PipelinePreset"].get<std::string>() + ".frag.hlsl";
 		}
 		// else: leave the struct default (kDefaultFragmentShader).
 
