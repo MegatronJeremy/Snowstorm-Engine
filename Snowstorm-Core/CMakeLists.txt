@@ -44,9 +44,14 @@ find_package(Tracy CONFIG REQUIRED)
 # is a deliberate opt-in you'd do by adding this define to that config, not the default.
 target_compile_definitions(Snowstorm-Core PUBLIC $<$<CONFIG:Debug>:TRACY_ENABLE>)
 
+# BUILD_INTERFACE/INSTALL_INTERFACE rather than a bare path: the exported target must not carry this
+# machine's source directory into an installed package, or a consumer's compile would reach back into a
+# tree that need not exist. Stb has no imported target (it is a find-module giving a variable), so the
+# package config re-adds its include directory after find_dependency; see SnowstormConfig.cmake.in.
 target_include_directories(Snowstorm-Core PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/Source
-    ${Stb_INCLUDE_DIR}
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Source>
+    $<INSTALL_INTERFACE:include>
+    $<BUILD_INTERFACE:${Stb_INCLUDE_DIR}>
 )
 
 target_link_libraries(Snowstorm-Core PUBLIC

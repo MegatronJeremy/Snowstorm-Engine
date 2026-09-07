@@ -20,14 +20,14 @@ file(GLOB_RECURSE TEST_SOURCES
 # just those two TUs into the test binary — the alternative (linking the whole Editor executable) would
 # drag in ImGui/Vulkan and is wrong for a headless logic test.
 set(EDITOR_UNDO_SOURCES
-    ${CMAKE_SOURCE_DIR}/Snowstorm-Editor/Source/Singletons/EditorCommands.cpp
-    ${CMAKE_SOURCE_DIR}/Snowstorm-Editor/Source/Singletons/EditorHistorySingleton.cpp
+    ${SNOWSTORM_ROOT_DIR}/Snowstorm-Editor/Source/Singletons/EditorCommands.cpp
+    ${SNOWSTORM_ROOT_DIR}/Snowstorm-Editor/Source/Singletons/EditorHistorySingleton.cpp
 )
 target_sources(Snowstorm-Tests PRIVATE ${TEST_SOURCES} ${EDITOR_UNDO_SOURCES})
 
 target_include_directories(Snowstorm-Tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/Snowstorm-Core/Source
-    ${CMAKE_SOURCE_DIR}/Snowstorm-Editor/Source
+    ${SNOWSTORM_ROOT_DIR}/Snowstorm-Core/Source
+    ${SNOWSTORM_ROOT_DIR}/Snowstorm-Editor/Source
 )
 
 find_package(Catch2 CONFIG REQUIRED)

@@ -93,6 +93,43 @@ Tools/neural/      PyTorch training harness for the neural upscaler (exports .ss
 Tools/tracy/       Tracy profiler GUI (connect to a running Debug build)
 ```
 
+### Building a game on the engine
+
+A game lives in its own repository, never inside this tree. It keeps its own project descriptor,
+content and source, and pulls the engine in from a sibling checkout:
+
+```cmake
+set(SNOWSTORM_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../Snowstorm-Engine" CACHE PATH "engine root")
+add_subdirectory("${SNOWSTORM_ROOT}" "${CMAKE_BINARY_DIR}/Snowstorm" EXCLUDE_FROM_ALL)
+target_link_libraries(MyGame PRIVATE $<LINK_LIBRARY:WHOLE_ARCHIVE,Snowstorm::Core>)
+```
+
+Or against an installed SDK, with no engine source in the game's build at all:
+
+```bash
+cmake --install build --config Debug --prefix /path/to/snowstorm-sdk
+```
+
+```cmake
+find_package(Snowstorm REQUIRED)   # also sets SNOWSTORM_ASSET_DIR
+target_link_libraries(MyGame PRIVATE $<LINK_LIBRARY:WHOLE_ARCHIVE,Snowstorm::Core>)
+```
+
+Both spell the dependency `Snowstorm::Core`, so a game's CMake does not branch on which it got.
+`WHOLE_ARCHIVE` is required either way: Core's components self-register through static initializers, and
+a linker that drops unreferenced translation units drops the component registry with them. Install each
+configuration you intend to build; the package reports which ones it carries rather than silently
+mapping one onto another.
+
+This is the layout Unreal calls a project beside the `Engine` directory, and O3DE calls
+project-centric engine-source. The engine never references the game. Game code enters through
+`IGameModule` (`Snowstorm/Game/`), which `RuntimeLayer` hosts, so the game subclasses nothing and forks
+nothing. `Projects/Sandbox` stays in-tree as the engine's own sample, the way Unreal ships templates.
+
+The engine resolves its own assets (`Engine/Shaders`, `Tools/dxc`) relative to the executable rather
+than the working directory, so a game stages those beside its own binary and runs from its own
+directory. Project content resolves separately, through the active `.ssproj`.
+
 Executables link the Core static library and add its `Source/` directory to their include path.
 
 ## Testing

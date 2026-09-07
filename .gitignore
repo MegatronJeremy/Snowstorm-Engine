@@ -52,6 +52,8 @@ Makefile
 # the blanket *.json ignore) or every fresh checkout renders nothing. The demo
 # content now lives in the Sandbox project, so un-ignore its registry there.
 !Projects/Sandbox/assets/AssetRegistry.json
+# Same for every game project's registry.
+!Projects/*/assets/AssetRegistry.json
 
 # Editor fonts are shipped assets (the NERV theme loads a monospace TTF from here).
 !Engine/Fonts/
