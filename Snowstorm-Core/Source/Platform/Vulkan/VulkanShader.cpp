@@ -357,14 +357,7 @@ namespace Snowstorm
 			// Engine shaders live under the engine root; a game's shaders live in its own project. See
 			// ResolveShaderSource.
 			const fs::path srcPath = ResolveShaderSource(sourcePath);
-			const fs::path dxcExe = GetDxcExePath();
 			const fs::path cacheDir = GetShaderCacheDir();
-
-			if (!fs::exists(dxcExe))
-			{
-				SS_CORE_ERROR("DXC not found at {}", dxcExe.string());
-				return false;
-			}
 			fs::create_directories(cacheDir);
 
 			const std::string fullText = ReadTextFileOrEmpty(srcPath);
@@ -405,6 +398,20 @@ namespace Snowstorm
 			{
 				outSpv = outSpvPath.string();
 				return true;
+			}
+
+			// dxc is only needed to COMPILE, so it is checked here rather than on entry. It used to be
+			// required before the cache was consulted, which made a 15 MB tool a hard dependency of a run
+			// that never invokes it: a build shipping a warm shader cache had to carry it anyway.
+			//
+			// The source text is still read above, because the cache key is derived from it. Dropping that
+			// too needs a cook index recording key-per-shader, which is a larger change than this one.
+			const fs::path dxcExe = GetDxcExePath();
+			if (!fs::exists(dxcExe))
+			{
+				SS_CORE_ERROR("DXC not found at {} (needed to compile {}; no cached SPIR-V for it)",
+				              dxcExe.string(), sourcePath);
+				return false;
 			}
 
 			// Now that shader compilation runs on JobSystem workers, the SAME output .spv can be requested by
