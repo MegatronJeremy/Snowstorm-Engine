@@ -15,6 +15,9 @@ namespace Snowstorm::CVars
 	// consuming Snowstorm from its OWN repo sets this, because there the exe is not under the engine
 	// tree. See Utility/EnginePaths.hpp.
 	extern CVar<std::string> EngineRoot;
+
+	// Force every asset in the registry through its cook, then exit. See GameLayer.
+	extern CVar<bool> CookAssets;
 	// Upper bound on every denoiser's a-trous pass count, and the size of GIDenoisePass's per-frame
 	// descriptor/uniform pool, which is why it lives here rather than as a literal in either: the pool
 	// must have a slot per pass, and when the two numbers drifted apart the extra passes asserted at

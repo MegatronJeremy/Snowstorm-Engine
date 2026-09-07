@@ -43,8 +43,11 @@ add_subdirectory(Snowstorm-Runtime)
 # the layout mirrors the repo rather than flattening it, and it is what retires rule 3 (the baked
 # configure-time path) for a shipped build.
 #
-# Engine/cache is deliberately NOT staged: it is generated, and the stage dir must stay writable so a
-# cold run can populate it in place.
+# Engine/cache IS staged, so a package starts warm rather than cooking shaders and meshes on its first
+# launch. It is generated content, so the directory is created at configure time to give the copy a
+# source even on a clean tree; run the engine with --cook.assets first to fill it, or the stage simply
+# carries whatever a previous run happened to warm. The stage dir stays writable either way, so anything
+# still cold is cooked in place on first run.
 #
 # CACHE INTERNAL, not a plain set(), because a game consuming this engine via add_subdirectory needs to
 # see it: variables set here live in the engine's directory scope and do not reach the consumer's.
@@ -56,6 +59,9 @@ set(SS_STAGE_STAMP "${CMAKE_BINARY_DIR}/stage/stage-engine-$<CONFIG>.stamp")
 # CONFIGURE_DEPENDS so adding a shader re-runs the glob instead of silently staging a stale set. The
 # stamp gives the copy a real output for CMake to track: a POST_BUILD copy would only fire when an
 # executable RELINKS, so editing content and rebuilding would stage the old copy.
+# Engine/cache is deliberately NOT in this glob: it changes on every run, so tracking it would make the
+# stamp perpetually out of date. The copy still runs whenever the stamp rebuilds, and a cold entry costs
+# nothing anyway since the stage cooks it in place.
 file(GLOB_RECURSE SS_STAGE_INPUTS CONFIGURE_DEPENDS
     "${SS_ENGINE_SOURCE_DIR}/Engine/Shaders/*"
     "${SS_ENGINE_SOURCE_DIR}/Engine/Fonts/*"
@@ -72,11 +78,15 @@ add_custom_command(
     # a cold shader elsewhere.
     COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
             "${SS_ENGINE_SOURCE_DIR}/Tools/dxc" "${SS_STAGE_DIR}/Tools/dxc"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+            "${SS_ENGINE_SOURCE_DIR}/Engine/cache" "${SS_STAGE_DIR}/Engine/cache"
     COMMAND ${CMAKE_COMMAND} -E touch "${SS_STAGE_STAMP}"
     DEPENDS ${SS_STAGE_INPUTS}
     COMMENT "Staging engine content"
     VERBATIM
 )
+
+file(MAKE_DIRECTORY "${SS_ENGINE_SOURCE_DIR}/Engine/cache")
 
 add_custom_target(stage DEPENDS "${SS_STAGE_STAMP}")
 

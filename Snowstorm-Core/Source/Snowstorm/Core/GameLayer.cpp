@@ -97,6 +97,15 @@ namespace Snowstorm
 			              m_ScenePath);
 		}
 
+		// Cooking is a mode, not a scene: everything the registry names is loaded regardless of what the
+		// startup scene happens to reference, which is the whole point (a lazy cache holds only what a run
+		// touched). The scene still loads first so a cook also warms whatever it pulls in.
+		if (CVars::CookAssets.Get())
+		{
+			m_Cooking = true;
+			CookAllAssets();
+		}
+
 		// Bind a camera to the viewport AFTER the scene is loaded: use the scene's authored camera if it has
 		// one, else fall back to a default. Must be after Deserialize so an authored camera is visible here.
 		ConfigureSceneCamera(viewportId);
@@ -185,5 +194,67 @@ namespace Snowstorm
 	void GameLayer::OnUpdate(const Timestep ts)
 	{
 		m_World->OnUpdate(ts);
+
+		if (m_Cooking)
+		{
+			// Textures decode on workers and upload on the main thread, so the cook is not finished when
+			// the requests are made, only when the queue drains. Meshes were already forced synchronously.
+			const auto& assets = m_World->GetSingleton<AssetManagerSingleton>();
+			if (assets.PendingLoadCount() == 0)
+			{
+				SS_CORE_INFO("Cook: complete.");
+				Application::Get().Close();
+			}
+		}
+	}
+
+	void GameLayer::CookAllAssets() const
+	{
+		auto& assets = m_World->GetSingleton<AssetManagerSingleton>();
+
+		// A cooked artifact is written as a side effect of loading, so cooking IS loading everything the
+		// registry names. That is deliberate: a separate cook path would be a second implementation of
+		// import, free to disagree with the one that actually runs, which is the standing complaint about
+		// cook-shaders.py duplicating dxc's flags.
+		uint32_t meshes = 0, textures = 0, materials = 0;
+		std::vector<AssetHandle> textureHandles;
+		std::vector<AssetHandle> materialHandles;
+
+		assets.IterateAssets(
+		    [&](const AssetMetadata& meta)
+		    {
+			    switch (meta.Type)
+			    {
+			    case AssetType::Mesh:
+				    // Synchronous on purpose: this writes the .ssmesh before returning.
+				    (void)assets.GetMesh(meta.Handle);
+				    ++meshes;
+				    break;
+			    case AssetType::Texture:
+				    textureHandles.push_back(meta.Handle);
+				    break;
+			    case AssetType::Material:
+				    materialHandles.push_back(meta.Handle);
+				    break;
+			    default:
+				    break;
+			    }
+		    });
+
+		// Deferred out of the iteration: both of these can register new assets, and mutating the registry
+		// while walking it is how a container invalidates its own iterator.
+		for (const AssetHandle h : textureHandles)
+		{
+			(void)assets.GetTextureViewAsync(h);
+			++textures;
+		}
+		for (const AssetHandle h : materialHandles)
+		{
+			(void)assets.GetMaterialInstance(h);
+			++materials;
+		}
+
+		SS_CORE_INFO("Cook: requested {} mesh(es), {} texture(s), {} material(s); waiting for the queue.",
+		             meshes, textures, materials);
 	}
 }

@@ -8,6 +8,11 @@
 
 namespace Snowstorm::CVars
 {
+	CVar<bool> CookAssets{"cook.assets", false,
+	                      "Load every mesh, texture and material named by the project's asset registry so "
+	                      "each one's cooked artifact is written, then exit. Use before staging, so a "
+	                      "packaged build starts warm instead of cooking on first launch."};
+
 	CVar<std::string> EngineRoot{"engine.root", "",
 	                             "Directory holding Engine/Shaders, Engine/cache and Tools/dxc. Empty = "
 	                             "derived from the executable's location. Set it when consuming Snowstorm "
