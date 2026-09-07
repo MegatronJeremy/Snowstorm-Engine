@@ -136,6 +136,25 @@ namespace Snowstorm::VirtualPath
 		return best;
 	}
 
+	AssetRef SplitSubResource(const std::string_view path)
+	{
+		constexpr std::string_view marker = "?submesh=";
+		const size_t pos = path.find(marker);
+		if (pos == std::string_view::npos)
+		{
+			return {std::string(path), -1};
+		}
+		AssetRef ref;
+		ref.Path = std::string(path.substr(0, pos));
+		ref.SubResource = std::stoi(std::string(path.substr(pos + marker.size())));
+		return ref;
+	}
+
+	std::string JoinSubResource(const std::string_view path, const int subResource)
+	{
+		return std::string(path) + "?submesh=" + std::to_string(subResource);
+	}
+
 	std::string NormalizeKey(const std::string_view path)
 	{
 		return Lower(fs::path(std::string(path)).lexically_normal().generic_string());

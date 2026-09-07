@@ -1,5 +1,7 @@
 #include "AssetRegistry.hpp"
 
+#include "Snowstorm/Assets/VirtualPath.hpp"
+
 #include <nlohmann/json.hpp>
 #include <fstream>
 
@@ -18,12 +20,13 @@ namespace Snowstorm
 		// case-insensitive on Windows (assets/Meshes/x.obj == assets/meshes/x.obj), so compare
 		// lower-cased generic strings — otherwise the same file gets two handles and shows up
 		// twice in the editor. The stored Path keeps its original casing for display.
+		//
+		// Shared with the virtual path namespace rather than kept separate: an asset's identity key and a
+		// mounted path's key have to agree, or a registry lookup and a mount lookup can disagree about
+		// whether two spellings name the same file.
 		std::string PathKey(const std::filesystem::path& p)
 		{
-			std::string s = NormalizePath(p).generic_string();
-			std::ranges::transform(s, s.begin(), [](const unsigned char c)
-			                       { return static_cast<char>(std::tolower(c)); });
-			return s;
+			return VirtualPath::NormalizeKey(NormalizePath(p).generic_string());
 		}
 	}
 

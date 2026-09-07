@@ -1,5 +1,7 @@
 #include "AssetManagerSingleton.hpp"
 
+#include "Snowstorm/Assets/VirtualPath.hpp"
+
 #include "AssetFileTime.hpp"
 #include "MeshBoundsBuilder.hpp"
 #include "MeshMetaCache.hpp"
@@ -35,29 +37,6 @@ namespace Snowstorm
 {
 	namespace
 	{
-		// A model-import asset path may carry a "?submesh=N" suffix so that each part of a
-		// multi-mesh file gets its own registry handle. Split it back into (file path, index);
-		// index is -1 when there is no suffix (a plain whole-file mesh).
-		struct SubmeshRef
-		{
-			std::string FilePath;
-			int SubmeshIndex = -1;
-		};
-
-		SubmeshRef ParseSubmeshPath(const std::string& path)
-		{
-			constexpr std::string_view marker = "?submesh=";
-			const size_t pos = path.find(marker);
-			if (pos == std::string::npos)
-			{
-				return {path, -1};
-			}
-			SubmeshRef ref;
-			ref.FilePath = path.substr(0, pos);
-			ref.SubmeshIndex = std::stoi(path.substr(pos + marker.size()));
-			return ref;
-		}
-
 		// Registry paths are stored project-relative (portable across machines; matches the committed
 		// AssetRegistry.json). Resolve them against the active project's directory for actual file I/O.
 		// Absolute entries are self-contained and pass through without a project. A relative entry,
@@ -301,7 +280,7 @@ namespace Snowstorm
 			const aiMesh* aiSub = scene->mMeshes[i];
 
 			// Mesh handle: encode the submesh index in the path so each part is its own asset.
-			const std::string meshAssetPath = modelPathStr + "?submesh=" + std::to_string(i);
+			const std::string meshAssetPath = VirtualPath::JoinSubResource(modelPathStr, static_cast<int>(i));
 			const AssetHandle meshHandle = Import(meshAssetPath, AssetType::Mesh);
 
 			AssetHandle matHandle{0};
@@ -375,8 +354,8 @@ namespace Snowstorm
 
 		// The registry path may encode a submesh ("file.obj?submesh=N"); split it so bounds + load
 		// operate on the right file and part. A plain mesh has SubmeshIndex == -1 (whole file).
-		const SubmeshRef sub = ParseSubmeshPath(meta->Path.string());
-		const std::filesystem::path filePath = ResolveAssetPath(sub.FilePath);
+		const VirtualPath::AssetRef sub = VirtualPath::SplitSubResource(meta->Path.string());
+		const std::filesystem::path filePath = ResolveAssetPath(sub.Path);
 		const uint64_t sourceTime = GetFileWriteTimeU64(filePath);
 
 		MeshBounds bounds{};
@@ -393,7 +372,7 @@ namespace Snowstorm
 
 		if (!haveBounds)
 		{
-			if (ComputeMeshBoundsAssimp(filePath, sub.SubmeshIndex, bounds))
+			if (ComputeMeshBoundsAssimp(filePath, sub.SubResource, bounds))
 			{
 				MeshMetaCache out{};
 				out.Handle = handle;
@@ -409,8 +388,8 @@ namespace Snowstorm
 		// Submeshes go through the cooked-blob cache (keyed by handle) so a scene with N parts parses the
 		// source file at most once total, not once per part. Whole-file loads keep the plain path (they
 		// flatten every submesh and aren't the startup hot spot).
-		Ref<Mesh> mesh = (sub.SubmeshIndex >= 0)
-		                     ? meshLib.LoadCached(filePath.string(), sub.SubmeshIndex, handle)
+		Ref<Mesh> mesh = (sub.SubResource >= 0)
+		                     ? meshLib.LoadCached(filePath.string(), sub.SubResource, handle)
 		                     : meshLib.Load(filePath.string());
 
 		if (mesh && haveBounds)
@@ -455,11 +434,11 @@ namespace Snowstorm
 			return nullptr;
 		}
 
-		const SubmeshRef sub = ParseSubmeshPath(meta->Path.string());
+		const VirtualPath::AssetRef sub = VirtualPath::SplitSubResource(meta->Path.string());
 
 		// Whole-file loads flatten every submesh and are rare (not the startup hot path); keep them
 		// synchronous rather than growing a second async code path for them.
-		if (sub.SubmeshIndex < 0)
+		if (sub.SubResource < 0)
 		{
 			return GetMesh(handle);
 		}
@@ -473,8 +452,8 @@ namespace Snowstorm
 		auto& jobs = Application::Get().GetServiceManager().GetService<JobSystem>();
 		auto& meshLib = Application::Get().GetServiceManager().GetService<MeshLibrary>();
 
-		const std::string filePath = ResolveAssetPath(sub.FilePath).string();
-		const int submeshIndex = sub.SubmeshIndex;
+		const std::string filePath = ResolveAssetPath(sub.Path).string();
+		const int submeshIndex = sub.SubResource;
 
 		(void)jobs.Submit([this, &meshLib, handle, filePath, submeshIndex]()
 		                  {

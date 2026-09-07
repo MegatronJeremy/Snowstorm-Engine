@@ -1,5 +1,7 @@
 #include "MeshLibrary.hpp"
 
+#include "Snowstorm/Assets/VirtualPath.hpp"
+
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
@@ -106,7 +108,7 @@ namespace Snowstorm
 	Ref<Mesh> MeshLibrary::Load(const std::string& filepath, const int submeshIndex)
 	{
 		// Cache key embeds the submesh index so different parts of the same file stay distinct.
-		const std::string cacheKey = filepath + "?submesh=" + std::to_string(submeshIndex);
+		const std::string cacheKey = VirtualPath::JoinSubResource(filepath, submeshIndex);
 		if (m_Meshes.contains(cacheKey))
 		{
 			return m_Meshes[cacheKey];

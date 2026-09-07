@@ -103,3 +103,26 @@ TEST_CASE("One shader file is one library key however it is spelled", "[vpath]")
 	// A permutation is still a distinct entry, which is the property the key already had.
 	CHECK(ShaderLibrary::MakeKey(relative) != ShaderLibrary::MakeKey(relative, ShaderDefines{"SS_RAYTRACING"}));
 }
+
+// The "?submesh=N" grammar used to live as a hand-rolled find() in the asset manager and a hand-rolled
+// concatenation in the mesh library: one syntax, two copies, no owner.
+TEST_CASE("Sub-resource split and join round-trip", "[vpath]")
+{
+	const auto whole = VirtualPath::SplitSubResource("/Game/meshes/Sponza.gltf");
+	CHECK(whole.Path == "/Game/meshes/Sponza.gltf");
+	CHECK(whole.SubResource == -1); // no suffix means the whole file
+
+	const auto part = VirtualPath::SplitSubResource("/Game/meshes/Sponza.gltf?submesh=4");
+	CHECK(part.Path == "/Game/meshes/Sponza.gltf");
+	CHECK(part.SubResource == 4);
+
+	// Join then split is identity, including for the whole-file sentinel, which the mesh library relies
+	// on when it builds its in-memory cache key.
+	const auto rejoined = VirtualPath::SplitSubResource(VirtualPath::JoinSubResource("/Game/x.gltf", 7));
+	CHECK(rejoined.Path == "/Game/x.gltf");
+	CHECK(rejoined.SubResource == 7);
+
+	const auto rejoinedWhole = VirtualPath::SplitSubResource(VirtualPath::JoinSubResource("/Game/x.gltf", -1));
+	CHECK(rejoinedWhole.Path == "/Game/x.gltf");
+	CHECK(rejoinedWhole.SubResource == -1);
+}

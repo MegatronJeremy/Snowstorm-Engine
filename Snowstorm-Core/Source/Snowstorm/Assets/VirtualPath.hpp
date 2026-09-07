@@ -45,6 +45,19 @@ namespace Snowstorm
 		// must not become two handles. Display keeps the original casing; only the key is folded.
 		[[nodiscard]] std::string NormalizeKey(std::string_view path);
 
+		// A multi-mesh file gives each of its parts a registry handle, distinguished by a "?submesh=N"
+		// suffix on the path. That grammar existed as a hand-rolled find("?submesh=") in the asset manager
+		// and a hand-rolled concatenation in the mesh library, i.e. two copies of one syntax with no owner.
+		// It belongs here, with the rest of what a path can mean.
+		struct AssetRef
+		{
+			std::string Path;
+			int SubResource = -1; // -1 = the whole file
+		};
+
+		[[nodiscard]] AssetRef SplitSubResource(std::string_view path);
+		[[nodiscard]] std::string JoinSubResource(std::string_view path, int subResource);
+
 		// Where a mount points right now. /Game/ and /Cache/ follow the active project and the engine
 		// root, so this is resolved per call rather than cached.
 		[[nodiscard]] std::filesystem::path MountRoot(std::string_view prefix);
