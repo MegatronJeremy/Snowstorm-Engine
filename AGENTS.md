@@ -100,6 +100,9 @@ texture path (`RendererService::EnqueueTextureUpload`).
 
 **Doom is a game, not engine code.** It lives in `Games/Doom/`, links `Snowstorm-Core` the way any
 game would, and offers hosts exactly one entry point, `RegisterDoomSystems(World&)` in `DoomGame.hpp`.
+`Snowstorm-Doom` is its executable, and it is ~25 lines: an `Application` that pushes `GameLayer` with
+that one function. `Snowstorm-Runtime` is the same shape, which is the point, since neither is
+privileged.
 The engine has no knowledge of it: nothing under `Snowstorm-Core/` names Doom outside two explanatory
 comments. The Editor and the Runtime each link the game and call that function after
 `RegisterCoreSystems`, which is what orders `DoomSystem` behind `MaterialResolveSystem` and ahead of
@@ -950,7 +953,7 @@ Snowstorm-Core/      # STATIC library: all engine code (the only place most work
   Source/Snowstorm/  #   platform-independent engine (Core, ECS, Render, Systems, ...)
   Source/Platform/   #   Vulkan/ (RHI implementation, ~28 files) and Windows/
 Snowstorm-Editor/    # Editor EXECUTABLE, links Core; ImGui dockspace, panels, viewport
-Snowstorm-Runtime/   # Editor-free runtime EXECUTABLE, links Core; shares RegisterCoreSystems
+Snowstorm-Runtime/   # Editor-free player EXECUTABLE; a ~25-line shell over GameLayer
 Snowstorm-Tests/     # Catch2 unit tests (GPU-free; run by ctest, gated in CI)
 Games/Doom/          # a GAME built on the engine, not part of it; hosts link it and call RegisterDoomSystems
 Engine/              # engine-owned runtime data: Shaders/, Fonts/, and the gitignored cache/
@@ -973,6 +976,12 @@ see, so treat it as part of the feature, not an afterthought.
 
 ## Architecture (Core)
 
+- **Game bootstrap:** `Core/GameLayer.hpp` is the layer a non-editor host pushes. It builds the `World`,
+  boots the active project, calls `RegisterCoreSystems`, loads the startup scene, and makes the viewport
+  and camera. A game passes its own `void(World&)` registration to the constructor, which runs
+  immediately after `RegisterCoreSystems` so its systems land behind every engine system in the same
+  phase. It is engine code rather than one executable's private layer because every shipping game needs
+  exactly this bootstrap; `Snowstorm-Runtime` and `Snowstorm-Doom` are both thin shells over it.
 - **Entry point:** clients define `Snowstorm::CreateApplication()`; `Core/EntryPoint.hpp` provides
   `main` (inits logging, wraps `Run()` in profiler sessions). `Application` owns the window, the
   `LayerStack`, the `EventBus`, and the `ServiceManager` (singleton via `Application::Get()`).

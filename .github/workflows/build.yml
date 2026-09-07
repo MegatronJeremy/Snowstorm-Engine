@@ -80,8 +80,10 @@ jobs:
       - name: Configure (vcpkg + CMake, Doom ON)
         run: py Scripts/Generate-Solution.py --with-doom --build-dir build-doom
 
-      # Snowstorm-Runtime, not Snowstorm-Core: Core is a static library, so building it alone would
-      # compile the Doom code without ever resolving its symbols. The Runtime links Core WHOLE_ARCHIVE,
-      # which forces every TU into the image and therefore forces the link to be real.
-      - name: Build (Runtime, links the Doom path)
-        run: cmake --build build-doom --config Debug --target Snowstorm-Runtime
+      # Executables, not Snowstorm-Core: Core and DoomGame are static libraries, so building them alone
+      # would compile the Doom code without ever resolving its symbols. Both of these link Core and
+      # DoomGame WHOLE_ARCHIVE, which forces every TU into the image and the link to be real.
+      # Snowstorm-Doom is the game; Snowstorm-Runtime is the generic player that also links it, and the
+      # two are separate links worth gating separately.
+      - name: Build (game + runtime, links the Doom path)
+        run: cmake --build build-doom --config Debug --target Snowstorm-Doom Snowstorm-Runtime

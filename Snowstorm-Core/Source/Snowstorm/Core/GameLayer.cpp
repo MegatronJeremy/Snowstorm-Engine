@@ -1,6 +1,4 @@
-#include "RuntimeLayer.hpp"
-
-#include "DoomGame.hpp"
+#include "Snowstorm/Core/GameLayer.hpp"
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Core/Application.hpp"
@@ -9,7 +7,9 @@
 #include "Snowstorm/Project/Project.hpp"
 #include "Snowstorm/Project/ProjectSerializer.hpp"
 #include "Snowstorm/Systems/CoreSystems.hpp"
+#include "Snowstorm/World/Entity.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
+#include "Snowstorm/World/World.hpp"
 
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Components/CameraControllerComponent.hpp"
@@ -25,12 +25,12 @@
 
 namespace Snowstorm
 {
-	RuntimeLayer::RuntimeLayer()
-	    : Layer("RuntimeLayer")
+	GameLayer::GameLayer(std::function<void(World&)> registerGameSystems)
+	    : Layer("GameLayer"), m_RegisterGameSystems(std::move(registerGameSystems))
 	{
 	}
 
-	void RuntimeLayer::OnAttach()
+	void GameLayer::OnAttach()
 	{
 		m_World = CreateRef<World>();
 
@@ -70,10 +70,12 @@ namespace Snowstorm
 		// The SAME engine systems the editor runs, minus the editor/UI systems on top.
 		RegisterCoreSystems(*m_World);
 
-		// Games this host can run. After RegisterCoreSystems, which is what orders DoomSystem correctly
-		// inside SystemPhase::Resolve; see DoomGame.hpp. Inert unless the build has SS_HAS_DOOM and
-		// doom.enabled is set, so it costs nothing in an ordinary run.
-		RegisterDoomSystems(*m_World);
+		// Then the game's own systems, if this host brought any. After the engine's, on purpose: within a
+		// phase, systems run in registration order.
+		if (m_RegisterGameSystems)
+		{
+			m_RegisterGameSystems(*m_World);
+		}
 
 		// The viewport is host-owned (window-sized), so create it before the scene loads. The CAMERA, in
 		// contrast, is scene-owned (#147): a scene can author a gameplay camera, and the runtime uses it.
@@ -104,7 +106,7 @@ namespace Snowstorm
 		// now, so a resized window shows a scaled image until #146 makes the target track the window.
 	}
 
-	UUID RuntimeLayer::CreateRuntimeViewport() const
+	UUID GameLayer::CreateRuntimeViewport() const
 	{
 		const auto& window = Application::Get().GetWindow();
 		const auto w = static_cast<float>(window.GetWidth());
@@ -117,7 +119,7 @@ namespace Snowstorm
 		return viewport.GetComponent<IDComponent>().Id;
 	}
 
-	void RuntimeLayer::ConfigureSceneCamera(const UUID viewportId) const
+	void GameLayer::ConfigureSceneCamera(const UUID viewportId) const
 	{
 		auto& reg = m_World->GetRegistry();
 
@@ -180,7 +182,7 @@ namespace Snowstorm
 		             reg.any_of<TagComponent>(authored) ? reg.Read<TagComponent>(authored).Tag : std::string("<camera>"));
 	}
 
-	void RuntimeLayer::OnUpdate(const Timestep ts)
+	void GameLayer::OnUpdate(const Timestep ts)
 	{
 		m_World->OnUpdate(ts);
 	}

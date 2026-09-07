@@ -43,3 +43,31 @@ endif()
 # No precompiled header here on purpose. Core's pch force-includes Windows.h, whose rpcndr.h typedefs
 # `boolean` as unsigned char while doomtype.h typedefs it as unsigned int; Core needed a per-file
 # SKIP_PRECOMPILE_HEADERS to work around that, and a target with no pch simply does not have the problem.
+
+# The game executable. A game ships as this: an Application subclass that pushes GameLayer with its own
+# system registration, and nothing else. WHOLE_ARCHIVE for the reason every host needs it, since
+# DoomComponent's registration is an unreferenced static initializer.
+#
+# It still needs a scene to load and a WAD to read, neither of which it invents:
+#   Snowstorm-Doom.exe --startup.scene=Projects/Sandbox/assets/scenes/Doom.world
+#                      --doom.enabled --doom.wad=<IWAD>
+add_executable(Snowstorm-Doom "${CMAKE_CURRENT_SOURCE_DIR}/DoomMain.cpp")
+
+set_target_properties(Snowstorm-Doom PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    FOLDER Games
+)
+
+target_link_libraries(Snowstorm-Doom PRIVATE
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,Snowstorm-Core>
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,DoomGame>
+)
+
+# Copy dependent runtime DLLs next to the exe, as the other executables do.
+add_custom_command(TARGET Snowstorm-Doom POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_RUNTIME_DLLS:Snowstorm-Doom> $<TARGET_FILE_DIR:Snowstorm-Doom>
+    COMMAND_EXPAND_LISTS
+)
