@@ -877,6 +877,38 @@ save deletes the block from the `.world`. That is why the editor links both game
 is running. `GameRegistrationTests` asserts a game's components survived, and was verified to fail
 without the flag.
 
+## Staging a runnable build
+
+`cmake --build build --config Debug --target stage` produces `build/stage/<config>/`: a directory the
+executables run out of with no engine tree present.
+
+```
+cmake --build build --config Debug --target stage
+cd build/stage/Debug && ./Snowstorm-Pong.exe --startup.scene=Projects/Sandbox/assets/scenes/Pong.world
+```
+
+**Not part of the default build, on purpose.** The payload is ~140 MB and packaging is a step you ask
+for, the way Unreal stages on package rather than on compile. It also leaves every existing path alone,
+so smoke, perf and quality keep finding executables where they always have.
+
+**What makes it self-contained is `GetEngineRoot`'s rule 2**: it walks up from the executable for
+`Engine/Shaders`, finds it in the stage, and never consults the source tree. That is why the layout
+mirrors the repo instead of flattening it, and it is what retires rule 3 (the baked configure-time
+path) for a shipped build. Verified rather than assumed: a staged run writes its cache into the STAGE's
+`Engine/cache` and leaves the source tree's untouched, and since that path is `GetEngineRoot()/Engine/
+cache`, it is proof of which root won.
+
+`Engine/cache` is deliberately NOT staged: it is generated, and the stage must stay writable so a cold
+run populates it in place.
+
+**Each executable's whole output directory is copied**, not the exe plus `$<TARGET_RUNTIME_DLLS>`. That
+generator expression names only DLLs of directly linked imported targets and misses assimp's transitive
+dependencies (minizip, pugixml, poly2tri, zlib), which vcpkg's applocal deployment is what actually puts
+next to the exe. Staging 7 of 18 DLLs produced a stage whose executables would not start.
+
+The content copy hangs off a stamp file rather than a `POST_BUILD` command, because `POST_BUILD` only
+fires when its target RELINKS: editing a scene and rebuilding would stage the old one.
+
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc
