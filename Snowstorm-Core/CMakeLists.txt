@@ -47,6 +47,12 @@ find_package(Tracy CONFIG REQUIRED)
 # is a deliberate opt-in you'd do by adding this define to that config, not the default.
 target_compile_definitions(Snowstorm-Core PUBLIC $<$<CONFIG:Debug>:TRACY_ENABLE>)
 
+# The engine's own tree, baked in as a DEV-ONLY fallback for finding Engine/Shaders and Tools/dxc.
+# It is what makes a game in its own repository work with no setup step: there the executable lives in
+# the game's build tree, so walking up from it never reaches the engine. See Utility/EnginePaths.hpp,
+# which deliberately ranks this BELOW the walk-up.
+target_compile_definitions(Snowstorm-Core PRIVATE SS_ENGINE_SOURCE_DIR="${SS_ENGINE_SOURCE_DIR}")
+
 target_include_directories(Snowstorm-Core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
     ${Stb_INCLUDE_DIR}
@@ -60,13 +66,6 @@ target_include_directories(Snowstorm-Core PRIVATE ${MINIAUDIO_INCLUDE_DIRS})
 # Core source, and miniaudio expects to be the first thing in its own translation unit. /W0 because its
 # warnings are upstream's and would bury the engine's own.
 set_source_files_properties(Source/Snowstorm/Audio/MiniaudioImpl.cpp PROPERTIES
-    SKIP_PRECOMPILE_HEADERS ON
-)
-
-# Doom's sound backend includes doomtype.h, which in C++ typedefs `boolean` as unsigned int while
-# Windows' rpcndr.h typedefs it as unsigned char. pch.h force-includes Windows.h everywhere else, so
-# this one TU has to be built without it.
-set_source_files_properties(Source/Snowstorm/Examples/Doom/DoomSound.cpp PROPERTIES
     SKIP_PRECOMPILE_HEADERS ON
 )
 if(MSVC)
@@ -95,11 +94,3 @@ target_link_libraries(Snowstorm-Core PUBLIC
     nlohmann_json::nlohmann_json
     Tracy::TracyClient
 )
-
-# Embedded Doom (root option SS_ENABLE_DOOM, default OFF). Source/Snowstorm/Examples/Doom compiles
-# either way; without this target its SS_HAS_DOOM define is absent and DoomSystem is a no-op, so the
-# GPL-2.0 dependency stays out of a default build entirely. On Core rather than an executable so both
-# the Editor and the Runtime get it from RegisterCoreSystems.
-if(SS_ENABLE_DOOM)
-    target_link_libraries(Snowstorm-Core PUBLIC doomgeneric)
-endif()

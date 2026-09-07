@@ -10,6 +10,11 @@
 // single instance of each. Add new engine flags here rather than reading std::getenv ad hoc.
 namespace Snowstorm::CVars
 {
+	// Where the engine's own assets (Engine/Shaders, Engine/cache, Tools/dxc) live. Empty = derive it
+	// from the executable's location, which is right whenever the engine is built in place. A game
+	// consuming Snowstorm from its OWN repo sets this, because there the exe is not under the engine
+	// tree. See Utility/EnginePaths.hpp.
+	extern CVar<std::string> EngineRoot;
 	// Upper bound on every denoiser's a-trous pass count, and the size of GIDenoisePass's per-frame
 	// descriptor/uniform pool, which is why it lives here rather than as a literal in either: the pool
 	// must have a slot per pass, and when the two numbers drifted apart the extra passes asserted at

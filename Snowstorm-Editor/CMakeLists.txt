@@ -22,7 +22,7 @@ target_sources(Snowstorm-Editor PRIVATE ${EDITOR_SOURCES})
 # Include directories
 target_include_directories(Snowstorm-Editor PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
-    ${CMAKE_SOURCE_DIR}/Snowstorm-Core/Source
+    ${SS_ENGINE_SOURCE_DIR}/Snowstorm-Core/Source
 )
 
 # ImGuizmo: editor-only transform gizmos drawn over the viewport.
@@ -37,12 +37,13 @@ target_link_libraries(Snowstorm-Editor PUBLIC
     imguizmo::imguizmo
 )
 
-# Embedded Doom (root option SS_ENABLE_DOOM, default OFF). Core's Examples/Doom compiles either way;
-# without this target its SS_HAS_DOOM define is absent and the system compiles to a no-op, so the
-# GPL-2.0 dependency stays out of a default build entirely.
-if(SS_ENABLE_DOOM)
-    target_link_libraries(Snowstorm-Editor PRIVATE doomgeneric)
-endif()
+# Games this editor can author and play. Linked exactly as Unreal's editor loads the game module.
+# WHOLE_ARCHIVE for the same reason Core needs it: a game's component registrations are static
+# initializers in TUs nothing references, and dropping them fails SILENTLY (the component vanishes from
+# the inspector and the serializer skips it), never as a link error.
+target_link_libraries(Snowstorm-Editor PRIVATE
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,PongGame>
+)
 
 # Copy every runtime DLL this exe depends on next to it after build. vcpkg's automatic applocal deploy
 # covers most (assimp, etc.) but missed TracyClient.dll, so launching outside the vcpkg bin dir (e.g. the

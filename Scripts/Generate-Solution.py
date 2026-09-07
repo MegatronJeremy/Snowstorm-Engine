@@ -133,10 +133,6 @@ def main():
     ap.add_argument("--clean", action="store_true", help="Delete build dir before configuring")
     ap.add_argument("--fresh", action="store_true", help="Also delete vcpkg installed/buildtrees (forces full reinstall)")
     ap.add_argument("--generator", default=None, help='Optional CMake generator, e.g. "Visual Studio 17 2022"')
-    ap.add_argument("--with-doom", action="store_true",
-                    help="Configure with SS_ENABLE_DOOM=ON. Needs no extra packages: Doom's audio goes "
-                         "through the engine's own AudioService. Note doomgeneric is GPL-2.0, so such a "
-                         "build cannot be redistributed under this project's UNLICENSE.")
     args = ap.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -207,7 +203,6 @@ def main():
         "-T", toolset_arg,
         *instance_arg,
         *(["-G", args.generator] if args.generator else []),
-        *([f"-DSS_ENABLE_DOOM={'ON' if args.with_doom else 'OFF'}"]),
     ], env=env)
 
     sln = build_dir / "Snowstorm.sln"

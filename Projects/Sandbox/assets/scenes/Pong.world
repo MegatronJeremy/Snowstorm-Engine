@@ -1,0 +1,216 @@
+{
+ "Entities": [
+  {
+   "Name": "Environment",
+   "UUID": "7301000000000000001",
+   "Components": {
+    "Snowstorm::EnvironmentComponent": {
+     "Background": "SolidColor",
+     "SkyIntensity": 0.0,
+     "SkyZenithColor": [
+      0.02,
+      0.02,
+      0.04
+     ],
+     "SkyHorizonColor": [
+      0.02,
+      0.02,
+      0.04
+     ],
+     "GroundColor": [
+      0.0,
+      0.0,
+      0.0
+     ]
+    }
+   }
+  },
+  {
+   "Name": "Directional Light",
+   "UUID": "7301000000000000002",
+   "Components": {
+    "Snowstorm::DirectionalLightComponent": {
+     "CastShadows": false,
+     "Color": [
+      1.0,
+      1.0,
+      1.0
+     ],
+     "Direction": [
+      0.0,
+      -0.3,
+      -1.0
+     ],
+     "Intensity": 2.0
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      4.0,
+      4.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    }
+   }
+  },
+  {
+   "Name": "Main Camera",
+   "UUID": "7301000000000000003",
+   "Components": {
+    "Snowstorm::CameraComponent": {
+     "Projection": "Perspective",
+     "PerspectiveFOV": 0.785398,
+     "PerspectiveNear": 0.1,
+     "PerspectiveFar": 100.0,
+     "Primary": true
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      11.5
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    }
+   }
+  },
+  {
+   "Name": "Paddle Left",
+   "UUID": "7301000000000000005",
+   "Components": {
+    "Snowstorm::MeshComponent": {
+     "$asset": "12112538743247314239"
+    },
+    "Snowstorm::MaterialComponent": {
+     "$asset": "14863079243352112687"
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      -7.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      0.3,
+      2.0,
+      1.0
+     ]
+    },
+    "PongPaddleComponent": {
+     "Side": 0,
+     "Speed": 9.0,
+     "HalfHeight": 1.0
+    }
+   }
+  },
+  {
+   "Name": "Paddle Right",
+   "UUID": "7301000000000000006",
+   "Components": {
+    "Snowstorm::MeshComponent": {
+     "$asset": "12112538743247314239"
+    },
+    "Snowstorm::MaterialComponent": {
+     "$asset": "9496730424453785457"
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      7.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      0.3,
+      2.0,
+      1.0
+     ]
+    },
+    "PongPaddleComponent": {
+     "Side": 1,
+     "Speed": 9.0,
+     "HalfHeight": 1.0
+    }
+   }
+  },
+  {
+   "Name": "Ball",
+   "UUID": "7301000000000000007",
+   "Components": {
+    "Snowstorm::MeshComponent": {
+     "$asset": "12112538743247314239"
+    },
+    "Snowstorm::MaterialComponent": {
+     "$asset": "14863079243352112687"
+    },
+    "Snowstorm::VisibilityComponent": {
+     "Mask": 3
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      0.4,
+      0.4,
+      1.0
+     ]
+    },
+    "PongBallComponent": {
+     "Velocity": [
+      5.0,
+      3.0,
+      0.0
+     ],
+     "Radius": 0.2,
+     "ScoreLeft": 0,
+     "ScoreRight": 0
+    }
+   }
+  }
+ ],
+ "Scene": "Pong"
+}

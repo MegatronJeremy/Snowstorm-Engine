@@ -93,63 +93,6 @@ debugger environment) pointing at the vcpkg `bin` dir.
 
 The first run is slow: vcpkg compiles every dependency from source.
 
-### Embedded Doom (`SS_ENABLE_DOOM`, off)
-
-`Projects/Sandbox/assets/scenes/Doom.world` plays Doom on a textured quad, as a demo of the dynamic
-texture path (`RendererService::EnqueueTextureUpload`). It is off because it is not part of the
-engine and because **doomgeneric is GPL-2.0 while this project is public domain**: a build with it on
-is a combined work that cannot be redistributed under `UNLICENSE.txt`. Nothing GPL is committed here;
-`Vendor/doomgeneric/CMakeLists.txt` clones it into the build tree at configure time instead.
-
-```
-py Scripts/Generate-Solution.py --with-doom && cmake --build build --config Debug
-build/Snowstorm-Runtime/Debug/Snowstorm-Runtime.exe \
-  --startup.scene=Projects/Sandbox/assets/scenes/Doom.world \
-  --doom.enabled --doom.wad=<path to an IWAD> --display.fullscreen
-```
-
-Use `--with-doom` rather than a bare `cmake -DSS_ENABLE_DOOM=ON`: `Generate-Solution.py` passes
-`-DSS_ENABLE_DOOM=OFF` whenever the flag is absent, so the next ordinary re-generate silently turns a
-Doom build back off. A bare `cmake` also skips the vcpkg toolchain file and the pinned MSVC toolset
-that every `find_package` here depends on.
-
-No IWAD ships with the repo (`*.wad` is gitignored); Freedoom is the freely licensed one. The Editor
-runs it too (drop `--display.fullscreen`); `DoomSystem` is registered by `RegisterCoreSystems`, so both
-hosts get it.
-
-The scene frames the quad to the vertical FOV, so it fills the height at any window size and
-pillarboxes against a backdrop quad on anything wider than Doom's 8:5. Camera look and movement are
-both gated on holding the right mouse button, so every key reaches Doom unless you are holding it.
-
-Doom runs on its own thread because it drives a 35 Hz tic loop and blocks waiting for it, which would
-otherwise cap the frame rate. It has no shutdown entry point, so that thread is detached and dies with
-the process, and the state it shares is deliberately leaked rather than destroyed under it.
-
-`.github/workflows/build.yml` carries a second job, `windows-doom`, that configures with
-`--with-doom` and links `Snowstorm-Runtime`. It exists because the default job builds `SS_ENABLE_DOOM=OFF`
-and every TU under `Examples/Doom` sits inside `#ifdef SS_HAS_DOOM`, so without it CI compiles none of
-this code. It is a compile-and-link gate only: it resolves every `DG_*`/`OPL_*`/`SS_DoomAudio_*` symbol
-and proves nothing about behaviour, since no tic runs and no device is opened. It links the Runtime
-rather than Core because Core is a static library, so building Core alone would compile the code without
-ever resolving it.
-
-**Doom's audio is the engine's audio.** Both `DG_sound_module` and `DG_music_module` are implemented
-against `AudioService` (`Examples/Doom/`), so there is one output device and one mixer rather than a
-second, SDL-owned one; nothing here needs SDL2 or SDL2_mixer. Effects are DMX lumps decoded to PCM.
-Music is **OPL2 FM synthesis**, not MIDI: miniaudio has no synthesiser, General MIDI would need a
-soundfont this repo cannot ship, and the OPL instrument bank (`GENMIDI`) already lives inside the
-IWAD. Chocolate Doom 2.1.0 supplies the sequencer and `dbopl`, fetched (never vendored) for the same
-licence reason; `OplDriver.c` supplies the `OPL_*` entry points that Chocolate Doom's `opl.c` and
-`opl_sdl.c` provided (neither is built: `opl.c` drags in the Win32 hardware-port backend and both
-reach SDL) and feeds an `AudioService` stream.
-
-Two lifetime rules hold that together, and both were bugs first. Doom triggers sounds from ITS thread
-while `AudioService` is main-thread-only, so effects are marshalled through a command queue that
-`DoomSystem` drains: the unjoinable thread means a direct call would be a use-after-free at shutdown
-no matter how thread-safe the service was. And the OPL producer thread (engine-created, so joinable)
-is stopped in `~DoomSystem`, which `Application` runs before the service manager, so it cannot outlive
-the stream it writes into.
-
 ### New box (one time)
 
 A clone plus these commands reproduces the full workflow. There is deliberately no setup script:
@@ -192,7 +135,9 @@ the commit, or move the reference machine deliberately.
 ## Smoke test (run after non-trivial changes)
 
 `Scripts/smoke-test.py` boots each executable headlessly and checks it doesn't crash or log
-errors. It launches every app with `SS_SMOKE_FRAMES` set (the engine then runs that many frames
+errors. The example game is one of those executables, which is what keeps it from rotting: a target in
+`TARGETS` may name a scene it needs, and `Pong` boots `Pong.world` so it runs actual gameplay rather
+than whatever the startup project points at. It launches every app with `SS_SMOKE_FRAMES` set (the engine then runs that many frames
 and exits cleanly), captures stdout/stderr, enforces a per-app wall-clock timeout (a hang/deadlock
 becomes a failure instead of blocking), checks the exit code, and scans the log for error markers
 (`[error]`/`[critical]`, Vulkan validation, assertion text). Exit 0 = all pass.
@@ -200,7 +145,7 @@ becomes a failure instead of blocking), checks the exit code, and scans the log 
 ```
 py Scripts/smoke-test.py                 # 120 frames, 60s timeout/app, Debug build
 py Scripts/smoke-test.py --frames 300    # longer soak
-py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime)
+py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime | Pong)
 py Scripts/smoke-test.py --warnings-fail # treat [warning] lines as failures too
 py Scripts/smoke-test.py --strict        # enable deeper Vulkan validation (see below)
 ```
@@ -897,6 +842,32 @@ Voices are owned by `AudioSystem`, never by the entity: entity deletion, scene l
 Play/Stop snapshot restore all destroy components without notice, so a per-entity id would strand a
 playing sound nothing can reach. `Execute` sweeps voices whose entity is gone.
 
+## Games
+
+`Games/` holds games built on the engine, not parts of it. The engine has no knowledge of anything
+there; a host opts in by linking a game and calling its one registration function, and both
+`Snowstorm-Editor` and `Snowstorm-Runtime` link both games so either scene can be authored and played.
+
+**`Games/Pong` is the example.** It is the whole of what building on
+Snowstorm takes: two components (`PongComponents.cpp`, registered exactly as an engine component is),
+one system in `SystemPhase::Logic` with `RunsInEditMode() == false` so the scene stays still while it
+is authored, a `RegisterPongSystems(World&)` seam, a hand-authored `Pong.world`, and a ~25-line
+executable over `GameLayer`. No third-party dependency, no build flag, no licence carve-out. It
+self-plays (an unattended paddle tracks the ball), which is what makes it verifiable headlessly: a
+`SS_SMOKE_FRAMES` run logs rallies and scores with no keyboard attached.
+
+Doom runs on the engine too, but from [its own repository](https://github.com/MegatronJeremy/Snowstorm-Doom),
+which consumes Snowstorm as a submodule. It lives there rather than here because doomgeneric is GPL-2.0
+against this project's public domain, and because it is a poor teaching artifact: most of its 1550 lines
+are emulator plumbing rather than engine API.
+
+**A host must link a game `WHOLE_ARCHIVE` even if it never calls into it.** Component registrations are
+static initializers in TUs nothing references, and the failure is silent in every direction: the
+component vanishes from the inspector, `SceneSerializer` skips it with a bare `continue`, and the next
+save deletes the block from the `.world`. That is why the editor links both games, not just the one it
+is running. `GameRegistrationTests` asserts a game's components survived, and was verified to fail
+without the flag.
+
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc
@@ -929,8 +900,9 @@ Snowstorm-Core/      # STATIC library: all engine code (the only place most work
   Source/Snowstorm/  #   platform-independent engine (Core, ECS, Render, Systems, ...)
   Source/Platform/   #   Vulkan/ (RHI implementation, ~28 files) and Windows/
 Snowstorm-Editor/    # Editor EXECUTABLE, links Core; ImGui dockspace, panels, viewport
-Snowstorm-Runtime/   # Editor-free runtime EXECUTABLE, links Core; shares RegisterCoreSystems
+Snowstorm-Runtime/   # Editor-free player EXECUTABLE; a ~25-line shell over GameLayer
 Snowstorm-Tests/     # Catch2 unit tests (GPU-free; run by ctest, gated in CI)
+Games/Pong/          # the small example GAME: what building on the engine actually takes, ~300 lines
 Engine/              # engine-owned runtime data: Shaders/, Fonts/, and the gitignored cache/
 Projects/Sandbox/    # the sample project: assets/ (scenes, meshes, materials, textures, registry)
 Dataset/             # gitignored capture output + trained weights
@@ -951,6 +923,12 @@ see, so treat it as part of the feature, not an afterthought.
 
 ## Architecture (Core)
 
+- **Game bootstrap:** `Core/GameLayer.hpp` is the layer a non-editor host pushes. It builds the `World`,
+  boots the active project, calls `RegisterCoreSystems`, loads the startup scene, and makes the viewport
+  and camera. A game passes its own `void(World&)` registration to the constructor, which runs
+  immediately after `RegisterCoreSystems` so its systems land behind every engine system in the same
+  phase. It is engine code rather than one executable's private layer because every shipping game needs
+  exactly this bootstrap; `Snowstorm-Runtime` and `Snowstorm-Doom` are both thin shells over it.
 - **Entry point:** clients define `Snowstorm::CreateApplication()`; `Core/EntryPoint.hpp` provides
   `main` (inits logging, wraps `Run()` in profiler sessions). `Application` owns the window, the
   `LayerStack`, the `EventBus`, and the `ServiceManager` (singleton via `Application::Get()`).

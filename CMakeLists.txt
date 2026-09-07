@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 project(Snowstorm LANGUAGES CXX)
 
+# Where THIS engine lives, which is not CMAKE_SOURCE_DIR whenever Snowstorm is consumed as a
+# subdirectory by a game in its own repository: there CMAKE_SOURCE_DIR is the GAME's root, and every
+# path built from it points at files that do not exist. Use this for anything inside the engine.
+set(SS_ENGINE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE INTERNAL "Snowstorm engine source root")
+
 # Global settings
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,22 +19,11 @@ if(MSVC)
     add_compile_options(/MP)
 endif()
 
-# Embedded Doom (Vendor/doomgeneric). OFF because it is not part of the engine: it is a demo of the
-# dynamic-texture upload path, it needs an IWAD the repo does not ship, and doomgeneric is GPL-2.0
-# against this project's public domain, so a build with it ON is a combined work that cannot be
-# redistributed under UNLICENSE.txt. ON also clones ~6 MB from GitHub at configure time.
-option(SS_ENABLE_DOOM "Fetch and build the embedded doomgeneric interpreter (GPL-2.0)" OFF)
-
-# 1. Add subdirectories for core and the executables
-# This must happen before setting target properties
-if(SS_ENABLE_DOOM)
-    # Only when needed: enabling C unconditionally would make every configure look for a C compiler
-    # for a target that usually is not built.
-    enable_language(C)
-    add_subdirectory(Vendor/doomgeneric)
-endif()
-
 add_subdirectory(Snowstorm-Core)
+
+# Games built on the engine. Not part of it: the engine has no knowledge of anything under Games/, and
+# a host opts in by linking the game and calling its one registration function.
+add_subdirectory(Games/Pong)
 add_subdirectory(Snowstorm-Editor)
 add_subdirectory(Snowstorm-Runtime)
 
@@ -65,10 +59,10 @@ target_compile_definitions(Snowstorm-Core PUBLIC $<$<CONFIG:Debug>:SS_VULKAN_LAY
 # container (add_custom_target ... SOURCES) -- nothing is compiled or linked here; shaders are still
 # compiled at runtime by DXC (hash-cached). Attached to no binary because they're shared engine assets.
 file(GLOB SHADER_FILES
-    "${CMAKE_SOURCE_DIR}/Engine/Shaders/*.hlsl"
-    "${CMAKE_SOURCE_DIR}/Engine/Shaders/Include/*.hlsli"
+    "${SS_ENGINE_SOURCE_DIR}/Engine/Shaders/*.hlsl"
+    "${SS_ENGINE_SOURCE_DIR}/Engine/Shaders/Include/*.hlsli"
 )
 add_custom_target(Shaders SOURCES ${SHADER_FILES})
 # Mirror the on-disk layout in the IDE tree (Shaders/ + Shaders/Include/).
-source_group(TREE "${CMAKE_SOURCE_DIR}/Engine/Shaders" PREFIX "Shaders" FILES ${SHADER_FILES})
+source_group(TREE "${SS_ENGINE_SOURCE_DIR}/Engine/Shaders" PREFIX "Shaders" FILES ${SHADER_FILES})
 
