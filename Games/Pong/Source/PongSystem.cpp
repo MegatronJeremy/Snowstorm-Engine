@@ -14,9 +14,10 @@ namespace Snowstorm
 {
 	namespace
 	{
-		// The playfield, in world units, matching the backdrop quad authored in Pong.world. Constants
-		// rather than component fields on purpose: an example should not make the reader chase a value
-		// through the inspector to understand the geometry.
+		// The playfield, in world units. It is what the camera in Pong.world is framed to see, so moving
+		// one without the other puts the walls off screen. Constants rather than component fields on
+		// purpose: an example should not make the reader chase a value through the inspector to
+		// understand the geometry.
 		constexpr float kHalfWidth = 8.0f;  // ball scores past +/- this
 		constexpr float kHalfHeight = 4.5f; // ball bounces off +/- this
 		constexpr float kPaddleX = 7.0f;
