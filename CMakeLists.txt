@@ -54,7 +54,10 @@ add_subdirectory(Snowstorm-Runtime)
 set(SS_STAGE_DIR "${CMAKE_BINARY_DIR}/stage/$<CONFIG>" CACHE INTERNAL "Snowstorm stage output directory")
 
 # The ENGINE half of the payload: what every game needs regardless of which game it is.
-set(SS_STAGE_STAMP "${CMAKE_BINARY_DIR}/stage/stage-engine-$<CONFIG>.stamp")
+# Inside the stage dir, not beside it: a stamp describes what is in that directory, so deleting the
+# directory has to invalidate it too. With the stamps one level up, deleting build/stage/<config> left
+# them claiming the content was still there and the next build produced a silently EMPTY package.
+set(SS_STAGE_STAMP "${SS_STAGE_DIR}/.stamp-engine")
 
 # CONFIGURE_DEPENDS so adding a shader re-runs the glob instead of silently staging a stale set. The
 # stamp gives the copy a real output for CMake to track: a POST_BUILD copy would only fire when an
@@ -78,15 +81,26 @@ add_custom_command(
     # a cold shader elsewhere.
     COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
             "${SS_ENGINE_SOURCE_DIR}/Tools/dxc" "${SS_STAGE_DIR}/Tools/dxc"
+    # Only the artifact kinds a RUN consumes. Copying Engine/cache wholesale also staged the RGA gate's
+    # offline shaders-cook, profiler captures and shader-stats dumps: development output with no business
+    # in a package.
     COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-            "${SS_ENGINE_SOURCE_DIR}/Engine/cache" "${SS_STAGE_DIR}/Engine/cache"
+            "${SS_ENGINE_SOURCE_DIR}/Engine/cache/shaders" "${SS_STAGE_DIR}/Engine/cache/shaders"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+            "${SS_ENGINE_SOURCE_DIR}/Engine/cache/mesh" "${SS_STAGE_DIR}/Engine/cache/mesh"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+            "${SS_ENGINE_SOURCE_DIR}/Engine/cache/texture" "${SS_STAGE_DIR}/Engine/cache/texture"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+            "${SS_ENGINE_SOURCE_DIR}/Engine/cache/ibl" "${SS_STAGE_DIR}/Engine/cache/ibl"
     COMMAND ${CMAKE_COMMAND} -E touch "${SS_STAGE_STAMP}"
     DEPENDS ${SS_STAGE_INPUTS}
     COMMENT "Staging engine content"
     VERBATIM
 )
 
-file(MAKE_DIRECTORY "${SS_ENGINE_SOURCE_DIR}/Engine/cache")
+foreach(SS_CACHE_KIND shaders mesh texture ibl)
+    file(MAKE_DIRECTORY "${SS_ENGINE_SOURCE_DIR}/Engine/cache/${SS_CACHE_KIND}")
+endforeach()
 
 add_custom_target(stage DEPENDS "${SS_STAGE_STAMP}")
 
@@ -120,7 +134,7 @@ endfunction()
 # the repo root.
 function(snowstorm_stage_project SS_PROJECT_DIR)
     get_filename_component(SS_PROJECT_NAME "${SS_PROJECT_DIR}" NAME)
-    set(SS_PROJECT_STAMP "${CMAKE_BINARY_DIR}/stage/stage-project-${SS_PROJECT_NAME}-$<CONFIG>.stamp")
+    set(SS_PROJECT_STAMP "${SS_STAGE_DIR}/.stamp-project-${SS_PROJECT_NAME}")
 
     file(GLOB_RECURSE SS_PROJECT_INPUTS CONFIGURE_DEPENDS "${SS_PROJECT_DIR}/*")
 
