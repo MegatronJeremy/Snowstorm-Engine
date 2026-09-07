@@ -52,6 +52,17 @@ namespace Snowstorm
 					break;
 				}
 			}
+			// The tree this engine was CONFIGURED from. Below the walk-up on purpose: a staged or packaged
+			// build has Engine/ beside the exe and must win, or it would silently read shaders out of a
+			// stale checkout on the build machine. The exists() guard makes this self-disabling when the
+			// source tree is gone, degrading to the working directory rather than to a wrong path.
+#ifdef SS_ENGINE_SOURCE_DIR
+			if (fs::path configured(SS_ENGINE_SOURCE_DIR); fs::exists(configured / "Engine" / "Shaders", ec))
+			{
+				return configured;
+			}
+#endif
+
 			return fs::current_path();
 		}();
 		return root;

@@ -47,6 +47,12 @@ find_package(Tracy CONFIG REQUIRED)
 # is a deliberate opt-in you'd do by adding this define to that config, not the default.
 target_compile_definitions(Snowstorm-Core PUBLIC $<$<CONFIG:Debug>:TRACY_ENABLE>)
 
+# The engine's own tree, baked in as a DEV-ONLY fallback for finding Engine/Shaders and Tools/dxc.
+# It is what makes a game in its own repository work with no setup step: there the executable lives in
+# the game's build tree, so walking up from it never reaches the engine. See Utility/EnginePaths.hpp,
+# which deliberately ranks this BELOW the walk-up.
+target_compile_definitions(Snowstorm-Core PRIVATE SS_ENGINE_SOURCE_DIR="${SS_ENGINE_SOURCE_DIR}")
+
 target_include_directories(Snowstorm-Core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
     ${Stb_INCLUDE_DIR}
