@@ -226,10 +226,13 @@ namespace Snowstorm
 	{
 		// CPU-only: safe on a worker thread. No m_Meshes access (that map holds GPU resources and is
 		// main-thread-only); the caller finalizes on the main thread via FinalizeCooked.
+		// For the IN-MEMORY parsed-file cache below only. mtime is the right key there: that cache lives
+		// for one process, so a timestamp cannot be stale in a way that matters. The on-disk artifact is
+		// the opposite case and checks a content hash, which is why it takes the path instead.
 		const uint64_t sourceTime = GetFileWriteTimeU64(filepath);
 
 		// Fast path: this submesh's cooked blob already on disk (no Assimp).
-		if (auto blob = MeshCacheIO::Load(handle, sourceTime))
+		if (auto blob = MeshCacheIO::Load(handle, filepath))
 		{
 			return blob;
 		}
@@ -241,7 +244,7 @@ namespace Snowstorm
 		std::lock_guard parseGuard(*fileLock);
 
 		// Another worker may have written this blob while we waited on the lock — recheck disk.
-		if (auto blob = MeshCacheIO::Load(handle, sourceTime))
+		if (auto blob = MeshCacheIO::Load(handle, filepath))
 		{
 			return blob;
 		}
@@ -276,7 +279,7 @@ namespace Snowstorm
 		{
 			return std::nullopt;
 		}
-		(void)MeshCacheIO::Save(handle, sourceTime, cooked); // persist so next startup skips the parse entirely
+		(void)MeshCacheIO::Save(handle, filepath, cooked); // persist so next startup skips the parse entirely
 		return cooked;
 	}
 

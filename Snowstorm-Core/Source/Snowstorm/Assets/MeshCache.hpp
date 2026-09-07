@@ -27,12 +27,14 @@ namespace Snowstorm
 		// Engine/cache/mesh/<handle>.ssmesh (next to the <handle>.json bounds sidecar).
 		static std::filesystem::path GetCachePath(AssetHandle handle);
 
-		// Load the cooked blob if it exists AND matches sourceWriteTime (stale/missing -> nullopt, so the
+		// Load the cooked blob if it exists AND the source is unchanged (stale/missing -> nullopt, so the
 		// caller re-cooks from source). The write-time gate is the same invalidation the bounds cache uses.
-		static std::optional<CookedMesh> Load(AssetHandle handle, uint64_t sourceWriteTime);
+		// Takes the SOURCE PATH, not a precomputed stamp: freshness is a two-level rule (mtime, then a
+		// content hash) and putting it behind this call is what stops a caller implementing half of it.
+		static std::optional<CookedMesh> Load(AssetHandle handle, const std::filesystem::path& sourcePath);
 
 		// Write the cooked blob (creates dirs; atomic temp-then-rename). Returns false on failure — a
 		// failed cook just means the next load re-parses, never a crash.
-		static bool Save(AssetHandle handle, uint64_t sourceWriteTime, const CookedMesh& mesh);
+		static bool Save(AssetHandle handle, const std::filesystem::path& sourcePath, const CookedMesh& mesh);
 	};
 }

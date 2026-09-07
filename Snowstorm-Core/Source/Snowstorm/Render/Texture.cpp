@@ -85,7 +85,7 @@ namespace Snowstorm
 		const bool useCache = (handle.Value() != 0);
 		if (useCache)
 		{
-			if (auto blob = TextureCacheIO::Load(handle, sourceWriteTime))
+			if (auto blob = TextureCacheIO::Load(handle, filePath))
 			{
 				return blob;
 			}
@@ -125,7 +125,7 @@ namespace Snowstorm
 
 		if (useCache)
 		{
-			(void)TextureCacheIO::Save(handle, sourceWriteTime, cooked); // decode+mip once; next load reads the blob
+			(void)TextureCacheIO::Save(handle, filePath, cooked); // decode+mip once; next load reads the blob
 		}
 		return cooked;
 	}

@@ -37,9 +37,9 @@ namespace Snowstorm
 		static std::filesystem::path GetCachePath(AssetHandle handle);
 
 		// Load the cooked pixels if present AND matching sourceWriteTime (else nullopt -> caller re-decodes).
-		static std::optional<CookedTexture> Load(AssetHandle handle, uint64_t sourceWriteTime);
+		static std::optional<CookedTexture> Load(AssetHandle handle, const std::filesystem::path& sourcePath);
 
 		// Write cooked pixels (creates dirs; atomic temp-then-rename). Returns false on failure.
-		static bool Save(AssetHandle handle, uint64_t sourceWriteTime, const CookedTexture& tex);
+		static bool Save(AssetHandle handle, const std::filesystem::path& sourcePath, const CookedTexture& tex);
 	};
 }
