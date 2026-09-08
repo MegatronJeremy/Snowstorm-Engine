@@ -313,6 +313,24 @@ namespace Snowstorm::CVars
 
 	CVar<float> AOScale{"render.ao.scale", 0.5f, "RT AO internal resolution: the RTAO occlusion trace runs at this fraction of viewport res (0.5 = quarter the pixels = ~4x cheaper), then a depth-aware bilateral upsample restores full res (#126). 1.0 = full-res reference. Clamped to [0.25, 1.0].", CVarFlags::Persist};
 
+	CVar<int> ResolutionWidth{"render.resolution.width", 0,
+	                          "Force the render width, ignoring the window/viewport size. 0 = follow it. "
+	                          "Set both axes; the benchmarks use this so a baseline is comparable across "
+	                          "machines and editor layouts."};
+	CVar<int> ResolutionHeight{"render.resolution.height", 0,
+	                           "Force the render height, ignoring the window/viewport size. 0 = follow it."};
+
+	void ApplyForcedResolution(uint32_t& w, uint32_t& h)
+	{
+		const int fw = ResolutionWidth.Get();
+		const int fh = ResolutionHeight.Get();
+		if (fw <= 0 || fh <= 0)
+			return;
+
+		w = static_cast<uint32_t>(fw);
+		h = static_cast<uint32_t>(fh);
+	}
+
 	float ClampedRenderScale()
 	{
 		const float s = RenderScale.Get();

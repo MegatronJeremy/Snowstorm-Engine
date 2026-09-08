@@ -787,7 +787,10 @@ namespace Snowstorm
 		// any scene loads (no black viewport during startup/scene transitions).
 		m_RenderTargetEntity.AddComponent<DoNotSerializeComponent>();
 
-		m_RenderTargetEntity.AddComponent<ViewportComponent>(glm::vec2{static_cast<float>(windowWidth), static_cast<float>(windowHeight)});
+		uint32_t vw = windowWidth;
+		uint32_t vh = windowHeight;
+		CVars::ApplyForcedResolution(vw, vh);
+		m_RenderTargetEntity.AddComponent<ViewportComponent>(glm::vec2{static_cast<float>(vw), static_cast<float>(vh)});
 
 		// Initial full-res targets; ViewportResizeSystem rebuilds Target at render.scale on the first frame.
 		auto& rtc = m_RenderTargetEntity.AddComponent<RenderTargetComponent>();

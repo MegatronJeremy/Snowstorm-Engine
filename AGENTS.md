@@ -328,15 +328,24 @@ first; `--gpu` pins it, taking a short all-digits value as a candidate **index**
 (including a model number like `9070`) as a case-insensitive name substring. Re-baseline deliberately
 (with a commit) when a change *intends* to shift perf, never to paper over an unexplained regression.
 
-**A baseline is also keyed by resolution and viewpoint**, and both are now recorded rather than
-assumed. The Editor renders at the window size, which no CVar pins, so every JSON stamps `width`,
-`height`, and the 6-value `camera` pose; a mismatch against the baseline is a SKIP (exit **2**), not
-a diff. Without that, a different monitor or window size moves *every* pass by roughly the same
-factor and reads as a global regression. The viewpoint is pinned by the script rather than gated:
-`BENCH_CAMERA` in `perf-bench.py` is fed to `camera.override`, so the pose lives in the repo instead
-of in `<scene>.world.editor`, which is per-machine working state the editor rewrites on every save.
-Changing `BENCH_CAMERA` invalidates every baseline, so re-capture all adapters in the same commit.
-A baseline predating these fields carries none of them and is compared without the check.
+**A baseline is keyed by resolution and viewpoint, and the script pins both.** `BENCH_CAMERA` feeds
+`camera.override` and `BENCH_RESOLUTION` (1920x1080) feeds `render.resolution.width/height`, so both
+live in the repo rather than in per-machine state. Every JSON still stamps `width`, `height` and the
+6-value `camera`, and a mismatch is a SKIP (exit **2**) rather than a diff, since a different render
+size moves *every* pass by roughly the same factor and reads as a global regression.
+
+Resolution had to be pinned because nothing else pins it: the Editor renders at whatever size the
+local ImGui dock layout gives its viewport panel, so a committed baseline silently stopped matching
+when someone rearranged their editor, and the gate then compared nothing while still looking like it
+ran. The committed sets had drifted to three different resolutions by accident of layout (1915x1064,
+1717x979, 1677x999). `render.resolution.width/height` forces the render target size on both hosts
+(0 = follow the window/panel, the default); the target is offscreen, so forcing a size needs no window
+that big and the editor panel just displays the result scaled.
+
+Changing `BENCH_CAMERA` or `BENCH_RESOLUTION` invalidates every baseline, so re-capture all adapters
+in the same commit. A baseline predating these fields carries none of them and is compared without the
+check; the `amd-radeon-rx-9060-xt` and `amd-radeon-rx-7900-xtx` sets are in that state, captured on
+other machines before the resolution was pinned.
 
 **Nondeterministic GPU numbers across runs point at the shader cache first.** Clear
 `Engine/cache/shaders/*.spv` and re-run before trusting any before/after comparison; a stale cache

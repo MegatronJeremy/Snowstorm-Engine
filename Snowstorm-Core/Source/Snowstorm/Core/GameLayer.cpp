@@ -140,7 +140,10 @@ namespace Snowstorm
 		// Viewport (offscreen render target the camera draws into). RuntimeInitSystem builds/rebuilds the
 		// GPU RenderTarget for any ViewportComponent, so we only supply the size here.
 		auto viewport = m_World->CreateEntity("Runtime Viewport");
-		viewport.AddComponent<ViewportComponent>(glm::vec2{w, h});
+		uint32_t vw = static_cast<uint32_t>(w);
+		uint32_t vh = static_cast<uint32_t>(h);
+		CVars::ApplyForcedResolution(vw, vh);
+		viewport.AddComponent<ViewportComponent>(glm::vec2{static_cast<float>(vw), static_cast<float>(vh)});
 		return viewport.GetComponent<IDComponent>().Id;
 	}
 
