@@ -113,6 +113,14 @@ namespace Snowstorm
 			return VK_FORMAT_BC3_UNORM_BLOCK;
 		case PixelFormat::BC3_RGBA_sRGB:
 			return VK_FORMAT_BC3_SRGB_BLOCK;
+		case PixelFormat::BC5_RG_UNorm:
+			return VK_FORMAT_BC5_UNORM_BLOCK;
+		case PixelFormat::BC7_RGBA_UNorm:
+			return VK_FORMAT_BC7_UNORM_BLOCK;
+		case PixelFormat::BC7_RGBA_sRGB:
+			return VK_FORMAT_BC7_SRGB_BLOCK;
+		case PixelFormat::BC6H_RGB_UFloat:
+			return VK_FORMAT_BC6H_UFLOAT_BLOCK;
 		case PixelFormat::RGBA16_SFloat:
 			return VK_FORMAT_R16G16B16A16_SFLOAT;
 		case PixelFormat::RGBA32_SFloat:
@@ -142,6 +150,10 @@ namespace Snowstorm
 		case PixelFormat::BC1_RGB_sRGB:
 		case PixelFormat::BC3_RGBA_UNorm:
 		case PixelFormat::BC3_RGBA_sRGB:
+		case PixelFormat::BC5_RG_UNorm:
+		case PixelFormat::BC7_RGBA_UNorm:
+		case PixelFormat::BC7_RGBA_sRGB:
+		case PixelFormat::BC6H_RGB_UFloat:
 			return true;
 		default:
 			return false;

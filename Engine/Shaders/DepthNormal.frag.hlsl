@@ -21,6 +21,7 @@
 // passes reconstruct phantom solid surfaces where the texture is transparent.
 
 #include "Include/GBufferEncode.hlsli"
+#include "Include/NormalEncode.hlsli"
 
 struct DepthNormalPush
 {
@@ -63,7 +64,7 @@ float3 ResolveShadingNormal(float3 nWS, float4 tangentWS, float2 uv)
 	float3 T = normalize(tangentWS.xyz);
 	T = normalize(T - N * dot(N, T)); // re-orthogonalize so interpolation skew doesn't tilt the basis
 	const float3 B = cross(N, T) * tangentWS.w;
-	const float3 sampled = Textures[NonUniformResourceIndex(gDN.NormalTextureIndex)].Sample(AlbedoSampler, uv).xyz * 2.0 - 1.0;
+	const float3 sampled = DecodeTangentNormal(Textures[NonUniformResourceIndex(gDN.NormalTextureIndex)].Sample(AlbedoSampler, uv).xyz);
 	const float3x3 TBN = float3x3(T, B, N);
 	return normalize(mul(sampled, TBN));
 }

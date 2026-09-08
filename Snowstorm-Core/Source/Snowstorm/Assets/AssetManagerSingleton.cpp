@@ -77,7 +77,47 @@ namespace Snowstorm
 
 	bool AssetManagerSingleton::LoadRegistry(const std::filesystem::path& filePath)
 	{
-		return m_Registry.LoadFromFile(filePath);
+		const bool ok = m_Registry.LoadFromFile(filePath);
+		RebuildTextureRoles();
+		return ok;
+	}
+
+	// A texture's role is whichever material slot references it. Two materials disagreeing (the same image
+	// used as both albedo and normal) leaves it Unknown, so the conservative colour encoding wins rather
+	// than one material's opinion silently deciding for the other.
+	void AssetManagerSingleton::RebuildTextureRoles()
+	{
+		m_TextureRoles.clear();
+
+		auto stamp = [this](const AssetHandle h, const TextureRole role)
+		{
+			if (h.Value() == 0)
+				return;
+			const auto [it, inserted] = m_TextureRoles.try_emplace(h.Value(), role);
+			if (!inserted && it->second != role)
+				it->second = TextureRole::Unknown;
+		};
+
+		m_Registry.Iterate([this, &stamp](const AssetMetadata& meta)
+		                   {
+			if (meta.Type != AssetType::Material)
+				return;
+
+			MaterialAsset mat;
+			if (!MaterialAssetIO::Load(ResolveAssetPath(meta.Path), mat))
+				return;
+
+			stamp(mat.AlbedoTexture, TextureRole::Albedo);
+			stamp(mat.EmissiveTexture, TextureRole::Albedo);
+			stamp(mat.NormalTexture, TextureRole::Normal);
+			stamp(mat.MetallicRoughnessTexture, TextureRole::Mask);
+			stamp(mat.AOTexture, TextureRole::Mask); });
+	}
+
+	TextureRole AssetManagerSingleton::GetTextureRole(const AssetHandle handle) const
+	{
+		const auto it = m_TextureRoles.find(handle.Value());
+		return it != m_TextureRoles.end() ? it->second : TextureRole::Unknown;
 	}
 
 	bool AssetManagerSingleton::SaveRegistry(const std::filesystem::path& filePath) const
@@ -87,7 +127,10 @@ namespace Snowstorm
 
 	AssetHandle AssetManagerSingleton::Import(const std::filesystem::path& path, const AssetType type)
 	{
-		return m_Registry.Import(path, type);
+		const AssetHandle handle = m_Registry.Import(path, type);
+		if (type == AssetType::Material)
+			RebuildTextureRoles(); // a new material can name textures nothing referenced before
+		return handle;
 	}
 
 	std::vector<Entity> AssetManagerSingleton::ImportModel(const std::filesystem::path& path)
@@ -753,10 +796,11 @@ namespace Snowstorm
 		const std::string path = ResolveAssetPath(meta->Path).string();
 		const std::string debugName = meta->Path.filename().string();
 		const uint64_t sourceTime = GetFileWriteTimeU64(path);
+		const TextureRole role = GetTextureRole(handle); // resolved here: the worker has no registry access
 		const uint32_t slot = placeholder->GetGlobalBindlessIndex();
 		m_PlaceholderSlots.insert(slot); // slot now shows the placeholder; cleared when the real image is uploaded
 
-		(void)jobs.Submit([this, key, handle, srgb, slot, path, sourceTime, debugName]()
+		(void)jobs.Submit([this, key, handle, srgb, slot, path, sourceTime, role, debugName]()
 		                  {
 			CompletedTextureLoad done;
 			done.Key = key;
@@ -766,7 +810,7 @@ namespace Snowstorm
 			done.DebugName = debugName;
 
 			// CPU-only on the worker: cooked-blob read or stb decode (+ cache write). No GPU.
-			if (auto cooked = Texture::DecodeCPU(path, handle, sourceTime))
+			if (auto cooked = Texture::DecodeCPU(path, handle, sourceTime, role))
 			{
 				done.Cooked = std::move(*cooked);
 				done.Success = true;

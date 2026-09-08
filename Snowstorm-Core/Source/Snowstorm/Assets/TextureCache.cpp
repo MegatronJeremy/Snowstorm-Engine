@@ -15,7 +15,7 @@ namespace Snowstorm
 		constexpr uint32_t kMagic = 0x58455453; // "STEX"
 		// v2: stores the full precomputed mip chain (v1 stored only the base level). Bumping forces a
 		// re-cook, which is fine — .sstex is a derived cache.
-		constexpr uint32_t kVersion = 4; // +Encoding
+		constexpr uint32_t kVersion = 5; // +BC5 (role-driven encoding)
 
 		struct Header
 		{

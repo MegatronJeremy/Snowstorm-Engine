@@ -34,8 +34,9 @@ namespace Snowstorm
 		enum class Encoding : uint8_t
 		{
 			RGBA8 = 0,
-			BC1 = 1, // opaque, 8:1
-			BC3 = 2, // has alpha, 4:1
+			BC1 = 1, // opaque colour, 8:1
+			BC3 = 2, // colour with alpha, 4:1
+			BC5 = 3, // tangent-space normals, 4:1; two 8-bit planes, Z reconstructed in the shader
 		};
 		Encoding Format = Encoding::RGBA8;
 

@@ -105,6 +105,11 @@ namespace Snowstorm
 
 		const AssetMetadata* GetMetadata(AssetHandle handle) const { return m_Registry.GetMetadata(handle); }
 
+		// Role of a texture, derived from the material slots that reference it. Unknown when no material
+		// does, or when two materials disagree about it.
+		[[nodiscard]] TextureRole GetTextureRole(AssetHandle handle) const;
+		void RebuildTextureRoles();
+
 		// Absolute path on disk for a handle, or an empty path if the handle is unknown. Registry paths
 		// are stored project-relative (portable, and that is what AssetRegistry.json commits), so a
 		// consumer doing its own file I/O must resolve them against the active project rather than the
@@ -132,6 +137,7 @@ namespace Snowstorm
 
 	private:
 		AssetRegistry m_Registry;
+		std::unordered_map<uint64_t, TextureRole> m_TextureRoles; // rebuilt from materials, never serialized
 
 		std::unordered_set<uint64_t> m_WarnedHandles;
 

@@ -86,6 +86,7 @@ Texture2D Textures[] : register(t0, space3);
 TextureCube Cubemaps[] : register(t1, space3);
 RaytracingAccelerationStructure SceneTLAS : register(t2, space3);
 #include "Include/RTGeometry.hlsli"
+#include "Include/NormalEncode.hlsli"
 #include "Include/SkyCommon.hlsli" // EvaluateSky
 
 uint64_t GeoTableAddress()
@@ -306,7 +307,7 @@ Hit ResolvePbrHit(uint64_t tableAddr, uint instId, uint prim, float2 bary, float
 		if (dot(T, T) > 0.0)
 		{
 			const float3 B = cross(Ns, T) * (tObj.w < 0.0 ? -1.0 : 1.0);
-			const float3 s = Textures[NonUniformResourceIndex(rec.NormalTextureIndex)].SampleLevel(LinearSampler, uv, 0).xyz * 2.0 - 1.0;
+			const float3 s = DecodeTangentNormal(Textures[NonUniformResourceIndex(rec.NormalTextureIndex)].SampleLevel(LinearSampler, uv, 0).xyz);
 			const float3 Nm = normalize(s.x * T + s.y * B + s.z * Ns);
 			if (dot(Nm, Ng) > 0.0)
 			{
