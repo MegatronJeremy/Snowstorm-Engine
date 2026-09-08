@@ -19,7 +19,6 @@ PACKAGES = [
     "imgui[vulkan-binding,glfw-binding,docking-experimental,glfw-binding]",
     "imguizmo",
     "rttr",
-    "gli",
     "volk",
     "vulkan-memory-allocator",
     "spirv-reflect",

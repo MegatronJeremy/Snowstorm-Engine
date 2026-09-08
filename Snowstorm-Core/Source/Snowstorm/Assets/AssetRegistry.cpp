@@ -4,6 +4,7 @@
 
 #include <nlohmann/json.hpp>
 #include <fstream>
+#include <optional>
 
 namespace Snowstorm
 {
@@ -43,6 +44,35 @@ namespace Snowstorm
 			return ref.SubResource >= 0 ? VirtualPath::JoinSubResource(path, ref.SubResource) : path;
 		}
 
+		// One spelling of an asset's identity, so the same file cannot get a handle per spelling.
+		//
+		// A path reaches the registry in three forms: already mounted ("/Game/x.png"), absolute (a file
+		// the user picked or an editor bootstrap built from the project directory), or the legacy
+		// project-relative form the content browser still produces ("assets/x.png"). Before the namespace
+		// existed those all keyed the same because they were all stored raw. Once stored paths moved into
+		// the namespace, a lookup by the project-relative form stopped matching the mounted entry, so
+		// every content-browser scan re-imported every asset under a fresh handle and the registry grew by
+		// its own size each run.
+		//
+		// The sub-resource suffix is not part of the path and has to survive the rewrite, so it is split
+		// off and rejoined rather than fed to the filesystem, which has no file named "x.gltf?submesh=4".
+		std::string Canonicalize(const std::filesystem::path& p)
+		{
+			const auto ref = VirtualPath::SplitSubResource(NormalizePath(p).generic_string());
+			std::string path = ref.Path;
+
+			if (!VirtualPath::IsVirtual(path))
+			{
+				std::optional<std::string> mounted;
+				if (std::filesystem::path(path).is_absolute())
+					mounted = VirtualPath::Virtualize(path);
+
+				path = mounted ? *mounted : MigrateToVirtual(path);
+			}
+
+			return ref.SubResource >= 0 ? VirtualPath::JoinSubResource(path, ref.SubResource) : path;
+		}
+
 		// Key used to decide whether two paths refer to the same asset. The filesystem is
 		// case-insensitive on Windows (assets/Meshes/x.obj == assets/meshes/x.obj), so compare
 		// lower-cased generic strings — otherwise the same file gets two handles and shows up
@@ -53,7 +83,7 @@ namespace Snowstorm
 		// whether two spellings name the same file.
 		std::string PathKey(const std::filesystem::path& p)
 		{
-			return VirtualPath::NormalizeKey(NormalizePath(p).generic_string());
+			return VirtualPath::NormalizeKey(Canonicalize(p));
 		}
 	}
 
@@ -145,7 +175,7 @@ namespace Snowstorm
 		AssetMetadata m{};
 		m.Handle = AssetHandle{};
 		m.Type = type;
-		m.Path = NormalizePath(assetPath);
+		m.Path = Canonicalize(assetPath); // store the mounted name, not whichever spelling the caller had
 
 		m_Metadata[m.Handle] = std::move(m);
 		return m.Handle;

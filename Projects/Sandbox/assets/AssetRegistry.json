@@ -96,11 +96,6 @@
       "Type": "Texture"
     },
     {
-      "Handle": "4098444733576884815",
-      "Path": "/Game/Textures/skybox.dds",
-      "Type": "Texture"
-    },
-    {
       "Handle": "8567236743302198087",
       "Path": "/Game/meshes/Sponza/Sponza_mat18.ssmat",
       "Type": "Material"
