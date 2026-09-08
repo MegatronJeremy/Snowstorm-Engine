@@ -456,6 +456,18 @@ namespace Snowstorm
 			SS_CORE_WARN("samplerAnisotropy not supported by hardware; disabling it.");
 		}
 
+		// Sampling a BCn image requires this feature to be ENABLED, not merely supported: without it the
+		// BC formats carry no format features, so the cooked block-compressed textures are invalid usage
+		// even where a desktop driver happens to accept them.
+		if (supportedFeatures.textureCompressionBC)
+		{
+			enabledFeatures.textureCompressionBC = VK_TRUE;
+		}
+		else
+		{
+			SS_CORE_WARN("textureCompressionBC not supported by hardware; cooked BC textures will not load.");
+		}
+
 		// 64-bit ints in shaders: needed by the RT reflection trace's device-address arithmetic
 		// (vk::RawBufferLoad<uint64_t> over the geometry table, #118). Universally supported on RT-class
 		// GPUs; enabled only when present so a device lacking it still creates (the RT permutation just won't

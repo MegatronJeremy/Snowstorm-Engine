@@ -86,6 +86,14 @@ DEFAULT_SCENE = "Projects/Sandbox/assets/scenes/Sponza.world"
 # were captured at. Changing it invalidates every baseline: re-capture all adapters in the same commit.
 BENCH_CAMERA = "8.519127,1.494902,-0.430814,0.027222,1.495751,0.0"
 
+# Pinned render resolution. The Editor otherwise renders at whatever size the local ImGui dock layout
+# gives its viewport panel, so a committed baseline silently stopped matching when someone rearranged
+# their editor: the sets in this repo were captured at 1915x1064, 1717x979 and 1677x999 purely by
+# accident of layout, and a mismatch is a SKIP, which means the gate quietly compares nothing. Pinning
+# it here puts the resolution in the repo next to the camera pose, for the same reason.
+# Changing this invalidates every baseline, so re-capture all adapters in the same commit.
+BENCH_RESOLUTION = (1920, 1080)
+
 # run_config sentinel: the run itself succeeded, but the device reports no GPU timestamps, so there
 # are no numbers to compare. Distinct from None (a real run failure) because the two exit
 # differently: a device that cannot be measured is a SKIP (2), never a FAIL (1).
@@ -124,6 +132,8 @@ def run_config(name: str, env_overrides: dict, exe: Path, cwd: Path, frames: int
     env["SS_PERF_BENCH_CONFIG"] = name  # the engine can't infer the rung; it's a combination of CVars
     env["SS_STARTUP_SCENE"] = scene
     env["SS_CAMERA_OVERRIDE"] = BENCH_CAMERA
+    env["SS_RENDER_RESOLUTION_WIDTH"] = str(BENCH_RESOLUTION[0])
+    env["SS_RENDER_RESOLUTION_HEIGHT"] = str(BENCH_RESOLUTION[1])
     env["SS_RENDER_AA"] = "2"  # TAA: the realistic config the RT effects assume
     env["SS_VALIDATION_NONFATAL"] = "1"
     # Config isolation: run pure code-defaults + the env overrides below, ignoring this machine's persisted

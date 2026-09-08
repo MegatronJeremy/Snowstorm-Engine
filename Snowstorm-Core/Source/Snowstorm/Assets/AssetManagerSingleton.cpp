@@ -1,5 +1,7 @@
 #include "AssetManagerSingleton.hpp"
 
+#include "Snowstorm/Assets/VirtualPath.hpp"
+
 #include "AssetFileTime.hpp"
 #include "MeshBoundsBuilder.hpp"
 #include "MeshMetaCache.hpp"
@@ -35,29 +37,6 @@ namespace Snowstorm
 {
 	namespace
 	{
-		// A model-import asset path may carry a "?submesh=N" suffix so that each part of a
-		// multi-mesh file gets its own registry handle. Split it back into (file path, index);
-		// index is -1 when there is no suffix (a plain whole-file mesh).
-		struct SubmeshRef
-		{
-			std::string FilePath;
-			int SubmeshIndex = -1;
-		};
-
-		SubmeshRef ParseSubmeshPath(const std::string& path)
-		{
-			constexpr std::string_view marker = "?submesh=";
-			const size_t pos = path.find(marker);
-			if (pos == std::string::npos)
-			{
-				return {path, -1};
-			}
-			SubmeshRef ref;
-			ref.FilePath = path.substr(0, pos);
-			ref.SubmeshIndex = std::stoi(path.substr(pos + marker.size()));
-			return ref;
-		}
-
 		// Registry paths are stored project-relative (portable across machines; matches the committed
 		// AssetRegistry.json). Resolve them against the active project's directory for actual file I/O.
 		// Absolute entries are self-contained and pass through without a project. A relative entry,
@@ -70,6 +49,15 @@ namespace Snowstorm
 				return p;
 			}
 
+			// A mounted path says where it lives, so it needs no project context and can name engine
+			// content as easily as game content. Checked on the native string, not generic_string(),
+			// because either spelling reaches here and VirtualPath accepts both.
+			if (const std::string s = p.string(); VirtualPath::IsVirtual(s))
+			{
+				return VirtualPath::Resolve(s);
+			}
+
+			// Legacy: project-relative, and therefore unable to refer to anything outside the project.
 			const Ref<Project> project = Project::GetActive();
 			SS_CORE_VERIFY(project, "Cannot resolve relative asset path '{}' without an active project", p.string());
 			if (!project)
@@ -89,7 +77,47 @@ namespace Snowstorm
 
 	bool AssetManagerSingleton::LoadRegistry(const std::filesystem::path& filePath)
 	{
-		return m_Registry.LoadFromFile(filePath);
+		const bool ok = m_Registry.LoadFromFile(filePath);
+		RebuildTextureRoles();
+		return ok;
+	}
+
+	// A texture's role is whichever material slot references it. Two materials disagreeing (the same image
+	// used as both albedo and normal) leaves it Unknown, so the conservative colour encoding wins rather
+	// than one material's opinion silently deciding for the other.
+	void AssetManagerSingleton::RebuildTextureRoles()
+	{
+		m_TextureRoles.clear();
+
+		auto stamp = [this](const AssetHandle h, const TextureRole role)
+		{
+			if (h.Value() == 0)
+				return;
+			const auto [it, inserted] = m_TextureRoles.try_emplace(h.Value(), role);
+			if (!inserted && it->second != role)
+				it->second = TextureRole::Unknown;
+		};
+
+		m_Registry.Iterate([this, &stamp](const AssetMetadata& meta)
+		                   {
+			if (meta.Type != AssetType::Material)
+				return;
+
+			MaterialAsset mat;
+			if (!MaterialAssetIO::Load(ResolveAssetPath(meta.Path), mat))
+				return;
+
+			stamp(mat.AlbedoTexture, TextureRole::Albedo);
+			stamp(mat.EmissiveTexture, TextureRole::Albedo);
+			stamp(mat.NormalTexture, TextureRole::Normal);
+			stamp(mat.MetallicRoughnessTexture, TextureRole::Mask);
+			stamp(mat.AOTexture, TextureRole::Mask); });
+	}
+
+	TextureRole AssetManagerSingleton::GetTextureRole(const AssetHandle handle) const
+	{
+		const auto it = m_TextureRoles.find(handle.Value());
+		return it != m_TextureRoles.end() ? it->second : TextureRole::Unknown;
 	}
 
 	bool AssetManagerSingleton::SaveRegistry(const std::filesystem::path& filePath) const
@@ -99,7 +127,10 @@ namespace Snowstorm
 
 	AssetHandle AssetManagerSingleton::Import(const std::filesystem::path& path, const AssetType type)
 	{
-		return m_Registry.Import(path, type);
+		const AssetHandle handle = m_Registry.Import(path, type);
+		if (type == AssetType::Material)
+			RebuildTextureRoles(); // a new material can name textures nothing referenced before
+		return handle;
 	}
 
 	std::vector<Entity> AssetManagerSingleton::ImportModel(const std::filesystem::path& path)
@@ -301,7 +332,7 @@ namespace Snowstorm
 			const aiMesh* aiSub = scene->mMeshes[i];
 
 			// Mesh handle: encode the submesh index in the path so each part is its own asset.
-			const std::string meshAssetPath = modelPathStr + "?submesh=" + std::to_string(i);
+			const std::string meshAssetPath = VirtualPath::JoinSubResource(modelPathStr, static_cast<int>(i));
 			const AssetHandle meshHandle = Import(meshAssetPath, AssetType::Mesh);
 
 			AssetHandle matHandle{0};
@@ -375,8 +406,8 @@ namespace Snowstorm
 
 		// The registry path may encode a submesh ("file.obj?submesh=N"); split it so bounds + load
 		// operate on the right file and part. A plain mesh has SubmeshIndex == -1 (whole file).
-		const SubmeshRef sub = ParseSubmeshPath(meta->Path.string());
-		const std::filesystem::path filePath = ResolveAssetPath(sub.FilePath);
+		const VirtualPath::AssetRef sub = VirtualPath::SplitSubResource(meta->Path.string());
+		const std::filesystem::path filePath = ResolveAssetPath(sub.Path);
 		const uint64_t sourceTime = GetFileWriteTimeU64(filePath);
 
 		MeshBounds bounds{};
@@ -393,7 +424,7 @@ namespace Snowstorm
 
 		if (!haveBounds)
 		{
-			if (ComputeMeshBoundsAssimp(filePath, sub.SubmeshIndex, bounds))
+			if (ComputeMeshBoundsAssimp(filePath, sub.SubResource, bounds))
 			{
 				MeshMetaCache out{};
 				out.Handle = handle;
@@ -409,8 +440,8 @@ namespace Snowstorm
 		// Submeshes go through the cooked-blob cache (keyed by handle) so a scene with N parts parses the
 		// source file at most once total, not once per part. Whole-file loads keep the plain path (they
 		// flatten every submesh and aren't the startup hot spot).
-		Ref<Mesh> mesh = (sub.SubmeshIndex >= 0)
-		                     ? meshLib.LoadCached(filePath.string(), sub.SubmeshIndex, handle)
+		Ref<Mesh> mesh = (sub.SubResource >= 0)
+		                     ? meshLib.LoadCached(filePath.string(), sub.SubResource, handle)
 		                     : meshLib.Load(filePath.string());
 
 		if (mesh && haveBounds)
@@ -455,11 +486,11 @@ namespace Snowstorm
 			return nullptr;
 		}
 
-		const SubmeshRef sub = ParseSubmeshPath(meta->Path.string());
+		const VirtualPath::AssetRef sub = VirtualPath::SplitSubResource(meta->Path.string());
 
 		// Whole-file loads flatten every submesh and are rare (not the startup hot path); keep them
 		// synchronous rather than growing a second async code path for them.
-		if (sub.SubmeshIndex < 0)
+		if (sub.SubResource < 0)
 		{
 			return GetMesh(handle);
 		}
@@ -473,8 +504,8 @@ namespace Snowstorm
 		auto& jobs = Application::Get().GetServiceManager().GetService<JobSystem>();
 		auto& meshLib = Application::Get().GetServiceManager().GetService<MeshLibrary>();
 
-		const std::string filePath = ResolveAssetPath(sub.FilePath).string();
-		const int submeshIndex = sub.SubmeshIndex;
+		const std::string filePath = ResolveAssetPath(sub.Path).string();
+		const int submeshIndex = sub.SubResource;
 
 		(void)jobs.Submit([this, &meshLib, handle, filePath, submeshIndex]()
 		                  {
@@ -765,10 +796,11 @@ namespace Snowstorm
 		const std::string path = ResolveAssetPath(meta->Path).string();
 		const std::string debugName = meta->Path.filename().string();
 		const uint64_t sourceTime = GetFileWriteTimeU64(path);
+		const TextureRole role = GetTextureRole(handle); // resolved here: the worker has no registry access
 		const uint32_t slot = placeholder->GetGlobalBindlessIndex();
 		m_PlaceholderSlots.insert(slot); // slot now shows the placeholder; cleared when the real image is uploaded
 
-		(void)jobs.Submit([this, key, handle, srgb, slot, path, sourceTime, debugName]()
+		(void)jobs.Submit([this, key, handle, srgb, slot, path, sourceTime, role, debugName]()
 		                  {
 			CompletedTextureLoad done;
 			done.Key = key;
@@ -778,7 +810,7 @@ namespace Snowstorm
 			done.DebugName = debugName;
 
 			// CPU-only on the worker: cooked-blob read or stb decode (+ cache write). No GPU.
-			if (auto cooked = Texture::DecodeCPU(path, handle, sourceTime))
+			if (auto cooked = Texture::DecodeCPU(path, handle, sourceTime, role))
 			{
 				done.Cooked = std::move(*cooked);
 				done.Success = true;

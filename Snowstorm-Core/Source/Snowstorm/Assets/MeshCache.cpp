@@ -1,5 +1,7 @@
 #include "MeshCache.hpp"
 
+#include "Snowstorm/Assets/AssetFileTime.hpp"
+
 #include "Snowstorm/Utility/EnginePaths.hpp"
 
 #include "Snowstorm/Core/Log.hpp"
@@ -10,17 +12,20 @@ namespace Snowstorm
 {
 	namespace
 	{
-		// On-disk header. Magic + version guard against stale/foreign files; SourceWriteTime invalidates the
-		// blob when the source asset changes (same gate as the bounds cache). Counts size the reads. Bumping
-		// Version (e.g. if Vertex layout changes) forces a re-cook of every mesh.
+		// On-disk header. Magic + version guard against stale/foreign files. Freshness records BOTH the
+		// source mtime (the cheap gate, so a warm load never opens the source) and its content hash (the
+		// authority, so the blob survives a checkout, copy or touch that moves the timestamp). That second
+		// field is what makes this artifact shippable instead of valid only on the machine that cooked it.
+		// Bumping Version (e.g. if Vertex layout changes) forces a re-cook of every mesh.
 		constexpr uint32_t kMagic = 0x484D5353; // "SSMH"
-		constexpr uint32_t kVersion = 1;
+		constexpr uint32_t kVersion = 2;        // +SourceHash
 
 		struct Header
 		{
 			uint32_t Magic = kMagic;
 			uint32_t Version = kVersion;
 			uint64_t SourceWriteTime = 0;
+			uint64_t SourceHash = 0;
 			uint64_t VertexCount = 0;
 			uint64_t IndexCount = 0;
 		};
@@ -34,7 +39,7 @@ namespace Snowstorm
 		return p;
 	}
 
-	std::optional<CookedMesh> MeshCacheIO::Load(const AssetHandle handle, const uint64_t sourceWriteTime)
+	std::optional<CookedMesh> MeshCacheIO::Load(const AssetHandle handle, const std::filesystem::path& sourcePath)
 	{
 		const auto path = GetCachePath(handle);
 
@@ -48,7 +53,7 @@ namespace Snowstorm
 			return std::nullopt;
 
 		// Stale: source changed since this blob was cooked. Caller re-parses + re-cooks.
-		if (h.SourceWriteTime != sourceWriteTime)
+		if (!SourceIsUnchanged(sourcePath, h.SourceWriteTime, h.SourceHash))
 			return std::nullopt;
 
 		if (h.VertexCount == 0 || h.IndexCount == 0)
@@ -73,7 +78,7 @@ namespace Snowstorm
 		return mesh;
 	}
 
-	bool MeshCacheIO::Save(const AssetHandle handle, const uint64_t sourceWriteTime, const CookedMesh& mesh)
+	bool MeshCacheIO::Save(const AssetHandle handle, const std::filesystem::path& sourcePath, const CookedMesh& mesh)
 	{
 		if (mesh.Vertices.empty() || mesh.Indices.empty())
 			return false;
@@ -83,7 +88,8 @@ namespace Snowstorm
 		std::filesystem::create_directories(path.parent_path(), ec);
 
 		Header h{};
-		h.SourceWriteTime = sourceWriteTime;
+		h.SourceWriteTime = GetFileWriteTimeU64(sourcePath);
+		h.SourceHash = HashFileContents(sourcePath);
 		h.VertexCount = mesh.Vertices.size();
 		h.IndexCount = mesh.Indices.size();
 

@@ -19,7 +19,6 @@ PACKAGES = [
     "imgui[vulkan-binding,glfw-binding,docking-experimental,glfw-binding]",
     "imguizmo",
     "rttr",
-    "gli",
     "volk",
     "vulkan-memory-allocator",
     "spirv-reflect",
@@ -27,6 +26,7 @@ PACKAGES = [
     "catch2",
     "tracy",  # real-time frame/sampling profiler (client lib); connect the Tracy GUI to a running build
     "miniaudio",  # audio playback/mixing (header-only, Unlicense OR MIT-0)
+    "libsquish",  # BC1/BC3/BC5 block compression for the texture cook
 ]
 
 # The toolset must resolve to one concrete MSVC version, the same on both sides. vcpkg takes the

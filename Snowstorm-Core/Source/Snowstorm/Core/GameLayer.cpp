@@ -1,5 +1,6 @@
 #include "Snowstorm/Core/GameLayer.hpp"
 
+#include "Snowstorm/Assets/AssetCook.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
@@ -25,8 +26,9 @@
 
 namespace Snowstorm
 {
-	GameLayer::GameLayer(std::function<void(World&)> registerGameSystems)
-	    : Layer("GameLayer"), m_RegisterGameSystems(std::move(registerGameSystems))
+	GameLayer::GameLayer(std::function<void(World&)> registerGameSystems, std::string defaultProject)
+	    : Layer("GameLayer"), m_RegisterGameSystems(std::move(registerGameSystems)),
+	      m_DefaultProject(std::move(defaultProject))
 	{
 	}
 
@@ -39,7 +41,19 @@ namespace Snowstorm
 		// Fall back to a CWD-rooted implicit project if the .ssproj is missing (fail-soft).
 		if (!Project::GetActive())
 		{
-			const std::filesystem::path ssproj = CVars::StartupProject.Get();
+			// A game boots ITS OWN project unless told otherwise, which is what separates a game
+			// executable from the generic player. Snowstorm-Pong used to load Sandbox/Sponza and run no
+			// Pong at all, because startup.project defaults to the engine's sample.
+			//
+			// "Told otherwise" is detected by comparing against the CVar's compiled default, since CVars
+			// are resolved before CreateApplication runs and a game therefore cannot change the default
+			// itself. The one ambiguity: passing --startup.project with exactly the engine default is
+			// indistinguishable from not passing it, and yields the game's project.
+			std::filesystem::path ssproj = CVars::StartupProject.Get();
+			if (!m_DefaultProject.empty() && ssproj == std::filesystem::path(CVars::StartupProject.GetDefault()))
+			{
+				ssproj = m_DefaultProject;
+			}
 			Ref<Project> project = CreateRef<Project>();
 			if (!ssproj.empty() && std::filesystem::exists(ssproj) && ProjectSerializer::Deserialize(*project, ssproj))
 			{
@@ -97,6 +111,17 @@ namespace Snowstorm
 			              m_ScenePath);
 		}
 
+		// Cooking is a mode, not a scene: everything the registry names is loaded regardless of what the
+		// startup scene happens to reference, which is the whole point (a lazy cache holds only what a run
+		// touched). The scene still loads first so a cook also warms whatever it pulls in.
+		if (CVars::CookAssets.Get())
+		{
+			m_Cooking = true;
+			const CookRequest requested = CookAllRegistryAssets(*m_World);
+			SS_CORE_INFO("Cook: requested {} mesh(es), {} texture(s), {} material(s); waiting for the queue.",
+			             requested.Meshes, requested.Textures, requested.Materials);
+		}
+
 		// Bind a camera to the viewport AFTER the scene is loaded: use the scene's authored camera if it has
 		// one, else fall back to a default. Must be after Deserialize so an authored camera is visible here.
 		ConfigureSceneCamera(viewportId);
@@ -115,7 +140,10 @@ namespace Snowstorm
 		// Viewport (offscreen render target the camera draws into). RuntimeInitSystem builds/rebuilds the
 		// GPU RenderTarget for any ViewportComponent, so we only supply the size here.
 		auto viewport = m_World->CreateEntity("Runtime Viewport");
-		viewport.AddComponent<ViewportComponent>(glm::vec2{w, h});
+		uint32_t vw = static_cast<uint32_t>(w);
+		uint32_t vh = static_cast<uint32_t>(h);
+		CVars::ApplyForcedResolution(vw, vh);
+		viewport.AddComponent<ViewportComponent>(glm::vec2{static_cast<float>(vw), static_cast<float>(vh)});
 		return viewport.GetComponent<IDComponent>().Id;
 	}
 
@@ -185,5 +213,18 @@ namespace Snowstorm
 	void GameLayer::OnUpdate(const Timestep ts)
 	{
 		m_World->OnUpdate(ts);
+
+		if (m_Cooking)
+		{
+			// Textures decode on workers and upload on the main thread, so the cook is not finished when
+			// the requests are made, only when the queue drains. Meshes were already forced synchronously.
+			const auto& assets = m_World->GetSingleton<AssetManagerSingleton>();
+			if (assets.PendingLoadCount() == 0)
+			{
+				SS_CORE_INFO("Cook: complete.");
+				Application::Get().Close();
+			}
+		}
 	}
+
 }

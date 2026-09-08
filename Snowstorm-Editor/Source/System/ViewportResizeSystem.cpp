@@ -86,8 +86,9 @@ namespace Snowstorm
 			else
 			{
 				// Non-imgui path: viewport = window size
-				const uint32_t windowW = app.GetWindow().GetWidth();
-				const uint32_t windowH = app.GetWindow().GetHeight();
+				uint32_t windowW = app.GetWindow().GetWidth();
+				uint32_t windowH = app.GetWindow().GetHeight();
+				CVars::ApplyForcedResolution(windowW, windowH);
 
 				// mark viewport as changed
 				auto& vpW = reg.Write<ViewportComponent>(vpEntity);

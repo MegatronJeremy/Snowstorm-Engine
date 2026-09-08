@@ -434,9 +434,14 @@ namespace Snowstorm
 				vi.Hovered = ImGui::IsWindowHovered(); });
 
 			// ---- Viewport size
+			// The forced resolution is applied HERE rather than downstream because this write is what the
+			// resize system reacts to; overriding after it would fight this one every frame.
 			const ImVec2 panelSize = ImGui::GetContentRegionAvail();
+			uint32_t panelW = static_cast<uint32_t>(panelSize.x);
+			uint32_t panelH = static_cast<uint32_t>(panelSize.y);
+			CVars::ApplyForcedResolution(panelW, panelH);
 			reg.WriteIfChanged<ViewportComponent>(e, [&](auto& vp)
-			                                      { vp.Size = {panelSize.x, panelSize.y}; });
+			                                      { vp.Size = {static_cast<float>(panelW), static_cast<float>(panelH)}; });
 
 			// ---- Draw. Sample the present target's UNORM view (the tonemapped, hardware-sRGB-encoded
 			// result), NOT the HDR scene target and NOT the sRGB attachment view. The UNORM view reads the

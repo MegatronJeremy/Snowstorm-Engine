@@ -156,6 +156,7 @@ py Scripts/smoke-test.py                 # 120 frames, 60s timeout/app, Debug bu
 py Scripts/smoke-test.py --frames 300    # longer soak
 py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime | Pong)
 py Scripts/smoke-test.py --warnings-fail # treat [warning] lines as failures too
+py Scripts/smoke-test.py --staged        # run the PACKAGE in build/stage/<config>, not the build tree
 py Scripts/smoke-test.py --strict        # enable deeper Vulkan validation (see below)
 ```
 
@@ -327,15 +328,24 @@ first; `--gpu` pins it, taking a short all-digits value as a candidate **index**
 (including a model number like `9070`) as a case-insensitive name substring. Re-baseline deliberately
 (with a commit) when a change *intends* to shift perf, never to paper over an unexplained regression.
 
-**A baseline is also keyed by resolution and viewpoint**, and both are now recorded rather than
-assumed. The Editor renders at the window size, which no CVar pins, so every JSON stamps `width`,
-`height`, and the 6-value `camera` pose; a mismatch against the baseline is a SKIP (exit **2**), not
-a diff. Without that, a different monitor or window size moves *every* pass by roughly the same
-factor and reads as a global regression. The viewpoint is pinned by the script rather than gated:
-`BENCH_CAMERA` in `perf-bench.py` is fed to `camera.override`, so the pose lives in the repo instead
-of in `<scene>.world.editor`, which is per-machine working state the editor rewrites on every save.
-Changing `BENCH_CAMERA` invalidates every baseline, so re-capture all adapters in the same commit.
-A baseline predating these fields carries none of them and is compared without the check.
+**A baseline is keyed by resolution and viewpoint, and the script pins both.** `BENCH_CAMERA` feeds
+`camera.override` and `BENCH_RESOLUTION` (1920x1080) feeds `render.resolution.width/height`, so both
+live in the repo rather than in per-machine state. Every JSON still stamps `width`, `height` and the
+6-value `camera`, and a mismatch is a SKIP (exit **2**) rather than a diff, since a different render
+size moves *every* pass by roughly the same factor and reads as a global regression.
+
+Resolution had to be pinned because nothing else pins it: the Editor renders at whatever size the
+local ImGui dock layout gives its viewport panel, so a committed baseline silently stopped matching
+when someone rearranged their editor, and the gate then compared nothing while still looking like it
+ran. The committed sets had drifted to three different resolutions by accident of layout (1915x1064,
+1717x979, 1677x999). `render.resolution.width/height` forces the render target size on both hosts
+(0 = follow the window/panel, the default); the target is offscreen, so forcing a size needs no window
+that big and the editor panel just displays the result scaled.
+
+Changing `BENCH_CAMERA` or `BENCH_RESOLUTION` invalidates every baseline, so re-capture all adapters
+in the same commit. A baseline predating these fields carries none of them and is compared without the
+check; the `amd-radeon-rx-9060-xt` and `amd-radeon-rx-7900-xtx` sets are in that state, captured on
+other machines before the resolution was pinned.
 
 **Nondeterministic GPU numbers across runs point at the shader cache first.** Clear
 `Engine/cache/shaders/*.spv` and re-run before trusting any before/after comparison; a stale cache
@@ -812,6 +822,70 @@ Two selection traps, both of which produced a wrong verdict here before being ca
 
 Report both anyway. The point is which one decides.
 
+## Texture block compression
+
+`cook.textures.compress` block-compresses cooked textures, **on by default** after eyes-on confirmation on
+Sponza (the metrics below cannot settle it: block artifacts on gradients are exactly what whole-image
+numbers underweight, so the default was held off until someone looked). Turn it off to cook exact RGBA8
+when a texture must not be quantized. Everything below was measured on Sponza's 72 textures, RX 9070 XT,
+Debug.
+
+**Encoding is chosen by ROLE, not by one global format.** Role is derived from the material slot a
+texture is referenced through (`AssetManagerSingleton::RebuildTextureRoles`), rebuilt at registry load
+rather than stored per asset, so it costs no registry migration. Two materials disagreeing about one
+texture leaves it Unknown and the conservative colour encoding wins.
+
+| role | format | why |
+|---|---|---|
+| albedo, opaque | BC1, 4 bpp | 8:1, and what Unreal/Unity/Godot all default to |
+| albedo, alpha | BC3, 8 bpp | BC1's 1-bit alpha decodes transparent black and bleeds halos |
+| tangent normal | **BC5**, 8 bpp | two independent 8-bit planes; z reconstructed in the shader |
+| metallic-roughness, AO | BC1, 4 bpp | measured adequate, see below |
+
+**BC7 is deliberately unused.** It is 8 bpp, the same as BC3 and double BC1, so promoting everything to
+it costs 51 MB -> 102 MB on this set and gives back half the saving. libsquish cannot emit it either. It
+is a per-texture escape hatch (Unreal's `TC_BC7`), not a default. `PixelFormat` already carries
+`BC7_RGBA_UNorm/sRGB` and `BC6H_RGB_UFloat`, so the table can express them the day one is needed; the
+encoder would be a new dependency (`nvtt`, MIT, is in vcpkg).
+
+**Normals are what the role split is for.** BC1 pushes a unit vector through one shared RGB565 line:
+3.47 degrees of mean angular error against BC5's 1.13, over the 22 conforming maps. **Two Sponza images
+sitting in `NormalTexture` slots are not normal maps** (vector length ~1.3, 25-40% of texels with z<0),
+and BC5 raises their error rather than lowering it, so `IsTangentSpaceNormalMap` checks content and falls
+back to colour encoding with a warning. The slot alone cannot be trusted.
+
+**Masks stay BC1, measured rather than assumed.** On the channels the shader actually reads
+(`mr.g` roughness, `mr.b` metallic) BC1 gives 44.7 dB and 44.0 dB, against normals' 31 dB that needed
+fixing. The unused R channel has a source std of 1.2, so it is constant. Any 8 bpp alternative doubles
+mask storage for a signal already fine, and a two-channel BC5 would be 8 bpp against BC1's 4, so BC1 is
+also the efficient choice here, not merely the adequate one.
+
+**What compression buys, both halves measured.** Cache 390 MB -> 69 MB. VMA allocation
+**1373.3 -> 1074.8 MiB, 298.5 MiB less**, reproducible to the byte across runs. Interleaved A/B on one
+binary with only the cache swapped puts the **Forward pass at 0.376 -> 0.292 ms on its per-run minimum,
+-22%**, per-run ranges of 0.005 and 0.003 and no overlap, all four paired deltas sharing sign. The
+bandwidth argument for BCn is therefore measured here, not inferred: block-compressed texels stay
+compressed in VRAM and are decoded in the texture unit.
+
+**What it costs.** Whole-frame FLIP against uncompressed is 0.026-0.028 across three viewpoints. For
+scale, `all-rt` sits 0.103 from the path tracer, so this is not free; it was 0.045 before the role split
+and the encoder-quality fix.
+
+**Use the encoder's best fit.** The cook asks squish for `kColourIterativeClusterFit`, not
+`kColourRangeFit` (its own header calls that one "very fast, low quality"), which is worth +2 dB across
+every role at byte-identical output. A cook runs offline and should buy the quality.
+
+**BC5 carries no third channel**, so every shader that samples a normal map decodes through
+`DecodeTangentNormal` in `Engine/Shaders/Include/NormalEncode.hlsli`, discriminating on a raw blue below
+0.5 (a stored tangent normal has z>0, which always encodes above it). That header declares no resources
+on purpose: two of its three callers do not include `Engine.hlsli`, and a resource declared there is
+emitted into every shader that includes it. **The path tracer decodes through the same helper**, since it
+is the reference the quality gates compare against.
+
+Sampling a BCn image requires `textureCompressionBC` **enabled**, not merely supported. It is requested
+in `VulkanContext`; without that the cooked textures are invalid usage that desktop drivers happen to
+accept and validation does not flag.
+
 ## Audio
 
 `AudioService` (miniaudio) owns the device and the mixer; `AudioSystem` turns `AudioSourceComponent`
@@ -876,6 +950,66 @@ component vanishes from the inspector, `SceneSerializer` skips it with a bare `c
 save deletes the block from the `.world`. That is why the editor links both games, not just the one it
 is running. `GameRegistrationTests` asserts a game's components survived, and was verified to fail
 without the flag.
+
+## Staging a runnable build
+
+`cmake --build build --config Debug --target stage` produces `build/stage/<config>/`: a directory the
+executables run out of with no engine tree present.
+
+```
+cmake --build build --config Debug --target stage
+cd build/stage/Debug && ./Snowstorm-Pong.exe --startup.scene=Projects/Sandbox/assets/scenes/Pong.world
+```
+
+A GAME adds its own executable and project through two functions the engine exposes, which is what
+makes `stage` package a game rather than only this repository's sample:
+
+```cmake
+snowstorm_stage_executable(Snowstorm-Doom)
+snowstorm_stage_project("${CMAKE_CURRENT_SOURCE_DIR}/Projects/Doom")
+```
+
+Functions rather than a list the engine reads, because a consuming game's targets and project only
+exist AFTER `add_subdirectory(Snowstorm-Engine)`, so nothing evaluated there could name them. This
+repository declares its own contributions the same way, guarded on being the top-level project so a
+game packaging itself does not find the engine's editor, Pong and 54 MB sample project in its build.
+
+The stage is added to, never pruned (`copy_directory_if_different` does not remove), so content deleted
+from the source lingers until `build/stage` is deleted.
+
+**Cooking has an editor surface, packaging deliberately does not.** *File > Cook Assets* runs
+`CookAllRegistryAssets`, the same function `--cook.assets` runs, so the two cannot disagree. Producing a
+stage stays a CMake target: it copies build output, so a button for it would have to guess which build
+directory produced the running executable and shell out to a generator that may not be installed.
+Unreal can offer *File > Package Project* because UAT is a first-class shipped tool; nothing here is.
+
+**Gate the package, not just the build**: `py Scripts/smoke-test.py --staged` runs the executables out
+of the stage with the stage as the working directory. It is the only check that the PACKAGE works. The
+bug that motivated it built, linked and passed every other gate: stale stamps left a stage with an empty
+`Projects/`, and it failed only when run from there. Verified to catch exactly that, by removing
+`Projects/` from a stage and watching the gate go FAIL.
+
+**Not part of the default build, on purpose.** The payload is ~140 MB and packaging is a step you ask
+for, the way Unreal stages on package rather than on compile. It also leaves every existing path alone,
+so smoke, perf and quality keep finding executables where they always have.
+
+**What makes it self-contained is `GetEngineRoot`'s rule 2**: it walks up from the executable for
+`Engine/Shaders`, finds it in the stage, and never consults the source tree. That is why the layout
+mirrors the repo instead of flattening it, and it is what retires rule 3 (the baked configure-time
+path) for a shipped build. Verified rather than assumed: a staged run writes its cache into the STAGE's
+`Engine/cache` and leaves the source tree's untouched, and since that path is `GetEngineRoot()/Engine/
+cache`, it is proof of which root won.
+
+`Engine/cache` is deliberately NOT staged: it is generated, and the stage must stay writable so a cold
+run populates it in place.
+
+**Each executable's whole output directory is copied**, not the exe plus `$<TARGET_RUNTIME_DLLS>`. That
+generator expression names only DLLs of directly linked imported targets and misses assimp's transitive
+dependencies (minizip, pugixml, poly2tri, zlib), which vcpkg's applocal deployment is what actually puts
+next to the exe. Staging 7 of 18 DLLs produced a stage whose executables would not start.
+
+The content copy hangs off a stamp file rather than a `POST_BUILD` command, because `POST_BUILD` only
+fires when its target RELINKS: editing a scene and rebuilding would stage the old one.
 
 ## Console variables (CVars)
 
@@ -1007,7 +1141,7 @@ see, so treat it as part of the feature, not an afterthought.
 ## Dependencies (vcpkg, x64-windows)
 
 assimp, EnTT, fmt, glew, glfw3, glm, imgui (vulkan+glfw bindings, docking), imguizmo, rttr, spdlog,
-stb, Vulkan SDK, vulkan-memory-allocator, gli, volk, spirv-reflect, nlohmann-json, catch2, tracy,
+stb, Vulkan SDK, vulkan-memory-allocator, volk, spirv-reflect, nlohmann-json, catch2, tracy, libsquish,
 miniaudio. The canonical list
 is `PACKAGES` in `Scripts/Generate-Solution.py`; the linkage is in `Snowstorm-Core/CMakeLists.txt`.
 Keep those two in sync when adding a dependency.
@@ -1077,14 +1211,21 @@ Worked example, the **asset pipeline** (the engine's biggest deliberate simplifi
   watcher** re-cooks only what changed (and its dependents) and hot-reloads it; the runtime
   **streams** cooked assets asynchronously under a memory budget; builds cook only the transitive
   closure of what scenes actually reference (no dead content shipped).
-- **What Snowstorm does instead, deliberately:** `Import` just adds a `handle → path` row to a JSON
-  registry; there is no cook step (Assimp/dxc/stb run every startup), no `.meta`, no hot-reload, no
-  async, no GUID-vs-path indirection (handles are stable but the registry stores raw paths). This is
-  acceptable for the thesis. The editor's manual "Import" button mirrors the fact that, in a real
-  engine, import is a *deliberate, potentially expensive* step, not a reason the current trivial
-  version must stay manual. The honest upgrade path, in order: auto-import on scan → file watcher →
-  a cook step with `.meta` sidecars → async streaming. Treat the existing `AssetRegistry` /
-  `AssetManagerSingleton` as the seam where that grows.
+- **What Snowstorm does instead, deliberately:** `Import` adds a `handle → path` row to a JSON registry,
+  where the path is a mounted name (`/Game/...`) rather than wherever the file sat on the authoring
+  machine. There IS a cook step now: meshes, textures, shaders and IBL cook to artifacts under
+  `Engine/cache`, keyed on a **content hash** (mtime is only a cheap gate), driven by `--cook.assets` or
+  *File > Cook Assets*. What is still missing is the `.meta` sidecar, hot-reload, async streaming, and a
+  GUID separate from the path. The honest upgrade path from here: `.meta` sidecars (which is also what
+  would let a texture's compression role be overridden per asset rather than derived from material
+  slots) → a file watcher → async streaming. Treat `AssetRegistry` / `AssetManagerSingleton` as the seam
+  where that grows.
+
+  **An asset's identity is `AssetRegistry`'s `Canonicalize`, and it has exactly one spelling.** A path
+  arrives mounted, absolute, or in the legacy project-relative form, and all three must key to one
+  handle. When they did not, every content-browser scan re-imported every asset under a fresh handle and
+  the registry grew by its own size per run, with no error and no crash: it reads as an ordinary content
+  change and gets committed by a routine `git add`. `AssetIdentityTests` pins it.
 
 ## Verify before claiming
 

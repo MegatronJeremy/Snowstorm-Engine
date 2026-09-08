@@ -1,7 +1,10 @@
 #include "AssetRegistry.hpp"
 
+#include "Snowstorm/Assets/VirtualPath.hpp"
+
 #include <nlohmann/json.hpp>
 #include <fstream>
+#include <optional>
 
 namespace Snowstorm
 {
@@ -14,16 +17,73 @@ namespace Snowstorm
 			return p.lexically_normal();
 		}
 
+		// Registry paths used to be stored relative to the PROJECT directory ("assets/meshes/x.obj").
+		// A mounted path says the same thing without needing to know which project is active, and can also
+		// name engine content, which a project-relative path structurally cannot.
+		//
+		// The conversion is textual and needs no filesystem: "assets/" is the project's asset directory,
+		// which is what /Game/ mounts. Anything already mounted passes through, so this is idempotent and
+		// a registry written by a newer build loads unchanged on an older one that still understands the
+		// legacy form.
+		std::string MigrateToVirtual(const std::string& stored)
+		{
+			if (stored.empty() || VirtualPath::IsVirtual(stored))
+				return stored;
+
+			// The sub-resource suffix is not part of the path and must survive the rewrite.
+			const auto ref = VirtualPath::SplitSubResource(stored);
+			std::string path = ref.Path;
+
+			constexpr std::string_view assets = "assets/";
+			std::string lowered = VirtualPath::NormalizeKey(path);
+			if (lowered.starts_with(assets))
+				path = "/Game/" + path.substr(assets.size());
+			else
+				return stored; // outside the asset directory: leave it alone rather than guess a mount
+
+			return ref.SubResource >= 0 ? VirtualPath::JoinSubResource(path, ref.SubResource) : path;
+		}
+
+		// One spelling of an asset's identity, so the same file cannot get a handle per spelling.
+		//
+		// A path reaches the registry in three forms: already mounted ("/Game/x.png"), absolute (a file
+		// the user picked or an editor bootstrap built from the project directory), or the legacy
+		// project-relative form the content browser still produces ("assets/x.png"). Before the namespace
+		// existed those all keyed the same because they were all stored raw. Once stored paths moved into
+		// the namespace, a lookup by the project-relative form stopped matching the mounted entry, so
+		// every content-browser scan re-imported every asset under a fresh handle and the registry grew by
+		// its own size each run.
+		//
+		// The sub-resource suffix is not part of the path and has to survive the rewrite, so it is split
+		// off and rejoined rather than fed to the filesystem, which has no file named "x.gltf?submesh=4".
+		std::string Canonicalize(const std::filesystem::path& p)
+		{
+			const auto ref = VirtualPath::SplitSubResource(NormalizePath(p).generic_string());
+			std::string path = ref.Path;
+
+			if (!VirtualPath::IsVirtual(path))
+			{
+				std::optional<std::string> mounted;
+				if (std::filesystem::path(path).is_absolute())
+					mounted = VirtualPath::Virtualize(path);
+
+				path = mounted ? *mounted : MigrateToVirtual(path);
+			}
+
+			return ref.SubResource >= 0 ? VirtualPath::JoinSubResource(path, ref.SubResource) : path;
+		}
+
 		// Key used to decide whether two paths refer to the same asset. The filesystem is
 		// case-insensitive on Windows (assets/Meshes/x.obj == assets/meshes/x.obj), so compare
 		// lower-cased generic strings — otherwise the same file gets two handles and shows up
 		// twice in the editor. The stored Path keeps its original casing for display.
+		//
+		// Shared with the virtual path namespace rather than kept separate: an asset's identity key and a
+		// mounted path's key have to agree, or a registry lookup and a mount lookup can disagree about
+		// whether two spellings name the same file.
 		std::string PathKey(const std::filesystem::path& p)
 		{
-			std::string s = NormalizePath(p).generic_string();
-			std::ranges::transform(s, s.begin(), [](const unsigned char c)
-			                       { return static_cast<char>(std::tolower(c)); });
-			return s;
+			return VirtualPath::NormalizeKey(Canonicalize(p));
 		}
 	}
 
@@ -55,7 +115,7 @@ namespace Snowstorm
 			AssetMetadata m{};
 			m.Handle = UUID::FromString(handleStr);
 			m.Type = AssetTypeFromString(typeStr);
-			m.Path = NormalizePath(pathStr);
+			m.Path = NormalizePath(MigrateToVirtual(pathStr));
 
 			if (m.Type == AssetType::None || m.Handle == 0)
 			{
@@ -115,7 +175,7 @@ namespace Snowstorm
 		AssetMetadata m{};
 		m.Handle = AssetHandle{};
 		m.Type = type;
-		m.Path = NormalizePath(assetPath);
+		m.Path = Canonicalize(assetPath); // store the mounted name, not whichever spelling the caller had
 
 		m_Metadata[m.Handle] = std::move(m);
 		return m.Handle;

@@ -45,6 +45,27 @@ namespace Snowstorm
 		BGRA8_UNorm, // Important for Windows Swapchains
 		BGRA8_sRGB,
 
+		// Block-compressed color, 4x4 blocks. BC1 is 8 bytes per block (4 bpp, 8:1 against RGBA8) and has
+		// no usable alpha; BC3 is 16 bytes per block (8 bpp, 4:1) and stores alpha separately. The cook
+		// picks between them by whether a texture actually uses alpha. Both need the device's
+		// textureCompressionBC feature, which every desktop GPU has.
+		BC1_RGB_UNorm,
+		BC1_RGB_sRGB,
+		BC3_RGBA_UNorm,
+		BC3_RGBA_sRGB,
+
+		// BC5 is two independent BC4 planes (8 bpp): 8-bit endpoints and 3-bit indices per channel, against
+		// BC1's shared RGB565 line. That is why it is the format for tangent-space normals, whose third
+		// component is reconstructed rather than stored. Measured on Sponza's normal maps, BC1 averages
+		// 3.47 degrees of angular error against BC5's 1.13.
+		BC5_RG_UNorm,
+
+		// BC7 is 8 bpp like BC3, so it buys quality over BC3 at no cost and doubles the size of a BC1
+		// texture. BC6H is the only HDR block format (no alpha), for environment maps.
+		BC7_RGBA_UNorm,
+		BC7_RGBA_sRGB,
+		BC6H_RGB_UFloat,
+
 		// Color (HDR float) — needed for IBL env/irradiance/prefilter maps and an HDR scene target (#54)
 		RGBA16_SFloat,
 		R11G11B10_UFloat,

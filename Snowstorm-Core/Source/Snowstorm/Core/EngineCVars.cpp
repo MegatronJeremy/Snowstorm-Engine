@@ -8,6 +8,18 @@
 
 namespace Snowstorm::CVars
 {
+	CVar<bool> CompressTextures{"cook.textures.compress", true,
+	                            "Block-compress cooked textures, by the role each is used in: BC1 opaque, "
+	                            "BC3 with alpha, BC5 for tangent-space normals. Measured on Sponza: cache "
+	                            "390 -> 69 MB, 298 MiB less VRAM, and the Forward pass 22% faster, against "
+	                            "a whole-frame FLIP of 0.026 vs uncompressed. Turn it off to cook exact "
+	                            "RGBA8 when a texture must not be quantized."};
+
+	CVar<bool> CookAssets{"cook.assets", false,
+	                      "Load every mesh, texture and material named by the project's asset registry so "
+	                      "each one's cooked artifact is written, then exit. Use before staging, so a "
+	                      "packaged build starts warm instead of cooking on first launch."};
+
 	CVar<std::string> EngineRoot{"engine.root", "",
 	                             "Directory holding Engine/Shaders, Engine/cache and Tools/dxc. Empty = "
 	                             "derived from the executable's location. Set it when consuming Snowstorm "
@@ -300,6 +312,24 @@ namespace Snowstorm::CVars
 	CVar<float> GIDenoiseVariance{"render.gi.denoise.variance", 4.0f, "SVGF variance-guided à-trous luminance-phi for GI (#129 Inc 3b): scales the luminance edge-stop by local noise so the filter widens in noisy/disoccluded regions, tight where converged. 0 = off (fixed depth+normal kernel). ~2-8 typical; higher = more adaptive blur.", CVarFlags::Persist};
 
 	CVar<float> AOScale{"render.ao.scale", 0.5f, "RT AO internal resolution: the RTAO occlusion trace runs at this fraction of viewport res (0.5 = quarter the pixels = ~4x cheaper), then a depth-aware bilateral upsample restores full res (#126). 1.0 = full-res reference. Clamped to [0.25, 1.0].", CVarFlags::Persist};
+
+	CVar<int> ResolutionWidth{"render.resolution.width", 0,
+	                          "Force the render width, ignoring the window/viewport size. 0 = follow it. "
+	                          "Set both axes; the benchmarks use this so a baseline is comparable across "
+	                          "machines and editor layouts."};
+	CVar<int> ResolutionHeight{"render.resolution.height", 0,
+	                           "Force the render height, ignoring the window/viewport size. 0 = follow it."};
+
+	void ApplyForcedResolution(uint32_t& w, uint32_t& h)
+	{
+		const int fw = ResolutionWidth.Get();
+		const int fh = ResolutionHeight.Get();
+		if (fw <= 0 || fh <= 0)
+			return;
+
+		w = static_cast<uint32_t>(fw);
+		h = static_cast<uint32_t>(fh);
+	}
 
 	float ClampedRenderScale()
 	{

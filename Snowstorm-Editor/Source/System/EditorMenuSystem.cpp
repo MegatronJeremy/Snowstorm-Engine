@@ -13,6 +13,9 @@
 #include "Snowstorm/World/World.hpp"
 #include "Snowstorm/World/Entity.hpp"
 #include "Snowstorm/Input/InputStateSingleton.hpp"
+#include <fmt/format.h>
+
+#include "Snowstorm/Assets/AssetCook.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Project/Project.hpp"
 #include "Snowstorm/Utility/FileDialog.hpp"
@@ -197,6 +200,27 @@ namespace Snowstorm
 				if (ImGui::MenuItem("Import Model..."))
 				{
 					m_ShowImportPopup = true;
+				}
+
+				// Cooking, in the editor, because the editor is where you notice content is missing from a
+				// package. This is the same code --cook.assets runs, so the two cannot disagree.
+				//
+				// Packaging deliberately has NO menu item. Producing a stage is a build-system action
+				// (a CMake target that copies build output), and an editor button for it would have to
+				// guess which build directory produced the running executable and shell out to a
+				// generator that may not be installed. Unreal can offer File > Package Project because
+				// UAT is a first-class shipped tool; nothing here is.
+				if (ImGui::MenuItem("Cook Assets"))
+				{
+					auto& assets = SingletonView<AssetManagerSingleton>();
+					const CookRequest requested = CookAllRegistryAssets(*m_World);
+					SingletonView<EditorNotificationsSingleton>().Push(
+					    fmt::format("Cooking {} mesh(es), {} texture(s), {} material(s)...", requested.Meshes,
+					                requested.Textures, requested.Materials),
+					    EditorToastType::Info, 3.0f);
+					SS_CORE_INFO("Cook: requested {} mesh(es), {} texture(s), {} material(s); {} still in flight.",
+					             requested.Meshes, requested.Textures, requested.Materials,
+					             assets.PendingLoadCount());
 				}
 
 				ImGui::Separator();

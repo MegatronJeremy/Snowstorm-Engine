@@ -1,6 +1,7 @@
 #include "EnginePaths.hpp"
 
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Assets/VirtualPath.hpp"
 #include "Snowstorm/Project/Project.hpp"
 #include "Snowstorm/Core/PlatformDetection.hpp"
 
@@ -76,6 +77,16 @@ namespace Snowstorm
 			return p;
 		}
 
+		// A mounted path is unambiguous: the table says exactly where it lives, and a bad prefix is an
+		// error rather than a cue to look somewhere else.
+		if (VirtualPath::IsVirtual(path))
+		{
+			return VirtualPath::Resolve(path);
+		}
+
+		// Legacy, unqualified. This is the probe the mount table exists to retire: it cannot distinguish
+		// a typo from a missing file, and whichever root happens to have a matching name wins. Kept only
+		// so material files written before the namespace still load.
 		std::error_code ec;
 		if (fs::path engineSide = GetEngineRoot() / p; fs::exists(engineSide, ec))
 		{
