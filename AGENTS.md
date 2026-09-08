@@ -815,9 +815,11 @@ Report both anyway. The point is which one decides.
 
 ## Texture block compression
 
-`cook.textures.compress` block-compresses cooked textures. It **defaults off**, because it changes what
-reaches the screen and block artifacts on gradients are exactly what whole-image metrics underweight.
-Everything below was measured on Sponza's 72 textures on an RX 9070 XT, Debug.
+`cook.textures.compress` block-compresses cooked textures, **on by default** after eyes-on confirmation on
+Sponza (the metrics below cannot settle it: block artifacts on gradients are exactly what whole-image
+numbers underweight, so the default was held off until someone looked). Turn it off to cook exact RGBA8
+when a texture must not be quantized. Everything below was measured on Sponza's 72 textures, RX 9070 XT,
+Debug.
 
 **Encoding is chosen by ROLE, not by one global format.** Role is derived from the material slot a
 texture is referenced through (`AssetManagerSingleton::RebuildTextureRoles`), rebuilt at registry load
