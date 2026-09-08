@@ -3,8 +3,8 @@
   "config": "shadows",
   "frames": 300,
   "timestampsSupported": true,
-  "width": 1915,
-  "height": 1064,
+  "width": 1677,
+  "height": 999,
   "camera": [
     8.5191,
     1.4949,
@@ -13,8 +13,63 @@
     1.4958,
     0.0
   ],
-  "totalGpuMs": 4.5013,
+  "totalGpuMs": 4.1534,
   "passes": {
+    "CameraDepthPrepass": {
+      "avgMs": 0.0458,
+      "minMs": 0.0441,
+      "maxMs": 0.0499,
+      "fragInvocations": 5219564,
+      "depth": 0,
+      "spreadPct": 0.655021834061139,
+      "q1Ms": 0.04575,
+      "q3Ms": 0.046,
+      "runs": 5
+    },
+    "Forward": {
+      "avgMs": 3.8218,
+      "minMs": 3.6832,
+      "maxMs": 3.9562,
+      "fragInvocations": 2540324,
+      "depth": 0,
+      "spreadPct": 1.6955361348055882,
+      "q1Ms": 3.82025,
+      "q3Ms": 3.8539000000000003,
+      "runs": 5
+    },
+    "TemporalResolve": {
+      "avgMs": 0.1165,
+      "minMs": 0.0791,
+      "maxMs": 0.2165,
+      "fragInvocations": 1675323,
+      "depth": 0,
+      "spreadPct": 37.682403433476374,
+      "q1Ms": 0.10595,
+      "q3Ms": 0.1356,
+      "runs": 5
+    },
+    "PostProcess": {
+      "avgMs": 0.0427,
+      "minMs": 0.0132,
+      "maxMs": 0.1465,
+      "fragInvocations": 1675323,
+      "depth": 0,
+      "spreadPct": 107.02576112412177,
+      "q1Ms": 0.02465,
+      "q3Ms": 0.05495,
+      "runs": 5
+    },
+    "Velocity": {
+      "avgMs": 0.0826,
+      "minMs": 0.0799,
+      "maxMs": 0.0863,
+      "fragInvocations": 3900717,
+      "depth": 0,
+      "spreadPct": 0.9685230024213183,
+      "q1Ms": 0.0824,
+      "q3Ms": 0.08295,
+      "runs": 5
+    },
     "Sky": {
       "avgMs": 0.0,
       "minMs": 0.0,
@@ -23,76 +78,21 @@
       "depth": 1,
       "spreadPct": 0.0,
       "q1Ms": 0.0,
-      "q3Ms": 0.0001,
+      "q3Ms": 0.0,
       "runs": 5
     },
     "Editor": {
-      "avgMs": 0.0398,
-      "minMs": 0.0381,
-      "maxMs": 0.0686,
-      "fragInvocations": 9771737,
+      "avgMs": 0.0452,
+      "minMs": 0.0375,
+      "maxMs": 0.1392,
+      "fragInvocations": 9497496,
       "depth": 0,
-      "spreadPct": 1.5075376884422018,
-      "q1Ms": 0.039650000000000005,
-      "q3Ms": 0.04,
-      "runs": 5
-    },
-    "CameraDepthPrepass": {
-      "avgMs": 0.0439,
-      "minMs": 0.0425,
-      "maxMs": 0.0859,
-      "fragInvocations": 3960708,
-      "depth": 0,
-      "spreadPct": 3.4168564920273377,
-      "q1Ms": 0.0437,
-      "q3Ms": 0.04455,
-      "runs": 5
-    },
-    "PostProcess": {
-      "avgMs": 0.0316,
-      "minMs": 0.0156,
-      "maxMs": 0.054,
-      "fragInvocations": 2037560,
-      "depth": 0,
-      "spreadPct": 25.0,
-      "q1Ms": 0.031149999999999997,
-      "q3Ms": 0.03535,
-      "runs": 5
-    },
-    "Velocity": {
-      "avgMs": 0.0733,
-      "minMs": 0.0709,
-      "maxMs": 0.1254,
-      "fragInvocations": 3055753,
-      "depth": 0,
-      "spreadPct": 3.8199181446111825,
-      "q1Ms": 0.07285,
-      "q3Ms": 0.07444999999999999,
-      "runs": 5
-    },
-    "TemporalResolve": {
-      "avgMs": 0.1076,
-      "minMs": 0.0775,
-      "maxMs": 0.2052,
-      "fragInvocations": 2037560,
-      "depth": 0,
-      "spreadPct": 12.639405204460955,
-      "q1Ms": 0.10745,
-      "q3Ms": 0.1192,
-      "runs": 5
-    },
-    "Forward": {
-      "avgMs": 4.1999,
-      "minMs": 4.0646,
-      "maxMs": 8.6348,
-      "fragInvocations": 2753451,
-      "depth": 0,
-      "spreadPct": 3.2619824281530407,
-      "q1Ms": 4.1874,
-      "q3Ms": 4.25955,
+      "spreadPct": 22.12389380530974,
+      "q1Ms": 0.04285,
+      "q3Ms": 0.04845,
       "runs": 5
     }
   },
-  "totalSpreadPct": 3.4301201875013856,
+  "totalSpreadPct": 2.1620840756970057,
   "runs": 5
 }
