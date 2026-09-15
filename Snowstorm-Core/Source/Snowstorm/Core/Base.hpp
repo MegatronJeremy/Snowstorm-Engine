@@ -39,9 +39,20 @@
 #define SS_INTERNAL_ASSERT_WITH_MSG(type, check, ...) SS_INTERNAL_ASSERT_IMPL(type, check, __VA_ARGS__)
 #define SS_INTERNAL_ASSERT_NO_MSG(type, check) SS_INTERNAL_ASSERT_IMPL(type, check, "Assertion '{0}' failed at {1}:{2}", SS_STRINGIFY_MACRO(check), std::filesystem::path(__FILE__).filename().string(), __LINE__)
 
-// Robust: if only 1 arg -> NO_MSG, otherwise -> WITH_MSG (even for 3+ args)
-#define SS_INTERNAL_ASSERT_GET_MACRO_NAME(_1, _2, _3, _4, NAME, ...) NAME
-#define SS_INTERNAL_ASSERT_GET_MACRO(...) SS_EXPAND_MACRO(SS_INTERNAL_ASSERT_GET_MACRO_NAME(__VA_ARGS__, SS_INTERNAL_ASSERT_WITH_MSG, SS_INTERNAL_ASSERT_WITH_MSG, SS_INTERNAL_ASSERT_WITH_MSG, SS_INTERNAL_ASSERT_NO_MSG))
+// If only 1 arg -> NO_MSG, otherwise -> WITH_MSG.
+//
+// NAME is selected POSITIONALLY: with N arguments it is the 13th entry of (__VA_ARGS__, padding),
+// so the padding must be at least as long as the widest call site. At four placeholders a
+// five-argument assert selected the caller's own fifth ARGUMENT as the macro name and expanded to
+// garbage instead of failing cleanly. Twelve allows a message with up to ten substitutions.
+#define SS_INTERNAL_ASSERT_GET_MACRO_NAME(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, NAME, ...) NAME
+#define SS_INTERNAL_ASSERT_GET_MACRO(...)                                                                  \
+	SS_EXPAND_MACRO(SS_INTERNAL_ASSERT_GET_MACRO_NAME(                                                     \
+	    __VA_ARGS__, SS_INTERNAL_ASSERT_WITH_MSG, SS_INTERNAL_ASSERT_WITH_MSG,                              \
+	    SS_INTERNAL_ASSERT_WITH_MSG, SS_INTERNAL_ASSERT_WITH_MSG, SS_INTERNAL_ASSERT_WITH_MSG,              \
+	    SS_INTERNAL_ASSERT_WITH_MSG, SS_INTERNAL_ASSERT_WITH_MSG, SS_INTERNAL_ASSERT_WITH_MSG,              \
+	    SS_INTERNAL_ASSERT_WITH_MSG, SS_INTERNAL_ASSERT_WITH_MSG, SS_INTERNAL_ASSERT_WITH_MSG,              \
+	    SS_INTERNAL_ASSERT_NO_MSG))
 
 #define SS_ASSERT(...) SS_EXPAND_MACRO(SS_INTERNAL_ASSERT_GET_MACRO(__VA_ARGS__)(_, __VA_ARGS__))
 #define SS_CORE_ASSERT(...) SS_EXPAND_MACRO(SS_INTERNAL_ASSERT_GET_MACRO(__VA_ARGS__)(_CORE_, __VA_ARGS__))

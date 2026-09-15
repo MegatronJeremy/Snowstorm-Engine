@@ -96,7 +96,16 @@ namespace Snowstorm
 		const VmaAllocator allocator = GetAllocator();
 
 		const VkResult res = vmaCreateImage(allocator, &imageCI, &allocCI, &m_Image, &m_Allocation, nullptr);
-		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to create Vulkan image via VMA");
+		// The bare message cannot separate host/device OOM from a zero extent from an unsupported
+		// format+usage pair, which are three unrelated bugs. A machine whose commit charge is
+		// exhausted fails here with VK_ERROR_OUT_OF_DEVICE_MEMORY and, without the VkResult, reads
+		// identically to a driver or engine fault.
+		SS_CORE_ASSERT(res == VK_SUCCESS,
+		               "Failed to create Vulkan image via VMA: '{}' {}x{} mips {} layers {} "
+		               "format {} usage {} -> VkResult {}",
+		               m_Desc.DebugName.empty() ? "<unnamed>" : m_Desc.DebugName.c_str(), m_Desc.Width,
+		               m_Desc.Height, m_Desc.MipLevels, layers, static_cast<int>(m_VkFormat),
+		               static_cast<int>(imageCI.usage), static_cast<int>(res));
 
 		// Name the image so validation/RenderDoc report it by DebugName instead of a raw handle.
 		SetVulkanObjectName(GetVulkanDevice(), reinterpret_cast<uint64_t>(m_Image),
