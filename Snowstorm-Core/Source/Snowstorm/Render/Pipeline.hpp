@@ -128,9 +128,18 @@ namespace Snowstorm
 		bool Wireframe = false;
 	};
 
+	// How a blended attachment combines. Alpha: straight alpha (src * a + dst * (1 - a)). Premultiplied: the
+	// source colour already carries its alpha (src + dst * (1 - a)), which is what RmlUi 6 renders with.
+	enum class BlendMode : uint8_t
+	{
+		Alpha,
+		Premultiplied,
+	};
+
 	struct PipelineBlendAttachment
 	{
 		bool EnableBlend = false;
+		BlendMode Mode = BlendMode::Alpha;
 	};
 
 	struct PipelineBlendState

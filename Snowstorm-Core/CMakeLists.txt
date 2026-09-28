@@ -38,6 +38,8 @@ find_package(volk CONFIG REQUIRED)
 find_package(unofficial-spirv-reflect CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(Tracy CONFIG REQUIRED)
+# The game UI layer (Snowstorm/UI): HTML/CSS-style documents, rendered by the engine's own UI pass.
+find_package(RmlUi CONFIG REQUIRED)
 
 # Tracy is only compiled in when TRACY_ENABLE is defined; otherwise every Tracy macro is a no-op (zero
 # overhead). Enable it in Debug only, matching the engine's SS_PROFILE gating — profiling a Release build
@@ -73,4 +75,5 @@ target_link_libraries(Snowstorm-Core PUBLIC
     unofficial::spirv-reflect
     nlohmann_json::nlohmann_json
     Tracy::TracyClient
+    RmlUi::RmlUi
 )

@@ -498,15 +498,19 @@ namespace Snowstorm
 
 			const bool enableBlend =
 			    (i < m_Desc.Blend.Attachments.size()) ? m_Desc.Blend.Attachments[i].EnableBlend : false;
+			const BlendMode mode =
+			    (i < m_Desc.Blend.Attachments.size()) ? m_Desc.Blend.Attachments[i].Mode : BlendMode::Alpha;
 
 			a.blendEnable = enableBlend ? VK_TRUE : VK_FALSE;
 
-			// Default alpha blend (common for 2D); tweak later per pipeline if desired.
-			a.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+			// Straight alpha by default (common for 2D). Premultiplied: the colour already carries its alpha,
+			// so it is added as-is (the UI pass, whose vertices and textures RmlUi hands over premultiplied);
+			// its alpha accumulates coverage instead of being discarded.
+			a.srcColorBlendFactor = mode == BlendMode::Premultiplied ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_SRC_ALPHA;
 			a.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 			a.colorBlendOp = VK_BLEND_OP_ADD;
 			a.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-			a.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+			a.dstAlphaBlendFactor = mode == BlendMode::Premultiplied ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : VK_BLEND_FACTOR_ZERO;
 			a.alphaBlendOp = VK_BLEND_OP_ADD;
 
 			blendAttachments[i] = a;

@@ -31,6 +31,7 @@ find_dependency(volk CONFIG)
 find_dependency(unofficial-spirv-reflect CONFIG)
 find_dependency(nlohmann_json CONFIG)
 find_dependency(Tracy CONFIG)
+find_dependency(RmlUi CONFIG)
 
 include("${CMAKE_CURRENT_LIST_DIR}/SnowstormTargets.cmake")
 

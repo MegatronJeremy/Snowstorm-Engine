@@ -23,6 +23,9 @@
 #include "Snowstorm/Render/RenderTarget.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
 #include "Snowstorm/Render/Texture.hpp"
+#include "Snowstorm/Core/Application.hpp"
+#include "Snowstorm/Service/ServiceManager.hpp"
+#include "Snowstorm/UI/UiService.hpp"
 
 namespace Snowstorm
 {
@@ -220,12 +223,27 @@ namespace Snowstorm
 		//    window shows a scaled image until #146 makes the target track the window.
 		if (const Ref<RenderTarget> swapchain = Renderer::GetSwapchainTarget())
 		{
+			// The game UI (Snowstorm/UI), when a game has opened one: laid out and collected here on the main
+			// thread, drawn first in whichever pass composes the swapchain, so ImGui stays on top of it.
+			UiService* ui = nullptr;
+			ServiceManager& services = Application::Get().GetServiceManager();
+			if (services.ServiceRegistered<UiService>() && services.GetService<UiService>().IsActive())
+			{
+				ui = &services.GetService<UiService>();
+				ui->BuildFrame(swapchain->GetWidth(), swapchain->GetHeight());
+			}
+			const PixelFormat uiFormat = swapchain->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+
 			if (Renderer::IsImGuiBackendInitialized())
 			{
 				graph.AddPass({.Name = "Editor",
 				               .Target = swapchain,
-				               .Execute = [&](CommandContext& c)
+				               .Execute = [&, ui, uiFormat, frameIndex](CommandContext& c)
 				               {
+					               if (ui)
+					               {
+						               ui->Draw(c, frameIndex, uiFormat);
+					               }
 					               Renderer::RenderImGuiDrawData(c);
 				               }});
 			}
@@ -239,9 +257,13 @@ namespace Snowstorm
 					graph.AddPass({.Name = "Present",
 					               .Target = swapchain,
 					               .Reads = {{src->GetTexture(), RenderGraph::AccessState::Sampled}},
-					               .Execute = [this, src, swapFormat, frameIndex](CommandContext& c)
+					               .Execute = [this, src, swapFormat, frameIndex, ui](CommandContext& c)
 					               {
 						               m_PresentPass.Draw(c, frameIndex, src, swapFormat);
+						               if (ui)
+						               {
+							               ui->Draw(c, frameIndex, swapFormat);
+						               }
 					               }});
 				}
 			}
