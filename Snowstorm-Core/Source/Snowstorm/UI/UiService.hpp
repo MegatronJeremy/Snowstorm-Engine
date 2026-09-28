@@ -17,6 +17,8 @@ namespace Rml
 namespace Snowstorm
 {
 	class CommandContext;
+	class RenderGraph;
+	class Texture;
 	class UiRenderer;
 	class UiSystemInterface;
 
@@ -55,9 +57,16 @@ namespace Snowstorm
 		// Images still decoding off the main thread.
 		[[nodiscard]] size_t PendingTextures() const;
 
-		// ---- called by RenderSystem
-		void BuildFrame(uint32_t width, uint32_t height);
-		void Draw(CommandContext& ctx, uint32_t frameIndex, PixelFormat colorFormat);
+		// ---- called by RenderSystem, in this order
+		// On the main thread: RmlUi's update and layout, and the frame's drawing recorded. Does nothing until the
+		// UI's shaders have compiled, a frame or two after start.
+		void BuildFrame(uint32_t width, uint32_t height, PixelFormat swapFormat);
+		// The frame's own passes (its layers, filters, masks, saved textures), added to the graph ahead of the
+		// pass that composes the swapchain in `swapFormat`.
+		void AddPasses(RenderGraph& graph, uint32_t frameIndex, PixelFormat swapFormat);
+		// Inside that pass: the finished UI, blended over what is there. CompositeReads is its Reads.
+		void Composite(CommandContext& ctx, PixelFormat format);
+		[[nodiscard]] std::vector<Ref<Texture>> CompositeReads() const;
 
 		// Release every document, texture and font while the renderer is still up. The destructor calls it too,
 		// but services are destroyed in no promised order, so a game calls this from its own shutdown.

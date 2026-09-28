@@ -288,29 +288,53 @@ namespace Snowstorm
 		return m_Renderer ? m_Renderer->PendingTextures() : 0;
 	}
 
-	void UiService::BuildFrame(const uint32_t width, const uint32_t height)
+	void UiService::BuildFrame(const uint32_t width, const uint32_t height, const PixelFormat swapFormat)
 	{
-		if (!m_Context || width == 0 || height == 0)
+		if (!m_Context || width == 0 || height == 0 || !m_Renderer->Ready(swapFormat))
 		{
 			return;
 		}
 		if (width != m_Width || height != m_Height)
 		{
+			const bool grew = width > m_Width || height > m_Height;
 			m_Width = width;
 			m_Height = height;
 			m_Context->SetDimensions({static_cast<int>(width), static_cast<int>(height)});
+			// RmlUi bakes a box-shadow into a window-sized layer and keeps it until the element changes, so one baked
+			// while the window was smaller (the first frames, before the window reaches its size) stays clipped.
+			// Releasing the textures makes it bake them again; the images come straight back (UiRenderer parks them).
+			if (grew && m_Renderer->HasClippedBakes())
+			{
+				Rml::ReleaseTextures(m_Renderer.get());
+			}
 		}
-		m_Context->Update();
+		// Recording starts BEFORE the update: RmlUi bakes textures on demand (a box-shadow renders its shadow,
+		// background and border into a layer it saves as a texture), and a bake issued during the update must
+		// land in this frame's recording rather than one that is about to be cleared.
 		m_Renderer->BeginFrame(width, height);
+		m_Context->Update();
 		m_Context->Render();
 	}
 
-	void UiService::Draw(CommandContext& ctx, const uint32_t frameIndex, const PixelFormat colorFormat)
+	void UiService::AddPasses(RenderGraph& graph, const uint32_t frameIndex, const PixelFormat swapFormat)
 	{
 		if (m_Context && m_Renderer)
 		{
-			m_Renderer->Draw(ctx, frameIndex, colorFormat);
+			m_Renderer->AddPasses(graph, frameIndex, swapFormat);
 		}
+	}
+
+	void UiService::Composite(CommandContext& ctx, const PixelFormat format)
+	{
+		if (m_Context && m_Renderer)
+		{
+			m_Renderer->Composite(ctx, format);
+		}
+	}
+
+	std::vector<Ref<Texture>> UiService::CompositeReads() const
+	{
+		return m_Context && m_Renderer ? m_Renderer->CompositeReads() : std::vector<Ref<Texture>>{};
 	}
 
 	void UiService::Shutdown()

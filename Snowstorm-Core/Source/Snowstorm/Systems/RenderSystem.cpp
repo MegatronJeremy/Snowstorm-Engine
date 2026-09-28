@@ -223,26 +223,34 @@ namespace Snowstorm
 		//    window shows a scaled image until #146 makes the target track the window.
 		if (const Ref<RenderTarget> swapchain = Renderer::GetSwapchainTarget())
 		{
-			// The game UI (Snowstorm/UI), when a game has opened one: laid out and collected here on the main
-			// thread, drawn first in whichever pass composes the swapchain, so ImGui stays on top of it.
+			// The game UI (Snowstorm/UI), when a game has opened one: laid out and recorded here on the main
+			// thread, rendered in its own passes (layers, filters, clip masks), then composited first in whichever
+			// pass composes the swapchain, so ImGui stays on top of it.
 			UiService* ui = nullptr;
+			std::vector<RenderGraph::ResourceAccess> uiReads;
+			const PixelFormat uiFormat = swapchain->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 			ServiceManager& services = Application::Get().GetServiceManager();
 			if (services.ServiceRegistered<UiService>() && services.GetService<UiService>().IsActive())
 			{
 				ui = &services.GetService<UiService>();
-				ui->BuildFrame(swapchain->GetWidth(), swapchain->GetHeight());
+				ui->BuildFrame(swapchain->GetWidth(), swapchain->GetHeight(), uiFormat);
+				ui->AddPasses(graph, frameIndex, uiFormat);
+				for (const Ref<Texture>& t : ui->CompositeReads())
+				{
+					uiReads.push_back({.Texture = t, .State = RenderGraph::AccessState::Sampled});
+				}
 			}
-			const PixelFormat uiFormat = swapchain->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 
 			if (Renderer::IsImGuiBackendInitialized())
 			{
 				graph.AddPass({.Name = "Editor",
 				               .Target = swapchain,
-				               .Execute = [&, ui, uiFormat, frameIndex](CommandContext& c)
+				               .Reads = uiReads,
+				               .Execute = [&, ui, uiFormat](CommandContext& c)
 				               {
 					               if (ui)
 					               {
-						               ui->Draw(c, frameIndex, uiFormat);
+						               ui->Composite(c, uiFormat);
 					               }
 					               Renderer::RenderImGuiDrawData(c);
 				               }});
@@ -254,15 +262,17 @@ namespace Snowstorm
 				{
 					const Ref<TextureView> src = presentRtc.PresentSampleView;
 					const PixelFormat swapFormat = swapchain->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+					std::vector<RenderGraph::ResourceAccess> presentReads = uiReads;
+					presentReads.push_back({src->GetTexture(), RenderGraph::AccessState::Sampled});
 					graph.AddPass({.Name = "Present",
 					               .Target = swapchain,
-					               .Reads = {{src->GetTexture(), RenderGraph::AccessState::Sampled}},
+					               .Reads = presentReads,
 					               .Execute = [this, src, swapFormat, frameIndex, ui](CommandContext& c)
 					               {
 						               m_PresentPass.Draw(c, frameIndex, src, swapFormat);
 						               if (ui)
 						               {
-							               ui->Draw(c, frameIndex, swapFormat);
+							               ui->Composite(c, swapFormat);
 						               }
 					               }});
 				}

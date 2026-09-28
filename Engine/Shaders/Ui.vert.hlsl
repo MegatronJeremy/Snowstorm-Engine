@@ -5,8 +5,8 @@
 // rebased on the CPU, so SV_VertexID is the vertex's position in this frame's buffer.
 //
 // The transform maps RmlUi's pixel space (top-left origin, y down) to Vulkan clip space, whose y = -1 is the
-// top of the swapchain image, so nothing is flipped. The ortho projection leaves z at 0 for untransformed
-// geometry; it is folded from GL's [-w, w] into Vulkan's [0, w] so a perspective transform is not clipped.
+// top of the target, so nothing is flipped. The ortho projection leaves z at 0 for untransformed geometry; it
+// is folded from GL's [-w, w] into Vulkan's [0, w] so a perspective transform is not clipped.
 
 UiVSOut main(uint vid : SV_VertexID)
 {
@@ -23,5 +23,6 @@ UiVSOut main(uint vid : SV_VertexID)
 	o.PositionCS = clip;
 	o.Colour = float4(colour & 0xFF, (colour >> 8) & 0xFF, (colour >> 16) & 0xFF, colour >> 24) / 255.0;
 	o.UV = uv;
+	o.Local = position;
 	return o;
 }

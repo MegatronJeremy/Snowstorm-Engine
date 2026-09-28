@@ -18,9 +18,11 @@ namespace Snowstorm
 		// Max GPU scopes (passes) timed per frame. A heavy frame runs the depth prepass + G-buffer + velocity,
 		// four half-res RT sub-chains each 5-6 passes (GI/AO/reflection/shadow: trace + temporal + a-trous xN +
 		// upsample), forward + sky + resolve + upscale + tonemap + LDR chain + editor + the IBL bakes — well past
-		// 32. 64 covers all effects on at once with headroom; scopes past this are dropped with a warning rather
-		// than overflowing the pool. Pool cost is trivial (2 timestamps + 1 pipeline-stats query per scope).
-		constexpr uint32_t kMaxGpuScopes = 64;
+		// 32. 64 covered all effects on at once with headroom until the UI layer (Snowstorm/UI): a frame that bakes
+		// a dozen box-shadows (each a layer, a blur of three passes, a mask and a save) adds sixty passes on its
+		// own. 256 covers both; scopes past this are dropped with a warning rather than overflowing the pool.
+		// Pool cost is trivial (2 timestamps + 1 pipeline-stats query per scope).
+		constexpr uint32_t kMaxGpuScopes = 256;
 
 		// A layout in which the image is WRITTEN (its LayoutStageAccess carries a write access bit), so a
 		// transition INTO it leaves a pending write a later cross-stage read must barrier against. Pure read
