@@ -114,7 +114,8 @@ namespace Snowstorm
 		{
 			std::vector<Rml::Vertex> Vertices;
 			std::vector<int> Indices;
-			Rml::Vector2f Size; // of the vertices' bounding box
+			Rml::Vector2f Size;   // of the vertices' bounding box
+			bool Repeats = false; // texture coordinates past 0..1: a decorator repeating its image
 		};
 
 		// A colour target the UI renders into and samples from: a layer, a mask, a filter's scratch, or a saved
@@ -139,6 +140,7 @@ namespace Snowstorm
 			std::optional<Target> Saved; // a layer region RmlUi keeps (SaveLayerAsTexture)
 			bool Clipped = false;        // a Saved region that reached the window's edge
 			bool File = false;           // loaded from Source (LoadTexture), so it can be parked and handed back
+			bool PixelArt = false;       // a file named *.px.*: scaled with hard texel edges (UI_FLAG_PIXEL_ART)
 			Rml::Vector2i Dimensions;
 		};
 
@@ -202,6 +204,8 @@ namespace Snowstorm
 			Rml::Rectanglei ScissorRect;
 			std::array<float, 16> Transform{}; // projection * element transform, column-major
 			Rml::Vector2f UvScale{1.0f, 1.0f}; // see UiPush.UvScale
+			bool PixelArt = false;
+			bool Repeat = false;
 		};
 
 		struct SegmentOp

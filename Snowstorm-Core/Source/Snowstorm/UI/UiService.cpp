@@ -267,7 +267,22 @@ namespace Snowstorm
 	Rml::ElementDocument* UiService::LoadDocument(const std::filesystem::path& path)
 	{
 		Rml::Context* context = Context();
-		return context ? context->LoadDocument(Utf8(path)) : nullptr;
+		if (!context)
+		{
+			return nullptr;
+		}
+		// An <img src="img/x.png"> resolves against its document's URL, and RmlUi's URL parser reads a Windows
+		// drive letter ("C:\...") as a malformed protocol: the document's own directory comes back empty and
+		// every relative image in it fails to load. A path relative to the working directory has no drive, and
+		// RmlUi's file interface opens it from there. (Stylesheets resolve their paths without the parser.)
+		std::filesystem::path open = path;
+		std::error_code ec;
+		if (const std::filesystem::path relative = std::filesystem::relative(path, std::filesystem::current_path(ec), ec);
+		    !ec && !relative.empty() && !relative.has_root_name())
+		{
+			open = relative;
+		}
+		return context->LoadDocument(Utf8(open.generic_u8string()));
 	}
 
 	void UiService::SetDpRatio(const float ratio)

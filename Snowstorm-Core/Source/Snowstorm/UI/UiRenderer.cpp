@@ -56,6 +56,8 @@ namespace Snowstorm
 		constexpr uint32_t kFlagTextured = 1;
 		constexpr uint32_t kFlagGradient = 2;
 		constexpr uint32_t kFlagMaskWrite = 4;
+		constexpr uint32_t kFlagPixelArt = 8;
+		constexpr uint32_t kFlagRepeat = 16;
 
 		// Mirrors UiPush in Ui.hlsli field-for-field.
 		struct UiPushConstants
@@ -250,6 +252,9 @@ namespace Snowstorm
 			{
 				lo = Rml::Math::Min(lo, v.position);
 				hi = Rml::Math::Max(hi, v.position);
+				constexpr float slack = 1e-3f;
+				g->Repeats = g->Repeats || v.tex_coord.x < -slack || v.tex_coord.y < -slack || v.tex_coord.x > 1.0f + slack ||
+				             v.tex_coord.y > 1.0f + slack;
 			}
 			g->Size = hi - lo;
 		}
@@ -333,6 +338,8 @@ namespace Snowstorm
 		d.TextureIndex = bindless;
 		if (texture != 0)
 		{
+			d.PixelArt = reinterpret_cast<const TextureEntry*>(texture)->PixelArt;
+			d.Repeat = g->Repeats;
 			// A baked layer smaller than the quad showing it was clipped to the window when RmlUi baked it (it
 			// warns "Results may be clipped"): draw what exists at 1:1 rather than stretch it over the quad.
 			if (const auto* t = reinterpret_cast<const TextureEntry*>(texture); t->Saved)
@@ -377,6 +384,7 @@ namespace Snowstorm
 		auto* e = new TextureEntry{};
 		e->Source = source;
 		e->File = true;
+		e->PixelArt = path.stem().extension() == ".px"; // as in wall.px.png
 		e->Dimensions = textureDimensions;
 		e->Decoding = Application::Get().GetServiceManager().GetService<JobSystem>().Submit(
 		    [path]() -> std::optional<CookedTexture>
@@ -1176,7 +1184,8 @@ namespace Snowstorm
 		push.Translation[0] = draw.Translation.x;
 		push.Translation[1] = draw.Translation.y;
 		push.TextureIndex = draw.TextureIndex;
-		push.Flags = flags | (draw.Textured ? kFlagTextured : 0u) | (draw.Gradient >= 0 ? kFlagGradient : 0u);
+		push.Flags = flags | (draw.Textured ? kFlagTextured : 0u) | (draw.Gradient >= 0 ? kFlagGradient : 0u) |
+		             (draw.PixelArt ? kFlagPixelArt : 0u) | (draw.Repeat ? kFlagRepeat : 0u);
 		push.GradientIndex = static_cast<uint32_t>(std::max(draw.Gradient, 0));
 		push.MaskIndex = MaskBindless(draw.Mask);
 		push.MaskValue = maskValue;

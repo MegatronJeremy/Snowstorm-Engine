@@ -34,6 +34,8 @@ StructuredBuffer<UiGradient> UiGradients : register(t6, space1);
 #define UI_FLAG_TEXTURED 1u
 #define UI_FLAG_GRADIENT 2u
 #define UI_FLAG_MASK_WRITE 4u // writing a clip mask: MaskValue everywhere the geometry covers, no blending
+#define UI_FLAG_PIXEL_ART 8u  // the texture is pixel art (its file is named *.px.*): scaled with hard texel edges
+#define UI_FLAG_REPEAT 16u    // the geometry's texture coordinates run past 0..1 (a decorator's repeat): wrap them
 
 // Mirrors UiPushConstants in UiRenderer.cpp field-for-field (104 bytes).
 struct UiPush

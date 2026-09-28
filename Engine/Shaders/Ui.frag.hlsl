@@ -55,6 +55,23 @@ float4 GradientColour(UiGradient g, float2 p)
 	return g.Colors[n - 1];
 }
 
+// Pixel art at any scale ("sharp bilinear"): inside a texel the sample stays on the texel's centre, and only
+// the last screen pixel before a texel edge blends into the next one. Nearest sampling would do at whole-number
+// scales, but the UI scales by the window height, so texels land 3 pixels wide here and 4 there; this keeps
+// them even with a one-pixel antialiased seam instead.
+float2 PixelArtUV(Texture2D tex, float2 uv)
+{
+	float w, h;
+	tex.GetDimensions(w, h);
+	const float2 size = float2(w, h);
+	const float2 texel = uv * size;
+	const float2 pixelsPerTexel = 1.0 / max(fwidth(texel), float2(1e-5, 1e-5));
+	const float2 fromCentre = frac(texel) - 0.5;
+	const float2 plateau = max(0.5 - 0.5 / pixelsPerTexel, 0.0);
+	const float2 f = (fromCentre - clamp(fromCentre, -plateau, plateau)) * pixelsPerTexel + 0.5;
+	return (floor(texel) + f) / size;
+}
+
 float4 main(UiVSOut input) : SV_Target
 {
 	if (gUi.Flags & UI_FLAG_MASK_WRITE)
@@ -64,9 +81,30 @@ float4 main(UiVSOut input) : SV_Target
 	float4 texel = float4(1.0, 1.0, 1.0, 1.0);
 	if (gUi.Flags & UI_FLAG_TEXTURED)
 	{
+		Texture2D tex = Textures[NonUniformResourceIndex(gUi.TextureIndex)];
 		const float2 uv = input.UV * gUi.UvScale;
-		texel = any(uv > 1.0) ? float4(0.0, 0.0, 0.0, 0.0)
-		                        : Textures[NonUniformResourceIndex(gUi.TextureIndex)].Sample(UiSampler, uv);
+		// The sampler clamps (a 9-slice must not bleed its opposite edge in), so a repeated image wraps here, with
+		// the unwrapped coordinates' gradients so the seam picks no mip of its own. Every branch below is uniform
+		// per draw (flags), so the derivatives hold.
+		const bool repeat = (gUi.Flags & UI_FLAG_REPEAT) != 0;
+		if (gUi.Flags & UI_FLAG_PIXEL_ART)
+		{
+			// Level 0 always: the bent coordinates' derivatives jump at every texel seam and would pick a mip there.
+			const float2 bent = PixelArtUV(tex, uv);
+			texel = tex.SampleLevel(UiSampler, repeat ? frac(bent) : bent, 0.0);
+		}
+		else if (repeat)
+		{
+			texel = tex.SampleGrad(UiSampler, frac(uv), ddx(uv), ddy(uv));
+		}
+		else
+		{
+			texel = tex.Sample(UiSampler, uv);
+		}
+		if (any(gUi.UvScale > 1.0) && any(uv > 1.0))
+		{
+			texel = float4(0.0, 0.0, 0.0, 0.0); // past the end of a bake clipped to the window
+		}
 	}
 	if (gUi.Flags & UI_FLAG_GRADIENT)
 	{
