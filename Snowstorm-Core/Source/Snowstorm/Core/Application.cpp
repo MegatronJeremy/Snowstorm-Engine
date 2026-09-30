@@ -6,6 +6,7 @@
 
 #include "Snowstorm/Core/CoreServices.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Core/JobSystem.hpp"
 #include "Snowstorm/Debug/Instrumentor.hpp"
 #include "Snowstorm/Render/PerfBench.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
@@ -49,6 +50,11 @@ namespace Snowstorm
 	Application::~Application()
 	{
 		SS_PROFILE_FUNCTION();
+
+		// Drain the job pool before the layers free their worlds. Async asset loads capture their World's
+		// AssetManagerSingleton, and the pool (a service) outlives the layers, so a cook still running here
+		// would write into a freed World. The same safe point the editor's CloseProject takes.
+		m_ServiceManager->GetService<JobSystem>().WaitAll();
 
 		// Finish all in-flight GPU work before tearing down layers/worlds, which destroy GPU
 		// resources (textures, descriptor sets, views). Without this they can be destroyed while
