@@ -62,6 +62,7 @@
 #include "Singletons/EditorStatusBarSingleton.hpp"
 #include "System/DockspaceSetupSystem.hpp"
 #include "System/StatusBarSystem.hpp"
+#include "System/EditorExtensionSystem.hpp"
 #include "System/EditorMenuSystem.hpp"
 #include "System/EditorNotificationSystem.hpp"
 #include "System/SceneHierarchySystem.hpp"
@@ -71,7 +72,7 @@
 namespace Snowstorm
 {
 	EditorLayer::EditorLayer()
-	    : Layer("EditorLayer")
+	    : Layer("EditorLayer"), m_Extensions(EditorExtensions::TakeRegistered())
 	{
 	}
 
@@ -119,6 +120,16 @@ namespace Snowstorm
 		InitializeActiveWorld();
 
 		LoadOrCreateStartupWorld();
+
+		std::vector<IEditorExtension*> active;
+		for (const Scope<IEditorExtension>& extension : m_Extensions)
+		{
+			SS_CORE_INFO("Editor extension '{}'", extension->Name());
+			extension->OnAttach();
+			extension->OnProjectOpened(*activeProject);
+			active.push_back(extension.get());
+		}
+		EditorExtensions::SetActive(std::move(active));
 	}
 
 	void EditorLayer::InitializeActiveWorld()
@@ -386,6 +397,11 @@ namespace Snowstorm
 		// next Ctrl+S would overwrite that old file with this project's empty world.
 		m_ActiveScenePath = Project::GetActive()->GetStartScenePath().string();
 
+		for (const Scope<IEditorExtension>& extension : m_Extensions)
+		{
+			extension->OnProjectOpened(*project);
+		}
+
 		return true;
 	}
 
@@ -405,6 +421,11 @@ namespace Snowstorm
 		if (!Project::GetActive())
 		{
 			return;
+		}
+
+		for (const Scope<IEditorExtension>& extension : m_Extensions)
+		{
+			extension->OnProjectClosed();
 		}
 
 		// Save the project file only, deliberately NOT the scene. Whether unsaved scene edits
@@ -761,6 +782,7 @@ namespace Snowstorm
 		systemManager.RegisterSystem<LoadingOverlaySystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<CVarPanelSystem>(SystemPhase::UI);
 		systemManager.RegisterSystem<ConsoleSystem>(SystemPhase::UI);
+		systemManager.RegisterSystem<EditorExtensionSystem>(SystemPhase::UI);
 
 		// Editor example
 		systemManager.RegisterSystem<MandelbrotControllerSystem>(SystemPhase::PreRender);
@@ -1179,6 +1201,13 @@ namespace Snowstorm
 	void EditorLayer::OnDetach()
 	{
 		SS_PROFILE_FUNCTION();
+
+		EditorExtensions::SetActive({});
+		for (auto it = m_Extensions.rbegin(); it != m_Extensions.rend(); ++it)
+		{
+			(*it)->OnProjectClosed();
+			(*it)->OnDetach();
+		}
 
 		// Persist user settings (render.*, display.*) so they survive a restart. Skipped in smoke/headless
 		// runs (smoke.frames > 0) so automated runs stay side-effect-free and reproducible: they tear down
