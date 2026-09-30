@@ -5,6 +5,7 @@
 #include "Snowstorm/Debug/Instrumentor.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 
+#include "Extension/EditorExtension.hpp"
 #include "System/ConsoleSystem.hpp"
 #include "System/CVarPanelSystem.hpp"
 #include "System/DockspaceSetupSystem.hpp"
@@ -295,6 +296,11 @@ namespace Snowstorm
 					ImGui::EndMenu();
 				}
 				ImGui::EndMenu();
+			}
+
+			for (IEditorExtension* extension : EditorExtensions::Active())
+			{
+				extension->OnMainMenuBar();
 			}
 
 			if (ImGui::BeginMenu("Help"))

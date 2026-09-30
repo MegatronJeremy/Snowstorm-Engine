@@ -2,6 +2,8 @@
 
 #include <Snowstorm.h>
 
+#include "Extension/EditorExtension.hpp"
+
 namespace Snowstorm
 {
 	class EditorLayer final : public Layer
@@ -105,6 +107,8 @@ namespace Snowstorm
 		void AddDefaultLightRig() const;
 
 	private:
+		std::vector<Scope<IEditorExtension>> m_Extensions;
+
 		Ref<World> m_ActiveWorld;
 
 		Entity m_RenderTargetEntity;
