@@ -13,8 +13,10 @@
 #include <RmlUi/Core/RenderInterface.h>
 
 #include <array>
+#include <atomic>
 #include <future>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -50,7 +52,9 @@ namespace Snowstorm
 	// transform or a border-radius, and to keep a box-shadow from showing through its own element.
 	//
 	// Images load off the main thread: LoadTexture answers RmlUi's layout at once from the file header and decodes
-	// on the JobSystem, and a draw whose image is still decoding is skipped until it arrives.
+	// on the JobSystem, and a draw whose image is still decoding is skipped until it arrives. Nor does the upload
+	// wait: a decoded image is copied by the frame's first UI pass, from a staging buffer the frame slot keeps, and
+	// draws from the next frame, so the main thread never stops for the GPU to take a picture.
 	//
 	// Colour: premultiplied everywhere, as RmlUi 6 composes; UNORM layers and a UNORM swapchain, so CSS colours
 	// blend in the space they are authored in, as a browser does. Not implemented: mask-image.
@@ -131,12 +135,23 @@ namespace Snowstorm
 			uint32_t Height = 0;
 		};
 
+		// A decoded image on its way to the GPU: created, its copy queued for the frame's upload pass. It draws from
+		// the first frame after that pass has been recorded, not before. A view made sooner would find the image in
+		// no layout yet, and VulkanTextureView would transition it with a submit of its own that waits for the GPU:
+		// the stall this path exists to avoid.
+		struct Arriving
+		{
+			Ref<Texture> Image;
+			std::shared_ptr<std::atomic<bool>> Recorded; // set by the upload pass once its copy is in the frame
+		};
+
 		struct TextureEntry
 		{
 			Ref<Texture> Texture;
 			uint32_t Bindless = 0;
 			std::string Source; // for the log line when a decode fails
 			std::optional<std::future<std::optional<CookedTexture>>> Decoding;
+			std::optional<Arriving> Uploading;
 			std::optional<Target> Saved; // a layer region RmlUi keeps (SaveLayerAsTexture)
 			bool Clipped = false;        // a Saved region that reached the window's edge
 			bool File = false;           // loaded from Source (LoadTexture), so it can be parked and handed back
@@ -246,9 +261,19 @@ namespace Snowstorm
 			Ref<Buffer> Vertices;
 			Ref<Buffer> Indices;
 			Ref<Buffer> Gradients;
+			Ref<Buffer> Staging; // the frame's image uploads, read by its upload pass
 			size_t VertexCapacity = 0;   // bytes
 			size_t IndexCapacity = 0;    // bytes
 			size_t GradientCapacity = 0; // bytes
+			size_t StagingCapacity = 0;  // bytes
+		};
+
+		// An image whose pixels the next upload pass copies in.
+		struct Upload
+		{
+			Ref<Texture> Texture;
+			CookedTexture Pixels;
+			std::shared_ptr<std::atomic<bool>> Recorded;
 		};
 
 		// A position in a filter chain: which target holds the image, at which downsample level, in which scratch
@@ -267,6 +292,8 @@ namespace Snowstorm
 		[[nodiscard]] uint32_t TopLayer() const { return m_LayerStack.back(); }
 		void UpdateTransform();
 		void PumpDecodes();
+		// A texture for `pixels` (RGBA8, premultiplied, its mips) whose contents arrive with the next upload pass.
+		std::optional<Arriving> QueueUpload(CookedTexture pixels);
 
 		// ---- resources
 		bool EnsurePipelines(PixelFormat swapFormat);
@@ -279,6 +306,7 @@ namespace Snowstorm
 		Target& Scratch(uint32_t level, int slot);
 
 		// ---- replay
+		void AddUploadPass(RenderGraph& graph, FrameResources& fr);
 		void AddSegmentPass(RenderGraph& graph, const FrameResources& fr, const SegmentOp& op, std::vector<Ref<Texture>> reads);
 		void AddMaskPasses(RenderGraph& graph, const FrameResources& fr, const MaskOp& op);
 		void AddCompositePasses(RenderGraph& graph, const CompositeOp& op);
@@ -301,6 +329,7 @@ namespace Snowstorm
 		Ref<Sampler> m_Sampler;
 		std::vector<FrameResources> m_Frames;
 		std::unordered_set<TextureEntry*> m_Textures; // every live handle, so decodes can be pumped
+		std::vector<Upload> m_Uploads;                // created since the last upload pass, waiting for their pixels
 		// Images RmlUi released lately, by source, with the frame they were released on. Rml::ReleaseTextures
 		// drops every image to re-bake the box-shadows; RmlUi asks for the same images again on the next frame,
 		// and they come back from here instead of blinking out for a decode.

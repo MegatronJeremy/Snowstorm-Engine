@@ -32,9 +32,11 @@ namespace Snowstorm
 		constexpr uint32_t kGradientsBinding = 6; // StructuredBuffer<UiGradient> UiGradients : t6
 		constexpr uint32_t kWordsPerVertex = 5;
 		constexpr size_t kInitialBytes = 64 * 1024;
-		// Decoded images uploaded per frame. Each is a staging copy of a full mip chain; a screen that opens with
-		// a dozen pictures fills in over a few frames instead of stalling one.
-		constexpr int kUploadsPerFrame = 2;
+		// Decoded images taken up per frame, in bytes of their mip chains: two 1024 px pictures (5.6 MB each). The
+		// copy waits for nothing, but each one is a memcpy into the frame's staging buffer on the main thread, so a
+		// screen that opens with a dozen pictures fills in over a few frames instead of drawing one late. One image
+		// larger than this goes alone.
+		constexpr size_t kUploadBytesPerFrame = 12u << 20;
 		// How long a released image waits to be asked for again before it is freed.
 		constexpr uint64_t kParkedFrames = 120;
 		// Downsample levels a blur may use: sigma halves with each, and 1/32 of the window is already a smear.
@@ -79,6 +81,24 @@ namespace Snowstorm
 			uint32_t w;
 			std::memcpy(&w, &f, sizeof(w));
 			return w;
+		}
+
+		// An RGBA8 image's bytes with its full mip chain, as Texture::DecodeCPU builds it.
+		size_t MipChainBytes(const Rml::Vector2i dimensions)
+		{
+			size_t bytes = 0;
+			uint32_t w = static_cast<uint32_t>(std::max(dimensions.x, 1));
+			uint32_t h = static_cast<uint32_t>(std::max(dimensions.y, 1));
+			while (true)
+			{
+				bytes += static_cast<size_t>(w) * h * 4;
+				if (w == 1 && h == 1)
+				{
+					return bytes;
+				}
+				w = std::max(1u, w / 2u);
+				h = std::max(1u, h / 2u);
+			}
 		}
 
 		// RmlUi composes premultiplied colour everywhere and expects images to arrive that way too.
@@ -413,6 +433,8 @@ namespace Snowstorm
 
 		auto* e = new TextureEntry{};
 		e->Source = "(generated)";
+		// Uploaded at once, waiting for it: RmlUi draws with a generated texture in the frame that makes it (a font
+		// atlas, as text first shows), and one frame without it would blink. They are made rarely.
 		e->Texture = Texture::CreateFromPixels(cooked, false, "RmlGenerated");
 		if (!e->Texture)
 		{
@@ -422,6 +444,28 @@ namespace Snowstorm
 		e->Bindless = e->Texture->GetDefaultView()->GetGlobalBindlessIndex();
 		m_Textures.insert(e);
 		return reinterpret_cast<Rml::TextureHandle>(e);
+	}
+
+	std::optional<UiRenderer::Arriving> UiRenderer::QueueUpload(CookedTexture pixels)
+	{
+		// What Texture::CreateFromPixels makes (UNORM: the bytes are premultiplied as they are composed), without
+		// its upload, which submits and waits.
+		TextureDesc desc{};
+		desc.Dimension = TextureDimension::Texture2D;
+		desc.Format = PixelFormat::RGBA8_UNorm;
+		desc.Usage = TextureUsage::Sampled | TextureUsage::TransferDst;
+		desc.Width = pixels.Width;
+		desc.Height = pixels.Height;
+		desc.MipLevels = pixels.MipLevels();
+		desc.DebugName = "RmlImage";
+		Ref<Texture> texture = Texture::Create(desc);
+		if (!texture)
+		{
+			return std::nullopt;
+		}
+		auto recorded = std::make_shared<std::atomic<bool>>(false);
+		m_Uploads.push_back({texture, std::move(pixels), recorded});
+		return Arriving{texture, recorded};
 	}
 
 	void UiRenderer::ReleaseTexture(const Rml::TextureHandle texture)
@@ -447,6 +491,10 @@ namespace Snowstorm
 			Retire(*e->Saved);
 		}
 		Retire(e->Texture);
+		if (e->Uploading)
+		{
+			Retire(e->Uploading->Image); // its copy may be in a frame still on the GPU
+		}
 		delete e;
 	}
 
@@ -472,12 +520,29 @@ namespace Snowstorm
 
 	void UiRenderer::PumpDecodes()
 	{
-		int uploads = 0;
+		// Images whose copy an earlier frame recorded draw from this one. Their view is made only now, with the image
+		// already in its sampled layout, so making it submits nothing.
+		for (TextureEntry* e : m_Textures)
+		{
+			if (e->Uploading && e->Uploading->Recorded->load())
+			{
+				e->Texture = std::move(e->Uploading->Image);
+				e->Uploading.reset();
+				e->Bindless = e->Texture->GetDefaultView()->GetGlobalBindlessIndex();
+			}
+		}
+
+		size_t bytes = 0;
 		for (TextureEntry* e : m_Textures)
 		{
 			if (!e->Decoding || e->Decoding->wait_for(std::chrono::seconds(0)) != std::future_status::ready)
 			{
 				continue;
+			}
+			const size_t need = MipChainBytes(e->Dimensions);
+			if (bytes > 0 && bytes + need > kUploadBytesPerFrame)
+			{
+				break; // next frame
 			}
 			std::optional<CookedTexture> cooked = e->Decoding->get();
 			e->Decoding.reset();
@@ -486,22 +551,15 @@ namespace Snowstorm
 				SS_CORE_WARN("UiRenderer: could not decode '{}'", e->Source);
 				continue;
 			}
-			e->Texture = Texture::CreateFromPixels(*cooked, false, "RmlImage");
-			if (e->Texture)
-			{
-				e->Bindless = e->Texture->GetDefaultView()->GetGlobalBindlessIndex();
-			}
-			if (++uploads >= kUploadsPerFrame)
-			{
-				break;
-			}
+			bytes += need;
+			e->Uploading = QueueUpload(std::move(*cooked));
 		}
 	}
 
 	size_t UiRenderer::PendingTextures() const
 	{
 		return static_cast<size_t>(std::count_if(m_Textures.begin(), m_Textures.end(),
-		                                          [](const TextureEntry* e) { return e->Decoding.has_value(); }));
+		                                          [](const TextureEntry* e) { return e->Decoding.has_value() || e->Uploading.has_value(); }));
 	}
 
 	// ---- state
@@ -809,6 +867,10 @@ namespace Snowstorm
 				              return false;
 			              }
 			              Retire(e->Texture);
+			              if (e->Uploading)
+			              {
+				              Retire(e->Uploading->Image);
+			              }
 			              delete e;
 			              return true;
 		              });
@@ -1031,8 +1093,9 @@ namespace Snowstorm
 			d.DebugName = "Ui_Set1";
 			fr.Set = DescriptorSet::Create(layouts[kSetIndex], d);
 		}
-		// Grown by doubling, never shrunk. The slot's previous buffer may still be read by its last submission;
-		// dropping the Ref hands it to the backend's deferred release, as for any buffer.
+		// Grown by doubling, never shrunk. Dropping the slot's previous buffer destroys it at once, and the backend
+		// waits for the device to go idle first (VulkanBuffer's destructor), so growing is a stall: rare, which is
+		// why these only ever grow.
 		const auto grow = [](size_t have, const size_t need)
 		{
 			have = std::max(have, kInitialBytes);
@@ -1087,6 +1150,12 @@ namespace Snowstorm
 		fr.Set->SetSampler(kSamplerBinding, m_Sampler);
 		fr.Set->SetBuffer(kGradientsBinding, {.Buffer = fr.Gradients, .Offset = 0, .Range = 0});
 		fr.Set->Commit();
+
+		// The images decoded since the last upload pass. They draw from the next frame (PumpDecodes).
+		if (!m_Uploads.empty())
+		{
+			AddUploadPass(graph, fr);
+		}
 
 		// SS_UI_TRACE=1 logs the recording of each frame that saves a layer (a box-shadow bake), the first 40.
 		static const bool trace = std::getenv("SS_UI_TRACE") != nullptr;
@@ -1156,6 +1225,61 @@ namespace Snowstorm
 		}
 		m_SavedThisFrame = std::move(saved);
 		m_FrameReady = true;
+	}
+
+	void UiRenderer::AddUploadPass(RenderGraph& graph, FrameResources& fr)
+	{
+		struct Copy
+		{
+			Ref<Texture> Texture;
+			std::vector<uint64_t> Offsets;
+			std::shared_ptr<std::atomic<bool>> Recorded;
+		};
+		size_t total = 0;
+		for (const Upload& u : m_Uploads)
+		{
+			for (const std::vector<uint8_t>& level : u.Pixels.Levels)
+			{
+				total += level.size();
+			}
+		}
+		// The slot's own buffer: this slot's last frame has finished (Renderer::BeginFrame waited on its fence), so
+		// nothing still reads it. Sized for the per-frame budget from the start, so it grows only for an image larger
+		// than that, and growing is a stall (see EnsureFrameResources).
+		if (fr.StagingCapacity < total)
+		{
+			fr.StagingCapacity = std::max(total, kUploadBytesPerFrame);
+			fr.Staging = Buffer::Create(fr.StagingCapacity, BufferUsage::Storage, nullptr, true, "UiStaging");
+		}
+
+		std::vector<Copy> copies;
+		copies.reserve(m_Uploads.size());
+		uint64_t offset = 0; // RGBA8 levels are whole texels, so every offset stays a multiple of 4 as the copy needs
+		for (const Upload& u : m_Uploads)
+		{
+			Copy c{u.Texture, {}, u.Recorded};
+			c.Offsets.reserve(u.Pixels.Levels.size());
+			for (const std::vector<uint8_t>& level : u.Pixels.Levels)
+			{
+				fr.Staging->SetData(level.data(), level.size(), offset);
+				c.Offsets.push_back(offset);
+				offset += level.size();
+			}
+			copies.push_back(std::move(c));
+		}
+		m_Uploads.clear();
+
+		graph.AddPass({.Name = "UI upload",
+		               .IsCompute = true, // no target: copies only, recorded outside any render pass
+		               .Execute = [staging = fr.Staging, copies = std::move(copies)](CommandContext& ctx)
+		               {
+			               for (const Copy& c : copies)
+			               {
+				               ctx.CopyBufferToTexture(staging, c.Texture, c.Offsets);
+				               // Later frames are later in the queue, so the copy's barrier covers their reads.
+				               c.Recorded->store(true);
+			               }
+		               }});
 	}
 
 	void UiRenderer::RecordDraw(CommandContext& ctx, const FrameResources& fr, const DrawCommand& draw, const uint32_t flags,

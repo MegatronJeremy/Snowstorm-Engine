@@ -123,6 +123,15 @@ namespace Snowstorm
 		virtual void CopyTextureToBuffer(const Ref<Texture>& texture, const Ref<Buffer>& dst,
 		                                 uint32_t mipLevel = 0, uint32_t arrayLayer = 0) = 0;
 
+		// CPU->GPU upload recorded into the frame: fill every mip of layer 0 of `texture` from a host-visible
+		// buffer, level i tightly packed at levelOffsets[i] (one offset per mip, multiples of the texel size), and
+		// leave it in the shader-sampled layout. What Texture::SetMipData does, minus its wait: SetMipData submits
+		// on its own and blocks the calling thread until the copy is done, while this lands in the command buffer
+		// being recorded, ahead of whatever later in the frame samples the texture. The buffer must stay untouched
+		// until this frame's submission has finished. Outside a render pass, on the graphics queue.
+		virtual void CopyBufferToTexture(const Ref<Buffer>& src, const Ref<Texture>& texture,
+		                                 const std::vector<uint64_t>& levelOffsets) = 0;
+
 		// Reset the internal state between passes if the backend needs it
 		virtual void ResetState() = 0;
 

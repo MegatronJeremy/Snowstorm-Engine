@@ -771,6 +771,38 @@ namespace Snowstorm
 		TransitionLayout(texture, prev);
 	}
 
+	void VulkanCommandContext::CopyBufferToTexture(const Ref<Buffer>& src, const Ref<Texture>& texture,
+	                                               const std::vector<uint64_t>& levelOffsets)
+	{
+		SS_CORE_ASSERT(src && texture, "CopyBufferToTexture: null buffer or texture");
+		SS_CORE_ASSERT(!m_IsRendering, "CopyBufferToTexture: a copy cannot be recorded inside a render pass");
+		const auto vkTex = std::static_pointer_cast<VulkanTexture>(texture);
+		const auto vkBuf = std::static_pointer_cast<VulkanBuffer>(src);
+		const TextureDesc& d = texture->GetDesc();
+		SS_CORE_ASSERT(levelOffsets.size() == d.MipLevels, "CopyBufferToTexture: one offset per mip level");
+
+		// Whatever the image held is overwritten whole, so its old contents need not survive the transition
+		// (UNDEFINED for a new image: no prior work to wait on).
+		TransitionLayout(texture, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+		std::vector<VkBufferImageCopy> regions(d.MipLevels);
+		for (uint32_t i = 0; i < d.MipLevels; ++i)
+		{
+			VkBufferImageCopy& r = regions[i];
+			r.bufferOffset = levelOffsets[i];
+			r.bufferRowLength = 0;   // tightly packed
+			r.bufferImageHeight = 0; // tightly packed
+			r.imageSubresource = {vkTex->GetAspectMask(), i, 0, 1};
+			r.imageOffset = {0, 0, 0};
+			r.imageExtent = {std::max(1u, d.Width >> i), std::max(1u, d.Height >> i), 1};
+		}
+		vkCmdCopyBufferToImage(m_CommandBuffer, vkBuf->GetHandle(), vkTex->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		                       static_cast<uint32_t>(regions.size()), regions.data());
+
+		// Transfer write -> shader read, for every sampling recorded after this in the frame.
+		TransitionLayout(texture, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	}
+
 	void VulkanCommandContext::ResetState()
 	{
 		m_IsRendering = false;
