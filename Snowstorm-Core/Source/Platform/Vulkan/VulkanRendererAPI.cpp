@@ -14,6 +14,7 @@
 #include "Platform/Vulkan/VulkanTexture.hpp"
 #include "Platform/Vulkan/VulkanCommandContext.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include "Platform/Vulkan/VulkanContext.hpp"
 #include "Platform/Windows/WindowsWindow.hpp"
@@ -700,7 +701,7 @@ namespace Snowstorm
 		init_info.Queue = context.GetGraphicsQueue();
 		init_info.DescriptorPool = s_ImGuiPool;
 		init_info.MinImageCount = 2;
-		init_info.ImageCount = 3;
+		init_info.ImageCount = std::max(init_info.MinImageCount, static_cast<uint32_t>(context.GetSwapchainImages().size()));
 		init_info.UseDynamicRendering = true;
 
 		init_info.CheckVkResultFn = [](const VkResult result)
