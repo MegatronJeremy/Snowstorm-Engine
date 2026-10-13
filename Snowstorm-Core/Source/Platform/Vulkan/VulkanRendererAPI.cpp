@@ -2,9 +2,11 @@
 
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
+#include "imgui_internal.h"
 #include "VulkanBindlessManager.hpp"
 #include "VulkanOmmBaker.hpp"
 
+#include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
@@ -757,13 +759,16 @@ namespace Snowstorm
 		viewport.maxDepth = 1.0f;
 		vkCmdSetViewport(cmd, 0, 1, &viewport);
 
-		// Only call Render() if the frame hasn't been finalized yet.
-		// If the user hasn't called ImGui::NewFrame() at all, this will still assert,
-		// which is GOOD because it highlights the logic error.
-		if (ImGui::GetDrawData() == nullptr)
+		// GetDrawData() keeps returning the previous frame's data until the next NewFrame, so it cannot tell
+		// "rendered this frame" from "stale". WithinFrameScope is true exactly between NewFrame and Render.
+		// A minimized window skips NewFrame on purpose (ImGuiService), so that case is not an error.
+		if (!ImGui::GetCurrentContext()->WithinFrameScope)
 		{
-			ImGui::Render();
+			const Window& window = Application::Get().GetWindow();
+			SS_CORE_VERIFY(window.GetWidth() == 0 || window.GetHeight() == 0, "RenderImGuiDrawData called without ImGui::NewFrame this frame; skipping ImGui draw");
+			return;
 		}
+		ImGui::Render();
 
 		ImDrawData* drawData = ImGui::GetDrawData();
 		if (drawData && drawData->CmdListsCount > 0)
