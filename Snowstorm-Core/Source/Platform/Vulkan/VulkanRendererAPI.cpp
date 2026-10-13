@@ -2,9 +2,11 @@
 
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
+#include "imgui_internal.h"
 #include "VulkanBindlessManager.hpp"
 #include "VulkanOmmBaker.hpp"
 
+#include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
@@ -12,6 +14,7 @@
 #include "Platform/Vulkan/VulkanTexture.hpp"
 #include "Platform/Vulkan/VulkanCommandContext.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include "Platform/Vulkan/VulkanContext.hpp"
 #include "Platform/Windows/WindowsWindow.hpp"
@@ -698,7 +701,7 @@ namespace Snowstorm
 		init_info.Queue = context.GetGraphicsQueue();
 		init_info.DescriptorPool = s_ImGuiPool;
 		init_info.MinImageCount = 2;
-		init_info.ImageCount = 3;
+		init_info.ImageCount = std::max(init_info.MinImageCount, static_cast<uint32_t>(context.GetSwapchainImages().size()));
 		init_info.UseDynamicRendering = true;
 
 		init_info.CheckVkResultFn = [](const VkResult result)
@@ -757,13 +760,16 @@ namespace Snowstorm
 		viewport.maxDepth = 1.0f;
 		vkCmdSetViewport(cmd, 0, 1, &viewport);
 
-		// Only call Render() if the frame hasn't been finalized yet.
-		// If the user hasn't called ImGui::NewFrame() at all, this will still assert,
-		// which is GOOD because it highlights the logic error.
-		if (ImGui::GetDrawData() == nullptr)
+		// GetDrawData() keeps returning the previous frame's data until the next NewFrame, so it cannot tell
+		// "rendered this frame" from "stale". WithinFrameScope is true exactly between NewFrame and Render.
+		// A minimized window skips NewFrame on purpose (ImGuiService), so that case is not an error.
+		if (!ImGui::GetCurrentContext()->WithinFrameScope)
 		{
-			ImGui::Render();
+			const Window& window = Application::Get().GetWindow();
+			SS_CORE_VERIFY(window.GetWidth() == 0 || window.GetHeight() == 0, "RenderImGuiDrawData called without ImGui::NewFrame this frame; skipping ImGui draw");
+			return;
 		}
+		ImGui::Render();
 
 		ImDrawData* drawData = ImGui::GetDrawData();
 		if (drawData && drawData->CmdListsCount > 0)
