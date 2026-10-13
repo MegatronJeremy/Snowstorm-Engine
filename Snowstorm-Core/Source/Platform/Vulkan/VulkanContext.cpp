@@ -867,7 +867,25 @@ namespace Snowstorm
 		{
 			return false;
 		}
-		m_SwapchainExtent = caps.currentExtent;
+
+		// 0xFFFFFFFF means the surface size is set by the swapchain: take the framebuffer size, clamped to the
+		// supported range.
+		if (caps.currentExtent.width == 0xFFFFFFFFu)
+		{
+			int fbWidth = 0;
+			int fbHeight = 0;
+			glfwGetFramebufferSize(static_cast<GLFWwindow*>(m_WindowHandle), &fbWidth, &fbHeight);
+			if (fbWidth <= 0 || fbHeight <= 0)
+			{
+				return false;
+			}
+			m_SwapchainExtent.width = std::clamp(static_cast<uint32_t>(fbWidth), caps.minImageExtent.width, caps.maxImageExtent.width);
+			m_SwapchainExtent.height = std::clamp(static_cast<uint32_t>(fbHeight), caps.minImageExtent.height, caps.maxImageExtent.height);
+		}
+		else
+		{
+			m_SwapchainExtent = caps.currentExtent;
+		}
 
 		uint32_t formatCount = 0;
 		vkGetPhysicalDeviceSurfaceFormatsKHR(m_PhysicalDevice, m_Surface, &formatCount, nullptr);
