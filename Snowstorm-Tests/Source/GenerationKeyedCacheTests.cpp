@@ -12,7 +12,8 @@ TEST_CASE("GenerationKeyedCache keeps entries while the generation is unchanged"
 	cache.Acquire(1, 0).push_back(7);
 
 	int evictions = 0;
-	auto& again = cache.Acquire(1, 0, [&](std::vector<int>&) { ++evictions; });
+	auto& again = cache.Acquire(1, 0, [&](std::vector<int>&)
+	                            { ++evictions; });
 	REQUIRE(evictions == 0);
 	REQUIRE(again == std::vector<int>{7});
 }
@@ -24,7 +25,8 @@ TEST_CASE("GenerationKeyedCache evicts and resets on a generation change", "[ren
 	cache.Acquire(2, 0).push_back(9);
 
 	std::vector<int> seen;
-	auto& fresh = cache.Acquire(1, 1, [&](std::vector<int>& old) { seen = old; });
+	auto& fresh = cache.Acquire(1, 1, [&](std::vector<int>& old)
+	                            { seen = old; });
 	REQUIRE(seen == std::vector<int>{7});
 	REQUIRE(fresh.empty());
 
