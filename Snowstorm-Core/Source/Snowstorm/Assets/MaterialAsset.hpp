@@ -42,5 +42,7 @@ namespace Snowstorm
 		// masking (no blending/sorting); used by foliage/fence textures. AlphaMask off = fully opaque.
 		bool AlphaMask = false;
 		float AlphaCutoff = 0.5f; // glTF default
+
+		[[nodiscard]] bool operator==(const MaterialAsset&) const = default;
 	};
 }
