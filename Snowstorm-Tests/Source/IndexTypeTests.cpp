@@ -10,11 +10,11 @@ TEST_CASE("IndexTypeSize matches the element width", "[render]")
 	REQUIRE(IndexTypeSize(IndexType::UInt32) == 4);
 }
 
-TEST_CASE("SelectIndexType switches to 32-bit past 65536 vertices", "[render]")
+TEST_CASE("SelectIndexType switches to 32-bit at 65536 vertices", "[render]")
 {
 	REQUIRE(SelectIndexType(3) == IndexType::UInt16);
-	REQUIRE(SelectIndexType(65536) == IndexType::UInt16);
-	REQUIRE(SelectIndexType(65537) == IndexType::UInt32);
+	REQUIRE(SelectIndexType(65535) == IndexType::UInt16);
+	REQUIRE(SelectIndexType(65536) == IndexType::UInt32);
 }
 
 TEST_CASE("PackIndices emits little-endian elements of the requested width", "[render]")
