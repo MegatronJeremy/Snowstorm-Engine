@@ -274,6 +274,7 @@ namespace Snowstorm
 		// until AFTER a successful acquire — resetting here and then bailing on OUT_OF_DATE would
 		// leave the fence unsignaled forever, hanging the next wait on this slot.)
 		vkWaitForFences(device, 1, &m_InFlightFences[m_CurrentFrameIndex], VK_TRUE, UINT64_MAX);
+		VulkanBindlessManager::Get().AdvanceFrame();
 
 		// 2. Acquire an image from the swapchain. On OUT_OF_DATE (surface changed, e.g. resize) the
 		// swapchain is unusable: rebuild it and retry. SUBOPTIMAL still works for this frame; we

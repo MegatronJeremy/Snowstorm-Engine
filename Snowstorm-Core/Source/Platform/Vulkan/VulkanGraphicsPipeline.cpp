@@ -631,7 +631,7 @@ namespace Snowstorm
 			pipeCI.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
 		}
 
-		res = vkCreateGraphicsPipelines(m_Device, VK_NULL_HANDLE, 1, &pipeCI, nullptr, &m_Pipeline);
+		res = vkCreateGraphicsPipelines(m_Device, VulkanContext::Get().GetPipelineCache(), 1, &pipeCI, nullptr, &m_Pipeline);
 		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to create Vulkan graphics pipeline");
 
 		vkDestroyShaderModule(m_Device, fragModule, nullptr);
@@ -668,9 +668,8 @@ namespace Snowstorm
 		}
 
 		// The new SPIR-V might declare a different binding interface. Reflect it first (cheap) and compare
-		// against the signature we built with: if it changed, the renderer's cached descriptor sets (keyed by
-		// this pipeline pointer, allocated from the OLD set layout) would be incompatible. Rebuilding anyway
-		// would corrupt bindings, so refuse and keep the working pipeline — a restart picks up the new layout.
+		// against the signature we built with: if it changed, the layout generation is bumped so the renderer
+		// evicts descriptor sets allocated from the OLD set layout.
 		const std::string prevSignature = m_LayoutSignature;
 
 		// Drain all in-flight frames once before touching GPU objects any command buffer might reference.
@@ -680,10 +679,9 @@ namespace Snowstorm
 
 		if (m_LayoutSignature != prevSignature)
 		{
-			SS_CORE_WARN("Shader hot-reload for '{}' changed the descriptor/binding layout. The live pipeline "
-			             "was rebuilt, but cached descriptor sets may be stale — restart the app if bindings "
-			             "misbehave. (Layout hot-swap is not yet supported.)",
-			             m_Desc.Shader->GetPath());
+			++m_LayoutGeneration;
+			SS_CORE_INFO("Hot-reloaded pipeline '{}' with a changed binding layout; cached descriptor sets evicted.",
+			             m_Desc.DebugName);
 		}
 		else
 		{

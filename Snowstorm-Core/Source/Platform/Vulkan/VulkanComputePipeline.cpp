@@ -218,7 +218,7 @@ namespace Snowstorm
 			pipeCI.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
 		}
 
-		SS_CORE_VERIFY(vkCreateComputePipelines(m_Device, VK_NULL_HANDLE, 1, &pipeCI, nullptr, &m_Pipeline) == VK_SUCCESS,
+		SS_CORE_VERIFY(vkCreateComputePipelines(m_Device, VulkanContext::Get().GetPipelineCache(), 1, &pipeCI, nullptr, &m_Pipeline) == VK_SUCCESS,
 		               "Failed to create Vulkan compute pipeline");
 
 		vkDestroyShaderModule(m_Device, module, nullptr);
@@ -258,9 +258,9 @@ namespace Snowstorm
 
 		if (m_LayoutSignature != prevSignature)
 		{
-			SS_CORE_WARN("Compute shader hot-reload for '{}' changed the descriptor/binding layout; cached "
-			             "descriptor sets may be stale — restart if bindings misbehave.",
-			             m_Desc.Shader->GetPath());
+			++m_LayoutGeneration;
+			SS_CORE_INFO("Hot-reloaded pipeline '{}' with a changed binding layout; cached descriptor sets evicted.",
+			             m_Desc.DebugName);
 		}
 		else
 		{
