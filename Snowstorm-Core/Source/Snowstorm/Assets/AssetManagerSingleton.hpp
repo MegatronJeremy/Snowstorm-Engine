@@ -58,6 +58,12 @@ namespace Snowstorm
 		// Call once per frame (see AssetLoadService). Does GPU work, so MUST run on the main/render thread.
 		void ProcessCompletedLoads();
 
+		// Scene-transition sweep (#77): releases every cached mesh and shader that no component, pipeline or
+		// in-flight job references, in this cache and in MeshLibrary/ShaderLibrary. GPU buffers are freed
+		// after frames in flight have retired. Call after the old scene's entities are gone and before the
+		// next scene loads. Returns meshes + shaders released.
+		size_t EvictUnreferenced();
+
 		// Progress for a loading screen: assets whose async load hasn't finished yet (0 = everything
 		// resident). PendingLoadTotal is the high-water mark since the queue was last empty, so a bar can
 		// show loaded/total.

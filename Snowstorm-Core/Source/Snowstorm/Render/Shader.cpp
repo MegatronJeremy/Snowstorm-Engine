@@ -225,6 +225,20 @@ namespace Snowstorm
 		return m_Shaders.contains(filepath);
 	}
 
+	size_t ShaderLibrary::EvictUnreferenced(const uint32_t retireDelay, const std::unordered_set<const Shader*>& cacheHeld,
+	                                        std::vector<const Shader*>& evicted)
+	{
+		return Snowstorm::EvictUnreferenced(
+		    m_Shaders, m_Retired, retireDelay,
+		    [this, &evicted](const std::string& key, const Ref<Shader>& shader)
+		    {
+			    m_LastModifications.erase(key);
+			    evicted.push_back(shader.get());
+		    },
+		    [&cacheHeld](const Ref<Shader>& shader) -> size_t
+		    { return cacheHeld.contains(shader.get()) ? 1 : 0; });
+	}
+
 	void ShaderLibrary::ReloadAll()
 	{
 		for (auto& [key, lastModified] : m_LastModifications)

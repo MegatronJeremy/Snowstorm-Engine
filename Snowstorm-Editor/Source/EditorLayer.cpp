@@ -488,6 +488,10 @@ namespace Snowstorm
 		// world we're about to replace); see EditorLayer::RegisterEditorSystems.
 		m_ActiveWorld->ClearSceneEntities();
 
+		// The device is idle and the old scene's components are gone: drop the meshes and shaders only it
+		// used instead of leaking them for the life of the app (#77).
+		m_ActiveWorld->GetSingleton<AssetManagerSingleton>().EvictUnreferenced();
+
 		if (!SceneSerializer::Deserialize(*m_ActiveWorld, scenePath))
 		{
 			SS_CORE_WARN("Failed to deserialize scene '{}'.", scenePath);
