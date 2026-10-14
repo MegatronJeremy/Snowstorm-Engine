@@ -93,8 +93,16 @@ namespace Snowstorm
 		[[nodiscard]] VkImageView GetImageView() const { return m_ImageView; }
 		[[nodiscard]] VkImageAspectFlags GetAspectMask() const { return m_AspectMask; }
 
+		// The view owns the bindless slot it registered and retires it on destruction. Async texture loading
+		// repoints a placeholder's slot at the real image: DisownBindlessSlot() on the placeholder and
+		// AdoptBindlessSlot() on the real view move that slot's lifetime with it. Adopting first retires the
+		// slot this view registered for itself. Main thread.
+		void AdoptBindlessSlot(uint32_t slot);
+		[[nodiscard]] uint32_t DisownBindlessSlot();
+
 	private:
 		void CreateImageView();
+		void RetireOwnedBindlessSlot();
 		void DestroyImageView();
 
 	private:
@@ -104,6 +112,9 @@ namespace Snowstorm
 		VkImageView m_ImageView = VK_NULL_HANDLE;
 		VkImageAspectFlags m_AspectMask = 0;
 		VkFormat m_VkFormat = VK_FORMAT_UNDEFINED;
+
+		uint32_t m_OwnedBindlessSlot = ~0u; // ~0u: owns none
+		bool m_OwnedSlotIsCube = false;
 
 		mutable Ref<DescriptorSet> m_UIDescriptorSet;
 	};
