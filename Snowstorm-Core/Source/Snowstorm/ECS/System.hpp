@@ -117,8 +117,11 @@ namespace Snowstorm
 			auto view = reg.view<typename Access::Component...>();
 
 			// Snapshot the matching entities into a contiguous array so ParallelFor can slice by index
-			// (an EnTT view isn't random-access across multiple component pools). Cheap vs. the per-entity work.
-			std::vector<entt::entity> entities(view.begin(), view.end());
+			// (an EnTT view isn't random-access across multiple component pools). The buffer is a per-system
+			// scratch that keeps its capacity across calls, so steady state allocates nothing. The body must
+			// not re-enter ParallelForEach on the same system (documented above), which would alias it.
+			std::vector<entt::entity>& entities = m_ParallelScratch;
+			entities.assign(view.begin(), view.end());
 			const size_t count = entities.size();
 			if (count == 0)
 			{
@@ -138,7 +141,8 @@ namespace Snowstorm
 				}
 			};
 
-			if (!CVars::EcsParallel.Get() || !Application::Get().GetServiceManager().ServiceRegistered<JobSystem>())
+			if (!CVars::EcsParallel.Get() || !Application::Exists() ||
+			    !Application::Get().GetServiceManager().ServiceRegistered<JobSystem>())
 			{
 				runRange(0, count); // serial path (CVar off, or no pool — e.g. tests/headless)
 			}
@@ -192,6 +196,10 @@ namespace Snowstorm
 
 		WorldRef m_World;
 
+	protected:
+		/// Capacity of the reused ParallelForEach snapshot buffer (for tests and diagnostics).
+		[[nodiscard]] size_t ParallelScratchCapacity() const { return m_ParallelScratch.capacity(); }
+
 	private:
 		// Resolve one component ref with the constness its access tag declares: Read<T> -> const T&,
 		// Write<T> -> T&. Always goes through the non-const registry get<T> (the view's is const-only).
@@ -207,6 +215,8 @@ namespace Snowstorm
 				return std::as_const(reg.template get<typename A::Component>(e));
 			}
 		}
+
+		mutable std::vector<entt::entity> m_ParallelScratch;
 
 		// Post-barrier: mark every Write<>-declared component changed on the iterated entities, so
 		// ChangedView<T> keeps working for the parallel loop. Single-threaded (touches the shared tracking
