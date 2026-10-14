@@ -33,13 +33,17 @@ find_package(spdlog CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 find_package(Vulkan REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
-find_package(gli CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
 find_package(unofficial-spirv-reflect CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
 # Header-only, so there is no package config and no library to link: just an include path.
 find_path(MINIAUDIO_INCLUDE_DIRS "miniaudio.h" REQUIRED)
+
+# BC1/BC3 encoder for the texture cook. Chosen over BC7 (bc7enc/ISPC) because squish is in vcpkg
+# already and BC1/BC3 need no feature beyond textureCompressionBC, which every desktop GPU has. BC7
+# would look better at the same 8 bpp as BC3; it is the upgrade if quality proves insufficient.
+find_package(unofficial-libsquish CONFIG REQUIRED)
 find_package(Tracy CONFIG REQUIRED)
 
 # Tracy is only compiled in when TRACY_ENABLE is defined; otherwise every Tracy macro is a no-op (zero
@@ -89,8 +93,8 @@ target_link_libraries(Snowstorm-Core PUBLIC
     volk::volk 
     volk::volk_headers
     GPUOpen::VulkanMemoryAllocator
-    gli
     unofficial::spirv-reflect
     nlohmann_json::nlohmann_json
     Tracy::TracyClient
+    unofficial::libsquish::squish
 )

@@ -4,6 +4,7 @@
 
 #include <glm/vec3.hpp>
 
+#include <cstdint>
 #include <string>
 
 // Central declaration of engine-wide console variables. Defined in EngineCVars.cpp so there is a
@@ -15,6 +16,12 @@ namespace Snowstorm::CVars
 	// consuming Snowstorm from its OWN repo sets this, because there the exe is not under the engine
 	// tree. See Utility/EnginePaths.hpp.
 	extern CVar<std::string> EngineRoot;
+
+	// Force every asset in the registry through its cook, then exit. See GameLayer.
+	extern CVar<bool> CookAssets;
+
+	// Block-compress cooked textures. See TextureCache.
+	extern CVar<bool> CompressTextures;
 	// Upper bound on every denoiser's a-trous pass count, and the size of GIDenoisePass's per-frame
 	// descriptor/uniform pool, which is why it lives here rather than as a literal in either: the pool
 	// must have a slot per pass, and when the two numbers drifted apart the extra passes asserted at
@@ -341,6 +348,21 @@ namespace Snowstorm::CVars
 	// render.scale clamped to the supported range [0.25, 1.0]. Use this everywhere the value is consumed
 	// so a hand-edited config / CLI can't request a degenerate (<=0) or >native scale.
 	[[nodiscard]] float ClampedRenderScale();
+
+	// Force the render resolution instead of following the window (Runtime) or the viewport panel
+	// (Editor). 0 on either axis means follow, which is the default.
+	//
+	// This exists because a benchmark result is only comparable against another one taken at the same
+	// resolution, and neither host pins it: the Editor renders at whatever size the local ImGui dock
+	// layout gives its viewport panel, so a committed perf baseline silently stops matching when someone
+	// rearranges their editor. The render target is offscreen, so forcing a size does not require a
+	// window that big; the panel just displays the result scaled.
+	extern CVar<int> ResolutionWidth;
+	extern CVar<int> ResolutionHeight;
+
+	// Apply the override in place. Leaves w/h untouched unless BOTH axes are set, since half an override
+	// would silently change the aspect ratio.
+	void ApplyForcedResolution(uint32_t& w, uint32_t& h);
 
 	// Split-screen upscaler-vs-ground-truth comparison (#43). When on, the scene is rendered twice (low-res
 	// upscaled + full-res native) and shown split at compare.split; FXAA is forced off both sides so the

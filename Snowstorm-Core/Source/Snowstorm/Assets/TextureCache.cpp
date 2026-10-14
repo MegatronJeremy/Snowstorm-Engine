@@ -1,5 +1,7 @@
 #include "TextureCache.hpp"
 
+#include "Snowstorm/Assets/AssetFileTime.hpp"
+
 #include "Snowstorm/Utility/EnginePaths.hpp"
 
 #include "Snowstorm/Core/Log.hpp"
@@ -13,13 +15,16 @@ namespace Snowstorm
 		constexpr uint32_t kMagic = 0x58455453; // "STEX"
 		// v2: stores the full precomputed mip chain (v1 stored only the base level). Bumping forces a
 		// re-cook, which is fine — .sstex is a derived cache.
-		constexpr uint32_t kVersion = 2;
+		constexpr uint32_t kVersion = 5; // +BC5 (role-driven encoding)
 
 		struct Header
 		{
 			uint32_t Magic = kMagic;
 			uint32_t Version = kVersion;
 			uint64_t SourceWriteTime = 0;
+			uint64_t SourceHash = 0;
+			uint32_t Encoding = 0; // CookedTexture::Encoding
+			uint32_t Pad = 0;      // keep the header 8-byte aligned
 			uint32_t Width = 0;
 			uint32_t Height = 0;
 			uint32_t MipLevels = 0;
@@ -34,7 +39,7 @@ namespace Snowstorm
 		return p;
 	}
 
-	std::optional<CookedTexture> TextureCacheIO::Load(const AssetHandle handle, const uint64_t sourceWriteTime)
+	std::optional<CookedTexture> TextureCacheIO::Load(const AssetHandle handle, const std::filesystem::path& sourcePath)
 	{
 		const auto path = GetCachePath(handle);
 
@@ -47,7 +52,7 @@ namespace Snowstorm
 		if (!in || h.Magic != kMagic || h.Version != kVersion)
 			return std::nullopt;
 
-		if (h.SourceWriteTime != sourceWriteTime) // source changed -> re-decode
+		if (!SourceIsUnchanged(sourcePath, h.SourceWriteTime, h.SourceHash)) // source changed -> re-decode
 			return std::nullopt;
 
 		if (h.Width == 0 || h.Height == 0 || h.MipLevels == 0)
@@ -57,6 +62,8 @@ namespace Snowstorm
 		tex.Width = h.Width;
 		tex.Height = h.Height;
 		tex.Levels.resize(h.MipLevels);
+
+		tex.Format = static_cast<CookedTexture::Encoding>(h.Encoding);
 
 		// Each level is length-prefixed (u64) so a malformed file can't be mistaken for valid data.
 		for (uint32_t i = 0; i < h.MipLevels; ++i)
@@ -78,7 +85,7 @@ namespace Snowstorm
 		return tex;
 	}
 
-	bool TextureCacheIO::Save(const AssetHandle handle, const uint64_t sourceWriteTime, const CookedTexture& tex)
+	bool TextureCacheIO::Save(const AssetHandle handle, const std::filesystem::path& sourcePath, const CookedTexture& tex)
 	{
 		if (tex.Levels.empty() || tex.Width == 0 || tex.Height == 0)
 			return false;
@@ -88,10 +95,12 @@ namespace Snowstorm
 		std::filesystem::create_directories(path.parent_path(), ec);
 
 		Header h{};
-		h.SourceWriteTime = sourceWriteTime;
+		h.SourceWriteTime = GetFileWriteTimeU64(sourcePath);
+		h.SourceHash = HashFileContents(sourcePath);
 		h.Width = tex.Width;
 		h.Height = tex.Height;
 		h.MipLevels = tex.MipLevels();
+		h.Encoding = static_cast<uint32_t>(tex.Format);
 
 		const auto tmp = path.string() + ".tmp";
 		{

@@ -25,7 +25,10 @@ namespace Snowstorm
 			{
 				return AssetType::Mesh;
 			}
-			if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga" || ext == ".dds" || ext == ".bmp")
+			// What stb_image decodes. .dds is deliberately absent: nothing here decodes a DDS container, so
+			// advertising it as importable registered an asset whose every load then failed, and a rescan
+			// re-registered it after each manual cleanup.
+			if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga" || ext == ".bmp")
 			{
 				return AssetType::Texture;
 			}
