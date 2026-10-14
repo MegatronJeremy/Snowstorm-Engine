@@ -558,6 +558,36 @@ namespace Snowstorm
 		// SS_CORE_INFO("DESTROYING ImageView: {0}", m_Desc.DebugName.c_str());
 
 		DestroyImageView();
+		RetireOwnedBindlessSlot();
+	}
+
+	void VulkanTextureView::RetireOwnedBindlessSlot()
+	{
+		// Slot 0 is the overflow/"no texture" fallback and is shared, never recycled.
+		if (m_OwnedBindlessSlot != ~0u && m_OwnedBindlessSlot != 0)
+		{
+			auto& bindless = VulkanBindlessManager::Get();
+			if (m_OwnedSlotIsCube)
+				bindless.UnregisterCube(m_OwnedBindlessSlot);
+			else
+				bindless.UnregisterTexture(m_OwnedBindlessSlot);
+		}
+		m_OwnedBindlessSlot = ~0u;
+	}
+
+	void VulkanTextureView::AdoptBindlessSlot(const uint32_t slot)
+	{
+		RetireOwnedBindlessSlot();
+		m_OwnedBindlessSlot = slot;
+		m_OwnedSlotIsCube = false;
+		SetGlobalBindlessIndex(slot);
+	}
+
+	uint32_t VulkanTextureView::DisownBindlessSlot()
+	{
+		const uint32_t slot = m_OwnedBindlessSlot;
+		m_OwnedBindlessSlot = ~0u;
+		return slot;
 	}
 
 	void VulkanTextureView::CreateImageView()
@@ -624,9 +654,10 @@ namespace Snowstorm
 		if (HasUsage(vkTex->GetDesc().Usage, TextureUsage::Sampled))
 		{
 			auto& bindless = VulkanBindlessManager::Get();
-			SetGlobalBindlessIndex(m_Desc.Dimension == TextureDimension::TextureCube
-			                           ? bindless.RegisterCube(m_ImageView)
-			                           : bindless.RegisterTexture(m_ImageView));
+			m_OwnedSlotIsCube = m_Desc.Dimension == TextureDimension::TextureCube;
+			m_OwnedBindlessSlot = m_OwnedSlotIsCube ? bindless.RegisterCube(m_ImageView)
+			                                        : bindless.RegisterTexture(m_ImageView);
+			SetGlobalBindlessIndex(m_OwnedBindlessSlot);
 		}
 		else
 		{

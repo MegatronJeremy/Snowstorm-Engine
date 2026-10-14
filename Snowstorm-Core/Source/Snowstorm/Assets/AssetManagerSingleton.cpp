@@ -607,11 +607,19 @@ namespace Snowstorm
 			const auto vkView = std::static_pointer_cast<VulkanTextureView>(realView);
 			VulkanBindlessManager::Get().WriteTexture(done.Slot, vkView->GetImageView());
 
-			// realView auto-registered its own slot at creation, but materials reference `done.Slot` (the
-			// placeholder's), which we just repointed to this image. Override the view's reported index to
-			// done.Slot so any later GetGlobalBindlessIndex() read is consistent with what materials sample.
-			// (The view's own incidental slot is leaked until bindless slot recycling exists — bounded, see
-			// the 10k budget; #follow-up.)
+			// Materials reference `done.Slot` (the placeholder's), which we just repointed to this image. Move
+			// the slot's ownership from the placeholder view to the real view, which also retires the real
+			// view's own incidental slot. If the placeholder is no longer cached, adopt nothing: the slot
+			// then stays with the placeholder and is retired when it dies.
+			auto& viewCache = done.Srgb ? m_TextureViewCache : m_TextureViewCacheLinear;
+			if (const auto cached = viewCache.find(done.Handle.Value()); cached != viewCache.end())
+			{
+				const auto placeholderView = std::static_pointer_cast<VulkanTextureView>(cached->second);
+				if (placeholderView->GetGlobalBindlessIndex() == done.Slot && placeholderView->DisownBindlessSlot() == done.Slot)
+				{
+					vkView->AdoptBindlessSlot(done.Slot);
+				}
+			}
 			realView->SetGlobalBindlessIndex(done.Slot);
 
 			m_ResidentTextures[done.Key] = real;
