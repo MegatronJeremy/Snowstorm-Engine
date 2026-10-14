@@ -12,7 +12,8 @@ namespace
 {
 	using Cache = std::unordered_map<std::string, std::shared_ptr<int>>;
 	constexpr auto kNoop = [](const std::string&, const std::shared_ptr<int>&) {};
-	constexpr auto kNoExtra = [](const std::shared_ptr<int>&) -> size_t { return 0; };
+	constexpr auto kNoExtra = [](const std::shared_ptr<int>&) -> size_t
+	{ return 0; };
 }
 
 TEST_CASE("eviction drops only entries nobody else references", "[eviction]")
@@ -53,7 +54,8 @@ TEST_CASE("eviction reports each removed key and a second pass is a no-op", "[ev
 	RetireQueue<std::shared_ptr<int>> retired;
 	size_t seen = 0;
 
-	REQUIRE(EvictUnreferenced(cache, retired, 1, [&](const std::string&, const std::shared_ptr<int>&) { ++seen; }, kNoExtra) == 2);
+	REQUIRE(EvictUnreferenced(cache, retired, 1, [&](const std::string&, const std::shared_ptr<int>&)
+	                          { ++seen; }, kNoExtra) == 2);
 	REQUIRE(seen == 2);
 	REQUIRE(EvictUnreferenced(cache, retired, 1, kNoop, kNoExtra) == 0);
 }
@@ -66,7 +68,8 @@ TEST_CASE("a reference held by a second cache does not keep an entry alive", "[e
 	other["a"] = cache["a"];
 	RetireQueue<std::shared_ptr<int>> retired;
 
-	const auto oneExtra = [](const std::shared_ptr<int>&) -> size_t { return 1; };
+	const auto oneExtra = [](const std::shared_ptr<int>&) -> size_t
+	{ return 1; };
 	REQUIRE(EvictUnreferenced(cache, retired, 1, kNoop, oneExtra) == 1);
 	REQUIRE(other["a"].use_count() == 2); // second cache + retire queue
 }
