@@ -26,6 +26,8 @@
 #include "Snowstorm/Components/MaterialComponent.hpp"
 #include "Snowstorm/Components/VisibilityComponents.hpp"
 
+#include <unordered_set>
+
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
@@ -497,8 +499,63 @@ namespace Snowstorm
 		return nullptr;
 	}
 
+	size_t AssetManagerSingleton::EvictUnreferenced()
+	{
+		auto& services = Application::Get().GetServiceManager();
+		// A buffer is last read by a frame submitted before the sweep, so it must outlive the frames in
+		// flight; the +1 covers the frame being recorded.
+		const uint32_t retireDelay = Renderer::GetFramesInFlight() + 1;
+		size_t released = 0;
+
+		if (services.ServiceRegistered<MeshLibrary>())
+		{
+			std::unordered_set<const Mesh*> held;
+			for (const auto& [handle, mesh] : m_MeshCache)
+			{
+				held.insert(mesh.get());
+			}
+			std::vector<const Mesh*> evicted;
+			released += services.GetService<MeshLibrary>().EvictUnreferenced(retireDelay, held, evicted);
+			const std::unordered_set<const Mesh*> gone(evicted.begin(), evicted.end());
+			std::erase_if(m_MeshCache, [&gone](const auto& entry)
+			              { return gone.contains(entry.second.get()); });
+		}
+
+		if (services.ServiceRegistered<ShaderLibrary>())
+		{
+			std::unordered_set<const Shader*> held;
+			for (const auto& [handle, shader] : m_ShaderCache)
+			{
+				held.insert(shader.get());
+			}
+			std::vector<const Shader*> evicted;
+			released += services.GetService<ShaderLibrary>().EvictUnreferenced(retireDelay, held, evicted);
+			const std::unordered_set<const Shader*> gone(evicted.begin(), evicted.end());
+			std::erase_if(m_ShaderCache, [&gone](const auto& entry)
+			              { return gone.contains(entry.second.get()); });
+		}
+
+		if (released > 0)
+		{
+			SS_CORE_INFO("Scene transition: released {} unreferenced mesh/shader cache entries.", released);
+		}
+		return released;
+	}
+
 	void AssetManagerSingleton::ProcessCompletedLoads()
 	{
+		{
+			auto& services = Application::Get().GetServiceManager();
+			if (services.ServiceRegistered<MeshLibrary>())
+			{
+				services.GetService<MeshLibrary>().Advance();
+			}
+			if (services.ServiceRegistered<ShaderLibrary>())
+			{
+				services.GetService<ShaderLibrary>().Advance();
+			}
+		}
+
 		// Move both completed batches out under the lock, then do the GPU work unlocked (workers keep producing).
 		std::vector<CompletedMeshLoad> meshBatch;
 		std::vector<CompletedTextureLoad> texBatch;
