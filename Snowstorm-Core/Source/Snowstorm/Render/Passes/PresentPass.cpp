@@ -25,7 +25,7 @@ namespace Snowstorm
 			return;
 		}
 		// Clamp-to-edge bilinear; a tap at the image edge must not wrap. Bilinear also handles the case where
-		// the source present target and the swapchain differ in size (until #146 makes them track).
+		// the source present target and the swapchain differ in size (a resize lands a frame apart).
 		SamplerDesc s{};
 		s.MinFilter = Filter::Linear;
 		s.MagFilter = Filter::Linear;
