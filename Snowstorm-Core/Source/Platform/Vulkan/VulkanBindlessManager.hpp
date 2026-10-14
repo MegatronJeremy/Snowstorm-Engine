@@ -2,6 +2,8 @@
 
 #include "VulkanCommon.hpp"
 
+#include "Snowstorm/Render/BindlessSlotAllocator.hpp"
+
 #include <mutex>
 
 namespace Snowstorm
@@ -28,6 +30,18 @@ namespace Snowstorm
 		// index (baked into material constants) never changes, so no material needs patching. Main thread.
 		void WriteTexture(uint32_t index, VkImageView imageView);
 
+		// Return a slot to the free-list. It is quarantined for kRetireFrames AdvanceFrame() calls before it
+		// can be handed out again (frames in flight may still sample it). Slot 0 (2D) and the cube sentinel
+		// are ignored. Thread-safe.
+		void UnregisterTexture(uint32_t index);
+		void UnregisterCube(uint32_t index);
+
+		// Once per frame, after the in-flight fence wait.
+		void AdvanceFrame();
+
+		// Max frames in flight (2) + 1.
+		static constexpr uint32_t kRetireFrames = 3;
+
 		// Point binding 2 (the single TLAS slot) at the scene's acceleration structure (#118). Ray-query
 		// shaders read it via the bindless set. VK_NULL_HANDLE clears it (no scene AS). Only present when the
 		// device supports RT (the binding is created conditionally in Init); no-op otherwise. Main thread.
@@ -51,7 +65,6 @@ namespace Snowstorm
 
 		bool m_RayTracing = false; // binding 2 (TLAS) present only when the device supports RT
 
-		uint32_t m_NextFreeIndex = 0;
 		// Cube slot 0 is RESERVED as the "no cube" sentinel: FrameCB cube indices (IrradianceCube,
 		// PrefilteredCube) use `== 0` to mean "unset -> fall back" (analytic ambient), and DefaultLit's
 		// reflection miss-path does the same. Handing slot 0 to a real cube makes that cube read as "off" —
@@ -59,7 +72,8 @@ namespace Snowstorm
 		// scene with no skybox cube) landed at 0 and silently disabled IBL. The 2D array gets this guarantee
 		// for free (an async placeholder texture consumes 2D slot 0 at startup); cubes have no placeholder,
 		// so reserve it explicitly by starting handout at 1.
-		uint32_t m_NextFreeCubeIndex = 1;
+		BindlessSlotAllocator m_Textures{MAX_BINDLESS_TEXTURES, 0, kRetireFrames};
+		BindlessSlotAllocator m_Cubes{MAX_BINDLESS_CUBES, 1, kRetireFrames};
 		std::mutex m_IndexMutex;
 	};
 }

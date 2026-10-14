@@ -80,16 +80,14 @@ namespace Snowstorm
 	{
 		std::scoped_lock lock(m_IndexMutex);
 
-		// Indices are handed out monotonically with no recycling yet, so guard the array bound.
-		// Without this, an overflow writes past the descriptor array (silent corruption in release).
-		SS_CORE_ASSERT(m_NextFreeIndex < MAX_BINDLESS_TEXTURES, "Bindless texture array is full");
-		if (m_NextFreeIndex >= MAX_BINDLESS_TEXTURES)
+		// Without the bound check an overflow would write past the descriptor array.
+		const uint32_t index = m_Textures.Allocate();
+		SS_CORE_ASSERT(index != BindlessSlotAllocator::Invalid, "Bindless texture array is full");
+		if (index == BindlessSlotAllocator::Invalid)
 		{
 			SS_CORE_ERROR("VulkanBindlessManager: out of bindless slots (max {0}); reusing slot 0", MAX_BINDLESS_TEXTURES);
 			return 0;
 		}
-
-		const uint32_t index = m_NextFreeIndex++;
 
 		VkDescriptorImageInfo imageInfo{};
 		imageInfo.imageView = imageView;
@@ -111,9 +109,8 @@ namespace Snowstorm
 	{
 		std::scoped_lock lock(m_IndexMutex);
 
-		// Repoint an EXISTING slot (must have been handed out by RegisterTexture). Does not touch
-		// m_NextFreeIndex — no new slot is allocated.
-		SS_CORE_ASSERT(index < m_NextFreeIndex, "WriteTexture: slot {} was never registered", index);
+		// Repoint an EXISTING slot (must have been handed out by RegisterTexture); allocates nothing.
+		SS_CORE_ASSERT(m_Textures.WasAllocated(index), "WriteTexture: slot {} was never registered", index);
 
 		VkDescriptorImageInfo imageInfo{};
 		imageInfo.imageView = imageView;
@@ -165,14 +162,13 @@ namespace Snowstorm
 	{
 		std::scoped_lock lock(m_IndexMutex);
 
-		SS_CORE_ASSERT(m_NextFreeCubeIndex < MAX_BINDLESS_CUBES, "Bindless cube array is full");
-		if (m_NextFreeCubeIndex >= MAX_BINDLESS_CUBES)
+		const uint32_t index = m_Cubes.Allocate();
+		SS_CORE_ASSERT(index != BindlessSlotAllocator::Invalid, "Bindless cube array is full");
+		if (index == BindlessSlotAllocator::Invalid)
 		{
 			SS_CORE_ERROR("VulkanBindlessManager: out of bindless cube slots (max {0}); reusing slot 0", MAX_BINDLESS_CUBES);
 			return 0;
 		}
-
-		const uint32_t index = m_NextFreeCubeIndex++;
 
 		VkDescriptorImageInfo imageInfo{};
 		imageInfo.imageView = imageView;
@@ -188,6 +184,25 @@ namespace Snowstorm
 
 		vkUpdateDescriptorSets(m_Device, 1, &write, 0, nullptr);
 		return index;
+	}
+
+	void VulkanBindlessManager::UnregisterTexture(const uint32_t index)
+	{
+		std::scoped_lock lock(m_IndexMutex);
+		m_Textures.Release(index);
+	}
+
+	void VulkanBindlessManager::UnregisterCube(const uint32_t index)
+	{
+		std::scoped_lock lock(m_IndexMutex);
+		m_Cubes.Release(index);
+	}
+
+	void VulkanBindlessManager::AdvanceFrame()
+	{
+		std::scoped_lock lock(m_IndexMutex);
+		m_Textures.Advance();
+		m_Cubes.Advance();
 	}
 
 	void VulkanBindlessManager::Shutdown()
