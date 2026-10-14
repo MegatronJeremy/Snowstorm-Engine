@@ -29,6 +29,13 @@ Usage (from repo root or anywhere):
     py Scripts/perf-bench.py --abs-threshold 0  # gate on % alone (noisy on sub-ms passes)
     py Scripts/perf-bench.py --scene <path>     # benchmark a different scene
     py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
+    py Scripts/perf-bench.py --compare-exe <base-exe> --pairs 3 --gate   # gate a change vs its base build
+
+--gate (with --compare-exe) is the verdict for a machine that cannot pin clocks: the stored baseline
+carries another sitting's clock state, so the change is compared with its base commit measured back to
+back. A config fails when the TOTAL or any pass is resolved (>=2 pairs, median paired delta larger than
+the pair-to-pair spread) AND over --threshold (%) AND over --abs-threshold (ms). Inconclusive passes.
+Exit 1 on any such regression or a failed run, else 0; one VERDICT line per config, then PASS/FAIL.
 
 Exit code: 0 if every config is within threshold (or --update-baseline), 1 on a regression or
 run failure, 2 if a config was never compared (no baseline for this adapter, or a device without
@@ -298,6 +305,23 @@ def print_ab(res: dict, min_ms: float) -> None:
         "TOTAL gpu", res["totalA"], res["totalDelta"], res["totalSpread"], v))
 
 
+def gate_ab(res: dict, threshold_pct: float, abs_ms: float, min_ms: float) -> list[str]:
+    """Regressions in a paired A/B result: the TOTAL or any pass that is, all at once, resolved (>=2 pairs
+    and the median paired delta larger than the pair-to-pair spread), over `threshold_pct`, and over
+    `abs_ms` in absolute terms. Inconclusive results never fail: the A/B could not show a regression.
+    Returns one description per regression, empty when the config passes."""
+    if res.get("pairs", 0) < 2:
+        return []
+    found = []
+    rows = [(n, a, m, s) for n, a, m, s in res["rows"] if a >= min_ms]
+    rows.append(("TOTAL gpu", res["totalA"], res["totalDelta"], res["totalSpread"]))
+    for pname, aval, med, spread in rows:
+        delta_ms = aval * med / 100.0
+        if med > spread and med > threshold_pct and delta_ms > abs_ms:
+            found.append("{} {:+.2f}% ({:+.3f} ms, spread {:.2f}%)".format(pname, med, delta_ms, spread))
+    return found
+
+
 def device_slug(device: str) -> str:
     """Filesystem-safe directory name for an adapter, e.g. 'AMD Radeon RX 9070 XT' -> 'amd-radeon-rx-9070-xt'."""
     slug = re.sub(r"[^a-z0-9]+", "-", device.lower()).strip("-")
@@ -451,6 +475,9 @@ def main() -> int:
                          "golden baseline. Use this to measure a CHANGE: it cancels the common-mode drift a "
                          "stored baseline cannot correct for.")
     ap.add_argument("--pairs", type=int, default=5, help="A/B pairs for --compare-exe (default 5)")
+    ap.add_argument("--gate", action="store_true",
+                    help="With --compare-exe: fail (exit 1) when the TOTAL or any pass is a resolved "
+                         "regression over --threshold and --abs-threshold. Inconclusive is not a failure.")
     ap.add_argument("--canary-pass", default=None,
                     help="Normalise the run by this pass's movement vs the baseline, cancelling a global "
                          "clock shift the golden path cannot otherwise correct for. Must name a pass the "
@@ -507,6 +534,7 @@ def main() -> int:
         print(f"          B = {exe}")
         print(f"          {args.pairs} interleaved pairs per config\n")
         ab_ok = True
+        regressions = []
         for name, env_overrides in configs:
             print(f"=== {name} ===")
             res = paired_ab(name, env_overrides, ref_exe, exe, args.pairs,
@@ -516,7 +544,25 @@ def main() -> int:
                 ab_ok = False
                 continue
             print_ab(res, NOISE_FLOOR_MS)
+            if args.gate:
+                found = gate_ab(res, args.threshold, args.abs_threshold, NOISE_FLOOR_MS)
+                if found:
+                    print("  VERDICT {}: REGRESSION  {}".format(name, "; ".join(found)))
+                    regressions.append(name)
+                elif res.get("pairs", 0) < 2:
+                    print("  VERDICT {}: not gated (needs >=2 pairs)".format(name))
+                else:
+                    print("  VERDICT {}: ok (no resolved regression over {}% and {} ms)".format(
+                        name, args.threshold, args.abs_threshold))
             print("")
+        if args.gate:
+            if not ab_ok:
+                print("FAIL: a run failed during the A/B")
+            elif regressions:
+                print("FAIL: resolved regression in: " + ", ".join(regressions))
+            else:
+                print("PASS: no config shows a resolved regression vs the reference build")
+            return 0 if ab_ok and not regressions else 1
         return 0 if ab_ok else 1
 
     all_ok = True
