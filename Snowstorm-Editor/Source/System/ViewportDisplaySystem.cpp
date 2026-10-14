@@ -220,40 +220,20 @@ namespace Snowstorm
 		// The 64px cell's glyph is inset, so the quad is larger than the pick radius to fill the old disc.
 		constexpr float kIconQuadScale = 1.4f;
 
-		// Returns the atlas ImTextureID, or 0 when it could not be loaded (the glyph fallback is used then).
-		// Loaded once, lazily; a failure is logged once and never retried.
-		uint64_t IconAtlasId()
-		{
-			static Ref<TextureView> view;
-			static bool attempted = false;
-			if (!attempted)
-			{
-				attempted = true;
-				if (const Ref<Texture> tex = Texture::Create(kIconAtlasPath, true))
-				{
-					view = TextureView::Create(tex, MakeFullViewDesc(tex->GetDesc()));
-				}
-				if (!view)
-				{
-					SS_CORE_WARN("Editor icon atlas '{}' failed to load; using glyph light icons", kIconAtlasPath);
-				}
-			}
-			return view ? view->GetUIID() : 0;
-		}
-
 		// Draw the billboard icon (a constant-screen-size filled disc + dark outline) at a light's projected
 		// origin, with a small dark glyph on top that differs per light type so you can tell types apart at a
 		// glance. The disc is the always-visible marker AND the click hitbox (PickEntity uses the same radius),
 		// so the icon IS the hitbox. Dark glyph/outline reads on both light and dark backgrounds.
 		void DrawLightIcon(ImDrawList* dl, const glm::vec3& worldPos, const glm::mat4& viewProj,
-		                   const ImVec2& rectMin, const ImVec2& rectSize, ImU32 color, LightIconKind kind)
+		                   const ImVec2& rectMin, const ImVec2& rectSize, ImU32 color, LightIconKind kind,
+		                   const uint64_t atlas)
 		{
 			ImVec2 c{};
 			if (!WorldToScreen(worldPos, viewProj, rectMin, rectSize, c))
 			{
 				return; // behind camera
 			}
-			if (const uint64_t atlas = IconAtlasId(); atlas != 0)
+			if (atlas != 0)
 			{
 				const float h = kLightIconRadiusPx * kIconQuadScale;
 				const float u0 = static_cast<float>(kind) / kIconAtlasCells;
@@ -328,7 +308,7 @@ namespace Snowstorm
 		// the shape is contextual detail for the thing you're editing. Position/direction come from the entity
 		// transform, the same source LightingSystem gathers from, so the gizmo matches what's actually lit.
 		void DrawLightGizmos(TrackedRegistry& reg, const glm::mat4& viewProj, const ImVec2& rectMin,
-		                     const ImVec2& rectSize, const Entity selected)
+		                     const ImVec2& rectSize, const Entity selected, const uint64_t iconAtlas)
 		{
 			ImDrawList* dl = ImGui::GetWindowDrawList();
 			const entt::entity selectedHandle = selected ? selected.Handle() : entt::null;
@@ -342,7 +322,7 @@ namespace Snowstorm
 				const glm::vec3 pos = reg.Read<TransformComponent>(e).Position;
 				const bool isSelected = e == selectedHandle;
 				const ImU32 col = LightGizmoColor(light.Color, isSelected);
-				DrawLightIcon(dl, pos, viewProj, rectMin, rectSize, col, LightIconKind::Point);
+				DrawLightIcon(dl, pos, viewProj, rectMin, rectSize, col, LightIconKind::Point, iconAtlas);
 				if (isSelected)
 				{
 					DrawWorldRing(dl, pos, kX, kY, light.Range, viewProj, rectMin, rectSize, col);
@@ -361,7 +341,7 @@ namespace Snowstorm
 				const ImU32 col = LightGizmoColor(light.Color, isSelected);
 
 				// Icon at the spot's apex (its origin) -- the click target, always drawn.
-				DrawLightIcon(dl, apex, viewProj, rectMin, rectSize, col, LightIconKind::Spot);
+				DrawLightIcon(dl, apex, viewProj, rectMin, rectSize, col, LightIconKind::Spot, iconAtlas);
 				if (!isSelected)
 				{
 					continue; // cone wireframe only for the selected light
@@ -396,7 +376,7 @@ namespace Snowstorm
 				const glm::vec3 pos = reg.Read<TransformComponent>(e).Position;
 				const bool isSelected = e == selectedHandle;
 				const ImU32 col = LightGizmoColor(light.Color, isSelected);
-				DrawLightIcon(dl, pos, viewProj, rectMin, rectSize, col, LightIconKind::Directional);
+				DrawLightIcon(dl, pos, viewProj, rectMin, rectSize, col, LightIconKind::Directional, iconAtlas);
 
 				if (isSelected && glm::length(light.Direction) > 1e-4f)
 				{
@@ -410,6 +390,23 @@ namespace Snowstorm
 				}
 			}
 		}
+	}
+
+	uint64_t ViewportDisplaySystem::IconAtlasId()
+	{
+		if (!m_IconAtlasAttempted)
+		{
+			m_IconAtlasAttempted = true;
+			if (const Ref<Texture> tex = Texture::Create(kIconAtlasPath, true))
+			{
+				m_IconAtlas = TextureView::Create(tex, MakeFullViewDesc(tex->GetDesc()));
+			}
+			if (!m_IconAtlas)
+			{
+				SS_CORE_WARN("Editor icon atlas '{}' failed to load; using glyph light icons", kIconAtlasPath);
+			}
+		}
+		return m_IconAtlas ? m_IconAtlas->GetUIID() : 0;
 	}
 
 	void ViewportDisplaySystem::Execute(Timestep)
@@ -701,7 +698,8 @@ namespace Snowstorm
 			// lights are moved with the normal transform gizmo. Tinted by the light color; the selected
 			// light is drawn brighter/thicker so it stands out. Drawn here, inside the per-viewport block,
 			// so camRt/imageStart/vp are in scope.
-			DrawLightGizmos(reg, camRt.ViewProjection, imageStart, ImVec2{vp.Size.x, vp.Size.y}, selection.Selected);
+			DrawLightGizmos(reg, camRt.ViewProjection, imageStart, ImVec2{vp.Size.x, vp.Size.y}, selection.Selected,
+			                IconAtlasId());
 		}
 
 		// ---- Play/Stop toolbar: a top-CENTER floating overlay (UE5 places play controls at the top of the
