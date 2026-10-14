@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "Snowstorm/Components/IDComponent.hpp"
+#include "Snowstorm/Components/MaterialComponent.hpp"
+#include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/TagComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Singletons/EditorCommands.hpp"
@@ -67,6 +69,29 @@ TEST_CASE("SceneSerializer round-trips a single entity preserving UUID + compone
 	REQUIRE(restored.GetComponent<TagComponent>().Tag == "Original");
 	REQUIRE(restored.HasComponent<TransformComponent>());
 	REQUIRE(restored.GetComponent<TransformComponent>().Position.y == 2.0f);
+}
+
+TEST_CASE("SceneSerializer keeps Mesh/Material components whose asset handle is zero", "[editor][serialize]")
+{
+	World world;
+	Entity e = world.CreateEntity("Unassigned");
+	e.AddComponent<MeshComponent>();
+	e.AddComponent<MaterialComponent>();
+	const UUID id = e.GetComponent<IDComponent>().Id;
+
+	nlohmann::json snap;
+	REQUIRE(SceneSerializer::SerializeEntity(e, snap));
+
+	world.DestroyEntity(e);
+	world.FlushDestroyQueue();
+
+	const Entity restored = SceneSerializer::DeserializeEntity(world, snap);
+	REQUIRE(restored.IsValid());
+	REQUIRE(restored.GetComponent<IDComponent>().Id == id);
+	REQUIRE(restored.HasComponent<MeshComponent>());
+	REQUIRE(restored.GetComponent<MeshComponent>().MeshHandle.Value() == 0);
+	REQUIRE(restored.HasComponent<MaterialComponent>());
+	REQUIRE(restored.GetComponent<MaterialComponent>().Material.Value() == 0);
 }
 
 TEST_CASE("TransformCommand undo/redo restores before/after", "[editor][undo]")
