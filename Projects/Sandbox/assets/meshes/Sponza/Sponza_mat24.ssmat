@@ -17,7 +17,7 @@
   "MetallicRoughnessTexture": "12113485980367813577",
   "NormalTexture": "9944843222276312743",
   "Roughness": 1.0,
-  "Shader": "Engine/Shaders/DefaultLit.frag.hlsl",
+  "Shader": "/Engine/Shaders/DefaultLit.frag.hlsl",
   "Type": "SnowstormMaterial",
   "Version": 3
 }

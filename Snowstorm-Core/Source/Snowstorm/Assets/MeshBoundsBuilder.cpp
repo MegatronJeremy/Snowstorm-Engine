@@ -93,8 +93,12 @@ namespace Snowstorm
 	bool ComputeMeshBoundsAssimp(const std::filesystem::path& filepath, MeshBounds& out)
 	{
 		Assimp::Importer importer;
+		// Match MeshLibrary::Load(filepath): pre-transform, so the bounds describe the geometry the mesh
+		// library actually produces. These two flag sets are a PAIR and must move together; bounds drive
+		// frustum culling, so bounds computed from un-transformed vertices for a mesh built from
+		// transformed ones would cull it against the wrong box.
 		const aiScene* scene = importer.ReadFile(filepath.string(),
-		                                         aiProcess_Triangulate | aiProcess_JoinIdenticalVertices);
+		                                         aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_PreTransformVertices);
 
 		if (!scene || !scene->mRootNode || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE))
 			return false;

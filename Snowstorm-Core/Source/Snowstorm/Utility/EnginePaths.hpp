@@ -33,12 +33,14 @@ namespace Snowstorm
 	// path passes through unchanged, so a caller may always route through this.
 	std::filesystem::path EngineAssetPath(std::string_view relative);
 
-	// Resolves a shader source path, which may belong to the ENGINE or to a GAME. Tries, in order: the
-	// path as given if absolute, then the engine root, then the active project's directory. The project
-	// leg is what lets a game ship its own shaders: a material in a game's project can say
-	// "Shaders/Thing.frag.hlsl" and have it found next to that project rather than inside the engine.
-	// Without it, every shader a game uses would have to be committed into the engine's own tree.
+	// Resolves a shader source path, which may belong to the ENGINE or to a GAME.
 	//
-	// Falls back to the engine root when nothing exists, so a failure reports the path a reader expects.
+	// A mounted path ("/Engine/Shaders/Foo.hlsl") resolves through the mount table and is unambiguous.
+	// An absolute path passes through. Anything else is a legacy unqualified string and falls back to
+	// probing the engine root then the active project, taking whichever exists.
+	//
+	// That probe is what the mount table exists to retire: it cannot tell a typo from a missing file,
+	// and whichever root happens to hold a matching name wins. It survives only so material files
+	// written before the namespace keep loading.
 	std::filesystem::path ResolveShaderSource(std::string_view path);
 }

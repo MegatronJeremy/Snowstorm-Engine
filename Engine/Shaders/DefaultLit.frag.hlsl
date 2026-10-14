@@ -1,4 +1,5 @@
 #include "Include/Engine.hlsli"
+#include "Include/NormalEncode.hlsli"
 
 // DefaultLit fragment stage: metallic-roughness PBR (Cook-Torrance) + normal mapping + directional
 // shadows + split-sum IBL, then exposure/ACES tonemap/sRGB encode. Paired with the shared
@@ -500,7 +501,7 @@ float3 ResolveNormal(PSInput i, uint normalIndex)
 	// Re-orthogonalize (Gram-Schmidt) so interpolation skew doesn't tilt the basis.
 	T = normalize(T - N * dot(N, T));
 	float3 B = cross(N, T) * i.TangentWS.w;                                   // handedness sign baked at import
-	float3 sampled = SampleBindless(normalIndex, i.TexCoord).xyz * 2.0 - 1.0; // [0,1] -> [-1,1]
+	float3 sampled = DecodeTangentNormal(SampleBindless(normalIndex, i.TexCoord).xyz);
 	float3x3 TBN = float3x3(T, B, N);
 	return normalize(mul(sampled, TBN));
 }

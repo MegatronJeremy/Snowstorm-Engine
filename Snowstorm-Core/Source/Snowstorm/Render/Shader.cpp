@@ -1,5 +1,6 @@
 #include "Shader.hpp"
 
+#include "Snowstorm/Assets/VirtualPath.hpp"
 #include "Snowstorm/Utility/EnginePaths.hpp"
 
 #include "Platform/Vulkan/VulkanShader.hpp"
@@ -38,11 +39,39 @@ namespace Snowstorm
 			return key;
 		}
 
+		// One spelling per file. A render pass says "Engine/Shaders/DefaultLit.frag.hlsl" while
+		// AssetManagerSingleton::GetShader hands over an absolute path for the same file, and keying on the
+		// raw string made those two library entries: two compiles, two cache slots, and a hot-reload that
+		// only refreshed whichever one the reload system happened to name. Canonicalising to the virtual
+		// path collapses them.
+		//
+		// Falls back to the input when the file is under no mount, which keeps an absolute path outside
+		// the project working rather than turning it into an empty key.
+		std::string CanonicalSource(const std::string& path)
+		{
+			if (const auto v = VirtualPath::Virtualize(ResolveShaderSource(path)))
+			{
+				return *v;
+			}
+			return path;
+		}
+
 		// The file-path portion of a library key: everything before the '#' feature suffix.
 		std::string_view SourcePartOfKey(const std::string& key)
 		{
 			return std::string_view(key).substr(0, key.find('#'));
 		}
+	}
+
+	std::string ShaderLibrary::MakeKey(const std::string& filepath, const ShaderDefines& features)
+	{
+		return MakeShaderKey(CanonicalSource(filepath), features);
+	}
+
+	std::string ShaderLibrary::MakeKey(const std::string& vertPath, const std::string& fragPath,
+	                                   const ShaderDefines& features)
+	{
+		return MakeShaderKey(CanonicalSource(vertPath) + "|" + CanonicalSource(fragPath), features);
 	}
 
 	Ref<Shader> Shader::Create(const std::string& filepath, ShaderDefines features)
@@ -117,7 +146,7 @@ namespace Snowstorm
 
 	Ref<Shader> ShaderLibrary::Load(const std::string& filepath, ShaderDefines features)
 	{
-		const std::string key = MakeShaderKey(filepath, features);
+		const std::string key = MakeKey(filepath, features);
 		if (Exists(key))
 		{
 			return Get(key);
@@ -136,7 +165,7 @@ namespace Snowstorm
 	{
 		// Key on the composite so a (vert, frag) pair is one library entry; hot-reload watches the newer
 		// of the two files (editing either re-triggers). See ReloadAll's composite-key handling.
-		const std::string key = MakeShaderKey(vertPath + "|" + fragPath, features);
+		const std::string key = MakeKey(vertPath, fragPath, features);
 		if (Exists(key))
 		{
 			return Get(key);
