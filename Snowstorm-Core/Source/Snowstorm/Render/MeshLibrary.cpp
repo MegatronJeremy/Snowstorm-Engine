@@ -315,4 +315,15 @@ namespace Snowstorm
 	{
 		return m_Meshes.erase(filepath) > 0;
 	}
+
+	size_t MeshLibrary::EvictUnreferenced(const uint32_t retireDelay, const std::unordered_set<const Mesh*>& cacheHeld,
+	                                      std::vector<const Mesh*>& evicted)
+	{
+		return Snowstorm::EvictUnreferenced(
+		    m_Meshes, m_Retired, retireDelay,
+		    [&evicted](const std::string&, const Ref<Mesh>& mesh)
+		    { evicted.push_back(mesh.get()); },
+		    [&cacheHeld](const Ref<Mesh>& mesh) -> size_t
+		    { return cacheHeld.contains(mesh.get()) ? 1 : 0; });
+	}
 }
