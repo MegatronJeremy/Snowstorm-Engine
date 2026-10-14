@@ -1030,6 +1030,7 @@ namespace Snowstorm
 	}
 
 	void VulkanCommandContext::DrawIndexed(const Ref<Buffer>& indexBuffer,
+	                                       const IndexType indexType,
 	                                       const uint32_t indexCount,
 	                                       const uint32_t instanceCount,
 	                                       const uint32_t firstIndex,
@@ -1040,10 +1041,10 @@ namespace Snowstorm
 		const auto vkIndexBuffer = std::static_pointer_cast<VulkanBuffer>(indexBuffer);
 		const VkBuffer buf = vkIndexBuffer->GetHandle();
 
-		// You may want to store index type in your Buffer or Pipeline.
-		const VkIndexType indexType = VK_INDEX_TYPE_UINT32;
+		const VkIndexType vkIndexType =
+		    indexType == IndexType::UInt16 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
 
-		vkCmdBindIndexBuffer(m_CommandBuffer, buf, 0, indexType);
+		vkCmdBindIndexBuffer(m_CommandBuffer, buf, 0, vkIndexType);
 		vkCmdDrawIndexed(m_CommandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 	}
 

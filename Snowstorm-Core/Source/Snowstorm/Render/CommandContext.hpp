@@ -71,6 +71,7 @@ namespace Snowstorm
 		                  uint32_t firstVertex = 0) = 0;
 
 		virtual void DrawIndexed(const Ref<Buffer>& indexBuffer,
+		                         IndexType indexType,
 		                         uint32_t indexCount,
 		                         uint32_t instanceCount = 1,
 		                         uint32_t firstIndex = 0,
