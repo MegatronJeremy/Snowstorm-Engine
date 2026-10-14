@@ -1,10 +1,14 @@
 #pragma once
 
+#include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
+#include "Snowstorm/Render/Sampler.hpp"
 #include "Snowstorm/Render/RenderTarget.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
 #include <glm/glm.hpp>
+
+#include <vector>
 
 namespace Snowstorm
 {
@@ -30,8 +34,11 @@ namespace Snowstorm
 		// Record the depth-only draw of the renderer's accumulated batches into the bound shadow target,
 		// transforming by `lightViewProj` (pushed as a per-draw push constant, so one command buffer can
 		// render many light views: the sun plus each spot atlas tile). Lazily builds the depth pipeline for
-		// `depthFormat`. Call inside a shadow render pass after the renderer's caster DrawMesh accumulation.
-		void RecordDepth(RendererService& renderer, PixelFormat depthFormat, const glm::mat4& lightViewProj);
+		// `depthFormat`. Opaque batches take the position-only pipeline; alpha-masked (MASK) batches take a
+		// second, alpha-tested pipeline so the shadow matches the lit cutout. Call inside a shadow render
+		// pass after the renderer's caster DrawMesh accumulation.
+		void RecordDepth(RendererService& renderer, uint32_t frameIndex, PixelFormat depthFormat,
+		                 const glm::mat4& lightViewProj);
 
 		// Build a spot light's perspective world->light-clip matrix (FOV = 2*outer cone half-angle, square
 		// aspect, near..Range). Pure + static so the gather (LightingSystem) can compute it before the pass.
@@ -62,8 +69,14 @@ namespace Snowstorm
 
 	private:
 		void EnsurePipeline(PixelFormat depthFormat);
+		void EnsureMaskedPipeline(PixelFormat depthFormat);
+		const Ref<DescriptorSet>& EnsureMaskedSamplerSet(uint32_t frameIndex);
 
 		Ref<Pipeline> m_Pipeline;
+		Ref<Pipeline> m_MaskedPipeline;
+		PixelFormat m_MaskedDepthFormat = PixelFormat::Unknown;
+		Ref<Sampler> m_MaskedSampler;
+		std::vector<Ref<DescriptorSet>> m_MaskedSamplerSets; // set 1 (sampler only), one per frame-in-flight
 		PixelFormat m_DepthFormat = PixelFormat::Unknown;
 
 		// Shared shadow-map target (depth-only, sampleable). Resolution from render.shadow.resolution.

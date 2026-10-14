@@ -3,6 +3,7 @@
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Math/Bounds.hpp"
 #include "Snowstorm/Render/Mesh.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
@@ -124,10 +125,98 @@ namespace Snowstorm
 		m_DepthFormat = depthFormat;
 	}
 
-	void ShadowPass::RecordDepth(RendererService& renderer, const PixelFormat depthFormat, const glm::mat4& lightViewProj)
+	void ShadowPass::EnsureMaskedPipeline(const PixelFormat depthFormat)
+	{
+		if (m_MaskedPipeline && m_MaskedDepthFormat == depthFormat)
+		{
+			return;
+		}
+
+		Ref<Shader> shader = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load(
+		    "Engine/Shaders/ShadowMasked.vert.hlsl", "Engine/Shaders/ShadowMasked.frag.hlsl");
+		SS_CORE_ASSERT(shader, "Failed to load ShadowMasked shader");
+		if (!shader->IsReady())
+		{
+			return;
+		}
+
+		VertexLayoutDesc vertexLayout{};
+		VertexBufferLayoutDesc vb{};
+		vb.Binding = 0;
+		vb.InputRate = VertexInputRate::PerVertex;
+		vb.Stride = sizeof(Vertex);
+		vb.Attributes = {
+		    {.Location = 0, .Format = VertexFormat::Float3, .Offset = static_cast<uint32_t>(offsetof(Vertex, Position))},
+		    {.Location = 1, .Format = VertexFormat::Float3, .Offset = static_cast<uint32_t>(offsetof(Vertex, Normal))},
+		    {.Location = 2, .Format = VertexFormat::Float2, .Offset = static_cast<uint32_t>(offsetof(Vertex, TexCoord))},
+		    {.Location = 3, .Format = VertexFormat::Float4, .Offset = static_cast<uint32_t>(offsetof(Vertex, Tangent))},
+		};
+		vertexLayout.Buffers = {vb};
+
+		PipelineDesc p{};
+		p.Type = PipelineType::Graphics;
+		p.Shader = shader;
+		p.VertexLayout = vertexLayout;
+		p.ColorFormats = {};
+		p.DepthFormat = depthFormat;
+		// LightViewProj (VS) + alpha-mask scalars (FS); must match ShadowMaskedPush in both stages.
+		p.PushConstants = {{.Offset = 0,
+		                    .Size = sizeof(glm::mat4) + 4 * sizeof(uint32_t),
+		                    .Stages = ShaderStage::Vertex | ShaderStage::Fragment}};
+		p.Raster.Cull = CullMode::None; // same as the opaque shadow pipeline
+		p.DepthStencil.EnableDepthTest = true;
+		p.DepthStencil.EnableDepthWrite = true;
+		p.DepthStencil.DepthCompare = CompareOp::Less;
+		p.DebugName = "ShadowMaskedPipeline";
+
+		m_MaskedPipeline = Pipeline::Create(p);
+		SS_CORE_ASSERT(m_MaskedPipeline, "Failed to create ShadowMasked pipeline");
+		m_MaskedDepthFormat = depthFormat;
+		m_MaskedSamplerSets.clear(); // layouts belong to the old pipeline
+	}
+
+	const Ref<DescriptorSet>& ShadowPass::EnsureMaskedSamplerSet(const uint32_t frameIndex)
+	{
+		if (!m_MaskedSampler)
+		{
+			SamplerDesc s{};
+			s.MinFilter = Filter::Linear;
+			s.MagFilter = Filter::Linear;
+			s.MipmapMode = SamplerMipmapMode::Linear;
+			s.AddressU = SamplerAddressMode::Repeat; // match the lit sampler: cutout atlases tile
+			s.AddressV = SamplerAddressMode::Repeat;
+			s.AddressW = SamplerAddressMode::Repeat;
+			s.EnableAnisotropy = false;
+			s.DebugName = "ShadowMaskedAlphaSampler";
+			m_MaskedSampler = Sampler::Create(s);
+		}
+
+		const uint32_t frames = Renderer::GetFramesInFlight();
+		if (m_MaskedSamplerSets.size() < frames)
+		{
+			m_MaskedSamplerSets.resize(frames);
+		}
+		if (!m_MaskedSamplerSets[frameIndex])
+		{
+			const auto& setLayouts = m_MaskedPipeline->GetSetLayouts();
+			SS_CORE_ASSERT(setLayouts.size() > 1 && setLayouts[1], "ShadowMasked pipeline missing set 1 (sampler)");
+			DescriptorSetDesc dsd{};
+			dsd.DebugName = "ShadowMasked_Set1_Sampler";
+			m_MaskedSamplerSets[frameIndex] = DescriptorSet::Create(setLayouts[1], dsd);
+			m_MaskedSamplerSets[frameIndex]->SetSampler(0, m_MaskedSampler);
+			m_MaskedSamplerSets[frameIndex]->Commit();
+		}
+		return m_MaskedSamplerSets[frameIndex];
+	}
+
+	void ShadowPass::RecordDepth(RendererService& renderer, const uint32_t frameIndex, const PixelFormat depthFormat,
+	                             const glm::mat4& lightViewProj)
 	{
 		EnsurePipeline(depthFormat);
-		renderer.DrawBatchesDepthOnly(m_Pipeline, lightViewProj);
+		EnsureMaskedPipeline(depthFormat);
+		// Until the masked shader compiles, masked batches fall back to the opaque path (solid shadow).
+		renderer.DrawBatchesDepthOnly(m_Pipeline, lightViewProj, m_MaskedPipeline,
+		                              m_MaskedPipeline ? EnsureMaskedSamplerSet(frameIndex) : Ref<DescriptorSet>{});
 	}
 
 	glm::mat4 ShadowPass::ComputeSpotViewProj(const glm::vec3& position, const glm::vec3& direction,

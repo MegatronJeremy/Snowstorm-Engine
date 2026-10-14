@@ -539,7 +539,22 @@ namespace Snowstorm
 		return true;
 	}
 
-	void RendererService::DrawBatchesDepthOnly(const Ref<Pipeline>& depthPipeline, const glm::mat4& lightViewProj)
+	namespace
+	{
+		bool IsAlphaMaskedBatch(const MaterialInstance* material)
+		{
+			if (!material)
+			{
+				return false;
+			}
+			const Material::Constants& c = material->GetConstants();
+			return c.AlphaMaskEnabled != 0 && c.AlbedoTextureIndex != 0;
+		}
+	}
+
+	void RendererService::DrawBatchesDepthOnly(const Ref<Pipeline>& depthPipeline, const glm::mat4& lightViewProj,
+	                                           const Ref<Pipeline>& maskedPipeline,
+	                                           const Ref<DescriptorSet>& maskedSamplerSet)
 	{
 		if (!m_CommandContext || m_Batches.empty() || !depthPipeline)
 		{
@@ -566,12 +581,57 @@ namespace Snowstorm
 		// objectSet is the same for every batch this pass.
 		m_CommandContext->BindDescriptorSet(objectSet, 2);
 
+		const bool splitMasked = maskedPipeline && maskedSamplerSet;
+		bool anyMasked = false;
 		for (auto& batch : m_Batches)
 		{
 			if (batch.Instances.empty() || !batch.Mesh)
 				continue;
+			if (splitMasked && IsAlphaMaskedBatch(batch.MaterialInstance.get()))
+			{
+				anyMasked = true;
+				continue;
+			}
 
 			WriteBatchInstancedDraw(batch, " in shadow pass");
+		}
+
+		if (!anyMasked)
+		{
+			return;
+		}
+
+		// Masked batches: a different push-constant range makes the layouts incompatible, so re-bind
+		// everything after switching pipeline (sets 1 sampler + 2 instances, set 3 bindless).
+		const auto& maskedLayouts = maskedPipeline->GetSetLayouts();
+		SS_CORE_ASSERT(maskedLayouts.size() > 2 && maskedLayouts[2], "ShadowMasked pipeline missing set 2 (instances)");
+		m_CommandContext->BindPipeline(maskedPipeline);
+		const Ref<DescriptorSet>& maskedObjectSet =
+		    AcquireObjectSet(maskedPipeline, m_FrameIndex, "Set2_Instances_ShadowMasked");
+		m_CommandContext->BindDescriptorSets(1, {maskedSamplerSet, maskedObjectSet});
+		m_CommandContext->BindGlobalResources();
+
+		// Mirrors ShadowMaskedPush in ShadowMasked.vert/frag.
+		struct ShadowMaskedPush
+		{
+			glm::mat4 LightViewProj;
+			uint32_t AlbedoTextureIndex;
+			uint32_t AlphaMaskEnabled;
+			float AlphaCutoff;
+			float BaseAlpha;
+		};
+
+		for (auto& batch : m_Batches)
+		{
+			if (batch.Instances.empty() || !batch.Mesh || !IsAlphaMaskedBatch(batch.MaterialInstance.get()))
+				continue;
+
+			const Material::Constants& c = batch.MaterialInstance->GetConstants();
+			const ShadowMaskedPush push{lightViewProj, c.AlbedoTextureIndex, c.AlphaMaskEnabled, c.AlphaCutoff,
+			                            c.BaseColor.a};
+			m_CommandContext->PushConstants(&push, sizeof(push), 0);
+
+			WriteBatchInstancedDraw(batch, " in masked shadow pass");
 		}
 	}
 
