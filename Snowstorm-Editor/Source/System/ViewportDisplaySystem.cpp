@@ -14,6 +14,7 @@
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/Lighting/LightingComponents.hpp"
 #include "Snowstorm/Math/Bounds.hpp"
+#include "Snowstorm/Math/EulerContinuity.hpp"
 #include "Snowstorm/Math/Picking.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
@@ -545,7 +546,7 @@ namespace Snowstorm
 			// Make the gizmo a larger, thicker click target. The defaults draw thin rings that are easy to
 			// miss — a near-miss falls through to entity picking and deselects the object (its gizmo then
 			// vanishes, reading as "rotation doesn't work"). Bigger radius + thicker rotation rings cut the
-			// miss rate. (Rotation jumps at steep pitch are a separate gimbal-lock issue in Euler storage.)
+			// miss rate.
 			ImGuizmo::SetGizmoSizeClipSpace(0.16f); // default 0.1
 			ImGuizmo::Style& gizmoStyle = ImGuizmo::GetStyle();
 			gizmoStyle.RotationLineThickness = 4.0f;      // default 2
@@ -567,20 +568,16 @@ namespace Snowstorm
 				                         static_cast<ImGuizmo::OPERATION>(m_GizmoOp), ImGuizmo::WORLD,
 				                         glm::value_ptr(model)))
 				{
-					// Decompose the manipulated matrix back into the TRS component. Euler angles MUST be
-					// extracted in the SAME Y->X->Z order that TransformComponent::GetTransformMatrix
-					// composes them (Ry*Rx*Rz) -- glm::eulerAngles() uses a different fixed order, so its
-					// output rebuilt Y->X->Z is a DIFFERENT orientation. That mismatch made the object jump
-					// every drag frame, the gizmo re-read the jumped matrix, and it spiralled ("freaks out").
-					// extractEulerAngleYXZ is the exact inverse of the compose order (same as RotatorSystem).
+					// Decompose the manipulated matrix back into the TRS component. Euler storage is lossy (two
+					// triples per orientation, yaw and roll coupled at pitch +-90 deg), so take the triple nearest the
+					// current one: a bare extract flips between equivalents near steep pitch (#73).
 					glm::vec3 scale, translation, skew;
 					glm::vec4 perspective;
 					glm::quat rotation;
 					if (glm::decompose(model, scale, rotation, translation, skew, perspective))
 					{
-						float yaw = 0.0f, pitch = 0.0f, roll = 0.0f; // Y, X, Z
-						glm::extractEulerAngleYXZ(glm::mat4_cast(rotation), yaw, pitch, roll);
-						const glm::vec3 rotationEuler(pitch, yaw, roll); // TransformComponent stores (X,Y,Z)
+						const glm::vec3 previous = selected.GetComponent<TransformComponent>().Rotation;
+						const glm::vec3 rotationEuler = NearestEulerYXZ(glm::mat4_cast(rotation), previous);
 						selected.PatchComponent<TransformComponent>([&](TransformComponent& t)
 						                                            {
 							t.Position = translation;
