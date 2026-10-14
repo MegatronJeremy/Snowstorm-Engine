@@ -242,3 +242,35 @@ TEST_CASE("History: a new action clears the redo stack", "[editor][undo]")
 	history.Push(CreateRef<RenameCommand>(id, "E", "E2"));
 	REQUIRE_FALSE(history.CanRedo());
 }
+
+TEST_CASE("MaterialEditCommand undoes and redoes edits on the loaded buffer", "[editor][undo][material]")
+{
+	World world;
+	auto buffer = CreateRef<MaterialEditBuffer>();
+	buffer->Loaded = AssetHandle{7};
+	buffer->Valid = true;
+
+	const MaterialAsset before = buffer->Asset;
+	MaterialAsset after = before;
+	after.Metallic = 0.75f;
+	after.FragmentShader = "Engine/Shaders/Other.frag.hlsl";
+	buffer->Asset = after;
+
+	EditorHistorySingleton history;
+	history.Push(CreateRef<MaterialEditCommand>(buffer, AssetHandle{7}, before, after));
+
+	history.Undo(world);
+	REQUIRE(buffer->Asset == before);
+	REQUIRE(std::string(buffer->ShaderBuf) == before.FragmentShader);
+	REQUIRE(buffer->Dirty);
+
+	history.Redo(world);
+	REQUIRE(buffer->Asset == after);
+
+	// Another material is loaded now: the step must not touch it.
+	buffer->Loaded = AssetHandle{8};
+	buffer->Asset = before;
+	history.Undo(world);
+	REQUIRE(buffer->Asset == before);
+	REQUIRE(buffer->Asset.Metallic == 0.0f);
+}
