@@ -7,6 +7,8 @@
 
 namespace Snowstorm
 {
+	class TextureView;
+
 	class ViewportDisplaySystem final : public System
 	{
 	public:
@@ -18,6 +20,11 @@ namespace Snowstorm
 		void Execute(Timestep ts) override;
 
 	private:
+		// Lazily loaded; owned here so it is released with the system, before the renderer shuts down.
+		uint64_t IconAtlasId();
+		Ref<TextureView> m_IconAtlas;
+		bool m_IconAtlasAttempted = false;
+
 		// Current gizmo operation, cycled with W/E/R (matches ImGuizmo::OPERATION values:
 		// TRANSLATE=7, ROTATE=120, SCALE=896). Stored as int to keep ImGuizmo out of the header.
 		int m_GizmoOp = 7; // TRANSLATE
