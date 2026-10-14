@@ -1099,6 +1099,12 @@ Worked example, the **asset pipeline** (the engine's biggest deliberate simplifi
   a cook step with `.meta` sidecars → async streaming. Treat the existing `AssetRegistry` /
   `AssetManagerSingleton` as the seam where that grows.
 
+**Cache eviction.** `MeshLibrary`, `ShaderLibrary` and `AssetManagerSingleton`'s handle caches are swept
+by `AssetManagerSingleton::EvictUnreferenced()` on Open Scene, after the old entities are cleared: an entry
+goes when its `shared_ptr` has no owner besides the caches (components, pipelines and in-flight compiles
+count as owners). Evicted objects wait `GetFramesInFlight()+1` frames in a `RetireQueue` before their GPU
+buffers are released. Textures are not swept yet.
+
 ## Verify before claiming
 
 - This is graphics code: "renders/looks correct" can only be confirmed by **building and running**
