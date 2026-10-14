@@ -212,6 +212,7 @@ py Scripts/perf-bench.py --only +gi         # one config (rt-off | shadows | +ao
 py Scripts/perf-bench.py --frames 300       # more frames = less noise WITHIN a run
 py Scripts/perf-bench.py --repeat 5         # more independent runs = less noise BETWEEN runs (default 3)
 py Scripts/perf-bench.py --compare-exe <ref-exe>   # interleaved A/B vs another build (measure a CHANGE)
+py Scripts/perf-bench.py --compare-exe <base-exe> --pairs 3 --gate   # same, exit 1 on a resolved regression
 py Scripts/perf-bench.py --canary-pass Editor      # normalise out a global clock shift
 py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
 ```
@@ -285,12 +286,15 @@ the pairs disagree and prints `inconclusive`. This needs no baseline, so it also
 has none. The golden-file path answers a different question ("did this drift from the committed numbers")
 and stays the right tool for regression gating.
 
-**The A/B is an instrument, not a gate: it never fails on a regression.** `--compare-exe` short-circuits
-before any baseline logic and exits non-zero only when a RUN fails, so a green exit code from it means
-"the runs completed", never "perf is fine". Do not wire it into CI expecting a gate. Reach for it when the
-golden path reports something surprising, which is the case it settles and the golden path cannot: a
-config whose numbers move with machine state reads as a 20% regression against a stored baseline and as
-`inconclusive` under pairing, and only the second is true.
+**On a machine that cannot pin clocks, the A/B against the base build is the gate; stored baselines are
+references.** A re-run of the baseline's own commit on the Z2's 8060S fails with disjoint IQRs between
+sittings, so the stored-baseline gate cannot be trusted there. `--compare-exe <base-exe> --pairs 3 --gate`
+adds a verdict after the report: a config fails when the TOTAL or any pass is resolved (at least 2 pairs,
+median paired delta larger than the pair-to-pair spread) AND over `--threshold` AND over `--abs-threshold`.
+An inconclusive result passes, because the A/B could not show a regression. Exit 1 on a resolved
+regression or a failed run. Without `--gate` the A/B stays an instrument and exits non-zero only when a run
+fails, so a green exit then means "the runs completed", never "perf is fine". It prints one `VERDICT`
+line per config and a closing PASS/FAIL.
 
 **The two readouts use different verdict rules on purpose.** `compare` gates, so a finding must clear
 `--abs-threshold` as well as the statistical test: materiality. `print_ab` measures, so it asks only
