@@ -144,11 +144,11 @@ namespace Snowstorm
 			{
 				// JsonAlias names the key older scene files used for this property.
 				const rttr::variant alias = prop.get_metadata("JsonAlias");
-				if (!alias.is_valid() || !alias.is_type<const char*>())
+				if (!alias.is_valid() || !alias.is_type<std::string>())
 				{
 					continue;
 				}
-				key = alias.get_value<const char*>();
+				key = alias.get_value<std::string>();
 				if (!j.contains(key))
 				{
 					continue;
