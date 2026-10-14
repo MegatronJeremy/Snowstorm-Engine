@@ -2,11 +2,13 @@
 
 #include <atomic>
 #include <unordered_map>
+#include <unordered_set>
 #include <filesystem>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include "Snowstorm/Assets/UnreferencedEviction.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Service/Service.hpp"
 
@@ -117,6 +119,14 @@ namespace Snowstorm
 
 		void ReloadAll();
 
+		// Scene-transition sweep (#77): drops every shader no pipeline, cache or in-flight compile still
+		// references, releasing it after `retireDelay` Advance() calls. Main thread only.
+		// `cacheHeld`: shaders AssetManagerSingleton's handle cache also holds one reference to.
+		size_t EvictUnreferenced(uint32_t retireDelay, const std::unordered_set<const Shader*>& cacheHeld,
+		                         std::vector<const Shader*>& evicted);
+		void Advance() { m_Retired.Advance(); }
+		[[nodiscard]] size_t RetiringCount() const { return m_Retired.Size(); }
+
 		// Async-compile progress for a loading bar (same idiom as AssetManagerSingleton's
 		// PendingLoadCount/Total). PendingCompileCount = shaders still compiling right now; PendingCompileTotal
 		// = high-water mark since the queue was last empty, so a bar reads "compiled = total - pending".
@@ -131,6 +141,7 @@ namespace Snowstorm
 		void SubmitAsyncCompile(const Ref<Shader>& shader);
 
 		std::unordered_map<std::string, Ref<Shader>> m_Shaders;
+		RetireQueue<Ref<Shader>> m_Retired;
 		std::unordered_map<std::string, std::filesystem::file_time_type> m_LastModifications;
 
 		// In-flight async compiles. Incremented on submit, decremented by the worker when done. Atomic
