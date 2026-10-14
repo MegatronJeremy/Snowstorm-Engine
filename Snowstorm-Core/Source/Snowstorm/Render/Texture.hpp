@@ -140,7 +140,13 @@ namespace Snowstorm
 		// CPU-only decode: return the RGBA8 pixels for a source image, from the cooked .sstex blob if fresh
 		// else by stb-decoding (and writing the blob). No GPU work, so safe on a JobSystem worker. Returns
 		// nullopt on decode failure. `handle`/`sourceWriteTime` key the cook cache.
-		static std::optional<CookedTexture> DecodeCPU(const std::filesystem::path& filePath, AssetHandle handle, uint64_t sourceWriteTime);
+		static std::optional<CookedTexture> DecodeCPU(const std::filesystem::path& filePath, AssetHandle handle, uint64_t sourceWriteTime,
+		                                              TextureRole role = TextureRole::Unknown);
+
+		// Makes in-flight and queued DecodeCPU cooks return nullopt without finishing. Called once at
+		// shutdown: a cold cook is minutes of block compression that nothing will use, and the cache is
+		// derived data that the next run rebuilds. One-way; never cleared within a process.
+		static void AbortCooking();
 
 	protected:
 		Texture() = default;

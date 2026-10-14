@@ -1,5 +1,7 @@
 #include "MeshLibrary.hpp"
 
+#include "Snowstorm/Assets/VirtualPath.hpp"
+
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
@@ -66,8 +68,14 @@ namespace Snowstorm
 		}
 
 		Assimp::Importer importer;
+		// The SAME flags the per-submesh path uses. They used to differ by PreTransformVertices, so a file
+		// loaded whole kept every part in its own node's local space while the same file loaded per-part
+		// had the hierarchy baked in. Merging those local-space parts into one buffer, which the loop
+		// below does, stacks them at the origin: a multi-node model came out as a jumble. Nothing in the
+		// project hit it, because the only whole-file meshes actually referenced by a scene are .obj,
+		// which has no node hierarchy for the flag to bake.
 		const aiScene* scene = importer.ReadFile(filepath,
-		                                         aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_JoinIdenticalVertices | aiProcess_CalcTangentSpace);
+		                                         aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_JoinIdenticalVertices | aiProcess_PreTransformVertices | aiProcess_CalcTangentSpace);
 
 		if (!scene || !scene->mRootNode || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE)
 		{
@@ -106,7 +114,7 @@ namespace Snowstorm
 	Ref<Mesh> MeshLibrary::Load(const std::string& filepath, const int submeshIndex)
 	{
 		// Cache key embeds the submesh index so different parts of the same file stay distinct.
-		const std::string cacheKey = filepath + "?submesh=" + std::to_string(submeshIndex);
+		const std::string cacheKey = VirtualPath::JoinSubResource(filepath, submeshIndex);
 		if (m_Meshes.contains(cacheKey))
 		{
 			return m_Meshes[cacheKey];
@@ -218,10 +226,13 @@ namespace Snowstorm
 	{
 		// CPU-only: safe on a worker thread. No m_Meshes access (that map holds GPU resources and is
 		// main-thread-only); the caller finalizes on the main thread via FinalizeCooked.
+		// For the IN-MEMORY parsed-file cache below only. mtime is the right key there: that cache lives
+		// for one process, so a timestamp cannot be stale in a way that matters. The on-disk artifact is
+		// the opposite case and checks a content hash, which is why it takes the path instead.
 		const uint64_t sourceTime = GetFileWriteTimeU64(filepath);
 
 		// Fast path: this submesh's cooked blob already on disk (no Assimp).
-		if (auto blob = MeshCacheIO::Load(handle, sourceTime))
+		if (auto blob = MeshCacheIO::Load(handle, filepath))
 		{
 			return blob;
 		}
@@ -233,7 +244,7 @@ namespace Snowstorm
 		std::lock_guard parseGuard(*fileLock);
 
 		// Another worker may have written this blob while we waited on the lock — recheck disk.
-		if (auto blob = MeshCacheIO::Load(handle, sourceTime))
+		if (auto blob = MeshCacheIO::Load(handle, filepath))
 		{
 			return blob;
 		}
@@ -268,7 +279,7 @@ namespace Snowstorm
 		{
 			return std::nullopt;
 		}
-		(void)MeshCacheIO::Save(handle, sourceTime, cooked); // persist so next startup skips the parse entirely
+		(void)MeshCacheIO::Save(handle, filepath, cooked); // persist so next startup skips the parse entirely
 		return cooked;
 	}
 

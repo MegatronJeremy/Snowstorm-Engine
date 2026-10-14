@@ -62,6 +62,7 @@ Makefile
 # the blanket *.json ignore) or every fresh checkout renders nothing. The demo
 # content now lives in the Sandbox project, so un-ignore its registry there.
 !Projects/Sandbox/assets/AssetRegistry.json
+!Projects/Pong/assets/AssetRegistry.json
 
 # Authored benchmark camera routes. Committed data, not build output: a missing route file makes the engine
 # fall back to the circular orbit, which still runs, so the failure would show up as quietly wrong numbers
