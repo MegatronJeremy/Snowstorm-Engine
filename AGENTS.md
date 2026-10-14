@@ -549,6 +549,15 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   a scene, outranking the `<scene>.world.editor` sidecar. Measuring UNDER motion is a different gate
   with a different protocol, `quality-motion.py` below; it is not this one with the path switched on.
 
+**`Reflections.world` is the testbed for reflection changes.** Sponza cannot register any reflection
+change (#171): one low-contrast specular floor moves only 0.3% of pixels by more than 2/255. The scene
+puts the reflected signal where a metric can see it: a polished floor (roughness 0.04, metallic 0.9)
+and a mirror wall (0.02, 1.0) facing saturated and checker-textured pillars, a black pillar and a
+white one beside a bright procedural sky, a five-cube roughness ladder (0.05 to 0.7) for the
+roughness cutoff and roughness-driven kernels, and the girl mesh for a non-box silhouette. Only
+existing assets and per-entity overrides are used, so it needs no registry rows. It has no committed
+baselines and no emissive surfaces (a material override cannot set emissive).
+
 Every run sets `SS_CONFIG_IGNORE=1`, so a capture is code defaults plus the technique's overrides and
 never this machine's persisted `SnowstormConfig.cfg`. Note that only `all-rt` overrides
 `render.shadows.mode`: every other technique renders with the default shadow map, so shadowing is a

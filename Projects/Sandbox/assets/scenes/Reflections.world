@@ -1,0 +1,947 @@
+{
+  "Entities": [
+    {
+      "Components": {
+        "Snowstorm::DirectionalLightComponent": {
+          "CastShadows": true,
+          "Color": [
+            1.0,
+            0.97,
+            0.9
+          ],
+          "Direction": [
+            -0.399501,
+            -0.799002,
+            -0.449439
+          ],
+          "Enabled": true,
+          "Intensity": 6.0
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Sun (key)",
+      "UUID": "7419590676172780625"
+    },
+    {
+      "Components": {
+        "Snowstorm::EnvironmentComponent": {
+          "Background": "ProceduralSky",
+          "GroundColor": [
+            0.02,
+            0.02,
+            0.02
+          ],
+          "SkyHorizonColor": [
+            1.0,
+            0.82,
+            0.6
+          ],
+          "SkyIntensity": 1.5,
+          "SkyZenithColor": [
+            0.15,
+            0.3,
+            0.7
+          ]
+        }
+      },
+      "Name": "Environment",
+      "UUID": "8183118577785885965"
+    },
+    {
+      "Components": {
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0,
+            1.7,
+            9.5
+          ],
+          "Rotation": [
+            -0.14,
+            0,
+            0
+          ],
+          "Scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Snowstorm::CameraComponent": {
+          "Projection": "Perspective",
+          "PerspectiveFOV": 0.9,
+          "PerspectiveNear": 0.1,
+          "PerspectiveFar": 200.0,
+          "Primary": true
+        }
+      },
+      "Name": "Game Camera",
+      "UUID": "8428889832475137352"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.9,
+                0.9,
+                0.92,
+                1.0
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.04
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.9
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "12112538743247314239"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0,
+            0,
+            0
+          ],
+          "Rotation": [
+            -1.5707963267948966,
+            0,
+            0
+          ],
+          "Scale": [
+            40,
+            40,
+            1
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Floor (polished)",
+      "UUID": "9192990757264511780"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.95,
+                0.95,
+                0.95,
+                1.0
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.02
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 1.0
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "12112538743247314239"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0,
+            3,
+            -9
+          ],
+          "Rotation": [
+            0,
+            0,
+            0
+          ],
+          "Scale": [
+            18,
+            6,
+            1
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Mirror wall",
+      "UUID": "7618228304289792676"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.9,
+                0.9,
+                0.9,
+                1.0
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.05
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 1.0
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "5810267832183663728"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            -6,
+            0.8,
+            2.0
+          ],
+          "Rotation": [
+            0,
+            0.5,
+            0
+          ],
+          "Scale": [
+            0.8,
+            0.8,
+            0.8
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Ladder cube r=0.05",
+      "UUID": "8875106495808773213"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.9,
+                0.9,
+                0.9,
+                1.0
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.15
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 1.0
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "5810267832183663728"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            -3,
+            0.8,
+            2.0
+          ],
+          "Rotation": [
+            0,
+            0.5,
+            0
+          ],
+          "Scale": [
+            0.8,
+            0.8,
+            0.8
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Ladder cube r=0.15",
+      "UUID": "6236023523956783719"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.9,
+                0.9,
+                0.9,
+                1.0
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.3
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 1.0
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "5810267832183663728"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0,
+            0.8,
+            2.0
+          ],
+          "Rotation": [
+            0,
+            0.5,
+            0
+          ],
+          "Scale": [
+            0.8,
+            0.8,
+            0.8
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Ladder cube r=0.3",
+      "UUID": "8098652241742086588"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.9,
+                0.9,
+                0.9,
+                1.0
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.5
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 1.0
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "5810267832183663728"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            3,
+            0.8,
+            2.0
+          ],
+          "Rotation": [
+            0,
+            0.5,
+            0
+          ],
+          "Scale": [
+            0.8,
+            0.8,
+            0.8
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Ladder cube r=0.5",
+      "UUID": "7483705248807753374"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.9,
+                0.9,
+                0.9,
+                1.0
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.7
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 1.0
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "5810267832183663728"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            6,
+            0.8,
+            2.0
+          ],
+          "Rotation": [
+            0,
+            0.5,
+            0
+          ],
+          "Scale": [
+            0.8,
+            0.8,
+            0.8
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Ladder cube r=0.7",
+      "UUID": "6336977569477118347"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "AlbedoTexture",
+              "Type": "Texture",
+              "Value": "12465655103903380530"
+            },
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                1,
+                0.05,
+                0.05,
+                1.0
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.6
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "5810267832183663728"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            -7.5,
+            2.0,
+            -4.5
+          ],
+          "Rotation": [
+            0,
+            0.0,
+            0
+          ],
+          "Scale": [
+            0.5,
+            2.0,
+            0.5
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Pillar 0",
+      "UUID": "6214590092038562596"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.05,
+                0.9,
+                0.1,
+                1.0
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.6
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "5810267832183663728"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            -4.5,
+            2.0,
+            -4.5
+          ],
+          "Rotation": [
+            0,
+            0.3,
+            0
+          ],
+          "Scale": [
+            0.5,
+            2.0,
+            0.5
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Pillar 1",
+      "UUID": "7051796015214349435"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "AlbedoTexture",
+              "Type": "Texture",
+              "Value": "12465655103903380530"
+            },
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.1,
+                0.2,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.6
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "5810267832183663728"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            -1.5,
+            2.0,
+            -4.5
+          ],
+          "Rotation": [
+            0,
+            0.6,
+            0
+          ],
+          "Scale": [
+            0.5,
+            2.0,
+            0.5
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Pillar 2",
+      "UUID": "8484789368427765381"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                1.0,
+                0.85,
+                0.05,
+                1.0
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.6
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "5810267832183663728"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            1.5,
+            2.0,
+            -4.5
+          ],
+          "Rotation": [
+            0,
+            0.8999999999999999,
+            0
+          ],
+          "Scale": [
+            0.5,
+            2.0,
+            0.5
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Pillar 3",
+      "UUID": "6703484384059129973"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "AlbedoTexture",
+              "Type": "Texture",
+              "Value": "12465655103903380530"
+            },
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.6
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "5810267832183663728"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            4.5,
+            2.0,
+            -4.5
+          ],
+          "Rotation": [
+            0,
+            1.2,
+            0
+          ],
+          "Scale": [
+            0.5,
+            2.0,
+            0.5
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Pillar 4",
+      "UUID": "5910757949989815448"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.6
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "5810267832183663728"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            7.5,
+            2.0,
+            -4.5
+          ],
+          "Rotation": [
+            0,
+            1.5,
+            0
+          ],
+          "Scale": [
+            0.5,
+            2.0,
+            0.5
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Pillar 5",
+      "UUID": "5169347642331663307"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "AlbedoTexture",
+              "Type": "Texture",
+              "Value": "12465655103903380530"
+            },
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                1,
+                1,
+                1,
+                1.0
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.5
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "5810267832183663728"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0,
+            0.6,
+            -1.0
+          ],
+          "Rotation": [
+            0,
+            0.7,
+            0
+          ],
+          "Scale": [
+            1.2,
+            1.2,
+            1.2
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Checker block",
+      "UUID": "9006925251996248864"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.9,
+                0.2,
+                0.15,
+                1.0
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.35
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "14167707854468761414"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            4.5,
+            0.0,
+            -1.0
+          ],
+          "Rotation": [
+            0,
+            -0.6,
+            0
+          ],
+          "Scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Girl (complex silhouette)",
+      "UUID": "6901886544661272153"
+    }
+  ],
+  "Scene": {
+    "Name": "Reflections",
+    "Version": 1
+  }
+}
