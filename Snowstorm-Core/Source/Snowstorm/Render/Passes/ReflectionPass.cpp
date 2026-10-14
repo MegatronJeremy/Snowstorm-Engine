@@ -42,8 +42,8 @@ namespace Snowstorm
 
 			uint32_t ReflGeoTableAddrLo = 0;
 			uint32_t ReflGeoTableAddrHi = 0;
-			uint32_t RayCount = 1; // render.reflections.rays (clamped): reflection rays/pixel this frame
-			uint32_t _Pad1 = 0;
+			uint32_t RayCount = 1;         // render.reflections.rays (clamped): reflection rays/pixel this frame
+			float ReflMaxRoughness = 0.8f; // render.reflections.max_roughness: pixels at or above are not traced
 		};
 
 		// The shader's own cbuffer rows sum to this. Catches the whole-struct half of a drift at compile time
@@ -124,6 +124,7 @@ namespace Snowstorm
 		cb.ReflRange = CVars::ReflectionRange.Get();
 		cb.OutSize = {outW, outH};
 		cb.ReflConeScale = CVars::ReflectionConeScale.Get();
+		cb.ReflMaxRoughness = CVars::ReflectionMaxRoughness.Get();
 		cb.FrameCounter = frameCounter;
 
 		cb.LightCount = static_cast<uint32_t>(frame.Lights.LightCount);
