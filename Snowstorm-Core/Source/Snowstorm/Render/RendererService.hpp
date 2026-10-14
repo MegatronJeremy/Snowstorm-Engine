@@ -8,6 +8,7 @@
 #include "Snowstorm/Lighting/LightingUniforms.hpp"
 #include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/FrameData.hpp"
+#include "Snowstorm/Render/GenerationKeyedCache.hpp"
 #include "Snowstorm/Render/MaterialInstance.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
@@ -477,8 +478,9 @@ namespace Snowstorm
 		std::unordered_map<BatchKey, size_t, BatchKeyHash> m_BatchIndex;
 
 		// Cached per-pipeline sets, per frame-in-flight
-		std::unordered_map<const Pipeline*, std::vector<Ref<DescriptorSet>>> m_FrameSets;
-		std::unordered_map<const Pipeline*, std::vector<Ref<DescriptorSet>>> m_ObjectSets;
+		// Keyed by the pipeline's layout generation: a hot-reload that changes the binding layout evicts them.
+		GenerationKeyedCache<const Pipeline*, std::vector<Ref<DescriptorSet>>> m_FrameSets;
+		GenerationKeyedCache<const Pipeline*, std::vector<Ref<DescriptorSet>>> m_ObjectSets;
 
 		std::unordered_map<const DescriptorSet*, Ref<Buffer>> m_FrameUniformBuffers;
 

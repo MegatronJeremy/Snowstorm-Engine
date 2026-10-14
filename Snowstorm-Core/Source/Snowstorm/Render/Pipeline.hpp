@@ -181,9 +181,12 @@ namespace Snowstorm
 		// GetDesc(), which still references the same Shader — whose SPIR-V has been recompiled on disk. The
 		// backend swaps its internal handle, so every holder of this Ref<Pipeline> transparently binds the
 		// new pipeline next frame (no re-wiring). Safe only when the shader's descriptor/vertex layout is
-		// unchanged (editing shader math): a binding-layout change would invalidate the renderer's cached
-		// descriptor sets, so backends log and refuse rather than corrupt state. See ShaderReloadSystem.
+		// unchanged; a binding-layout change bumps GetLayoutGeneration() so caches of descriptor sets
+		// allocated from the old set layouts can evict them. See ShaderReloadSystem.
 		virtual void Reload() {}
+
+		// Increments whenever a rebuild changed the reflected descriptor/push-constant layout.
+		[[nodiscard]] virtual uint64_t GetLayoutGeneration() const { return 0; }
 
 		// Live MSAA: rebuild the backend pipeline in place at a new rasterization sample count (updates the
 		// desc + swaps the internal handle, like Reload). No-op if unchanged or on pipeline types without
