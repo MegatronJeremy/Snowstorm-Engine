@@ -67,6 +67,11 @@ namespace Snowstorm
 
 		VmaAllocator GetAllocator() const { return m_Allocator; }
 
+		// Device-wide pipeline cache, seeded from and saved to Engine/cache/pipeline. Pass it to every
+		// vkCreate*Pipelines call. Internally synchronized unless created with the externally-synchronized
+		// flag, which this one is not, so worker threads may share it.
+		VkPipelineCache GetPipelineCache() const { return m_PipelineCache; }
+
 		VkCommandPool GetGraphicsCommandPool() const { return m_GraphicsCommandPool; }
 
 		VkSwapchainKHR GetSwapchain() const { return m_Swapchain; }
@@ -142,6 +147,10 @@ namespace Snowstorm
 		VkCommandPool m_ComputeCommandPool = VK_NULL_HANDLE;
 
 		VmaAllocator m_Allocator = nullptr;
+
+		VkPipelineCache m_PipelineCache = VK_NULL_HANDLE;
+		void CreatePipelineCache();
+		void SavePipelineCache() const;
 
 		VkCommandPool m_GraphicsCommandPool = VK_NULL_HANDLE;
 

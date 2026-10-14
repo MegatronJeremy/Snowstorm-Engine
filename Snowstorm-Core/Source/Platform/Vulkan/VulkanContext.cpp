@@ -7,6 +7,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -22,6 +23,10 @@
 #include <vk_mem_alloc.h>
 
 #include "VulkanBindlessManager.hpp"
+#include "Snowstorm/Utility/EnginePaths.hpp"
+
+#include <filesystem>
+#include <fstream>
 
 #define VK_CHECK(expr)                                           \
 	{                                                            \
@@ -802,6 +807,8 @@ namespace Snowstorm
 
 		VK_CHECK(vmaCreateAllocator(&allocatorInfo, &m_Allocator));
 
+		CreatePipelineCache();
+
 		VulkanBindlessManager::Get().Init();
 
 		// 7. Swapchain
@@ -1048,11 +1055,116 @@ namespace Snowstorm
 		// SS_CORE_INFO("VMA Leak Report: {0}", statsString);
 		// vmaFreeStatsString(m_Allocator, statsString);
 
+		if (m_PipelineCache != VK_NULL_HANDLE)
+		{
+			SavePipelineCache();
+			vkDestroyPipelineCache(m_Device, m_PipelineCache, nullptr);
+			m_PipelineCache = VK_NULL_HANDLE;
+		}
+
 		vmaDestroyAllocator(m_Allocator);
 
 		vkDestroyDevice(m_Device, nullptr);
 
 		vkDestroyInstance(m_Instance, nullptr);
+	}
+
+	namespace
+	{
+		// One file per vendor/device/driver build: a driver update changes pipelineCacheUUID and
+		// driverVersion, so stale blobs are never offered to the new driver.
+		std::filesystem::path PipelineCachePath(const VkPhysicalDeviceProperties& p)
+		{
+			char name[96];
+			std::snprintf(name, sizeof(name), "%08x-%08x-%08x-%08x.bin", p.vendorID, p.deviceID, p.driverVersion,
+			              p.apiVersion);
+			return EngineAssetPath("Engine/cache/pipeline") / name;
+		}
+	} // namespace
+
+	void VulkanContext::CreatePipelineCache()
+	{
+		VkPhysicalDeviceProperties props{};
+		vkGetPhysicalDeviceProperties(m_PhysicalDevice, &props);
+
+		std::vector<char> blob;
+		const auto path = PipelineCachePath(props);
+		if (std::ifstream in(path, std::ios::binary | std::ios::ate); in.is_open())
+		{
+			const std::streamsize size = in.tellg();
+			in.seekg(0);
+			blob.resize(static_cast<size_t>(std::max<std::streamsize>(size, 0)));
+			if (!in.read(blob.data(), static_cast<std::streamsize>(blob.size())))
+				blob.clear();
+		}
+
+		// Drivers validate the blob themselves, but the header is cheap to check here and a mismatch is
+		// logged instead of silently becoming a cold cache.
+		if (!blob.empty())
+		{
+			bool ok = blob.size() >= sizeof(uint32_t) * 4 + VK_UUID_SIZE;
+			if (ok)
+			{
+				uint32_t hdr[4];
+				std::memcpy(hdr, blob.data(), sizeof(hdr));
+				ok = hdr[0] >= sizeof(hdr) + VK_UUID_SIZE && hdr[0] <= blob.size() &&
+				     hdr[1] == VK_PIPELINE_CACHE_HEADER_VERSION_ONE && hdr[2] == props.vendorID &&
+				     hdr[3] == props.deviceID &&
+				     std::memcmp(blob.data() + sizeof(hdr), props.pipelineCacheUUID, VK_UUID_SIZE) == 0;
+			}
+			if (!ok)
+			{
+				SS_CORE_WARN("Pipeline cache {} does not match this device/driver; starting cold",
+				             path.string());
+				blob.clear();
+			}
+		}
+
+		VkPipelineCacheCreateInfo ci{};
+		ci.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+		ci.initialDataSize = blob.size();
+		ci.pInitialData = blob.empty() ? nullptr : blob.data();
+		VkResult res = vkCreatePipelineCache(m_Device, &ci, nullptr, &m_PipelineCache);
+		if (res != VK_SUCCESS && !blob.empty())
+		{
+			ci.initialDataSize = 0;
+			ci.pInitialData = nullptr;
+			res = vkCreatePipelineCache(m_Device, &ci, nullptr, &m_PipelineCache);
+		}
+		if (res != VK_SUCCESS)
+		{
+			SS_CORE_WARN("vkCreatePipelineCache failed ({}); pipelines compile uncached", static_cast<int>(res));
+			m_PipelineCache = VK_NULL_HANDLE;
+		}
+	}
+
+	void VulkanContext::SavePipelineCache() const
+	{
+		size_t size = 0;
+		if (vkGetPipelineCacheData(m_Device, m_PipelineCache, &size, nullptr) != VK_SUCCESS || size == 0)
+			return;
+		std::vector<char> blob(size);
+		if (vkGetPipelineCacheData(m_Device, m_PipelineCache, &size, blob.data()) != VK_SUCCESS)
+			return;
+		blob.resize(size);
+
+		VkPhysicalDeviceProperties props{};
+		vkGetPhysicalDeviceProperties(m_PhysicalDevice, &props);
+		const auto path = PipelineCachePath(props);
+
+		// Write-then-rename so a crash mid-write never leaves a truncated blob under the real name.
+		std::error_code ec;
+		std::filesystem::create_directories(path.parent_path(), ec);
+		auto tmp = path;
+		tmp += ".tmp";
+		{
+			std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+			if (!out.write(blob.data(), static_cast<std::streamsize>(blob.size())))
+				return;
+		}
+		std::filesystem::rename(tmp, path, ec);
+		if (ec)
+			std::filesystem::remove(tmp, ec);
 	}
 
 	void VulkanContext::LogMemoryStats() const
