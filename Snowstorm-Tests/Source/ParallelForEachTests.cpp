@@ -23,12 +23,14 @@ namespace
 
 		void Execute(Timestep) override
 		{
-			ParallelForEach<Write<Counter>, Read<Step>>([](entt::entity, Counter& c, const Step& s) { c.value += s.by; });
+			ParallelForEach<Write<Counter>, Read<Step>>([](entt::entity, Counter& c, const Step& s)
+			                                            { c.value += s.by; });
 		}
 
 		void RunOther()
 		{
-			ParallelForEach<Write<Counter>>([](entt::entity, Counter& c) { c.value += 100; });
+			ParallelForEach<Write<Counter>>([](entt::entity, Counter& c)
+			                                { c.value += 100; });
 		}
 
 		[[nodiscard]] size_t ScratchCapacity() const { return ParallelScratchCapacity(); }
