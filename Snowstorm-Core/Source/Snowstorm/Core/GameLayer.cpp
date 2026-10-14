@@ -102,8 +102,8 @@ namespace Snowstorm
 		ConfigureSceneCamera(viewportId);
 
 		// The scene renders into an offscreen RenderTarget; with no ImGui backend, RenderSystem's
-		// PresentPass blits the primary viewport onto the swapchain (#4). The viewport is fixed-size for
-		// now, so a resized window shows a scaled image until #146 makes the target track the window.
+		// PresentPass blits the primary viewport onto the swapchain (#4); OnUpdate keeps the viewport at the
+		// window size.
 	}
 
 	UUID GameLayer::CreateRuntimeViewport() const
@@ -184,6 +184,22 @@ namespace Snowstorm
 
 	void GameLayer::OnUpdate(const Timestep ts)
 	{
+		// RuntimeInitSystem rebuilds the render target when the viewport size changes (#146). A minimized
+		// window reports 0x0; keep the last size so the target is not rebuilt at nothing.
+		const auto& window = Application::Get().GetWindow();
+		const glm::vec2 windowSize{static_cast<float>(window.GetWidth()), static_cast<float>(window.GetHeight())};
+		if (windowSize.x > 0.0f && windowSize.y > 0.0f)
+		{
+			auto& reg = m_World->GetRegistry();
+			for (const entt::entity e : reg.view<ViewportComponent>())
+			{
+				if (reg.Read<ViewportComponent>(e).Size != windowSize)
+				{
+					reg.Write<ViewportComponent>(e).Size = windowSize;
+				}
+			}
+		}
+
 		m_World->OnUpdate(ts);
 	}
 }

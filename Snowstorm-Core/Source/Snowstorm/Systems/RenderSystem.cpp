@@ -253,8 +253,7 @@ namespace Snowstorm
 		//    ImGui backend is up.
 		//  - Runtime (#4): no ImGui, so blit the primary viewport's final LDR image (PresentSampleView)
 		//    straight to the swapchain with a fullscreen triangle (PresentPass). Without this the runtime
-		//    presents a blank window. NOTE: the runtime's present target is currently fixed-size, so a resized
-		//    window shows a scaled image until #146 makes the target track the window.
+		//    presents a blank window.
 		if (const Ref<RenderTarget> swapchain = Renderer::GetSwapchainTarget())
 		{
 			if (Renderer::IsImGuiBackendInitialized())
