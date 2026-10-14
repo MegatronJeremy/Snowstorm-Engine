@@ -1,0 +1,230 @@
+{
+  "device": "AMD Radeon(TM) 8060S Graphics",
+  "config": "shadows-stoch",
+  "frames": 300,
+  "timestampsSupported": true,
+  "width": 1717,
+  "height": 972,
+  "camera": [
+    8.5191,
+    1.4949,
+    -0.4308,
+    0.0272,
+    1.4958,
+    0.0
+  ],
+  "totalGpuMs": 16.8746,
+  "passes": {
+    "ShadowSpecDenoise2": {
+      "avgMs": 0.9998,
+      "minMs": 0.9874,
+      "maxMs": 1.0554,
+      "fragInvocations": 0,
+      "depth": 0,
+      "spreadPct": 1.070214042808566,
+      "q1Ms": 0.9988,
+      "q3Ms": 1.00745,
+      "runs": 5
+    },
+    "ShadowSpecTemporal": {
+      "avgMs": 0.507,
+      "minMs": 0.4758,
+      "maxMs": 0.6335,
+      "fragInvocations": 0,
+      "depth": 0,
+      "spreadPct": 2.347140039447714,
+      "q1Ms": 0.5041,
+      "q3Ms": 0.5137499999999999,
+      "runs": 5
+    },
+    "Velocity": {
+      "avgMs": 0.3142,
+      "minMs": 0.306,
+      "maxMs": 0.8564,
+      "fragInvocations": 3908570,
+      "depth": 0,
+      "spreadPct": 1.1457670273710987,
+      "q1Ms": 0.31245,
+      "q3Ms": 0.31505,
+      "runs": 5
+    },
+    "ShadowDenoise2": {
+      "avgMs": 1.3609,
+      "minMs": 0.994,
+      "maxMs": 1.832,
+      "fragInvocations": 0,
+      "depth": 0,
+      "spreadPct": 4.548460577558957,
+      "q1Ms": 1.32495,
+      "q3Ms": 1.36675,
+      "runs": 5
+    },
+    "TemporalResolve": {
+      "avgMs": 0.236,
+      "minMs": 0.2306,
+      "maxMs": 0.2578,
+      "fragInvocations": 1668924,
+      "depth": 0,
+      "spreadPct": 1.2288135593220397,
+      "q1Ms": 0.23515,
+      "q3Ms": 0.2377,
+      "runs": 5
+    },
+    "DepthNormal": {
+      "avgMs": 0.5134,
+      "minMs": 0.4676,
+      "maxMs": 1.0336,
+      "fragInvocations": 4661231,
+      "depth": 0,
+      "spreadPct": 1.5192832099727365,
+      "q1Ms": 0.51275,
+      "q3Ms": 0.5203,
+      "runs": 5
+    },
+    "Editor": {
+      "avgMs": 0.1573,
+      "minMs": 0.1549,
+      "maxMs": 0.1849,
+      "fragInvocations": 9304728,
+      "depth": 0,
+      "spreadPct": 1.7164653528289942,
+      "q1Ms": 0.15710000000000002,
+      "q3Ms": 0.15865,
+      "runs": 5
+    },
+    "RTShadow": {
+      "avgMs": 7.0231,
+      "minMs": 6.9682,
+      "maxMs": 7.0919,
+      "fragInvocations": 0,
+      "depth": 0,
+      "spreadPct": 1.5990089846364055,
+      "q1Ms": 6.9955,
+      "q3Ms": 7.0579,
+      "runs": 5
+    },
+    "ShadowSpecDenoise0": {
+      "avgMs": 0.9022,
+      "minMs": 0.8381,
+      "maxMs": 1.3715,
+      "fragInvocations": 0,
+      "depth": 0,
+      "spreadPct": 5.752604743959204,
+      "q1Ms": 0.8961,
+      "q3Ms": 0.93655,
+      "runs": 5
+    },
+    "PostProcess": {
+      "avgMs": 0.0412,
+      "minMs": 0.0399,
+      "maxMs": 0.0684,
+      "fragInvocations": 1668924,
+      "depth": 0,
+      "spreadPct": 1.2135922330097098,
+      "q1Ms": 0.0411,
+      "q3Ms": 0.04145,
+      "runs": 5
+    },
+    "CameraDepthPrepass": {
+      "avgMs": 0.1815,
+      "minMs": 0.1549,
+      "maxMs": 0.637,
+      "fragInvocations": 4483265,
+      "depth": 0,
+      "spreadPct": 7.823691460055092,
+      "q1Ms": 0.1796,
+      "q3Ms": 0.1911,
+      "runs": 5
+    },
+    "ShadowTemporal": {
+      "avgMs": 0.4979,
+      "minMs": 0.4733,
+      "maxMs": 0.6134,
+      "fragInvocations": 0,
+      "depth": 0,
+      "spreadPct": 2.4904599317132,
+      "q1Ms": 0.49429999999999996,
+      "q3Ms": 0.50495,
+      "runs": 5
+    },
+    "Sky": {
+      "avgMs": 0.0023,
+      "minMs": 0.0009,
+      "maxMs": 0.0028,
+      "fragInvocations": 0,
+      "depth": 1,
+      "spreadPct": 4.347826086956514,
+      "q1Ms": 0.0022500000000000003,
+      "q3Ms": 0.0023,
+      "runs": 5
+    },
+    "ShadowDenoise1": {
+      "avgMs": 0.8973,
+      "minMs": 0.8817,
+      "maxMs": 0.99,
+      "fragInvocations": 0,
+      "depth": 0,
+      "spreadPct": 1.705115346038112,
+      "q1Ms": 0.8965,
+      "q3Ms": 0.90985,
+      "runs": 5
+    },
+    "ShadowDenoise0": {
+      "avgMs": 0.8635,
+      "minMs": 0.8449,
+      "maxMs": 0.9423,
+      "fragInvocations": 0,
+      "depth": 0,
+      "spreadPct": 1.737116386797917,
+      "q1Ms": 0.8619,
+      "q3Ms": 0.874,
+      "runs": 5
+    },
+    "ShadowSpecDenoise1": {
+      "avgMs": 0.896,
+      "minMs": 0.8831,
+      "maxMs": 0.9729,
+      "fragInvocations": 0,
+      "depth": 0,
+      "spreadPct": 1.0602678571428519,
+      "q1Ms": 0.89515,
+      "q3Ms": 0.90265,
+      "runs": 5
+    },
+    "ShadowUpsample": {
+      "avgMs": 0.1399,
+      "minMs": 0.1208,
+      "maxMs": 0.1699,
+      "fragInvocations": 1668924,
+      "depth": 0,
+      "spreadPct": 4.789135096497507,
+      "q1Ms": 0.1374,
+      "q3Ms": 0.1422,
+      "runs": 5
+    },
+    "ShadowSpecUpsample": {
+      "avgMs": 0.1525,
+      "minMs": 0.1176,
+      "maxMs": 0.5663,
+      "fragInvocations": 1668924,
+      "depth": 0,
+      "spreadPct": 12.262295081967228,
+      "q1Ms": 0.1445,
+      "q3Ms": 0.15975,
+      "runs": 5
+    },
+    "Forward": {
+      "avgMs": 1.1883,
+      "minMs": 1.1667,
+      "maxMs": 1.3828,
+      "fragInvocations": 2617755,
+      "depth": 0,
+      "spreadPct": 1.4137843978793172,
+      "q1Ms": 1.18485,
+      "q3Ms": 1.2001499999999998,
+      "runs": 5
+    }
+  },
+  "totalSpreadPct": 1.2906972609721143,
+  "runs": 5
+}
