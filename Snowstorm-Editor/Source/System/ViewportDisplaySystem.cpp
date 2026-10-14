@@ -20,6 +20,7 @@
 #include "Snowstorm/Render/SceneBounds.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 #include "Snowstorm/Systems/TlasInstanceMapSingleton.hpp"
+#include "Snowstorm/Utility/EnginePaths.hpp"
 #include "Singletons/EditorCommands.hpp"
 #include "Singletons/EditorHistorySingleton.hpp"
 #include "Singletons/EditorSelectionSingleton.hpp"
@@ -38,6 +39,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <limits>
 #include <optional>
 
@@ -397,9 +399,14 @@ namespace Snowstorm
 		if (!m_IconAtlasAttempted)
 		{
 			m_IconAtlasAttempted = true;
-			if (const Ref<Texture> tex = Texture::Create(kIconAtlasPath, true))
+			std::error_code ec;
+			const std::filesystem::path path = EngineAssetPath(kIconAtlasPath);
+			if (std::filesystem::exists(path, ec))
 			{
-				m_IconAtlas = TextureView::Create(tex, MakeFullViewDesc(tex->GetDesc()));
+				if (const Ref<Texture> tex = Texture::Create(path, true))
+				{
+					m_IconAtlas = TextureView::Create(tex, MakeFullViewDesc(tex->GetDesc()));
+				}
 			}
 			if (!m_IconAtlas)
 			{
