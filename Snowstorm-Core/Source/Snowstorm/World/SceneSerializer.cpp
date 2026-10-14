@@ -98,12 +98,8 @@ namespace Snowstorm
 			if (typeName == "Snowstorm::MeshComponent")
 			{
 				const std::string h = inJson.value("$asset", "0");
-				if (h == "0")
-				{
-					return true;
-				}
-
-				const AssetHandle handle = UUID::FromString(h);
+				// Handle 0 means "awaiting assignment": the component must still exist so it survives save/load.
+				const AssetHandle handle = h == "0" ? AssetHandle{0} : UUID::FromString(h);
 
 				entity.AddOrReplaceComponent<MeshComponent>();
 
@@ -116,12 +112,8 @@ namespace Snowstorm
 			if (typeName == "Snowstorm::MaterialComponent")
 			{
 				const std::string h = inJson.value("$asset", "0");
-				if (h == "0")
-				{
-					return true;
-				}
-
-				const AssetHandle handle = UUID::FromString(h);
+				// Handle 0 means "awaiting assignment": the component must still exist so it survives save/load.
+				const AssetHandle handle = h == "0" ? AssetHandle{0} : UUID::FromString(h);
 
 				entity.AddOrReplaceComponent<MaterialComponent>();
 
