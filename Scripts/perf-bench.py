@@ -29,6 +29,7 @@ Usage (from repo root or anywhere):
     py Scripts/perf-bench.py --abs-threshold 0  # gate on % alone (noisy on sub-ms passes)
     py Scripts/perf-bench.py --scene <path>     # benchmark a different scene
     py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
+    py Scripts/perf-bench.py --pin-clocks       # lock GPU clocks (NVIDIA, elevated shell); restored on exit
     py Scripts/perf-bench.py --compare-exe <base-exe> --pairs 3 --gate   # gate a change vs its base build
 
 --gate (with --compare-exe) is the verdict for a machine that cannot pin clocks: the stored baseline
@@ -43,9 +44,11 @@ GPU timestamps). Exit 2 is not a pass: it means the gate did not run, which is w
 a new GPU, or a timestamp-less device sees.
 """
 import argparse
+import atexit
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -322,6 +325,75 @@ def gate_ab(res: dict, threshold_pct: float, abs_ms: float, min_ms: float) -> li
     return found
 
 
+def parse_nvidia_query(text: str) -> list[dict]:
+    """Rows of `nvidia-smi --query-gpu=index,name,clocks.max.gr --format=csv,noheader,nounits`."""
+    rows = []
+    for line in text.splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 3 or not parts[0].isdigit():
+            continue
+        try:
+            rows.append({"index": int(parts[0]), "name": parts[1], "maxMhz": int(float(parts[2]))})
+        except ValueError:
+            continue
+    return rows
+
+
+def select_nvidia_gpu(rows: list[dict], gpu: str) -> dict | None:
+    """Same selection syntax as --gpu: a short all-digits value is an index, anything else a case-insensitive name
+    substring. Empty selects the only adapter; with several it is ambiguous, so None."""
+    if not gpu:
+        return rows[0] if len(rows) == 1 else None
+    if gpu.isdigit() and len(gpu) <= 2:
+        return next((r for r in rows if r["index"] == int(gpu)), None)
+    hits = [r for r in rows if gpu.lower() in r["name"].lower()]
+    return hits[0] if len(hits) == 1 else None
+
+
+def nvidia_pin_cmds(index: int, mhz: int) -> tuple[list[str], list[str]]:
+    base = ["nvidia-smi", "-i", str(index)]
+    return base + [f"--lock-gpu-clocks={mhz},{mhz}"], base + ["--reset-gpu-clocks"]
+
+
+class ClockPin:
+    """Opt-in pin of the GPU to a fixed clock for the run, restored on exit (atexit covers failures
+    and Ctrl-C). `pinned` is what the run header and the JSON report; `note` says why when it is False."""
+
+    def __init__(self, gpu: str, mhz: int = 0, run=subprocess.run, which=shutil.which):
+        self.pinned = False
+        self.note = ""
+        self.mhz = 0
+        self._restore: list[str] | None = None
+        self._run = run
+        if not which("nvidia-smi"):
+            self.note = ("no scriptable clock-pin mechanism for this adapter (nvidia-smi absent; AMD on "
+                         "Windows has none), numbers are UNPINNED")
+            return
+        q = run(["nvidia-smi", "--query-gpu=index,name,clocks.max.gr", "--format=csv,noheader,nounits"],
+                capture_output=True, text=True)
+        row = select_nvidia_gpu(parse_nvidia_query(q.stdout or ""), gpu) if q.returncode == 0 else None
+        if row is None:
+            self.note = "nvidia-smi found no unambiguous adapter for --gpu '%s', numbers are UNPINNED" % gpu
+            return
+        self.mhz = mhz or row["maxMhz"]
+        lock, restore = nvidia_pin_cmds(row["index"], self.mhz)
+        r = run(lock, capture_output=True, text=True)
+        if r.returncode != 0:
+            self.note = ("nvidia-smi refused the clock lock (needs an elevated shell): "
+                         + ((r.stdout or "") + (r.stderr or "")).strip()[:160] + "; numbers are UNPINNED")
+            return
+        self.pinned = True
+        self._restore = restore
+        self.note = f"locked {row['name']} to {self.mhz} MHz"
+        atexit.register(self.restore)
+
+    def restore(self) -> None:
+        if self._restore:
+            cmd, self._restore = self._restore, None
+            self._run(cmd, capture_output=True, text=True)
+            print("clock pin: restored default GPU clocks")
+
+
 def device_slug(device: str) -> str:
     """Filesystem-safe directory name for an adapter, e.g. 'AMD Radeon RX 9070 XT' -> 'amd-radeon-rx-9070-xt'."""
     slug = re.sub(r"[^a-z0-9]+", "-", device.lower()).strip("-")
@@ -497,6 +569,10 @@ def main() -> int:
                     help="Minimum absolute ms rise for a regression, on top of --threshold (default 0.10)")
     ap.add_argument("--scene", default=DEFAULT_SCENE, help="Scene to benchmark")
     ap.add_argument("--gpu", default="", help="Pin the GPU (render.gpu syntax: name substring or index)")
+    ap.add_argument("--pin-clocks", action="store_true",
+                    help="Lock GPU clocks for the run (NVIDIA via nvidia-smi, needs an elevated shell), restored on exit")
+    ap.add_argument("--pin-clocks-mhz", type=int, default=0,
+                    help="Clock to lock to (default: the adapter's max graphics clock; lower it if that throttles)")
     ap.add_argument("--update-baseline", action="store_true", help="Write current results as the new baseline")
     args = ap.parse_args()
 
@@ -520,7 +596,12 @@ def main() -> int:
     print(f"Repo root : {repo_root}")
     print(f"Build dir : {build_dir}  (config: {args.config})")
     print(f"Scene     : {args.scene}   Frames: {args.frames}   Threshold: {args.threshold}% and >{args.abs_threshold} ms")
-    print(f"Mode      : {'UPDATE BASELINE' if args.update_baseline else 'compare vs baseline'}\n")
+    print(f"Mode      : {'UPDATE BASELINE' if args.update_baseline else 'compare vs baseline'}")
+    pin = ClockPin(args.gpu, args.pin_clocks_mhz) if args.pin_clocks else None
+    if pin:
+        print(f"Clocks    : {'PINNED, ' if pin.pinned else ''}{pin.note}")
+    clocks_pinned = bool(pin and pin.pinned)
+    print()
 
     # A/B mode short-circuits the golden-baseline path entirely: it measures a DIFFERENCE between two
     # builds under identical conditions, which is a different question from "did this drift from the
@@ -588,6 +669,7 @@ def main() -> int:
             all_ok = False
             continue
         current = aggregate_runs(runs)
+        current["clocksPinned"] = clocks_pinned
         if len(runs) > 1:
             print(f"  {len(runs)} runs, median; total spread {current.get('totalSpreadPct', 0.0):.1f}%")
 
@@ -599,6 +681,9 @@ def main() -> int:
             print(f"  updated baseline: {bp.relative_to(repo_root)}  (device: {device or '?'})")
         elif bp.exists():
             baseline = json.loads(bp.read_text())
+            if bool(baseline.get("clocksPinned", False)) != clocks_pinned:
+                print(f"  WARNING: baseline was captured {'pinned' if baseline.get('clocksPinned') else 'unpinned'}, "
+                      f"this run is {'pinned' if clocks_pinned else 'unpinned'}: absolute numbers are not comparable.")
             if reason := view_mismatch(current, baseline):
                 ungated.append(name)
                 print(f"  NOT GATED: {reason}. Nothing comparable, so no diff was run.")
