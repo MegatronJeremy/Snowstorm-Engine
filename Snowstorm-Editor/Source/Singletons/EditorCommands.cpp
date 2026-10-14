@@ -8,6 +8,7 @@
 #include "Snowstorm/World/World.hpp"
 
 #include <algorithm>
+#include <cstring>
 
 namespace Snowstorm
 {
@@ -132,5 +133,24 @@ namespace Snowstorm
 		{
 			e.WriteComponent<TagComponent>().Tag = m_After;
 		}
+	}
+
+	// ---- MaterialEditCommand -------------------------------------------------------------------------
+
+	void MaterialEditBuffer::SetShaderText(const std::string& path)
+	{
+		std::strncpy(ShaderBuf, path.c_str(), sizeof(ShaderBuf) - 1);
+		ShaderBuf[sizeof(ShaderBuf) - 1] = '\0';
+	}
+
+	void MaterialEditCommand::Apply(const MaterialAsset& state)
+	{
+		if (!m_Buffer || !m_Buffer->Valid || m_Buffer->Loaded != m_Handle)
+		{
+			return;
+		}
+		m_Buffer->Asset = state;
+		m_Buffer->SetShaderText(state.FragmentShader);
+		m_Buffer->Dirty = true; // differs from what was last saved or loaded, even when undone to the load state
 	}
 }
