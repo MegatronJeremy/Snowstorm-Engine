@@ -4,11 +4,13 @@
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "Mesh.hpp"
 
 #include "Snowstorm/Assets/AssetTypes.hpp"
 #include "Snowstorm/Assets/MeshCache.hpp"
+#include "Snowstorm/Assets/UnreferencedEviction.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Service/Service.hpp"
 
@@ -46,8 +48,21 @@ namespace Snowstorm
 		void Clear();
 		bool Remove(const std::string& filepath);
 
+		// Scene-transition sweep: drops every mesh no component, cache or job still references (#77). The
+		// buffers are released after `retireDelay` Advance() calls, so frames in flight finish reading them.
+		// `cacheHeld` lists meshes another cache (AssetManagerSingleton's handle cache) also holds one
+		// reference to; those still count as unreferenced. Evicted pointers are appended to `evicted` so
+		// that cache can drop them. Main thread only.
+		size_t EvictUnreferenced(uint32_t retireDelay, const std::unordered_set<const Mesh*>& cacheHeld,
+		                         std::vector<const Mesh*>& evicted);
+
+		// Ticks the retire queue; call once per frame.
+		void Advance() { m_Retired.Advance(); }
+		[[nodiscard]] size_t RetiringCount() const { return m_Retired.Size(); }
+
 	private:
 		std::unordered_map<std::string, Ref<Mesh>> m_Meshes;
+		RetireQueue<Ref<Mesh>> m_Retired;
 
 		// Cold-cook coordination (worker threads). A model file with N submeshes must be parsed by Assimp
 		// ONCE, not once per submesh — 25 workers each doing a full ReadFile of the same 20MB glTF is a
