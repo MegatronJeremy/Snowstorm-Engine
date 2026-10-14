@@ -20,6 +20,7 @@ namespace Snowstorm
 		// Shader hot-reload: rebuild the VkPipeline/layout in place from m_Desc after the compute shader
 		// recompiled. See VulkanGraphicsPipeline::Reload for the rationale + layout-drift caveat.
 		void Reload() override;
+		[[nodiscard]] uint64_t GetLayoutGeneration() const override { return m_LayoutGeneration; }
 
 		[[nodiscard]] VkPipeline GetHandle() const { return m_Pipeline; }
 		[[nodiscard]] VkPipelineLayout GetPipelineLayout() const { return m_PipelineLayout; }
@@ -44,5 +45,6 @@ namespace Snowstorm
 
 		uint64_t m_BuiltShaderVersion = 0;
 		std::string m_LayoutSignature;
+		uint64_t m_LayoutGeneration = 0;
 	};
 }
