@@ -2,6 +2,8 @@
 
 #include <squish.h>
 
+#include <atomic>
+
 #include "Snowstorm/Core/EngineCVars.hpp"
 
 #include "RendererAPI.hpp"
@@ -138,6 +140,16 @@ namespace Snowstorm
 		}
 	}
 
+	namespace
+	{
+		std::atomic<bool> g_CookAborted{false};
+	}
+
+	void Texture::AbortCooking()
+	{
+		g_CookAborted.store(true, std::memory_order_relaxed);
+	}
+
 	std::optional<CookedTexture> Texture::DecodeCPU(const std::filesystem::path& filePath, const AssetHandle handle, const uint64_t sourceWriteTime,
 	                                                const TextureRole role)
 	{
@@ -152,6 +164,11 @@ namespace Snowstorm
 			{
 				return blob;
 			}
+		}
+
+		if (g_CookAborted.load(std::memory_order_relaxed))
+		{
+			return std::nullopt;
 		}
 
 		int w = 0, h = 0, channels = 0;
@@ -212,6 +229,10 @@ namespace Snowstorm
 			uint32_t lw = cooked.Width, lh = cooked.Height;
 			for (uint32_t i = 0; i < mipCount; ++i)
 			{
+				if (g_CookAborted.load(std::memory_order_relaxed))
+				{
+					return std::nullopt;
+				}
 				cooked.Levels[i] = CompressLevel(cooked.Levels[i], lw, lh, squishFormat);
 				lw = std::max(1u, lw / 2u);
 				lh = std::max(1u, lh / 2u);

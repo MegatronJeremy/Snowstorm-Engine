@@ -11,6 +11,7 @@
 #include "Snowstorm/Render/PerfBench.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
+#include "Snowstorm/Render/Texture.hpp"
 
 #include <fstream>
 
@@ -54,6 +55,8 @@ namespace Snowstorm
 		// Drain the job pool before the layers free their worlds. Async asset loads capture their World's
 		// AssetManagerSingleton, and the pool (a service) outlives the layers, so a cook still running here
 		// would write into a freed World. The same safe point the editor's CloseProject takes.
+		// Abort cold texture cooks first, otherwise this wait lasts for the whole compression queue.
+		Texture::AbortCooking();
 		m_ServiceManager->GetService<JobSystem>().WaitAll();
 
 		// Finish all in-flight GPU work before tearing down layers/worlds, which destroy GPU
