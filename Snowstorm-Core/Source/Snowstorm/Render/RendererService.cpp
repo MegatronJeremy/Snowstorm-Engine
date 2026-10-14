@@ -274,7 +274,16 @@ namespace Snowstorm
 
 		// One (set, UBO) per (pipeline, frameIndex). The UBO is kept alive in m_FrameUniformBuffers,
 		// keyed by the DescriptorSet* (avoids storing it on DescriptorSet itself).
-		auto& perFrameFrameSets = m_FrameSets[pipeline.get()];
+		auto& perFrameFrameSets = m_FrameSets.Acquire(pipeline.get(),
+		                                              pipeline->GetLayoutGeneration(),
+		                                              [this](std::vector<Ref<DescriptorSet>>& stale)
+		                                              {
+			                                              for (const Ref<DescriptorSet>& set : stale)
+			                                              {
+				                                              if (set)
+					                                              m_FrameUniformBuffers.erase(set.get());
+			                                              }
+		                                              });
 		if (perFrameFrameSets.empty())
 			perFrameFrameSets.resize(Renderer::GetFramesInFlight());
 
@@ -475,7 +484,7 @@ namespace Snowstorm
 		// capacity → committed once, never re-bound mid-frame). Cached per (pipeline, frame-in-flight).
 		EnsureInstanceBuffer(frameIndex, 0);
 
-		auto& perFrameObjectSets = m_ObjectSets[pipeline.get()];
+		auto& perFrameObjectSets = m_ObjectSets.Acquire(pipeline.get(), pipeline->GetLayoutGeneration());
 		if (perFrameObjectSets.empty())
 			perFrameObjectSets.resize(Renderer::GetFramesInFlight());
 
