@@ -105,6 +105,38 @@ namespace Snowstorm
 		// on/off toggle is a pure perf switch with identical (deterministic, ordered) output.
 		const size_t grain = CVars::EcsParallel.Get() ? size_t{256} : candidates.size() + 1;
 
+		// World-space bounds depend only on the candidate, not on the camera: build them once per Execute
+		// so each extra camera pays frustum tests only (the TRS matrix and its sphere/AABB transforms
+		// dominate the per-entity cost in Debug, where glm is not inlined).
+		struct WorldBounds
+		{
+			Sphere Sphere;
+			AABB Box;
+			bool Resolved = false;
+		};
+		std::vector<WorldBounds> bounds(candidates.size());
+		jobs.ParallelFor(
+		    candidates.size(),
+		    [&](const size_t begin, const size_t end)
+		    {
+			    for (size_t i = begin; i < end; ++i)
+			    {
+				    const entt::entity e = candidates[i];
+				    const auto& mesh = reg.Read<MeshComponent>(e);
+				    if (!mesh.MeshInstance || !reg.Read<MaterialComponent>(e).MaterialInstance)
+				    {
+					    continue;
+				    }
+				    const glm::mat4 M = reg.Read<TransformComponent>(e).GetTransformMatrix();
+				    const MeshBounds& localB = mesh.MeshInstance->GetBounds();
+				    WorldBounds& wb = bounds[i];
+				    wb.Sphere = TransformSphere(localB.Sphere, M);
+				    wb.Box = TransformAABB(localB.Box, M);
+				    wb.Resolved = true;
+			    }
+		    },
+		    grain);
+
 		for (const entt::entity camE : camView)
 		{
 			const auto& camRT = reg.Read<CameraRuntimeComponent>(camE);
@@ -133,18 +165,14 @@ namespace Snowstorm
 			    [&](const size_t i, auto&& emit)
 			    {
 				    const entt::entity e = candidates[i];
-				    const auto& mesh = reg.Read<MeshComponent>(e);
-				    const auto& mat = reg.Read<MaterialComponent>(e);
-				    const auto& vis = reg.Read<VisibilityComponent>(e);
-
-				    // Must be resolved
-				    if (!mesh.MeshInstance || !mat.MaterialInstance)
+				    const WorldBounds& wb = bounds[i];
+				    if (!wb.Resolved)
 				    {
 					    return;
 				    }
 
 				    // Layer filtering
-				    if ((vis.Mask & camMask) == 0)
+				    if ((reg.Read<VisibilityComponent>(e).Mask & camMask) == 0)
 				    {
 					    return;
 				    }
@@ -152,22 +180,12 @@ namespace Snowstorm
 				    // Eligible for this camera (resolved + layer-matched); frustum culling decides the rest.
 				    considered.fetch_add(1, std::memory_order_relaxed);
 
-				    // Frustum culling
-				    const auto& tr = reg.Read<TransformComponent>(e);
-				    const glm::mat4 M = tr.GetTransformMatrix();
-
-				    const MeshBounds& localB = mesh.MeshInstance->GetBounds();
-
-				    // Sphere first (cheap)
-				    const Sphere ws = TransformSphere(localB.Sphere, M);
-				    if (!camRT.frustum.IntersectsSphere(ws.Center, ws.Radius))
+				    // Sphere first (cheap), AABB second (tighter)
+				    if (!camRT.frustum.IntersectsSphere(wb.Sphere.Center, wb.Sphere.Radius))
 				    {
 					    return;
 				    }
-
-				    // AABB second (tighter)
-				    const AABB wa = TransformAABB(localB.Box, M);
-				    if (!camRT.frustum.IntersectsAABB(wa))
+				    if (!camRT.frustum.IntersectsAABB(wb.Box))
 				    {
 					    return;
 				    }
