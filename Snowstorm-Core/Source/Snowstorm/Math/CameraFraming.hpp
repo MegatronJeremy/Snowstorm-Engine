@@ -39,7 +39,7 @@ namespace Snowstorm
 		pose.Yaw = 0.0f;                         // facing -Z toward the centre
 		pose.Pitch = -glm::atan(lift, distance); // look slightly down at the centre
 		pose.Near = glm::max(radius * 0.001f, 0.05f);
-		pose.Far = (distance + radius) * 2.0f;
+		pose.Far = glm::max((distance + radius) * 2.0f, pose.Near * 100.0f); // the Near floor can exceed a tiny model's span
 		return pose;
 	}
 }
