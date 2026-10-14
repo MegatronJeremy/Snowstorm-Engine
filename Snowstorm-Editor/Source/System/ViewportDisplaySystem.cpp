@@ -18,6 +18,7 @@
 #include "Snowstorm/Math/Picking.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
+#include "Snowstorm/Render/Texture.hpp"
 #include "Snowstorm/Systems/TlasInstanceMapSingleton.hpp"
 #include "Singletons/EditorCommands.hpp"
 #include "Singletons/EditorHistorySingleton.hpp"
@@ -205,15 +206,40 @@ namespace Snowstorm
 			return ImGui::GetColorU32(col);
 		}
 
-		// Light type, used to pick a distinguishing icon glyph. Textured sprites (a real bulb/spot/sun image,
-		// like Unreal) are deliberately not used here -- these are cheap draw-list glyphs so no texture/bindless
-		// icon pipeline is needed (see the follow-up issue for the textured version).
 		enum class LightIconKind
 		{
 			Point,       // omnidirectional dot
 			Spot,        // cone symbol (triangle)
 			Directional, // sun (radiating rays)
 		};
+
+		// Editor icon atlas (Scripts/gen-editor-icons.py): four 64x64 cells in a row, white glyph with a dark
+		// outline so it can be tinted by the light color. Cell index follows LightIconKind.
+		constexpr const char* kIconAtlasPath = "Projects/Sandbox/assets/editor-icons/icons.png";
+		constexpr float kIconAtlasCells = 4.0f;
+		// The 64px cell's glyph is inset, so the quad is larger than the pick radius to fill the old disc.
+		constexpr float kIconQuadScale = 1.4f;
+
+		// Returns the atlas ImTextureID, or 0 when it could not be loaded (the glyph fallback is used then).
+		// Loaded once, lazily; a failure is logged once and never retried.
+		uint64_t IconAtlasId()
+		{
+			static Ref<TextureView> view;
+			static bool attempted = false;
+			if (!attempted)
+			{
+				attempted = true;
+				if (const Ref<Texture> tex = Texture::Create(kIconAtlasPath, true))
+				{
+					view = TextureView::Create(tex, MakeFullViewDesc(tex->GetDesc()));
+				}
+				if (!view)
+				{
+					SS_CORE_WARN("Editor icon atlas '{}' failed to load; using glyph light icons", kIconAtlasPath);
+				}
+			}
+			return view ? view->GetUIID() : 0;
+		}
 
 		// Draw the billboard icon (a constant-screen-size filled disc + dark outline) at a light's projected
 		// origin, with a small dark glyph on top that differs per light type so you can tell types apart at a
@@ -226,6 +252,14 @@ namespace Snowstorm
 			if (!WorldToScreen(worldPos, viewProj, rectMin, rectSize, c))
 			{
 				return; // behind camera
+			}
+			if (const uint64_t atlas = IconAtlasId(); atlas != 0)
+			{
+				const float h = kLightIconRadiusPx * kIconQuadScale;
+				const float u0 = static_cast<float>(kind) / kIconAtlasCells;
+				dl->AddImage(static_cast<ImTextureID>(atlas), ImVec2(c.x - h, c.y - h), ImVec2(c.x + h, c.y + h),
+				             ImVec2(u0, 0.0f), ImVec2(u0 + 1.0f / kIconAtlasCells, 1.0f), color);
+				return;
 			}
 			const ImU32 dark = ImGui::GetColorU32(ImVec4(0, 0, 0, 0.85f));
 			dl->AddCircleFilled(c, kLightIconRadiusPx, color, 16);
