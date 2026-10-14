@@ -11,10 +11,11 @@
 // res, exactly as #124 keeps albedo out of the half-res GI buffer. The forward pass samples this target by
 // screen UV and does `lerp(envCubeSpecular, sampled * specWeight * ReflIntensity, reflWeight)`.
 //
-// SHARP ray (no glossy cone jitter): a mirror ray needs only normal+depth (both in the G-buffer), so the
-// trace stays roughness-free + deterministic. The forward's reflWeight already fades rough surfaces onto
-// the blurry prefiltered env cube, so smooth surfaces get a sharp RT reflection and rough ones hand off to
-// the cube (a roughness-driven glossy blur is a deferred follow-up: #129 Inc 3 / a separate issue).
+// Pixels at or above ReflMaxRoughness (render.reflections.max_roughness) are not traced: the forward's
+// reflWeight is exactly 0 there and it never samples this buffer for them, so they get the same zero
+// radiance + ReflRange as sky. The test is the forward's own `roughness < ReflMaxRoughness`, kept in sync.
+// Below the cutoff the trace is a roughness-scaled cone around R (see the jitter loop); the forward fades
+// rough surfaces onto the blurry prefiltered env cube.
 //
 // .a = hit distance (world units), for the temporal pass's depth-aware reject now and a future NRD-style
 // reflected-virtual-position reprojection. A miss writes a large sentinel distance.
@@ -57,7 +58,7 @@ cbuffer ReflCB : register(b4, space0)
 	uint ReflGeoTableAddrLo; // device address of the GeometryRecord table (lo/hi)
 	uint ReflGeoTableAddrHi;
 	uint RayCount;           // reflection rays per pixel this frame (render.reflections.rays, clamped [1,16])
-	uint _Pad1;
+	float ReflMaxRoughness; // roughness cutoff (render.reflections.max_roughness): at or above, skip the ray
 };
 
 // Set 3 bindless + geometry-table read + one-bounce hit shading, shared with the GI compute pass (#129).
@@ -93,7 +94,8 @@ void main(uint3 id : SV_DispatchThreadID)
 
 	// Sky / no geometry (prepass clears depth to 1.0; far plane also ~1.0) -> no reflection. Write 0 radiance
 	// + a large hit distance (a "miss" for the temporal depth reject). Depth-based sky test (#129 Inc 1b).
-	if (IsSky(depth))
+	// Roughness at or above the cutoff takes the same exit: the forward weights these pixels by 0 anyway.
+	if (IsSky(depth) || roughness >= ReflMaxRoughness)
 	{
 		ReflOut[id.xy] = float4(0, 0, 0, ReflRange);
 		return;
