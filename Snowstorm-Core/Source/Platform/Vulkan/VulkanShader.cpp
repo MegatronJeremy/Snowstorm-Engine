@@ -444,9 +444,30 @@ namespace Snowstorm
 			}
 
 			// Compile the real source file directly (DXC resolves #include via -I; the file is unmodified).
-			if (!CompileStageWithDxc(dxcExe, srcPath, outSpvPath, profile, defines, debug))
+			// dxc writes -Fo incrementally, and the unlocked fs::exists fast path above (plus a concurrent
+			// process, or a killed earlier run) would treat a half-written file as a finished one. So dxc
+			// writes a private temp and the finished file is renamed into place, which readers see whole or
+			// not at all.
+			const std::string tmpSuffix = "." + std::to_string(GetCurrentProcessId()) + "." + std::to_string(GetCurrentThreadId()) + ".tmp";
+			const fs::path tmpSpvPath = outSpvPath.string() + tmpSuffix;
+			std::error_code ec;
+			fs::remove(tmpSpvPath, ec);
+			if (!CompileStageWithDxc(dxcExe, srcPath, tmpSpvPath, profile, defines, debug))
 			{
+				fs::remove(tmpSpvPath, ec);
 				return false;
+			}
+			fs::rename(tmpSpvPath, outSpvPath, ec);
+			if (ec)
+			{
+				// Windows rename fails if another process won the race and the target is in use; the
+				// content is identical by construction, so the existing file is the result.
+				fs::remove(tmpSpvPath, ec);
+				if (!fs::exists(outSpvPath))
+				{
+					SS_CORE_ERROR("Could not publish compiled shader {}", outSpvPath.string());
+					return false;
+				}
 			}
 
 			outSpv = outSpvPath.string();
