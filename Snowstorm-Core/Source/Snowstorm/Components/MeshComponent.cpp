@@ -14,7 +14,8 @@ namespace Snowstorm
 		registration::class_<MeshComponent>("Snowstorm::MeshComponent")
 		    .constructor()
 		    .property("Mesh", &MeshComponent::MeshHandle)(
-		        metadata("AssetType", static_cast<int>(AssetType::Mesh)) // inspector asset picker filter
+		        metadata("AssetType", static_cast<int>(AssetType::Mesh)), // inspector asset picker filter
+		        metadata("JsonAlias", "$asset")                           // key written before scenes used reflected names
 		    );
 	}
 

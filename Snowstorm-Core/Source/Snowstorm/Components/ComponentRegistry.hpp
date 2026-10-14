@@ -7,6 +7,7 @@
 #include <functional>
 #include <cctype>
 #include <rttr/type>
+#include <nlohmann/json_fwd.hpp>
 #include <imgui.h>
 
 #include "Snowstorm/Events/ApplicationEvent.hpp"
@@ -20,6 +21,12 @@ namespace Snowstorm
 		// Flags
 		bool Serializable = true; // written into .world
 		bool DrawInEditor = true; // shown in inspector
+		// Written by the entity header (UUID, Name), never into "Components".
+		bool Structural = false;
+
+		// Replaces the reflected JSON path for a component whose on-disk shape is not its property list.
+		std::function<void(Entity, nlohmann::json&)> SerializeFn = nullptr;
+		std::function<void(Entity, const nlohmann::json&)> DeserializeFn = nullptr;
 
 		// Editor UI
 		std::function<void(Entity)> DrawFn = nullptr;
@@ -132,6 +139,9 @@ namespace Snowstorm
 	{
 		bool Serializable = true;
 		bool DrawInEditor = true;
+		bool Structural = false;
+		std::function<void(Entity, nlohmann::json&)> SerializeFn = nullptr;
+		std::function<void(Entity, const nlohmann::json&)> DeserializeFn = nullptr;
 		std::function<void(Entity)> DrawFnOverride = nullptr;
 	};
 
@@ -222,6 +232,9 @@ namespace Snowstorm
 		    .Type = type,
 		    .Serializable = opts.Serializable,
 		    .DrawInEditor = opts.DrawInEditor,
+		    .Structural = opts.Structural,
+		    .SerializeFn = opts.SerializeFn,
+		    .DeserializeFn = opts.DeserializeFn,
 
 		    .DrawFn = DrawFn,
 
