@@ -67,6 +67,10 @@ namespace Snowstorm
 
 		VmaAllocator GetAllocator() const { return m_Allocator; }
 
+		// Device-wide pipeline cache, persisted under Engine/cache/pipeline. VK_NULL_HANDLE if creation failed,
+		// which Vulkan accepts as "no cache".
+		VkPipelineCache GetPipelineCache() const { return m_PipelineCache; }
+
 		VkCommandPool GetGraphicsCommandPool() const { return m_GraphicsCommandPool; }
 
 		VkSwapchainKHR GetSwapchain() const { return m_Swapchain; }
@@ -142,6 +146,10 @@ namespace Snowstorm
 		VkCommandPool m_ComputeCommandPool = VK_NULL_HANDLE;
 
 		VmaAllocator m_Allocator = nullptr;
+
+		VkPipelineCache m_PipelineCache = VK_NULL_HANDLE;
+		void CreatePipelineCache();
+		void SavePipelineCache() const;
 
 		VkCommandPool m_GraphicsCommandPool = VK_NULL_HANDLE;
 

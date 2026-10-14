@@ -218,7 +218,7 @@ namespace Snowstorm
 			pipeCI.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
 		}
 
-		SS_CORE_VERIFY(vkCreateComputePipelines(m_Device, VK_NULL_HANDLE, 1, &pipeCI, nullptr, &m_Pipeline) == VK_SUCCESS,
+		SS_CORE_VERIFY(vkCreateComputePipelines(m_Device, VulkanContext::Get().GetPipelineCache(), 1, &pipeCI, nullptr, &m_Pipeline) == VK_SUCCESS,
 		               "Failed to create Vulkan compute pipeline");
 
 		vkDestroyShaderModule(m_Device, module, nullptr);

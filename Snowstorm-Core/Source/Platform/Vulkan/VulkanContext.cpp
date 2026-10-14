@@ -8,11 +8,14 @@
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
 
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Utility/EnginePaths.hpp"
 #include "VulkanPipelineStats.hpp"
 
 //-- compile the actual implementation in this file
@@ -814,6 +817,8 @@ namespace Snowstorm
 
 		VK_CHECK(vmaCreateAllocator(&allocatorInfo, &m_Allocator));
 
+		CreatePipelineCache();
+
 		VulkanBindlessManager::Get().Init();
 
 		// 7. Swapchain
@@ -1008,6 +1013,129 @@ namespace Snowstorm
 		m_VSync = enabled;
 	}
 
+	namespace
+	{
+		// Mirrors the VK_PIPELINE_CACHE_HEADER_VERSION_ONE prefix the driver writes. The driver rejects a blob
+		// that does not match, but an explicit check keeps a stale or foreign file from being fed to it at all
+		// (a driver update or a different GPU in the same cache dir changes vendor/device/UUID).
+		struct PipelineCacheHeader
+		{
+			uint32_t HeaderSize;
+			uint32_t HeaderVersion;
+			uint32_t VendorID;
+			uint32_t DeviceID;
+			uint8_t UUID[VK_UUID_SIZE];
+		};
+
+		std::filesystem::path PipelineCachePath(const VkPhysicalDeviceProperties& props)
+		{
+			char name[32];
+			std::snprintf(name, sizeof(name), "%08x-%08x.bin", props.vendorID, props.deviceID);
+			return Snowstorm::EngineAssetPath("Engine/cache/pipeline") / name;
+		}
+	} // namespace
+
+	void VulkanContext::CreatePipelineCache()
+	{
+		VkPhysicalDeviceProperties props{};
+		vkGetPhysicalDeviceProperties(m_PhysicalDevice, &props);
+
+		std::vector<char> blob;
+		{
+			std::ifstream in(PipelineCachePath(props), std::ios::binary | std::ios::ate);
+			if (in)
+			{
+				const std::streamoff size = in.tellg();
+				if (size > static_cast<std::streamoff>(sizeof(PipelineCacheHeader)))
+				{
+					blob.resize(static_cast<size_t>(size));
+					in.seekg(0);
+					in.read(blob.data(), size);
+					if (!in)
+					{
+						blob.clear();
+					}
+				}
+			}
+		}
+
+		if (!blob.empty())
+		{
+			PipelineCacheHeader h{};
+			std::memcpy(&h, blob.data(), sizeof(h));
+			const bool valid = h.HeaderSize >= sizeof(PipelineCacheHeader) &&
+			                   h.HeaderVersion == VK_PIPELINE_CACHE_HEADER_VERSION_ONE && h.VendorID == props.vendorID &&
+			                   h.DeviceID == props.deviceID &&
+			                   std::memcmp(h.UUID, props.pipelineCacheUUID, VK_UUID_SIZE) == 0;
+			if (!valid)
+			{
+				SS_CORE_INFO("Pipeline cache header does not match this device/driver; starting empty");
+				blob.clear();
+			}
+		}
+
+		VkPipelineCacheCreateInfo ci{};
+		ci.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+		ci.initialDataSize = blob.size();
+		ci.pInitialData = blob.empty() ? nullptr : blob.data();
+		VkResult res = vkCreatePipelineCache(m_Device, &ci, nullptr, &m_PipelineCache);
+		if (res != VK_SUCCESS && !blob.empty())
+		{
+			ci.initialDataSize = 0;
+			ci.pInitialData = nullptr;
+			res = vkCreatePipelineCache(m_Device, &ci, nullptr, &m_PipelineCache);
+		}
+		if (res != VK_SUCCESS)
+		{
+			// Pipelines fall back to VK_NULL_HANDLE, i.e. no caching.
+			SS_CORE_WARN("vkCreatePipelineCache failed ({}); pipelines will not be cached", static_cast<int>(res));
+			m_PipelineCache = VK_NULL_HANDLE;
+		}
+	}
+
+	void VulkanContext::SavePipelineCache() const
+	{
+		if (m_PipelineCache == VK_NULL_HANDLE)
+		{
+			return;
+		}
+
+		size_t size = 0;
+		if (vkGetPipelineCacheData(m_Device, m_PipelineCache, &size, nullptr) != VK_SUCCESS || size == 0)
+		{
+			return;
+		}
+		std::vector<char> data(size);
+		if (vkGetPipelineCacheData(m_Device, m_PipelineCache, &size, data.data()) != VK_SUCCESS)
+		{
+			return;
+		}
+		data.resize(size);
+
+		VkPhysicalDeviceProperties props{};
+		vkGetPhysicalDeviceProperties(m_PhysicalDevice, &props);
+		const std::filesystem::path path = PipelineCachePath(props);
+
+		// Written to a private temp and renamed so a crash or a second process never leaves a torn file.
+		std::error_code ec;
+		std::filesystem::create_directories(path.parent_path(), ec);
+		std::filesystem::path tmp = path;
+		tmp += ".tmp";
+		{
+			std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+			out.write(data.data(), static_cast<std::streamsize>(data.size()));
+			if (!out)
+			{
+				return;
+			}
+		}
+		std::filesystem::rename(tmp, path, ec);
+		if (ec)
+		{
+			std::filesystem::remove(tmp, ec);
+		}
+	}
+
 	bool VulkanContext::RecreateSwapchain()
 	{
 		// All in-flight work may still reference the old swapchain images; drain the GPU first.
@@ -1027,6 +1155,12 @@ namespace Snowstorm
 	{
 		// Flush driver-reported shader statistics while the device is still alive; the query needs it.
 		VulkanPipelineStats::Write();
+
+		SavePipelineCache();
+		if (m_PipelineCache != VK_NULL_HANDLE)
+		{
+			vkDestroyPipelineCache(m_Device, m_PipelineCache, nullptr);
+		}
 
 		DestroySwapchain();
 		vkDestroySurfaceKHR(m_Instance, m_Surface, nullptr);
