@@ -258,9 +258,9 @@ namespace Snowstorm
 
 		if (m_LayoutSignature != prevSignature)
 		{
-			SS_CORE_WARN("Compute shader hot-reload for '{}' changed the descriptor/binding layout; cached "
-			             "descriptor sets may be stale — restart if bindings misbehave.",
-			             m_Desc.Shader->GetPath());
+			++m_LayoutGeneration;
+			SS_CORE_INFO("Hot-reloaded pipeline '{}' with a changed binding layout; cached descriptor sets evicted.",
+			             m_Desc.DebugName);
 		}
 		else
 		{

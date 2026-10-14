@@ -17,6 +17,7 @@ namespace Snowstorm
 		// (whose Shader now has freshly recompiled SPIR-V on disk), swapping m_Pipeline in place so existing
 		// Ref<Pipeline> holders bind the new one next frame. No-op if the shader version hasn't advanced.
 		void Reload() override;
+		[[nodiscard]] uint64_t GetLayoutGeneration() const override { return m_LayoutGeneration; }
 
 		// Live MSAA: rebuild in place at a new rasterization sample count (updates m_Desc.SampleCount, swaps the
 		// VkPipeline). No-op if unchanged. Caller ensures GPU idle (ViewportResizeSystem drains before it).
@@ -64,8 +65,8 @@ namespace Snowstorm
 
 		// Compact fingerprint of the reflected descriptor-set + push-constant layout, recomputed on every
 		// Build(). Reload() compares old vs new: if it changed, the shader edit altered its binding interface,
-		// which would invalidate the renderer's cached descriptor sets (keyed by pipeline pointer) — we log
-		// and keep the old pipeline instead of silently corrupting bindings. Set-layout hot-swap is future work.
+		// which bumps m_LayoutGeneration so the renderer's cached descriptor sets are evicted.
 		std::string m_LayoutSignature;
+		uint64_t m_LayoutGeneration = 0;
 	};
 }
