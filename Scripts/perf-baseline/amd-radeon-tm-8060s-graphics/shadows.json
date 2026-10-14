@@ -1,0 +1,98 @@
+{
+  "device": "AMD Radeon(TM) 8060S Graphics",
+  "config": "shadows",
+  "frames": 300,
+  "timestampsSupported": true,
+  "width": 1717,
+  "height": 972,
+  "camera": [
+    8.5191,
+    1.4949,
+    -0.4308,
+    0.0272,
+    1.4958,
+    0.0
+  ],
+  "totalGpuMs": 22.8859,
+  "passes": {
+    "PostProcess": {
+      "avgMs": 0.1433,
+      "minMs": 0.0402,
+      "maxMs": 0.6988,
+      "fragInvocations": 1668924,
+      "depth": 0,
+      "spreadPct": 12.909979064898804,
+      "q1Ms": 0.1355,
+      "q3Ms": 0.154,
+      "runs": 3
+    },
+    "Sky": {
+      "avgMs": 0.0671,
+      "minMs": 0.0003,
+      "maxMs": 0.395,
+      "fragInvocations": 0,
+      "depth": 1,
+      "spreadPct": 71.53502235469449,
+      "q1Ms": 0.0341,
+      "q3Ms": 0.0821,
+      "runs": 3
+    },
+    "Velocity": {
+      "avgMs": 0.3224,
+      "minMs": 0.3091,
+      "maxMs": 1.0421,
+      "fragInvocations": 3908570,
+      "depth": 0,
+      "spreadPct": 0.7133995037220919,
+      "q1Ms": 0.3223,
+      "q3Ms": 0.3246,
+      "runs": 3
+    },
+    "Editor": {
+      "avgMs": 0.1594,
+      "minMs": 0.1567,
+      "maxMs": 0.1759,
+      "fragInvocations": 9304252,
+      "depth": 0,
+      "spreadPct": 0.4391468005018859,
+      "q1Ms": 0.1594,
+      "q3Ms": 0.1601,
+      "runs": 3
+    },
+    "CameraDepthPrepass": {
+      "avgMs": 0.166,
+      "minMs": 0.147,
+      "maxMs": 0.7019,
+      "fragInvocations": 4483183,
+      "depth": 0,
+      "spreadPct": 3.4939759036144573,
+      "q1Ms": 0.165,
+      "q3Ms": 0.1708,
+      "runs": 3
+    },
+    "Forward": {
+      "avgMs": 21.8398,
+      "minMs": 21.3345,
+      "maxMs": 22.5062,
+      "fragInvocations": 2615910,
+      "depth": 0,
+      "spreadPct": 0.3837031474647208,
+      "q1Ms": 21.7777,
+      "q3Ms": 21.8615,
+      "runs": 3
+    },
+    "TemporalResolve": {
+      "avgMs": 0.2493,
+      "minMs": 0.2273,
+      "maxMs": 0.6165,
+      "fragInvocations": 1668924,
+      "depth": 0,
+      "spreadPct": 3.7705575611712763,
+      "q1Ms": 0.2407,
+      "q3Ms": 0.2501,
+      "runs": 3
+    }
+  },
+  "totalSpreadPct": 0.33470390065498457,
+  "runs": 3
+}
