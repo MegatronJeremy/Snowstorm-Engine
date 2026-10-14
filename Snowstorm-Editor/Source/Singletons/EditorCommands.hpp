@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Snowstorm/Assets/MaterialAsset.hpp"
+#include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Utility/UUID.hpp"
 #include "Singletons/EditorCommand.hpp"
@@ -114,5 +116,42 @@ namespace Snowstorm
 		UUID m_Target;
 		std::string m_Before;
 		std::string m_After;
+	};
+
+	// The Material Inspector's edit buffer: the .ssmat loaded for editing, not yet written to disk.
+	// Shared with MaterialEditCommand so undo/redo can patch it without going through the panel.
+	struct MaterialEditBuffer
+	{
+		AssetHandle Loaded{0};
+		MaterialAsset Asset;
+		bool Valid = false;
+		bool Dirty = false;
+		char ShaderBuf[256] = {};
+
+		void SetShaderText(const std::string& path);
+	};
+
+	// An edit of a material asset in the inspector buffer (one coalesced drag or one picker change).
+	// Applies to the buffer only while the same material is still loaded in it; switching selection
+	// reloads the buffer from disk, after which older steps for another material are no-ops.
+	class MaterialEditCommand final : public EditorCommand
+	{
+	public:
+		MaterialEditCommand(Ref<MaterialEditBuffer> buffer, AssetHandle handle, MaterialAsset before, MaterialAsset after)
+		    : m_Buffer(std::move(buffer)), m_Handle(handle), m_Before(std::move(before)), m_After(std::move(after))
+		{
+		}
+
+		void Undo(World&) override { Apply(m_Before); }
+		void Redo(World&) override { Apply(m_After); }
+		[[nodiscard]] const char* Name() const override { return "Edit Material"; }
+
+	private:
+		void Apply(const MaterialAsset& state);
+
+		Ref<MaterialEditBuffer> m_Buffer;
+		AssetHandle m_Handle;
+		MaterialAsset m_Before;
+		MaterialAsset m_After;
 	};
 }

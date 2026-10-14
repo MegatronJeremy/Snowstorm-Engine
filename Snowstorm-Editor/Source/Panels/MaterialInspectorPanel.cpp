@@ -9,6 +9,8 @@
 #include "Snowstorm/Project/Project.hpp"
 #include "Snowstorm/World/World.hpp"
 #include "Service/EditorTheme.hpp"
+#include "Singletons/EditorCommands.hpp"
+#include "Singletons/EditorHistorySingleton.hpp"
 #include "Singletons/EditorNotificationsSingleton.hpp"
 
 #include <imgui.h>
@@ -27,16 +29,18 @@ namespace Snowstorm
 		// The material currently loaded into the edit buffer. Keyed by handle so switching selection in the
 		// Content Browser reloads from disk; kept in a file-local static because the panel is a stateless
 		// free function (no per-World object to hang it on). Editor is single-window/single-material at a
-		// time, so one shared buffer is sufficient. m_Dirty tracks unsaved edits (drives the Save button).
-		struct EditState
+		// time, so one shared buffer is sufficient. Dirty tracks unsaved edits (drives the Save button).
+		// Shared with MaterialEditCommand, which patches it on undo/redo.
+		const Ref<MaterialEditBuffer> g_Buffer = CreateRef<MaterialEditBuffer>();
+		MaterialEditBuffer& g_State = *g_Buffer;
+
+		// Pre-edit snapshot of an interaction still in progress (a slider drag); one undo step is pushed
+		// when no widget is active any more.
+		struct PendingMaterialEdit
 		{
-			AssetHandle Loaded{0};
-			MaterialAsset Asset;
-			bool Valid = false;
-			bool Dirty = false;
-			char ShaderBuf[256] = {};
-		};
-		EditState g_State;
+			bool Active = false;
+			MaterialAsset Before;
+		} g_Pending;
 
 		// Resolve a registry (project-relative) material path to absolute for file I/O. Mirrors
 		// AssetManagerSingleton's private ResolveAssetPath: relative entries live under the active project.
@@ -175,12 +179,12 @@ namespace Snowstorm
 		// (Re)load from disk when the selection changes. Fail loud if the .ssmat can't be read.
 		if (!g_State.Valid || g_State.Loaded != handle)
 		{
+			g_Pending = {};
 			g_State.Loaded = handle;
 			g_State.Asset = MaterialAsset{};
 			g_State.Valid = MaterialAssetIO::Load(ResolveMaterialPath(meta->Path), g_State.Asset);
 			g_State.Dirty = false;
-			std::strncpy(g_State.ShaderBuf, g_State.Asset.FragmentShader.c_str(), sizeof(g_State.ShaderBuf) - 1);
-			g_State.ShaderBuf[sizeof(g_State.ShaderBuf) - 1] = '\0';
+			g_State.SetShaderText(g_State.Asset.FragmentShader);
 		}
 
 		ImGui::TextDisabled("MATERIAL");
@@ -195,6 +199,7 @@ namespace Snowstorm
 
 		MaterialAsset& m = g_State.Asset;
 		bool changed = false;
+		const MaterialAsset frameBefore = g_Pending.Active ? MaterialAsset{} : m;
 
 		// --- Shader (the data-driven path — the whole point of #167). A dropdown of the mesh-surface shaders
 		// discovered on disk (typo-proof), plus a collapsible free-form path for a shader not in the list. ---
@@ -229,8 +234,7 @@ namespace Snowstorm
 				if (ImGui::Selectable(path.c_str(), selected))
 				{
 					m.FragmentShader = path;
-					std::strncpy(g_State.ShaderBuf, path.c_str(), sizeof(g_State.ShaderBuf) - 1);
-					g_State.ShaderBuf[sizeof(g_State.ShaderBuf) - 1] = '\0';
+					g_State.SetShaderText(path);
 					changed = true;
 				}
 				if (selected)
@@ -282,6 +286,21 @@ namespace Snowstorm
 		if (changed)
 		{
 			g_State.Dirty = true;
+			if (!g_Pending.Active)
+			{
+				g_Pending.Active = true;
+				g_Pending.Before = frameBefore;
+			}
+		}
+		// Coalesce a drag into one step: commit once the widget is released.
+		if (g_Pending.Active && !ImGui::IsAnyItemActive())
+		{
+			if (g_Pending.Before != m)
+			{
+				world.GetSingleton<EditorHistorySingleton>().Push(
+				    CreateRef<MaterialEditCommand>(g_Buffer, handle, std::move(g_Pending.Before), m));
+			}
+			g_Pending = {};
 		}
 
 		ImGui::Separator();
