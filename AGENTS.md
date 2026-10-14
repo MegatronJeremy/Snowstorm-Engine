@@ -311,7 +311,14 @@ hitting everything alike, not contention landing unevenly.
 
 Removing the noise at its source still beats averaging over it: a **stable power state** (AMD via the
 Radeon Developer Tool Suite, NVIDIA via `nvidia-smi --lock-gpu-clocks`) is the real fix where the hardware
-and tooling allow it. Like
+and tooling allow it.
+`--pin-clocks` does it for NVIDIA: it locks the adapter selected by `--gpu` to its max graphics clock
+(`--pin-clocks-mhz` lowers it if that throttles thermally) with `nvidia-smi --lock-gpu-clocks`, which needs an
+elevated shell, and resets on exit including failure and Ctrl-C. AMD on Windows has no scriptable
+mechanism, so there the flag prints `UNPINNED` in the header and changes nothing. Each JSON records
+`clocksPinned`, and a diff against a baseline captured in the other state warns that the absolute numbers are
+not comparable (a baseline predating the field counts as unpinned). `Scripts/test_perf_bench_pin.py` covers
+the pure parts. Like
 smoke, it needs a **real GPU** (Vulkan timestamps) so it's a **local** gate, not CI; on a device
 without timestamp support the JSON sets `timestampsSupported:false` and the run counts as a SKIP
 (exit **2**), never a pass and never a false FAIL.
