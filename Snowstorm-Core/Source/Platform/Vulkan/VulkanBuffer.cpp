@@ -1,6 +1,8 @@
 #include "VulkanBuffer.hpp"
 
 #include "VulkanCommon.hpp"
+#include "VulkanContext.hpp"
+#include "Snowstorm/Render/SmallBufferPool.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/Log.hpp"
 
@@ -91,13 +93,19 @@ namespace Snowstorm
 		bufferInfo.size = size;
 		bufferInfo.usage = usageFlags;
 
-		VkResult result = vmaCreateBuffer(
-		    GetAllocator(),
-		    &bufferInfo,
-		    &allocInfo,
-		    &m_Buffer,
-		    &m_Allocation,
-		    &m_AllocInfo);
+		VkResult result = VK_ERROR_FEATURE_NOT_PRESENT;
+		const VmaPool smallPool = GetVulkanContext().GetSmallHostBufferPool();
+		if (smallPool && UsesSmallHostBufferPool(size, hostVisible, isReadback))
+		{
+			VmaAllocationCreateInfo poolAlloc = allocInfo;
+			poolAlloc.pool = smallPool;
+			result = vmaCreateBuffer(GetAllocator(), &bufferInfo, &poolAlloc, &m_Buffer, &m_Allocation, &m_AllocInfo);
+		}
+		if (result != VK_SUCCESS)
+		{
+			// Not pooled, or the pool's memory type does not fit this buffer: default allocator.
+			result = vmaCreateBuffer(GetAllocator(), &bufferInfo, &allocInfo, &m_Buffer, &m_Allocation, &m_AllocInfo);
+		}
 		SS_CORE_ASSERT(result == VK_SUCCESS, "Failed to create Vulkan buffer");
 
 		// Query memory properties so we can decide whether flushing is needed
