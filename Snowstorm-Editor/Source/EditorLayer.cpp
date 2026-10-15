@@ -1271,6 +1271,11 @@ namespace Snowstorm
 		}
 	}
 
+	std::string EditorLayer::SmokeUnsettled() const
+	{
+		return m_ActiveWorld ? m_ActiveWorld->GetSingleton<AssetManagerSingleton>().UnsettledReason() : std::string{};
+	}
+
 	void EditorLayer::OnUpdate(const Timestep ts)
 	{
 		SS_PROFILE_FUNCTION();

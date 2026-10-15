@@ -211,6 +211,11 @@ namespace Snowstorm
 		             reg.any_of<TagComponent>(authored) ? reg.Read<TagComponent>(authored).Tag : std::string("<camera>"));
 	}
 
+	std::string GameLayer::SmokeUnsettled() const
+	{
+		return m_World ? m_World->GetSingleton<AssetManagerSingleton>().UnsettledReason() : std::string{};
+	}
+
 	void GameLayer::OnUpdate(const Timestep ts)
 	{
 		// RuntimeInitSystem rebuilds the render target when the viewport size changes (#146). A minimized

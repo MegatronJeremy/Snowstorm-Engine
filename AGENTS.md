@@ -185,6 +185,13 @@ Set it yourself when debugging validation interactively. GPU resources are also 
 `SetVulkanObjectName` (`VK_EXT_debug_utils`), so validation/RenderDoc report e.g. `Swapchain[0]`
 instead of a raw `VkImage 0x...` handle.
 
+**A run passes only once assets settle.** After the frame budget the app keeps running until
+`AssetManagerSingleton::PendingLoadCount() == 0` and no bindless slot is still the placeholder
+(`UnsettledReason`, reached through `Layer::SmokeUnsettled`), until `smoke.settle.seconds` have passed since process start
+(the harness sets it to `--timeout` minus 10); otherwise it logs `[error]` and fails. A stuck cook
+used to pass because only the frame count was checked. `--cold --scene <Sponza.world>` covers the
+cook path, and needs a generous `--timeout`.
+
 **Smoke and perf-bench do not cover the unit tests.** Both boot the app and watch it behave, so
 neither notices a broken exact-string expectation: `PerfBenchTests` asserts the JSON the benchmark
 writes, character for character. Run `ctest --test-dir build -C Debug --output-on-failure` (or the
