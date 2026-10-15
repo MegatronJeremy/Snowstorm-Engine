@@ -1,5 +1,6 @@
 ﻿#include "VulkanSampler.hpp"
 
+#include "VulkanCommon.hpp"
 #include "Snowstorm/Core/Log.hpp"
 
 namespace Snowstorm
@@ -41,8 +42,8 @@ namespace Snowstorm
 	{
 		if (m_Sampler != VK_NULL_HANDLE)
 		{
-			vkDeviceWaitIdle(m_Device); // TODO, again probably bad to wait here
-			vkDestroySampler(m_Device, m_Sampler, nullptr);
+			RetireVulkanObject([device = m_Device, sampler = m_Sampler]
+			                   { vkDestroySampler(device, sampler, nullptr); });
 			m_Sampler = VK_NULL_HANDLE;
 		}
 	}

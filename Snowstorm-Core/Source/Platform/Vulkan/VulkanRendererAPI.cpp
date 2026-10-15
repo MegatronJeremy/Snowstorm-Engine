@@ -4,6 +4,7 @@
 #include "imgui_impl_vulkan.h"
 #include "imgui_internal.h"
 #include "VulkanBindlessManager.hpp"
+#include "VulkanCommon.hpp"
 #include "VulkanOmmBaker.hpp"
 
 #include "Snowstorm/Core/Application.hpp"
@@ -38,6 +39,8 @@ namespace Snowstorm
 		WrapSwapchainTextures();
 
 		m_CurrentFrameIndex = 0;
+		// +1 frame of margin over the fence depth: a retire happens mid-frame, after that frame's own wait.
+		EnableVulkanRetireQueue(s_MaxFramesInFlight + 1);
 
 		m_GraphicsContexts.resize(s_MaxFramesInFlight);
 		m_ComputeContexts.resize(s_MaxFramesInFlight);
@@ -209,6 +212,7 @@ namespace Snowstorm
 
 		// Wait for GPU to finish work before destroying the core context
 		vkDeviceWaitIdle(device);
+		FlushVulkanRetireQueue();
 
 		VulkanBindlessManager::Get().Shutdown();
 
@@ -275,6 +279,7 @@ namespace Snowstorm
 		// leave the fence unsignaled forever, hanging the next wait on this slot.)
 		vkWaitForFences(device, 1, &m_InFlightFences[m_CurrentFrameIndex], VK_TRUE, UINT64_MAX);
 		VulkanBindlessManager::Get().AdvanceFrame();
+		AdvanceVulkanRetireQueue();
 
 		// 2. Acquire an image from the swapchain. On OUT_OF_DATE (surface changed, e.g. resize) the
 		// swapchain is unusable: rebuild it and retry. SUBOPTIMAL still works for this frame; we

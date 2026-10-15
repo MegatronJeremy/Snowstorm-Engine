@@ -114,8 +114,8 @@ namespace Snowstorm
 
 	VulkanBuffer::~VulkanBuffer()
 	{
-		vkDeviceWaitIdle(GetVulkanDevice()); // TODO this is probably really bad practice, having it here and in other places
-		vmaDestroyBuffer(GetAllocator(), m_Buffer, m_Allocation);
+		RetireVulkanObject([allocator = GetAllocator(), buffer = m_Buffer, allocation = m_Allocation]
+		                   { vmaDestroyBuffer(allocator, buffer, allocation); });
 	}
 
 	void* VulkanBuffer::Map()
