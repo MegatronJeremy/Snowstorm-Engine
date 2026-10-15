@@ -6,21 +6,20 @@
 #include "Snowstorm/Components/VisibilityComponents.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/ECS/TrackedRegistry.hpp"
-#include "Snowstorm/Lighting/LightingComponents.hpp"
 #include "Snowstorm/Render/RenderGraph.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/RenderTarget.hpp"
 
 namespace Snowstorm
 {
-	void ShadowRenderer::RenderShadows(FrameContext& fc, World& world)
+	void ShadowRenderer::RenderShadows(FrameContext& fc)
 	{
-		SetupDirectionalShadow(fc, world);
+		SetupDirectionalShadow(fc);
 		SetupSpotShadows(fc);
 		SetupPointShadows(fc);
 	}
 
-	void ShadowRenderer::SetupDirectionalShadow(FrameContext& fc, World& world)
+	void ShadowRenderer::SetupDirectionalShadow(FrameContext& fc)
 	{
 		// NOTE: pass Execute lambdas run LATER, in RenderGraph::Execute() — after THIS method returns. So they
 		// must NOT capture this method's locals by reference (they'd dangle). They capture fc by reference (it
@@ -34,21 +33,11 @@ namespace Snowstorm
 		// (ShadowMapIndex = 0) and the lit shader falls back to fully lit.
 		renderer.SetShadowData(glm::mat4(1.0f), 0, 0); // default: no shadows unless set up below
 
-		// Primary sun = first directional light (matches DirectionalLights[0] in the shader). Shadows are
-		// gated by the global render.shadows CVar (scalability kill-switch) AND the light's authored
-		// CastShadows flag — either off => no shadow pass, ShadowMapIndex stays 0 (fully lit).
-		glm::vec3 sunDir{0.0f};
-		bool sunCasts = false;
-		for (const auto sunView = fc.Reg.view<const DirectionalLightComponent>(); const auto e : sunView)
-		{
-			const auto& dl = sunView.get<const DirectionalLightComponent>(e);
-			sunDir = dl.Direction;
-			sunCasts = dl.CastShadows;
-			break;
-		}
-
-		glm::mat4 lightViewProj{1.0f};
-		if (CVars::ShadowsRasterActive() && sunCasts && ShadowPass::ComputeSunViewProj(world, sunDir, lightViewProj))
+		// LightingSystem (PreRender) already picked the primary sun (first ENABLED directional, the shader's
+		// DirectionalLights[0]) and gated it on render.shadows + CastShadows + scene bounds.
+		const RendererService::SunShadowFit& sunFit = renderer.GetSunShadowFit();
+		const glm::mat4 lightViewProj = sunFit.LightViewProj;
+		if (sunFit.Valid)
 		{
 			const Ref<RenderTarget>& shadowRT = m_ShadowPass.GetOrCreateShadowTarget();
 			const uint32_t shadowIndex =
