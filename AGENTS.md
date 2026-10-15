@@ -1344,6 +1344,8 @@ buffers are released. Textures are not swept yet.
     no GUI, for automated/offline trace analysis). Instrumented spots: frame-loop phases, every ECS system,
     and JobSystem worker tasks. One `SS_PROFILE_SCOPE` per lexical scope (it declares a fixed-name RAII
     object, so two in the same block is a redefinition; nest them).
+  Per-pass GPU scopes also reach Tracy as GPU zones (one context per queue, `VulkanTracyGpuZones`), so
+  GPU passes sit under the CPU timeline once a Tracy GUI is connected.
   A whole debugging session was once burned scattering probes to find a load spike that the Performance
   panel would have pinned to `RenderSystem`/shadow-fit in one glance (and the fix, reading the panel, was
   already built). If the existing readouts genuinely don't cover the spot, ADD a permanent, toggleable
