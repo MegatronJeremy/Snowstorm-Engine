@@ -161,7 +161,7 @@ namespace Snowstorm
 
 		const EnvironmentDataBlock& env = renderer.GetEnvironment();
 		SetupIBL(fc, env);
-		m_ShadowRenderer.RenderShadows(fc, *m_World);
+		m_ShadowRenderer.RenderShadows(fc);
 
 		// RT editor picking (#118 follow-up): trace the queued click ray against the scene TLAS in a tiny
 		// compute pass, so the result reads back on a later frame (RecordPick latches the retired dispatch,

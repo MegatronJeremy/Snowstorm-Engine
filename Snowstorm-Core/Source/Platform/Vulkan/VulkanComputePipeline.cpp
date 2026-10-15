@@ -76,7 +76,8 @@ namespace Snowstorm
 
 	void VulkanComputePipeline::Build()
 	{
-		const std::string compPath = m_Desc.Shader->GetCompiledPath(ShaderStageKind::Compute);
+		const Shader::CompiledShader compiled = m_Desc.Shader->GetCompiled();
+		const std::string& compPath = compiled.Comp;
 		SS_CORE_ASSERT(!compPath.empty(), "Compute pipeline shader has no compiled compute SPIR-V (missing #type compute?)");
 
 		const std::vector<char> code = ReadFile(compPath);
@@ -225,7 +226,7 @@ namespace Snowstorm
 
 		VulkanPipelineStats::Record(m_Device, m_Pipeline, m_Desc.Shader->GetPath());
 
-		m_BuiltShaderVersion = m_Desc.Shader->GetVersion();
+		m_BuiltShaderVersion = compiled.Version;
 	}
 
 	void VulkanComputePipeline::Destroy()
