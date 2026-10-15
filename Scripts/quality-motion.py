@@ -172,6 +172,8 @@ def run_motion_capture(tech_env: dict, out_base: Path, exe: Path, repo_root: Pat
         "SS_STARTUP_SCENE": scene,
         "SS_VALIDATION_NONFATAL": "1",
         "SS_CONFIG_IGNORE": "1",
+        "SS_RENDER_RESOLUTION_WIDTH": str(qb.CAPTURE_RESOLUTION[0]),
+        "SS_RENDER_RESOLUTION_HEIGHT": str(qb.CAPTURE_RESOLUTION[1]),
     })
     env.update(MOTION_ENV)
     env.update(tech_env)
@@ -222,7 +224,7 @@ def run_motion_capture(tech_env: dict, out_base: Path, exe: Path, repo_root: Pat
     return imgs, poses, device
 
 
-_REF_CACHE_VERSION = 2  # bump to invalidate every cached motion reference
+_REF_CACHE_VERSION = 3  # bump to invalidate every cached motion reference
 
 
 def _motion_reference_key(repo_root: Path, exe: Path, scene: str, frame: int, ref_frames: int) -> str:
