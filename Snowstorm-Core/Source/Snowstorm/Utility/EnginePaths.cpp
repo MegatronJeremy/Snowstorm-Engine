@@ -32,6 +32,11 @@ namespace Snowstorm
 		}
 	}
 
+	fs::path GetExecutableDir()
+	{
+		return GetExeDir();
+	}
+
 	const fs::path& GetEngineRoot()
 	{
 		static const fs::path root = []
