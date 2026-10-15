@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <functional>
 #include <mutex>
+#include <string>
 #include <vector>
 
 namespace Snowstorm
@@ -44,6 +45,24 @@ namespace Snowstorm
 		// to the model (DefaultLit; diffuse color + diffuse texture from the aiMaterial when present).
 		// Returns the created entities (empty on failure). Does NOT save the registry — caller decides.
 		std::vector<Entity> ImportModel(const std::filesystem::path& path);
+
+		struct ImportFileResult
+		{
+			// Zero for meshes (a model yields several handles) and on failure.
+			AssetHandle Handle{0};
+			// Meshes only: the entities ImportModel spawned.
+			std::vector<Entity> Entities;
+			// Empty on success; otherwise why the file was refused.
+			std::string Error;
+
+			[[nodiscard]] bool Ok() const { return Error.empty(); }
+		};
+
+		// Single entry point for bringing one file into the project, dispatched on its extension
+		// (AssetTypeFromPath). Non-mesh types follow PlanImport into the project's per-type folder and
+		// register through Import; meshes go through ImportModel. Scenes and unknown extensions are refused
+		// with a reason. Does NOT save the registry, so a batch saves once.
+		ImportFileResult ImportFile(const std::filesystem::path& source);
 
 		Ref<Mesh> GetMesh(AssetHandle handle);
 

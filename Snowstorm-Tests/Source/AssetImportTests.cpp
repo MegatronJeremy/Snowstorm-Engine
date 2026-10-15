@@ -118,3 +118,13 @@ TEST_CASE("PlanImport reuses a byte-identical existing file", "[assets][import]"
 	CHECK(!plan.Renamed);
 	CHECK(plan.DestRel.generic_string() == "assets/textures/a.png");
 }
+
+TEST_CASE("DefaultImportFolder follows the sample project's layout", "[assets][import]")
+{
+	CHECK(DefaultImportFolder(AssetType::Mesh) == "meshes");
+	CHECK(DefaultImportFolder(AssetType::Texture) == "textures");
+	CHECK(DefaultImportFolder(AssetType::Material) == "materials");
+	CHECK(DefaultImportFolder(AssetType::Audio) == "audio");
+	CHECK(DefaultImportFolder(AssetType::Scene).empty());
+	CHECK(DefaultImportFolder(AssetType::None).empty());
+}
