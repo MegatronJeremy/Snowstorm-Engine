@@ -75,3 +75,40 @@ TEST_CASE("CVar tracks its default: IsAtDefault + ResetToDefault", "[cvar]")
 	f.Set(0.9f);
 	REQUIRE(fi.IsAtDefault());
 }
+
+#include "Snowstorm/Utility/SettingsPaths.hpp"
+
+#include <filesystem>
+#include <fstream>
+
+TEST_CASE("Project settings path is under the project's Saved directory", "[cvar][settings]")
+{
+	const auto p = ProjectSettingsPath("Projects/Sandbox");
+	REQUIRE(p == std::filesystem::path("Projects/Sandbox") / "Saved" / "Settings.cfg");
+	REQUIRE(ProjectSettingsPath("A") != ProjectSettingsPath("B"));
+}
+
+TEST_CASE("Project settings load, save, and yield to higher-priority sources", "[cvar][settings]")
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / "ss_settings_test_project";
+	fs::remove_all(dir);
+
+	static CVar<int> persisted{"test.settings.persisted", 1, "", CVarFlags::Persist};
+	static CVar<int> overridden{"test.settings.overridden", 1, "", CVarFlags::Persist};
+
+	auto& reg = CVarRegistry::Get();
+	persisted.Set(7);
+	overridden.Set(9);
+	reg.SaveProjectSettings(dir); // creates Saved/
+	REQUIRE(fs::exists(ProjectSettingsPath(dir)));
+
+	persisted.Set(1);
+	overridden.Set(1);
+	std::unordered_set<std::string> skip{"test.settings.overridden"};
+	reg.LoadConfig(ProjectSettingsPath(dir).string(), true, &skip);
+	REQUIRE(persisted.Get() == 7);
+	REQUIRE(overridden.Get() == 1); // a skipped (env/CLI-set) CVar keeps its value
+
+	fs::remove_all(dir);
+}
