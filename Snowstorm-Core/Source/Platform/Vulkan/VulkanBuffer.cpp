@@ -2,7 +2,7 @@
 
 #include "VulkanCommon.hpp"
 #include "VulkanContext.hpp"
-#include "VulkanSmallBufferPool.hpp"
+#include "Snowstorm/Render/SmallBufferPool.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/Log.hpp"
 

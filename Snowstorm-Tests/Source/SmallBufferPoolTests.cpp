@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "Platform/Vulkan/VulkanSmallBufferPool.hpp"
+#include "Snowstorm/Render/SmallBufferPool.hpp"
 
 using namespace Snowstorm;
 

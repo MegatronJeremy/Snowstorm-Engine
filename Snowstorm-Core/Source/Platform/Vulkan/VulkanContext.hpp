@@ -67,7 +67,7 @@ namespace Snowstorm
 
 		VmaAllocator GetAllocator() const { return m_Allocator; }
 
-		// Pool for small host-mapped buffers (see VulkanSmallBufferPool.hpp); null if no memory type fit.
+		// Pool for small host-mapped buffers (see Snowstorm/Render/SmallBufferPool.hpp); null if no memory type fit.
 		VmaPool GetSmallHostBufferPool() const { return m_SmallHostBufferPool; }
 
 		// Device-wide pipeline cache, persisted under Engine/cache/pipeline. VK_NULL_HANDLE if creation failed,
