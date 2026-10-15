@@ -875,7 +875,7 @@ namespace Snowstorm
 			done.DebugName = debugName;
 
 			// CPU-only on the worker: cooked-blob read or stb decode (+ cache write). No GPU.
-			if (auto cooked = Texture::DecodeCPU(path, handle, sourceTime, role))
+			if (auto cooked = Texture::DecodeCPU(path, handle, sourceTime, role, srgb))
 			{
 				done.Cooked = std::move(*cooked);
 				done.Success = true;
