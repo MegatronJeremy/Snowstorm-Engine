@@ -166,6 +166,16 @@ namespace Snowstorm::EditorTheme
 		SS_CORE_INFO("Editor theme: no monospace font in Engine/Fonts; using built-in font.");
 	}
 
+	std::string PanelTitle(const char* label)
+	{
+		std::string title = "// ";
+		for (const char* c = label; *c; ++c)
+		{
+			title += (*c == ' ') ? '_' : static_cast<char>(std::toupper(static_cast<unsigned char>(*c)));
+		}
+		return title + "###" + label;
+	}
+
 	void SectionHeader(const char* label)
 	{
 		std::string upper(label);
