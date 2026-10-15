@@ -175,7 +175,8 @@ TEST_CASE("Bulk change marker: AND semantics, removal and mixed explicit marks",
 
 	reg.MarkChangedBulk(
 	    {std::type_index(typeid(Position))},
-	    [](const TrackedRegistry& r, const entt::entity x) { return r.all_of<Position, Velocity>(x); },
+	    [](const TrackedRegistry& r, const entt::entity x)
+	    { return r.all_of<Position, Velocity>(x); },
 	    [](const TrackedRegistry& r, const std::function<void(entt::entity)>& visit)
 	    {
 		    for (const entt::entity x : r.view<Position, Velocity>())
