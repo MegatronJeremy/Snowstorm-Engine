@@ -645,15 +645,22 @@ namespace Snowstorm
 
 	void VulkanGraphicsPipeline::Destroy()
 	{
-		// Caller is responsible for device idle. Destroy in reverse creation order.
-		if (m_Pipeline != VK_NULL_HANDLE)
+		// The GPU may still execute command buffers that bind these; retire instead of draining the device.
+		if (m_Pipeline != VK_NULL_HANDLE || m_PipelineLayout != VK_NULL_HANDLE)
 		{
-			vkDestroyPipeline(m_Device, m_Pipeline, nullptr);
+			RetireVulkanObject(
+			    [device = m_Device, pipeline = m_Pipeline, layout = m_PipelineLayout]
+			    {
+				    if (pipeline != VK_NULL_HANDLE)
+				    {
+					    vkDestroyPipeline(device, pipeline, nullptr);
+				    }
+				    if (layout != VK_NULL_HANDLE)
+				    {
+					    vkDestroyPipelineLayout(device, layout, nullptr);
+				    }
+			    });
 			m_Pipeline = VK_NULL_HANDLE;
-		}
-		if (m_PipelineLayout != VK_NULL_HANDLE)
-		{
-			vkDestroyPipelineLayout(m_Device, m_PipelineLayout, nullptr);
 			m_PipelineLayout = VK_NULL_HANDLE;
 		}
 		// Drop the reflected set layouts (the bindless set 3 is external/manager-owned and not destroyed here).
@@ -673,8 +680,6 @@ namespace Snowstorm
 		// evicts descriptor sets allocated from the OLD set layout.
 		const std::string prevSignature = m_LayoutSignature;
 
-		// Drain all in-flight frames once before touching GPU objects any command buffer might reference.
-		vkDeviceWaitIdle(m_Device);
 		Destroy();
 		Build();
 
@@ -698,11 +703,10 @@ namespace Snowstorm
 			return;
 		}
 
-		// Rebuild in place at the new sample count. Drain first (any in-flight command buffer may reference the
-		// old VkPipeline). Same swap-the-handle mechanism as Reload, so existing Ref<Pipeline> holders (material
+		// Rebuild in place at the new sample count. The old VkPipeline is retired, not drained (in-flight command buffers may
+		// reference it). Same swap-the-handle mechanism as Reload, so existing Ref<Pipeline> holders (material
 		// instances) bind the new one next frame — no re-resolution needed.
 		m_Desc.SampleCount = s;
-		vkDeviceWaitIdle(m_Device);
 		Destroy();
 		Build();
 		SS_CORE_INFO("Rebuilt graphics pipeline '{}' at {}x MSAA.", m_Desc.DebugName, s);
@@ -710,10 +714,6 @@ namespace Snowstorm
 
 	VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
 	{
-		if (m_Pipeline != VK_NULL_HANDLE || m_PipelineLayout != VK_NULL_HANDLE)
-		{
-			vkDeviceWaitIdle(m_Device);
-			Destroy();
-		}
+		Destroy();
 	}
 }
