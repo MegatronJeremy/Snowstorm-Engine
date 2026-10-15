@@ -44,8 +44,9 @@ namespace Snowstorm
 		// meshes are resident and the shaders are compiled, what renders depends on worker-thread completion
 		// order; starting the path there would put the capture at a pose determined by load timing.
 		const uint64_t renderFrame = ServiceView<RendererService>().GetFrameCounter();
-		const bool ready = SingletonView<AssetManagerSingleton>().PendingLoadCount() == 0 &&
-		                   Application::Get().GetServiceManager().GetService<ShaderLibrary>().PendingCompileCount() == 0;
+		const bool ready = m_Readiness.Update(
+		    SingletonView<AssetManagerSingleton>().PendingLoadCount(),
+		    Application::Get().GetServiceManager().GetService<ShaderLibrary>().PendingCompileCount());
 
 		for (const auto view = reg.view<CameraControllerComponent, TransformComponent>(); const auto e : view)
 		{
@@ -111,5 +112,10 @@ namespace Snowstorm
 			tr.Position = pose.Position;
 			tr.Rotation = glm::vec3(pose.Pitch, pose.Yaw, 0.0f);
 		}
+	}
+
+	void CameraPathSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.ReadComponents<CameraControllerComponent, CameraPathComponent>().WriteComponents<TransformComponent>().ReadResources<RendererService, AssetManagerSingleton, ShaderLibrary>();
 	}
 }

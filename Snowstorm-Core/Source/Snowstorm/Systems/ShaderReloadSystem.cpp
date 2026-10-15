@@ -82,4 +82,9 @@ namespace Snowstorm
 			                      { pipeline->Reload(); });
 		}
 	}
+
+	void ShaderReloadSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.WriteResources<ShaderLibrary>();
+	}
 }

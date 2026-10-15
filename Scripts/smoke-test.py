@@ -11,7 +11,7 @@ This needs a real GPU + display (Vulkan), so it is a LOCAL check, not a CI job.
 Run it after a build to catch runtime regressions that compilation can't.
 
 Usage (from repo root or anywhere):
-    py Scripts/smoke-test.py                 # default 120 frames, 60s timeout each
+    py Scripts/smoke-test.py                 # default 120 frames, 180s timeout each
     py Scripts/smoke-test.py --frames 300    # run more frames
     py Scripts/smoke-test.py --timeout 90    # per-app wall-clock budget (seconds)
     py Scripts/smoke-test.py --config Release # test the Release build instead of Debug
@@ -19,6 +19,11 @@ Usage (from repo root or anywhere):
     py Scripts/smoke-test.py --warnings-fail  # treat [warning] lines as failures too
     py Scripts/smoke-test.py --scene Projects/Sandbox/assets/scenes/Sponza.world   # boot a specific scene
     py Scripts/smoke-test.py --cold --scene Projects/Sandbox/assets/scenes/Sponza.world  # wipe cook caches first
+
+After the frame budget the app also waits for asset streaming to drain (PendingLoadCount() == 0)
+and for every bindless texture slot to leave the placeholder; if that does not happen within
+timeout-10 seconds the engine logs an [error] and the run fails. Use --cold with --scene for a
+heavy scene so the cook path is covered, and raise --timeout (a cold Sponza cook is slow).
 
 Exit code: 0 if every target passed, 1 otherwise.
 
@@ -101,6 +106,10 @@ def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
 
     env = os.environ.copy()
     env["SS_SMOKE_FRAMES"] = str(frames)
+    # After the frame budget the app waits (up to this long) for asset streaming to drain and for no
+    # texture slot to remain a placeholder, and logs [error] otherwise. Without it a load that never
+    # finishes passes. Kept under the wall-clock timeout so the engine reports the reason first.
+    env["SS_SMOKE_SETTLE_SECONDS"] = str(max(1, timeout - 10))
     # Don't assert-and-die on the first Vulkan validation error; log them all and keep running so a
     # single smoke run surfaces every error at once. We detect failures by scanning the log below.
     env["SS_VALIDATION_NONFATAL"] = "1"
@@ -171,14 +180,14 @@ def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
             ok = False
 
     if ok:
-        print(f"  PASS: ran {frames} frames, exit 0, no error markers.")
+        print(f"  PASS: ran {frames} frames, assets settled, exit 0, no error markers.")
     return ok
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Smoke-test the Snowstorm executables.")
     ap.add_argument("--frames", type=int, default=120, help="Frames to run per app (default 120)")
-    ap.add_argument("--timeout", type=int, default=60, help="Per-app wall-clock timeout in seconds (default 60)")
+    ap.add_argument("--timeout", type=int, default=180, help="Per-app wall-clock timeout in seconds (default 180)")
     ap.add_argument("--config", default="Debug", help="Build config dir under build/ (default Debug)")
     ap.add_argument("--build-dir", default="build", help="Build directory (default build)")
     ap.add_argument("--triplet", default="x64-windows", help="vcpkg triplet for the validation-layer path (default x64-windows)")

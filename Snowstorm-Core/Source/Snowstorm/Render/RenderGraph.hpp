@@ -107,6 +107,9 @@ namespace Snowstorm
 		// samples the viewport through ImGui bindings the graph cannot see, so it must not be hoisted.
 		[[nodiscard]] std::vector<uint32_t> BuildSchedule() const;
 
+		// Same, with the swapchain target supplied so the ordering is computable without a live renderer.
+		[[nodiscard]] std::vector<uint32_t> BuildSchedule(const Ref<RenderTarget>& swapchain) const;
+
 		// Log the dependency graph and, per pass, the earliest slot it could legally occupy. Gated by the
 		// render.graph.dumpdeps CVar (a frame countdown), so it is a standing diagnostic rather than a
 		// throwaway probe.

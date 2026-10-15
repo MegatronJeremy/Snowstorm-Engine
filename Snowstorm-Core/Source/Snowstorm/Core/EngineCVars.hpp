@@ -22,6 +22,7 @@ namespace Snowstorm::CVars
 
 	// Block-compress cooked textures. See TextureCache.
 	extern CVar<bool> CompressTextures;
+	extern CVar<int> TextureQuality;
 	// Upper bound on every denoiser's a-trous pass count, and the size of GIDenoisePass's per-frame
 	// descriptor/uniform pool, which is why it lives here rather than as a literal in either: the pool
 	// must have a slot per pass, and when the two numbers drifted apart the extra passes asserted at
@@ -36,6 +37,7 @@ namespace Snowstorm::CVars
 	// Run this many frames then exit cleanly (0 = run until the window closes). Used by the smoke
 	// test to drive the app headlessly.
 	extern CVar<int> SmokeFrames;
+	extern CVar<int> SmokeSettleSeconds;
 
 	// Headless GPU perf benchmark (local regression gate, GPU analogue of smoke.frames). When > 0, run
 	// this many frames accumulating per-pass GPU timings (RendererService::GetGpuPassTimes) past warmup,
@@ -264,6 +266,9 @@ namespace Snowstorm::CVars
 	// project if the file is missing, so the engine still runs. Editor + Runtime both honor it.
 	extern CVar<std::string> StartupProject;
 
+	// Force the editor start screen even when a recent project exists.
+	extern CVar<bool> EditorPicker;
+
 	// Override the scene loaded at startup (path to a .world). Empty (default) uses the active project's
 	// StartScene. Lets the smoke harness boot any scene headlessly (e.g. load Sponza to exercise
 	// the PBR sampling path that Startup.world doesn't, without a manual Content Browser open).
@@ -439,6 +444,11 @@ namespace Snowstorm::CVars
 
 	// Shadow-map resolution (square). Changing it rebuilds the shadow target. Higher = sharper, costlier.
 	extern CVar<int> ShadowResolution;
+
+	// How many directional lights get a raster shadow map (the primary uses the dedicated sun map, the rest a
+	// tile of one shared atlas). 1 = primary only (default). Clamped to [1, MAX_DIRECTIONAL_LIGHTS]. Ray-traced
+	// shadows are unaffected: every casting directional traces.
+	extern CVar<int> ShadowDirectionals;
 
 	// Soft shadows: 3x3 PCF for the raster shadow map; cone-sampled penumbra for RT shadows. Off = hard.
 	extern CVar<bool> ShadowSoft;

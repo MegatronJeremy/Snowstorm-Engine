@@ -1,5 +1,6 @@
 #include "VulkanContext.hpp"
 #include "Snowstorm/Render/SmallBufferPool.hpp"
+#include "Snowstorm/Render/QueueFamilySelect.hpp"
 
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/Log.hpp"
@@ -378,25 +379,16 @@ namespace Snowstorm
 			vkGetPhysicalDeviceQueueFamilyProperties(m_PhysicalDevice, &queueCount, nullptr);
 			std::vector<VkQueueFamilyProperties> props(queueCount);
 			vkGetPhysicalDeviceQueueFamilyProperties(m_PhysicalDevice, &queueCount, props.data());
-			m_TransferQueueFamily = m_GraphicsQueueFamily;
-			m_ComputeQueueFamily = m_GraphicsQueueFamily;
+			std::vector<QueueFamilyCaps> caps(queueCount);
 			for (uint32_t i = 0; i < queueCount; ++i)
 			{
-				const bool hasTransfer = (props[i].queueFlags & VK_QUEUE_TRANSFER_BIT) != 0;
-				const bool hasGraphics = (props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
-				const bool hasCompute = (props[i].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0;
-				if (hasTransfer && !hasGraphics && !hasCompute && m_TransferQueueFamily == m_GraphicsQueueFamily)
-				{
-					m_TransferQueueFamily = i;
-				}
-				// Async-compute family is COMPUTE without GRAPHICS: a family carrying GRAPHICS would
-				// time-slice against the render work instead of running concurrently, so it is not a
-				// candidate. None found leaves the graphics family aliased in.
-				if (hasCompute && !hasGraphics && m_ComputeQueueFamily == m_GraphicsQueueFamily)
-				{
-					m_ComputeQueueFamily = i;
-				}
+				caps[i].Transfer = (props[i].queueFlags & VK_QUEUE_TRANSFER_BIT) != 0;
+				caps[i].Graphics = (props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
+				caps[i].Compute = (props[i].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0;
 			}
+			const QueueFamilySelection sel = SelectQueueFamilies(caps, m_GraphicsQueueFamily);
+			m_TransferQueueFamily = sel.Transfer;
+			m_ComputeQueueFamily = sel.Compute;
 		}
 
 		SS_CORE_INFO("Selected GPU [{}]: {} (of {} candidate(s)).", chosen, candidates[chosen].Props.deviceName,

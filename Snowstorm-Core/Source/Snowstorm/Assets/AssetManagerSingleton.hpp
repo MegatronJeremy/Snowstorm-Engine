@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <functional>
 #include <mutex>
+#include <string>
 #include <vector>
 
 namespace Snowstorm
@@ -45,6 +46,24 @@ namespace Snowstorm
 		// Returns the created entities (empty on failure). Does NOT save the registry — caller decides.
 		std::vector<Entity> ImportModel(const std::filesystem::path& path);
 
+		struct ImportFileResult
+		{
+			// Zero for meshes (a model yields several handles) and on failure.
+			AssetHandle Handle{0};
+			// Meshes only: the entities ImportModel spawned.
+			std::vector<Entity> Entities;
+			// Empty on success; otherwise why the file was refused.
+			std::string Error;
+
+			[[nodiscard]] bool Ok() const { return Error.empty(); }
+		};
+
+		// Single entry point for bringing one file into the project, dispatched on its extension
+		// (AssetTypeFromPath). Non-mesh types follow PlanImport into the project's per-type folder and
+		// register through Import; meshes go through ImportModel. Scenes and unknown extensions are refused
+		// with a reason. Does NOT save the registry, so a batch saves once.
+		ImportFileResult ImportFile(const std::filesystem::path& source);
+
 		Ref<Mesh> GetMesh(AssetHandle handle);
 
 		// Non-blocking mesh fetch: returns the GPU mesh if already resident, else null and kicks off an
@@ -68,6 +87,11 @@ namespace Snowstorm
 		// resident). PendingLoadTotal is the high-water mark since the queue was last empty, so a bar can
 		// show loaded/total.
 		[[nodiscard]] uint32_t PendingLoadCount() const;
+		// Bindless slots still showing the magenta placeholder. Non-zero after PendingLoadCount() reaches 0
+		// means a load failed and its slot was kept.
+		[[nodiscard]] uint32_t PlaceholderSlotCount() const { return static_cast<uint32_t>(m_PlaceholderSlots.size()); }
+		// "" when nothing is loading and no slot is a placeholder, else a one-line reason (smoke gate).
+		[[nodiscard]] std::string UnsettledReason() const;
 		[[nodiscard]] uint32_t PendingLoadTotal() const { return m_PendingTotal; }
 
 		// True when a bindless texture slot holds its REAL image, not the async magenta placeholder. Slot 0 =
@@ -135,6 +159,8 @@ namespace Snowstorm
 		// Copy a loaded MaterialAsset's colors/factors/maps onto a base Material (shared by the cached
 		// and unique material-instance paths). Resolves each texture handle in the correct color space.
 		void ApplyMaterialAsset(Material& base, const MaterialAsset& matAsset);
+		// Packs the .ssmat's named shader params (declared in the shader source) into PerInstanceCustomData.
+		static void ApplyShaderParams(MaterialInstance& instance, const MaterialAsset& matAsset);
 
 		// Resolve metadata for a non-zero handle, logging a clear error (once per handle) if it is
 		// missing or the wrong type. A scene referencing handles absent from the registry is the

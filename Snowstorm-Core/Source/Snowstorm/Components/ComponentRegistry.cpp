@@ -211,7 +211,14 @@ namespace Snowstorm
 		{
 			ImGui::TableNextRow();
 			ImGui::TableSetColumnIndex(0);
-			ImGui::TextUnformatted(label);
+			std::string upper(label);
+			for (char& ch : upper)
+			{
+				ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+			}
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted(upper.c_str());
+			ImGui::TableSetColumnIndex(1);
 			ImGui::SetNextItemWidth(-FLT_MIN);
 		}
 
@@ -333,12 +340,12 @@ namespace Snowstorm
 
 	bool BeginPropertyTable(const char* id)
 	{
-		// Single full-width column: each property stacks its label above a full-width widget (see
-		// LabelLeft). A table (rather than raw widgets) is kept so PadOuterX gives consistent insets and
-		// future per-row striping/hover stays cheap. Borders off for a clean instrument look.
-		if (ImGui::BeginTable(id, 1, ImGuiTableFlags_PadOuterX))
+		// LABEL | value grid (see LabelLeft). The label column is a stretch share, not fixed pixels, so the
+		// value column keeps usable width in a narrow dock.
+		if (ImGui::BeginTable(id, 2, ImGuiTableFlags_PadOuterX))
 		{
-			ImGui::TableSetupColumn("prop", ImGuiTableColumnFlags_WidthStretch);
+			ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthStretch, 0.4f);
+			ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 0.6f);
 			return true;
 		}
 		return false;

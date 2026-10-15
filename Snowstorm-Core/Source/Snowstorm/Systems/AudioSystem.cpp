@@ -219,4 +219,9 @@ namespace Snowstorm
 			it = m_Voices.erase(it);
 		}
 	}
+
+	void AudioSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.WriteComponents<AudioSourceComponent>().WriteResources<AudioService, AssetManagerSingleton, TrackingMapResource>().ReadResources<SimulationStateSingleton>();
+	}
 }

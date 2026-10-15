@@ -24,6 +24,7 @@ namespace Snowstorm
 
 	private:
 		void SetupDirectionalShadow(FrameContext& fc);
+		void SetupSecondaryDirectionalShadows(FrameContext& fc);
 		void SetupSpotShadows(FrameContext& fc);
 		void SetupPointShadows(FrameContext& fc);
 

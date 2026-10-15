@@ -23,6 +23,7 @@
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/RenderTarget.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
+#include "Snowstorm/Render/VelocityPolicy.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
 namespace Snowstorm
@@ -409,21 +410,27 @@ namespace Snowstorm
 		// Dataset export (#46) also needs the velocity buffer (an exported channel), so force the velocity
 		// pass on while exporting even without debug-view/TAA. Requires compare (ground truth exists).
 		const bool exporting = CVars::DatasetExport.Get() && comparing;
-		// GI (#125), reflection (#129), and AO (#130) temporal accumulation reproject by motion vectors, so any
-		// forces the velocity pass on whenever its effect runs (mirrors VelocityEffect::ShouldRun so flag + pass agree).
-		// SSR and SSGI (#151) ALWAYS need velocity (they reproject the previous-frame color at the hit), not just
-		// when a temporal stage is on, so either forces the pass on separately from the RT-temporal ORs.
-		const bool giTemporal = (CVars::GiActive() && CVars::GITemporalActive()) ||
-		                        CVars::ReflectionsSSRActive() || CVars::GiSSGIActive() ||
-		                        (CVars::ReflectionsRTActive() && CVars::ReflectionTemporalActive()) ||
-		                        (CVars::AoRTActive() && CVars::AOTemporalActive()) ||
-		                        (CVars::ShadowStochasticActive() && CVars::ShadowTemporalActive());
+		// GI (#125), reflection (#129), AO (#130) and stochastic-shadow temporal accumulation reproject by motion
+		// vectors, and SSR/SSGI (#151) gather the previous-frame color by velocity every frame. The decision lives
+		// in VelocityPolicy.hpp so the flag and VelocityEffect::ShouldRun cannot disagree.
 		// velocityNeeded is cached on the context because several effects branch on it: VelocityEffect (whether
 		// to render the buffer), LdrChainEffect (the tonemap debug view samples it), and CompareEffect (dataset
 		// export reads it as a channel).
-		const bool velocityNeeded = (debugView == 1 || taaOn || dlaa || neuralTemporal || exporting || giTemporal) && vpRT.VelocityTarget &&
-		                            !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
-		                            vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
+		const VelocityConsumers velocityConsumers{
+		    .DebugView = debugView == 1,
+		    .Taa = taaOn,
+		    .Dlaa = dlaa,
+		    .NeuralTemporal = neuralTemporal,
+		    .DatasetExport = exporting,
+		    .GiTemporal = CVars::GiActive() && CVars::GITemporalActive(),
+		    .ReflectionTemporal = CVars::ReflectionsRTActive() && CVars::ReflectionTemporalActive(),
+		    .AoTemporal = CVars::AoRTActive() && CVars::AOTemporalActive(),
+		    .ShadowTemporal = CVars::ShadowStochasticActive() && CVars::ShadowTemporalActive(),
+		    .PrevColorGather = CVars::ReflectionsSSRActive() || CVars::GiSSGIActive(),
+		};
+		const bool velocityTargetReady = vpRT.VelocityTarget && !vpRT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
+		                                 vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
+		const bool velocityNeeded = ChooseVelocityRoute(velocityConsumers, velocityTargetReady) != VelocityRoute::None;
 		v.VelocityNeeded = velocityNeeded;
 
 		// The depth+normal prepass renders the G-buffer when GI (#124) OR AO (#126) OR RT reflections (#129)
@@ -788,5 +795,10 @@ namespace Snowstorm
 		                  {
 			                  m_PostProcessPass.Draw(fc.Renderer, BorrowContext(c), fc.FrameIndex, params, dstFmt);
 		                  }});
+	}
+
+	void RenderSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.ReadComponents<ViewportComponent, RenderTargetComponent, TransformComponent, CameraComponent, CameraTargetComponent, CameraRuntimeComponent, CameraVisibilityComponent, MeshComponent, MaterialComponent, VisibilityComponent, CameraPathComponent>().WriteResources<RendererService, AssetManagerSingleton, ReflectionGeometrySingleton>();
 	}
 }

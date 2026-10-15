@@ -19,6 +19,7 @@
 #include "Snowstorm/Assets/AssetCook.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Project/Project.hpp"
+#include "Snowstorm/Project/RecentProjects.hpp"
 #include "Snowstorm/Utility/FileDialog.hpp"
 #include "Singletons/EditorNotificationsSingleton.hpp"
 #include "Singletons/EditorStatusBarSingleton.hpp"
@@ -149,6 +150,25 @@ namespace Snowstorm
 						const bool ok = cmds.OpenProject(ssprojPath);
 						notify.Push(ok ? "Project opened" : "Failed to open project", ok ? EditorToastType::Success : EditorToastType::Error);
 					}
+				}
+
+				if (ImGui::BeginMenu("Recent Projects", static_cast<bool>(cmds.OpenProject)))
+				{
+					std::vector<RecentProject> recents = RecentProjects::Load(RecentProjects::StorePath());
+					RecentProjects::Prune(recents, [](const std::filesystem::path& p)
+					                      { return std::filesystem::exists(p); });
+					if (recents.empty())
+						ImGui::TextDisabled("(none)");
+					for (const RecentProject& r : recents)
+					{
+						const std::string label = (r.Name.empty() ? r.Path.stem().string() : r.Name) + "##" + r.Path.generic_string();
+						if (ImGui::MenuItem(label.c_str()) && cmds.OpenProject)
+						{
+							const bool ok = cmds.OpenProject(r.Path);
+							notify.Push(ok ? "Project opened" : "Failed to open project", ok ? EditorToastType::Success : EditorToastType::Error);
+						}
+					}
+					ImGui::EndMenu();
 				}
 
 				if (ImGui::MenuItem("Save Project", nullptr, false, static_cast<bool>(cmds.SaveProject)))
@@ -342,6 +362,7 @@ namespace Snowstorm
 
 		DrawImportModelPopup(notify);
 		DrawNewProjectPopup(notify);
+		DrawStartScreen(notify);
 		DrawShortcutsWindow();
 
 		ImGui::End();
@@ -438,6 +459,14 @@ namespace Snowstorm
 			ImGui::EndTable();
 		}
 
+		section("Play (viewport toolbar)");
+		if (ImGui::BeginTable("play", 2, tableFlags))
+		{
+			row("Play button", "Run the scene (PIE) / Stop");
+			row("Arrow next to Play", "Pick In Editor (PIE) or Standalone (launches Snowstorm-Runtime)");
+			ImGui::EndTable();
+		}
+
 		section("Scene Hierarchy");
 		if (ImGui::BeginTable("hier", 2, tableFlags))
 		{
@@ -508,7 +537,7 @@ namespace Snowstorm
 		// Opening must happen outside the menu (the menu closes on click); flag-then-open here.
 		if (m_ShowImportPopup)
 		{
-			ImGui::OpenPopup("Import Model");
+			ImGui::OpenPopup("Import Asset");
 			m_ShowImportPopup = false;
 		}
 
@@ -516,9 +545,9 @@ namespace Snowstorm
 		const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
 		ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 
-		if (ImGui::BeginPopupModal("Import Model", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+		if (ImGui::BeginPopupModal("Import Asset", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
 		{
-			ImGui::TextUnformatted("Model file to import into the project:");
+			ImGui::TextUnformatted("File to import into the project (model, texture, material, shader, audio):");
 			ImGui::SetNextItemWidth(420.0f);
 			ImGui::InputText("##importpath", m_ImportPathBuffer, sizeof(m_ImportPathBuffer));
 
@@ -526,7 +555,20 @@ namespace Snowstorm
 			if (ImGui::Button("..."))
 			{
 				if (const std::filesystem::path picked = FileDialog::OpenFile(
-				        {{"Wavefront OBJ", "obj"}, {"FBX", "fbx"}, {"glTF", "gltf"}, {"glTF Binary", "glb"}});
+				        {{"Wavefront OBJ", "obj"},
+				         {"FBX", "fbx"},
+				         {"glTF", "gltf"},
+				         {"glTF Binary", "glb"},
+				         {"PNG", "png"},
+				         {"JPEG", "jpg"},
+				         {"JPEG", "jpeg"},
+				         {"TGA", "tga"},
+				         {"BMP", "bmp"},
+				         {"Material", "ssmat"},
+				         {"HLSL Shader", "hlsl"},
+				         {"WAV", "wav"},
+				         {"FLAC", "flac"},
+				         {"MP3", "mp3"}});
 				    !picked.empty())
 				{
 					const std::string pickedStr = picked.string();
@@ -534,7 +576,7 @@ namespace Snowstorm
 				}
 			}
 
-			ImGui::TextDisabled("The model and its textures are copied into the project's assets/meshes/ folder.");
+			ImGui::TextDisabled("Files from outside the project are copied into its assets/<type>/ folder; models bring their textures.");
 
 			ImGui::Separator();
 
@@ -544,16 +586,20 @@ namespace Snowstorm
 			if (ImGui::Button("Import", ImVec2(120.0f, 0.0f)))
 			{
 				auto& assets = SingletonView<AssetManagerSingleton>();
-				const std::vector<Entity> created = assets.ImportModel(m_ImportPathBuffer);
-				if (!created.empty())
+				const AssetManagerSingleton::ImportFileResult result = assets.ImportFile(m_ImportPathBuffer);
+				if (result.Ok())
 				{
-					notify.Push("Imported " + std::to_string(created.size()) + " parts", EditorToastType::Success);
+					if (Project::GetActive())
+						assets.SaveRegistry(Project::GetActive()->GetAssetRegistryPath());
+					notify.Push(result.Entities.empty() ? "Imported " + std::filesystem::path(m_ImportPathBuffer).filename().string()
+					                                    : "Imported " + std::to_string(result.Entities.size()) + " parts",
+					            EditorToastType::Success);
 					m_ImportPathBuffer[0] = '\0';
 					ImGui::CloseCurrentPopup();
 				}
 				else
 				{
-					notify.Push("Import failed (see log)", EditorToastType::Error);
+					notify.Push("Import failed: " + result.Error, EditorToastType::Error);
 				}
 			}
 			if (!hasPath)
@@ -634,5 +680,68 @@ namespace Snowstorm
 
 			ImGui::EndPopup();
 		}
+	}
+
+	void EditorMenuSystem::DrawStartScreen(EditorNotificationsSingleton& notify)
+	{
+		auto& cmds = SingletonView<EditorCommandsSingleton>();
+		if (cmds.ShowStartScreen)
+		{
+			cmds.ShowStartScreen = false;
+			m_StartScreenRecents = RecentProjects::Load(RecentProjects::StorePath());
+			RecentProjects::Prune(m_StartScreenRecents, [](const std::filesystem::path& p)
+			                      { return std::filesystem::exists(p); });
+			ImGui::OpenPopup("Start");
+		}
+
+		const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+		ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+		ImGui::SetNextWindowSize(ImVec2(520.0f, 0.0f), ImGuiCond_Appearing);
+
+		if (!ImGui::BeginPopupModal("Start", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+			return;
+
+		ImGui::SeparatorText("Recent projects");
+		if (m_StartScreenRecents.empty())
+			ImGui::TextDisabled("No recent projects yet.");
+
+		for (const RecentProject& r : m_StartScreenRecents)
+		{
+			const std::string name = r.Name.empty() ? r.Path.stem().string() : r.Name;
+			ImGui::PushID(r.Path.generic_string().c_str());
+			if (ImGui::Selectable(name.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick) && cmds.OpenProject)
+			{
+				const bool ok = cmds.OpenProject(r.Path);
+				notify.Push(ok ? "Project opened" : "Failed to open project", ok ? EditorToastType::Success : EditorToastType::Error);
+				if (ok)
+					ImGui::CloseCurrentPopup();
+			}
+			ImGui::SameLine();
+			ImGui::TextDisabled("%s", r.Path.string().c_str());
+			ImGui::PopID();
+		}
+
+		ImGui::Separator();
+		if (ImGui::Button("New Project...", ImVec2(150.0f, 0.0f)))
+		{
+			m_ShowNewProjectPopup = true;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Open Project...", ImVec2(150.0f, 0.0f)) && cmds.OpenProject)
+		{
+			if (const std::filesystem::path p = FileDialog::OpenFile({{"Snowstorm Project", "ssproj"}}); !p.empty())
+			{
+				const bool ok = cmds.OpenProject(p);
+				notify.Push(ok ? "Project opened" : "Failed to open project", ok ? EditorToastType::Success : EditorToastType::Error);
+				if (ok)
+					ImGui::CloseCurrentPopup();
+			}
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Continue", ImVec2(150.0f, 0.0f)))
+			ImGui::CloseCurrentPopup();
+
+		ImGui::EndPopup();
 	}
 }

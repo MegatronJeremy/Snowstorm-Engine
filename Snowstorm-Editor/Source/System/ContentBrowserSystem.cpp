@@ -1,5 +1,6 @@
 #include "ContentBrowserSystem.hpp"
 
+#include "Snowstorm/Assets/AssetImport.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Assets/MaterialAsset.hpp"
 #include "Snowstorm/Assets/MaterialAssetIO.hpp"
@@ -20,40 +21,6 @@ namespace Snowstorm
 {
 	namespace
 	{
-		// Map a file extension (lowercase, with dot) to an asset type. None means "not importable".
-		AssetType TypeFromExtension(const std::string& ext)
-		{
-			if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".glb")
-			{
-				return AssetType::Mesh;
-			}
-			// What stb_image decodes. .dds is deliberately absent: nothing here decodes a DDS container, so
-			// advertising it as importable registered an asset whose every load then failed, and a rescan
-			// re-registered it after each manual cleanup.
-			if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga" || ext == ".bmp")
-			{
-				return AssetType::Texture;
-			}
-			if (ext == ".ssmat")
-			{
-				return AssetType::Material;
-			}
-			if (ext == ".hlsl")
-			{
-				return AssetType::Shader;
-			}
-			if (ext == ".world")
-			{
-				return AssetType::Scene;
-			}
-			// What miniaudio decodes without an extra decoder dependency.
-			if (ext == ".wav" || ext == ".flac" || ext == ".mp3")
-			{
-				return AssetType::Audio;
-			}
-			return AssetType::None;
-		}
-
 		ImVec4 TypeColor(const AssetType t)
 		{
 			switch (t)
@@ -113,11 +80,7 @@ namespace Snowstorm
 				continue;
 			}
 
-			std::string ext = it->path().extension().string();
-			std::ranges::transform(ext, ext.begin(), [](const unsigned char c)
-			                       { return static_cast<char>(std::tolower(c)); });
-
-			const AssetType type = TypeFromExtension(ext);
+			const AssetType type = AssetTypeFromPath(it->path());
 			if (type == AssetType::None)
 			{
 				continue; // skip scenes, json, meta caches, etc.
@@ -200,11 +163,7 @@ namespace Snowstorm
 		const std::filesystem::path root = Project::GetActive()->GetAssetDirectory();
 		m_PendingScan = std::async(std::launch::async, [root]
 		                           { return ScanDirectory(root, "cache", [](const std::filesystem::path& p)
-			                                              {
-			                                                  std::string ext = p.extension().string();
-			                                                  std::ranges::transform(ext, ext.begin(), [](const unsigned char c)
-			                                                                         { return static_cast<char>(std::tolower(c)); });
-			                                                  return TypeFromExtension(ext) != AssetType::None; }); });
+			                                              { return AssetTypeFromPath(p) != AssetType::None; }); });
 	}
 
 	void ContentBrowserSystem::Execute(Timestep)
@@ -215,7 +174,7 @@ namespace Snowstorm
 		}
 		PollFileChanges();
 
-		ImGui::Begin("Content Browser");
+		ImGui::Begin(EditorTheme::PanelTitle("Content Browser").c_str());
 
 		// Files under assets/ are auto-imported when they appear or change (file watcher); Rescan is the
 		// manual fallback.

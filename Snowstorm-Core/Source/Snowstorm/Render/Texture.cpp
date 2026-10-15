@@ -1,7 +1,5 @@
 #include "Texture.hpp"
 
-#include <squish.h>
-
 #include <atomic>
 
 #include "Snowstorm/Core/EngineCVars.hpp"
@@ -9,11 +7,14 @@
 #include "RendererAPI.hpp"
 #include "Snowstorm/Assets/AssetFileTime.hpp"
 #include "Snowstorm/Assets/TextureCache.hpp"
+#include "Snowstorm/Render/TextureCook.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Platform/Vulkan/VulkanTexture.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+
+#include <squish.h>
 
 #include <algorithm>
 #include <cmath>
@@ -52,111 +53,6 @@ namespace Snowstorm
 		{
 			return 1u + static_cast<uint32_t>(std::floor(std::log2(static_cast<float>(std::max(w, h)))));
 		}
-
-		// Box-downsample one RGBA8 level to the next (half size, min 1). Averages each 2x2 block; clamps at
-		// odd/edge extents by reusing the last row/col. Simple + gamma-naive (averages in whatever space the
-		// bytes are — matches what vkCmdBlitImage's linear filter did before, so no visual change vs. the old
-		// GPU mip-gen). Good enough for a thesis engine; a gamma-correct/Kaiser filter is a later polish.
-		std::vector<uint8_t> DownsampleRGBA8(const std::vector<uint8_t>& src, const uint32_t sw, const uint32_t sh,
-		                                     const uint32_t dw, const uint32_t dh)
-		{
-			std::vector<uint8_t> dst(static_cast<size_t>(dw) * dh * 4);
-			for (uint32_t y = 0; y < dh; ++y)
-			{
-				const uint32_t sy0 = std::min(y * 2u, sh - 1);
-				const uint32_t sy1 = std::min(sy0 + 1u, sh - 1);
-				for (uint32_t x = 0; x < dw; ++x)
-				{
-					const uint32_t sx0 = std::min(x * 2u, sw - 1);
-					const uint32_t sx1 = std::min(sx0 + 1u, sw - 1);
-					for (uint32_t c = 0; c < 4; ++c)
-					{
-						const uint32_t a = src[(static_cast<size_t>(sy0) * sw + sx0) * 4 + c];
-						const uint32_t b = src[(static_cast<size_t>(sy0) * sw + sx1) * 4 + c];
-						const uint32_t d = src[(static_cast<size_t>(sy1) * sw + sx0) * 4 + c];
-						const uint32_t e = src[(static_cast<size_t>(sy1) * sw + sx1) * 4 + c];
-						dst[(static_cast<size_t>(y) * dw + x) * 4 + c] = static_cast<uint8_t>((a + b + d + e + 2) / 4);
-					}
-				}
-			}
-			return dst;
-		}
-
-		// True if any texel has alpha < 255. BC1 has no usable alpha (1 bit, and squish's encoder treats it
-		// as opaque), so this is what decides BC1 vs BC3: getting it wrong makes a cut-out texture opaque.
-		bool UsesAlpha(const std::vector<uint8_t>& rgba)
-		{
-			for (size_t i = 3; i < rgba.size(); i += 4)
-			{
-				if (rgba[i] != 255)
-					return true;
-			}
-			return false;
-		}
-
-		// Is this actually a tangent-space normal map? BC5 drops the third channel and the shader
-		// reconstructs it as sqrt(1 - x^2 - y^2), which is only valid for unit-length vectors in the +Z
-		// hemisphere. Sponza has two colour images sitting in NormalTexture slots (vector length ~1.3,
-		// 25-40% of texels with z<0); encoding those as BC5 raises their error instead of lowering it, so
-		// the slot alone cannot be trusted and the content gets the deciding vote.
-		bool IsTangentSpaceNormalMap(const std::vector<uint8_t>& rgba)
-		{
-			if (rgba.size() < 4)
-				return false;
-
-			const size_t texels = rgba.size() / 4;
-			const size_t stride = std::max<size_t>(1, texels / 4096); // sampled: a full 4K scan buys nothing
-
-			size_t sampled = 0, negativeZ = 0;
-			double lengthSum = 0.0;
-			for (size_t i = 0; i < texels; i += stride)
-			{
-				const double x = rgba[i * 4 + 0] / 127.5 - 1.0;
-				const double y = rgba[i * 4 + 1] / 127.5 - 1.0;
-				const double z = rgba[i * 4 + 2] / 127.5 - 1.0;
-				lengthSum += std::sqrt(x * x + y * y + z * z);
-				negativeZ += z < 0.0 ? 1 : 0;
-				++sampled;
-			}
-			if (sampled == 0)
-				return false;
-
-			return lengthSum / static_cast<double>(sampled) <= 1.1 && static_cast<double>(negativeZ) / static_cast<double>(sampled) <= 0.05;
-		}
-
-		// RGBA8 -> BC1/BC3 for one mip. squish works in 4x4 blocks and handles a partial edge block itself,
-		// so a mip smaller than 4 texels still encodes; the GPU reads the full block and samples the valid
-		// region, which is how every block-compressed mip chain works.
-		// Returns an empty vector when `aborted` turned true mid-level.
-		//
-		// Compressed in strips of whole block rows: a 2K level under the iterative cluster fit takes whole
-		// seconds in a Debug build, and shutdown waits for in-flight workers, so a per-level abort check
-		// stalled exit for as long as the slowest level. A strip of full-width rows is contiguous in both
-		// the RGBA input and the block output, so the concatenation equals one whole-image call.
-		std::vector<uint8_t> CompressLevel(const std::vector<uint8_t>& rgba, const uint32_t w, const uint32_t h,
-		                                   const int squishFormat, const std::atomic<bool>& aborted)
-		{
-			// The colour fit only applies to the DXT formats; BC5's two planes have their own fit.
-			const int flags = squishFormat | squish::kColourIterativeClusterFit;
-			constexpr uint32_t kStripRows = 16;
-			const int bytes = squish::GetStorageRequirements(static_cast<int>(w), static_cast<int>(h), flags);
-			const int blockBytes = squish::GetStorageRequirements(4, 4, flags);
-
-			std::vector<uint8_t> out(static_cast<size_t>(bytes));
-			size_t written = 0;
-			for (uint32_t y = 0; y < h; y += kStripRows)
-			{
-				if (aborted.load(std::memory_order_relaxed))
-				{
-					return {};
-				}
-				const uint32_t rows = std::min(kStripRows, h - y);
-				squish::CompressImage(rgba.data() + static_cast<size_t>(y) * w * 4, static_cast<int>(w), static_cast<int>(rows),
-				                      out.data() + written, flags);
-				written += static_cast<size_t>((w + 3) / 4) * ((rows + 3) / 4) * blockBytes;
-			}
-			return out;
-		}
 	}
 
 	void Texture::AbortCooking()
@@ -165,16 +61,19 @@ namespace Snowstorm
 	}
 
 	std::optional<CookedTexture> Texture::DecodeCPU(const std::filesystem::path& filePath, const AssetHandle handle, const uint64_t sourceWriteTime,
-	                                                const TextureRole role)
+	                                                const TextureRole role, const bool srgb)
 	{
-		// CPU-only, worker-safe. Fast path: the cooked .sstex blob (no stb decode + no mip-gen). The decoded
-		// RGBA bytes are color-space-agnostic, so one blob serves both sRGB and linear views (srgb is applied
-		// later at GPU-upload time). Only cache handle-backed assets — handle 0 (inline/handle-less textures)
+		// CPU-only, worker-safe. Fast path: the cooked .sstex blob (no stb decode + no mip-gen). The blob is
+		// keyed by role, mip space and the compress CVar (TextureCookKey). Only cache handle-backed assets — handle 0 (inline/handle-less textures)
 		// would all collide on one "0.sstex", so skip the cache for those.
 		const bool useCache = (handle.Value() != 0);
+		const MipSpace mipSpace = MipSpaceFor(role, srgb);
+		const bool highQuality = CVars::TextureQuality.Get() > 0;
+		const TextureCookKey cookKey{static_cast<uint8_t>(role), static_cast<uint8_t>(mipSpace),
+		                             static_cast<uint8_t>(!CVars::CompressTextures.Get() ? 0 : (highQuality ? 2 : 1)), kTextureEncoderRevision};
 		if (useCache)
 		{
-			if (auto blob = TextureCacheIO::Load(handle, filePath))
+			if (auto blob = TextureCacheIO::Load(handle, filePath, cookKey))
 			{
 				return blob;
 			}
@@ -212,7 +111,7 @@ namespace Snowstorm
 		{
 			const uint32_t nw = std::max(1u, pw / 2u);
 			const uint32_t nh = std::max(1u, ph / 2u);
-			cooked.Levels[i] = DownsampleRGBA8(cooked.Levels[i - 1], pw, ph, nw, nh);
+			cooked.Levels[i] = DownsampleRGBA8(cooked.Levels[i - 1], pw, ph, nw, nh, mipSpace);
 			pw = nw;
 			ph = nh;
 		}
@@ -221,23 +120,21 @@ namespace Snowstorm
 		// compounds the error, which is why every cooker mips first and compresses each level.
 		if (CVars::CompressTextures.Get())
 		{
-			int squishFormat;
-			if (role == TextureRole::Normal && IsTangentSpaceNormalMap(cooked.Levels[0]))
+			const bool tangentNormal = role == TextureRole::Normal && IsTangentSpaceNormalMap(cooked.Levels[0]);
+			if (role == TextureRole::Normal && !tangentNormal)
 			{
-				squishFormat = squish::kBc5;
-				cooked.Format = CookedTexture::Encoding::BC5;
+				SS_CORE_WARN("Texture '{}' is bound as a normal map but is not tangent-space "
+				             "(non-unit vectors or z<0); encoding it as colour instead.",
+				             filePath.string());
 			}
-			else
+			cooked.Format = ChooseEncoding(tangentNormal, !tangentNormal && UsesAlpha(cooked.Levels[0]), highQuality);
+			const bool bc7 = cooked.Format == CookedTexture::Encoding::BC7;
+			int squishFormat = 0;
+			if (!bc7)
 			{
-				if (role == TextureRole::Normal)
-				{
-					SS_CORE_WARN("Texture '{}' is bound as a normal map but is not tangent-space "
-					             "(non-unit vectors or z<0); encoding it as colour instead.",
-					             filePath.string());
-				}
-				const bool alpha = UsesAlpha(cooked.Levels[0]);
-				squishFormat = alpha ? squish::kDxt5 : squish::kDxt1;
-				cooked.Format = alpha ? CookedTexture::Encoding::BC3 : CookedTexture::Encoding::BC1;
+				squishFormat = tangentNormal                                   ? squish::kBc5
+				               : cooked.Format == CookedTexture::Encoding::BC3 ? squish::kDxt5
+				                                                               : squish::kDxt1;
 			}
 
 			uint32_t lw = cooked.Width, lh = cooked.Height;
@@ -247,7 +144,9 @@ namespace Snowstorm
 				{
 					return std::nullopt;
 				}
-				cooked.Levels[i] = CompressLevel(cooked.Levels[i], lw, lh, squishFormat, g_CookAborted);
+				cooked.Levels[i] = bc7 ? CompressLevelBC7(cooked.Levels[i], lw, lh, mipSpace == MipSpace::SRGB, g_CookAborted,
+				                                          CVars::TextureQuality.Get() > 1)
+				                       : CompressLevel(cooked.Levels[i], lw, lh, squishFormat, g_CookAborted);
 				if (cooked.Levels[i].empty())
 				{
 					return std::nullopt;
@@ -259,7 +158,7 @@ namespace Snowstorm
 
 		if (useCache)
 		{
-			(void)TextureCacheIO::Save(handle, filePath, cooked); // decode+mip once; next load reads the blob
+			(void)TextureCacheIO::Save(handle, filePath, cooked, cookKey); // decode+mip once; next load reads the blob
 		}
 		return cooked;
 	}
@@ -284,22 +183,7 @@ namespace Snowstorm
 		// every channel and breaks lighting — the caller picks the flag per slot (see GetTextureView).
 		// The cook decides the encoding; srgb decides only the color space, which is orthogonal. A BC blob
 		// uploaded as RGBA8 would be read as garbage, so this must follow the artifact rather than assume.
-		switch (cooked.Format)
-		{
-		case CookedTexture::Encoding::BC1:
-			desc.Format = srgb ? PixelFormat::BC1_RGB_sRGB : PixelFormat::BC1_RGB_UNorm;
-			break;
-		case CookedTexture::Encoding::BC3:
-			desc.Format = srgb ? PixelFormat::BC3_RGBA_sRGB : PixelFormat::BC3_RGBA_UNorm;
-			break;
-		case CookedTexture::Encoding::BC5:
-			desc.Format = PixelFormat::BC5_RG_UNorm; // normals are linear data; there is no sRGB BC5
-			break;
-		case CookedTexture::Encoding::RGBA8:
-		default:
-			desc.Format = srgb ? PixelFormat::RGBA8_sRGB : PixelFormat::RGBA8_UNorm;
-			break;
-		}
+		desc.Format = PixelFormatFor(cooked.Format, srgb);
 		desc.DebugName = debugName;
 
 		auto texture = Texture::Create(desc);
@@ -312,7 +196,7 @@ namespace Snowstorm
 		// Synchronous convenience path (kept for non-async callers): decode on the calling thread, upload.
 		// The async loader instead calls DecodeCPU on a worker and CreateFromPixels on the main thread.
 		const uint64_t sourceTime = GetFileWriteTimeU64(filePath);
-		auto cooked = DecodeCPU(filePath, AssetHandle{0}, sourceTime);
+		auto cooked = DecodeCPU(filePath, AssetHandle{0}, sourceTime, TextureRole::Unknown, srgb);
 		SS_CORE_ASSERT(cooked, "Failed to load texture image: {}", filePath.string());
 		if (!cooked)
 		{

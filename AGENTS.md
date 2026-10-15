@@ -152,7 +152,7 @@ becomes a failure instead of blocking), checks the exit code, and scans the log 
 (`[error]`/`[critical]`, Vulkan validation, assertion text). Exit 0 = all pass.
 
 ```
-py Scripts/smoke-test.py                 # 120 frames, 60s timeout/app, Debug build
+py Scripts/smoke-test.py                 # 120 frames, 180s timeout/app, Debug build
 py Scripts/smoke-test.py --frames 300    # longer soak
 py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime | Pong)
 py Scripts/smoke-test.py --warnings-fail # treat [warning] lines as failures too
@@ -184,6 +184,13 @@ var set, every validation error is logged and the app keeps running, so a single
 Set it yourself when debugging validation interactively. GPU resources are also named via
 `SetVulkanObjectName` (`VK_EXT_debug_utils`), so validation/RenderDoc report e.g. `Swapchain[0]`
 instead of a raw `VkImage 0x...` handle.
+
+**A run passes only once assets settle.** After the frame budget the app keeps running until
+`AssetManagerSingleton::PendingLoadCount() == 0` and no bindless slot is still the placeholder
+(`UnsettledReason`, reached through `Layer::SmokeUnsettled`), until `smoke.settle.seconds` have passed since process start
+(the harness sets it to `--timeout` minus 10); otherwise it logs `[error]` and fails. A stuck cook
+used to pass because only the frame count was checked. `--cold --scene <Sponza.world>` covers the
+cook path, and needs a generous `--timeout`.
 
 **Smoke and perf-bench do not cover the unit tests.** Both boot the app and watch it behave, so
 neither notices a broken exact-string expectation: `PerfBenchTests` asserts the JSON the benchmark
@@ -435,7 +442,8 @@ spot check compares its one shader and stays a genuine pass.
 **Input SPIR-V (two sources, one baseline).** Locally the gate reads `Engine/cache/shaders/`,
 populated by any editor build+run. But a clean checkout / CI has no cache and no GPU, so
 `Scripts/cook-shaders.py` compiles every shader offline with the engine's exact dxc flags
-(VulkanShader.cpp: profiles `vs/ps/cs_6_5`, entry `main`, `SS_RAYTRACING`/`SS_FP16` permutations)
+(`Tools/ShaderCook` includes `Render/ShaderCompile.hpp`, the same command-line builder the runtime
+calls; the script builds it on first use with plain CMake. Profiles `vs/ps/cs_6_5`, entry `main`, `SS_RAYTRACING`/`SS_FP16` permutations)
 into `Engine/cache/shaders-cook/`. The cook reproduces the runtime-cache numbers **bit-for-bit**, so
 both paths gate against the same committed baseline; the baseline is generated from the cook so it
 also covers shaders never exercised in a run (`Metrics.comp`, the `Neural*.comp` passes). The
@@ -450,9 +458,11 @@ py Scripts/rga-occupancy.py --spv-dir Engine/cache/shaders-cook
 Cooking the default `rt` variant alone drops the `base` permutation from every entry, so any shader
 whose worst case lives there is re-baselined to a weaker number and the local gate stops agreeing
 with CI. Pointing the gate at the runtime cache (`Engine/cache/shaders`, its default) is the other
-trap: a `--update-baseline` from there deletes the entries for shaders no editor run exercises. Keep
-`cook-shaders.py`'s flags in sync with VulkanShader.cpp: it is a deliberate second copy of them, with
-no shared source of truth. `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
+trap: a `--update-baseline` from there deletes the entries for shaders no editor run exercises. Call-site
+and dynamic permutations live in `Scripts/shader-permutations.txt`: add a line there when a call site
+starts passing a new define. The flags need no sync, since the runtime and the cook share
+`BuildDxcCommandLine`; `py Scripts/cook-shaders.py --dry-run` prints the planned command lines
+without dxc. `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
 expected the old `#type` split and silently compiled nothing).
 
 **This gate runs in CI** (`.github/workflows/shaders.yml`): unlike smoke-test and perf-bench, RGA is
@@ -525,16 +535,25 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
 `<path>_ldr.npy` and the script computes the metrics offline. The reference runs **unbiased**
 (`pathtrace.clamp` and `pathtrace.weightclamp` both 0).
 
-- **Runtime, not Editor.** Captures run `Snowstorm-Runtime` (fixed viewport, no editor panels), so
-  the framing is deterministic. Even so, every capture is bilinear-resampled to a canonical
-  **1024x576** before any metric, because the editor viewport size is not reproducible across
-  launches (1177x649 and 1817x1009 were both observed in one session) and a shape mismatch silently
-  breaks the comparison. A fixed-resolution render path would remove the resample.
+- **Runtime, not Editor.** Captures run `Snowstorm-Runtime` (no editor panels), and every capture
+  forces `render.resolution.width/height` to **1920x1080** (`CAPTURE_RESOLUTION`, the override perf-bench
+  pins), so the render size never follows the window (1177x649 and 1817x1009 were both observed in
+  one session before #162). Metrics are still computed after a bilinear downscale to **1024x576**
+  for cost, and as a safety net against a host that ignores the override. The cached PT references
+  are keyed with `_REF_CACHE_VERSION` (bumped to 2 with this change), so captures made at window
+  size are not reused. Committed quality baselines were captured at window size: re-capture them
+  with `--update-baseline` on each reference machine; until then expect small metric shifts.
+  `quality-motion.py` pins the same resolution for its route frames (and has its own cache version,
+  3), so its committed motion baselines need the same re-capture.
 - **Three Sponza viewpoints** (`atrium`, `floor`, `gallery`) share one position and vary orientation,
   covering content that stresses AO, GI and reflections differently. Two further candidate
   orientations were dropped as degenerate (yaw+pi was 99.7% dark; the side yaw 78.7% dark, 0%
   bright). Averaging across viewpoints is what `Scripts/quality-tune.py` minimizes, so a tuned
   parameter does not overfit one frame.
+- **LPIPS is reported, not gated.** When `torch` and `lpips` are importable (`pip install torch lpips`),
+  each technique line also prints LPIPS-AlexNet against the reference; otherwise a note says it is
+  skipped. It is never auto-installed and not stored in the baselines, since it varies with the torch
+  build and the weights download. In-engine LPIPS (#112) is not built: this is the offline path.
 - **Eight techniques**: `raster`, `ssao`, `rtao`, `ssr`, `rtrefl`, `ssgi`, `rtgi`, `all-rt`. Each is a
   full real-time render with that one technique on, TAA enabled.
 - **FLIP is pinned** to `flip-evaluator==1.7` (a perceptual metric that drifts between versions makes
@@ -866,16 +885,25 @@ texture leaves it Unknown and the conservative colour encoding wins.
 
 | role | format | why |
 |---|---|---|
-| albedo, opaque | BC1, 4 bpp | 8:1, and what Unreal/Unity/Godot all default to |
-| albedo, alpha | BC3, 8 bpp | BC1's 1-bit alpha decodes transparent black and bleeds halos |
+| albedo, opaque | BC1, 4 bpp (BC7 at `cook.textures.quality=1`) | 8:1, and what Unreal/Unity/Godot all default to |
+| albedo, alpha | BC3, 8 bpp (BC7 at `cook.textures.quality>=1`) | BC1's 1-bit alpha decodes transparent black and bleeds halos; BC3 encodes in seconds where exhaustive BC7 takes minutes per 2K texture |
 | tangent normal | **BC5**, 8 bpp | two independent 8-bit planes; z reconstructed in the shader |
 | metallic-roughness, AO | BC1, 4 bpp | measured adequate, see below |
 
-**BC7 is deliberately unused.** It is 8 bpp, the same as BC3 and double BC1, so promoting everything to
-it costs 51 MB -> 102 MB on this set and gives back half the saving. libsquish cannot emit it either. It
-is a per-texture escape hatch (Unreal's `TC_BC7`), not a default. `PixelFormat` already carries
-`BC7_RGBA_UNorm/sRGB` and `BC6H_RGB_UFloat`, so the table can express them the day one is needed; the
-encoder would be a new dependency (`nvtt`, MIT, is in vcpkg).
+**Mips are filtered in the colour space of the role** (`MipSpaceFor`, `Render/TextureCook.cpp`): albedo in
+linear light (sRGB EOTF LUT, exact OETF on write), normals and masks as plain byte averages, alpha always
+linear. A role-Unknown texture follows the caller's `srgb` flag. The cache blob header carries role, mip
+space, compress flag and an encoder revision; a mismatch re-cooks.
+
+**BC7 is an opt-in quality tier, not the default.** It is 8 bpp, the same as BC3 and double BC1, so
+`cook.textures.quality=1` promotes opaque albedo to BC7 (51 MB -> 102 MB on Sponza, half the saving
+given back) and colour with alpha from BC3 to BC7. The default tier encodes alpha as BC3 (squish
+`kDxt5`): DirectXTex's default BC7 search is exhaustive and took minutes per 2K alpha texture, which
+stalled Sponza's load at 91/94. BC7 therefore runs with `TEX_COMPRESS_BC7_QUICK` unless
+`quality>=2`. The encoder is DirectXTex (MIT, vcpkg `directxtex`), CPU, called without
+`TEX_COMPRESS_PARALLEL` because cook workers are already the parallelism. libsquish keeps BC1/BC3/BC5.
+The quality tier is global; a per-texture override waits for `.meta` sidecars. The tier is part of
+`TextureCookKey`, so flipping it re-cooks; the FLIP delta of `quality=1` is not measured yet.
 
 **Normals are what the role split is for.** BC1 pushes a unit vector through one shared RGB565 line:
 3.47 degrees of mean angular error against BC5's 1.13, over the 22 conforming maps. **Two Sponza images
@@ -914,6 +942,16 @@ is the reference the quality gates compare against.
 Sampling a BCn image requires `textureCompressionBC` **enabled**, not merely supported. It is requested
 in `VulkanContext`; without that the cooked textures are invalid usage that desktop drivers happen to
 accept and validation does not flag.
+
+## Directional shadows
+
+`render.shadow.directionals` (default 1) is how many directionals get a raster shadow map. The primary (first
+enabled) keeps the dedicated sun map; up to 3 more get scene-fit tiles of one `DirAtlas` (2x2, each
+`render.shadow.resolution`), selected by `SelectShadowDirectionals` in registry order and over-budget lights
+render unshadowed with a one-shot warning. `GPUDirectionalLight::ShadowSlot` carries the choice to the shader
+(-1 none, 0 sun map, s >= 1 `DirShadows[s - 1]`). Ray-traced shadows ignore the budget: every casting
+directional traces. Secondary directionals still light the scene but are invisible to GI, reflections, the
+path tracer, the sky disc and IBL, which read `Lights[0]` only. Each secondary costs one full scene depth pass.
 
 ## Audio
 
@@ -1040,14 +1078,28 @@ next to the exe. Staging 7 of 18 DLLs produced a stage whose executables would n
 The content copy hangs off a stamp file rather than a `POST_BUILD` command, because `POST_BUILD` only
 fires when its target RELINKS: editing a scene and rebuilding would stage the old one.
 
+## Material shader parameters
+
+A custom surface shader names the floats it packs into `PerInstanceCustomData` with `// @param` lines:
+`// @param Zoom float slot=2 default=3 min=0.5 max=4` (types `float float2 float3 float4 int color3 color4`;
+`slot` is the first vec4 component, default first free). HLSL packing cannot be named by SPIR-V reflection,
+so the declaration is the contract. `ParseShaderParams`/`PackShaderParams` (`Render/ShaderParams.hpp`) are
+the pure core; the material inspector draws one row per parameter (right-click resets), edits land in the
+sparse `ShaderParams` map of the `.ssmat`, and `AssetManagerSingleton` packs them into the instance at
+build time. A controller system that writes `SetPerInstanceCustomData` per frame still overrides them.
+
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc
 `std::getenv`. Declare engine-wide CVars in `Snowstorm/Core/EngineCVars.{hpp,cpp}`; each
 self-registers and is resolved once at startup by `CVarRegistry::Initialize(argc, argv)` (called in
-`EntryPoint.hpp`) from, in increasing priority: **default → `SnowstormConfig.cfg` →
-`SnowstormStartup.cfg` → environment → CLI**. `SnowstormConfig.cfg` is auto-saved by the editor on
-shutdown and holds persistent CVars only; `SnowstormStartup.cfg` is hand-authored, never written by
+`EntryPoint.hpp`) from, in increasing priority: **default → `<project>/Saved/Settings.cfg` →
+`SnowstormStartup.cfg` → environment → CLI**. The project settings file is per project (a switch
+never clobbers another project's tuning), gitignored, auto-saved by the editor on shutdown and holds
+persistent CVars only. It loads once the project is active (`LoadProjectSettings`), not in
+`Initialize`, because `startup.project` is itself a CVar; CVars set by the startup file, env or CLI
+are skipped by that load so the order above holds. A project without one migrates once from the
+legacy root `SnowstormConfig.cfg`. `SnowstormStartup.cfg` is hand-authored, never written by
 the app, and can carry any CVar, so it is the safe place for machine-local toggles the auto-save
 cannot clobber. `config.ignore` (`SS_CONFIG_IGNORE=1`) skips both files, which is what the benchmark
 harnesses set so a run depends on code defaults plus its own overrides, never on local settings.
@@ -1063,7 +1115,18 @@ panel (`CVarPanelSystem`): it lists every CVar with a type-appropriate widget (c
 plus a `name value` command line, via typed accessors on `ICVar` (`GetKind`/`Get*`/`Set*`). Most
 engine CVars are read per-frame through `.Get()` (shadows, IBL, exposure, shadow quality), so edits
 take effect immediately, and those marked `CVarFlags::Persist` are written back to
-`SnowstormConfig.cfg` on shutdown.
+`<project>/Saved/Settings.cfg` on shutdown.
+
+## Editor project selection
+
+The editor keeps a per-user recent-projects list in `%APPDATA%/Snowstorm/RecentProjects.json`
+(`RecentProjects.hpp`: newest first, capped at 10, written whenever a project opens). Boot order,
+decided by the pure `RecentProjects::DecideBoot`: an explicit `startup.project` (CLI/env/cfg, anything
+but the default) wins; else `--editor.picker` shows the start screen; else the most recent project that
+still exists opens directly; else the start screen shows. The start screen is a modal over the
+default project (recent list, New, Open, Continue); *File > Recent Projects* offers the same list.
+The Runtime keeps its implicit CWD project, and the Editor still falls back to one when the
+.ssproj is unreadable, so `Project::GetActive()` is non-null before the picker is dismissed.
 
 ## Layout
 
@@ -1126,6 +1189,13 @@ see, so treat it as part of the feature, not an afterthought.
   parallel-vs-serial decision *consciously* each time, not default to serial by habit. Note the current
   ceiling: the O(n) post-barrier change-mark (#91) caps end-to-end speedup at scale even when the
   compute parallelizes near-linearly, so measure with `--ecs.benchmark` rather than assuming a win.
+- **System access declarations:** every core system overrides `System::DeclareAccess(SystemAccess&)` with the
+  components and resources (Singletons, Services, and the `TrackingMapResource` pseudo-resource for tracked
+  mutators and `Init/Changed/FiniView`) it reads and writes, plus `Structural()` when it emplaces, removes or
+  destroys. Undeclared means exclusive and main-thread-only. `SystemManager::DeclaredAccess()` lists them and
+  `SystemAccess::ConflictsWith` is the pairwise rule, and `BuildSchedule` (`ECS/SystemSchedule.hpp`) layers one phase into stages from it; nothing executes from it yet
+  (#85). A new core system needs a declaration (`SystemAccessTests` fails otherwise).
+- **Cluster grid math:** `Render/LightClusterMath.hpp` is the pure, GPU-free core of the planned clustered light cull (#66): exponential depth slices, analytic view-space cluster bounds, sphere-AABB overlap and a CPU reference cull (ascending index, fixed stride, overflow dropped). Nothing renders from it yet.
 - **Rendering:** backend-agnostic interfaces in `Render/` (`RendererAPI`, `Renderer`, `Pipeline`,
   `Shader`, `Buffer`, `Texture`, `Material`, `RenderGraph`, ...). The concrete implementation lives
   in `Platform/Vulkan/` (volk + Vulkan Memory Allocator + spirv-reflect; shaders compiled to SPIR-V
@@ -1135,6 +1205,8 @@ see, so treat it as part of the feature, not an afterthought.
   type names. A shape that is not the property list sets `SerializeFn`/`DeserializeFn` in
   `ComponentRegisterOptions` (`MaterialOverridesComponent`), `Structural` keeps a component in the entity
   header (`IDComponent`, `TagComponent`), and property metadata `JsonAlias` names the key older files used.
+- **Render graph scheduling is CPU-testable:** `RenderGraph::BuildDependencies` and `BuildSchedule(swapchain)` need no
+  device (`RenderGraphScheduleTests`); only `Execute` (fork/join, ownership transfers) needs a GPU.
 - **Events:** `Events/` hierarchy dispatched through `EventBus`; input bridged in `Input/`.
 
 ### Conventions
@@ -1183,7 +1255,7 @@ Keep those two in sync when adding a dependency.
 
 Work on a branch, merge through a pull request; see the branch/PR rule under Agent collaboration.
 `.gitignore` excludes everything generated: `build/`, `vcpkg/`, `.vs/`, `Engine/cache`, the local
-config files (`SnowstormConfig.cfg`, `SnowstormStartup.cfg`), captures and weights (`Dataset/`,
+config files (`Projects/*/Saved/`, `SnowstormConfig.cfg`, `SnowstormStartup.cfg`), captures and weights (`Dataset/`,
 `*.npy`, `*.ssnn`), downloaded tooling (`Tools/rga/`, `Tools/rdts/`), the PT reference cache
 (`Scripts/.quality-ref-cache/`), and all solution/project files (`*.sln`, `*.vcxproj*`, `*.cmake`,
 `CMakeCache.txt`, `ALL_BUILD.*`, `ZERO_CHECK.*`, `Makefile`). The committed baselines under
@@ -1254,6 +1326,11 @@ Worked example, the **asset pipeline** (the engine's biggest deliberate simplifi
   slots) → a file watcher → async streaming. Treat `AssetRegistry` / `AssetManagerSingleton` as the seam
   where that grows.
 
+  **`AssetManagerSingleton::ImportFile` is the one way a file enters the project** (*File > Import Asset*).
+  It dispatches on `AssetTypeFromPath`; non-mesh types go through `PlanImport` into `<assets>/<type>/`
+  (`DefaultImportFolder`), never overwriting (a different file at the same name takes `_N`, an identical
+  one is reused), and meshes go through `ImportModel`. It does not save the registry.
+
   **An asset's identity is `AssetRegistry`'s `Canonicalize`, and it has exactly one spelling.** A path
   arrives mounted, absolute, or in the legacy project-relative form, and all three must key to one
   handle. When they did not, every content-browser scan re-imported every asset under a fresh handle and
@@ -1323,6 +1400,8 @@ buffers are released. Textures are not swept yet.
     no GUI, for automated/offline trace analysis). Instrumented spots: frame-loop phases, every ECS system,
     and JobSystem worker tasks. One `SS_PROFILE_SCOPE` per lexical scope (it declares a fixed-name RAII
     object, so two in the same block is a redefinition; nest them).
+  Per-pass GPU scopes also reach Tracy as GPU zones (one context per queue, `VulkanTracyGpuZones`), so
+  GPU passes sit under the CPU timeline once a Tracy GUI is connected.
   A whole debugging session was once burned scattering probes to find a load spike that the Performance
   panel would have pinned to `RenderSystem`/shadow-fit in one glance (and the fix, reading the panel, was
   already built). If the existing readouts genuinely don't cover the spot, ADD a permanent, toggleable

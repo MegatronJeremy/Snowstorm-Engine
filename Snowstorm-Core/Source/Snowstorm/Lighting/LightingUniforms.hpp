@@ -2,6 +2,8 @@
 
 #include "Snowstorm/Math/Math.hpp"
 
+#include <cstddef>
+
 namespace Snowstorm
 {
 	constexpr int MAX_DIRECTIONAL_LIGHTS = 4;
@@ -18,8 +20,19 @@ namespace Snowstorm
 		glm::vec3 Direction;
 		float Intensity;
 		glm::vec3 Color;
-		float Padding = 0.0f;
+		// Raster shadow source: -1 = unshadowed, 0 = the sun map (the primary), s >= 1 = DirShadows[s - 1] in
+		// the directional atlas. Under RT shadows any value >= 0 only means "this light casts".
+		int ShadowSlot = -1;
 	};
+
+	// A secondary shadowed directional: scene-fit ortho matrix + its tile of the directional atlas
+	// (xy = UV offset, zw = UV scale). Slot 0 (the primary) keeps the dedicated sun map in FrameCB.
+	struct GPUDirShadow
+	{
+		glm::mat4 ViewProj = glm::mat4(1.0f);
+		glm::vec4 AtlasRect = {0, 0, 1, 1};
+	};
+	constexpr int MAX_SECONDARY_DIR_SHADOWS = MAX_DIRECTIONAL_LIGHTS - 1;
 
 	// Positional light GPU layouts. Each is whole 16-byte rows (std140/cbuffer packing). Position and,
 	// for spot, Direction are baked in world space by LightingSystem from the entity transform. Cone
@@ -89,7 +102,14 @@ namespace Snowstorm
 		GPUPointShadow PointShadows[MAX_SHADOW_POINTS];
 		int PointShadowCount = 0;
 		float PointShadowPadding[3] = {0, 0, 0};
+
+		// Secondary directional shadow payloads, indexed by GPUDirectionalLight::ShadowSlot - 1.
+		GPUDirShadow DirShadows[MAX_SECONDARY_DIR_SHADOWS];
 	};
+
+	static_assert(sizeof(GPUDirectionalLight) == 32);
+	static_assert(sizeof(GPUDirShadow) == 80);
+	static_assert(offsetof(LightDataBlock, DirShadows) % 16 == 0);
 
 	// CPU-side environment values handed to the renderer (RendererService::UploadEnvironment), which
 	// folds the colors into FrameCB and uses DrawProceduralSky to decide whether to run the sky pass.

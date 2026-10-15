@@ -82,4 +82,9 @@ namespace Snowstorm
 			    AdvanceRotation(tr, rot, dt); // shared pure math (see RotatorMath.hpp)
 		    });
 	}
+
+	void RotatorSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.ReadComponents<RotatorComponent, CameraPathComponent>().WriteComponents<TransformComponent>().ReadResources<RendererService, EditorHooksSingleton>().WriteResources<TrackingMapResource>();
+	}
 }

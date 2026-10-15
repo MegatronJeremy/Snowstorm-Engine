@@ -66,6 +66,7 @@ namespace Snowstorm
 				project->SetProjectDirectory(std::filesystem::current_path());
 			}
 			Project::SetActive(project);
+			CVarRegistry::Get().LoadProjectSettings(project->GetProjectDirectory());
 		}
 
 		// Runtime systems resolve project-relative scenes/assets, so an active project is a host
@@ -208,6 +209,11 @@ namespace Snowstorm
 
 		SS_CORE_INFO("Runtime: using authored scene camera '{}'.",
 		             reg.any_of<TagComponent>(authored) ? reg.Read<TagComponent>(authored).Tag : std::string("<camera>"));
+	}
+
+	std::string GameLayer::SmokeUnsettled() const
+	{
+		return m_World ? m_World->GetSingleton<AssetManagerSingleton>().UnsettledReason() : std::string{};
 	}
 
 	void GameLayer::OnUpdate(const Timestep ts)

@@ -30,6 +30,10 @@ namespace Snowstorm
 		{
 		}
 
+		// Smoke mode (smoke.frames) holds shutdown while this is non-empty, up to smoke.settle.seconds, and
+		// fails the run if it never empties. Returns why the layer is not settled yet, or "" when it is.
+		virtual std::string SmokeUnsettled() const { return {}; }
+
 		const std::string& GetName() const { return m_DebugName; }
 
 	protected:

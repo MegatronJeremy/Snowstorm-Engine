@@ -1,5 +1,6 @@
 #include "AssetManagerSingleton.hpp"
 
+#include "Snowstorm/Assets/AssetImport.hpp"
 #include "Snowstorm/Assets/VirtualPath.hpp"
 
 #include "AssetFileTime.hpp"
@@ -18,6 +19,10 @@
 #include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Assets/MaterialAssetIO.hpp"
+#include "Snowstorm/Render/ShaderParams.hpp"
+#include <format>
+#include <fstream>
+#include "Snowstorm/Utility/EnginePaths.hpp"
 #include "Snowstorm/Project/Project.hpp"
 
 #include "Platform/Vulkan/VulkanBindlessManager.hpp"
@@ -133,6 +138,51 @@ namespace Snowstorm
 		if (type == AssetType::Material)
 			RebuildTextureRoles(); // a new material can name textures nothing referenced before
 		return handle;
+	}
+
+	AssetManagerSingleton::ImportFileResult AssetManagerSingleton::ImportFile(const std::filesystem::path& source)
+	{
+		ImportFileResult result;
+		const AssetType type = AssetTypeFromPath(source);
+		if (type == AssetType::None || type == AssetType::Scene)
+		{
+			result.Error = type == AssetType::Scene ? "scenes are opened, not imported" : "unsupported file type '" + source.extension().string() + "'";
+			return result;
+		}
+
+		std::error_code ec;
+		if (!std::filesystem::is_regular_file(source, ec))
+		{
+			result.Error = "not a file";
+			return result;
+		}
+
+		if (type == AssetType::Mesh)
+		{
+			result.Entities = ImportModel(source);
+			if (result.Entities.empty())
+				result.Error = "model could not be read (see log)";
+			return result;
+		}
+
+		const Ref<Project> project = Project::GetActive();
+		const std::filesystem::path projectDir = project ? project->GetProjectDirectory() : std::filesystem::path{};
+		const std::filesystem::path destFolder = project ? project->GetConfig().AssetDirectory / DefaultImportFolder(type) : std::filesystem::path{};
+		const ImportPlan plan = PlanImport(source, projectDir, destFolder);
+
+		if (plan.Copy && !plan.ReuseExisting)
+		{
+			std::filesystem::create_directories(plan.DestAbs.parent_path(), ec);
+			std::filesystem::copy_file(source, plan.DestAbs, std::filesystem::copy_options::none, ec);
+			if (ec)
+			{
+				result.Error = "copy failed: " + ec.message();
+				return result;
+			}
+		}
+
+		result.Handle = Import(plan.DestRel.generic_string(), type);
+		return result;
 	}
 
 	std::vector<Entity> AssetManagerSingleton::ImportModel(const std::filesystem::path& path)
@@ -743,6 +793,15 @@ namespace Snowstorm
 		return static_cast<uint32_t>(m_InFlightMeshes.size() + m_InFlightTextures.size());
 	}
 
+	std::string AssetManagerSingleton::UnsettledReason() const
+	{
+		if (const uint32_t pending = PendingLoadCount(); pending > 0)
+			return std::format("asset loading did not drain: {} / {} still pending", pending, m_PendingTotal);
+		if (const uint32_t placeholders = PlaceholderSlotCount(); placeholders > 0)
+			return std::format("{} texture slot(s) still show the placeholder", placeholders);
+		return {};
+	}
+
 	bool AssetManagerSingleton::IsTextureSlotResident(const uint32_t slot) const
 	{
 		// Slot 0 = untextured (no image dependency). Every other slot is real unless it is still in the
@@ -875,7 +934,7 @@ namespace Snowstorm
 			done.DebugName = debugName;
 
 			// CPU-only on the worker: cooked-blob read or stb decode (+ cache write). No GPU.
-			if (auto cooked = Texture::DecodeCPU(path, handle, sourceTime, role))
+			if (auto cooked = Texture::DecodeCPU(path, handle, sourceTime, role, srgb))
 			{
 				done.Cooked = std::move(*cooked);
 				done.Success = true;
@@ -979,7 +1038,9 @@ namespace Snowstorm
 		Ref<Material> base = CreateRef<Material>(pipeline);
 		ApplyMaterialAsset(*base, matAsset);
 
-		return CreateRef<MaterialInstance>(base);
+		Ref<MaterialInstance> mi = CreateRef<MaterialInstance>(base);
+		ApplyShaderParams(*mi, matAsset);
+		return mi;
 	}
 
 	Ref<MaterialInstance> AssetManagerSingleton::GetMaterialInstance(const AssetHandle handle)
@@ -1014,6 +1075,7 @@ namespace Snowstorm
 		ApplyMaterialAsset(*base, matAsset);
 
 		Ref<MaterialInstance> mi = CreateRef<MaterialInstance>(base);
+		ApplyShaderParams(*mi, matAsset);
 
 		m_MaterialInstanceCache[handle] = mi;
 		return mi;
@@ -1045,6 +1107,17 @@ namespace Snowstorm
 				pipeline->SetSampleCount(samples);
 			}
 		}
+	}
+
+	void AssetManagerSingleton::ApplyShaderParams(MaterialInstance& instance, const MaterialAsset& matAsset)
+	{
+		std::ifstream in(ResolveShaderSource(matAsset.FragmentShader));
+		if (!in)
+			return;
+		const std::string source((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		const std::vector<ShaderParam> params = ParseShaderParams(source);
+		if (!params.empty())
+			instance.SetPerInstanceCustomData(PackShaderParams(params, matAsset.ShaderParams));
 	}
 
 	void AssetManagerSingleton::ApplyMaterialAsset(Material& base, const MaterialAsset& matAsset)

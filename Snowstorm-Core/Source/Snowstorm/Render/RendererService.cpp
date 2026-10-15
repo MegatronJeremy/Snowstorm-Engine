@@ -146,7 +146,7 @@ namespace Snowstorm
 
 			// Demodulated specular twin index (0 = grey-vis specular fallback). New 16-byte row; matches Engine.hlsli.
 			uint32_t ShadowSpecTextureIndex = 0;
-			uint32_t _FramePad0 = 0;
+			uint32_t DirShadowAtlasIndex = 0; // secondary-directional shadow atlas (0 = none); mirrors Engine.hlsli
 			uint32_t _FramePad1 = 0;
 			uint32_t _FramePad2 = 0;
 		};
@@ -339,6 +339,7 @@ namespace Snowstorm
 		frame.RTShadowEnabled = (!m_ForceRasterShadow && CVars::ShadowsRTActive()) ? 1u : 0u;
 		frame.SpotShadowAtlasIndex = fd.Shadow.SpotShadowAtlasIndex;
 		frame.PointShadowAtlasIndex = fd.Shadow.PointShadowAtlasIndex;
+		frame.DirShadowAtlasIndex = fd.Shadow.DirShadowAtlasIndex;
 
 		// RT ambient occlusion (#118): active only when render.ao.mode is RT AND the device supports RT
 		// (AoRTActive folds both). The shader's RTAO branch is compiled out on non-RT devices, so this stays

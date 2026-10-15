@@ -15,6 +15,11 @@ namespace Snowstorm::CVars
 	                            "a whole-frame FLIP of 0.026 vs uncompressed. Turn it off to cook exact "
 	                            "RGBA8 when a texture must not be quantized."};
 
+	CVar<int> TextureQuality{"cook.textures.quality", 0,
+	                         "Encoder tier for cooked colour textures: 0 = BC1 opaque, BC3 with alpha; 1 = BC7 "
+	                         "(8 bpp, doubles opaque albedo size, quick encoder); 2 = BC7 exhaustive "
+	                         "(minutes per 2K texture). Normals stay BC5 and masks BC1."};
+
 	CVar<bool> CookAssets{"cook.assets", false,
 	                      "Load every mesh, texture and material named by the project's asset registry so "
 	                      "each one's cooked artifact is written, then exit. Use before staging, so a "
@@ -26,6 +31,8 @@ namespace Snowstorm::CVars
 	                             "from another repository, where the exe is outside the engine tree."};
 
 	CVar<int> SmokeFrames{"smoke.frames", 0, "Run N frames then exit cleanly (0 = until window closed)", CVarFlags::ReadOnly};
+
+	CVar<int> SmokeSettleSeconds{"smoke.settle.seconds", 120, "Smoke mode: after the frame budget, wait until this many seconds have passed since startup for asset streaming to drain and no texture slot to remain a placeholder; log [error] if it does not (0 = do not wait, never fail on it).", CVarFlags::ReadOnly};
 
 	CVar<int> PerfBenchFrames{"perf.bench.frames", 0, "Headless GPU perf benchmark: run N frames accumulating per-pass GPU timings (past warmup), write averaged JSON to perf.bench.path, then exit (0 = off). Driven by Scripts/perf-bench.py.", CVarFlags::ReadOnly};
 
@@ -120,6 +127,8 @@ namespace Snowstorm::CVars
 	// they're ReadOnly: change them in SnowstormStartup.cfg / CLI and relaunch.
 	CVar<std::string> StartupProject{"startup.project", "Projects/Sandbox/Sandbox.ssproj", "Path to the .ssproj loaded at startup (relative to the working directory = repo root). The engine boots this real project instead of synthesizing an implicit one at the CWD. If the file is missing/unreadable, falls back to an implicit CWD-rooted project so the engine still runs. Point --startup.project elsewhere to boot a different project.", CVarFlags::ReadOnly};
 
+	CVar<bool> EditorPicker{"editor.picker", false, "Force the editor's project start screen at boot even when a recent project exists. Without it the editor opens the most recent project directly (an explicit startup.project outranks both).", CVarFlags::ReadOnly};
+
 	CVar<std::string> StartupScene{"startup.scene", "", "Path to a .world to load at startup (empty = the active project's StartScene); e.g. Projects/Sandbox/assets/scenes/Sponza.world", CVarFlags::ReadOnly};
 
 	CVar<std::string> GpuSelect{"render.gpu", "", "Select the physical GPU by case-insensitive name substring (e.g. \"9070\", \"NVIDIA\") or candidate index (\"0\",\"1\"); empty = auto (rank by device type: discrete > integrated > virtual > cpu). Read once at device creation, so a change applies on the next launch. Persisted; the editor's GPU picker writes it.", CVarFlags::Persist};
@@ -194,6 +203,8 @@ namespace Snowstorm::CVars
 	CVar<int> ShadowsMode{"render.shadows.mode", 1, "Shadow technique: 0 = Off, 1 = Shadow Map (raster depth maps + PCF), 2 = Ray Traced (hardware ray query, requires an RT GPU; falls back to Off on a non-RT device). Mode 2 skips the raster shadow passes entirely. Replaces the old render.shadows/render.shadows.rt toggles (#118)", CVarFlags::Persist};
 
 	CVar<int> ShadowResolution{"render.shadow.resolution", 2048, "Shadow-map resolution (square); changing it rebuilds the shadow target", CVarFlags::Persist};
+
+	CVar<int> ShadowDirectionals{"render.shadow.directionals", 1, "Directional lights that get a raster shadow map: the primary uses the sun map, up to 3 more share one atlas (each costs a full scene depth pass). 1 = primary only. Ray-traced shadows ignore this (every casting directional traces).", CVarFlags::Persist};
 
 	CVar<bool> ShadowSoft{"render.shadow.soft", true, "Soft shadows: 3x3 PCF for the raster shadow map; cone-sampled penumbra for RT shadows (each shadow ray jittered within the light's size, TAA-denoised). Off = hard single tap / single ray. Needs TAA (render.aa = TAA) for a clean RT penumbra.", CVarFlags::Persist};
 

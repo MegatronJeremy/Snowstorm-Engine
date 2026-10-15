@@ -2,6 +2,7 @@
 
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Utility/CVar.hpp"
+#include "Service/EditorTheme.hpp"
 
 #include <imgui.h>
 
@@ -19,7 +20,7 @@ namespace Snowstorm
 		}
 
 		ImGui::SetNextWindowSize(ImVec2(420.0f, 460.0f), ImGuiCond_FirstUseEver);
-		if (!ImGui::Begin("Console Variables", &s_Open))
+		if (!ImGui::Begin(EditorTheme::PanelTitle("Console Variables").c_str(), &s_Open))
 		{
 			ImGui::End();
 			return;

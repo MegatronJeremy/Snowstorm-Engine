@@ -27,6 +27,9 @@ Usage (from repo root or anywhere):
 
 FLIP is optional: if the `flip-evaluator` package isn't importable the run still gates on PSNR/SSIM
 (install with `pip install flip-evaluator` to enable it). numpy is required.
+LPIPS (AlexNet) is reported when `torch` and `lpips` are importable (`pip install torch lpips`), never
+gated and never auto-installed: it is the metric that separates a sharp technique from a blurry one
+where PSNR/SSIM cannot, but it needs torch and a weights download the other gates do not.
 
 Exit code: 0 if every technique is within threshold (or --update-baseline), 1 on a regression or
 failure, 2 if a comparison was never made: no baseline, a baseline captured on a different GPU (the
@@ -116,6 +119,11 @@ TECHNIQUES = {
 # always compare 1:1. Chosen below both observed native sizes so it only ever downscales. The engine-side
 # fixed-resolution render (#162) is the cleaner fix that avoids the resample; this is the metric-domain one.
 CANON_W, CANON_H = 1024, 576
+
+# Render resolution every capture is forced to (render.resolution.width/height, the same override
+# perf-bench pins), so the target size no longer follows the window or the editor panel (#162). 16:9 and
+# larger than CANON, so the metric resample is a pure downscale of identical content on every machine.
+CAPTURE_RESOLUTION = (1920, 1080)
 
 
 def _resize_bilinear(img: "np.ndarray", out_h: int, out_w: int) -> "np.ndarray":
@@ -207,6 +215,41 @@ def flip(a: "np.ndarray", b: "np.ndarray"):
         return None
 
 
+_LPIPS_STATE = {"tried": False, "fn": None}
+
+
+def lpips_inputs(a: "np.ndarray", b: "np.ndarray"):
+    """HxWx3(+A) uint8 pair -> two 1x3xHxW float32 arrays in [-1, 1], the range LPIPS expects."""
+    def prep(x):
+        x = np.ascontiguousarray(x[..., :3], dtype=np.float32) / 255.0
+        return np.ascontiguousarray((x * 2.0 - 1.0).transpose(2, 0, 1)[None])
+    return prep(a), prep(b)
+
+
+def lpips_score(a: "np.ndarray", b: "np.ndarray"):
+    """LPIPS (AlexNet, lower = closer). Returns None unless torch and lpips are importable."""
+    if not _LPIPS_STATE["tried"]:
+        _LPIPS_STATE["tried"] = True
+        try:
+            import lpips
+            import torch
+            _LPIPS_STATE["fn"] = (torch, lpips.LPIPS(net="alex", verbose=False).eval())
+        except Exception:
+            print("  note: LPIPS unavailable (pip install torch lpips to enable); reporting without it.")
+    st = _LPIPS_STATE["fn"]
+    if st is None:
+        return None
+    torch, model = st
+    try:
+        x, y = lpips_inputs(a, b)
+        with torch.no_grad():
+            return float(model(torch.from_numpy(x), torch.from_numpy(y)).item())
+    except Exception as e:
+        print(f"  note: LPIPS failed ({e}); reporting without it.")
+        _LPIPS_STATE["fn"] = None
+        return None
+
+
 # ---- capture -----------------------------------------------------------------------------------
 
 # Returned in the device slot when the engine refused the capture because an RT technique was
@@ -246,6 +289,8 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
     env["SS_STARTUP_SCENE"] = scene
     env["SS_VALIDATION_NONFATAL"] = "1"
     env["SS_CONFIG_IGNORE"] = "1"  # code defaults + these overrides only (baseline isolation)
+    env["SS_RENDER_RESOLUTION_WIDTH"] = str(CAPTURE_RESOLUTION[0])
+    env["SS_RENDER_RESOLUTION_HEIGHT"] = str(CAPTURE_RESOLUTION[1])
     env.update(env_overrides)
     if layer_path and layer_path.is_dir():
         env["VK_ADD_LAYER_PATH"] = str(layer_path)
@@ -294,8 +339,8 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
     # path, which never converges), "safety cap" means the frame cap cut it off with the image moving.
     if (m := re.search(r"Quality capture: wrote .* at frame (\d+) \((converged|safety cap|fixed window)\)", proc.stdout)):
         print(f"  captured at frame {m.group(1)} ({m.group(2)})")
-    # Normalize to the canonical metric resolution so window-size nondeterminism can't cause shape
-    # mismatches / non-comparable metrics (see CANON_W/H).
+    # Captures render at CAPTURE_RESOLUTION; the resample to CANON_W/H keeps metrics cheap and is a
+    # safety net should a host ignore the override.
     img = _resize_bilinear(np.load(ldr).astype(np.float64), CANON_H, CANON_W)
     return img, device
 
@@ -315,7 +360,7 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
 # not be compared. Rankings within one sweep survived that; nothing across tools did.
 REF_FRAMES_DEFAULT = 400
 
-_REF_CACHE_VERSION = 1  # bump to invalidate all cached references on a format/keying change
+_REF_CACHE_VERSION = 2  # bump to invalidate all cached references on a format/keying change
 _PT_SOURCES = ["Engine/Shaders/PathTrace.comp.hlsl", "Engine/Shaders/Include/Engine.hlsli"]
 
 
@@ -515,7 +560,9 @@ def main() -> int:
             cur = {"device": dev or ref_dev, "viewpoint": vp, "technique": tech,
                    "flip": flip(ref_img, img), "psnr": psnr(ref_img, img), "ssim": ssim(ref_img, img)}
             fl = f"{cur['flip']:.4f}" if cur["flip"] is not None else "n/a"
-            print(f"  FLIP={fl}  PSNR={cur['psnr']:.2f}dB  SSIM={cur['ssim']:.4f}")
+            lp = lpips_score(ref_img, img)
+            lps = f"  LPIPS={lp:.4f} (not gated)" if lp is not None else ""
+            print(f"  FLIP={fl}  PSNR={cur['psnr']:.2f}dB  SSIM={cur['ssim']:.4f}{lps}")
 
             bp = baseline_path(repo_root, cur["device"], vp, tech)
             if args.update_baseline:

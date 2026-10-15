@@ -13,9 +13,8 @@ namespace Snowstorm
 	// blob so startup/import skips re-decoding every image. Second cook cache after meshes (#84); the source
 	// image is the input, this is the GPU-ready pixel artifact keyed by asset handle.
 	//
-	// NOT keyed by srgb: the decoded bytes are identical regardless of color space — srgb only selects the
-	// Vulkan image FORMAT at upload time (sRGB vs UNORM), not the pixel data. So one blob serves both the
-	// albedo (sRGB) and data-map (linear) views of the same source.
+	// The Vulkan image FORMAT (sRGB vs UNORM) is chosen at upload time, but the mip chain is filtered in the
+	// colour space the role implies, so the blob is keyed by TextureCookKey.
 	struct CookedTexture
 	{
 		uint32_t Width = 0; // base (mip 0) dimensions
@@ -37,11 +36,28 @@ namespace Snowstorm
 			BC1 = 1, // opaque colour, 8:1
 			BC3 = 2, // colour with alpha, 4:1
 			BC5 = 3, // tangent-space normals, 4:1; two 8-bit planes, Z reconstructed in the shader
+			BC7 = 4, // colour with alpha or high-quality opaque colour, 4:1 against RGBA8, 8 bpp
 		};
 		Encoding Format = Encoding::RGBA8;
 
 		[[nodiscard]] uint32_t MipLevels() const { return static_cast<uint32_t>(Levels.size()); }
 	};
+
+	// The inputs besides the source file that decide the cooked bytes. A blob whose stored key differs from
+	// the requested one is a miss, so a material edit that moves a texture to another role, or flipping
+	// cook.textures.compress, re-cooks instead of serving the old encoding.
+	struct TextureCookKey
+	{
+		uint8_t Role = 0;     // TextureRole
+		uint8_t MipSpace = 0; // MipSpace the chain was filtered in
+		uint8_t Compress = 0; // 0 off, 1 cook.textures.compress at quality 0, 2 at quality 1 (BC7 opaque colour)
+		uint8_t EncoderRevision = 0;
+
+		bool operator==(const TextureCookKey&) const = default;
+	};
+
+	// Bump when an encoder setting changes cooked bytes without a layout change.
+	inline constexpr uint8_t kTextureEncoderRevision = 3; // 3: alpha colour BC7 -> BC3 at the default tier, BC7 quick
 
 	class TextureCacheIO
 	{
@@ -50,9 +66,9 @@ namespace Snowstorm
 		static std::filesystem::path GetCachePath(AssetHandle handle);
 
 		// Load the cooked pixels if present AND matching sourceWriteTime (else nullopt -> caller re-decodes).
-		static std::optional<CookedTexture> Load(AssetHandle handle, const std::filesystem::path& sourcePath);
+		static std::optional<CookedTexture> Load(AssetHandle handle, const std::filesystem::path& sourcePath, const TextureCookKey& key);
 
 		// Write cooked pixels (creates dirs; atomic temp-then-rename). Returns false on failure.
-		static bool Save(AssetHandle handle, const std::filesystem::path& sourcePath, const CookedTexture& tex);
+		static bool Save(AssetHandle handle, const std::filesystem::path& sourcePath, const CookedTexture& tex, const TextureCookKey& key);
 	};
 }

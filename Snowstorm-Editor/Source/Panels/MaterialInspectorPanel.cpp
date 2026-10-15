@@ -7,6 +7,7 @@
 #include "Snowstorm/Components/MaterialComponent.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Project/Project.hpp"
+#include "Snowstorm/Render/ShaderParams.hpp"
 #include "Snowstorm/Utility/EnginePaths.hpp"
 #include "Snowstorm/World/World.hpp"
 #include "Service/EditorTheme.hpp"
@@ -20,6 +21,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -151,6 +153,75 @@ namespace Snowstorm
 			return g_MaterialShaderCache.Items;
 		}
 
+		// The `// @param` declarations of the material's fragment shader, re-read when the path changes or
+		// after a Rescan (a shader edited on disk shows its new rows on the next shader switch).
+		struct ShaderParamCache
+		{
+			std::string Path;
+			std::vector<ShaderParam> Params;
+			std::vector<std::string> Errors;
+		} g_ParamCache;
+
+		const ShaderParamCache& ParamsFor(const std::string& shaderPath)
+		{
+			if (g_ParamCache.Path != shaderPath)
+			{
+				g_ParamCache = {};
+				g_ParamCache.Path = shaderPath;
+				std::ifstream in(ResolveShaderSource(shaderPath));
+				if (in)
+				{
+					const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+					g_ParamCache.Params = ParseShaderParams(text, &g_ParamCache.Errors);
+				}
+			}
+			return g_ParamCache;
+		}
+
+		// One named row. Edits land in the sparse map; returns true when the value changed.
+		bool ShaderParamRow(const ShaderParam& p, std::map<std::string, glm::vec4>& values)
+		{
+			glm::vec4 v = p.Default;
+			if (const auto it = values.find(p.Name); it != values.end())
+				v = it->second;
+			const char* label = p.Name.c_str();
+			bool edited = false;
+			switch (p.Type)
+			{
+			case ShaderParamType::Float:
+				edited = ImGui::SliderFloat(label, &v.x, p.Min, p.Max);
+				break;
+			case ShaderParamType::Float2:
+				edited = ImGui::DragFloat2(label, &v.x, (p.Max - p.Min) * 0.005f, p.Min, p.Max);
+				break;
+			case ShaderParamType::Float3:
+				edited = ImGui::DragFloat3(label, &v.x, (p.Max - p.Min) * 0.005f, p.Min, p.Max);
+				break;
+			case ShaderParamType::Float4:
+				edited = ImGui::DragFloat4(label, &v.x, (p.Max - p.Min) * 0.005f, p.Min, p.Max);
+				break;
+			case ShaderParamType::Int:
+			{
+				int i = static_cast<int>(v.x);
+				if (ImGui::SliderInt(label, &i, static_cast<int>(p.Min), static_cast<int>(p.Max)))
+				{
+					v.x = static_cast<float>(i);
+					edited = true;
+				}
+				break;
+			}
+			case ShaderParamType::Color3:
+				edited = ImGui::ColorEdit3(label, &v.x);
+				break;
+			case ShaderParamType::Color4:
+				edited = ImGui::ColorEdit4(label, &v.x);
+				break;
+			}
+			if (edited)
+				values[p.Name] = v;
+			return edited;
+		}
+
 		// A texture-handle row: reuse the inspector's asset picker (same widget the component inspector uses
 		// for texture properties). Returns true if the handle changed.
 		bool TextureRow(const char* label, AssetHandle& handle)
@@ -275,6 +346,25 @@ namespace Snowstorm
 			changed = true;
 		if (m.AlphaMask && ImGui::SliderFloat("Alpha Cutoff", &m.AlphaCutoff, 0.0f, 1.0f))
 			changed = true;
+
+		const ShaderParamCache& shaderParams = ParamsFor(m.FragmentShader);
+		if (!shaderParams.Params.empty())
+		{
+			ImGui::Separator();
+			ImGui::TextDisabled("SHADER PARAMETERS");
+			for (const ShaderParam& p : shaderParams.Params)
+			{
+				changed |= ShaderParamRow(p, m.ShaderParams);
+				if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+				{
+					changed |= m.ShaderParams.erase(p.Name) > 0; // reset to the declared default
+				}
+			}
+		}
+		for (const std::string& err : shaderParams.Errors)
+		{
+			ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "@param %s", err.c_str());
+		}
 
 		ImGui::Separator();
 		ImGui::TextDisabled("TEXTURES");

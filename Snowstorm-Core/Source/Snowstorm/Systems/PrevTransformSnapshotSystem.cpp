@@ -35,4 +35,9 @@ namespace Snowstorm
 			rt.PrevViewProjection = rt.ViewProjection;
 		}
 	}
+
+	void PrevTransformSnapshotSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.Structural().ReadComponents<TransformComponent, MeshComponent>().WriteComponents<PrevTransformComponent, CameraRuntimeComponent>();
+	}
 }
