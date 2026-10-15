@@ -113,11 +113,15 @@ namespace Snowstorm
 		uint32_t m_Height = 0;
 		uint32_t m_MaxChannels = 0; // widest layer's channel count (sizes the feature buffers)
 
-		// Transient per-dispatch descriptor sets / UBOs, ring-buffered by frame-in-flight index. Each Infer
-		// allocates fresh sets+UBOs; they must stay alive until the GPU finishes that frame, so we keep one
-		// generation per in-flight frame and only clear a slot when its frame comes around again (its prior
-		// submission has retired). Clearing immediately would destroy descriptors the GPU is still reading.
-		std::vector<std::vector<Ref<DescriptorSet>>> m_KeepAliveSets;
-		std::vector<std::vector<Ref<Buffer>>> m_KeepAliveBuffers;
+		// Per-dispatch descriptor set + UBO, ring-buffered by frame-in-flight index and reused in place
+		// every time the slot recurs (its previous submission has retired). Entries are addressed by
+		// dispatch order; Owner detects an order shift (the warp stage toggling) and recreates the entry.
+		struct DispatchResources
+		{
+			const Pipeline* Owner = nullptr;
+			Ref<DescriptorSet> Set;
+			Ref<Buffer> Ubo;
+		};
+		std::vector<std::vector<DispatchResources>> m_DispatchSlots;
 	};
 }

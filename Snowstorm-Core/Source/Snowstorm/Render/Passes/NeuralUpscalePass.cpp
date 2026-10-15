@@ -212,14 +212,10 @@ namespace Snowstorm
 		// would destroy in-use resources. Resize is rare (first frame, or a viewport/scale change), so drain the
 		// GPU first — the same guard IBLBakePass uses for one-time resource creation. Not on the per-frame path,
 		// so the stall is a non-issue. Beyond GPU-idle, validation forbids destroying an image view while ANY
-		// descriptor set still references it, so also free every ring slot's keep-alive (their sets bind the old
+		// descriptor set still references it, so also drop every ring slot's cached sets (they bind the old
 		// output view) before the reassignment below drops the old view.
 		Renderer::WaitIdle();
-		for (auto& slot : m_KeepAliveSets)
-		{
-			slot.clear();
-		}
-		for (auto& slot : m_KeepAliveBuffers)
+		for (auto& slot : m_DispatchSlots)
 		{
 			slot.clear();
 		}
@@ -298,40 +294,51 @@ namespace Snowstorm
 		const Ref<Texture>& output = m_Output[frameIndex];
 		const Ref<TextureView>& outputView = m_OutputView[frameIndex];
 
-		// Ring-buffer the transient sets/UBOs by frame-in-flight index. This slot's previous occupants were
-		// submitted `framesInFlight` frames ago and have retired, so freeing them now is safe; the ones we
-		// create below stay alive until this slot recurs. Clearing every frame would free descriptors still in
-		// flight (the crash: vkDestroyImageView on a view still bound in an in-flight set).
+		// This slot's previous submission retired `framesInFlight` frames ago, so its sets and UBOs are
+		// rewritten in place (SetData + descriptor update) instead of being recreated. Rewriting an
+		// in-flight slot would race the GPU.
 		const uint32_t frames = Renderer::GetFramesInFlight();
-		if (m_KeepAliveSets.size() != frames)
+		if (m_DispatchSlots.size() != frames)
 		{
-			m_KeepAliveSets.assign(frames, {});
-			m_KeepAliveBuffers.assign(frames, {});
+			m_DispatchSlots.assign(frames, {});
 		}
-		std::vector<Ref<DescriptorSet>>& keepSets = m_KeepAliveSets[frameIndex];
-		std::vector<Ref<Buffer>>& keepBufs = m_KeepAliveBuffers[frameIndex];
-		keepSets.clear();
-		keepBufs.clear();
+		std::vector<DispatchResources>& slot = m_DispatchSlots[frameIndex];
+		size_t dispatchCursor = 0;
+
+		const auto acquire = [&](const Ref<Pipeline>& pipe, const void* cbData, const size_t cbSize, const char* name) -> DispatchResources&
+		{
+			if (dispatchCursor == slot.size())
+			{
+				slot.emplace_back();
+			}
+			DispatchResources& d = slot[dispatchCursor++];
+			if (d.Owner != pipe.get())
+			{
+				const auto& layouts = pipe->GetSetLayouts();
+				SS_CORE_ASSERT(!layouts.empty() && layouts[0], "[Neural] pipeline missing set 0 layout");
+				d.Owner = pipe.get();
+				d.Ubo = Buffer::Create(cbSize, BufferUsage::Uniform, cbData, true, name);
+				d.Set = DescriptorSet::Create(layouts[0], {});
+			}
+			else
+			{
+				d.Ubo->SetData(cbData, cbSize);
+			}
+			return d;
+		};
 
 		const glm::uvec2 outSize{outWidth, outHeight};
 		const uint32_t gx = (outWidth + kGroup - 1) / kGroup;
 		const uint32_t gy = (outHeight + kGroup - 1) / kGroup;
 		const size_t featureBytes = static_cast<size_t>(m_MaxChannels) * outWidth * outHeight * sizeof(float);
 
-		const auto layoutFor = [](const Ref<Pipeline>& pipe)
-		{
-			const auto& layouts = pipe->GetSetLayouts();
-			SS_CORE_ASSERT(!layouts.empty() && layouts[0], "[Neural] pipeline missing set 0 layout");
-			return layouts[0];
-		};
-
 		// ---- Stage 1: bilinear-upsample LR into FeatureBase (the residual skip connection, channels 0..2) ----
 		{
 			SizeCB cb{};
 			cb.OutSize = outSize;
-			const Ref<Buffer> ubo = Buffer::Create(sizeof(SizeCB), BufferUsage::Uniform, &cb, true, "NeuralUpsampleCB");
-
-			const Ref<DescriptorSet> set = DescriptorSet::Create(layoutFor(m_UpsamplePipeline), {});
+			DispatchResources& res = acquire(m_UpsamplePipeline, &cb, sizeof(SizeCB), "NeuralUpsampleCB");
+			const Ref<Buffer>& ubo = res.Ubo;
+			const Ref<DescriptorSet>& set = res.Set;
 			set->SetTexture(0, lowResColor);
 			set->SetSampler(1, m_LinearClamp);
 			set->SetBuffer(2, {.Buffer = featBase, .Offset = 0, .Range = featureBytes});
@@ -341,9 +348,6 @@ namespace Snowstorm
 			ctx->BindPipeline(m_UpsamplePipeline);
 			ctx->BindDescriptorSet(set, 0);
 			ctx->Dispatch(gx, gy, 1);
-
-			keepSets.push_back(set);
-			keepBufs.push_back(ubo);
 		}
 
 		// ---- Stage 1b (temporal only): warp previous output by motion vectors into feature channels 3..5, and
@@ -355,9 +359,9 @@ namespace Snowstorm
 			WarpCB cb{};
 			cb.OutSize = outSize;
 			cb.HistoryValid = historyValid ? 1u : 0u;
-			const Ref<Buffer> ubo = Buffer::Create(sizeof(WarpCB), BufferUsage::Uniform, &cb, true, "NeuralWarpCB");
-
-			const Ref<DescriptorSet> set = DescriptorSet::Create(layoutFor(m_WarpPipeline), {});
+			DispatchResources& res = acquire(m_WarpPipeline, &cb, sizeof(WarpCB), "NeuralWarpCB");
+			const Ref<Buffer>& ubo = res.Ubo;
+			const Ref<DescriptorSet>& set = res.Set;
 			set->SetTexture(0, prevHistory);
 			set->SetTexture(1, velocity);
 			set->SetSampler(2, m_LinearClamp);
@@ -368,9 +372,6 @@ namespace Snowstorm
 			ctx->BindPipeline(m_WarpPipeline);
 			ctx->BindDescriptorSet(set, 0);
 			ctx->Dispatch(gx, gy, 1);
-
-			keepSets.push_back(set);
-			keepBufs.push_back(ubo);
 		}
 
 		// ---- Stage 2: conv stack. Layer 0 reads the base; later layers ping-pong A<->B. The base buffer stays
@@ -398,9 +399,9 @@ namespace Snowstorm
 			const size_t weightCount = static_cast<size_t>(l.OutChannels) * l.InChannels * l.KernelSize * l.KernelSize;
 			cb.WeightOffset = static_cast<uint32_t>(m_LayerOffsets[i]);
 			cb.BiasOffset = static_cast<uint32_t>(m_LayerOffsets[i] + weightCount);
-			const Ref<Buffer> ubo = Buffer::Create(sizeof(ConvCB), BufferUsage::Uniform, &cb, true, "NeuralConvCB");
-
-			const Ref<DescriptorSet> set = DescriptorSet::Create(layoutFor(m_ConvPipeline), {});
+			DispatchResources& res = acquire(m_ConvPipeline, &cb, sizeof(ConvCB), "NeuralConvCB");
+			const Ref<Buffer>& ubo = res.Ubo;
+			const Ref<DescriptorSet>& set = res.Set;
 			set->SetBuffer(0, {.Buffer = cur, .Offset = 0, .Range = featureBytes});
 			set->SetBuffer(1, {.Buffer = m_Weights, .Offset = 0, .Range = m_Weights->GetSize()});
 			set->SetBuffer(2, {.Buffer = next, .Offset = 0, .Range = featureBytes});
@@ -409,9 +410,6 @@ namespace Snowstorm
 
 			ctx->BindDescriptorSet(set, 0);
 			ctx->Dispatch(gx, gy, 1);
-
-			keepSets.push_back(set);
-			keepBufs.push_back(ubo);
 
 			// Ping-pong: this layer's output becomes the next layer's input; the buffer just consumed (unless it
 			// was the base) frees up as the next output. After layer 0, cur=Base must NOT be reused, so the pair
@@ -430,9 +428,9 @@ namespace Snowstorm
 		{
 			SizeCB cb{};
 			cb.OutSize = outSize;
-			const Ref<Buffer> ubo = Buffer::Create(sizeof(SizeCB), BufferUsage::Uniform, &cb, true, "NeuralAddCB");
-
-			const Ref<DescriptorSet> set = DescriptorSet::Create(layoutFor(m_AddPipeline), {});
+			DispatchResources& res = acquire(m_AddPipeline, &cb, sizeof(SizeCB), "NeuralAddCB");
+			const Ref<Buffer>& ubo = res.Ubo;
+			const Ref<DescriptorSet>& set = res.Set;
 			set->SetBuffer(0, {.Buffer = featBase, .Offset = 0, .Range = featureBytes});
 			set->SetBuffer(1, {.Buffer = cur, .Offset = 0, .Range = featureBytes});
 			set->SetTexture(2, outputView);
@@ -442,9 +440,6 @@ namespace Snowstorm
 			ctx->BindPipeline(m_AddPipeline);
 			ctx->BindDescriptorSet(set, 0);
 			ctx->Dispatch(gx, gy, 1);
-
-			keepSets.push_back(set);
-			keepBufs.push_back(ubo);
 		}
 
 		// The residual-add wrote the output as a storage image (GENERAL). Tonemap SAMPLES it next, so leave it
