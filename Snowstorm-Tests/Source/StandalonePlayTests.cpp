@@ -2,7 +2,6 @@
 
 #include "Singletons/StandalonePlay.hpp"
 
-
 using namespace Snowstorm;
 namespace fs = std::filesystem;
 
