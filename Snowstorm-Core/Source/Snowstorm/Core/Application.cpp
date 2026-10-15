@@ -86,7 +86,7 @@ namespace Snowstorm
 		// normal case) -> runs until the window is closed.
 		uint64_t smokeFramesLeft = 0;
 		bool smokeMode = false;
-		std::chrono::steady_clock::time_point smokeSettleStart;
+		const auto smokeRunStart = std::chrono::steady_clock::now();
 		if (const int smokeFrames = CVars::SmokeFrames.Get(); smokeFrames > 0)
 		{
 			smokeMode = true;
@@ -321,13 +321,12 @@ namespace Snowstorm
 				}
 			}
 
-			if (smokeMode && smokeFramesLeft > 0 && --smokeFramesLeft == 0)
-			{
-				smokeSettleStart = std::chrono::steady_clock::now();
-			}
+			if (smokeMode && smokeFramesLeft > 0)
+				--smokeFramesLeft;
 			if (smokeMode && smokeFramesLeft == 0)
 			{
-				// A load that never finishes must fail the run, not pass it after N frames.
+				// A load that never finishes must fail the run, not pass it after N frames. The deadline counts from
+				// process start so it always fires before the harness's wall-clock timeout, however long the frames took.
 				std::string unsettled;
 				const int settleSeconds = CVars::SmokeSettleSeconds.Get();
 				if (settleSeconds > 0)
@@ -338,7 +337,7 @@ namespace Snowstorm
 							break;
 					}
 				}
-				const bool timedOut = std::chrono::steady_clock::now() - smokeSettleStart >
+				const bool timedOut = std::chrono::steady_clock::now() - smokeRunStart >
 				                      std::chrono::seconds(settleSeconds);
 				if (unsettled.empty())
 				{
