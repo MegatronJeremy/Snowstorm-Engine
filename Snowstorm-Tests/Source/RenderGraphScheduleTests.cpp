@@ -21,6 +21,16 @@ namespace
 		TextureDesc m_Desc;
 	};
 
+	class FakeTarget final : public RenderTarget
+	{
+	public:
+		[[nodiscard]] const RenderTargetDesc& GetDesc() const override { return m_Desc; }
+		void Resize(uint32_t, uint32_t) override {}
+
+	private:
+		RenderTargetDesc m_Desc;
+	};
+
 	Ref<Texture> Tex()
 	{
 		return CreateRef<FakeTexture>();
@@ -33,6 +43,11 @@ namespace
 		p.Name = name;
 		p.IsCompute = queue == GpuQueue::AsyncCompute;
 		p.Queue = queue;
+		p.Execute = [](CommandContext&) {};
+		if (!p.IsCompute)
+		{
+			p.Target = CreateRef<FakeTarget>();
+		}
 		for (auto& r : reads)
 		{
 			p.Reads.push_back({r, RenderGraph::AccessState::Sampled});
