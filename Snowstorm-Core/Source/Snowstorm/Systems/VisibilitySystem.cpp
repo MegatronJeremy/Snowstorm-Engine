@@ -26,21 +26,21 @@ namespace Snowstorm
 	bool VisibilitySystem::IsVisibilityDirtyThisFrame() const
 	{
 		// Any relevant component changed?
-		if (!ChangedView<TransformComponent>().empty())
+		if (AnyChanged<TransformComponent>())
 			return true;
-		if (!ChangedView<CameraComponent>().empty())
+		if (AnyChanged<CameraComponent>())
 			return true;
-		if (!ChangedView<ViewportComponent>().empty())
+		if (AnyChanged<ViewportComponent>())
 			return true;
-		if (!ChangedView<VisibilityComponent>().empty())
+		if (AnyChanged<VisibilityComponent>())
 			return true;
-		if (!ChangedView<CameraVisibilityComponent>().empty())
+		if (AnyChanged<CameraVisibilityComponent>())
 			return true;
 
 		// Mesh/material resolution changes can change what is drawable (null -> valid, material swap, etc.)
-		if (!ChangedView<MeshComponent>().empty())
+		if (AnyChanged<MeshComponent>())
 			return true;
-		if (!ChangedView<MaterialComponent>().empty())
+		if (AnyChanged<MaterialComponent>())
 			return true;
 
 		// Any relevant component added/removed?
