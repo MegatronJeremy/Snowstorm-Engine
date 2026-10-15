@@ -1186,6 +1186,7 @@ see, so treat it as part of the feature, not an afterthought.
   destroys. Undeclared means exclusive and main-thread-only. `SystemManager::DeclaredAccess()` lists them and
   `SystemAccess::ConflictsWith` is the pairwise rule, and `BuildSchedule` (`ECS/SystemSchedule.hpp`) layers one phase into stages from it; nothing executes from it yet
   (#85). A new core system needs a declaration (`SystemAccessTests` fails otherwise).
+- **Cluster grid math:** `Render/LightClusterMath.hpp` is the pure, GPU-free core of the planned clustered light cull (#66): exponential depth slices, analytic view-space cluster bounds, sphere-AABB overlap and a CPU reference cull (ascending index, fixed stride, overflow dropped). Nothing renders from it yet.
 - **Rendering:** backend-agnostic interfaces in `Render/` (`RendererAPI`, `Renderer`, `Pipeline`,
   `Shader`, `Buffer`, `Texture`, `Material`, `RenderGraph`, ...). The concrete implementation lives
   in `Platform/Vulkan/` (volk + Vulkan Memory Allocator + spirv-reflect; shaders compiled to SPIR-V
