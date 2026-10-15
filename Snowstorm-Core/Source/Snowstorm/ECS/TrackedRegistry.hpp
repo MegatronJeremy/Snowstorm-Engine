@@ -4,6 +4,8 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <typeindex>
+#include <functional>
+#include <vector>
 #include <utility>
 
 namespace Snowstorm

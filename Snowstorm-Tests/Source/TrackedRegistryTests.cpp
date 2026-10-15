@@ -131,3 +131,36 @@ TEST_CASE("MarkChanged flags components changed without taking a reference", "[e
 	reg.MarkChanged<Position, Velocity>(e);
 	REQUIRE(reg.WasChanged<Velocity>(e));
 }
+
+TEST_CASE("MarkChangedBulk marks the iterated view's written components lazily", "[ecs]")
+{
+	TrackedRegistry reg;
+	const auto both = reg.create();
+	reg.emplace<Position>(both, 1, 1);
+	reg.emplace<Velocity>(both);
+	const auto onlyPos = reg.create();
+	reg.emplace<Position>(onlyPos, 2, 2);
+	reg.ClearTrackedComponents();
+
+	// Position written, Velocity read: the view is {Position, Velocity}.
+	reg.MarkChangedBulk(
+	    {std::type_index(typeid(Position))},
+	    [](const TrackedRegistry& r, const entt::entity e)
+	    { return r.all_of<Position, Velocity>(e); },
+	    [](const TrackedRegistry& r, const std::function<void(entt::entity)>& visit)
+	    {
+		    for (const entt::entity e : r.view<Position, Velocity>())
+			    visit(e);
+	    });
+
+	REQUIRE(reg.WasChanged<Position>(both));
+	REQUIRE_FALSE(reg.WasChanged<Velocity>(both));
+	REQUIRE_FALSE(reg.WasChanged<Position>(onlyPos));
+	REQUIRE(reg.ChangedView<Position>().size() == 1);
+	REQUIRE(reg.ChangedView<Position>().contains(both));
+	REQUIRE(reg.AnyChanged<Position>());
+	REQUIRE_FALSE(reg.AnyChanged<Velocity>());
+
+	reg.ClearTrackedComponents();
+	REQUIRE_FALSE(reg.AnyChanged<Position>());
+}
