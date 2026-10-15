@@ -1122,6 +1122,10 @@ see, so treat it as part of the feature, not an afterthought.
   in `Platform/Vulkan/` (volk + Vulkan Memory Allocator + spirv-reflect; shaders compiled to SPIR-V
   via `Tools/dxc`).
 - **Scenes:** serialized to/from JSON (`World/SceneSerializer.hpp`, nlohmann_json).
+  Every component serializes through its reflected properties (`JsonUtils.hpp`); the serializer holds no
+  type names. A shape that is not the property list sets `SerializeFn`/`DeserializeFn` in
+  `ComponentRegisterOptions` (`MaterialOverridesComponent`), `Structural` keeps a component in the entity
+  header (`IDComponent`, `TagComponent`), and property metadata `JsonAlias` names the key older files used.
 - **Events:** `Events/` hierarchy dispatched through `EventBus`; input bridged in `Input/`.
 
 ### Conventions
