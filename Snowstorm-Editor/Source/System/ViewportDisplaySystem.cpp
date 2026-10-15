@@ -23,7 +23,10 @@
 #include "Snowstorm/Utility/EnginePaths.hpp"
 #include "Singletons/EditorCommands.hpp"
 #include "Singletons/EditorHistorySingleton.hpp"
+#include "Singletons/EditorNotificationsSingleton.hpp"
 #include "Singletons/EditorSelectionSingleton.hpp"
+#include "Singletons/StandalonePlay.hpp"
+#include "Snowstorm/World/SceneSerializer.hpp"
 #include "Snowstorm/World/SimulationStateSingleton.hpp"
 
 #include <glm/gtc/quaternion.hpp>
@@ -727,7 +730,28 @@ namespace Snowstorm
 			ImGui::SetCursorScreenPos(ImVec2(contentMin.x + (contentWidth - kBtn) * 0.5f, contentMin.y + kTopMargin));
 			if (ImGui::InvisibleButton("##playstop", ImVec2(kBtn, kBtn)))
 			{
-				editorState.Current = playing ? SimulationStateSingleton::Mode::Edit : SimulationStateSingleton::Mode::Play;
+				if (playing)
+				{
+					editorState.Current = SimulationStateSingleton::Mode::Edit;
+				}
+				else if (m_PlayStandalone)
+				{
+					// The editor world is untouched: the Runtime gets a copy of the current (unsaved) scene.
+					auto& notify = SingletonView<EditorNotificationsSingleton>();
+					const std::string error = StandalonePlay::Launch(SceneSerializer::SerializeToString(*m_World));
+					if (error.empty())
+					{
+						notify.Push("Launched standalone Runtime", EditorToastType::Info);
+					}
+					else
+					{
+						notify.Push(error, EditorToastType::Error);
+					}
+				}
+				else
+				{
+					editorState.Current = SimulationStateSingleton::Mode::Play;
+				}
 			}
 			const bool hovered = ImGui::IsItemHovered();
 
@@ -753,7 +777,31 @@ namespace Snowstorm
 			}
 			if (hovered)
 			{
-				ImGui::SetTooltip(playing ? "Stop (return to Edit)" : "Play (run the scene)");
+				ImGui::SetTooltip(playing            ? "Stop (return to Edit)"
+				                  : m_PlayStandalone ? "Play Standalone (launch Snowstorm-Runtime with this scene)"
+				                                     : "Play (run the scene in the editor)");
+			}
+
+			// Play-mode selector: a chevron right of the button. Disabled while playing (mode is fixed for
+			// the session, as in UE).
+			ImGui::SetCursorScreenPos(ImVec2(contentMin.x + (contentWidth + kBtn) * 0.5f + 2.0f, contentMin.y + kTopMargin));
+			ImGui::BeginDisabled(playing);
+			if (ImGui::ArrowButton("##playmode", ImGuiDir_Down))
+			{
+				ImGui::OpenPopup("##playmodepopup");
+			}
+			ImGui::EndDisabled();
+			if (ImGui::BeginPopup("##playmodepopup"))
+			{
+				if (ImGui::MenuItem("In Editor (PIE)", nullptr, !m_PlayStandalone))
+				{
+					m_PlayStandalone = false;
+				}
+				if (ImGui::MenuItem("Standalone (Runtime)", nullptr, m_PlayStandalone))
+				{
+					m_PlayStandalone = true;
+				}
+				ImGui::EndPopup();
 			}
 		}
 

@@ -1041,9 +1041,13 @@ fires when its target RELINKS: editing a scene and rebuilding would stage the ol
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc
 `std::getenv`. Declare engine-wide CVars in `Snowstorm/Core/EngineCVars.{hpp,cpp}`; each
 self-registers and is resolved once at startup by `CVarRegistry::Initialize(argc, argv)` (called in
-`EntryPoint.hpp`) from, in increasing priority: **default → `SnowstormConfig.cfg` →
-`SnowstormStartup.cfg` → environment → CLI**. `SnowstormConfig.cfg` is auto-saved by the editor on
-shutdown and holds persistent CVars only; `SnowstormStartup.cfg` is hand-authored, never written by
+`EntryPoint.hpp`) from, in increasing priority: **default → `<project>/Saved/Settings.cfg` →
+`SnowstormStartup.cfg` → environment → CLI**. The project settings file is per project (a switch
+never clobbers another project's tuning), gitignored, auto-saved by the editor on shutdown and holds
+persistent CVars only. It loads once the project is active (`LoadProjectSettings`), not in
+`Initialize`, because `startup.project` is itself a CVar; CVars set by the startup file, env or CLI
+are skipped by that load so the order above holds. A project without one migrates once from the
+legacy root `SnowstormConfig.cfg`. `SnowstormStartup.cfg` is hand-authored, never written by
 the app, and can carry any CVar, so it is the safe place for machine-local toggles the auto-save
 cannot clobber. `config.ignore` (`SS_CONFIG_IGNORE=1`) skips both files, which is what the benchmark
 harnesses set so a run depends on code defaults plus its own overrides, never on local settings.
@@ -1059,7 +1063,7 @@ panel (`CVarPanelSystem`): it lists every CVar with a type-appropriate widget (c
 plus a `name value` command line, via typed accessors on `ICVar` (`GetKind`/`Get*`/`Set*`). Most
 engine CVars are read per-frame through `.Get()` (shadows, IBL, exposure, shadow quality), so edits
 take effect immediately, and those marked `CVarFlags::Persist` are written back to
-`SnowstormConfig.cfg` on shutdown.
+`<project>/Saved/Settings.cfg` on shutdown.
 
 ## Layout
 
@@ -1179,7 +1183,7 @@ Keep those two in sync when adding a dependency.
 
 Work on a branch, merge through a pull request; see the branch/PR rule under Agent collaboration.
 `.gitignore` excludes everything generated: `build/`, `vcpkg/`, `.vs/`, `Engine/cache`, the local
-config files (`SnowstormConfig.cfg`, `SnowstormStartup.cfg`), captures and weights (`Dataset/`,
+config files (`Projects/*/Saved/`, `SnowstormConfig.cfg`, `SnowstormStartup.cfg`), captures and weights (`Dataset/`,
 `*.npy`, `*.ssnn`), downloaded tooling (`Tools/rga/`, `Tools/rdts/`), the PT reference cache
 (`Scripts/.quality-ref-cache/`), and all solution/project files (`*.sln`, `*.vcxproj*`, `*.cmake`,
 `CMakeCache.txt`, `ALL_BUILD.*`, `ZERO_CHECK.*`, `Makefile`). The committed baselines under

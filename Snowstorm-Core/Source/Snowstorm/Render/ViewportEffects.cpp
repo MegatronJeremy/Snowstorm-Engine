@@ -1567,24 +1567,7 @@ namespace Snowstorm
 
 			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
 			{
-				const int debugView = CVars::DebugView.Get();
-				const bool taaOn = CVars::AAMode.Get() == 2 && v.RT.HistoryTarget[0] && v.RT.HistoryTarget[1] &&
-				                   !v.RT.HistoryTarget[0]->GetDesc().ColorAttachments.empty();
-				// DLAA runs the neural temporal network as the AA resolve, so it reprojects by motion vectors
-				// exactly like TAA even at scale 1.
-				const bool dlaa = CVars::DlaaActive();
-				const bool neuralTemporal = CVars::Upscaler.Get() == 2;
-				const bool exporting = CVars::DatasetExport.Get() && v.Comparing;
-				// GI (#125) and reflection (#129) temporal accumulation reproject by motion vectors, so either
-				// forces the velocity pass on whenever its effect is running, even without TAA / debug / neural.
-				const bool giTemporal = CVars::GiActive() && CVars::GITemporalActive();
-				const bool reflTemporal = CVars::ReflectionsRTActive() && CVars::ReflectionTemporalActive();
-				// SSR and SSGI (#151) reproject the previous-frame color by velocity every frame, so either needs
-				// the pass on unconditionally (not only when its temporal stage is enabled).
-				const bool prevColorGather = CVars::ReflectionsSSRActive() || CVars::GiSSGIActive();
-				return (debugView == 1 || taaOn || dlaa || neuralTemporal || exporting || giTemporal || reflTemporal || prevColorGather) && v.RT.VelocityTarget &&
-				       !v.RT.VelocityTarget->GetDesc().ColorAttachments.empty() &&
-				       v.RT.VelocityTarget->GetDesc().ColorAttachments[0].View;
+				return v.VelocityNeeded;
 			}
 
 			void Contribute(ViewportRenderContext& v) override

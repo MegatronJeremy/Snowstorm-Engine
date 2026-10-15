@@ -231,14 +231,22 @@ namespace Snowstorm
 
 	void VulkanComputePipeline::Destroy()
 	{
-		if (m_Pipeline != VK_NULL_HANDLE)
+		// The GPU may still execute command buffers that bind these; retire instead of draining the device.
+		if (m_Pipeline != VK_NULL_HANDLE || m_PipelineLayout != VK_NULL_HANDLE)
 		{
-			vkDestroyPipeline(m_Device, m_Pipeline, nullptr);
+			RetireVulkanObject(
+			    [device = m_Device, pipeline = m_Pipeline, layout = m_PipelineLayout]
+			    {
+				    if (pipeline != VK_NULL_HANDLE)
+				    {
+					    vkDestroyPipeline(device, pipeline, nullptr);
+				    }
+				    if (layout != VK_NULL_HANDLE)
+				    {
+					    vkDestroyPipelineLayout(device, layout, nullptr);
+				    }
+			    });
 			m_Pipeline = VK_NULL_HANDLE;
-		}
-		if (m_PipelineLayout != VK_NULL_HANDLE)
-		{
-			vkDestroyPipelineLayout(m_Device, m_PipelineLayout, nullptr);
 			m_PipelineLayout = VK_NULL_HANDLE;
 		}
 		m_SetLayouts.clear();
@@ -253,7 +261,6 @@ namespace Snowstorm
 
 		const std::string prevSignature = m_LayoutSignature;
 
-		vkDeviceWaitIdle(m_Device);
 		Destroy();
 		Build();
 
@@ -271,11 +278,7 @@ namespace Snowstorm
 
 	VulkanComputePipeline::~VulkanComputePipeline()
 	{
-		if (m_Pipeline != VK_NULL_HANDLE || m_PipelineLayout != VK_NULL_HANDLE)
-		{
-			vkDeviceWaitIdle(m_Device);
-			Destroy();
-		}
+		Destroy();
 	}
 
 	VkShaderStageFlags VulkanComputePipeline::GetVkPushConstantStagesFor(const uint32_t offset, const uint32_t size) const
