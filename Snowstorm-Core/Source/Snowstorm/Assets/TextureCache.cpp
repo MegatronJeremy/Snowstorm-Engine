@@ -15,7 +15,7 @@ namespace Snowstorm
 		constexpr uint32_t kMagic = 0x58455453; // "STEX"
 		// v2: stores the full precomputed mip chain (v1 stored only the base level). Bumping forces a
 		// re-cook, which is fine — .sstex is a derived cache.
-		constexpr uint32_t kVersion = 5; // +BC5 (role-driven encoding)
+		constexpr uint32_t kVersion = 6; // +cook key in header, gamma-correct mips
 
 		struct Header
 		{
@@ -24,7 +24,7 @@ namespace Snowstorm
 			uint64_t SourceWriteTime = 0;
 			uint64_t SourceHash = 0;
 			uint32_t Encoding = 0; // CookedTexture::Encoding
-			uint32_t Pad = 0;      // keep the header 8-byte aligned
+			TextureCookKey Key;    // 4 bytes: keeps the header 8-byte aligned
 			uint32_t Width = 0;
 			uint32_t Height = 0;
 			uint32_t MipLevels = 0;
@@ -39,7 +39,8 @@ namespace Snowstorm
 		return p;
 	}
 
-	std::optional<CookedTexture> TextureCacheIO::Load(const AssetHandle handle, const std::filesystem::path& sourcePath)
+	std::optional<CookedTexture> TextureCacheIO::Load(const AssetHandle handle, const std::filesystem::path& sourcePath,
+	                                                  const TextureCookKey& key)
 	{
 		const auto path = GetCachePath(handle);
 
@@ -49,7 +50,7 @@ namespace Snowstorm
 
 		Header h{};
 		in.read(reinterpret_cast<char*>(&h), sizeof(h));
-		if (!in || h.Magic != kMagic || h.Version != kVersion)
+		if (!in || h.Magic != kMagic || h.Version != kVersion || !(h.Key == key))
 			return std::nullopt;
 
 		if (!SourceIsUnchanged(sourcePath, h.SourceWriteTime, h.SourceHash)) // source changed -> re-decode
@@ -85,7 +86,8 @@ namespace Snowstorm
 		return tex;
 	}
 
-	bool TextureCacheIO::Save(const AssetHandle handle, const std::filesystem::path& sourcePath, const CookedTexture& tex)
+	bool TextureCacheIO::Save(const AssetHandle handle, const std::filesystem::path& sourcePath, const CookedTexture& tex,
+	                          const TextureCookKey& key)
 	{
 		if (tex.Levels.empty() || tex.Width == 0 || tex.Height == 0)
 			return false;
@@ -97,6 +99,7 @@ namespace Snowstorm
 		Header h{};
 		h.SourceWriteTime = GetFileWriteTimeU64(sourcePath);
 		h.SourceHash = HashFileContents(sourcePath);
+		h.Key = key;
 		h.Width = tex.Width;
 		h.Height = tex.Height;
 		h.MipLevels = tex.MipLevels();

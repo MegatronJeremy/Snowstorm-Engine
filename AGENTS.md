@@ -862,6 +862,11 @@ texture leaves it Unknown and the conservative colour encoding wins.
 | tangent normal | **BC5**, 8 bpp | two independent 8-bit planes; z reconstructed in the shader |
 | metallic-roughness, AO | BC1, 4 bpp | measured adequate, see below |
 
+**Mips are filtered in the colour space of the role** (`MipSpaceFor`, `Render/TextureCook.cpp`): albedo in
+linear light (sRGB EOTF LUT, exact OETF on write), normals and masks as plain byte averages, alpha always
+linear. A role-Unknown texture follows the caller's `srgb` flag. The cache blob header carries role, mip
+space, compress flag and an encoder revision; a mismatch re-cooks.
+
 **BC7 is deliberately unused.** It is 8 bpp, the same as BC3 and double BC1, so promoting everything to
 it costs 51 MB -> 102 MB on this set and gives back half the saving. libsquish cannot emit it either. It
 is a per-texture escape hatch (Unreal's `TC_BC7`), not a default. `PixelFormat` already carries
