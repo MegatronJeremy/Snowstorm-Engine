@@ -91,6 +91,25 @@ namespace Snowstorm
 		return kExtensions;
 	}
 
+	std::filesystem::path DefaultImportFolder(const AssetType type)
+	{
+		switch (type)
+		{
+		case AssetType::Mesh:
+			return "meshes";
+		case AssetType::Texture:
+			return "textures";
+		case AssetType::Material:
+			return "materials";
+		case AssetType::Shader:
+			return "shaders";
+		case AssetType::Audio:
+			return "audio";
+		default:
+			return {};
+		}
+	}
+
 	ImportPlan PlanImport(const std::filesystem::path& source, const std::filesystem::path& projectDir,
 	                      const std::filesystem::path& destFolderRel)
 	{
