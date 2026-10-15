@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
 
 #include "Snowstorm/ECS/SystemManager.hpp"
+#include "Snowstorm/ECS/SystemSchedule.hpp"
 #include "Snowstorm/Systems/CoreSystems.hpp"
 #include "Snowstorm/World/World.hpp"
 
@@ -78,4 +80,62 @@ TEST_CASE("Every core system declares its access", "[ecs]")
 		INFO(name);
 		CHECK(access.Declared);
 	}
+}
+
+TEST_CASE("BuildSchedule: disjoint systems share a stage, conflicts keep registration order", "[ecs]")
+{
+	SystemAccess w = Declared(), r = Declared(), other = Declared(), r2 = Declared();
+	w.WriteComponents<A>();
+	r.ReadComponents<A>();
+	other.WriteComponents<B>();
+	r2.ReadComponents<A>();
+
+	using Stages = SystemSchedule;
+	CHECK(BuildSchedule({}).empty());
+	CHECK(BuildSchedule({w, other}) == Stages{{0, 1}});
+	CHECK(BuildSchedule({w, r}) == Stages{{0}, {1}});
+	CHECK(BuildSchedule({r, r2}) == Stages{{0, 1}});
+	// w -> r and w -> r2, the two readers share stage 1; `other` is free of both.
+	CHECK(BuildSchedule({w, r, other, r2}) == Stages{{0, 2}, {1, 3}});
+}
+
+TEST_CASE("BuildSchedule: structural and undeclared systems run alone", "[ecs]")
+{
+	SystemAccess a = Declared(), b = Declared(), structural, undeclared;
+	a.ReadComponents<A>();
+	b.ReadComponents<B>();
+	structural.Structural().WriteComponents<A>();
+
+	using Stages = SystemSchedule;
+	CHECK(BuildSchedule({a, structural, b}) == Stages{{0}, {1}, {2}});
+	CHECK(BuildSchedule({a, undeclared, b}) == Stages{{0}, {1}, {2}});
+}
+
+TEST_CASE("BuildSchedule: a tracked read follows a tracked write through the pseudo-resource", "[ecs]")
+{
+	SystemAccess mutator = Declared(), reader = Declared();
+	mutator.WriteComponents<A>().WriteResources<TrackingMapResource>();
+	reader.ReadComponents<B>().ReadResources<TrackingMapResource>();
+	// Disjoint components, but the unsynchronised tracking maps force an order.
+	CHECK(BuildSchedule({mutator, reader}) == SystemSchedule{{0}, {1}});
+}
+
+TEST_CASE("BuildSchedule: core systems schedule every system exactly once, in order per stage", "[ecs]")
+{
+	World world;
+	RegisterCoreSystems(world);
+	std::vector<SystemAccess> access;
+	for (const auto& [name, a] : world.GetSystemManager().DeclaredAccess())
+	{
+		access.push_back(a);
+	}
+	const auto stages = BuildSchedule(access);
+	size_t total = 0;
+	for (const auto& stage : stages)
+	{
+		REQUIRE_FALSE(stage.empty());
+		CHECK(std::is_sorted(stage.begin(), stage.end()));
+		total += stage.size();
+	}
+	CHECK(total == access.size());
 }

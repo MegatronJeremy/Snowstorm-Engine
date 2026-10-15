@@ -57,7 +57,7 @@ namespace Snowstorm
 	};
 
 	// Bump when an encoder setting changes cooked bytes without a layout change.
-	inline constexpr uint8_t kTextureEncoderRevision = 2; // 2: alpha colour BC3 -> BC7
+	inline constexpr uint8_t kTextureEncoderRevision = 3; // 3: alpha colour BC7 -> BC3 at the default tier, BC7 quick
 
 	class TextureCacheIO
 	{

@@ -3,6 +3,7 @@
 #include "Snowstorm/Render/TextureCook.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <vector>
 
 using namespace Snowstorm;
@@ -93,7 +94,8 @@ TEST_CASE("Encoding choice and format mapping", "[texturecook]")
 {
 	using E = CookedTexture::Encoding;
 	CHECK(ChooseEncoding(true, false, true) == E::BC5);
-	CHECK(ChooseEncoding(false, true, false) == E::BC7);
+	CHECK(ChooseEncoding(false, true, false) == E::BC3);
+	CHECK(ChooseEncoding(false, true, true) == E::BC7);
 	CHECK(ChooseEncoding(false, false, false) == E::BC1);
 	CHECK(ChooseEncoding(false, false, true) == E::BC7);
 
@@ -117,4 +119,30 @@ TEST_CASE("BC7 strips are 16 bytes per block, keep alpha, and abort", "[texturec
 
 	const std::atomic<bool> stop{true};
 	CHECK(CompressLevelBC7(img, w, h, false, stop).empty());
+}
+
+TEST_CASE("A noisy alpha texture cooks within a time budget at the default and BC7 tiers", "[texturecook]")
+{
+	constexpr uint32_t n = 256;
+	std::vector<uint8_t> img(static_cast<size_t>(n) * n * 4);
+	uint32_t s = 12345;
+	for (auto& b : img)
+	{
+		s = s * 1664525u + 1013904223u;
+		b = static_cast<uint8_t>(s >> 24);
+	}
+
+	const std::atomic<bool> run{false};
+	constexpr int kDxt5 = 4; // squish::kDxt5
+	constexpr auto kBudget = std::chrono::seconds(30);
+	const auto t0 = std::chrono::steady_clock::now();
+	const auto bc3 = CompressLevel(img, n, n, kDxt5, run);
+	const auto t1 = std::chrono::steady_clock::now();
+	const auto bc7 = CompressLevelBC7(img, n, n, true, run);
+	const auto t2 = std::chrono::steady_clock::now();
+
+	CHECK(bc3.size() == static_cast<size_t>(n / 4) * (n / 4) * 16);
+	CHECK(bc7.size() == bc3.size());
+	CHECK(t1 - t0 < kBudget);
+	CHECK(t2 - t1 < kBudget);
 }
