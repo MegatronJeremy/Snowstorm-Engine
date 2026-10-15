@@ -15,5 +15,18 @@ namespace Snowstorm
 		    .property("Tag", &TagComponent::Tag);
 	}
 
-	AUTO_REGISTER_COMPONENT(TagComponent);
+	namespace
+	{
+		// Identity and name live in the entity header of the scene file, not in "Components".
+		struct AutoRegister_TagComponent
+		{
+			AutoRegister_TagComponent()
+			{
+				ComponentRegisterOptions opts{};
+				opts.Structural = true;
+				RegisterComponent<TagComponent>(opts);
+			}
+		};
+		const AutoRegister_TagComponent s_autoRegister_TagComponent;
+	}
 }

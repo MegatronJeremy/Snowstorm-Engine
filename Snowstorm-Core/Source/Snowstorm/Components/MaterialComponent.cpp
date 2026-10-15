@@ -13,7 +13,8 @@ namespace Snowstorm
 
 		registration::class_<MaterialComponent>("Snowstorm::MaterialComponent")
 		    .property("Material", &MaterialComponent::Material)(
-		        metadata("AssetType", static_cast<int>(AssetType::Material)) // inspector asset picker filter
+		        metadata("AssetType", static_cast<int>(AssetType::Material)), // inspector asset picker filter
+		        metadata("JsonAlias", "$asset")                               // key written before scenes used reflected names
 		    );
 	}
 

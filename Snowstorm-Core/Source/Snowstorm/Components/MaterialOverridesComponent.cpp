@@ -1,6 +1,8 @@
 #include "MaterialOverridesComponent.hpp"
 #include "Snowstorm/Components/ComponentRegistry.hpp"
 
+#include "Snowstorm/Utility/JsonUtils.hpp"
+
 #include <rttr/registration.h>
 #include <imgui.h>
 
@@ -166,8 +168,8 @@ namespace Snowstorm
 		    value("Color", MaterialOverrideType::Color),
 		    value("Texture", MaterialOverrideType::Texture));
 
-		// The override list is serialized by the SceneSerializer override path (sparse JSON array),
-		// not by reflecting these fields; registration is kept for tooling/introspection.
+		// The override list is serialized by the component's SerializeFn/DeserializeFn (sparse JSON
+		// array), not by reflecting these fields; registration is kept for tooling/introspection.
 		registration::class_<MaterialOverride>("Snowstorm::MaterialOverride")
 		    .property("Name", &MaterialOverride::Name)
 		    .property("Type", &MaterialOverride::Type)
@@ -190,6 +192,63 @@ namespace Snowstorm
 				ComponentRegisterOptions opts{};
 				opts.Serializable = true;
 				opts.DrawInEditor = true;
+				opts.SerializeFn = [](const Entity e, nlohmann::json& out)
+				{
+					const auto& mo = e.GetComponent<MaterialOverridesComponent>();
+					out = nlohmann::json::object();
+					nlohmann::json arr = nlohmann::json::array();
+					for (const MaterialOverride& o : mo.Overrides)
+					{
+						nlohmann::json el = nlohmann::json::object();
+						el["Name"] = o.Name;
+						el["Type"] = MaterialOverrideTypeToString(o.Type);
+						switch (o.Type)
+						{
+						case MaterialOverrideType::Float:
+							el["Value"] = o.Scalar;
+							break;
+						case MaterialOverrideType::Color:
+							el["Value"] = {o.Color.x, o.Color.y, o.Color.z, o.Color.w};
+							break;
+						case MaterialOverrideType::Texture:
+							el["Value"] = o.Texture.ToString();
+							break;
+						}
+						arr.push_back(std::move(el));
+					}
+					out["Overrides"] = std::move(arr);
+				};
+				opts.DeserializeFn = [](Entity e, const nlohmann::json& in)
+				{
+					e.AddOrReplaceComponent<MaterialOverridesComponent>();
+					auto& mo = e.WriteComponent<MaterialOverridesComponent>();
+					mo.Overrides.clear();
+					if (!in.contains("Overrides") || !in["Overrides"].is_array())
+						return;
+					for (const auto& el : in["Overrides"])
+					{
+						MaterialOverride o;
+						o.Name = el.value("Name", "");
+						o.Type = MaterialOverrideTypeFromString(el.value("Type", "Float"));
+						const auto& val = el.contains("Value") ? el["Value"] : nlohmann::json{};
+						switch (o.Type)
+						{
+						case MaterialOverrideType::Float:
+							if (val.is_number())
+								o.Scalar = val.get<float>();
+							break;
+						case MaterialOverrideType::Color:
+							if (val.is_array() && val.size() == 4)
+								o.Color = {val[0].get<float>(), val[1].get<float>(), val[2].get<float>(), val[3].get<float>()};
+							break;
+						case MaterialOverrideType::Texture:
+							if (val.is_string())
+								o.Texture = UUID::FromString(val.get<std::string>());
+							break;
+						}
+						mo.Overrides.push_back(std::move(o));
+					}
+				};
 				opts.DrawFnOverride = [](const Entity e)
 				{ DrawMaterialOverridesUI(e); };
 				RegisterComponent<MaterialOverridesComponent>(opts);
