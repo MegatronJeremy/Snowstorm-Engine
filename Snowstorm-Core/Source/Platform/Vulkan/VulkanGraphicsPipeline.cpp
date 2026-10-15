@@ -354,8 +354,9 @@ namespace Snowstorm
 	void VulkanGraphicsPipeline::Build()
 	{
 		// --- Shader modules ---
-		const std::string vertPath = m_Desc.Shader->GetCompiledPath(ShaderStageKind::Vertex);
-		const std::string fragPath = m_Desc.Shader->GetCompiledPath(ShaderStageKind::Fragment);
+		const Shader::CompiledShader compiled = m_Desc.Shader->GetCompiled();
+		const std::string& vertPath = compiled.Vert;
+		const std::string& fragPath = compiled.Frag;
 
 		SS_CORE_ASSERT(!vertPath.empty(), "Shader returned empty compiled vertex SPIR-V path");
 		SS_CORE_ASSERT(!fragPath.empty(), "Shader returned empty compiled fragment SPIR-V path");
@@ -639,7 +640,7 @@ namespace Snowstorm
 
 		VulkanPipelineStats::Record(m_Device, m_Pipeline, m_Desc.Shader->GetPath());
 
-		m_BuiltShaderVersion = m_Desc.Shader->GetVersion();
+		m_BuiltShaderVersion = compiled.Version;
 	}
 
 	void VulkanGraphicsPipeline::Destroy()
