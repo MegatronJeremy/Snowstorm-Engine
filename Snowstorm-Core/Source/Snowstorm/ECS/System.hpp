@@ -2,7 +2,9 @@
 
 #include <entt/entt.hpp>
 
+#include <functional>
 #include <type_traits>
+#include <typeindex>
 #include <utility>
 #include <vector>
 
@@ -98,11 +100,10 @@ namespace Snowstorm
 		/// mutation APIs (those poke the shared change-tracking map and are not thread-safe). Distinct
 		/// entities map to distinct slots in EnTT's contiguous storage, so per-entity writes are race-free.
 		///
-		/// ChangedView semantics ARE preserved: because writes are declared, a single-threaded pass AFTER
-		/// the parallel barrier marks every Write<> component changed on the iterated entities (like DOTS
-		/// conservatively bumping a chunk's change-version on RW access). That merge is O(n) serial — a
-		/// deliberate Amdahl tail of the per-entity change-map (the honest next lift is per-archetype
-		/// change versions). Skipped entirely when no component is written.
+		/// ChangedView semantics ARE preserved: because writes are declared, the call records ONE bulk
+		/// marker after the parallel barrier covering the view's Write<> components (DOTS RW-access
+		/// conservatism). Recording is O(1) in entity count; the matching entities are enumerated lazily
+		/// by ChangedView/WasChanged. Skipped entirely when no component is written.
 		///
 		/// Falls back to a plain serial loop (still with the mark pass) when the `ecs.parallel` CVar is off
 		/// or there's no JobSystem — so it's a drop-in for a serial view loop and the benchmark is one flip.
@@ -178,6 +179,14 @@ namespace Snowstorm
 			return m_World->GetRegistry().ChangedView<Components...>();
 		}
 
+		/// True when any entity has all the specified components changed (AND). Prefer it to
+		/// `!ChangedView<...>().empty()`: it builds no result set.
+		template <typename... Components>
+		[[nodiscard]] bool AnyChanged() const
+		{
+			return m_World->GetRegistry().AnyChanged<Components...>();
+		}
+
 		/// Returns a WORLD-scoped singleton (per-scene state: input, editor commands, asset manager).
 		template <typename T>
 		[[nodiscard]] T& SingletonView()
@@ -219,28 +228,37 @@ namespace Snowstorm
 		mutable std::vector<entt::entity> m_ParallelScratch;
 
 		// Post-barrier: mark every Write<>-declared component changed on the iterated entities, so
-		// ChangedView<T> keeps working for the parallel loop. Single-threaded (touches the shared tracking
-		// map). Compiles to nothing when the access set has no Write<> tags.
+		// ChangedView<T> keeps working for the parallel loop. One bulk marker, O(1) in entity count (the
+		// matching entities are enumerated lazily when a consumer queries). Compiles to nothing when the
+		// access set has no Write<> tags.
 		template <typename... Access>
-		static void MarkWrittenChanged(TrackedRegistry& reg, const std::vector<entt::entity>& entities)
+		static void MarkWrittenChanged(TrackedRegistry& reg, const std::vector<entt::entity>&)
 		{
 			constexpr bool anyWrite = (Access::IsWrite || ...);
 			if constexpr (anyWrite)
 			{
-				for (const entt::entity e : entities)
-				{
-					// Fold over only the Write<> tags; Read<> tags expand to a no-op.
-					(MarkIfWrite<Access>(reg, e), ...);
-				}
+				std::vector<std::type_index> written;
+				(AppendIfWrite<Access>(written), ...);
+				reg.MarkChangedBulk(
+				    std::move(written),
+				    [](const TrackedRegistry& r, const entt::entity e)
+				    { return r.template all_of<typename Access::Component...>(e); },
+				    [](const TrackedRegistry& r, const std::function<void(entt::entity)>& visit)
+				    {
+					    for (const entt::entity e : r.template view<typename Access::Component...>())
+					    {
+						    visit(e);
+					    }
+				    });
 			}
 		}
 
 		template <typename A>
-		static void MarkIfWrite(TrackedRegistry& reg, const entt::entity e)
+		static void AppendIfWrite(std::vector<std::type_index>& out)
 		{
 			if constexpr (A::IsWrite)
 			{
-				reg.template MarkChanged<typename A::Component>(e);
+				out.emplace_back(typeid(typename A::Component));
 			}
 		}
 	};

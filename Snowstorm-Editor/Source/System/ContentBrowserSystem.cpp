@@ -12,6 +12,8 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <chrono>
+#include <future>
 #include <filesystem>
 
 namespace Snowstorm
@@ -140,8 +142,8 @@ namespace Snowstorm
 		// Auto-import: every discovered source file gets a registry handle so it is immediately
 		// usable in the inspector picker. Import is idempotent (case-insensitive dedup), so this is
 		// safe to run on every scan and never creates duplicates. This is the trivial current form of
-		// a real engine's import step (see CLAUDE.md "Think like a real engine"); the deliberate next
-		// step up is a file watcher so this happens without an explicit scan.
+		// a real engine's import step (see CLAUDE.md "Think like a real engine"). PollFileChanges calls
+		// this when the watcher sees a settled change, so no manual scan is needed.
 		auto& assets = m_World->GetSingleton<AssetManagerSingleton>();
 		bool importedAny = false;
 		for (const Entry& entry : m_Entries)
@@ -166,17 +168,57 @@ namespace Snowstorm
 		m_Scanned = true;
 	}
 
+	void ContentBrowserSystem::PollFileChanges()
+	{
+		constexpr double kWatchIntervalSeconds = 1.0;
+		const double now = ImGui::GetTime();
+
+		if (m_PendingScan.valid())
+		{
+			if (m_PendingScan.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+			{
+				return;
+			}
+			DirectorySnapshot snapshot = m_PendingScan.get();
+			if (!m_WatchSeeded)
+			{
+				m_Debouncer.Seed(std::move(snapshot));
+				m_WatchSeeded = true;
+			}
+			else if (!m_Debouncer.Update(snapshot, now).Empty())
+			{
+				Rescan();
+			}
+		}
+
+		if (now < m_NextPoll)
+		{
+			return;
+		}
+		m_NextPoll = now + kWatchIntervalSeconds;
+
+		const std::filesystem::path root = Project::GetActive()->GetAssetDirectory();
+		m_PendingScan = std::async(std::launch::async, [root]
+		                           { return ScanDirectory(root, "cache", [](const std::filesystem::path& p)
+			                                              {
+			                                                  std::string ext = p.extension().string();
+			                                                  std::ranges::transform(ext, ext.begin(), [](const unsigned char c)
+			                                                                         { return static_cast<char>(std::tolower(c)); });
+			                                                  return TypeFromExtension(ext) != AssetType::None; }); });
+	}
+
 	void ContentBrowserSystem::Execute(Timestep)
 	{
 		if (!m_Scanned)
 		{
 			Rescan();
 		}
+		PollFileChanges();
 
 		ImGui::Begin("Content Browser");
 
-		// Files under assets/ are auto-imported on scan, so this panel just lists them. Use Rescan
-		// after dropping in new files (until a file watcher makes even that unnecessary).
+		// Files under assets/ are auto-imported when they appear or change (file watcher); Rescan is the
+		// manual fallback.
 		if (ImGui::Button("Rescan"))
 		{
 			Rescan();

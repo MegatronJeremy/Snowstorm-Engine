@@ -86,7 +86,7 @@ namespace Snowstorm
 					                             mesh.MeshInstance, mat.MaterialInstance);
 				                  }
 
-				                  m_ShadowPass.RecordDepth(r, shadowDepthFmt, lightViewProj);
+				                  m_ShadowPass.RecordDepth(r, fc.FrameIndex, shadowDepthFmt, lightViewProj);
 				                  // The depth target is transitioned to shader-read by EndRenderPass (it's a
 				                  // sampleable depth attachment) — can't barrier inside the rendering instance.
 			                  }});
@@ -166,7 +166,7 @@ namespace Snowstorm
 					                  c.SetViewport(static_cast<float>(col * tilePx), static_cast<float>(row * tilePx),
 					                                static_cast<float>(tilePx), static_cast<float>(tilePx), 0.0f, 1.0f);
 					                  c.SetScissor(col * tilePx, row * tilePx, tilePx, tilePx);
-					                  m_ShadowPass.RecordDepth(r, atlasFmt, spot.ShadowViewProj);
+					                  m_ShadowPass.RecordDepth(r, fc.FrameIndex, atlasFmt, spot.ShadowViewProj);
 				                  }
 			                  }});
 		}
@@ -235,7 +235,7 @@ namespace Snowstorm
 					                  c.SetViewport(static_cast<float>(col * tilePx), static_cast<float>(row * tilePx),
 					                                static_cast<float>(tilePx), static_cast<float>(tilePx), 0.0f, 1.0f);
 					                  c.SetScissor(col * tilePx, row * tilePx, tilePx, tilePx);
-					                  m_ShadowPass.RecordDepth(r, atlasFmt, payload.Face[face]);
+					                  m_ShadowPass.RecordDepth(r, fc.FrameIndex, atlasFmt, payload.Face[face]);
 				                  }
 			                  }
 		                  }});
