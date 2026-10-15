@@ -543,6 +543,10 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   orientations were dropped as degenerate (yaw+pi was 99.7% dark; the side yaw 78.7% dark, 0%
   bright). Averaging across viewpoints is what `Scripts/quality-tune.py` minimizes, so a tuned
   parameter does not overfit one frame.
+- **LPIPS is reported, not gated.** When `torch` and `lpips` are importable (`pip install torch lpips`),
+  each technique line also prints LPIPS-AlexNet against the reference; otherwise a note says it is
+  skipped. It is never auto-installed and not stored in the baselines, since it varies with the torch
+  build and the weights download. In-engine LPIPS (#112) is not built: this is the offline path.
 - **Eight techniques**: `raster`, `ssao`, `rtao`, `ssr`, `rtrefl`, `ssgi`, `rtgi`, `all-rt`. Each is a
   full real-time render with that one technique on, TAA enabled.
 - **FLIP is pinned** to `flip-evaluator==1.7` (a perceptual metric that drifts between versions makes
