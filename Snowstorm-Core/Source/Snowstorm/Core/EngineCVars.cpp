@@ -16,9 +16,9 @@ namespace Snowstorm::CVars
 	                            "RGBA8 when a texture must not be quantized."};
 
 	CVar<int> TextureQuality{"cook.textures.quality", 0,
-	                         "Encoder tier for cooked colour textures: 0 = BC1 opaque (4 bpp), 1 = BC7 opaque "
-	                         "(8 bpp, doubles opaque albedo size). Colour with alpha is BC7 at either tier. "
-	                         "Normals stay BC5 and masks BC1."};
+	                         "Encoder tier for cooked colour textures: 0 = BC1 opaque, BC3 with alpha; 1 = BC7 "
+	                         "(8 bpp, doubles opaque albedo size, quick encoder); 2 = BC7 exhaustive "
+	                         "(minutes per 2K texture). Normals stay BC5 and masks BC1."};
 
 	CVar<bool> CookAssets{"cook.assets", false,
 	                      "Load every mesh, texture and material named by the project's asset registry so "

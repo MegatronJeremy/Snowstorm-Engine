@@ -164,13 +164,15 @@ namespace Snowstorm
 	}
 
 	// DirectXTex pads a partial edge block itself. TEX_COMPRESS_PARALLEL stays off: cook workers are the
-	// parallelism, and nested OpenMP would oversubscribe the JobSystem. A strip of whole block rows is
+	// parallelism, and nested OpenMP would oversubscribe the JobSystem. The default encoder search is
+	// exhaustive and takes minutes on a 2K level, so BC7_QUICK is used unless `exhaustive`. A strip of whole block rows is
 	// contiguous in the input and the output, so the concatenation equals one whole-image call.
 	std::vector<uint8_t> CompressLevelBC7(const std::vector<uint8_t>& rgba, const uint32_t w, const uint32_t h, const bool srgb,
-	                                      const std::atomic<bool>& aborted)
+	                                      const std::atomic<bool>& aborted, const bool exhaustive)
 	{
 		constexpr uint32_t kStripRows = 16;
 		constexpr size_t kBlockBytes = 16;
+		const DirectX::TEX_COMPRESS_FLAGS flags = exhaustive ? DirectX::TEX_COMPRESS_DEFAULT : DirectX::TEX_COMPRESS_BC7_QUICK;
 		const DXGI_FORMAT srcFormat = srgb ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB : DXGI_FORMAT_R8G8B8A8_UNORM;
 		const DXGI_FORMAT dstFormat = srgb ? DXGI_FORMAT_BC7_UNORM_SRGB : DXGI_FORMAT_BC7_UNORM;
 
@@ -192,7 +194,7 @@ namespace Snowstorm
 			src.pixels = const_cast<uint8_t*>(rgba.data() + static_cast<size_t>(y) * w * 4);
 
 			DirectX::ScratchImage dst;
-			if (FAILED(DirectX::Compress(src, dstFormat, DirectX::TEX_COMPRESS_DEFAULT, DirectX::TEX_THRESHOLD_DEFAULT, dst)))
+			if (FAILED(DirectX::Compress(src, dstFormat, flags, DirectX::TEX_THRESHOLD_DEFAULT, dst)))
 			{
 				return {};
 			}
@@ -212,8 +214,10 @@ namespace Snowstorm
 	{
 		if (tangentNormal)
 			return CookedTexture::Encoding::BC5;
-		if (hasAlpha || highQuality)
+		if (highQuality)
 			return CookedTexture::Encoding::BC7;
+		if (hasAlpha)
+			return CookedTexture::Encoding::BC3;
 		return CookedTexture::Encoding::BC1;
 	}
 
