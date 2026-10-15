@@ -525,11 +525,16 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
 `<path>_ldr.npy` and the script computes the metrics offline. The reference runs **unbiased**
 (`pathtrace.clamp` and `pathtrace.weightclamp` both 0).
 
-- **Runtime, not Editor.** Captures run `Snowstorm-Runtime` (fixed viewport, no editor panels), so
-  the framing is deterministic. Even so, every capture is bilinear-resampled to a canonical
-  **1024x576** before any metric, because the editor viewport size is not reproducible across
-  launches (1177x649 and 1817x1009 were both observed in one session) and a shape mismatch silently
-  breaks the comparison. A fixed-resolution render path would remove the resample.
+- **Runtime, not Editor.** Captures run `Snowstorm-Runtime` (no editor panels), and every capture
+  forces `render.resolution.width/height` to **1920x1080** (`CAPTURE_RESOLUTION`, the override perf-bench
+  pins), so the render size never follows the window (1177x649 and 1817x1009 were both observed in
+  one session before #162). Metrics are still computed after a bilinear downscale to **1024x576**
+  for cost, and as a safety net against a host that ignores the override. The cached PT references
+  are keyed with `_REF_CACHE_VERSION` (bumped to 2 with this change), so captures made at window
+  size are not reused. Committed quality baselines were captured at window size: re-capture them
+  with `--update-baseline` on each reference machine; until then expect small metric shifts.
+  `quality-motion.py` pins the same resolution for its route frames (and has its own cache version,
+  3), so its committed motion baselines need the same re-capture.
 - **Three Sponza viewpoints** (`atrium`, `floor`, `gallery`) share one position and vary orientation,
   covering content that stresses AO, GI and reflections differently. Two further candidate
   orientations were dropped as degenerate (yaw+pi was 99.7% dark; the side yaw 78.7% dark, 0%

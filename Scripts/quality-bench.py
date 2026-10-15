@@ -117,6 +117,11 @@ TECHNIQUES = {
 # fixed-resolution render (#162) is the cleaner fix that avoids the resample; this is the metric-domain one.
 CANON_W, CANON_H = 1024, 576
 
+# Render resolution every capture is forced to (render.resolution.width/height, the same override
+# perf-bench pins), so the target size no longer follows the window or the editor panel (#162). 16:9 and
+# larger than CANON, so the metric resample is a pure downscale of identical content on every machine.
+CAPTURE_RESOLUTION = (1920, 1080)
+
 
 def _resize_bilinear(img: "np.ndarray", out_h: int, out_w: int) -> "np.ndarray":
     in_h, in_w = img.shape[:2]
@@ -246,6 +251,8 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
     env["SS_STARTUP_SCENE"] = scene
     env["SS_VALIDATION_NONFATAL"] = "1"
     env["SS_CONFIG_IGNORE"] = "1"  # code defaults + these overrides only (baseline isolation)
+    env["SS_RENDER_RESOLUTION_WIDTH"] = str(CAPTURE_RESOLUTION[0])
+    env["SS_RENDER_RESOLUTION_HEIGHT"] = str(CAPTURE_RESOLUTION[1])
     env.update(env_overrides)
     if layer_path and layer_path.is_dir():
         env["VK_ADD_LAYER_PATH"] = str(layer_path)
@@ -294,8 +301,8 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
     # path, which never converges), "safety cap" means the frame cap cut it off with the image moving.
     if (m := re.search(r"Quality capture: wrote .* at frame (\d+) \((converged|safety cap|fixed window)\)", proc.stdout)):
         print(f"  captured at frame {m.group(1)} ({m.group(2)})")
-    # Normalize to the canonical metric resolution so window-size nondeterminism can't cause shape
-    # mismatches / non-comparable metrics (see CANON_W/H).
+    # Captures render at CAPTURE_RESOLUTION; the resample to CANON_W/H keeps metrics cheap and is a
+    # safety net should a host ignore the override.
     img = _resize_bilinear(np.load(ldr).astype(np.float64), CANON_H, CANON_W)
     return img, device
 
@@ -315,7 +322,7 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
 # not be compared. Rankings within one sweep survived that; nothing across tools did.
 REF_FRAMES_DEFAULT = 400
 
-_REF_CACHE_VERSION = 1  # bump to invalidate all cached references on a format/keying change
+_REF_CACHE_VERSION = 2  # bump to invalidate all cached references on a format/keying change
 _PT_SOURCES = ["Engine/Shaders/PathTrace.comp.hlsl", "Engine/Shaders/Include/Engine.hlsli"]
 
 
