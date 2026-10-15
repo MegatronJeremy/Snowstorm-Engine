@@ -225,8 +225,10 @@ float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, flo
 // Directional-sun shadow: RT ray query (when RTShadowEnabled) or the raster shadow map (dedicated map,
 // gated by ShadowMapIndex; 0 = no shadows). `Ng`/`L`/`pixelPos` are only used by the RT path.
 //
-// The three Sample*Shadow entry points take a `lightIdx` that is unique across ALL lights in the frame (sun 0,
-// point 1 + p, spot 1 + MAX_POINT_LIGHTS + s), used only to hand each light its own STBN dimension pair.
+// The three Sample*Shadow entry points take a `lightIdx` that is unique across ALL lights in the frame
+// (directional l, point MAX_DIRECTIONAL_LIGHTS + p, spot MAX_DIRECTIONAL_LIGHTS + MAX_POINT_LIGHTS + s), used
+// only to hand each light its own STBN dimension pair. Only light 0 has a raster map, so a secondary directional
+// is shadowed by RT alone and is unshadowed in raster mode.
 float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL, float2 pixelPos, uint lightIdx)
 {
 #if defined(SS_RAYTRACING) && defined(SS_LIT_INLINE_RT_SHADOWS)
@@ -241,7 +243,7 @@ float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL, float
 		return RayTraceShadow(positionWS, Ng, L, 1e30);
 	}
 #endif
-	if (ShadowMapIndex == 0)
+	if (ShadowMapIndex == 0 || lightIdx != 0u)
 	{
 		return 1.0;
 	}
@@ -640,7 +642,7 @@ float4 main(PSInput i) : SV_Target0
 		}
 		else
 		{
-			const float shadow = (l == 0) ? SampleSunShadow(i.PositionWS, N, L, ndl, i.PositionCS.xy, 0u) : 1.0;
+			const float shadow = SampleSunShadow(i.PositionWS, N, L, ndl, i.PositionCS.xy, uint(l));
 			Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * shadow;
 		}
 	}
@@ -672,7 +674,7 @@ float4 main(PSInput i) : SV_Target0
 		}
 		else
 		{
-			const float pointShadow = SamplePointShadow(PointLights[p], i.PositionWS, N, L, dist, ndl, i.PositionCS.xy, uint(1 + p));
+			const float pointShadow = SamplePointShadow(PointLights[p], i.PositionWS, N, L, dist, ndl, i.PositionCS.xy, uint(MAX_DIRECTIONAL_LIGHTS + p));
 			Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * pointShadow;
 		}
 	}
@@ -712,7 +714,7 @@ float4 main(PSInput i) : SV_Target0
 		}
 		else
 		{
-			const float spotShadow = SampleSpotShadow(SpotLights[s], i.PositionWS, N, L, dist, ndl, i.PositionCS.xy, uint(1 + MAX_POINT_LIGHTS + s));
+			const float spotShadow = SampleSpotShadow(SpotLights[s], i.PositionWS, N, L, dist, ndl, i.PositionCS.xy, uint(MAX_DIRECTIONAL_LIGHTS + MAX_POINT_LIGHTS + s));
 			Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * spotShadow;
 		}
 	}
