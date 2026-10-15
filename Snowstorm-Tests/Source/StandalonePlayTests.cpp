@@ -12,8 +12,9 @@ TEST_CASE("StandalonePlay candidates: beside the editor, then the sibling Runtim
 {
 	const auto c = StandalonePlay::RuntimeCandidates(fs::path("build") / "Snowstorm-Editor" / "Debug");
 	REQUIRE(c.size() == 2);
-	CHECK(c[0] == fs::path("build") / "Snowstorm-Editor" / "Debug" / "Snowstorm-Runtime.exe");
-	CHECK(c[1] == fs::path("build") / "Snowstorm-Runtime" / "Debug" / "Snowstorm-Runtime.exe");
+	// Compared as strings: Catch2 recurses forever stringifying a path, which is itself a range of paths.
+	CHECK(c[0].generic_string() == "build/Snowstorm-Editor/Debug/Snowstorm-Runtime.exe");
+	CHECK(c[1].generic_string() == "build/Snowstorm-Runtime/Debug/Snowstorm-Runtime.exe");
 }
 
 TEST_CASE("StandalonePlay command line quotes exe and scene", "[editor][standalone]")
@@ -26,7 +27,7 @@ TEST_CASE("StandalonePlay writes the scene verbatim", "[editor][standalone]")
 {
 	const fs::path dir = fs::temp_directory_path() / "ss-standalone-play-test";
 	const auto path = StandalonePlay::WriteTempScene(dir, "{\"a\":1}");
-	REQUIRE(!path.empty());
+	REQUIRE_FALSE(path.empty());
 	std::ifstream in(path, std::ios::binary);
 	std::stringstream ss;
 	ss << in.rdbuf();
