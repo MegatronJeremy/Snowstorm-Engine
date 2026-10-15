@@ -1,7 +1,9 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // Minimal console-variable (CVar) system.
@@ -147,16 +149,15 @@ namespace Snowstorm
 	class CVarRegistry
 	{
 	public:
-		// Auto-managed user-settings file (working-dir relative). The editor WRITES this on shutdown
-		// (SaveConfig) and reads it at startup (Initialize). Persistent CVars only, so one-shot/dev flags
-		// can't leak into it. This is a saved snapshot, not a place to author dev flags.
+		// Pre-#148 global settings file (working-dir relative). Only READ now, as a one-time fallback by
+		// LoadProjectSettings when the project has no Saved/Settings.cfg yet; never written.
 		static constexpr const char* kConfigPath = "SnowstormConfig.cfg";
 
 		// Optional hand-authored startup overrides (working-dir relative). READ at startup, NEVER written by
 		// the app — so it's the safe home for dev/machine toggles the editor's auto-save would otherwise
 		// clobber (e.g. validation.extra=true to debug with validation every launch, no rebuild). Honors ANY
 		// CVar (not just persistent ones), like env/CLI, since you authored it deliberately. Gitignored.
-		// Precedence: below env/CLI (a one-off --flag or SS_* still wins), above the saved settings file.
+		// Precedence: below env/CLI (a one-off --flag or SS_* still wins), above the project settings file.
 		static constexpr const char* kStartupConfigPath = "SnowstormStartup.cfg";
 
 		static CVarRegistry& Get();
@@ -182,8 +183,20 @@ namespace Snowstorm
 		// hand-edited settings file can't flip one-shot/destructive flags (smoke.frames, scene.bake) that
 		// must stay CLI/env-driven. false (the read-only startup file): apply ANY CVar — it's authored on
 		// purpose and never auto-written, so there's no clobber footgun.
-		void LoadConfig(const std::string& path, bool persistentOnly = true);
+		// `skip` names CVars not to touch; `appliedOut` collects the names that were set.
+		void LoadConfig(const std::string& path, bool persistentOnly = true,
+		                const std::unordered_set<std::string>* skip = nullptr,
+		                std::unordered_set<std::string>* appliedOut = nullptr);
 		void SaveConfig(const std::string& path) const;
+
+		// Per-project auto-saved settings (<projectDir>/Saved/Settings.cfg, see SettingsPaths.hpp). Initialize
+		// cannot know the project (startup.project may itself come from env/CLI, and a game picks its own
+		// default), so the host calls Load once the project is active. CVars that the startup file, env or CLI
+		// set keep that value, so the precedence default -> project settings -> startup -> env -> CLI holds.
+		// No-op under config.ignore. Falls back once to the legacy global file when the project has none.
+		void LoadProjectSettings(const std::filesystem::path& projectDir);
+		// Creates Saved/ if needed; no-op under config.ignore.
+		void SaveProjectSettings(const std::filesystem::path& projectDir) const;
 
 		// Reset every persistent CVar to its constructed default (the "Reset to Defaults" action). Dev/one-shot
 		// CVars (validation, smoke, ...) are left untouched — they aren't user settings. Returns the count reset.
@@ -192,5 +205,7 @@ namespace Snowstorm
 	private:
 		std::vector<ICVar*> m_Ordered;
 		std::unordered_map<std::string, ICVar*> m_ByName;
+		std::unordered_set<std::string> m_Overridden; // set by startup file / env / CLI during Initialize
+		bool m_IgnoreConfig = false;
 	};
 }
