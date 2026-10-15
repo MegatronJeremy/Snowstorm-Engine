@@ -248,6 +248,11 @@ namespace Snowstorm::CVars
 	// instead of a decorated 1280x720. Startup-only (the window is created once).
 	extern CVar<bool> Fullscreen;
 
+	// Editor CRT overlay: faint horizontal scanlines and a corner vignette drawn over the main viewport
+	// with an ImGui foreground draw list (no shader). Off by default.
+	extern CVar<bool> EditorCrt;
+	extern CVar<float> EditorCrtIntensity;
+
 	// Open an audio output device at startup. Off = the engine runs silently and every AudioService call
 	// is a no-op; nothing else changes.
 	extern CVar<bool> AudioEnabled;

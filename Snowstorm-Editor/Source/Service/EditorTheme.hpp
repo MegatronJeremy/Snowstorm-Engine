@@ -19,6 +19,10 @@ namespace Snowstorm::EditorTheme
 	// A red NERV-style warning banner: "■ <text>" on a dim red bar. For alerts/empty states.
 	void WarningBanner(const char* text);
 
+	// Scanlines and a corner vignette over the main viewport, gated by the editor.crt CVar. Call once per
+	// frame between NewFrame and Render; it draws on the foreground draw list, so it sits over every panel.
+	void DrawCrtOverlay();
+
 	// Apply the NERV/Evangelion-inspired ImGui style: near-black backgrounds, amber accent,
 	// sharp corners, hard borders, dense spacing. Call after ImGui::CreateContext().
 	void ApplyEvangelion();
