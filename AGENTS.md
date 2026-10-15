@@ -862,6 +862,15 @@ Two selection traps, both of which produced a wrong verdict here before being ca
 
 Report both anyway. The point is which one decides.
 
+## Descriptor sets
+
+Non-bindless `DescriptorSet`s allocate from `VulkanDescriptorAllocator`: pools shared by layout shape
+(descriptor-type counts, not layout identity), 64 sets doubling to 1024 per pool, `FREE_DESCRIPTOR_SET_BIT`,
+one retry on a fresh pool after OUT_OF_POOL_MEMORY/FRAGMENTED_POOL. Sets are freed `kRetireFrames` (3) frames
+after destruction by `BeginFrame` (same call site as `VulkanBindlessManager::AdvanceFrame`), so destroying a
+set no longer stalls the device. Pools live until `Shutdown`. The policy arithmetic is backend-free in
+`DescriptorPoolPolicy.hpp` (Catch2-tested); bindless keeps its own pool.
+
 ## Texture block compression
 
 `cook.textures.compress` block-compresses cooked textures, **on by default** after eyes-on confirmation on
