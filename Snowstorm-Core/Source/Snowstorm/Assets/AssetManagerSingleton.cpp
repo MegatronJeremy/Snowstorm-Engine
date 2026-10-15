@@ -19,6 +19,7 @@
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Assets/MaterialAssetIO.hpp"
 #include "Snowstorm/Render/ShaderParams.hpp"
+#include <format>
 #include <fstream>
 #include "Snowstorm/Utility/EnginePaths.hpp"
 #include "Snowstorm/Project/Project.hpp"
@@ -744,6 +745,15 @@ namespace Snowstorm
 		// Both meshes and textures still loading OR waiting for GPU finalize. (Textures re-queued past the
 		// per-frame finalize budget remain in m_InFlightTextures until actually finalized.)
 		return static_cast<uint32_t>(m_InFlightMeshes.size() + m_InFlightTextures.size());
+	}
+
+	std::string AssetManagerSingleton::UnsettledReason() const
+	{
+		if (const uint32_t pending = PendingLoadCount(); pending > 0)
+			return std::format("asset loading did not drain: {} / {} still pending", pending, m_PendingTotal);
+		if (const uint32_t placeholders = PlaceholderSlotCount(); placeholders > 0)
+			return std::format("{} texture slot(s) still show the placeholder", placeholders);
+		return {};
 	}
 
 	bool AssetManagerSingleton::IsTextureSlotResident(const uint32_t slot) const

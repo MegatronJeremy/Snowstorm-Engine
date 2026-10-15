@@ -32,6 +32,8 @@ namespace Snowstorm::CVars
 
 	CVar<int> SmokeFrames{"smoke.frames", 0, "Run N frames then exit cleanly (0 = until window closed)", CVarFlags::ReadOnly};
 
+	CVar<int> SmokeSettleSeconds{"smoke.settle.seconds", 120, "Smoke mode: after the frame budget, wait up to this many seconds for asset streaming to drain and no texture slot to remain a placeholder; log [error] if it does not (0 = do not wait, never fail on it).", CVarFlags::ReadOnly};
+
 	CVar<int> PerfBenchFrames{"perf.bench.frames", 0, "Headless GPU perf benchmark: run N frames accumulating per-pass GPU timings (past warmup), write averaged JSON to perf.bench.path, then exit (0 = off). Driven by Scripts/perf-bench.py.", CVarFlags::ReadOnly};
 
 	CVar<std::string> PerfBenchPath{"perf.bench.path", "perf-bench.json", "Output path for the perf.bench.frames JSON dump.", CVarFlags::ReadOnly};

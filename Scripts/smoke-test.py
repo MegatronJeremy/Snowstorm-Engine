@@ -20,6 +20,11 @@ Usage (from repo root or anywhere):
     py Scripts/smoke-test.py --scene Projects/Sandbox/assets/scenes/Sponza.world   # boot a specific scene
     py Scripts/smoke-test.py --cold --scene Projects/Sandbox/assets/scenes/Sponza.world  # wipe cook caches first
 
+After the frame budget the app also waits for asset streaming to drain (PendingLoadCount() == 0)
+and for every bindless texture slot to leave the placeholder; if that does not happen within
+timeout-10 seconds the engine logs an [error] and the run fails. Use --cold with --scene for a
+heavy scene so the cook path is covered, and raise --timeout (a cold Sponza cook is slow).
+
 Exit code: 0 if every target passed, 1 otherwise.
 
 The --cold flag deletes the cooked-asset caches (Engine/cache/mesh, Engine/cache/texture,
@@ -101,6 +106,10 @@ def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
 
     env = os.environ.copy()
     env["SS_SMOKE_FRAMES"] = str(frames)
+    # After the frame budget the app waits (up to this long) for asset streaming to drain and for no
+    # texture slot to remain a placeholder, and logs [error] otherwise. Without it a load that never
+    # finishes passes. Kept under the wall-clock timeout so the engine reports the reason first.
+    env["SS_SMOKE_SETTLE_SECONDS"] = str(max(1, timeout - 10))
     # Don't assert-and-die on the first Vulkan validation error; log them all and keep running so a
     # single smoke run surfaces every error at once. We detect failures by scanning the log below.
     env["SS_VALIDATION_NONFATAL"] = "1"
@@ -171,7 +180,7 @@ def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
             ok = False
 
     if ok:
-        print(f"  PASS: ran {frames} frames, exit 0, no error markers.")
+        print(f"  PASS: ran {frames} frames, assets settled, exit 0, no error markers.")
     return ok
 
 

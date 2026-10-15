@@ -37,6 +37,7 @@ namespace Snowstorm::CVars
 	// Run this many frames then exit cleanly (0 = run until the window closes). Used by the smoke
 	// test to drive the app headlessly.
 	extern CVar<int> SmokeFrames;
+	extern CVar<int> SmokeSettleSeconds;
 
 	// Headless GPU perf benchmark (local regression gate, GPU analogue of smoke.frames). When > 0, run
 	// this many frames accumulating per-pass GPU timings (RendererService::GetGpuPassTimes) past warmup,

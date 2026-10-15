@@ -68,6 +68,11 @@ namespace Snowstorm
 		// resident). PendingLoadTotal is the high-water mark since the queue was last empty, so a bar can
 		// show loaded/total.
 		[[nodiscard]] uint32_t PendingLoadCount() const;
+		// Bindless slots still showing the magenta placeholder. Non-zero after PendingLoadCount() reaches 0
+		// means a load failed and its slot was kept.
+		[[nodiscard]] uint32_t PlaceholderSlotCount() const { return static_cast<uint32_t>(m_PlaceholderSlots.size()); }
+		// "" when nothing is loading and no slot is a placeholder, else a one-line reason (smoke gate).
+		[[nodiscard]] std::string UnsettledReason() const;
 		[[nodiscard]] uint32_t PendingLoadTotal() const { return m_PendingTotal; }
 
 		// True when a bindless texture slot holds its REAL image, not the async magenta placeholder. Slot 0 =

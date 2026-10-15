@@ -16,6 +16,7 @@ namespace Snowstorm
 		void OnDetach() override;
 
 		void OnUpdate(Timestep ts) override;
+		std::string SmokeUnsettled() const override;
 
 	private:
 		// --- Project lifecycle (see Snowstorm/Project/Project.hpp + ProjectSerializer) ---
