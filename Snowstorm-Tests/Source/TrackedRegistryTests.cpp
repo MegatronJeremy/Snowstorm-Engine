@@ -197,3 +197,45 @@ TEST_CASE("Bulk change marker: AND semantics, removal and mixed explicit marks",
 	REQUIRE(reg.ChangedView<Position>().empty());
 	REQUIRE_FALSE(reg.AnyChanged<Position>());
 }
+
+TEST_CASE("destroy drops tracking state instead of recording a removal", "[ecs]")
+{
+	TrackedRegistry reg;
+	const auto e = reg.create();
+	reg.emplace<Position>(e);
+	reg.destroy(e);
+
+	REQUIRE(reg.WasDestroyed(e));
+	REQUIRE(reg.AddedView<Position>().empty());
+	REQUIRE(reg.RemovedView<Position>().empty());
+	REQUIRE(reg.ChangedView<Position>().empty());
+}
+
+TEST_CASE("multi-type views intersect per-type sets", "[ecs]")
+{
+	TrackedRegistry reg;
+	const auto both = reg.create();
+	const auto onlyPos = reg.create();
+	reg.emplace<Position>(both);
+	reg.emplace<Velocity>(both);
+	reg.emplace<Position>(onlyPos);
+
+	const auto added = reg.AddedView<Position, Velocity>();
+	REQUIRE(added.size() == 1);
+	REQUIRE(added.contains(both));
+	REQUIRE(reg.AddedView<Position>().size() == 2);
+	REQUIRE(reg.AnyChanged<Position, Velocity>());
+}
+
+TEST_CASE("replace and patch raise Changed through the update signal", "[ecs]")
+{
+	TrackedRegistry reg;
+	const auto e = reg.create();
+	reg.emplace<Position>(e);
+	reg.ClearTrackedComponents();
+
+	reg.patch<Position>(e, [](Position& p)
+	                    { p.x = 3; });
+	REQUIRE(reg.WasChanged<Position>(e));
+	REQUIRE_FALSE(reg.WasAdded<Position>(e));
+}
