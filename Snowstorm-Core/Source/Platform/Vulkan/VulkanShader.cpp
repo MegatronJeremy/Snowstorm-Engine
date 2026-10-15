@@ -5,6 +5,7 @@
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
+#include "Snowstorm/Render/ShaderCompile.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -35,24 +36,14 @@ namespace Snowstorm
 			return ss.str();
 		}
 
-		// Simple 64-bit FNV-1a hash (good enough for cache keys)
 		uint64_t Hash64(const void* data, const size_t size)
 		{
-			const uint8_t* p = static_cast<const uint8_t*>(data);
-			uint64_t h = 1469598103934665603ull;
-			for (size_t i = 0; i < size; ++i)
-			{
-				h ^= p[i];
-				h *= 1099511628211ull;
-			}
-			return h;
+			return ShaderHash64(data, size);
 		}
 
 		std::string ToHex64(const uint64_t v)
 		{
-			char buf[17]{};
-			std::snprintf(buf, sizeof(buf), "%016llx", static_cast<unsigned long long>(v));
-			return {buf};
+			return ShaderKeyToHex(v);
 		}
 
 		fs::path GetDxcExePath()
@@ -98,12 +89,6 @@ namespace Snowstorm
 		fs::path GetShaderCacheDir()
 		{
 			return GetEngineRoot() / "Engine" / "cache" / "shaders";
-		}
-
-		std::wstring QuoteArg(const std::wstring& s)
-		{
-			// Always quote; simplest.
-			return L"\"" + s + L"\"";
 		}
 
 		bool RunProcessCaptureExitCode(const std::wstring& exePath,
@@ -234,81 +219,19 @@ namespace Snowstorm
 		                         bool debug)
 		{
 			const std::wstring exe = dxcExe.wstring();
-			const std::wstring in = inputHlsl.wstring();
 			const std::wstring out = outputSpv.wstring();
 
-			// Include base is the shaders root; shaders reference headers explicitly as "Include/Foo.hlsli"
-			// (relative-to-file, so the IDE resolves them too — a bare "Foo.hlsli" needs the -I flag the IDE
-			// doesn't see). DXC also resolves quote-includes relative to the including file, so this -I is a
-			// belt-and-suspenders fallback.
-			const fs::path includePath = GetEngineRoot() / "Engine" / "Shaders";
-			const std::wstring includePathW = includePath.wstring();
-
-			std::wstring cmd;
-			cmd += QuoteArg(exe);
-			cmd += L" -spirv -E main -T ";
-			cmd += profile;
-			cmd += L" -fspv-target-env=vulkan1.2 -fvk-use-dx-layout -Zpr";
-			// Make 16-bit types (float16_t) available (SM6.2+, all our profiles are 6.5). Harmless for shaders
-			// that don't use them — it only enables the type, emits no code — so it's added unconditionally. The
-			// neural conv's fp16 permutation (SS_FP16) needs it; without the flag float16_t silently widens to
-			// fp32 (correct but no perf win). SPV_KHR_16bit_storage is in dxc's known set (probe-verified).
-			cmd += L" -enable-16bit-types";
-
-			// Preserve every declared descriptor binding even if unused, so the REFLECTED pipeline layout is
-			// stable regardless of optimization. Without it, dxc dead-strips unused bindings ONLY when
-			// optimizing (-Od keeps them), so an optimized shader and its -Od twin reflect different descriptor
-			// layouts (e.g. Sky.frag: 1 binding optimized vs 8 with -Od). Live-flipping render.shaders.debug
-			// then changes the layout, which the pipeline hot-reload can't hot-swap (cached descriptor sets are
-			// keyed to the old layout) -> stale-binding warnings + corrupted output. Preserving bindings makes
-			// both modes reflect the SAME layout, so the flip is a pure code swap. Also more correct in general:
-			// the reflected layout matches the shader's authored interface, not an opt-level-dependent subset.
-			cmd += L" -fspv-preserve-bindings";
-
-			// Variant defines: one `-D` per entry. The list is the generic permutation mechanism — a shader
-			// wraps optional features in `#ifdef NAME` and the caller resolves which NAMEs to enable, so no
-			// per-feature branch lives here. The same list keys the .spv cache (see CompileStageFileToSpirvCache)
-			// so distinct variants never collide.
-			bool rayTracing = false;
-			for (const std::string& def : defines)
-			{
-				cmd += L" -D ";
-				cmd += std::wstring(def.begin(), def.end()); // ASCII macro names only
-				if (def == "SS_RAYTRACING=1" || def == "SS_RAYTRACING")
-				{
-					rayTracing = true;
-				}
-			}
-
-			// --- OPTIMIZATION / DEBUG FLAGS (Unreal r.Shaders.Optimize model, render.shaders.debug CVar) ---
-			// Default (debug == false): ship optimized. Emit NO -Od/-Zi/-fspv-debug and let dxc optimize (its
-			// default is ~-O3). This is decoupled from the C++ build config on purpose — a Debug-C++ editor still
-			// runs optimized shaders (unoptimized is unusable even for gameplay). -Od used to be unconditional,
-			// which shipped fully unoptimized SPIR-V everywhere (e.g. the neural conv's acc[] register array
-			// spilled to global memory under -Od — the whole reason for this change).
-			//
-			// debug == true: the old behavior, now opt-in for source-stepping in RenderDoc/PIX.
-			//   -Zi: include debug information.
-			//   -Od: disable optimizations (makes debugging MUCH easier).
-			//   -fspv-debug=vulkan-with-source: rich SPIR-V debug info (source lines). OMITTED for the RT
-			//   permutation: dxc 1.9 crashes with an access violation when this NonSemantic-source debug info is
-			//   combined with inline ray query (a known dxc bug). -Zi/-Od still give usable debug info; only the
-			//   embedded-source detail is dropped, and only when SS_RAYTRACING is defined.
-			if (debug)
-			{
-				cmd += L" -Zi -Od";
-				if (!rayTracing)
-				{
-					cmd += L" -fspv-debug=vulkan-with-source";
-				}
-			}
-
-			cmd += L" -I ";
-			cmd += QuoteArg(includePathW);
-			cmd += L" -Fo ";
-			cmd += QuoteArg(out);
-			cmd += L" ";
-			cmd += QuoteArg(in);
+			// Include base is the shaders root; shaders reference headers as "Include/Foo.hlsli", relative to
+			// the file so the IDE resolves them too. -I is a fallback.
+			DxcRequest request;
+			request.dxcExe = exe;
+			request.profile = profile;
+			request.input = inputHlsl.wstring();
+			request.output = out;
+			request.includeDir = (GetEngineRoot() / "Engine" / "Shaders").wstring();
+			request.defines = defines;
+			request.debug = debug;
+			const std::wstring cmd = BuildDxcCommandLine(request);
 
 			DWORD exitCode = 1;
 			std::string dxcOutput;
@@ -367,28 +290,8 @@ namespace Snowstorm
 				return false;
 			}
 
-			// Cache key: hash(source + all .hlsli headers + a per-profile flags tag). Same recipe as the
-			// legacy path; the flags tag keeps vs/ps/cs caches distinct.
-			uint64_t h = 0;
-			h ^= Hash64(fullText.data(), fullText.size());
-			h ^= HashIncludeHeaders();
-			h ^= Hash64(flagsTag, std::strlen(flagsTag));
-			// Variant defines change the emitted SPIR-V, so every enabled define must key the cache — otherwise
-			// two variants of the same source would collide on one .spv. Hashed in order (the caller keeps the
-			// list order stable), so e.g. the effect-gated non-RT build of a shader on an RT GPU gets its own
-			// .spv distinct from the RT build. Generic: a new permutation axis needs no change here.
-			for (const std::string& def : defines)
-			{
-				h ^= Hash64(def.data(), def.size());
-			}
-			// Opt level keys the cache too (render.shaders.debug): the optimized and -Od SPIR-V for the same
-			// source+defines differ, so without this the two variants would collide on one .spv and a flip of
-			// the CVar would silently serve the stale one. (Optimized = default => no extra hash, so existing
-			// caches from before this change are re-keyed exactly once, on the debug side.)
-			if (debug)
-			{
-				h ^= Hash64("Od", 2);
-			}
+			// Defines and the opt level key the cache so variants never collide on one .spv.
+			const uint64_t h = ComputeShaderKey(fullText, HashIncludeHeaders(), flagsTag, defines, debug);
 
 			const std::string key = ToHex64(h);
 			const std::string stem = srcPath.stem().string(); // e.g. "Mesh.vert" -> "Mesh.vert"
