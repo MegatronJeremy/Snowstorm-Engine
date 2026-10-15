@@ -1223,7 +1223,6 @@ namespace Snowstorm
 		if (m_SmallHostBufferPool)
 		{
 			vmaDestroyPool(m_Allocator, m_SmallHostBufferPool);
-			m_SmallHostBufferPool = nullptr;
 		}
 		vmaDestroyAllocator(m_Allocator);
 
