@@ -103,8 +103,7 @@ namespace Snowstorm
 
 						if (BeginPropertyTable("##ov"))
 						{
-							// Stacked layout (label above full-width widget), matching the inspector — the
-							// property table is single-column now, so there is no column 1 to address.
+							// Name (with the remove button) in the label column, value in the value column.
 							ImGui::TableNextRow();
 							ImGui::TableSetColumnIndex(0);
 
@@ -119,6 +118,7 @@ namespace Snowstorm
 							ImGui::AlignTextToFramePadding();
 							ImGui::TextUnformatted(o.Name.c_str());
 
+							ImGui::TableSetColumnIndex(1);
 							ImGui::SetNextItemWidth(-FLT_MIN);
 							DrawOverrideValue(o);
 							EndPropertyTable();
