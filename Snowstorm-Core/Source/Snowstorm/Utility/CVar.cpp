@@ -1,6 +1,7 @@
 #include "CVar.hpp"
 
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Utility/SettingsPaths.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -300,19 +301,19 @@ namespace Snowstorm
 			ignoreConfig = ign->GetBool();
 		}
 
+		m_IgnoreConfig = ignoreConfig;
+
 		// Config sources (lowest priority; env + CLI below override them). Resolution order:
-		//   default -> saved settings -> startup overrides -> env -> CLI
+		//   default -> project settings (LoadProjectSettings, once the project is known) -> startup -> env -> CLI
 		if (ignoreConfig)
 		{
 			SS_CORE_INFO("CVar config: ignoring on-disk config (config.ignore) -- code defaults + env/CLI only.");
 		}
 		else
 		{
-			// 0a. Auto-saved user settings (persistent CVars only). The editor writes this on shutdown.
-			LoadConfig(kConfigPath, /*persistentOnly=*/true);
-			// 0b. Hand-authored startup overrides (any CVar; never written by the app). The safe place to keep
+			// Hand-authored startup overrides (any CVar; never written by the app). The safe place to keep
 			// dev/machine toggles (e.g. validation.extra=true) so the editor's auto-save can't clobber them.
-			LoadConfig(kStartupConfigPath, /*persistentOnly=*/false);
+			LoadConfig(kStartupConfigPath, /*persistentOnly=*/false, nullptr, &m_Overridden);
 		}
 
 		// 1. Environment (lower priority).
@@ -321,6 +322,7 @@ namespace Snowstorm
 			if (const char* env = std::getenv(cvar->GetEnvName().c_str()))
 			{
 				cvar->SetFromString(env);
+				m_Overridden.insert(cvar->GetName());
 			}
 		}
 
@@ -349,6 +351,7 @@ namespace Snowstorm
 			if (ICVar* cvar = Find(key))
 			{
 				cvar->SetFromString(value);
+				m_Overridden.insert(key);
 			}
 			else
 			{
@@ -368,7 +371,9 @@ namespace Snowstorm
 		}
 	}
 
-	void CVarRegistry::LoadConfig(const std::string& path, const bool persistentOnly)
+	void CVarRegistry::LoadConfig(const std::string& path, const bool persistentOnly,
+	                              const std::unordered_set<std::string>* skip,
+	                              std::unordered_set<std::string>* appliedOut)
 	{
 		std::ifstream file(path);
 		if (!file) // missing file (e.g. first run, or no startup-override file) is a normal no-op, not an error
@@ -428,7 +433,15 @@ namespace Snowstorm
 				SS_CORE_WARN("CVar config: '{0}' is not a persistent setting (ignored in {1})", key, path);
 				continue;
 			}
+			if (skip && skip->contains(key))
+			{
+				continue;
+			}
 			cvar->SetFromString(value);
+			if (appliedOut)
+			{
+				appliedOut->insert(key);
+			}
 			++applied;
 		}
 
@@ -457,6 +470,35 @@ namespace Snowstorm
 				file << cvar->GetName() << " = " << cvar->GetValueString() << "\n";
 			}
 		}
+	}
+
+	void CVarRegistry::LoadProjectSettings(const std::filesystem::path& projectDir)
+	{
+		if (m_IgnoreConfig)
+		{
+			return;
+		}
+		const std::string path = ProjectSettingsPath(projectDir).string();
+		std::error_code ec;
+		if (!std::filesystem::exists(path, ec) && std::filesystem::exists(kConfigPath, ec))
+		{
+			SS_CORE_INFO("CVar config: no {0} yet, migrating from legacy {1}", path, kConfigPath);
+			LoadConfig(kConfigPath, /*persistentOnly=*/true, &m_Overridden);
+			return;
+		}
+		LoadConfig(path, /*persistentOnly=*/true, &m_Overridden);
+	}
+
+	void CVarRegistry::SaveProjectSettings(const std::filesystem::path& projectDir) const
+	{
+		if (m_IgnoreConfig)
+		{
+			return;
+		}
+		const std::filesystem::path path = ProjectSettingsPath(projectDir);
+		std::error_code ec;
+		std::filesystem::create_directories(path.parent_path(), ec);
+		SaveConfig(path.string());
 	}
 
 	int CVarRegistry::ResetPersistentToDefaults()

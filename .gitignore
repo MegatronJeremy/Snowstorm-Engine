@@ -76,6 +76,8 @@ Makefile
 # Local user settings written by the editor on shutdown (persistent CVars). Machine-local
 # state, not project data: must not be committed.
 SnowstormConfig.cfg
+# Per-project settings (#148): Projects/<Name>/Saved/Settings.cfg, written by the editor on shutdown.
+Projects/*/Saved/
 # Hand-authored startup CVar overrides (dev/machine toggles like validation.extra); read at startup,
 # never written by the app. Machine-local, must not be committed.
 SnowstormStartup.cfg
