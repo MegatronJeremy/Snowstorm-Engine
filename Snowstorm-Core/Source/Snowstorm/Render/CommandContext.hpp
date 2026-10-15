@@ -20,6 +20,9 @@ namespace Snowstorm
 		float Milliseconds = 0.0f;
 		uint32_t Depth = 0;
 		uint64_t FragInvocations = 0; // fragment-shader invocations this pass (0 = unmeasured / compute pass)
+		uint64_t StartNs = 0;         // absolute device-clock start (raw ticks * timestampPeriod); 0 = not recorded
+		uint64_t EndNs = 0;
+		GpuQueue Queue = GpuQueue::Graphics;
 	};
 
 	class CommandContext

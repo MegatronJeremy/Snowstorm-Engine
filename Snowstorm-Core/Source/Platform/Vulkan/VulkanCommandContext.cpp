@@ -980,7 +980,14 @@ namespace Snowstorm
 					const uint64_t end = stamps[scope.StartQuery + 1];
 					const float ms = static_cast<float>(end - start) * m_TimestampPeriodNs * 1e-6f;
 					const uint64_t fi = (statsOk && scope.StatsQuery != UINT32_MAX) ? frags[scope.StatsQuery] : 0;
-					result.push_back({.Name = scope.Name, .Milliseconds = ms, .Depth = scope.Depth, .FragInvocations = fi});
+					const double nsPerTick = m_TimestampPeriodNs;
+					result.push_back({.Name = scope.Name,
+					                  .Milliseconds = ms,
+					                  .Depth = scope.Depth,
+					                  .FragInvocations = fi,
+					                  .StartNs = static_cast<uint64_t>(static_cast<double>(start) * nsPerTick),
+					                  .EndNs = static_cast<uint64_t>(static_cast<double>(end) * nsPerTick),
+					                  .Queue = m_Queue});
 				}
 			}
 		}
