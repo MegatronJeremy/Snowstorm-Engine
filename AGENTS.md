@@ -435,7 +435,8 @@ spot check compares its one shader and stays a genuine pass.
 **Input SPIR-V (two sources, one baseline).** Locally the gate reads `Engine/cache/shaders/`,
 populated by any editor build+run. But a clean checkout / CI has no cache and no GPU, so
 `Scripts/cook-shaders.py` compiles every shader offline with the engine's exact dxc flags
-(VulkanShader.cpp: profiles `vs/ps/cs_6_5`, entry `main`, `SS_RAYTRACING`/`SS_FP16` permutations)
+(`Tools/ShaderCook` includes `Render/ShaderCompile.hpp`, the same command-line builder the runtime
+calls; the script builds it on first use with plain CMake. Profiles `vs/ps/cs_6_5`, entry `main`, `SS_RAYTRACING`/`SS_FP16` permutations)
 into `Engine/cache/shaders-cook/`. The cook reproduces the runtime-cache numbers **bit-for-bit**, so
 both paths gate against the same committed baseline; the baseline is generated from the cook so it
 also covers shaders never exercised in a run (`Metrics.comp`, the `Neural*.comp` passes). The
@@ -450,9 +451,11 @@ py Scripts/rga-occupancy.py --spv-dir Engine/cache/shaders-cook
 Cooking the default `rt` variant alone drops the `base` permutation from every entry, so any shader
 whose worst case lives there is re-baselined to a weaker number and the local gate stops agreeing
 with CI. Pointing the gate at the runtime cache (`Engine/cache/shaders`, its default) is the other
-trap: a `--update-baseline` from there deletes the entries for shaders no editor run exercises. Keep
-`cook-shaders.py`'s flags in sync with VulkanShader.cpp: it is a deliberate second copy of them, with
-no shared source of truth. `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
+trap: a `--update-baseline` from there deletes the entries for shaders no editor run exercises. Call-site
+and dynamic permutations live in `Scripts/shader-permutations.txt`: add a line there when a call site
+starts passing a new define. The flags need no sync, since the runtime and the cook share
+`BuildDxcCommandLine`; `py Scripts/cook-shaders.py --dry-run` prints the planned command lines
+without dxc. `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
 expected the old `#type` split and silently compiled nothing).
 
 **This gate runs in CI** (`.github/workflows/shaders.yml`): unlike smoke-test and perf-bench, RGA is
