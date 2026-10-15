@@ -1065,6 +1065,17 @@ engine CVars are read per-frame through `.Get()` (shadows, IBL, exposure, shadow
 take effect immediately, and those marked `CVarFlags::Persist` are written back to
 `<project>/Saved/Settings.cfg` on shutdown.
 
+## Editor project selection
+
+The editor keeps a per-user recent-projects list in `%APPDATA%/Snowstorm/RecentProjects.json`
+(`RecentProjects.hpp`: newest first, capped at 10, written whenever a project opens). Boot order,
+decided by the pure `RecentProjects::DecideBoot`: an explicit `startup.project` (CLI/env/cfg, anything
+but the default) wins; else `--editor.picker` shows the start screen; else the most recent project that
+still exists opens directly; else the start screen shows. The start screen is a modal over the
+default project (recent list, New, Open, Continue); *File > Recent Projects* offers the same list.
+The Runtime keeps its implicit CWD project, and the Editor still falls back to one when the
+.ssproj is unreadable, so `Project::GetActive()` is non-null before the picker is dismissed.
+
 ## Layout
 
 ```

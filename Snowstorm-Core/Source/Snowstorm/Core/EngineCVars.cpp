@@ -120,6 +120,8 @@ namespace Snowstorm::CVars
 	// they're ReadOnly: change them in SnowstormStartup.cfg / CLI and relaunch.
 	CVar<std::string> StartupProject{"startup.project", "Projects/Sandbox/Sandbox.ssproj", "Path to the .ssproj loaded at startup (relative to the working directory = repo root). The engine boots this real project instead of synthesizing an implicit one at the CWD. If the file is missing/unreadable, falls back to an implicit CWD-rooted project so the engine still runs. Point --startup.project elsewhere to boot a different project.", CVarFlags::ReadOnly};
 
+	CVar<bool> EditorPicker{"editor.picker", false, "Force the editor's project start screen at boot even when a recent project exists. Without it the editor opens the most recent project directly (an explicit startup.project outranks both).", CVarFlags::ReadOnly};
+
 	CVar<std::string> StartupScene{"startup.scene", "", "Path to a .world to load at startup (empty = the active project's StartScene); e.g. Projects/Sandbox/assets/scenes/Sponza.world", CVarFlags::ReadOnly};
 
 	CVar<std::string> GpuSelect{"render.gpu", "", "Select the physical GPU by case-insensitive name substring (e.g. \"9070\", \"NVIDIA\") or candidate index (\"0\",\"1\"); empty = auto (rank by device type: discrete > integrated > virtual > cpu). Read once at device creation, so a change applies on the next launch. Persisted; the editor's GPU picker writes it.", CVarFlags::Persist};
