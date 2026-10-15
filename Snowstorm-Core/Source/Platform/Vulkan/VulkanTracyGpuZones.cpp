@@ -5,8 +5,11 @@
 #if defined(TRACY_ENABLE)
 #include <tracy/TracyC.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <string>
+#include <vector>
 #endif
 
 namespace Snowstorm
