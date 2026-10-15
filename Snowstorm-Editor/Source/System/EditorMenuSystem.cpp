@@ -19,6 +19,7 @@
 #include "Snowstorm/Assets/AssetCook.hpp"
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Project/Project.hpp"
+#include "Snowstorm/Project/RecentProjects.hpp"
 #include "Snowstorm/Utility/FileDialog.hpp"
 #include "Singletons/EditorNotificationsSingleton.hpp"
 #include "Singletons/EditorStatusBarSingleton.hpp"
@@ -149,6 +150,25 @@ namespace Snowstorm
 						const bool ok = cmds.OpenProject(ssprojPath);
 						notify.Push(ok ? "Project opened" : "Failed to open project", ok ? EditorToastType::Success : EditorToastType::Error);
 					}
+				}
+
+				if (ImGui::BeginMenu("Recent Projects", static_cast<bool>(cmds.OpenProject)))
+				{
+					std::vector<RecentProject> recents = RecentProjects::Load(RecentProjects::StorePath());
+					RecentProjects::Prune(recents, [](const std::filesystem::path& p)
+					                      { return std::filesystem::exists(p); });
+					if (recents.empty())
+						ImGui::TextDisabled("(none)");
+					for (const RecentProject& r : recents)
+					{
+						const std::string label = (r.Name.empty() ? r.Path.stem().string() : r.Name) + "##" + r.Path.generic_string();
+						if (ImGui::MenuItem(label.c_str()) && cmds.OpenProject)
+						{
+							const bool ok = cmds.OpenProject(r.Path);
+							notify.Push(ok ? "Project opened" : "Failed to open project", ok ? EditorToastType::Success : EditorToastType::Error);
+						}
+					}
+					ImGui::EndMenu();
 				}
 
 				if (ImGui::MenuItem("Save Project", nullptr, false, static_cast<bool>(cmds.SaveProject)))
@@ -342,6 +362,7 @@ namespace Snowstorm
 
 		DrawImportModelPopup(notify);
 		DrawNewProjectPopup(notify);
+		DrawStartScreen(notify);
 		DrawShortcutsWindow();
 
 		ImGui::End();
@@ -642,5 +663,68 @@ namespace Snowstorm
 
 			ImGui::EndPopup();
 		}
+	}
+
+	void EditorMenuSystem::DrawStartScreen(EditorNotificationsSingleton& notify)
+	{
+		auto& cmds = SingletonView<EditorCommandsSingleton>();
+		if (cmds.ShowStartScreen)
+		{
+			cmds.ShowStartScreen = false;
+			m_StartScreenRecents = RecentProjects::Load(RecentProjects::StorePath());
+			RecentProjects::Prune(m_StartScreenRecents, [](const std::filesystem::path& p)
+			                      { return std::filesystem::exists(p); });
+			ImGui::OpenPopup("Start");
+		}
+
+		const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+		ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+		ImGui::SetNextWindowSize(ImVec2(520.0f, 0.0f), ImGuiCond_Appearing);
+
+		if (!ImGui::BeginPopupModal("Start", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+			return;
+
+		ImGui::SeparatorText("Recent projects");
+		if (m_StartScreenRecents.empty())
+			ImGui::TextDisabled("No recent projects yet.");
+
+		for (const RecentProject& r : m_StartScreenRecents)
+		{
+			const std::string name = r.Name.empty() ? r.Path.stem().string() : r.Name;
+			ImGui::PushID(r.Path.generic_string().c_str());
+			if (ImGui::Selectable(name.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick) && cmds.OpenProject)
+			{
+				const bool ok = cmds.OpenProject(r.Path);
+				notify.Push(ok ? "Project opened" : "Failed to open project", ok ? EditorToastType::Success : EditorToastType::Error);
+				if (ok)
+					ImGui::CloseCurrentPopup();
+			}
+			ImGui::SameLine();
+			ImGui::TextDisabled("%s", r.Path.string().c_str());
+			ImGui::PopID();
+		}
+
+		ImGui::Separator();
+		if (ImGui::Button("New Project...", ImVec2(150.0f, 0.0f)))
+		{
+			m_ShowNewProjectPopup = true;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Open Project...", ImVec2(150.0f, 0.0f)) && cmds.OpenProject)
+		{
+			if (const std::filesystem::path p = FileDialog::OpenFile({{"Snowstorm Project", "ssproj"}}); !p.empty())
+			{
+				const bool ok = cmds.OpenProject(p);
+				notify.Push(ok ? "Project opened" : "Failed to open project", ok ? EditorToastType::Success : EditorToastType::Error);
+				if (ok)
+					ImGui::CloseCurrentPopup();
+			}
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Continue", ImVec2(150.0f, 0.0f)))
+			ImGui::CloseCurrentPopup();
+
+		ImGui::EndPopup();
 	}
 }

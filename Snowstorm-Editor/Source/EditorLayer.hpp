@@ -27,6 +27,8 @@ namespace Snowstorm
 		// with the newly-opened project's. Mirrors OnAttach's bootstrap, just for an explicit project
 		// instead of the implicit working-directory one. Returns false on a bad/missing .ssproj.
 		bool OpenProject(const std::filesystem::path& ssprojPath);
+		// Records the project in the per-user recent list (%APPDATA%/Snowstorm/RecentProjects.json).
+		void NoteProjectOpened(const Project& project) const;
 
 		// Serialize the active Project's ProjectConfig back to its .ssproj. Does NOT save the active
 		// scene (call SaveActiveScene separately, or see CloseProject which does both).
