@@ -6,7 +6,7 @@ using namespace Snowstorm;
 
 namespace
 {
-	GpuScope Scope(const char* name, uint32_t depth, uint64_t s, uint64_t e, GpuQueue q = GpuQueue::Graphics)
+	GpuScope MakeScope(const char* name, uint32_t depth, uint64_t s, uint64_t e, GpuQueue q = GpuQueue::Graphics)
 	{
 		GpuScope g;
 		g.Name = name;
@@ -21,8 +21,8 @@ namespace
 TEST_CASE("GPU zone events nest parent over child and sort by time", "[render][gpu]")
 {
 	// Sky is a child of Forward and shares both its start and its end.
-	const std::vector<GpuScope> scopes = {Scope("Forward", 0, 100, 200), Scope("Sky", 1, 100, 200),
-	                                      Scope("Post", 0, 200, 300)};
+	const std::vector<GpuScope> scopes = {MakeScope("Forward", 0, 100, 200), MakeScope("Sky", 1, 100, 200),
+	                                      MakeScope("Post", 0, 200, 300)};
 	const auto ev = BuildGpuZoneEvents(scopes, GpuQueue::Graphics);
 	REQUIRE(ev.size() == 6);
 	const uint32_t scopeOrder[6] = {0, 1, 1, 0, 2, 2};
@@ -36,7 +36,7 @@ TEST_CASE("GPU zone events nest parent over child and sort by time", "[render][g
 
 TEST_CASE("GPU zone events keep a zero-length scope begin before its end", "[render][gpu]")
 {
-	const auto ev = BuildGpuZoneEvents({Scope("Empty", 0, 50, 50)}, GpuQueue::Graphics);
+	const auto ev = BuildGpuZoneEvents({MakeScope("Empty", 0, 50, 50)}, GpuQueue::Graphics);
 	REQUIRE(ev.size() == 2);
 	CHECK(ev[0].Begin);
 	CHECK_FALSE(ev[1].Begin);
@@ -44,8 +44,8 @@ TEST_CASE("GPU zone events keep a zero-length scope begin before its end", "[ren
 
 TEST_CASE("GPU zone events filter by queue and drop unrecorded scopes", "[render][gpu]")
 {
-	const std::vector<GpuScope> scopes = {Scope("Gfx", 0, 10, 20), Scope("Comp", 0, 12, 18, GpuQueue::AsyncCompute),
-	                                      Scope("None", 0, 0, 0)};
+	const std::vector<GpuScope> scopes = {MakeScope("Gfx", 0, 10, 20), MakeScope("Comp", 0, 12, 18, GpuQueue::AsyncCompute),
+	                                      MakeScope("None", 0, 0, 0)};
 	CHECK(BuildGpuZoneEvents(scopes, GpuQueue::Graphics).size() == 2);
 	CHECK(BuildGpuZoneEvents(scopes, GpuQueue::AsyncCompute).size() == 2);
 }
