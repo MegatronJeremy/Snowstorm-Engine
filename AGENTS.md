@@ -32,6 +32,7 @@ any machine, driven by any agent, behaves the same.
   else outward-facing or hard to reverse (issue comments, remote branches, force pushes).
 - **One increment per step.** Each step leaves the repo building and runnable. Small reviewable
   changes beat big batches.
+- **A change to a showcased feature updates its page.** `docs/showcase/` pages carry measured numbers and images for a feature; the PR that changes the feature updates the page, its numbers (GPU, commit, date) and its images in the same PR.
 - **Prefer a short plan before touching a risky surface**: descriptor/binding layouts, serialization
   formats, shared or global state, public APIs. Two minutes of planning catches the class of bug that
   otherwise only surfaces after a full build and test cycle.
@@ -1188,6 +1189,7 @@ see, so treat it as part of the feature, not an afterthought.
   destroys. Undeclared means exclusive and main-thread-only. `SystemManager::DeclaredAccess()` lists them and
   `SystemAccess::ConflictsWith` is the pairwise rule, and `BuildSchedule` (`ECS/SystemSchedule.hpp`) layers one phase into stages from it; nothing executes from it yet
   (#85). A new core system needs a declaration (`SystemAccessTests` fails otherwise).
+- **Cluster grid math:** `Render/LightClusterMath.hpp` is the pure, GPU-free core of the planned clustered light cull (#66): exponential depth slices, analytic view-space cluster bounds, sphere-AABB overlap and a CPU reference cull (ascending index, fixed stride, overflow dropped). Nothing renders from it yet.
 - **Rendering:** backend-agnostic interfaces in `Render/` (`RendererAPI`, `Renderer`, `Pipeline`,
   `Shader`, `Buffer`, `Texture`, `Material`, `RenderGraph`, ...). The concrete implementation lives
   in `Platform/Vulkan/` (volk + Vulkan Memory Allocator + spirv-reflect; shaders compiled to SPIR-V
