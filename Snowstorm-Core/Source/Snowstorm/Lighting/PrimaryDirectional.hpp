@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <span>
+#include <vector>
 
 namespace Snowstorm
 {
@@ -25,5 +26,44 @@ namespace Snowstorm
 			}
 		}
 		return lights.size();
+	}
+
+	// Raster shadow slot per candidate, in the same order: -1 unshadowed, 0 the sun map (the primary, when
+	// it casts), s >= 1 a tile of the directional atlas. At most `maxCasters` lights are shadowed in
+	// total (the primary included, whether or not it casts: slot 0 is reserved for it), taken in
+	// registry order so a light's shadow never flips with its intensity. `Dropped` counts casters over budget.
+	struct DirectionalShadowSlots
+	{
+		std::vector<int> Slots;
+		int Dropped = 0;
+	};
+
+	[[nodiscard]] inline DirectionalShadowSlots SelectShadowDirectionals(
+	    std::span<const DirectionalShadowCandidate> lights, const int maxCasters, const int maxSecondary)
+	{
+		DirectionalShadowSlots out;
+		out.Slots.assign(lights.size(), -1);
+		const size_t primary = FindPrimaryDirectional(lights);
+		int nextSlot = 1;
+		for (size_t i = primary; i < lights.size(); ++i)
+		{
+			if (!lights[i].Enabled || !lights[i].CastShadows)
+			{
+				continue;
+			}
+			if (i == primary)
+			{
+				out.Slots[i] = 0;
+			}
+			else if (nextSlot <= maxCasters - 1 && nextSlot <= maxSecondary)
+			{
+				out.Slots[i] = nextSlot++;
+			}
+			else
+			{
+				++out.Dropped;
+			}
+		}
+		return out;
 	}
 }

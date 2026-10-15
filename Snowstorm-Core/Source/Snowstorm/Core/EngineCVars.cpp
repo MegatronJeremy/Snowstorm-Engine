@@ -202,6 +202,8 @@ namespace Snowstorm::CVars
 
 	CVar<int> ShadowResolution{"render.shadow.resolution", 2048, "Shadow-map resolution (square); changing it rebuilds the shadow target", CVarFlags::Persist};
 
+	CVar<int> ShadowDirectionals{"render.shadow.directionals", 1, "Directional lights that get a raster shadow map: the primary uses the sun map, up to 3 more share one atlas (each costs a full scene depth pass). 1 = primary only. Ray-traced shadows ignore this (every casting directional traces).", CVarFlags::Persist};
+
 	CVar<bool> ShadowSoft{"render.shadow.soft", true, "Soft shadows: 3x3 PCF for the raster shadow map; cone-sampled penumbra for RT shadows (each shadow ray jittered within the light's size, TAA-denoised). Off = hard single tap / single ray. Needs TAA (render.aa = TAA) for a clean RT penumbra.", CVarFlags::Persist};
 
 	CVar<float> ShadowStrength{"render.shadow.strength", 1.0f, "Shadow darkness (1 = full occlusion, 0 = none)", CVarFlags::Persist};

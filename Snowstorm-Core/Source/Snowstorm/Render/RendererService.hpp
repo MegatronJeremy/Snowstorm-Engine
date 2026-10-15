@@ -176,6 +176,7 @@ namespace Snowstorm
 		// + tile rects travel inside the GPUPointShadow entries; this is the one shared texture index the
 		// shader needs. Mirrors SetSpotShadowAtlasIndex.
 		void SetPointShadowAtlasIndex(const uint32_t index) { m_FrameData.Shadow.PointShadowAtlasIndex = index; }
+		void SetDirShadowAtlasIndex(const uint32_t index) { m_FrameData.Shadow.DirShadowAtlasIndex = index; }
 
 		// CPU-side directional-sun shadow fit, computed by LightingSystem (PreRender) and consumed by
 		// RenderSystem's directional shadow pass. This is the sun analogue of the per-spot fit that

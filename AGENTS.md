@@ -914,6 +914,16 @@ Sampling a BCn image requires `textureCompressionBC` **enabled**, not merely sup
 in `VulkanContext`; without that the cooked textures are invalid usage that desktop drivers happen to
 accept and validation does not flag.
 
+## Directional shadows
+
+`render.shadow.directionals` (default 1) is how many directionals get a raster shadow map. The primary (first
+enabled) keeps the dedicated sun map; up to 3 more get scene-fit tiles of one `DirAtlas` (2x2, each
+`render.shadow.resolution`), selected by `SelectShadowDirectionals` in registry order and over-budget lights
+render unshadowed with a one-shot warning. `GPUDirectionalLight::ShadowSlot` carries the choice to the shader
+(-1 none, 0 sun map, s >= 1 `DirShadows[s - 1]`). Ray-traced shadows ignore the budget: every casting
+directional traces. Secondary directionals still light the scene but are invisible to GI, reflections, the
+path tracer, the sky disc and IBL, which read `Lights[0]` only. Each secondary costs one full scene depth pass.
+
 ## Audio
 
 `AudioService` (miniaudio) owns the device and the mixer; `AudioSystem` turns `AudioSourceComponent`

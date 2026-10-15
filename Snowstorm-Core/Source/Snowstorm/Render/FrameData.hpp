@@ -32,6 +32,7 @@ namespace Snowstorm
 			uint32_t ShadowResolution = 2048;
 			uint32_t SpotShadowAtlasIndex = 0;  // bindless index of the spot shadow atlas (0 = spots unshadowed)
 			uint32_t PointShadowAtlasIndex = 0; // bindless index of the point shadow atlas (0 = points unshadowed)
+			uint32_t DirShadowAtlasIndex = 0;   // bindless index of the secondary-directional atlas (0 = none)
 		} Shadow;
 
 		// Baked IBL bindless indices (pushed by IBLBakePass; the maps live in that pass). IrradianceCubeIndex

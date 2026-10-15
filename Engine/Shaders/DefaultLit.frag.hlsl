@@ -227,13 +227,17 @@ float RayTraceSoftShadow(float3 positionWS, float3 Ng, float3 L, float tMax, flo
 //
 // The three Sample*Shadow entry points take a `lightIdx` that is unique across ALL lights in the frame
 // (directional l, point MAX_DIRECTIONAL_LIGHTS + p, spot MAX_DIRECTIONAL_LIGHTS + MAX_POINT_LIGHTS + s), used
-// only to hand each light its own STBN dimension pair. Only light 0 has a raster map, so a secondary directional
-// is shadowed by RT alone and is unshadowed in raster mode.
-float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL, float2 pixelPos, uint lightIdx)
+// only to hand each light its own STBN dimension pair. The primary uses the dedicated sun map, secondaries a tile of the
+// directional atlas (render.shadow.directionals); a light with ShadowSlot < 0 is unshadowed in both modes.
+float SampleSunShadow(DirectionalLight light, float3 positionWS, float3 Ng, float3 L, float NdotL, float2 pixelPos, uint lightIdx)
 {
 #if defined(SS_RAYTRACING) && defined(SS_LIT_INLINE_RT_SHADOWS)
 	if (RTShadowEnabled != 0)
 	{
+		if (light.ShadowSlot < 0)
+		{
+			return 1.0; // this light doesn't cast
+		}
 		// Soft (cone-sampled penumbra) when enabled: the sun's angular radius is already supplied as a
 		// cosine, so it feeds the cone sampler directly. Else the hard single ray. Sun is at infinity.
 		if (ShadowSoft != 0)
@@ -243,11 +247,24 @@ float SampleSunShadow(float3 positionWS, float3 Ng, float3 L, float NdotL, float
 		return RayTraceShadow(positionWS, Ng, L, 1e30);
 	}
 #endif
-	if (ShadowMapIndex == 0 || lightIdx != 0u)
+	if (light.ShadowSlot < 0)
 	{
 		return 1.0;
 	}
-	return SampleShadowFactor(ShadowMapIndex, LightViewProj, float4(0, 0, 1, 1), positionWS, Ng, NdotL);
+	if (light.ShadowSlot == 0)
+	{
+		if (ShadowMapIndex == 0)
+		{
+			return 1.0;
+		}
+		return SampleShadowFactor(ShadowMapIndex, LightViewProj, float4(0, 0, 1, 1), positionWS, Ng, NdotL);
+	}
+	if (DirShadowAtlasIndex == 0)
+	{
+		return 1.0;
+	}
+	const DirShadow payload = DirShadows[light.ShadowSlot - 1];
+	return SampleShadowFactor(DirShadowAtlasIndex, payload.ViewProj, payload.AtlasRect, positionWS, Ng, NdotL);
 }
 
 // Spot shadow: RT ray query (when RTShadowEnabled and this spot casts) or the shared raster atlas at the
@@ -642,7 +659,7 @@ float4 main(PSInput i) : SV_Target0
 		}
 		else
 		{
-			const float shadow = SampleSunShadow(i.PositionWS, N, L, ndl, i.PositionCS.xy, uint(l));
+			const float shadow = SampleSunShadow(DirectionalLights[l], i.PositionWS, N, L, ndl, i.PositionCS.xy, uint(l));
 			Lo += ShadePBR(N, V, L, F0, albedo, metallic, roughness, radiance) * shadow;
 		}
 	}
