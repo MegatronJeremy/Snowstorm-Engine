@@ -6,15 +6,23 @@ on:
     paths:
       - 'Engine/Shaders/**'
       - 'Scripts/cook-shaders.py'
+      - 'Scripts/shader-permutations.txt'
+      - 'Tools/ShaderCook/**'
+      - 'Snowstorm-Core/Source/Snowstorm/Render/ShaderCompile.hpp'
       - 'Scripts/rga-occupancy.py'
       - 'Scripts/test_rga_occupancy.py'
+      - 'Scripts/test_cook_shaders.py'
       - 'Scripts/rga-baseline/**'
   pull_request:
     paths:
       - 'Engine/Shaders/**'
       - 'Scripts/cook-shaders.py'
+      - 'Scripts/shader-permutations.txt'
+      - 'Tools/ShaderCook/**'
+      - 'Snowstorm-Core/Source/Snowstorm/Render/ShaderCompile.hpp'
       - 'Scripts/rga-occupancy.py'
       - 'Scripts/test_rga_occupancy.py'
+      - 'Scripts/test_cook_shaders.py'
       - 'Scripts/rga-baseline/**'
 
 concurrency:
@@ -36,6 +44,9 @@ jobs:
       # Unit-test the gate's pure logic (occupancy model, CSV parse) before spending time on RGA.
       - name: Unit tests (occupancy model)
         run: py Scripts/test_rga_occupancy.py
+
+      - name: Unit tests (cook plan)
+        run: py Scripts/test_cook_shaders.py
 
       # RGA is ~238MB; cache the pinned version so only the first run downloads it.
       - name: Cache Radeon GPU Analyzer

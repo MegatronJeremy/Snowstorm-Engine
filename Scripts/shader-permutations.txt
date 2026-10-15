@@ -1,0 +1,19 @@
+# Call-site and dynamic shader permutations, one per line: <shader stem> | <tag> | <defines...>
+# Read by Tools/ShaderCook, which crosses each line with the device-capability variants (rt, base).
+# Only combinations a call site actually requests belong here: the full cross product is how variant
+# counts explode. A shader without a line cooks once with no feature defines.
+#
+# Capability variants are alternatives on one device and fold to the worst case in the occupancy gate;
+# feature variants run simultaneously in one frame, so each is gated on its own.
+
+# Dynamic axis: ShaderReloadSystem swaps it in place from a frame-constant CVar.
+DefaultLit.frag | inlineshadow   | SS_LIT_INLINE_RT_SHADOWS=1
+DefaultLit.frag | noinlineshadow |
+
+# render.gi.restir selects a permutation at startup; the reservoir path is compiled out when off.
+GI.comp | restir   | SS_GI_RESTIR=1
+GI.comp | norestir |
+
+GIDenoise.comp | gi     |
+GIDenoise.comp | ao     | SS_DENOISE_HITDIST=1
+GIDenoise.comp | shadow | SS_DENOISE_PENUMBRA=1
