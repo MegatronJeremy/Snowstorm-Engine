@@ -37,12 +37,15 @@ TEST_CASE("ChangeDebouncer reports modification and removal", "[assets][watcher]
 	d.Seed({{"a.png", {1, 10}}, {"b.png", {1, 10}}});
 
 	DirectorySnapshot s{{"a.png", {2, 10}}};
-	d.Update(s, 0.0);
+	const auto first = d.Update(s, 0.0); // removal is reported immediately, modification waits to settle
+	REQUIRE(first.Removed.size() == 1);
+	CHECK(first.Removed[0] == "b.png");
+	CHECK(first.Settled.empty());
+
 	const auto c = d.Update(s, 0.1);
 	REQUIRE(c.Settled.size() == 1);
 	CHECK(c.Settled[0] == "a.png");
-	REQUIRE(c.Removed.size() == 1);
-	CHECK(c.Removed[0] == "b.png");
+	CHECK(c.Removed.empty());
 }
 
 TEST_CASE("ScanDirectory skips the named directory and rejected files", "[assets][watcher]")
