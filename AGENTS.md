@@ -1177,7 +1177,7 @@ see, so treat it as part of the feature, not an afterthought.
   components and resources (Singletons, Services, and the `TrackingMapResource` pseudo-resource for tracked
   mutators and `Init/Changed/FiniView`) it reads and writes, plus `Structural()` when it emplaces, removes or
   destroys. Undeclared means exclusive and main-thread-only. `SystemManager::DeclaredAccess()` lists them and
-  `SystemAccess::ConflictsWith` is the pairwise rule a scheduler will use; nothing schedules from it yet
+  `SystemAccess::ConflictsWith` is the pairwise rule, and `BuildSchedule` (`ECS/SystemSchedule.hpp`) layers one phase into stages from it; nothing executes from it yet
   (#85). A new core system needs a declaration (`SystemAccessTests` fails otherwise).
 - **Rendering:** backend-agnostic interfaces in `Render/` (`RendererAPI`, `Renderer`, `Pipeline`,
   `Shader`, `Buffer`, `Texture`, `Material`, `RenderGraph`, ...). The concrete implementation lives
