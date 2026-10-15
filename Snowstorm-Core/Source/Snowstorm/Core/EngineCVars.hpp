@@ -264,6 +264,9 @@ namespace Snowstorm::CVars
 	// project if the file is missing, so the engine still runs. Editor + Runtime both honor it.
 	extern CVar<std::string> StartupProject;
 
+	// Force the editor start screen even when a recent project exists.
+	extern CVar<bool> EditorPicker;
+
 	// Override the scene loaded at startup (path to a .world). Empty (default) uses the active project's
 	// StartScene. Lets the smoke harness boot any scene headlessly (e.g. load Sponza to exercise
 	// the PBR sampling path that Startup.world doesn't, without a manual Content Browser open).

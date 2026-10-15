@@ -51,8 +51,10 @@
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/World/SimulationStateSingleton.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
+#include <chrono>
 #include "Snowstorm/Project/Project.hpp"
 #include "Snowstorm/Project/ProjectSerializer.hpp"
+#include "Snowstorm/Project/RecentProjects.hpp"
 
 #include "StressScene.hpp"
 
@@ -89,9 +91,22 @@ namespace Snowstorm
 		// (registry, scenes, meshes, ...) resolves under Projects/Sandbox/, while engine assets (shaders,
 		// fonts, caches) stay CWD-relative at the repo root. If the .ssproj is missing/unreadable, fall
 		// back to a CWD-rooted implicit project so a stripped checkout still runs (fail-soft).
+		bool showStartScreen = false;
 		if (!Project::GetActive())
 		{
-			const std::filesystem::path ssproj = CVars::StartupProject.Get();
+			std::filesystem::path ssproj = CVars::StartupProject.Get();
+
+			// Start-screen policy (#105): an explicit startup.project wins, else the most recent project
+			// that still exists opens directly, else the picker shows over the default project.
+			const std::vector<RecentProject> recents = RecentProjects::Load(RecentProjects::StorePath());
+			const bool explicitStartup = ssproj != std::filesystem::path(CVars::StartupProject.GetDefault());
+			const BootDecision boot = RecentProjects::DecideBoot(
+			    recents, ssproj, explicitStartup, CVars::EditorPicker.Get(),
+			    [](const std::filesystem::path& p)
+			    { return std::filesystem::exists(p); });
+			if (boot.Action == BootAction::OpenRecent)
+				ssproj = boot.Path;
+			showStartScreen = boot.Action == BootAction::ShowPicker;
 			Ref<Project> project = CreateRef<Project>();
 			if (!ssproj.empty() && std::filesystem::exists(ssproj) && ProjectSerializer::Deserialize(*project, ssproj))
 			{
@@ -121,6 +136,11 @@ namespace Snowstorm
 		Renderer::SetVSync(CVars::VSync.Get());
 
 		InitializeActiveWorld();
+		// The default project behind the picker is a placeholder; recording it would reorder the user's recents.
+		if (!showStartScreen)
+			NoteProjectOpened(*activeProject);
+		else
+			m_ActiveWorld->GetSingleton<EditorCommandsSingleton>().ShowStartScreen = true;
 
 		LoadOrCreateStartupWorld();
 
@@ -405,12 +425,27 @@ namespace Snowstorm
 		// next Ctrl+S would overwrite that old file with this project's empty world.
 		m_ActiveScenePath = Project::GetActive()->GetStartScenePath().string();
 
+		NoteProjectOpened(*project);
+
 		for (const Scope<IEditorExtension>& extension : m_Extensions)
 		{
 			extension->OnProjectOpened(*project);
 		}
 
 		return true;
+	}
+
+	void EditorLayer::NoteProjectOpened(const Project& project) const
+	{
+		const std::filesystem::path file = RecentProjects::StorePath();
+		if (file.empty() || project.GetProjectFileName().empty())
+			return;
+
+		std::vector<RecentProject> recents = RecentProjects::Load(file);
+		const std::filesystem::path ssproj = project.GetProjectDirectory() / project.GetProjectFileName();
+		RecentProjects::Touch(recents, {std::filesystem::absolute(ssproj), project.GetConfig().Name,
+		                                std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count()});
+		RecentProjects::Save(file, recents);
 	}
 
 	bool EditorLayer::SaveProject() const

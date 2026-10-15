@@ -44,6 +44,10 @@ namespace Snowstorm
 		std::function<bool(const std::filesystem::path& /*ssprojPath*/)> OpenProject;
 		std::function<bool()> SaveProject;
 
+		// Set at boot when there was no explicit or recent project to open; the menu system shows the
+		// start screen (recent list + New/Open) until a project is picked or it is dismissed.
+		bool ShowStartScreen = false;
+
 		// Create a fresh, empty entity (Tag + ID only) and return it. Bound by the editor layer.
 		std::function<Entity()> CreateEntity;
 
