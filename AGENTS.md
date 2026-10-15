@@ -32,6 +32,7 @@ any machine, driven by any agent, behaves the same.
   else outward-facing or hard to reverse (issue comments, remote branches, force pushes).
 - **One increment per step.** Each step leaves the repo building and runnable. Small reviewable
   changes beat big batches.
+- **A change to a showcased feature updates its page.** `docs/showcase/` pages carry measured numbers and images for a feature; the PR that changes the feature updates the page, its numbers (GPU, commit, date) and its images in the same PR.
 - **Prefer a short plan before touching a risky surface**: descriptor/binding layouts, serialization
   formats, shared or global state, public APIs. Two minutes of planning catches the class of bug that
   otherwise only surfaces after a full build and test cycle.
@@ -943,6 +944,8 @@ render unshadowed with a one-shot warning. `GPUDirectionalLight::ShadowSlot` car
 (-1 none, 0 sun map, s >= 1 `DirShadows[s - 1]`). Ray-traced shadows ignore the budget: every casting
 directional traces. Secondary directionals still light the scene but are invisible to GI, reflections, the
 path tracer, the sky disc and IBL, which read `Lights[0]` only. Each secondary costs one full scene depth pass.
+
+`Render/CascadeMath.hpp` holds the pure cascade math for a future sun CSM (#58): practical split scheme, slice corners, sphere fit and texel-snapped ortho matrix. Nothing in the renderer calls it yet; `CascadeMathTests` cover it.
 
 ## Audio
 
