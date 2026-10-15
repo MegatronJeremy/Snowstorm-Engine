@@ -2,6 +2,7 @@
 
 #include "LightingComponents.hpp"
 #include "LightingUniforms.hpp"
+#include "PrimaryDirectional.hpp"
 
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
@@ -12,6 +13,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <cmath>
+#include <vector>
 
 namespace Snowstorm
 {
@@ -22,11 +24,20 @@ namespace Snowstorm
 
 		LightDataBlock lightData;
 		bool droppedLights = false;
-		// Primary sun = FIRST directional light (matches DirectionalLights[0] in the shader). Captured while
-		// iterating so the shadow fit below uses the same light the shader treats as the sun.
-		bool haveSun = false;
-		glm::vec3 sunDir{0.0f};
-		bool sunCasts = false;
+		// Primary sun = first ENABLED directional (DirectionalLights[0] in the shader); the shadow fit below
+		// uses the same light.
+		std::vector<DirectionalShadowCandidate> candidates;
+		std::vector<glm::vec3> candidateDirs;
+		for (auto entity : lightView)
+		{
+			const auto& dl = lightView.get<DirectionalLightComponent>(entity);
+			candidates.push_back({dl.Enabled, dl.CastShadows});
+			candidateDirs.push_back(dl.Direction);
+		}
+		const size_t sunIndex = FindPrimaryDirectional(candidates);
+		const bool haveSun = sunIndex < candidates.size();
+		const glm::vec3 sunDir = haveSun ? candidateDirs[sunIndex] : glm::vec3{0.0f};
+		const bool sunCasts = haveSun && candidates[sunIndex].CastShadows;
 		for (auto entity : lightView)
 		{
 			// LightDataBlock::Lights is a fixed GPUDirectionalLight[MAX_DIRECTIONAL_LIGHTS] mirrored on the
@@ -41,12 +52,6 @@ namespace Snowstorm
 			if (!directionalLight.Enabled) // per-light off: contributes no light and can't be the sun
 			{
 				continue;
-			}
-			if (!haveSun)
-			{
-				haveSun = true;
-				sunDir = directionalLight.Direction;
-				sunCasts = directionalLight.CastShadows;
 			}
 			lightData.Lights[lightData.LightCount++] = {
 			    .Direction = glm::normalize(directionalLight.Direction),
