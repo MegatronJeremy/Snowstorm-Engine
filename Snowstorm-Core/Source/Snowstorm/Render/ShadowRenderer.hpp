@@ -5,8 +5,6 @@
 
 namespace Snowstorm
 {
-	class World;
-
 	// Frame-global shadow phase, split out of RenderSystem (the "ShadowSystem" concern). Owns the shared
 	// ShadowPass (the depth pipeline + the directional map / spot atlas / point atlas targets) and appends
 	// the directional + spot + point shadow depth passes to the graph once per frame, before the per-viewport
@@ -18,14 +16,14 @@ namespace Snowstorm
 	class ShadowRenderer
 	{
 	public:
-		// Append the sun / spot / point shadow depth passes for this frame. `world` is needed only for the
-		// sun's scene-bounds fit (ShadowPass::ComputeSunViewProj). The pass Execute lambdas run later, in
+		// Append the sun / spot / point shadow depth passes for this frame. The sun fit comes from
+		// LightingSystem via RendererService::GetSunShadowFit. The pass Execute lambdas run later, in
 		// RenderGraph::Execute, so they capture fc by reference (it lives in RenderSystem::Execute) and read
 		// renderer/reg/ctx/frameIndex through it — never this method's locals (they'd dangle).
-		void RenderShadows(FrameContext& fc, World& world);
+		void RenderShadows(FrameContext& fc);
 
 	private:
-		void SetupDirectionalShadow(FrameContext& fc, World& world);
+		void SetupDirectionalShadow(FrameContext& fc);
 		void SetupSpotShadows(FrameContext& fc);
 		void SetupPointShadows(FrameContext& fc);
 
