@@ -401,6 +401,26 @@
       "isa_size": 400.0,
       "permutations": 2
     },
+    "ShadowMasked.frag": {
+      "vgprs": 5.0,
+      "sgprs": 22.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 220.0,
+      "permutations": 2
+    },
+    "ShadowMasked.vert": {
+      "vgprs": 24.0,
+      "sgprs": 50.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 460.0,
+      "permutations": 2
+    },
     "Sharpen.frag": {
       "vgprs": 42.0,
       "sgprs": 22.0,

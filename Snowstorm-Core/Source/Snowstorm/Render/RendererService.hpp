@@ -107,7 +107,13 @@ namespace Snowstorm
 		// it from there, NOT FrameCB), so the SAME accumulated batches can be re-rendered for multiple light
 		// views in one pass (the spot atlas draws each tile with a different matrix). No materials/bindless,
 		// no set 0. Instances are appended at the running cursor (NOT cleared: the camera pass owns clearing).
-		void DrawBatchesDepthOnly(const Ref<Pipeline>& depthPipeline, const glm::mat4& lightViewProj);
+		//
+		// With a non-null `maskedPipeline` (ShadowMasked.vert/frag: set 1 sampler = `maskedSamplerSet`, set 3
+		// bindless, alpha scalars in the push constant), batches whose material is alpha-masked are drawn
+		// through it instead, so foliage casts a cutout-shaped shadow. Opaque batches stay on `depthPipeline`.
+		void DrawBatchesDepthOnly(const Ref<Pipeline>& depthPipeline, const glm::mat4& lightViewProj,
+		                          const Ref<Pipeline>& maskedPipeline = {},
+		                          const Ref<DescriptorSet>& maskedSamplerSet = {});
 
 		// Draw the currently-accumulated batches through a velocity pipeline (VelocityPass, #44), emitting
 		// per-pixel screen-space motion. Like DrawBatchesDepthOnly but pushes BOTH matrices (viewProj and
