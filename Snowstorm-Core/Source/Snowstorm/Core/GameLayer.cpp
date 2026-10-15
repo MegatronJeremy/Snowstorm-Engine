@@ -66,6 +66,7 @@ namespace Snowstorm
 				project->SetProjectDirectory(std::filesystem::current_path());
 			}
 			Project::SetActive(project);
+			CVarRegistry::Get().LoadProjectSettings(project->GetProjectDirectory());
 		}
 
 		// Runtime systems resolve project-relative scenes/assets, so an active project is a host
