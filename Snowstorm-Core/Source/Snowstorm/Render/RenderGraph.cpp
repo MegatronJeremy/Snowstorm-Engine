@@ -206,6 +206,11 @@ namespace Snowstorm
 
 	std::vector<uint32_t> RenderGraph::BuildSchedule() const
 	{
+		return BuildSchedule(CVars::GraphReorder.Get() ? Renderer::GetSwapchainTarget() : nullptr);
+	}
+
+	std::vector<uint32_t> RenderGraph::BuildSchedule(const Ref<RenderTarget>& swapchain) const
+	{
 		const size_t count = m_Passes.size();
 		std::vector<uint32_t> order;
 		order.reserve(count);
@@ -226,7 +231,6 @@ namespace Snowstorm
 			remaining[i] = static_cast<uint32_t>(deps[i].size());
 		}
 
-		const Ref<RenderTarget> swapchain = Renderer::GetSwapchainTarget();
 		std::vector<bool> terminal(count, false);
 		for (size_t i = 0; i < count; ++i)
 		{
