@@ -25,6 +25,8 @@ namespace Snowstorm
 
 	// Runs `destroy` once every in-flight frame that could reference the resource has completed (immediately
 	// when the renderer is not running). Use in destructors of GPU objects instead of vkDeviceWaitIdle.
+	// Drains that remain on purpose: renderer/bindless shutdown, swapchain recreate (old images are
+	// re-wrapped as textures), and VulkanTlas::Build (host-visible instance/scratch buffers are reused).
 	void RetireVulkanObject(std::function<void()> destroy);
 	void AdvanceVulkanRetireQueue();
 	void FlushVulkanRetireQueue();

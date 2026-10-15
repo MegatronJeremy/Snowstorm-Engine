@@ -70,16 +70,28 @@ namespace Snowstorm
 
 	VulkanTlas::~VulkanTlas()
 	{
-		vkDeviceWaitIdle(GetVulkanDevice());
-		Destroy();
-		if (m_InstanceBuffer != VK_NULL_HANDLE)
-		{
-			vmaDestroyBuffer(GetAllocator(), m_InstanceBuffer, m_InstanceAllocation);
-		}
-		if (m_ScratchBuffer != VK_NULL_HANDLE)
-		{
-			vmaDestroyBuffer(GetAllocator(), m_ScratchBuffer, m_ScratchAllocation);
-		}
+		RetireVulkanObject(
+		    [device = GetVulkanDevice(), allocator = GetAllocator(), as = m_AccelStruct, asBuffer = m_AsBuffer,
+		     asAllocation = m_AsAllocation, instBuffer = m_InstanceBuffer, instAllocation = m_InstanceAllocation,
+		     scratchBuffer = m_ScratchBuffer, scratchAllocation = m_ScratchAllocation]
+		    {
+			    if (as != VK_NULL_HANDLE)
+			    {
+				    vkDestroyAccelerationStructureKHR(device, as, nullptr);
+			    }
+			    if (asBuffer != VK_NULL_HANDLE)
+			    {
+				    vmaDestroyBuffer(allocator, asBuffer, asAllocation);
+			    }
+			    if (instBuffer != VK_NULL_HANDLE)
+			    {
+				    vmaDestroyBuffer(allocator, instBuffer, instAllocation);
+			    }
+			    if (scratchBuffer != VK_NULL_HANDLE)
+			    {
+				    vmaDestroyBuffer(allocator, scratchBuffer, scratchAllocation);
+			    }
+		    });
 	}
 
 	void VulkanTlas::Destroy()
@@ -105,7 +117,8 @@ namespace Snowstorm
 
 		// The previous AS/backing must be torn down before we build a new one (rebuild-each-call). The GPU
 		// isn't using it here — TlasBuildSystem runs in PreRender, before this frame's ray-query pass, and the
-		// prior build's ImmediateSubmit already fenced. A device wait keeps it simple and safe at this scale.
+		// prior build's ImmediateSubmit already fenced. The drain stays: the host-visible instance and scratch
+		// buffers are reused across rebuilds, so a GPU read of them in an earlier frame would race the write.
 		vkDeviceWaitIdle(device);
 		Destroy();
 
