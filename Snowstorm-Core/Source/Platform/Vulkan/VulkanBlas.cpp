@@ -208,14 +208,23 @@ namespace Snowstorm
 
 	VulkanBlas::~VulkanBlas()
 	{
-		vkDeviceWaitIdle(GetVulkanDevice());
-		if (m_AccelStruct != VK_NULL_HANDLE)
+		if (m_AccelStruct == VK_NULL_HANDLE && m_Buffer == VK_NULL_HANDLE)
 		{
-			vkDestroyAccelerationStructureKHR(GetVulkanDevice(), m_AccelStruct, nullptr);
+			return;
 		}
-		if (m_Buffer != VK_NULL_HANDLE)
-		{
-			vmaDestroyBuffer(GetAllocator(), m_Buffer, m_Allocation);
-		}
+		// A TLAS built in a still-in-flight frame may reference this BLAS: retire, never drain.
+		RetireVulkanObject(
+		    [device = GetVulkanDevice(), allocator = GetAllocator(), as = m_AccelStruct, buffer = m_Buffer,
+		     allocation = m_Allocation]
+		    {
+			    if (as != VK_NULL_HANDLE)
+			    {
+				    vkDestroyAccelerationStructureKHR(device, as, nullptr);
+			    }
+			    if (buffer != VK_NULL_HANDLE)
+			    {
+				    vmaDestroyBuffer(allocator, buffer, allocation);
+			    }
+		    });
 	}
 }
