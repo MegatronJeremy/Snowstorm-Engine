@@ -132,7 +132,9 @@ namespace Snowstorm
 			int squishFormat = 0;
 			if (!bc7)
 			{
-				squishFormat = tangentNormal ? squish::kBc5 : squish::kDxt1;
+				squishFormat = tangentNormal                                   ? squish::kBc5
+				               : cooked.Format == CookedTexture::Encoding::BC3 ? squish::kDxt5
+				                                                               : squish::kDxt1;
 			}
 
 			uint32_t lw = cooked.Width, lh = cooked.Height;
@@ -142,7 +144,8 @@ namespace Snowstorm
 				{
 					return std::nullopt;
 				}
-				cooked.Levels[i] = bc7 ? CompressLevelBC7(cooked.Levels[i], lw, lh, mipSpace == MipSpace::SRGB, g_CookAborted)
+				cooked.Levels[i] = bc7 ? CompressLevelBC7(cooked.Levels[i], lw, lh, mipSpace == MipSpace::SRGB, g_CookAborted,
+				                                          CVars::TextureQuality.Get() > 1)
 				                       : CompressLevel(cooked.Levels[i], lw, lh, squishFormat, g_CookAborted);
 				if (cooked.Levels[i].empty())
 				{

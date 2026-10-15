@@ -42,10 +42,10 @@ namespace Snowstorm
 	// RGBA8 -> BC7 for one mip (DirectXTex, CPU), in strips like CompressLevel. `srgb` selects the colour
 	// space the encoder measures error in; it must match the mip space and the sampled format.
 	[[nodiscard]] std::vector<uint8_t> CompressLevelBC7(const std::vector<uint8_t>& rgba, uint32_t w, uint32_t h, bool srgb,
-	                                                    const std::atomic<bool>& aborted);
+	                                                    const std::atomic<bool>& aborted, bool exhaustive = false);
 
-	// Encoding the cook picks. `highQuality` promotes opaque colour from BC1 to BC7; colour with alpha is
-	// always BC7 (same 8 bpp as BC3, better quality); tangent-space normals stay BC5.
+	// Encoding the cook picks. `highQuality` promotes colour, opaque or with alpha, to BC7; at the default
+	// tier colour with alpha is BC3 and opaque colour BC1; tangent-space normals stay BC5.
 	[[nodiscard]] CookedTexture::Encoding ChooseEncoding(bool tangentNormal, bool hasAlpha, bool highQuality);
 
 	// Vulkan format for a cooked encoding. BC5 has no sRGB variant.
