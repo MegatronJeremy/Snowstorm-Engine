@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <typeindex>
 #include <functional>
+#include <memory>
 #include <vector>
 #include <utility>
 
@@ -17,13 +18,15 @@ namespace Snowstorm
 	// - "Open Scene" / "Load Scene" wants hard reset semantics (Clear).
 	// - Systems sometimes want to react only to "added/removed/changed" components.
 	//
+	// - Added/Removed/Changed are fed by EnTT's on_construct/on_update/on_destroy signals into one set per
+	//   component type, so a view costs O(entities carrying that mark), not O(all tracked entities).
 	// - If you want "ChangedView" to mean something real, mutate components only through
 	//   TrackedRegistry APIs (Write/patch/replace/emplace_or_replace).
 	// - Directly taking a non-const reference via get<T>() and writing to it cannot be reliably tracked in C++.
 	class TrackedRegistry
 	{
 	public:
-		TrackedRegistry() = default;
+		TrackedRegistry() : m_State(std::make_unique<State>()) {}
 
 		// ---------------------------------------------------------------------
 		// Entity lifetime
@@ -38,14 +41,12 @@ namespace Snowstorm
 		/// Destroys an entity and tracks that it was destroyed this frame
 		void destroy(const entt::entity entity)
 		{
-			m_DestroyedEntities.insert(entity);
+			m_State->DestroyedEntities.insert(entity);
 
-			// Drop any per-entity tracking state
-			m_AddedComponents.erase(entity);
-			m_RemovedComponents.erase(entity);
-			m_ChangedComponents.erase(entity);
-
+			// The on_destroy listeners drop the entity's per-type state instead of recording a removal.
+			m_State->Destroying = true;
 			m_Registry.destroy(entity);
+			m_State->Destroying = false;
 		}
 
 		// ---------------------------------------------------------------------
@@ -55,57 +56,35 @@ namespace Snowstorm
 		template <typename T, typename... Args>
 		T& emplace(const entt::entity entity, Args&&... args)
 		{
-			const std::type_index typeIndex(typeid(T));
-
-			m_RemovedComponents[entity].erase(typeIndex);
-			m_AddedComponents[entity].insert(typeIndex);
-			m_ChangedComponents[entity].insert(typeIndex);
-
+			Track<T>();
 			return m_Registry.emplace<T>(entity, std::forward<Args>(args)...);
 		}
 
 		template <typename T, typename... Args>
 		T& emplace_or_replace(const entt::entity entity, Args&&... args)
 		{
-			const std::type_index typeIndex(typeid(T));
-			const bool existed = m_Registry.any_of<T>(entity);
-
-			m_ChangedComponents[entity].insert(typeIndex);
-
-			if (!existed)
-			{
-				m_RemovedComponents[entity].erase(typeIndex);
-				m_AddedComponents[entity].insert(typeIndex);
-			}
-
+			Track<T>();
 			return m_Registry.emplace_or_replace<T>(entity, std::forward<Args>(args)...);
 		}
 
 		template <typename T>
 		T& replace(const entt::entity entity, const T& value)
 		{
-			const std::type_index typeIndex(typeid(T));
-			m_ChangedComponents[entity].insert(typeIndex);
+			Track<T>();
 			return m_Registry.replace<T>(entity, value);
 		}
 
 		template <typename T>
 		void remove(const entt::entity entity)
 		{
-			const std::type_index typeIndex(typeid(T));
-
-			m_AddedComponents[entity].erase(typeIndex);
-			m_ChangedComponents[entity].erase(typeIndex);
-			m_RemovedComponents[entity].insert(typeIndex);
-
+			Track<T>();
 			m_Registry.remove<T>(entity);
 		}
 
 		template <typename T, typename Func>
 		void patch(const entt::entity entity, Func&& fn)
 		{
-			const std::type_index typeIndex(typeid(T));
-			m_ChangedComponents[entity].insert(typeIndex);
+			Track<T>();
 			m_Registry.patch<T>(entity, std::forward<Func>(fn));
 		}
 
@@ -113,8 +92,7 @@ namespace Snowstorm
 		template <typename T>
 		T& Write(const entt::entity entity)
 		{
-			const std::type_index typeIndex(typeid(T));
-			m_ChangedComponents[entity].insert(typeIndex);
+			Track<T>().Changed.insert(entity);
 			return m_Registry.get<T>(entity);
 		}
 
@@ -127,7 +105,7 @@ namespace Snowstorm
 		template <typename... Ts>
 		void MarkChanged(const entt::entity entity)
 		{
-			(m_ChangedComponents[entity].insert(std::type_index(typeid(Ts))), ...);
+			(Track<Ts>().Changed.insert(entity), ...);
 		}
 
 		using BulkContains = bool (*)(const TrackedRegistry&, entt::entity);
@@ -148,34 +126,17 @@ namespace Snowstorm
 		template <typename... Components>
 		[[nodiscard]] bool AnyChanged() const
 		{
-			for (const auto& [entity, types] : m_ChangedComponents)
-			{
-				if ((WasChanged<Components>(entity) && ...))
-				{
-					return true;
-				}
-			}
-			for (const auto& bulk : m_BulkChanged)
-			{
-				if (!(BulkHasType<Components>(bulk) || ...))
-				{
-					continue;
-				}
-				bool found = false;
-				bulk.Enumerate(*this,
-				               [&](const entt::entity e)
-				               {
-					               if (!found && (WasChanged<Components>(e) && ...))
-					               {
-						               found = true;
-					               }
-				               });
-				if (found)
-				{
-					return true;
-				}
-			}
-			return false;
+			bool found = false;
+			ForEachChangedCandidate<Components...>(
+			    [&](const entt::entity e)
+			    {
+				    if ((WasChanged<Components>(e) && ...))
+				    {
+					    found = true;
+				    }
+				    return found;
+			    });
+			return found;
 		}
 
 		/// WriteIfChanged<T>(entity, fn):
@@ -202,9 +163,7 @@ namespace Snowstorm
 			}
 
 			// Commit change
-			const std::type_index typeIndex(typeid(T));
-			m_ChangedComponents[entity].insert(typeIndex);
-
+			Track<T>();
 			m_Registry.replace<T>(entity, std::move(newValue));
 			return true;
 		}
@@ -292,34 +251,14 @@ namespace Snowstorm
 		template <typename... Components>
 		[[nodiscard]] std::unordered_set<entt::entity> AddedView() const
 		{
-			std::unordered_set<entt::entity> result;
-
-			for (const auto& [entity, types] : m_AddedComponents)
-			{
-				if ((types.contains(std::type_index(typeid(Components))) && ...))
-				{
-					result.insert(entity);
-				}
-			}
-
-			return result;
+			return Intersect<Components...>(&TypeTrack::Added);
 		}
 
 		/// Returns all entities that had ALL specified components REMOVED this frame
 		template <typename... Components>
 		[[nodiscard]] std::unordered_set<entt::entity> RemovedView() const
 		{
-			std::unordered_set<entt::entity> result;
-
-			for (const auto& [entity, types] : m_RemovedComponents)
-			{
-				if ((types.contains(std::type_index(typeid(Components))) && ...))
-				{
-					result.insert(entity);
-				}
-			}
-
-			return result;
+			return Intersect<Components...>(&TypeTrack::Removed);
 		}
 
 		/// Returns all entities that had ALL specified components CHANGED this frame (explicit marks and
@@ -327,28 +266,16 @@ namespace Snowstorm
 		template <typename... Components>
 		[[nodiscard]] std::unordered_set<entt::entity> ChangedView() const
 		{
-			std::unordered_set<entt::entity> candidates;
-			for (const auto& [entity, types] : m_ChangedComponents)
-			{
-				candidates.insert(entity);
-			}
-			for (const auto& bulk : m_BulkChanged)
-			{
-				if ((BulkHasType<Components>(bulk) || ...))
-				{
-					bulk.Enumerate(*this, [&](const entt::entity e)
-					               { candidates.insert(e); });
-				}
-			}
-
 			std::unordered_set<entt::entity> result;
-			for (const entt::entity entity : candidates)
-			{
-				if ((WasChanged<Components>(entity) && ...))
-				{
-					result.insert(entity);
-				}
-			}
+			ForEachChangedCandidate<Components...>(
+			    [&](const entt::entity e)
+			    {
+				    if ((WasChanged<Components>(e) && ...))
+				    {
+					    result.insert(e);
+				    }
+				    return false;
+			    });
 			return result;
 		}
 
@@ -360,35 +287,24 @@ namespace Snowstorm
 		template <typename T>
 		[[nodiscard]] bool WasAdded(const entt::entity entity) const
 		{
-			const auto it = m_AddedComponents.find(entity);
-			if (it == m_AddedComponents.end())
-			{
-				return false;
-			}
-
-			return it->second.contains(std::type_index(typeid(T)));
+			const TypeTrack* track = Find<T>();
+			return track && track->Added.contains(entity);
 		}
 
 		/// Was this component removed from this entity this frame?
 		template <typename T>
 		[[nodiscard]] bool WasRemoved(const entt::entity entity) const
 		{
-			const auto it = m_RemovedComponents.find(entity);
-			if (it == m_RemovedComponents.end())
-			{
-				return false;
-			}
-
-			return it->second.contains(std::type_index(typeid(T)));
+			const TypeTrack* track = Find<T>();
+			return track && track->Removed.contains(entity);
 		}
 
 		/// Was this component changed on this entity this frame?
 		template <typename T>
 		[[nodiscard]] bool WasChanged(const entt::entity entity) const
 		{
-			const std::type_index typeIndex(typeid(T));
-			const auto it = m_ChangedComponents.find(entity);
-			if (it != m_ChangedComponents.end() && it->second.contains(typeIndex))
+			const TypeTrack* track = Find<T>();
+			if (track && track->Changed.contains(entity))
 			{
 				return true;
 			}
@@ -409,7 +325,7 @@ namespace Snowstorm
 		/// Did this entity get destroyed this frame?
 		[[nodiscard]] bool WasDestroyed(const entt::entity entity) const
 		{
-			return m_DestroyedEntities.contains(entity);
+			return m_State->DestroyedEntities.contains(entity);
 		}
 
 		/// Was ANY entity destroyed this frame? Whole-entity destruction is tracked separately from component
@@ -419,7 +335,7 @@ namespace Snowstorm
 		/// one-shot events, so an any-destroyed trigger is cheap.
 		[[nodiscard]] bool AnyDestroyedThisFrame() const
 		{
-			return !m_DestroyedEntities.empty();
+			return !m_State->DestroyedEntities.empty();
 		}
 
 		// ---------------------------------------------------------------------
@@ -459,11 +375,14 @@ namespace Snowstorm
 		/// Clears tracked component events (call this per frame after processing)
 		void ClearTrackedComponents()
 		{
-			m_AddedComponents.clear();
-			m_RemovedComponents.clear();
-			m_ChangedComponents.clear();
+			for (auto& [id, track] : m_State->Tracks)
+			{
+				track.Added.clear();
+				track.Removed.clear();
+				track.Changed.clear();
+			}
 			m_BulkChanged.clear();
-			m_DestroyedEntities.clear();
+			m_State->DestroyedEntities.clear();
 		}
 
 	private:
@@ -487,15 +406,135 @@ namespace Snowstorm
 			return false;
 		}
 
-		// ---- Internal storage ----
+		// Per-component-type lifecycle sets, fed by EnTT's on_construct/on_update/on_destroy signals.
+		// A type is tracked from the first tracked mutation or query of it; the registry is private, so
+		// every component of a type passes through this class before the listeners exist.
+		struct TypeTrack
+		{
+			std::unordered_set<entt::entity> Added;
+			std::unordered_set<entt::entity> Removed;
+			std::unordered_set<entt::entity> Changed;
+		};
 
+		// Heap-allocated so the signal listeners' instance pointer survives moving the TrackedRegistry.
+		struct State
+		{
+			std::unordered_map<entt::id_type, TypeTrack> Tracks;
+			std::unordered_set<entt::entity> DestroyedEntities;
+			bool Destroying = false; // inside destroy(): drop state instead of recording a removal
+
+			template <typename T>
+			void OnConstruct(entt::registry&, const entt::entity e)
+			{
+				TypeTrack& t = Tracks[entt::type_hash<T>::value()];
+				t.Removed.erase(e);
+				t.Added.insert(e);
+				t.Changed.insert(e);
+			}
+
+			template <typename T>
+			void OnUpdate(entt::registry&, const entt::entity e)
+			{
+				Tracks[entt::type_hash<T>::value()].Changed.insert(e);
+			}
+
+			template <typename T>
+			void OnDestroy(entt::registry&, const entt::entity e)
+			{
+				TypeTrack& t = Tracks[entt::type_hash<T>::value()];
+				t.Added.erase(e);
+				t.Changed.erase(e);
+				if (Destroying)
+				{
+					t.Removed.erase(e);
+				}
+				else
+				{
+					t.Removed.insert(e);
+				}
+			}
+		};
+
+		template <typename T>
+		TypeTrack& Track()
+		{
+			const auto [it, inserted] = m_State->Tracks.try_emplace(entt::type_hash<T>::value());
+			if (inserted)
+			{
+				m_Registry.on_construct<T>().template connect<&State::template OnConstruct<T>>(*m_State);
+				m_Registry.on_update<T>().template connect<&State::template OnUpdate<T>>(*m_State);
+				m_Registry.on_destroy<T>().template connect<&State::template OnDestroy<T>>(*m_State);
+			}
+			return it->second;
+		}
+
+		template <typename T>
+		[[nodiscard]] const TypeTrack* Find() const
+		{
+			const auto it = m_State->Tracks.find(entt::type_hash<T>::value());
+			return it == m_State->Tracks.end() ? nullptr : &it->second;
+		}
+
+		/// Entities present in the `set` of every listed type. Walks the first type's set only.
+		template <typename First, typename... Rest>
+		[[nodiscard]] std::unordered_set<entt::entity> Intersect(std::unordered_set<entt::entity> TypeTrack::* set) const
+		{
+			std::unordered_set<entt::entity> result;
+			const TypeTrack* first = Find<First>();
+			if (!first || (!Find<Rest>() || ...))
+			{
+				return result;
+			}
+			for (const entt::entity e : first->*set)
+			{
+				if (((Find<Rest>()->*set).contains(e) && ...))
+				{
+					result.insert(e);
+				}
+			}
+			return result;
+		}
+
+		/// Visits the entities that may be changed for ALL the listed types: the first type's explicit marks
+		/// plus the members of every bulk marker naming it. `visit` returns true to stop early.
+		template <typename First, typename... Rest, typename Visit>
+		void ForEachChangedCandidate(Visit&& visit) const
+		{
+			if (const TypeTrack* first = Find<First>())
+			{
+				for (const entt::entity e : first->Changed)
+				{
+					if (visit(e))
+					{
+						return;
+					}
+				}
+			}
+			bool stop = false;
+			for (const auto& bulk : m_BulkChanged)
+			{
+				if (!BulkHasType<First>(bulk))
+				{
+					continue;
+				}
+				bulk.Enumerate(*this,
+				               [&](const entt::entity e)
+				               {
+					               if (!stop && visit(e))
+					               {
+						               stop = true;
+					               }
+				               });
+				if (stop)
+				{
+					return;
+				}
+			}
+		}
+
+		// Declared before the registry so it outlives the on_destroy signals fired while the registry tears down.
+		std::unique_ptr<State> m_State;
 		entt::registry m_Registry;
-
-		// Tracking state (now fully encapsulated)
-		std::unordered_map<entt::entity, std::unordered_set<std::type_index>> m_AddedComponents;
-		std::unordered_map<entt::entity, std::unordered_set<std::type_index>> m_RemovedComponents;
-		std::unordered_map<entt::entity, std::unordered_set<std::type_index>> m_ChangedComponents;
 		std::vector<BulkMarker> m_BulkChanged;
-		std::unordered_set<entt::entity> m_DestroyedEntities;
 	};
 }
