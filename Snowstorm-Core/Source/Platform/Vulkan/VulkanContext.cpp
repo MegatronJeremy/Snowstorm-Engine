@@ -1,4 +1,5 @@
 #include "VulkanContext.hpp"
+#include "Snowstorm/Render/SmallBufferPool.hpp"
 
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/Log.hpp"
@@ -817,6 +818,31 @@ namespace Snowstorm
 
 		VK_CHECK(vmaCreateAllocator(&allocatorInfo, &m_Allocator));
 
+		{
+			// Probe with the union of usages a pooled VulkanBuffer can carry; host-visible buffers all
+			// resolve to one memory type, and a buffer that cannot use the pool falls back at creation.
+			VkBufferCreateInfo probeInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+			probeInfo.size = kSmallHostBufferMaxSize;
+			probeInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+			                  VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+			                  VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+			VmaAllocationCreateInfo probeAlloc{};
+			probeAlloc.usage = VMA_MEMORY_USAGE_AUTO;
+			probeAlloc.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+			uint32_t memoryTypeIndex = 0;
+			if (vmaFindMemoryTypeIndexForBufferInfo(m_Allocator, &probeInfo, &probeAlloc, &memoryTypeIndex) == VK_SUCCESS)
+			{
+				VmaPoolCreateInfo poolInfo{};
+				poolInfo.memoryTypeIndex = memoryTypeIndex;
+				poolInfo.blockSize = kSmallHostBufferBlockSize;
+				if (vmaCreatePool(m_Allocator, &poolInfo, &m_SmallHostBufferPool) != VK_SUCCESS)
+				{
+					m_SmallHostBufferPool = nullptr;
+				}
+			}
+		}
+
 		CreatePipelineCache();
 
 		VulkanBindlessManager::Get().Init();
@@ -1194,6 +1220,10 @@ namespace Snowstorm
 		// SS_CORE_INFO("VMA Leak Report: {0}", statsString);
 		// vmaFreeStatsString(m_Allocator, statsString);
 
+		if (m_SmallHostBufferPool)
+		{
+			vmaDestroyPool(m_Allocator, m_SmallHostBufferPool);
+		}
 		vmaDestroyAllocator(m_Allocator);
 
 		vkDestroyDevice(m_Device, nullptr);
