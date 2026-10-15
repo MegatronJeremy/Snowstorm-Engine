@@ -27,6 +27,7 @@
 #include <vk_mem_alloc.h>
 
 #include "VulkanBindlessManager.hpp"
+#include "VulkanDescriptorAllocator.hpp"
 
 #define VK_CHECK(expr)                                           \
 	{                                                            \
@@ -838,6 +839,8 @@ namespace Snowstorm
 		CreatePipelineCache();
 
 		VulkanBindlessManager::Get().Init();
+		// Retire delay = frames in flight (2) + 1, as for the bindless slots.
+		VulkanDescriptorAllocator::Get().Init(m_Device, VulkanBindlessManager::kRetireFrames);
 
 		// 7. Swapchain
 		CreateSwapchain();

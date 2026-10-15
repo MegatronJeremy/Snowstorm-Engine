@@ -862,6 +862,15 @@ Two selection traps, both of which produced a wrong verdict here before being ca
 
 Report both anyway. The point is which one decides.
 
+## Descriptor sets
+
+Non-bindless `DescriptorSet`s allocate from `VulkanDescriptorAllocator`: pools shared by layout shape
+(descriptor-type counts, not layout identity), 64 sets doubling to 1024 per pool, `FREE_DESCRIPTOR_SET_BIT`,
+one retry on a fresh pool after OUT_OF_POOL_MEMORY/FRAGMENTED_POOL. Sets are freed `kRetireFrames` (3) frames
+after destruction by `BeginFrame` (same call site as `VulkanBindlessManager::AdvanceFrame`), so destroying a
+set no longer stalls the device. Pools live until `Shutdown`. The policy arithmetic is backend-free in
+`DescriptorPoolPolicy.hpp` (Catch2-tested); bindless keeps its own pool.
+
 ## Texture block compression
 
 `cook.textures.compress` block-compresses cooked textures, **on by default** after eyes-on confirmation on
@@ -1081,6 +1090,12 @@ so the declaration is the contract. `ParseShaderParams`/`PackShaderParams` (`Ren
 the pure core; the material inspector draws one row per parameter (right-click resets), edits land in the
 sparse `ShaderParams` map of the `.ssmat`, and `AssetManagerSingleton` packs them into the instance at
 build time. A controller system that writes `SetPerInstanceCustomData` per frame still overrides them.
+
+## Alpha mode
+
+`MaterialAsset::Alpha` is `Opaque`, `Mask` or `Blend`, persisted as `"AlphaMode"` in `.ssmat` (the legacy boolean
+`"AlphaMask"` is read, never written). The GPU layouts carry only the mask flag, set when the mode is `Mask`, so
+`Blend` renders as opaque in every pass until the sorted transparent pass lands (#82).
 
 ## Console variables (CVars)
 
