@@ -15,6 +15,10 @@ namespace Snowstorm
 	// Every extension AssetTypeFromExtension maps to a type other than None, lowercase with the dot.
 	std::span<const char* const> ImportableExtensions();
 
+	// Folder under the project's asset directory an imported file of this type lands in when the caller
+	// names none; the layout of the sample project. Empty for types that are not imported by copy.
+	std::filesystem::path DefaultImportFolder(AssetType type);
+
 	struct ImportPlan
 	{
 		// Where the asset ends up, project-relative when a project is given, else the source path itself.

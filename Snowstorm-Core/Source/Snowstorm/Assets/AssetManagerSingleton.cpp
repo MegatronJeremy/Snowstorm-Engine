@@ -1,5 +1,6 @@
 #include "AssetManagerSingleton.hpp"
 
+#include "Snowstorm/Assets/AssetImport.hpp"
 #include "Snowstorm/Assets/VirtualPath.hpp"
 
 #include "AssetFileTime.hpp"
@@ -136,6 +137,51 @@ namespace Snowstorm
 		if (type == AssetType::Material)
 			RebuildTextureRoles(); // a new material can name textures nothing referenced before
 		return handle;
+	}
+
+	AssetManagerSingleton::ImportFileResult AssetManagerSingleton::ImportFile(const std::filesystem::path& source)
+	{
+		ImportFileResult result;
+		const AssetType type = AssetTypeFromPath(source);
+		if (type == AssetType::None || type == AssetType::Scene)
+		{
+			result.Error = type == AssetType::Scene ? "scenes are opened, not imported" : "unsupported file type '" + source.extension().string() + "'";
+			return result;
+		}
+
+		std::error_code ec;
+		if (!std::filesystem::is_regular_file(source, ec))
+		{
+			result.Error = "not a file";
+			return result;
+		}
+
+		if (type == AssetType::Mesh)
+		{
+			result.Entities = ImportModel(source);
+			if (result.Entities.empty())
+				result.Error = "model could not be read (see log)";
+			return result;
+		}
+
+		const Ref<Project> project = Project::GetActive();
+		const std::filesystem::path projectDir = project ? project->GetProjectDirectory() : std::filesystem::path{};
+		const std::filesystem::path destFolder = project ? project->GetConfig().AssetDirectory / DefaultImportFolder(type) : std::filesystem::path{};
+		const ImportPlan plan = PlanImport(source, projectDir, destFolder);
+
+		if (plan.Copy && !plan.ReuseExisting)
+		{
+			std::filesystem::create_directories(plan.DestAbs.parent_path(), ec);
+			std::filesystem::copy_file(source, plan.DestAbs, std::filesystem::copy_options::none, ec);
+			if (ec)
+			{
+				result.Error = "copy failed: " + ec.message();
+				return result;
+			}
+		}
+
+		result.Handle = Import(plan.DestRel.generic_string(), type);
+		return result;
 	}
 
 	std::vector<Entity> AssetManagerSingleton::ImportModel(const std::filesystem::path& path)
