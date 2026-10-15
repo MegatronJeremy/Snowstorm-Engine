@@ -242,13 +242,13 @@
       "permutations": 2
     },
     "NeuralConv.comp": {
-      "vgprs": 13.0,
-      "sgprs": 48.0,
+      "vgprs": 28.0,
+      "sgprs": 95.0,
       "lds": 512.0,
-      "scratch": 272.0,
+      "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 1152.0,
+      "isa_size": 6624.0,
       "permutations": 2
     },
     "NeuralResidualAdd.comp": {
