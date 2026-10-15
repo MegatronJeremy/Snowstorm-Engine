@@ -28,6 +28,7 @@
 #include "Singletons/StandalonePlay.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
 #include "Snowstorm/World/SimulationStateSingleton.hpp"
+#include "Service/EditorTheme.hpp"
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -424,7 +425,7 @@ namespace Snowstorm
 		const auto viewportView = View<ViewportComponent, RenderTargetComponent>();
 
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0, 0});
-		ImGui::Begin("Viewport");
+		ImGui::Begin(EditorTheme::PanelTitle("Viewport").c_str());
 
 		auto& reg = m_World->GetRegistry();
 		auto& selection = m_World->GetSingleton<EditorSelectionSingleton>();

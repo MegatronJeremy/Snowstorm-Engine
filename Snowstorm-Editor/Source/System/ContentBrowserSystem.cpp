@@ -215,7 +215,7 @@ namespace Snowstorm
 		}
 		PollFileChanges();
 
-		ImGui::Begin("Content Browser");
+		ImGui::Begin(EditorTheme::PanelTitle("Content Browser").c_str());
 
 		// Files under assets/ are auto-imported when they appear or change (file watcher); Rescan is the
 		// manual fallback.

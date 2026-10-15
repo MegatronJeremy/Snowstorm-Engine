@@ -177,13 +177,17 @@ namespace Snowstorm
 				rttr::instance instance = working;
 
 				const std::string fullName = type.get_name().to_string();
-				const std::string display = PrettyComponentName(fullName);
+				std::string display = "== " + PrettyComponentName(fullName) + " ==";
+				for (char& ch : display)
+				{
+					ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+				}
 
 				bool changed = false;
 				ImGui::PushID(fullName.c_str()); // scope widget IDs per component (avoid collisions)
 				// Framed collapsing header gives each component a filled title bar -> visual
 				// separation + outline between components.
-				const bool open = ImGui::CollapsingHeader(display.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed);
+				const bool open = ImGui::CollapsingHeader((display + "###hdr").c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed);
 
 				// Right-click the header to remove the component (structural ones are not removable).
 				if (IsComponentRemovable(type) && ImGui::BeginPopupContextItem("##compctx"))

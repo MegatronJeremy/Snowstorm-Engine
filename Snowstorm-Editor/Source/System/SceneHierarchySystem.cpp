@@ -47,7 +47,7 @@ namespace Snowstorm
 	{
 		m_SceneHierarchyPanel.OnImGuiRender();
 
-		ImGui::Begin("Settings");
+		ImGui::Begin(EditorTheme::PanelTitle("Settings").c_str());
 
 		// Two tabs (#129 Inc 6): "Settings" = the render controls you tune; "Performance" = read-only
 		// diagnostics (frame/GPU timings, per-system + per-pass ms). Keeps the tuning knobs uncluttered by

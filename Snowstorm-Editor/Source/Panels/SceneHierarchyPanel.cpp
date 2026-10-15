@@ -221,8 +221,7 @@ namespace Snowstorm
 
 	void SceneHierarchyPanel::OnImGuiRender()
 	{
-		ImGui::Begin("Scene Hierarchy");
-		EditorTheme::SectionHeader("Scene Hierarchy");
+		ImGui::Begin(EditorTheme::PanelTitle("Scene Hierarchy").c_str());
 
 		auto& cmds = m_World->GetSingleton<EditorCommandsSingleton>();
 
@@ -447,8 +446,7 @@ namespace Snowstorm
 			ImGui::EndPopup();
 		}
 
-		ImGui::Begin("Properties");
-		EditorTheme::SectionHeader("Properties");
+		ImGui::Begin(EditorTheme::PanelTitle("Properties").c_str());
 		if (const Entity selected = GetSelected())
 		{
 			DrawComponents(selected);
