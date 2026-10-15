@@ -139,10 +139,20 @@ namespace Snowstorm
 		for (const rttr::type type = inst.get_derived_type();
 		     const auto& prop : type.get_properties())
 		{
-			const std::string key = prop.get_name().to_string();
+			std::string key = prop.get_name().to_string();
 			if (!j.contains(key))
 			{
-				continue;
+				// JsonAlias names the key older scene files used for this property.
+				const rttr::variant alias = prop.get_metadata("JsonAlias");
+				if (!alias.is_valid() || !alias.is_type<std::string>())
+				{
+					continue;
+				}
+				key = alias.get_value<std::string>();
+				if (!j.contains(key))
+				{
+					continue;
+				}
 			}
 
 			const rttr::type pt = prop.get_type();

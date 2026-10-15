@@ -11,7 +11,9 @@ namespace Snowstorm
 		using namespace rttr;
 
 		registration::class_<CameraTargetComponent>("Snowstorm::CameraTargetComponent")
-		    .property("TargetViewportUUID", &CameraTargetComponent::TargetViewportUUID);
+		    .property("TargetViewportUUID", &CameraTargetComponent::TargetViewportUUID)(
+		        metadata("JsonAlias", "TargetViewport") // key written before scenes used reflected names
+		    );
 	}
 
 	AUTO_REGISTER_COMPONENT(CameraTargetComponent);
