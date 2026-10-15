@@ -4,6 +4,7 @@
 #include "Snowstorm/Render/DescriptorSetLayout.hpp"
 
 #include "Platform/Vulkan/VulkanCommon.hpp"
+#include "Platform/Vulkan/VulkanDescriptorAllocator.hpp"
 #include "Platform/Vulkan/VulkanTexture.hpp"
 
 #include <unordered_map>
@@ -46,7 +47,7 @@ namespace Snowstorm
 		DescriptorSetDesc m_Desc{};
 
 		VkDevice m_Device = VK_NULL_HANDLE;
-		VkDescriptorPool m_Pool = VK_NULL_HANDLE;
+		VulkanDescriptorAllocator::Allocation m_Allocation{};
 		VkDescriptorSet m_Set = VK_NULL_HANDLE;
 
 		struct PendingBuffer

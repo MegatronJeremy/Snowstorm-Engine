@@ -3,6 +3,7 @@
 
 #include "Platform/Vulkan/VulkanDescriptorSet.hpp"
 
+#include "VulkanDescriptorAllocator.hpp"
 #include "VulkanDescriptorSetLayout.hpp"
 #include "Platform/Vulkan/VulkanBuffer.hpp"
 #include "Platform/Vulkan/VulkanSampler.hpp"
@@ -47,47 +48,8 @@ namespace Snowstorm
 
 		SS_CORE_ASSERT(!bindings.empty(), "DescriptorSetLayout has no bindings");
 
-		// Aggregate pool sizes by descriptor type for this single set.
-		// (You can later centralize pooling to avoid per-set pools.)
-		std::unordered_map<VkDescriptorType, uint32_t> counts;
-		for (const auto& b : bindings)
-		{
-			const VkDescriptorType vkType = ToVkDescriptorType(b.Type);
-			SS_CORE_ASSERT(vkType != VK_DESCRIPTOR_TYPE_MAX_ENUM, "Unsupported DescriptorType");
-			counts[vkType] += b.Count;
-		}
-
-		std::vector<VkDescriptorPoolSize> poolSizes;
-		poolSizes.reserve(counts.size());
-
-		for (const auto& kv : counts)
-		{
-			VkDescriptorPoolSize ps{};
-			ps.type = kv.first;
-			ps.descriptorCount = kv.second;
-			poolSizes.push_back(ps);
-		}
-
-		VkDescriptorPoolCreateInfo poolCI{};
-		poolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-		poolCI.flags = 0;
-		poolCI.maxSets = 1;
-		poolCI.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-		poolCI.pPoolSizes = poolSizes.data();
-
-		VkResult res = vkCreateDescriptorPool(m_Device, &poolCI, nullptr, &m_Pool);
-		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to create VkDescriptorPool");
-
-		const VkDescriptorSetLayout layoutHandle = vkLayout->GetHandle();
-
-		VkDescriptorSetAllocateInfo alloc{};
-		alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-		alloc.descriptorPool = m_Pool;
-		alloc.descriptorSetCount = 1;
-		alloc.pSetLayouts = &layoutHandle;
-
-		res = vkAllocateDescriptorSets(m_Device, &alloc, &m_Set);
-		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to allocate VkDescriptorSet");
+		m_Allocation = VulkanDescriptorAllocator::Get().Allocate(vkLayout->GetDesc(), vkLayout->GetHandle());
+		m_Set = m_Allocation.Set;
 	}
 
 	void VulkanDescriptorSet::DestroyVulkanObjects()
@@ -97,11 +59,10 @@ namespace Snowstorm
 			return;
 		}
 
-		if (m_Pool != VK_NULL_HANDLE)
+		if (m_Set != VK_NULL_HANDLE)
 		{
-			RetireVulkanObject([device = m_Device, pool = m_Pool]
-			                   { vkDestroyDescriptorPool(device, pool, nullptr); });
-			m_Pool = VK_NULL_HANDLE;
+			VulkanDescriptorAllocator::Get().Free(m_Allocation);
+			m_Allocation = {};
 			m_Set = VK_NULL_HANDLE;
 		}
 

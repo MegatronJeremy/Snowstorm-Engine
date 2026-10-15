@@ -5,6 +5,7 @@
 #include "imgui_internal.h"
 #include "VulkanBindlessManager.hpp"
 #include "VulkanCommon.hpp"
+#include "VulkanDescriptorAllocator.hpp"
 #include "VulkanOmmBaker.hpp"
 
 #include "Snowstorm/Core/Application.hpp"
@@ -214,6 +215,7 @@ namespace Snowstorm
 		vkDeviceWaitIdle(device);
 		FlushVulkanRetireQueue();
 
+		VulkanDescriptorAllocator::Get().Shutdown();
 		VulkanBindlessManager::Get().Shutdown();
 
 		// Function-local-static singleton owning the OMM bake pipeline + sampler; release here (device still alive)
@@ -279,6 +281,7 @@ namespace Snowstorm
 		// leave the fence unsignaled forever, hanging the next wait on this slot.)
 		vkWaitForFences(device, 1, &m_InFlightFences[m_CurrentFrameIndex], VK_TRUE, UINT64_MAX);
 		VulkanBindlessManager::Get().AdvanceFrame();
+		VulkanDescriptorAllocator::Get().BeginFrame();
 		AdvanceVulkanRetireQueue();
 
 		// 2. Acquire an image from the swapchain. On OUT_OF_DATE (surface changed, e.g. resize) the
