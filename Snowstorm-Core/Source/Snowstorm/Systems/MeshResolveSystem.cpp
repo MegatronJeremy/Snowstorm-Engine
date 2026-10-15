@@ -78,4 +78,9 @@ namespace Snowstorm
 			                         { m.MeshInstance = resolved; });
 		}
 	}
+
+	void MeshResolveSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.WriteComponents<MeshComponent>().WriteResources<AssetManagerSingleton, TrackingMapResource>();
+	}
 }

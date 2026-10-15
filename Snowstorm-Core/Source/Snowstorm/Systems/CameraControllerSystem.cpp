@@ -314,4 +314,9 @@ namespace Snowstorm
 
 		tr.Position += rtState.MoveVelocity * dt;
 	}
+
+	void CameraControllerSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.Structural().ReadComponents<CameraControllerComponent, ViewportInteractionComponent>().WriteComponents<CameraControllerRuntimeComponent>().ReadResources<InputStateSingleton>().ReadResources<TrackingMapResource>();
+	}
 }

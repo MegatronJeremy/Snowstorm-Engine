@@ -1165,6 +1165,12 @@ see, so treat it as part of the feature, not an afterthought.
   parallel-vs-serial decision *consciously* each time, not default to serial by habit. Note the current
   ceiling: the O(n) post-barrier change-mark (#91) caps end-to-end speedup at scale even when the
   compute parallelizes near-linearly, so measure with `--ecs.benchmark` rather than assuming a win.
+- **System access declarations:** every core system overrides `System::DeclareAccess(SystemAccess&)` with the
+  components and resources (Singletons, Services, and the `TrackingMapResource` pseudo-resource for tracked
+  mutators and `Init/Changed/FiniView`) it reads and writes, plus `Structural()` when it emplaces, removes or
+  destroys. Undeclared means exclusive and main-thread-only. `SystemManager::DeclaredAccess()` lists them and
+  `SystemAccess::ConflictsWith` is the pairwise rule a scheduler will use; nothing schedules from it yet
+  (#85). A new core system needs a declaration (`SystemAccessTests` fails otherwise).
 - **Rendering:** backend-agnostic interfaces in `Render/` (`RendererAPI`, `Renderer`, `Pipeline`,
   `Shader`, `Buffer`, `Texture`, `Material`, `RenderGraph`, ...). The concrete implementation lives
   in `Platform/Vulkan/` (volk + Vulkan Memory Allocator + spirv-reflect; shaders compiled to SPIR-V

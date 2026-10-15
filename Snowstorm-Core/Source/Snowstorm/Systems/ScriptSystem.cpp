@@ -41,4 +41,9 @@ namespace Snowstorm
 			scriptComponent.DestroyScript();
 		}
 	}
+
+	void ScriptSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.Structural();
+	}
 }

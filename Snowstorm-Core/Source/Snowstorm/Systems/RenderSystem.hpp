@@ -42,6 +42,7 @@ namespace Snowstorm
 		}
 
 		void Execute(Timestep ts) override;
+		void DeclareAccess(SystemAccess& a) const override;
 
 		// The shared render-phase vocabulary (FrameContext / CameraPick / GraphResource /
 		// ViewportRenderContext / IViewportEffect) now lives in RenderPhaseContext.hpp so collaborators can

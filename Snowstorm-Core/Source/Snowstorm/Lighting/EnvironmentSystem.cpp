@@ -34,4 +34,9 @@ namespace Snowstorm
 
 		renderer.UploadEnvironment(env);
 	}
+
+	void EnvironmentSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.ReadComponents<EnvironmentComponent>().WriteResources<RendererService>();
+	}
 }

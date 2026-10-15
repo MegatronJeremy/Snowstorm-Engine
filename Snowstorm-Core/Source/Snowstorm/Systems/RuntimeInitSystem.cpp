@@ -216,4 +216,9 @@ namespace Snowstorm
 			reg.Ensure<CameraControllerRuntimeComponent>(e);
 		}
 	}
+
+	void RuntimeInitSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.Structural();
+	}
 }

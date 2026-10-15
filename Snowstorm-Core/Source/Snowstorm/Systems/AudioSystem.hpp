@@ -21,6 +21,7 @@ namespace Snowstorm
 		~AudioSystem() override;
 
 		void Execute(Timestep ts) override;
+		void DeclareAccess(SystemAccess& a) const override;
 
 	private:
 		// A sound this system created and is responsible for destroying.
