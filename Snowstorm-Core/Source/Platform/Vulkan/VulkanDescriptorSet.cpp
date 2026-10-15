@@ -6,6 +6,7 @@
 #include "VulkanDescriptorSetLayout.hpp"
 #include "Platform/Vulkan/VulkanBuffer.hpp"
 #include "Platform/Vulkan/VulkanSampler.hpp"
+#include "VulkanCommon.hpp"
 #include "Snowstorm/Core/Log.hpp"
 
 namespace Snowstorm
@@ -96,11 +97,10 @@ namespace Snowstorm
 			return;
 		}
 
-		vkDeviceWaitIdle(m_Device);
-
 		if (m_Pool != VK_NULL_HANDLE)
 		{
-			vkDestroyDescriptorPool(m_Device, m_Pool, nullptr);
+			RetireVulkanObject([device = m_Device, pool = m_Pool]
+			                   { vkDestroyDescriptorPool(device, pool, nullptr); });
 			m_Pool = VK_NULL_HANDLE;
 			m_Set = VK_NULL_HANDLE;
 		}

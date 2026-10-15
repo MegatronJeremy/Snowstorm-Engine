@@ -3,6 +3,7 @@
 #include <functional>
 #include <string>
 
+#include "DeferredDeletionQueue.hpp"
 #include "VulkanContext.hpp"
 
 #include "Snowstorm/Render/Pipeline.hpp"
@@ -21,6 +22,13 @@ namespace Snowstorm
 	VmaAllocator GetAllocator();
 
 	// Engine-level helpers
+
+	// Runs `destroy` once every in-flight frame that could reference the resource has completed (immediately
+	// when the renderer is not running). Use in destructors of GPU objects instead of vkDeviceWaitIdle.
+	void RetireVulkanObject(std::function<void()> destroy);
+	void AdvanceVulkanRetireQueue();
+	void FlushVulkanRetireQueue();
+	void EnableVulkanRetireQueue(uint32_t framesInFlight);
 
 	// Shared graphics command pool
 	// Used for transient command buffers (uploads, short GPU jobs)
