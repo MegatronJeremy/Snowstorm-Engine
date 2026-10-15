@@ -23,22 +23,22 @@
     },
     "DefaultLit.frag[inlineshadow]": {
       "vgprs": 130.0,
-      "sgprs": 82.0,
+      "sgprs": 86.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 30200.0,
+      "isa_size": 31280.0,
       "permutations": 2
     },
     "DefaultLit.frag[noinlineshadow]": {
       "vgprs": 87.0,
-      "sgprs": 66.0,
+      "sgprs": 58.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 10496.0,
+      "isa_size": 11672.0,
       "permutations": 2
     },
     "DepthNormal.frag": {

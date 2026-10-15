@@ -28,17 +28,17 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 31604.0,
+      "isa_size": 32660.0,
       "permutations": 2
     },
     "DefaultLit.frag[noinlineshadow]": {
-      "vgprs": 89.0,
-      "sgprs": 63.0,
+      "vgprs": 88.0,
+      "sgprs": 58.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 10232.0,
+      "isa_size": 11344.0,
       "permutations": 2
     },
     "DepthNormal.frag": {
