@@ -1195,6 +1195,8 @@ see, so treat it as part of the feature, not an afterthought.
   type names. A shape that is not the property list sets `SerializeFn`/`DeserializeFn` in
   `ComponentRegisterOptions` (`MaterialOverridesComponent`), `Structural` keeps a component in the entity
   header (`IDComponent`, `TagComponent`), and property metadata `JsonAlias` names the key older files used.
+- **Render graph scheduling is CPU-testable:** `RenderGraph::BuildDependencies` and `BuildSchedule(swapchain)` need no
+  device (`RenderGraphScheduleTests`); only `Execute` (fork/join, ownership transfers) needs a GPU.
 - **Events:** `Events/` hierarchy dispatched through `EventBus`; input bridged in `Input/`.
 
 ### Conventions
