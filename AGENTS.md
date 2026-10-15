@@ -1314,6 +1314,11 @@ Worked example, the **asset pipeline** (the engine's biggest deliberate simplifi
   slots) → a file watcher → async streaming. Treat `AssetRegistry` / `AssetManagerSingleton` as the seam
   where that grows.
 
+  **`AssetManagerSingleton::ImportFile` is the one way a file enters the project** (*File > Import Asset*).
+  It dispatches on `AssetTypeFromPath`; non-mesh types go through `PlanImport` into `<assets>/<type>/`
+  (`DefaultImportFolder`), never overwriting (a different file at the same name takes `_N`, an identical
+  one is reused), and meshes go through `ImportModel`. It does not save the registry.
+
   **An asset's identity is `AssetRegistry`'s `Canonicalize`, and it has exactly one spelling.** A path
   arrives mounted, absolute, or in the legacy project-relative form, and all three must key to one
   handle. When they did not, every content-browser scan re-imported every asset under a fresh handle and
