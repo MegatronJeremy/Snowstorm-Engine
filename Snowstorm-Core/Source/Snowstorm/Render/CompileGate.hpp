@@ -28,11 +28,11 @@ namespace Snowstorm
 		// True: a request arrived during the compile, run again. False: the gate is idle again.
 		[[nodiscard]] bool Finish()
 		{
-			uint32_t s = RunningDirty;
-			if (m_State.compare_exchange_strong(s, Running, std::memory_order_acq_rel))
-				return true;
-			m_State.store(Idle, std::memory_order_release);
-			return false;
+			uint32_t s = Running;
+			if (m_State.compare_exchange_strong(s, Idle, std::memory_order_acq_rel))
+				return false;
+			m_State.store(Running, std::memory_order_release);
+			return true;
 		}
 
 	private:

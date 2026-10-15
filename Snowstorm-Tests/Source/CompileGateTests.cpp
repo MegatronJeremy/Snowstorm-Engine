@@ -28,6 +28,17 @@ TEST_CASE("CompileGate: requests during a compile coalesce into exactly one reru
 	REQUIRE_FALSE(gate.Finish());
 }
 
+TEST_CASE("CompileGate: a request during a rerun is not lost", "[shader]")
+{
+	CompileGate gate;
+	REQUIRE(gate.Request());
+	REQUIRE_FALSE(gate.Request());
+	REQUIRE(gate.Finish());
+	REQUIRE_FALSE(gate.Request());
+	REQUIRE(gate.Finish());
+	REQUIRE_FALSE(gate.Finish());
+}
+
 TEST_CASE("CompileGate: concurrent requests never overlap compiles and the last input is compiled", "[shader]")
 {
 	CompileGate gate;
