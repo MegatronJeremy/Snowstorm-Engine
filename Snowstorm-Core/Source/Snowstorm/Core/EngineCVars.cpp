@@ -15,6 +15,11 @@ namespace Snowstorm::CVars
 	                            "a whole-frame FLIP of 0.026 vs uncompressed. Turn it off to cook exact "
 	                            "RGBA8 when a texture must not be quantized."};
 
+	CVar<int> TextureQuality{"cook.textures.quality", 0,
+	                         "Encoder tier for cooked colour textures: 0 = BC1 opaque (4 bpp), 1 = BC7 opaque "
+	                         "(8 bpp, doubles opaque albedo size). Colour with alpha is BC7 at either tier. "
+	                         "Normals stay BC5 and masks BC1."};
+
 	CVar<bool> CookAssets{"cook.assets", false,
 	                      "Load every mesh, texture and material named by the project's asset registry so "
 	                      "each one's cooked artifact is written, then exit. Use before staging, so a "
@@ -196,6 +201,8 @@ namespace Snowstorm::CVars
 	CVar<int> ShadowsMode{"render.shadows.mode", 1, "Shadow technique: 0 = Off, 1 = Shadow Map (raster depth maps + PCF), 2 = Ray Traced (hardware ray query, requires an RT GPU; falls back to Off on a non-RT device). Mode 2 skips the raster shadow passes entirely. Replaces the old render.shadows/render.shadows.rt toggles (#118)", CVarFlags::Persist};
 
 	CVar<int> ShadowResolution{"render.shadow.resolution", 2048, "Shadow-map resolution (square); changing it rebuilds the shadow target", CVarFlags::Persist};
+
+	CVar<int> ShadowDirectionals{"render.shadow.directionals", 1, "Directional lights that get a raster shadow map: the primary uses the sun map, up to 3 more share one atlas (each costs a full scene depth pass). 1 = primary only. Ray-traced shadows ignore this (every casting directional traces).", CVarFlags::Persist};
 
 	CVar<bool> ShadowSoft{"render.shadow.soft", true, "Soft shadows: 3x3 PCF for the raster shadow map; cone-sampled penumbra for RT shadows (each shadow ray jittered within the light's size, TAA-denoised). Off = hard single tap / single ray. Needs TAA (render.aa = TAA) for a clean RT penumbra.", CVarFlags::Persist};
 

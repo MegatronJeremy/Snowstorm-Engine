@@ -525,11 +525,16 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
 `<path>_ldr.npy` and the script computes the metrics offline. The reference runs **unbiased**
 (`pathtrace.clamp` and `pathtrace.weightclamp` both 0).
 
-- **Runtime, not Editor.** Captures run `Snowstorm-Runtime` (fixed viewport, no editor panels), so
-  the framing is deterministic. Even so, every capture is bilinear-resampled to a canonical
-  **1024x576** before any metric, because the editor viewport size is not reproducible across
-  launches (1177x649 and 1817x1009 were both observed in one session) and a shape mismatch silently
-  breaks the comparison. A fixed-resolution render path would remove the resample.
+- **Runtime, not Editor.** Captures run `Snowstorm-Runtime` (no editor panels), and every capture
+  forces `render.resolution.width/height` to **1920x1080** (`CAPTURE_RESOLUTION`, the override perf-bench
+  pins), so the render size never follows the window (1177x649 and 1817x1009 were both observed in
+  one session before #162). Metrics are still computed after a bilinear downscale to **1024x576**
+  for cost, and as a safety net against a host that ignores the override. The cached PT references
+  are keyed with `_REF_CACHE_VERSION` (bumped to 2 with this change), so captures made at window
+  size are not reused. Committed quality baselines were captured at window size: re-capture them
+  with `--update-baseline` on each reference machine; until then expect small metric shifts.
+  `quality-motion.py` pins the same resolution for its route frames (and has its own cache version,
+  3), so its committed motion baselines need the same re-capture.
 - **Three Sponza viewpoints** (`atrium`, `floor`, `gallery`) share one position and vary orientation,
   covering content that stresses AO, GI and reflections differently. Two further candidate
   orientations were dropped as degenerate (yaw+pi was 99.7% dark; the side yaw 78.7% dark, 0%
@@ -857,16 +862,24 @@ texture leaves it Unknown and the conservative colour encoding wins.
 
 | role | format | why |
 |---|---|---|
-| albedo, opaque | BC1, 4 bpp | 8:1, and what Unreal/Unity/Godot all default to |
-| albedo, alpha | BC3, 8 bpp | BC1's 1-bit alpha decodes transparent black and bleeds halos |
+| albedo, opaque | BC1, 4 bpp (BC7 at `cook.textures.quality=1`) | 8:1, and what Unreal/Unity/Godot all default to |
+| albedo, alpha | **BC7**, 8 bpp | BC1's 1-bit alpha decodes transparent black and bleeds halos; BC7 beats BC3 at the same size |
 | tangent normal | **BC5**, 8 bpp | two independent 8-bit planes; z reconstructed in the shader |
 | metallic-roughness, AO | BC1, 4 bpp | measured adequate, see below |
 
-**BC7 is deliberately unused.** It is 8 bpp, the same as BC3 and double BC1, so promoting everything to
-it costs 51 MB -> 102 MB on this set and gives back half the saving. libsquish cannot emit it either. It
-is a per-texture escape hatch (Unreal's `TC_BC7`), not a default. `PixelFormat` already carries
-`BC7_RGBA_UNorm/sRGB` and `BC6H_RGB_UFloat`, so the table can express them the day one is needed; the
-encoder would be a new dependency (`nvtt`, MIT, is in vcpkg).
+**Mips are filtered in the colour space of the role** (`MipSpaceFor`, `Render/TextureCook.cpp`): albedo in
+linear light (sRGB EOTF LUT, exact OETF on write), normals and masks as plain byte averages, alpha always
+linear. A role-Unknown texture follows the caller's `srgb` flag. The cache blob header carries role, mip
+space, compress flag and an encoder revision; a mismatch re-cooks.
+
+**BC7 is the alpha encoder and an opt-in quality tier.** It is 8 bpp, the same as BC3 and double BC1, so
+colour with alpha takes it unconditionally (strictly better than BC3 at the same size), while opaque albedo
+stays BC1 unless `cook.textures.quality=1`, which doubles that set (51 MB -> 102 MB on Sponza) and gives back
+half the saving. The encoder is DirectXTex (MIT, vcpkg `directxtex`), CPU, called without
+`TEX_COMPRESS_PARALLEL` because cook workers are already the parallelism. libsquish keeps BC1/BC5. The
+quality tier is global; a per-texture override waits for `.meta` sidecars. `CookedTexture::Encoding::BC3`
+is still decodable, but the cook no longer emits it. The tier is part of `TextureCookKey`, so flipping it
+re-cooks; BC7 cook time and the FLIP delta of `quality=1` are not measured yet.
 
 **Normals are what the role split is for.** BC1 pushes a unit vector through one shared RGB565 line:
 3.47 degrees of mean angular error against BC5's 1.13, over the 22 conforming maps. **Two Sponza images
@@ -905,6 +918,16 @@ is the reference the quality gates compare against.
 Sampling a BCn image requires `textureCompressionBC` **enabled**, not merely supported. It is requested
 in `VulkanContext`; without that the cooked textures are invalid usage that desktop drivers happen to
 accept and validation does not flag.
+
+## Directional shadows
+
+`render.shadow.directionals` (default 1) is how many directionals get a raster shadow map. The primary (first
+enabled) keeps the dedicated sun map; up to 3 more get scene-fit tiles of one `DirAtlas` (2x2, each
+`render.shadow.resolution`), selected by `SelectShadowDirectionals` in registry order and over-budget lights
+render unshadowed with a one-shot warning. `GPUDirectionalLight::ShadowSlot` carries the choice to the shader
+(-1 none, 0 sun map, s >= 1 `DirShadows[s - 1]`). Ray-traced shadows ignore the budget: every casting
+directional traces. Secondary directionals still light the scene but are invisible to GI, reflections, the
+path tracer, the sky disc and IBL, which read `Lights[0]` only. Each secondary costs one full scene depth pass.
 
 ## Audio
 
@@ -1030,6 +1053,16 @@ next to the exe. Staging 7 of 18 DLLs produced a stage whose executables would n
 
 The content copy hangs off a stamp file rather than a `POST_BUILD` command, because `POST_BUILD` only
 fires when its target RELINKS: editing a scene and rebuilding would stage the old one.
+
+## Material shader parameters
+
+A custom surface shader names the floats it packs into `PerInstanceCustomData` with `// @param` lines:
+`// @param Zoom float slot=2 default=3 min=0.5 max=4` (types `float float2 float3 float4 int color3 color4`;
+`slot` is the first vec4 component, default first free). HLSL packing cannot be named by SPIR-V reflection,
+so the declaration is the contract. `ParseShaderParams`/`PackShaderParams` (`Render/ShaderParams.hpp`) are
+the pure core; the material inspector draws one row per parameter (right-click resets), edits land in the
+sparse `ShaderParams` map of the `.ssmat`, and `AssetManagerSingleton` packs them into the instance at
+build time. A controller system that writes `SetPerInstanceCustomData` per frame still overrides them.
 
 ## Console variables (CVars)
 
@@ -1329,6 +1362,8 @@ buffers are released. Textures are not swept yet.
     no GUI, for automated/offline trace analysis). Instrumented spots: frame-loop phases, every ECS system,
     and JobSystem worker tasks. One `SS_PROFILE_SCOPE` per lexical scope (it declares a fixed-name RAII
     object, so two in the same block is a redefinition; nest them).
+  Per-pass GPU scopes also reach Tracy as GPU zones (one context per queue, `VulkanTracyGpuZones`), so
+  GPU passes sit under the CPU timeline once a Tracy GUI is connected.
   A whole debugging session was once burned scattering probes to find a load spike that the Performance
   panel would have pinned to `RenderSystem`/shadow-fit in one glance (and the fix, reading the panel, was
   already built). If the existing readouts genuinely don't cover the spot, ADD a permanent, toggleable

@@ -5,6 +5,7 @@
 #include "imgui_internal.h"
 #include "VulkanBindlessManager.hpp"
 #include "VulkanCommon.hpp"
+#include "VulkanTracyGpuZones.hpp"
 #include "VulkanOmmBaker.hpp"
 
 #include "Snowstorm/Core/Application.hpp"
@@ -608,6 +609,7 @@ namespace Snowstorm
 	void VulkanRendererAPI::AppendCollectedScopes(VulkanCommandContext& ctx)
 	{
 		std::vector<GpuScope> scopes = ctx.CollectGpuScopes();
+		TracyGpuZones::Emit(scopes);
 		m_FrameGpuScopes.insert(m_FrameGpuScopes.end(),
 		                        std::make_move_iterator(scopes.begin()),
 		                        std::make_move_iterator(scopes.end()));

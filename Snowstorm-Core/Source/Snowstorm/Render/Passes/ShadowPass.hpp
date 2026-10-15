@@ -53,6 +53,11 @@ namespace Snowstorm
 		static constexpr uint32_t kSpotAtlasCols = 2;
 		static constexpr int kMaxShadowSpots = static_cast<int>(kSpotAtlasCols * kSpotAtlasCols);
 
+		// Atlas for the secondary shadowed directionals: kDirAtlasCols^2 tiles (tile i = DirShadows[i]),
+		// each `render.shadow.resolution` px. Same shape as the spot atlas, kept separate so the layouts don't mix.
+		[[nodiscard]] const Ref<RenderTarget>& GetOrCreateDirAtlas();
+		static constexpr uint32_t kDirAtlasCols = 2;
+
 		// Build one of a point light's 6 cube-face perspective view-projections (world -> that face's light
 		// clip). `face` is 0..5 in the order +X,-X,+Y,-Y,+Z,-Z. Each face is a 90-degree FOV, square-aspect
 		// frustum (near..range) looking down its axis — the cube unrolled into 6 planar depth renders. Pure +
@@ -84,6 +89,8 @@ namespace Snowstorm
 
 		// Spot shadow atlas (depth-only, sampleable): kSpotAtlasCols^2 tiles packed into one texture.
 		Ref<RenderTarget> m_SpotAtlas;
+
+		Ref<RenderTarget> m_DirAtlas;
 
 		// Point shadow atlas (depth-only, sampleable): kPointAtlasCols^2 tiles; 6 consecutive tiles per point.
 		Ref<RenderTarget> m_PointAtlas;

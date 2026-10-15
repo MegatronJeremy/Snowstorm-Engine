@@ -22,6 +22,7 @@ namespace Snowstorm::CVars
 
 	// Block-compress cooked textures. See TextureCache.
 	extern CVar<bool> CompressTextures;
+	extern CVar<int> TextureQuality;
 	// Upper bound on every denoiser's a-trous pass count, and the size of GIDenoisePass's per-frame
 	// descriptor/uniform pool, which is why it lives here rather than as a literal in either: the pool
 	// must have a slot per pass, and when the two numbers drifted apart the extra passes asserted at
@@ -442,6 +443,11 @@ namespace Snowstorm::CVars
 
 	// Shadow-map resolution (square). Changing it rebuilds the shadow target. Higher = sharper, costlier.
 	extern CVar<int> ShadowResolution;
+
+	// How many directional lights get a raster shadow map (the primary uses the dedicated sun map, the rest a
+	// tile of one shared atlas). 1 = primary only (default). Clamped to [1, MAX_DIRECTIONAL_LIGHTS]. Ray-traced
+	// shadows are unaffected: every casting directional traces.
+	extern CVar<int> ShadowDirectionals;
 
 	// Soft shadows: 3x3 PCF for the raster shadow map; cone-sampled penumbra for RT shadows. Off = hard.
 	extern CVar<bool> ShadowSoft;

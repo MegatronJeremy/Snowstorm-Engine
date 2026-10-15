@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Snowstorm/ECS/System.hpp"
+#include "Snowstorm/Systems/SceneReadiness.hpp"
 
 namespace Snowstorm
 {
@@ -24,5 +25,8 @@ namespace Snowstorm
 		void Execute(Timestep ts) override;
 
 		[[nodiscard]] bool RunsInEditMode() const override { return true; }
+
+	private:
+		SceneReadiness m_Readiness;
 	};
 }

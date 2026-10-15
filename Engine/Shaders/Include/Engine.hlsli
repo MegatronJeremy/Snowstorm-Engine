@@ -10,7 +10,14 @@ struct DirectionalLight
 	float3 Direction;
 	float Intensity;
 	float3 Color;
-	float Padding;
+	int ShadowSlot; // -1 none, 0 sun map, s >= 1 = DirShadows[s - 1] in the directional atlas
+};
+
+// Secondary shadowed directional (scene-fit ortho + atlas tile). Mirrors GPUDirShadow in LightingUniforms.hpp.
+struct DirShadow
+{
+	float4x4 ViewProj;
+	float4 AtlasRect;
 };
 
 // Positional lights. Mirror GPUPointLight / GPUSpotLight in LightingUniforms.hpp field-for-field.
@@ -103,6 +110,8 @@ cbuffer FrameCB : register(b0, space0)
 	PointShadow PointShadows[2]; // MAX_SHADOW_POINTS
 	int PointShadowCount;
 	float3 _PointShadowPad;
+
+	DirShadow DirShadows[3]; // MAX_SECONDARY_DIR_SHADOWS
 
 	// Environment: shared by the sky pass and the DefaultLit ambient term. Mirrors the FrameCB tail in
 	// RendererSingleton.cpp field-for-field (each float3 register-packed with the trailing float).
@@ -237,7 +246,7 @@ cbuffer FrameCB : register(b0, space0)
 	// shadowed specular (GGX D*G, no Fresnel). 0 = no spec buffer -> forward uses the grey-vis specular fallback.
 	// New 16-byte row; MUST match RendererService.cpp field-for-field.
 	uint ShadowSpecTextureIndex;
-	uint _FramePad0;
+	uint DirShadowAtlasIndex; // bindless index of the secondary-directional shadow atlas (0 = none)
 	uint _FramePad1;
 	uint _FramePad2;
 };
