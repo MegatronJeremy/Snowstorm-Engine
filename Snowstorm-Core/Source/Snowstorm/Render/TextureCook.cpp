@@ -1,5 +1,6 @@
 #include "TextureCook.hpp"
 
+#include <DirectXTex.h>
 #include <squish.h>
 
 #include <algorithm>
@@ -160,5 +161,77 @@ namespace Snowstorm
 			written += static_cast<size_t>((w + 3) / 4) * ((rows + 3) / 4) * blockBytes;
 		}
 		return out;
+	}
+
+	// DirectXTex pads a partial edge block itself. TEX_COMPRESS_PARALLEL stays off: cook workers are the
+	// parallelism, and nested OpenMP would oversubscribe the JobSystem. A strip of whole block rows is
+	// contiguous in the input and the output, so the concatenation equals one whole-image call.
+	std::vector<uint8_t> CompressLevelBC7(const std::vector<uint8_t>& rgba, const uint32_t w, const uint32_t h, const bool srgb,
+	                                      const std::atomic<bool>& aborted)
+	{
+		constexpr uint32_t kStripRows = 16;
+		constexpr size_t kBlockBytes = 16;
+		const DXGI_FORMAT srcFormat = srgb ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB : DXGI_FORMAT_R8G8B8A8_UNORM;
+		const DXGI_FORMAT dstFormat = srgb ? DXGI_FORMAT_BC7_UNORM_SRGB : DXGI_FORMAT_BC7_UNORM;
+
+		std::vector<uint8_t> out(static_cast<size_t>((w + 3) / 4) * ((h + 3) / 4) * kBlockBytes);
+		size_t written = 0;
+		for (uint32_t y = 0; y < h; y += kStripRows)
+		{
+			if (aborted.load(std::memory_order_relaxed))
+			{
+				return {};
+			}
+			const uint32_t rows = std::min(kStripRows, h - y);
+			DirectX::Image src{};
+			src.width = w;
+			src.height = rows;
+			src.format = srcFormat;
+			src.rowPitch = static_cast<size_t>(w) * 4;
+			src.slicePitch = src.rowPitch * rows;
+			src.pixels = const_cast<uint8_t*>(rgba.data() + static_cast<size_t>(y) * w * 4);
+
+			DirectX::ScratchImage dst;
+			if (FAILED(DirectX::Compress(src, dstFormat, DirectX::TEX_COMPRESS_DEFAULT, DirectX::TEX_THRESHOLD_DEFAULT, dst)))
+			{
+				return {};
+			}
+			const size_t stripBytes = static_cast<size_t>((w + 3) / 4) * ((rows + 3) / 4) * kBlockBytes;
+			const DirectX::Image* img = dst.GetImage(0, 0, 0);
+			if (!img || img->slicePitch != stripBytes || written + stripBytes > out.size())
+			{
+				return {};
+			}
+			std::copy_n(img->pixels, stripBytes, out.data() + written);
+			written += stripBytes;
+		}
+		return out;
+	}
+
+	CookedTexture::Encoding ChooseEncoding(const bool tangentNormal, const bool hasAlpha, const bool highQuality)
+	{
+		if (tangentNormal)
+			return CookedTexture::Encoding::BC5;
+		if (hasAlpha || highQuality)
+			return CookedTexture::Encoding::BC7;
+		return CookedTexture::Encoding::BC1;
+	}
+
+	PixelFormat PixelFormatFor(const CookedTexture::Encoding encoding, const bool srgb)
+	{
+		switch (encoding)
+		{
+		case CookedTexture::Encoding::BC1:
+			return srgb ? PixelFormat::BC1_RGB_sRGB : PixelFormat::BC1_RGB_UNorm;
+		case CookedTexture::Encoding::BC3:
+			return srgb ? PixelFormat::BC3_RGBA_sRGB : PixelFormat::BC3_RGBA_UNorm;
+		case CookedTexture::Encoding::BC5:
+			return PixelFormat::BC5_RG_UNorm;
+		case CookedTexture::Encoding::BC7:
+			return srgb ? PixelFormat::BC7_RGBA_sRGB : PixelFormat::BC7_RGBA_UNorm;
+		case CookedTexture::Encoding::RGBA8:
+		default:
+			return srgb ? PixelFormat::RGBA8_sRGB : PixelFormat::RGBA8_UNorm;
+		}
 	}
 }

@@ -26,7 +26,8 @@ PACKAGES = [
     "catch2",
     "tracy",  # real-time frame/sampling profiler (client lib); connect the Tracy GUI to a running build
     "miniaudio",  # audio playback/mixing (header-only, Unlicense OR MIT-0)
-    "libsquish",  # BC1/BC3/BC5 block compression for the texture cook
+    "libsquish",  # BC1/BC5 block compression for the texture cook
+    "directxtex",  # BC7 encoder for the texture cook (MIT)
 ]
 
 # The toolset must resolve to one concrete MSVC version, the same on both sides. vcpkg takes the

@@ -88,3 +88,33 @@ TEST_CASE("Strip-wise compression equals a single-strip result and aborts", "[te
 	const std::atomic<bool> stop{true};
 	CHECK(CompressLevel(img, w, h, 1, stop).empty());
 }
+
+TEST_CASE("Encoding choice and format mapping", "[texturecook]")
+{
+	using E = CookedTexture::Encoding;
+	CHECK(ChooseEncoding(true, false, true) == E::BC5);
+	CHECK(ChooseEncoding(false, true, false) == E::BC7);
+	CHECK(ChooseEncoding(false, false, false) == E::BC1);
+	CHECK(ChooseEncoding(false, false, true) == E::BC7);
+
+	CHECK(PixelFormatFor(E::BC7, true) == PixelFormat::BC7_RGBA_sRGB);
+	CHECK(PixelFormatFor(E::BC7, false) == PixelFormat::BC7_RGBA_UNorm);
+	CHECK(PixelFormatFor(E::BC5, true) == PixelFormat::BC5_RG_UNorm);
+	CHECK(PixelFormatFor(E::BC1, true) == PixelFormat::BC1_RGB_sRGB);
+}
+
+TEST_CASE("BC7 strips are 16 bytes per block, keep alpha, and abort", "[texturecook]")
+{
+	constexpr uint32_t w = 8, h = 40;
+	std::vector<uint8_t> img(static_cast<size_t>(w) * h * 4);
+	for (size_t i = 0; i < img.size(); i += 4)
+		img[i] = img[i + 1] = img[i + 2] = static_cast<uint8_t>(i >> 2), img[i + 3] = (i / 4) % 2 ? 255 : 0;
+
+	const std::atomic<bool> run{false};
+	const auto bc7 = CompressLevelBC7(img, w, h, false, run);
+	CHECK(bc7.size() == (w / 4) * (h / 4) * 16);
+	CHECK(bc7 == CompressLevelBC7(img, w, h, false, run)); // deterministic
+
+	const std::atomic<bool> stop{true};
+	CHECK(CompressLevelBC7(img, w, h, false, stop).empty());
+}
