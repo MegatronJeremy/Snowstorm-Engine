@@ -2,6 +2,7 @@
 
 #include "Snowstorm/Assets/AssetTypes.hpp"
 
+#include <cstdint>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 #include <map>
@@ -14,6 +15,37 @@ namespace Snowstorm
 	// constant, not a hardcoded literal at the pipeline site, so there is exactly one place that decides
 	// "what does an unspecified material render with".
 	inline constexpr const char* kDefaultFragmentShader = "/Engine/Shaders/DefaultLit.frag.hlsl";
+
+	enum class AlphaMode : uint8_t
+	{
+		Opaque,
+		Mask,
+		Blend
+	};
+
+	inline const char* AlphaModeName(const AlphaMode mode)
+	{
+		switch (mode)
+		{
+		case AlphaMode::Mask:
+			return "Mask";
+		case AlphaMode::Blend:
+			return "Blend";
+		default:
+			return "Opaque";
+		}
+	}
+
+	inline AlphaMode AlphaModeFromName(const std::string& name, const AlphaMode fallback = AlphaMode::Opaque)
+	{
+		if (name == "Opaque")
+			return AlphaMode::Opaque;
+		if (name == "Mask")
+			return AlphaMode::Mask;
+		if (name == "Blend")
+			return AlphaMode::Blend;
+		return fallback;
+	}
 
 	struct MaterialAsset
 	{
@@ -39,9 +71,9 @@ namespace Snowstorm
 		float Roughness = 1.0f;
 		glm::vec3 EmissiveColor = glm::vec3(0.0f);
 
-		// Alpha-cutout (glTF alphaMode MASK): discard albedo texels with alpha < AlphaCutoff. Opaque-pass
-		// masking (no blending/sorting); used by foliage/fence textures. AlphaMask off = fully opaque.
-		bool AlphaMask = false;
+		// glTF alphaMode. Mask discards albedo texels with alpha < AlphaCutoff in the opaque pass. Blend is
+		// recorded but still rendered as opaque until the transparent pass lands (#82).
+		AlphaMode Alpha = AlphaMode::Opaque;
 		float AlphaCutoff = 0.5f; // glTF default
 
 		// Sparse named overrides for the `// @param` declarations in the fragment shader (ShaderParams.hpp).

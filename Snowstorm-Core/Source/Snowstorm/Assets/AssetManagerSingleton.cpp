@@ -288,19 +288,20 @@ namespace Snowstorm
 			if (aiMat->Get(AI_MATKEY_COLOR_EMISSIVE, emissive) == AI_SUCCESS)
 				matAsset.EmissiveColor = glm::vec3(emissive.r, emissive.g, emissive.b);
 
-			// glTF alpha mode: MASK -> alpha-cutout (opaque-pass discard below cutoff). BLEND is not yet
-			// supported (needs a sorted transparent pass, #82) so it falls through as opaque for now.
-			// OPAQUE / absent -> AlphaMask stays false.
+			// glTF alpha mode: MASK -> alpha-cutout (opaque-pass discard below cutoff). BLEND is recorded
+			// but renders as opaque until the sorted transparent pass lands (#82). OPAQUE / absent -> Opaque.
 			aiString alphaMode;
 			if (aiMat->Get(AI_MATKEY_GLTF_ALPHAMODE, alphaMode) == AI_SUCCESS)
 			{
 				if (strcmp(alphaMode.C_Str(), "MASK") == 0)
 				{
-					matAsset.AlphaMask = true;
+					matAsset.Alpha = AlphaMode::Mask;
 					ai_real cutoff = matAsset.AlphaCutoff;
 					if (aiMat->Get(AI_MATKEY_GLTF_ALPHACUTOFF, cutoff) == AI_SUCCESS)
 						matAsset.AlphaCutoff = cutoff;
 				}
+				else if (strcmp(alphaMode.C_Str(), "BLEND") == 0)
+					matAsset.Alpha = AlphaMode::Blend;
 			}
 
 			// Resolve+import one texture slot. Tries `type`, then `fallback` (for formats that store a
@@ -1126,7 +1127,7 @@ namespace Snowstorm
 		base.SetMetallic(matAsset.Metallic);
 		base.SetRoughness(matAsset.Roughness);
 		base.SetEmissiveColor(matAsset.EmissiveColor);
-		base.SetAlphaMask(matAsset.AlphaMask);
+		base.SetAlphaMode(matAsset.Alpha);
 		base.SetAlphaCutoff(matAsset.AlphaCutoff);
 
 		// Albedo + emissive sample as sRGB; normal / metallic-roughness / AO are data maps and MUST be

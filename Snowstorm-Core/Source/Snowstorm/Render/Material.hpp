@@ -4,6 +4,7 @@
 
 #include <cstdint>
 
+#include "Snowstorm/Assets/MaterialAsset.hpp"
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Render/Sampler.hpp"
@@ -61,7 +62,14 @@ namespace Snowstorm
 		// Alpha-cutout (glTF MASK): when enabled, the shader discards albedo texels whose alpha is below
 		// AlphaCutoff. Stays in the opaque pass (depth write on, no blend/sort) — this is masking, not
 		// translucency. Used by foliage/fences with alpha-keyed textures (e.g. Sponza plants).
-		void SetAlphaMask(const bool enabled) { m_DefaultConstants.AlphaMaskEnabled = enabled ? 1u : 0u; }
+		// The GPU layouts only carry the mask flag, so Blend leaves it clear and stays opaque in every
+		// shader consumer until the transparent pass exists (#82).
+		void SetAlphaMode(const AlphaMode mode)
+		{
+			m_AlphaMode = mode;
+			m_DefaultConstants.AlphaMaskEnabled = mode == AlphaMode::Mask ? 1u : 0u;
+		}
+		[[nodiscard]] AlphaMode GetAlphaMode() const { return m_AlphaMode; }
 		void SetAlphaCutoff(const float cutoff) { m_DefaultConstants.AlphaCutoff = cutoff; }
 
 		void SetSampler(const Ref<Sampler>& sampler) { m_DefaultSampler = sampler; }
@@ -81,6 +89,7 @@ namespace Snowstorm
 		Ref<Pipeline> m_Pipeline;
 
 		Constants m_DefaultConstants{};
+		AlphaMode m_AlphaMode = AlphaMode::Opaque;
 		Ref<TextureView> m_AlbedoTexture; // Just a reference, not an array
 		Ref<TextureView> m_NormalTexture;
 		Ref<TextureView> m_MetallicRoughnessTexture;
