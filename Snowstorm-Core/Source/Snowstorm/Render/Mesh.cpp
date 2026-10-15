@@ -4,8 +4,10 @@
 
 namespace Snowstorm
 {
-	Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) : m_VertexCount(static_cast<uint32_t>(vertices.size())),
-	                                                                                        m_IndexCount(static_cast<uint32_t>(indices.size()))
+	Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices,
+	           const IndexType indexType) : m_IndexType(indexType),
+	                                        m_VertexCount(static_cast<uint32_t>(vertices.size())),
+	                                        m_IndexCount(static_cast<uint32_t>(indices.size()))
 	{
 		SS_CORE_ASSERT(m_VertexCount > 0, "Mesh must have vertices");
 		SS_CORE_ASSERT(m_IndexCount > 0, "Mesh must have indices");
@@ -17,10 +19,13 @@ namespace Snowstorm
 		    false,
 		    "Mesh Vertex Buffer");
 
+		const std::vector<uint8_t> packed = PackIndices(indices, indexType);
+		SS_CORE_ASSERT(indexType == IndexType::UInt32 || m_VertexCount <= kMaxUInt16Index + 1u,
+		               "UInt16 index type needs <= 65535 vertices");
 		m_IndexBuffer = Buffer::Create(
-		    sizeof(uint32_t) * indices.size(),
+		    packed.size(),
 		    BufferUsage::Index,
-		    indices.data(),
+		    packed.data(),
 		    false,
 		    "Mesh Index Buffer");
 
@@ -30,7 +35,7 @@ namespace Snowstorm
 
 	const Ref<BLAS>& Mesh::GetOrBuildBLAS()
 	{
-		if (!m_BLAS)
+		if (!m_BLAS && m_IndexType == IndexType::UInt32)
 		{
 			// Position is the first Vertex field (offset 0), stride is the whole vertex. The vertex/index
 			// buffers carry the AS-build-input usage (added in VulkanBuffer when RT is on), so the build reads
@@ -44,7 +49,7 @@ namespace Snowstorm
 	const Ref<BLAS>& Mesh::GetOrBuildOmmBlas(const uint32_t subdivisionLevel, const uint32_t albedoTextureIndex,
 	                                         const float alphaCutoff, const float baseColorAlpha)
 	{
-		if (!m_OmmBlas)
+		if (!m_OmmBlas && m_IndexType == IndexType::UInt32)
 		{
 			const uint32_t triangleCount = m_IndexCount / 3;
 			// GPU-bake the micromap states from the material's albedo alpha, then attach to a non-opaque BLAS.
