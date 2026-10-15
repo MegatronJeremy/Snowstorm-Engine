@@ -944,6 +944,8 @@ render unshadowed with a one-shot warning. `GPUDirectionalLight::ShadowSlot` car
 directional traces. Secondary directionals still light the scene but are invisible to GI, reflections, the
 path tracer, the sky disc and IBL, which read `Lights[0]` only. Each secondary costs one full scene depth pass.
 
+`Render/CascadeMath.hpp` holds the pure cascade math for a future sun CSM (#58): practical split scheme, slice corners, sphere fit and texel-snapped ortho matrix. Nothing in the renderer calls it yet; `CascadeMathTests` cover it.
+
 ## Audio
 
 `AudioService` (miniaudio) owns the device and the mixer; `AudioSystem` turns `AudioSourceComponent`
