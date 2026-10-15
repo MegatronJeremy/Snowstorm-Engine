@@ -68,8 +68,9 @@ namespace Snowstorm
 		// would all collide on one "0.sstex", so skip the cache for those.
 		const bool useCache = (handle.Value() != 0);
 		const MipSpace mipSpace = MipSpaceFor(role, srgb);
+		const bool highQuality = CVars::TextureQuality.Get() > 0;
 		const TextureCookKey cookKey{static_cast<uint8_t>(role), static_cast<uint8_t>(mipSpace),
-		                             static_cast<uint8_t>(CVars::CompressTextures.Get() ? 1 : 0), kTextureEncoderRevision};
+		                             static_cast<uint8_t>(!CVars::CompressTextures.Get() ? 0 : (highQuality ? 2 : 1)), kTextureEncoderRevision};
 		if (useCache)
 		{
 			if (auto blob = TextureCacheIO::Load(handle, filePath, cookKey))
@@ -119,23 +120,19 @@ namespace Snowstorm
 		// compounds the error, which is why every cooker mips first and compresses each level.
 		if (CVars::CompressTextures.Get())
 		{
-			int squishFormat;
-			if (role == TextureRole::Normal && IsTangentSpaceNormalMap(cooked.Levels[0]))
+			const bool tangentNormal = role == TextureRole::Normal && IsTangentSpaceNormalMap(cooked.Levels[0]);
+			if (role == TextureRole::Normal && !tangentNormal)
 			{
-				squishFormat = squish::kBc5;
-				cooked.Format = CookedTexture::Encoding::BC5;
+				SS_CORE_WARN("Texture '{}' is bound as a normal map but is not tangent-space "
+				             "(non-unit vectors or z<0); encoding it as colour instead.",
+				             filePath.string());
 			}
-			else
+			cooked.Format = ChooseEncoding(tangentNormal, !tangentNormal && UsesAlpha(cooked.Levels[0]), highQuality);
+			const bool bc7 = cooked.Format == CookedTexture::Encoding::BC7;
+			int squishFormat = 0;
+			if (!bc7)
 			{
-				if (role == TextureRole::Normal)
-				{
-					SS_CORE_WARN("Texture '{}' is bound as a normal map but is not tangent-space "
-					             "(non-unit vectors or z<0); encoding it as colour instead.",
-					             filePath.string());
-				}
-				const bool alpha = UsesAlpha(cooked.Levels[0]);
-				squishFormat = alpha ? squish::kDxt5 : squish::kDxt1;
-				cooked.Format = alpha ? CookedTexture::Encoding::BC3 : CookedTexture::Encoding::BC1;
+				squishFormat = tangentNormal ? squish::kBc5 : squish::kDxt1;
 			}
 
 			uint32_t lw = cooked.Width, lh = cooked.Height;
@@ -145,7 +142,8 @@ namespace Snowstorm
 				{
 					return std::nullopt;
 				}
-				cooked.Levels[i] = CompressLevel(cooked.Levels[i], lw, lh, squishFormat, g_CookAborted);
+				cooked.Levels[i] = bc7 ? CompressLevelBC7(cooked.Levels[i], lw, lh, mipSpace == MipSpace::SRGB, g_CookAborted)
+				                       : CompressLevel(cooked.Levels[i], lw, lh, squishFormat, g_CookAborted);
 				if (cooked.Levels[i].empty())
 				{
 					return std::nullopt;
@@ -182,22 +180,7 @@ namespace Snowstorm
 		// every channel and breaks lighting — the caller picks the flag per slot (see GetTextureView).
 		// The cook decides the encoding; srgb decides only the color space, which is orthogonal. A BC blob
 		// uploaded as RGBA8 would be read as garbage, so this must follow the artifact rather than assume.
-		switch (cooked.Format)
-		{
-		case CookedTexture::Encoding::BC1:
-			desc.Format = srgb ? PixelFormat::BC1_RGB_sRGB : PixelFormat::BC1_RGB_UNorm;
-			break;
-		case CookedTexture::Encoding::BC3:
-			desc.Format = srgb ? PixelFormat::BC3_RGBA_sRGB : PixelFormat::BC3_RGBA_UNorm;
-			break;
-		case CookedTexture::Encoding::BC5:
-			desc.Format = PixelFormat::BC5_RG_UNorm; // normals are linear data; there is no sRGB BC5
-			break;
-		case CookedTexture::Encoding::RGBA8:
-		default:
-			desc.Format = srgb ? PixelFormat::RGBA8_sRGB : PixelFormat::RGBA8_UNorm;
-			break;
-		}
+		desc.Format = PixelFormatFor(cooked.Format, srgb);
 		desc.DebugName = debugName;
 
 		auto texture = Texture::Create(desc);

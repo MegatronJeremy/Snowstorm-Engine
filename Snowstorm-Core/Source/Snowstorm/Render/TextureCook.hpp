@@ -1,6 +1,10 @@
 #pragma once
 
 #include "Snowstorm/Assets/AssetTypes.hpp"
+#include "Snowstorm/Assets/TextureCache.hpp"
+#include "Snowstorm/Render/RenderEnums.hpp"
+#include "Snowstorm/Assets/TextureCache.hpp"
+#include "Snowstorm/Render/RenderEnums.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -34,4 +38,16 @@ namespace Snowstorm
 	// polled often. Returns an empty vector when aborted mid-level.
 	[[nodiscard]] std::vector<uint8_t> CompressLevel(const std::vector<uint8_t>& rgba, uint32_t w, uint32_t h, int squishFormat,
 	                                                 const std::atomic<bool>& aborted);
+
+	// RGBA8 -> BC7 for one mip (DirectXTex, CPU), in strips like CompressLevel. `srgb` selects the colour
+	// space the encoder measures error in; it must match the mip space and the sampled format.
+	[[nodiscard]] std::vector<uint8_t> CompressLevelBC7(const std::vector<uint8_t>& rgba, uint32_t w, uint32_t h, bool srgb,
+	                                                    const std::atomic<bool>& aborted);
+
+	// Encoding the cook picks. `highQuality` promotes opaque colour from BC1 to BC7; colour with alpha is
+	// always BC7 (same 8 bpp as BC3, better quality); tangent-space normals stay BC5.
+	[[nodiscard]] CookedTexture::Encoding ChooseEncoding(bool tangentNormal, bool hasAlpha, bool highQuality);
+
+	// Vulkan format for a cooked encoding. BC5 has no sRGB variant.
+	[[nodiscard]] PixelFormat PixelFormatFor(CookedTexture::Encoding encoding, bool srgb);
 }

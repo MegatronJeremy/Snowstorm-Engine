@@ -857,8 +857,8 @@ texture leaves it Unknown and the conservative colour encoding wins.
 
 | role | format | why |
 |---|---|---|
-| albedo, opaque | BC1, 4 bpp | 8:1, and what Unreal/Unity/Godot all default to |
-| albedo, alpha | BC3, 8 bpp | BC1's 1-bit alpha decodes transparent black and bleeds halos |
+| albedo, opaque | BC1, 4 bpp (BC7 at `cook.textures.quality=1`) | 8:1, and what Unreal/Unity/Godot all default to |
+| albedo, alpha | **BC7**, 8 bpp | BC1's 1-bit alpha decodes transparent black and bleeds halos; BC7 beats BC3 at the same size |
 | tangent normal | **BC5**, 8 bpp | two independent 8-bit planes; z reconstructed in the shader |
 | metallic-roughness, AO | BC1, 4 bpp | measured adequate, see below |
 
@@ -867,11 +867,14 @@ linear light (sRGB EOTF LUT, exact OETF on write), normals and masks as plain by
 linear. A role-Unknown texture follows the caller's `srgb` flag. The cache blob header carries role, mip
 space, compress flag and an encoder revision; a mismatch re-cooks.
 
-**BC7 is deliberately unused.** It is 8 bpp, the same as BC3 and double BC1, so promoting everything to
-it costs 51 MB -> 102 MB on this set and gives back half the saving. libsquish cannot emit it either. It
-is a per-texture escape hatch (Unreal's `TC_BC7`), not a default. `PixelFormat` already carries
-`BC7_RGBA_UNorm/sRGB` and `BC6H_RGB_UFloat`, so the table can express them the day one is needed; the
-encoder would be a new dependency (`nvtt`, MIT, is in vcpkg).
+**BC7 is the alpha encoder and an opt-in quality tier.** It is 8 bpp, the same as BC3 and double BC1, so
+colour with alpha takes it unconditionally (strictly better than BC3 at the same size), while opaque albedo
+stays BC1 unless `cook.textures.quality=1`, which doubles that set (51 MB -> 102 MB on Sponza) and gives back
+half the saving. The encoder is DirectXTex (MIT, vcpkg `directxtex`), CPU, called without
+`TEX_COMPRESS_PARALLEL` because cook workers are already the parallelism. libsquish keeps BC1/BC5. The
+quality tier is global; a per-texture override waits for `.meta` sidecars. `CookedTexture::Encoding::BC3`
+is still decodable, but the cook no longer emits it. The tier is part of `TextureCookKey`, so flipping it
+re-cooks; BC7 cook time and the FLIP delta of `quality=1` are not measured yet.
 
 **Normals are what the role split is for.** BC1 pushes a unit vector through one shared RGB565 line:
 3.47 degrees of mean angular error against BC5's 1.13, over the 22 conforming maps. **Two Sponza images

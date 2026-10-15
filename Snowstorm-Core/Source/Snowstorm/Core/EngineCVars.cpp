@@ -15,6 +15,11 @@ namespace Snowstorm::CVars
 	                            "a whole-frame FLIP of 0.026 vs uncompressed. Turn it off to cook exact "
 	                            "RGBA8 when a texture must not be quantized."};
 
+	CVar<int> TextureQuality{"cook.textures.quality", 0,
+	                         "Encoder tier for cooked colour textures: 0 = BC1 opaque (4 bpp), 1 = BC7 opaque "
+	                         "(8 bpp, doubles opaque albedo size). Colour with alpha is BC7 at either tier. "
+	                         "Normals stay BC5 and masks BC1."};
+
 	CVar<bool> CookAssets{"cook.assets", false,
 	                      "Load every mesh, texture and material named by the project's asset registry so "
 	                      "each one's cooked artifact is written, then exit. Use before staging, so a "
