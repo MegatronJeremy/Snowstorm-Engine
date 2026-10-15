@@ -3,6 +3,7 @@
 #include "VulkanPipelineStats.hpp"
 
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Utility/EnginePaths.hpp"
 #include "VulkanContext.hpp"
 
 #include <nlohmann/json.hpp>
@@ -169,7 +170,7 @@ namespace Snowstorm::VulkanPipelineStats
 			               {"stats", e.Stats}});
 		}
 
-		const std::filesystem::path out = CVars::ShaderStatsPath.Get();
+		const std::filesystem::path out = EngineAssetPath(CVars::ShaderStatsPath.Get());
 		if (out.has_parent_path())
 		{
 			std::error_code ec;

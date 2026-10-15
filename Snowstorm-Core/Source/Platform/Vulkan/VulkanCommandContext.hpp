@@ -61,7 +61,7 @@ namespace Snowstorm
 		void Draw(uint32_t vertexCount, uint32_t instanceCount = 1,
 		          uint32_t firstVertex = 0) override;
 
-		void DrawIndexed(const Ref<Buffer>& indexBuffer, uint32_t indexCount,
+		void DrawIndexed(const Ref<Buffer>& indexBuffer, IndexType indexType, uint32_t indexCount,
 		                 uint32_t instanceCount = 1,
 		                 uint32_t firstIndex = 0,
 		                 int32_t vertexOffset = 0,
