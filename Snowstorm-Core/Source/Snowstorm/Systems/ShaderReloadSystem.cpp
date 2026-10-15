@@ -64,8 +64,8 @@ namespace Snowstorm
 		//-- check for source edits every 1 second (hot reload)
 		if (timeSinceLastCheck > 1.0f)
 		{
-			// Recompile any shader whose source (or an included header) changed -> bumps its version and writes
-			// fresh SPIR-V to the cache. (ReloadAll self-skips unchanged shaders.)
+			// Recompile any shader whose source (or an included header) changed -> compiled on a worker, which bumps
+			// its version once the fresh SPIR-V is published. (ReloadAll self-skips unchanged shaders.)
 			shaderLibrary.ReloadAll();
 			needPipelineRebuild = true; // a changed shader bumps its version; the sweep below self-skips otherwise
 			timeSinceLastCheck = 0.0f;
