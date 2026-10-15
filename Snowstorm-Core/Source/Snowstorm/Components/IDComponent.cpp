@@ -17,5 +17,18 @@ namespace Snowstorm
 		    .property_readonly("Value", &UUID::ToString);
 	}
 
-	AUTO_REGISTER_COMPONENT(IDComponent);
+	namespace
+	{
+		// Identity and name live in the entity header of the scene file, not in "Components".
+		struct AutoRegister_IDComponent
+		{
+			AutoRegister_IDComponent()
+			{
+				ComponentRegisterOptions opts{};
+				opts.Structural = true;
+				RegisterComponent<IDComponent>(opts);
+			}
+		};
+		const AutoRegister_IDComponent s_autoRegister_IDComponent;
+	}
 }
