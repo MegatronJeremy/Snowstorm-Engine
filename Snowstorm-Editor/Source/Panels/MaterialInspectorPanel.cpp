@@ -7,6 +7,7 @@
 #include "Snowstorm/Components/MaterialComponent.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Project/Project.hpp"
+#include "Snowstorm/Utility/EnginePaths.hpp"
 #include "Snowstorm/World/World.hpp"
 #include "Service/EditorTheme.hpp"
 #include "Singletons/EditorCommands.hpp"
@@ -75,7 +76,7 @@ namespace Snowstorm
 		{
 			error.clear();
 			std::vector<std::string> shaders;
-			const std::filesystem::path dir = "Engine/Shaders";
+			const std::filesystem::path dir = EngineAssetPath("Engine/Shaders");
 			std::error_code ec;
 			std::filesystem::directory_iterator it(dir, ec);
 			if (ec)

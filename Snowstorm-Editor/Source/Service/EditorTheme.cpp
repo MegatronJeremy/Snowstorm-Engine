@@ -1,6 +1,7 @@
 #include "EditorTheme.hpp"
 
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Utility/EnginePaths.hpp"
 
 #include <imgui.h>
 
@@ -145,12 +146,13 @@ namespace Snowstorm::EditorTheme
 		    "Engine/Fonts/Hack-Regular.ttf",
 		};
 
-		for (const char* path : candidates)
+		for (const char* candidate : candidates)
 		{
+			const std::string path = EngineAssetPath(candidate).string();
 			if (std::filesystem::exists(path))
 			{
 				ImGuiIO& io = ImGui::GetIO();
-				if (io.Fonts->AddFontFromFileTTF(path, 16.0f) != nullptr)
+				if (io.Fonts->AddFontFromFileTTF(path.c_str(), 16.0f) != nullptr)
 				{
 					SS_CORE_INFO("Editor theme: loaded monospace font '{}'.", path);
 					return;
