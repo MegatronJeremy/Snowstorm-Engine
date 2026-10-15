@@ -15,6 +15,7 @@ namespace Snowstorm
 	void ShadowRenderer::RenderShadows(FrameContext& fc)
 	{
 		SetupDirectionalShadow(fc);
+		SetupSecondaryDirectionalShadows(fc);
 		SetupSpotShadows(fc);
 		SetupPointShadows(fc);
 	}
@@ -80,6 +81,74 @@ namespace Snowstorm
 				                  // sampleable depth attachment) — can't barrier inside the rendering instance.
 			                  }});
 		}
+	}
+
+	void ShadowRenderer::SetupSecondaryDirectionalShadows(FrameContext& fc)
+	{
+		// Same shape as SetupSpotShadows (and the same dangling-capture rule). LightingSystem gave each
+		// secondary shadowed directional an atlas tile (ShadowSlot s >= 1 -> tile s-1) and its fit.
+		RendererService& renderer = fc.Renderer;
+		renderer.SetDirShadowAtlasIndex(0);
+
+		const LightDataBlock& lights = renderer.GetLights();
+		bool anySecondary = false;
+		for (int l = 0; l < lights.LightCount; ++l)
+		{
+			anySecondary = anySecondary || lights.Lights[l].ShadowSlot > 0;
+		}
+		if (!CVars::ShadowsRasterActive() || !anySecondary)
+		{
+			return;
+		}
+
+		const Ref<RenderTarget>& atlasRT = m_ShadowPass.GetOrCreateDirAtlas();
+		const uint32_t atlasIndex = atlasRT->GetDesc().DepthAttachment->View->GetGlobalBindlessIndex();
+		const PixelFormat atlasFmt = atlasRT->GetDesc().DepthAttachment->View->GetTexture()->GetDesc().Format;
+		const uint32_t tilePx = atlasRT->GetWidth() / ShadowPass::kDirAtlasCols;
+
+		renderer.SetDirShadowAtlasIndex(atlasIndex);
+
+		fc.Graph.AddPass({.Name = "DirectionalShadows",
+		                  .Target = atlasRT,
+		                  .Execute = [this, &fc, atlasFmt, tilePx](CommandContext& c)
+		                  {
+			                  RendererService& r = fc.Renderer;
+			                  TrackedRegistry& reg = fc.Reg;
+
+			                  CameraRuntimeComponent lightCam{};
+			                  lightCam.ViewProjection = glm::mat4(1.0f);
+			                  r.BeginScene(lightCam, glm::vec3(0.0f), BorrowContext(c), fc.FrameIndex);
+
+			                  for (const auto casters = reg.view<const TransformComponent, const MeshComponent, const MaterialComponent, const VisibilityComponent>();
+			                       const auto e : casters)
+			                  {
+				                  const auto& mesh = reg.Read<MeshComponent>(e);
+				                  const auto& mat = reg.Read<MaterialComponent>(e);
+				                  if (!mesh.MeshInstance || !mat.MaterialInstance)
+				                  {
+					                  continue;
+				                  }
+				                  r.DrawMesh(reg.Read<TransformComponent>(e).GetTransformMatrix(),
+				                             mesh.MeshInstance, mat.MaterialInstance);
+			                  }
+
+			                  const LightDataBlock& ld = r.GetLights();
+			                  for (int l = 0; l < ld.LightCount; ++l)
+			                  {
+				                  const int slot = ld.Lights[l].ShadowSlot;
+				                  if (slot <= 0)
+				                  {
+					                  continue;
+				                  }
+				                  const auto tile = static_cast<uint32_t>(slot - 1);
+				                  const uint32_t col = tile % ShadowPass::kDirAtlasCols;
+				                  const uint32_t row = tile / ShadowPass::kDirAtlasCols;
+				                  c.SetViewport(static_cast<float>(col * tilePx), static_cast<float>(row * tilePx),
+				                                static_cast<float>(tilePx), static_cast<float>(tilePx), 0.0f, 1.0f);
+				                  c.SetScissor(col * tilePx, row * tilePx, tilePx, tilePx);
+				                  m_ShadowPass.RecordDepth(r, fc.FrameIndex, atlasFmt, ld.DirShadows[slot - 1].ViewProj);
+			                  }
+		                  }});
 	}
 
 	void ShadowRenderer::SetupSpotShadows(FrameContext& fc)

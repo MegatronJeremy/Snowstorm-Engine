@@ -246,6 +246,19 @@ namespace Snowstorm
 		return m_SpotAtlas;
 	}
 
+	const Ref<RenderTarget>& ShadowPass::GetOrCreateDirAtlas()
+	{
+		const int requested = std::clamp(CVars::ShadowResolution.Get(), 256, 8192);
+		const auto atlasSize = static_cast<uint32_t>(requested) * kDirAtlasCols;
+
+		if (!m_DirAtlas || m_DirAtlas->GetWidth() != atlasSize)
+		{
+			m_DirAtlas = CreateShadowDepthTarget(atlasSize, "DirAtlas");
+			SS_CORE_ASSERT(m_DirAtlas, "Failed to create directional shadow atlas");
+		}
+		return m_DirAtlas;
+	}
+
 	glm::mat4 ShadowPass::ComputePointFaceViewProj(const glm::vec3& position, const int face, const float range)
 	{
 		// Cube-face look directions + up vectors, in the order +X,-X,+Y,-Y,+Z,-Z. The up choices are the

@@ -12,6 +12,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -38,8 +39,14 @@ namespace Snowstorm
 		const bool haveSun = sunIndex < candidates.size();
 		const glm::vec3 sunDir = haveSun ? candidateDirs[sunIndex] : glm::vec3{0.0f};
 		const bool sunCasts = haveSun && candidates[sunIndex].CastShadows;
+		const int directionalBudget = std::clamp(CVars::ShadowDirectionals.Get(), 1, MAX_DIRECTIONAL_LIGHTS);
+		const DirectionalShadowSlots dirSlots = SelectShadowDirectionals(candidates, directionalBudget, MAX_SECONDARY_DIR_SHADOWS);
+		const bool rasterDirShadows = CVars::ShadowsRasterActive();
+		const bool rtDirShadows = CVars::ShadowsRTActive();
+		size_t lightIndex = static_cast<size_t>(-1);
 		for (auto entity : lightView)
 		{
+			++lightIndex;
 			// LightDataBlock::Lights is a fixed GPUDirectionalLight[MAX_DIRECTIONAL_LIGHTS] mirrored on the
 			// GPU; writing past it corrupts the adjacent LightCount/Padding and overruns the shader array.
 			if (lightData.LightCount >= MAX_DIRECTIONAL_LIGHTS)
@@ -53,11 +60,38 @@ namespace Snowstorm
 			{
 				continue;
 			}
+			// Raster: primary -> sun map (slot 0, fit above), secondaries -> a scene-fit tile of the directional
+			// atlas. RT: every casting directional traces (the slot is only the "casts" sentinel).
+			int shadowSlot = -1;
+			if (rtDirShadows)
+			{
+				shadowSlot = directionalLight.CastShadows ? 0 : -1;
+			}
+			else if (rasterDirShadows)
+			{
+				shadowSlot = dirSlots.Slots[lightIndex];
+				if (shadowSlot > 0)
+				{
+					GPUDirShadow& payload = lightData.DirShadows[shadowSlot - 1];
+					if (ShadowPass::ComputeSunViewProj(*m_World, directionalLight.Direction, payload.ViewProj))
+					{
+						constexpr float inv = 1.0f / static_cast<float>(ShadowPass::kDirAtlasCols);
+						const int tile = shadowSlot - 1;
+						const int col = tile % static_cast<int>(ShadowPass::kDirAtlasCols);
+						const int row = tile / static_cast<int>(ShadowPass::kDirAtlasCols);
+						payload.AtlasRect = {static_cast<float>(col) * inv, static_cast<float>(row) * inv, inv, inv};
+					}
+					else
+					{
+						shadowSlot = -1; // no scene bounds
+					}
+				}
+			}
 			lightData.Lights[lightData.LightCount++] = {
 			    .Direction = glm::normalize(directionalLight.Direction),
 			    .Intensity = directionalLight.Intensity,
 			    .Color = directionalLight.Color,
-			    .Padding{}};
+			    .ShadowSlot = shadowSlot};
 		}
 
 		if (droppedLights && !m_WarnedDroppedDirectional)
@@ -65,6 +99,15 @@ namespace Snowstorm
 			SS_CORE_WARN("More than {} directional lights in scene; extra lights ignored.", MAX_DIRECTIONAL_LIGHTS);
 		}
 		m_WarnedDroppedDirectional = droppedLights;
+
+		const bool droppedDirShadow = rasterDirShadows && dirSlots.Dropped > 0;
+		if (droppedDirShadow && !m_WarnedDroppedDirShadow)
+		{
+			SS_CORE_WARN("{} shadow-casting directional light(s) over render.shadow.directionals = {}; they render "
+			             "unshadowed in raster mode.",
+			             dirSlots.Dropped, directionalBudget);
+		}
+		m_WarnedDroppedDirShadow = droppedDirShadow;
 
 		// Directional-sun shadow FIT (world -> light clip), the sun analogue of the per-spot fit computed
 		// below. Kept here so ALL shadow setup lives in the light system; RenderSystem only binds the depth
