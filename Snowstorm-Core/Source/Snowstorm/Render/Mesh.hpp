@@ -24,11 +24,16 @@ namespace Snowstorm
 	class Mesh
 	{
 	public:
-		Mesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
+		// indexType UInt16 stores 16-bit indices (half the memory and bandwidth) and requires every index
+		// < 0xFFFF. The ray-tracing readers (BLAS shader index fetch, OMM bake) consume 32-bit indices, so
+		// a UInt16 mesh is raster-only and GetOrBuildBLAS/GetOrBuildOmmBlas return null for it.
+		Mesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices,
+		     IndexType indexType = IndexType::UInt32);
 
 		[[nodiscard]] const Ref<Buffer>& GetVertexBuffer() const { return m_VertexBuffer; }
 		[[nodiscard]] const Ref<Buffer>& GetIndexBuffer() const { return m_IndexBuffer; }
 
+		[[nodiscard]] IndexType GetIndexType() const { return m_IndexType; }
 		[[nodiscard]] uint32_t GetVertexCount() const { return m_VertexCount; }
 		[[nodiscard]] uint32_t GetIndexCount() const { return m_IndexCount; }
 
@@ -51,6 +56,7 @@ namespace Snowstorm
 		Ref<Buffer> m_VertexBuffer;
 		Ref<Buffer> m_IndexBuffer;
 
+		IndexType m_IndexType = IndexType::UInt32;
 		uint32_t m_VertexCount = 0;
 		uint32_t m_IndexCount = 0;
 

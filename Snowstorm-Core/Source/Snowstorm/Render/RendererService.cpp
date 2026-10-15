@@ -531,6 +531,7 @@ namespace Snowstorm
 		// pass can bind its full contiguous set range in one call. Here we only stream geometry + draw.
 		m_CommandContext->BindVertexBuffer(batch.Mesh->GetVertexBuffer(), 0, 0);
 		m_CommandContext->DrawIndexed(batch.Mesh->GetIndexBuffer(),
+		                              batch.Mesh->GetIndexType(),
 		                              batch.Mesh->GetIndexCount(),
 		                              instanceCount,
 		                              0,
