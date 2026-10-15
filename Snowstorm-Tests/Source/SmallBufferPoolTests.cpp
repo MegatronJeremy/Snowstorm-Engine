@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
+
 #include "Platform/Vulkan/VulkanSmallBufferPool.hpp"
 
 using namespace Snowstorm;
@@ -20,6 +22,7 @@ TEST_CASE("Small host buffer pool routing", "[vulkan][alloc]")
 	}
 	SECTION("a block holds many threshold-sized buffers")
 	{
-		REQUIRE(kSmallHostBufferBlockSize / kSmallHostBufferMaxSize >= 16);
+		const uint64_t buffersPerBlock = kSmallHostBufferBlockSize / kSmallHostBufferMaxSize;
+		REQUIRE(buffersPerBlock >= 16u);
 	}
 }
