@@ -342,9 +342,16 @@ namespace Snowstorm
 			changed = true;
 		if (ImGui::SliderFloat("Roughness", &m.Roughness, 0.0f, 1.0f))
 			changed = true;
-		if (ImGui::Checkbox("Alpha Mask", &m.AlphaMask))
-			changed = true;
-		if (m.AlphaMask && ImGui::SliderFloat("Alpha Cutoff", &m.AlphaCutoff, 0.0f, 1.0f))
+		{
+			static constexpr const char* kAlphaModes[] = {"Opaque", "Mask", "Blend"};
+			int mode = static_cast<int>(m.Alpha);
+			if (ImGui::Combo("Alpha Mode", &mode, kAlphaModes, 3))
+			{
+				m.Alpha = static_cast<AlphaMode>(mode);
+				changed = true;
+			}
+		}
+		if (m.Alpha == AlphaMode::Mask && ImGui::SliderFloat("Alpha Cutoff", &m.AlphaCutoff, 0.0f, 1.0f))
 			changed = true;
 
 		const ShaderParamCache& shaderParams = ParamsFor(m.FragmentShader);

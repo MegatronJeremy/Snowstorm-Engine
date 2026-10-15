@@ -1079,6 +1079,12 @@ the pure core; the material inspector draws one row per parameter (right-click r
 sparse `ShaderParams` map of the `.ssmat`, and `AssetManagerSingleton` packs them into the instance at
 build time. A controller system that writes `SetPerInstanceCustomData` per frame still overrides them.
 
+## Alpha mode
+
+`MaterialAsset::Alpha` is `Opaque`, `Mask` or `Blend`, persisted as `"AlphaMode"` in `.ssmat` (the legacy boolean
+`"AlphaMask"` is read, never written). The GPU layouts carry only the mask flag, set when the mode is `Mask`, so
+`Blend` renders as opaque in every pass until the sorted transparent pass lands (#82).
+
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc
