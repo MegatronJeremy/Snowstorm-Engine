@@ -287,4 +287,9 @@ namespace Snowstorm
 			m_LastOmmDeferredLogged = ommDeferred;
 		}
 	}
+
+	void TlasBuildSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.ReadComponents<TransformComponent, MeshComponent, MaterialComponent>().WriteResources<AssetManagerSingleton, TlasInstanceMapSingleton, ReflectionGeometrySingleton>().ReadResources<TrackingMapResource>();
+	}
 }

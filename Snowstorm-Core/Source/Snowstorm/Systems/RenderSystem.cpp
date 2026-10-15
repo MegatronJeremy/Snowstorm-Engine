@@ -796,4 +796,9 @@ namespace Snowstorm
 			                  m_PostProcessPass.Draw(fc.Renderer, BorrowContext(c), fc.FrameIndex, params, dstFmt);
 		                  }});
 	}
+
+	void RenderSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.ReadComponents<ViewportComponent, RenderTargetComponent, TransformComponent, CameraComponent, CameraTargetComponent, CameraRuntimeComponent, CameraVisibilityComponent, MeshComponent, MaterialComponent, VisibilityComponent, CameraPathComponent>().WriteResources<RendererService, AssetManagerSingleton, ReflectionGeometrySingleton>();
+	}
 }

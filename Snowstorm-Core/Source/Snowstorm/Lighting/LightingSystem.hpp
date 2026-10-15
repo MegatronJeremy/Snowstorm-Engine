@@ -13,6 +13,7 @@ namespace Snowstorm
 		}
 
 		void Execute(Timestep ts) override;
+		void DeclareAccess(SystemAccess& a) const override;
 
 	private:
 		// Over-budget warnings are computed every Execute (per frame), so they'd spam the log. Latch each so

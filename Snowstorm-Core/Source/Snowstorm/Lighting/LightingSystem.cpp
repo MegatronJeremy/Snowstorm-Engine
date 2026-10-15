@@ -273,4 +273,9 @@ namespace Snowstorm
 
 		renderer3DSingleton.UploadLights(lightData);
 	}
+
+	void LightingSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.ReadComponents<DirectionalLightComponent, PointLightComponent, SpotLightComponent, TransformComponent>().WriteResources<RendererService>();
+	}
 }

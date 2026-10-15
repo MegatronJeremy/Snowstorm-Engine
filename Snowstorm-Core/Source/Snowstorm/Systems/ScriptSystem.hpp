@@ -14,6 +14,7 @@ namespace Snowstorm
 		}
 
 		void Execute(Timestep ts) override;
+		void DeclareAccess(SystemAccess& a) const override;
 
 		[[nodiscard]] bool RunsInEditMode() const override { return false; }
 	};

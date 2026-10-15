@@ -154,4 +154,9 @@ namespace Snowstorm
 			mc.MaterialInstance = unique;
 		}
 	}
+
+	void MaterialResolveSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.WriteComponents<MaterialComponent, MaterialOverridesComponent>().WriteResources<AssetManagerSingleton>().ReadResources<TrackingMapResource>();
+	}
 }

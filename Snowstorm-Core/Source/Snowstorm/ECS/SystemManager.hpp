@@ -85,6 +85,22 @@ namespace Snowstorm
 
 		TrackedRegistry& GetRegistry() { return m_Registry; }
 
+		// Declared access of every registered system as (name, access), in phase then registration order.
+		[[nodiscard]] std::vector<std::pair<std::string, SystemAccess>> DeclaredAccess() const
+		{
+			std::vector<std::pair<std::string, SystemAccess>> out;
+			for (size_t i = 0; i < m_Phases.size(); ++i)
+			{
+				for (size_t j = 0; j < m_Phases[i].size(); ++j)
+				{
+					SystemAccess access;
+					m_Phases[i][j]->DeclareAccess(access);
+					out.emplace_back(m_Timings[i][j].first, std::move(access));
+				}
+			}
+			return out;
+		}
+
 		// Per-phase CPU time (ms) for the most recent ExecuteSystems call, indexed by SystemPhase.
 		[[nodiscard]] const std::array<float, static_cast<size_t>(SystemPhase::_Count)>& GetPhaseTimingsMs() const
 		{

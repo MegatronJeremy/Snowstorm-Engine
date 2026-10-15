@@ -17,6 +17,7 @@ namespace Snowstorm
 		}
 
 		void Execute(Timestep ts) override;
+		void DeclareAccess(SystemAccess& a) const override;
 
 	private:
 		// Entities whose material couldn't resolve this frame because its pipeline wasn't ready yet
