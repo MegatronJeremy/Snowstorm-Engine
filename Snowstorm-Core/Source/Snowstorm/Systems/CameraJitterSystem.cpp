@@ -101,4 +101,9 @@ namespace Snowstorm
 			rt.JitterNdc = jitterNdc;
 		}
 	}
+
+	void CameraJitterSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.ReadComponents<CameraTargetComponent, RenderTargetComponent>().WriteComponents<CameraRuntimeComponent>().ReadResources<RendererService>();
+	}
 }

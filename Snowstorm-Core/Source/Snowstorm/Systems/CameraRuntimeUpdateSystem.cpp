@@ -173,4 +173,9 @@ namespace Snowstorm
 			rt.frustum = Frustum::FromViewProjection(rt.ViewProjection);
 		}
 	}
+
+	void CameraRuntimeUpdateSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.Structural().ReadComponents<TransformComponent, CameraComponent, CameraTargetComponent, ViewportComponent, IDComponent>().WriteComponents<CameraRuntimeComponent>().ReadResources<TrackingMapResource>();
+	}
 }

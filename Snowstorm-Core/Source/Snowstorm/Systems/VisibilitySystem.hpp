@@ -8,6 +8,7 @@ namespace Snowstorm
 	public:
 		using System::System;
 		void Execute(Timestep ts) override;
+		void DeclareAccess(SystemAccess& a) const override;
 
 	private:
 		[[nodiscard]] bool IsVisibilityDirtyThisFrame() const;
