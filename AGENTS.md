@@ -533,6 +533,8 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   are keyed with `_REF_CACHE_VERSION` (bumped to 2 with this change), so captures made at window
   size are not reused. Committed quality baselines were captured at window size: re-capture them
   with `--update-baseline` on each reference machine; until then expect small metric shifts.
+  `quality-motion.py` pins the same resolution for its route frames (and has its own cache version,
+  3), so its committed motion baselines need the same re-capture.
 - **Three Sponza viewpoints** (`atrium`, `floor`, `gallery`) share one position and vary orientation,
   covering content that stresses AO, GI and reflections differently. Two further candidate
   orientations were dropped as degenerate (yaw+pi was 99.7% dark; the side yaw 78.7% dark, 0%
