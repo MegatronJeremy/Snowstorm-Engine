@@ -267,6 +267,7 @@ namespace Snowstorm::CVars
 	// Override the scene loaded at startup (path to a .world). Empty (default) uses the active project's
 	// StartScene. Lets the smoke harness boot any scene headlessly (e.g. load Sponza to exercise
 	// the PBR sampling path that Startup.world doesn't, without a manual Content Browser open).
+	extern CVar<bool> EditorPicker;
 	extern CVar<std::string> StartupScene;
 
 	// GPU override for multi-GPU boxes: pick the physical device by case-insensitive name substring

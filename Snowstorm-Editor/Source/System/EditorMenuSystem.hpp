@@ -1,6 +1,9 @@
 #pragma once
 
 #include "Snowstorm/ECS/System.hpp"
+#include "Snowstorm/Project/RecentProjects.hpp"
+
+#include <vector>
 
 namespace Snowstorm
 {
@@ -31,6 +34,11 @@ namespace Snowstorm
 		// Location/Name (a fresh subfolder Create scaffolds), not the browsed folder itself.
 		void DrawNewProjectPopup(EditorNotificationsSingleton& notify);
 
+		// Start screen modal (#105): recent projects (newest first, missing ones pruned) plus New/Open.
+		// Shown when EditorCommandsSingleton::ShowStartScreen is set at boot; Escape or "Continue"
+		// dismisses it onto the project the editor already booted.
+		void DrawStartScreen(EditorNotificationsSingleton& notify);
+
 		// Keyboard & mouse shortcut reference window (Help menu). Keep its contents in sync with the
 		// actual bindings whenever a shortcut is added or changed — see CLAUDE.md.
 		void DrawShortcutsWindow();
@@ -38,6 +46,7 @@ namespace Snowstorm
 		bool m_ShowImportPopup = false;
 		bool m_ShowNewProjectPopup = false;
 		bool m_ShowShortcuts = false;
+		std::vector<RecentProject> m_StartScreenRecents;
 		char m_ImportPathBuffer[512] = {};
 		char m_NewProjectNameBuffer[128] = {};
 		char m_NewProjectLocationBuffer[512] = {};
