@@ -130,6 +130,54 @@ namespace Snowstorm
 			(m_ChangedComponents[entity].insert(std::type_index(typeid(Ts))), ...);
 		}
 
+		using BulkContains = bool (*)(const TrackedRegistry&, entt::entity);
+		using BulkEnumerate = void (*)(const TrackedRegistry&, const std::function<void(entt::entity)>&);
+
+		/// O(1) write-back for the data-parallel path: records that every entity matching a view had `types`
+		/// changed, without touching per-entity state. `contains` tests view membership of one entity,
+		/// `enumerate` visits all members. Queries resolve lazily: an entity reads as changed only while it
+		/// still matches the view, so a component removed afterwards no longer reads as changed. Cleared with
+		/// ClearTrackedComponents. Conservative like MarkChanged.
+		void MarkChangedBulk(std::vector<std::type_index> types, BulkContains contains, BulkEnumerate enumerate)
+		{
+			m_BulkChanged.push_back({std::move(types), contains, enumerate});
+		}
+
+		/// Is any entity changed for ALL the given component types (same semantics as ChangedView, without
+		/// building the result set)? Bulk markers cost one pass over their view, no allocation.
+		template <typename... Components>
+		[[nodiscard]] bool AnyChanged() const
+		{
+			for (const auto& [entity, types] : m_ChangedComponents)
+			{
+				if ((WasChanged<Components>(entity) && ...))
+				{
+					return true;
+				}
+			}
+			for (const auto& bulk : m_BulkChanged)
+			{
+				if (!(BulkHasType<Components>(bulk) || ...))
+				{
+					continue;
+				}
+				bool found = false;
+				bulk.Enumerate(*this,
+				               [&](const entt::entity e)
+				               {
+					               if (!found && (WasChanged<Components>(e) && ...))
+					               {
+						               found = true;
+					               }
+				               });
+				if (found)
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
 		/// WriteIfChanged<T>(entity, fn):
 		/// - Reads the component
 		/// - Applies fn(copy)
@@ -274,20 +322,33 @@ namespace Snowstorm
 			return result;
 		}
 
-		/// Returns all entities that had ALL specified components CHANGED this frame
+		/// Returns all entities that had ALL specified components CHANGED this frame (explicit marks and
+		/// bulk markers combined).
 		template <typename... Components>
 		[[nodiscard]] std::unordered_set<entt::entity> ChangedView() const
 		{
-			std::unordered_set<entt::entity> result;
-
+			std::unordered_set<entt::entity> candidates;
 			for (const auto& [entity, types] : m_ChangedComponents)
 			{
-				if ((types.contains(std::type_index(typeid(Components))) && ...))
+				candidates.insert(entity);
+			}
+			for (const auto& bulk : m_BulkChanged)
+			{
+				if ((BulkHasType<Components>(bulk) || ...))
+				{
+					bulk.Enumerate(*this, [&](const entt::entity e)
+					               { candidates.insert(e); });
+				}
+			}
+
+			std::unordered_set<entt::entity> result;
+			for (const entt::entity entity : candidates)
+			{
+				if ((WasChanged<Components>(entity) && ...))
 				{
 					result.insert(entity);
 				}
 			}
-
 			return result;
 		}
 
@@ -325,13 +386,24 @@ namespace Snowstorm
 		template <typename T>
 		[[nodiscard]] bool WasChanged(const entt::entity entity) const
 		{
+			const std::type_index typeIndex(typeid(T));
 			const auto it = m_ChangedComponents.find(entity);
-			if (it == m_ChangedComponents.end())
+			if (it != m_ChangedComponents.end() && it->second.contains(typeIndex))
+			{
+				return true;
+			}
+			if (!m_Registry.valid(entity))
 			{
 				return false;
 			}
-
-			return it->second.contains(std::type_index(typeid(T)));
+			for (const auto& bulk : m_BulkChanged)
+			{
+				if (BulkHasType<T>(bulk) && bulk.Contains(*this, entity))
+				{
+					return true;
+				}
+			}
+			return false;
 		}
 
 		/// Did this entity get destroyed this frame?
@@ -390,10 +462,31 @@ namespace Snowstorm
 			m_AddedComponents.clear();
 			m_RemovedComponents.clear();
 			m_ChangedComponents.clear();
+			m_BulkChanged.clear();
 			m_DestroyedEntities.clear();
 		}
 
 	private:
+		struct BulkMarker
+		{
+			std::vector<std::type_index> Types;
+			BulkContains Contains;
+			BulkEnumerate Enumerate;
+		};
+
+		template <typename T>
+		static bool BulkHasType(const BulkMarker& bulk)
+		{
+			for (const auto& t : bulk.Types)
+			{
+				if (t == std::type_index(typeid(T)))
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
 		// ---- Internal storage ----
 
 		entt::registry m_Registry;
@@ -402,6 +495,7 @@ namespace Snowstorm
 		std::unordered_map<entt::entity, std::unordered_set<std::type_index>> m_AddedComponents;
 		std::unordered_map<entt::entity, std::unordered_set<std::type_index>> m_RemovedComponents;
 		std::unordered_map<entt::entity, std::unordered_set<std::type_index>> m_ChangedComponents;
+		std::vector<BulkMarker> m_BulkChanged;
 		std::unordered_set<entt::entity> m_DestroyedEntities;
 	};
 }

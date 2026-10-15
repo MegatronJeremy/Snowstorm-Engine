@@ -164,3 +164,35 @@ TEST_CASE("MarkChangedBulk marks the iterated view's written components lazily",
 	reg.ClearTrackedComponents();
 	REQUIRE_FALSE(reg.AnyChanged<Position>());
 }
+
+TEST_CASE("Bulk change marker: AND semantics, removal and mixed explicit marks", "[ecs]")
+{
+	TrackedRegistry reg;
+	const auto e = reg.create();
+	reg.emplace<Position>(e, 1, 1);
+	reg.emplace<Velocity>(e);
+	reg.ClearTrackedComponents();
+
+	reg.MarkChangedBulk(
+	    {std::type_index(typeid(Position))},
+	    [](const TrackedRegistry& r, const entt::entity x) { return r.all_of<Position, Velocity>(x); },
+	    [](const TrackedRegistry& r, const std::function<void(entt::entity)>& visit)
+	    {
+		    for (const entt::entity x : r.view<Position, Velocity>())
+			    visit(x);
+	    });
+
+	// The marker covers Position only, so a Position+Velocity query finds nothing...
+	REQUIRE(reg.ChangedView<Position, Velocity>().empty());
+	REQUIRE_FALSE(reg.AnyChanged<Position, Velocity>());
+	// ...until Velocity is marked explicitly: the two sources combine per entity.
+	reg.MarkChanged<Velocity>(e);
+	REQUIRE(reg.ChangedView<Position, Velocity>().contains(e));
+	REQUIRE(reg.AnyChanged<Position, Velocity>());
+
+	// Removing the written component after the mark must not read as changed.
+	reg.remove<Position>(e);
+	REQUIRE_FALSE(reg.WasChanged<Position>(e));
+	REQUIRE(reg.ChangedView<Position>().empty());
+	REQUIRE_FALSE(reg.AnyChanged<Position>());
+}
