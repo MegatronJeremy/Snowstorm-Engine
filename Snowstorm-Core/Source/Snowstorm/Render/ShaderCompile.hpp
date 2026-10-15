@@ -35,8 +35,8 @@ namespace Snowstorm
 	// Cache key for one stage. headersHash covers every Include/*.hlsli; flagsTag names the stage profile
 	// and flag set. Each term is XOR-folded, so the result is order-insensitive (key v4 behaviour).
 	[[nodiscard]] inline uint64_t ComputeShaderKey(const std::string_view sourceText, const uint64_t headersHash,
-	                                              const std::string_view flagsTag,
-	                                              const std::vector<std::string>& defines, const bool debug)
+	                                               const std::string_view flagsTag,
+	                                               const std::vector<std::string>& defines, const bool debug)
 	{
 		uint64_t h = 0;
 		h ^= ShaderHash64(sourceText.data(), sourceText.size());
@@ -68,7 +68,8 @@ namespace Snowstorm
 	//    combining that debug info with inline ray query).
 	[[nodiscard]] inline std::wstring BuildDxcCommandLine(const DxcRequest& r)
 	{
-		const auto quote = [](const std::wstring& s) { return L"\"" + s + L"\""; };
+		const auto quote = [](const std::wstring& s)
+		{ return L"\"" + s + L"\""; };
 
 		std::wstring cmd = quote(r.dxcExe);
 		cmd += L" -spirv -E main -T ";
