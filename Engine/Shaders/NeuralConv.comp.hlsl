@@ -13,9 +13,9 @@
 // TWO PATHS, gated on SS_FP16 (device shaderFloat16 + 16-bit storage) — this is deliberate, backed by
 // measurement (Debug -Od shaders, temporal upscaler @0.5, 48-ch model, NeuralUpscale GPU ms):
 //   * SS_FP16 -> TILED: cache one input channel's halo tile in groupshared, loop input channels accumulating
-//     into a per-thread OUTPUT-channel register array (acc[]), so each input texel is read from global memory
-//     once per group per channel (not once per output channel). fp16 weights halve the dominant weight load
-//     AND keep acc[] in registers. Measured 195ms (naive) -> 84ms.
+//     into a per-thread block of OUTPUT-channel register accumulators (acc[]), so each input texel is read from
+//     global memory once per group per channel and block (not once per output channel). fp16 weights halve the
+//     dominant weight load. Measured 195ms (naive) -> 84ms.
 //   * else -> NAIVE: the simple per-pixel loop nest. On the fp32 fallback the acc[] register array SPILLS to
 //     global memory under -Od (measured 392ms, 2x SLOWER than naive), so fp32 devices keep the naive path
 //     (195ms) instead. fp16 alone on the naive shader does nothing (196ms — it's input-read-bound, not
@@ -56,13 +56,14 @@ float ReadInClamped(int x, int y, uint c)
 
 // 8x8 output tile per group, 1-texel halo (max KernelSize is 3 -> radius 1) -> 10x10 cached tile. ONE input
 // channel cached at a time: 100 floats = 400 B LDS, negligible -> full occupancy (caching all channels at once
-// was ~25 KB and collapsed occupancy, measured slower). MAX_OUT_CHANNELS caps the per-thread output-accumulator
-// register array; 64 covers the trained models (the "big" temporal one is 48-wide) with headroom. MUST match
-// kMaxTileChannels in NeuralUpscalePass::EnsureModel (which falls back to identity past it).
+// was ~25 KB and collapsed occupancy, measured slower). Output channels are processed in blocks of OC_BLOCK:
+// the accumulator array is indexed only by unrolled constants, so it stays in VGPRs. A runtime-indexed
+// acc[outC] array lives in scratch (RGA reported 272 B scratch for the previous form). The cost is that each
+// extra block re-reads the input channels, so a layer wider than OC_BLOCK pays ceil(outC / OC_BLOCK) input passes.
 #define TILE 8
 #define HALO 1
 #define TILE_DIM (TILE + 2 * HALO) // 10
-#define MAX_OUT_CHANNELS 64
+#define OC_BLOCK 16
 
 groupshared float gTile[TILE_DIM * TILE_DIM]; // current input channel's halo tile
 
@@ -74,62 +75,68 @@ void main(uint3 gid : SV_GroupID, uint3 gtid : SV_GroupThreadID, uint3 id : SV_D
 	const uint kR = KernelSize / 2;
 	const uint winY = (uint)gtid.y + HALO - kR; // this thread's KxK window origin inside the LDS tile
 	const uint winX = (uint)gtid.x + HALO - kR;
-
-	// Per-thread output-channel accumulators, seeded with bias. Held in registers across the input-channel loop
-	// so each input channel is read from global memory only once (into LDS), not once per output channel.
-	const uint outC = min(OutChannels, (uint)MAX_OUT_CHANNELS);
-	float acc[MAX_OUT_CHANNELS];
-	for (uint oc = 0; oc < outC; ++oc)
-	{
-		acc[oc] = (float)Weights[BiasOffset + oc];
-	}
+	const bool inRange = id.x < Size.x && id.y < Size.y;
 
 	const uint tileTexels = TILE_DIM * TILE_DIM;
-	for (uint ic = 0; ic < InChannels; ++ic)
+	for (uint oc0 = 0; oc0 < OutChannels; oc0 += OC_BLOCK)
 	{
-		// Cooperatively load this input channel's 10x10 halo tile into LDS (64 threads, ~2 texels each).
-		for (uint t = threadIdx; t < tileTexels; t += TILE * TILE)
+		const uint blockC = min(OutChannels - oc0, (uint)OC_BLOCK);
+		float acc[OC_BLOCK];
+		[unroll] for (uint j = 0; j < OC_BLOCK; ++j)
 		{
-			const uint ly = t / TILE_DIM;
-			const uint lx = t - ly * TILE_DIM;
-			gTile[t] = ReadInClamped(tileOrigin.x + (int)lx, tileOrigin.y + (int)ly, ic);
+			acc[j] = j < blockC ? (float)Weights[BiasOffset + oc0 + j] : 0.0f;
 		}
-		GroupMemoryBarrierWithGroupSync(); // tile for channel ic is visible to all threads
 
-		// MAC this channel's window into every output accumulator. All threads hit the barriers, so gate the
-		// math (not the loop) on being an in-range output pixel.
-		if (id.x < Size.x && id.y < Size.y)
+		for (uint ic = 0; ic < InChannels; ++ic)
 		{
-			for (uint oc = 0; oc < outC; ++oc)
+			// Cooperatively load this input channel's 10x10 halo tile into LDS (64 threads, ~2 texels each).
+			for (uint t = threadIdx; t < tileTexels; t += TILE * TILE)
 			{
-				const uint wBase = WeightOffset + (oc * InChannels + ic) * KernelSize * KernelSize;
-				float s = 0.0f;
-				[unroll] for (uint ky = 0; ky < KernelSize; ++ky)
+				const uint ly = t / TILE_DIM;
+				const uint lx = t - ly * TILE_DIM;
+				gTile[t] = ReadInClamped(tileOrigin.x + (int)lx, tileOrigin.y + (int)ly, ic);
+			}
+			GroupMemoryBarrierWithGroupSync(); // tile for channel ic is visible to all threads
+
+			// All threads hit the barriers, so gate the math (not the loop) on being an in-range pixel.
+			if (inRange)
+			{
+				[unroll] for (uint j = 0; j < OC_BLOCK; ++j)
 				{
-					[unroll] for (uint kx = 0; kx < KernelSize; ++kx)
+					if (j < blockC)
 					{
-						s += gTile[(winY + ky) * TILE_DIM + (winX + kx)] * (float)Weights[wBase + ky * KernelSize + kx];
+						const uint wBase = WeightOffset + ((oc0 + j) * InChannels + ic) * KernelSize * KernelSize;
+						float s = 0.0f;
+						[unroll] for (uint ky = 0; ky < KernelSize; ++ky)
+						{
+							[unroll] for (uint kx = 0; kx < KernelSize; ++kx)
+							{
+								s += gTile[(winY + ky) * TILE_DIM + (winX + kx)] *
+								     (float)Weights[wBase + ky * KernelSize + kx];
+							}
+						}
+						acc[j] += s;
 					}
 				}
-				acc[oc] += s;
+			}
+			GroupMemoryBarrierWithGroupSync(); // don't let the next channel's load overwrite LDS mid-read
+		}
+
+		if (inRange)
+		{
+			[unroll] for (uint j = 0; j < OC_BLOCK; ++j)
+			{
+				if (j < blockC)
+				{
+					float v = acc[j];
+					if (Activation == 1 && v < 0.0f)
+					{
+						v = 0.0f;
+					}
+					OutMap[((oc0 + j) * Size.y + id.y) * Size.x + id.x] = v;
+				}
 			}
 		}
-		GroupMemoryBarrierWithGroupSync(); // don't let the next channel's load overwrite LDS mid-read
-	}
-
-	if (id.x >= Size.x || id.y >= Size.y)
-	{
-		return;
-	}
-
-	for (uint oc = 0; oc < outC; ++oc)
-	{
-		float v = acc[oc];
-		if (Activation == 1 && v < 0.0f)
-		{
-			v = 0.0f;
-		}
-		OutMap[(oc * Size.y + id.y) * Size.x + id.x] = v;
 	}
 }
 
