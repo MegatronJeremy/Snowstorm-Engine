@@ -7,6 +7,7 @@
 #include "Platform/Vulkan/VulkanGraphicsPipeline.hpp"
 
 #include <memory>
+#include <mutex>
 #include <vector>
 
 namespace Snowstorm
@@ -15,12 +16,19 @@ namespace Snowstorm
 	{
 		// Weak registry of every live pipeline, so the shader-reload sweep can find them without any owner
 		// having to publish its pipelines. Weak so the registry never keeps a pipeline alive past its owner;
-		// dead entries are pruned lazily during ForEachLive. Single-threaded (all pipeline create/reload
-		// happens on the render thread), so no lock.
-		std::vector<std::weak_ptr<Pipeline>>& LiveRegistry()
+		// dead entries are pruned during ForEachLive. The mutex guards only the vector: Create/Register may be
+		// called from any thread, while Reload (vkDeviceWaitIdle + handle swap) must still run at a frame
+		// boundary on the render thread.
+		struct LiveState
 		{
-			static std::vector<std::weak_ptr<Pipeline>> s_registry;
-			return s_registry;
+			std::mutex Mutex;
+			std::vector<std::weak_ptr<Pipeline>> Entries;
+		};
+
+		LiveState& Live()
+		{
+			static LiveState s_state;
+			return s_state;
 		}
 	}
 
@@ -28,26 +36,37 @@ namespace Snowstorm
 	{
 		if (pipeline)
 		{
-			LiveRegistry().push_back(pipeline);
+			LiveState& live = Live();
+			std::lock_guard lock(live.Mutex);
+			live.Entries.push_back(pipeline);
 		}
 	}
 
 	void Pipeline::ForEachLive(const std::function<void(const Ref<Pipeline>&)>& fn)
 	{
-		auto& registry = LiveRegistry();
-		for (size_t i = 0; i < registry.size();)
+		// Snapshot under the lock and call fn outside it: fn may create pipelines (re-entering Register).
+		std::vector<Ref<Pipeline>> snapshot;
 		{
-			if (Ref<Pipeline> live = registry[i].lock())
+			LiveState& live = Live();
+			std::lock_guard lock(live.Mutex);
+			snapshot.reserve(live.Entries.size());
+			for (size_t i = 0; i < live.Entries.size();)
 			{
-				fn(live);
-				++i;
+				if (Ref<Pipeline> pipeline = live.Entries[i].lock())
+				{
+					snapshot.push_back(std::move(pipeline));
+					++i;
+				}
+				else
+				{
+					live.Entries[i] = live.Entries.back();
+					live.Entries.pop_back();
+				}
 			}
-			else
-			{
-				// Prune a dead entry by swapping the last one into its slot (order doesn't matter here).
-				registry[i] = registry.back();
-				registry.pop_back();
-			}
+		}
+		for (const Ref<Pipeline>& pipeline : snapshot)
+		{
+			fn(pipeline);
 		}
 	}
 
