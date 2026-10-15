@@ -13,6 +13,7 @@
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
+#include <chrono>
 #include <fstream>
 
 namespace Snowstorm
@@ -85,6 +86,7 @@ namespace Snowstorm
 		// normal case) -> runs until the window is closed.
 		uint64_t smokeFramesLeft = 0;
 		bool smokeMode = false;
+		const auto smokeRunStart = std::chrono::steady_clock::now();
 		if (const int smokeFrames = CVars::SmokeFrames.Get(); smokeFrames > 0)
 		{
 			smokeMode = true;
@@ -319,10 +321,34 @@ namespace Snowstorm
 				}
 			}
 
-			if (smokeMode && --smokeFramesLeft == 0)
+			if (smokeMode && smokeFramesLeft > 0)
+				--smokeFramesLeft;
+			if (smokeMode && smokeFramesLeft == 0)
 			{
-				SS_CORE_INFO("Smoke mode: frame budget reached, requesting shutdown.");
-				m_Running = false;
+				// A load that never finishes must fail the run, not pass it after N frames. The deadline counts from
+				// process start so it always fires before the harness's wall-clock timeout, however long the frames took.
+				std::string unsettled;
+				const int settleSeconds = CVars::SmokeSettleSeconds.Get();
+				if (settleSeconds > 0)
+				{
+					for (Layer* layer : *m_LayerStack)
+					{
+						if (unsettled = layer->SmokeUnsettled(); !unsettled.empty())
+							break;
+					}
+				}
+				const bool timedOut = std::chrono::steady_clock::now() - smokeRunStart >
+				                      std::chrono::seconds(settleSeconds);
+				if (unsettled.empty())
+				{
+					SS_CORE_INFO("Smoke mode: frame budget reached, requesting shutdown.");
+					m_Running = false;
+				}
+				else if (timedOut)
+				{
+					SS_CORE_ERROR("Smoke mode: not settled after {}s: {}", settleSeconds, unsettled);
+					m_Running = false;
+				}
 			}
 
 			// Dataset export (#46): stop once the requested number of tuples has been written to disk, so a

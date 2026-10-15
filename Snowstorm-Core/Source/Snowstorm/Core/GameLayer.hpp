@@ -36,6 +36,7 @@ namespace Snowstorm
 
 		void OnAttach() override;
 		void OnUpdate(Timestep ts) override;
+		std::string SmokeUnsettled() const override;
 
 	private:
 		// The viewport is host-owned (window-sized; a scene can't author viewport size). Returns its UUID so
