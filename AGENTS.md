@@ -1031,6 +1031,16 @@ next to the exe. Staging 7 of 18 DLLs produced a stage whose executables would n
 The content copy hangs off a stamp file rather than a `POST_BUILD` command, because `POST_BUILD` only
 fires when its target RELINKS: editing a scene and rebuilding would stage the old one.
 
+## Material shader parameters
+
+A custom surface shader names the floats it packs into `PerInstanceCustomData` with `// @param` lines:
+`// @param Zoom float slot=2 default=3 min=0.5 max=4` (types `float float2 float3 float4 int color3 color4`;
+`slot` is the first vec4 component, default first free). HLSL packing cannot be named by SPIR-V reflection,
+so the declaration is the contract. `ParseShaderParams`/`PackShaderParams` (`Render/ShaderParams.hpp`) are
+the pure core; the material inspector draws one row per parameter (right-click resets), edits land in the
+sparse `ShaderParams` map of the `.ssmat`, and `AssetManagerSingleton` packs them into the instance at
+build time. A controller system that writes `SetPerInstanceCustomData` per frame still overrides them.
+
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc

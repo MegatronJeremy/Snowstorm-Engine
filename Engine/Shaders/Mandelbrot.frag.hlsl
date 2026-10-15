@@ -11,6 +11,12 @@
 //    also lets us afford more iterations elsewhere).
 //  - A smooth cosine palette (Inigo Quilez style) instead of a hard HSV wheel.
 //
+// Inspector parameters (read by the material inspector; see Render/ShaderParams.hpp). They pack into
+// PerInstanceCustomData exactly as the shader reads it below.
+// @param Center float2 slot=0 default=-0.5,0 min=-2 max=2
+// @param Zoom float slot=2 default=3 min=0.00001 max=4
+// @param Iterations int slot=3 default=200 min=1 max=2000
+//
 // Precision note: this runs in fp32. The complex-plane step per pixel is ~zoom/resolution; once that
 // approaches fp32 epsilon (~1e-7 relative) the deep-zoom image degrades into blocky "mush". True deep
 // zoom needs fp64 or perturbation theory (a much larger change) -- deliberately out of scope here.
