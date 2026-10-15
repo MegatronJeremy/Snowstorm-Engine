@@ -22,7 +22,16 @@ namespace Snowstorm
 
 		[[nodiscard]] std::string GetCompiledPath(ShaderStageKind stage) const override;
 		[[nodiscard]] bool IsReady() const override { return m_Ready.load(std::memory_order_acquire); }
-		[[nodiscard]] uint64_t GetVersion() const override { return m_Version.load(std::memory_order_relaxed); }
+		[[nodiscard]] uint64_t GetVersion() const override
+		{
+			std::lock_guard lock(m_Mutex);
+			return m_Compiled.Version;
+		}
+		[[nodiscard]] CompiledShader GetCompiled() const override
+		{
+			std::lock_guard lock(m_Mutex);
+			return m_Compiled;
+		}
 
 		[[nodiscard]] ShaderPermutation GetPermutation() const override { return m_Permutation.load(std::memory_order_relaxed); }
 		void SetPermutation(const ShaderPermutation p) override { m_Permutation.store(p, std::memory_order_relaxed); }
@@ -64,12 +73,9 @@ namespace Snowstorm
 		// Compiled SPIR-V paths. Written by Compile() (worker) under m_Mutex, read by GetCompiledPath
 		// (main thread) under the same lock. Only valid once m_Ready is set.
 		mutable std::mutex m_Mutex;
-		std::string m_CompiledVertSpv;
-		std::string m_CompiledFragSpv;
-		std::string m_CompiledCompSpv;
+		CompiledShader m_Compiled;
 
 		std::atomic<bool> m_Ready{false};
-		std::atomic<uint64_t> m_Version{0};
 
 		// Desired RT permutation, read at Compile() time. Auto = device-gated (original). Written on the main
 		// thread (permutation swap) then Recompile()d, so relaxed atomic is enough — the recompile is the

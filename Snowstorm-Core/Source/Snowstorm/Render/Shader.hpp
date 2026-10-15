@@ -10,6 +10,7 @@
 
 #include "Snowstorm/Assets/UnreferencedEviction.hpp"
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Render/CompileGate.hpp"
 #include "Snowstorm/Service/Service.hpp"
 
 namespace Snowstorm
@@ -70,6 +71,17 @@ namespace Snowstorm
 		// Changes whenever recompilation produced new artifacts
 		[[nodiscard]] virtual uint64_t GetVersion() const = 0;
 
+		// One published compile result. Paths and version are read in a single call, so a pipeline stamps
+		// the version of the exact SPIR-V it built from even if a worker publishes concurrently.
+		struct CompiledShader
+		{
+			uint64_t Version = 0;
+			std::string Vert;
+			std::string Frag;
+			std::string Comp;
+		};
+		[[nodiscard]] virtual CompiledShader GetCompiled() const = 0;
+
 		// RT permutation selector (#118 perf). Default Auto = device-gated (original behavior). Set to
 		// ForceNonRT + Recompile() to swap to the cheap non-RT SPIR-V (e.g. DefaultLit when no RT effect is
 		// on). Read at Compile() time; the choice keys the .spv cache so variants don't collide.
@@ -85,9 +97,16 @@ namespace Snowstorm
 		[[nodiscard]] virtual ShaderDefines GetDynamicDefines() const = 0;
 		virtual void SetDynamicDefines(ShaderDefines defines) = 0;
 
+		// Overlapping calls coalesce (CompileGate): a call made while a compile runs returns at once and the
+		// running chain compiles again from the latest inputs, so the last request is always what gets published.
 		void Recompile()
 		{
-			Compile();
+			if (!m_Gate.Request())
+				return;
+			do
+			{
+				Compile();
+			} while (m_Gate.Finish());
 		}
 
 		// Single-path: a compute shader (one file).
@@ -97,6 +116,9 @@ namespace Snowstorm
 
 	protected:
 		virtual void Compile() = 0;
+
+	private:
+		CompileGate m_Gate;
 	};
 
 	// Application-scoped shader cache: owns compiled shaders keyed by source path and drives hot-reload

@@ -501,11 +501,11 @@ namespace Snowstorm
 		switch (stage)
 		{
 		case ShaderStageKind::Vertex:
-			return m_CompiledVertSpv;
+			return m_Compiled.Vert;
 		case ShaderStageKind::Fragment:
-			return m_CompiledFragSpv;
+			return m_Compiled.Frag;
 		case ShaderStageKind::Compute:
-			return m_CompiledCompSpv;
+			return m_Compiled.Comp;
 		}
 		return {};
 	}
@@ -562,10 +562,10 @@ namespace Snowstorm
 			}
 			{
 				std::lock_guard lock(m_Mutex);
-				m_CompiledVertSpv = std::move(vert);
-				m_CompiledFragSpv = std::move(frag);
+				m_Compiled.Vert = std::move(vert);
+				m_Compiled.Frag = std::move(frag);
+				++m_Compiled.Version;
 			}
-			m_Version.fetch_add(1, std::memory_order_relaxed);
 			m_Ready.store(true, std::memory_order_release);
 			return;
 		}
@@ -589,9 +589,9 @@ namespace Snowstorm
 		}
 		{
 			std::lock_guard lock(m_Mutex);
-			m_CompiledCompSpv = std::move(comp);
+			m_Compiled.Comp = std::move(comp);
+			++m_Compiled.Version;
 		}
-		m_Version.fetch_add(1, std::memory_order_relaxed);
 		m_Ready.store(true, std::memory_order_release);
 	}
 }
