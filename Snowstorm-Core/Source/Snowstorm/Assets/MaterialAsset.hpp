@@ -4,6 +4,7 @@
 
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
+#include <map>
 #include <string>
 
 namespace Snowstorm
@@ -42,6 +43,10 @@ namespace Snowstorm
 		// masking (no blending/sorting); used by foliage/fence textures. AlphaMask off = fully opaque.
 		bool AlphaMask = false;
 		float AlphaCutoff = 0.5f; // glTF default
+
+		// Sparse named overrides for the `// @param` declarations in the fragment shader (ShaderParams.hpp).
+		// Only edited params are stored; the rest take the shader's declared default.
+		std::map<std::string, glm::vec4> ShaderParams;
 
 		[[nodiscard]] bool operator==(const MaterialAsset&) const = default;
 	};

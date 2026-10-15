@@ -78,6 +78,14 @@ namespace Snowstorm
 		root["AlphaMask"] = asset.AlphaMask;
 		root["AlphaCutoff"] = asset.AlphaCutoff;
 
+		if (!asset.ShaderParams.empty())
+		{
+			json params = json::object();
+			for (const auto& [name, v] : asset.ShaderParams)
+				params[name] = Vec4ToJson(v);
+			root["ShaderParams"] = std::move(params);
+		}
+
 		std::ofstream out(path);
 		if (!out.is_open())
 			return false;
@@ -136,6 +144,16 @@ namespace Snowstorm
 		// Alpha-cutout fields (optional; absent -> struct defaults, so pre-alpha materials stay opaque).
 		outAsset.AlphaMask = root.value("AlphaMask", outAsset.AlphaMask);
 		outAsset.AlphaCutoff = root.value("AlphaCutoff", outAsset.AlphaCutoff);
+
+		if (root.contains("ShaderParams") && root["ShaderParams"].is_object())
+		{
+			for (const auto& [name, value] : root["ShaderParams"].items())
+			{
+				glm::vec4 v(0.0f);
+				if (JsonToVec4(value, v))
+					outAsset.ShaderParams[name] = v;
+			}
+		}
 
 		return true;
 	}

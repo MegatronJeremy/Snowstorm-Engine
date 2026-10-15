@@ -18,6 +18,9 @@
 #include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Assets/MaterialAssetIO.hpp"
+#include "Snowstorm/Render/ShaderParams.hpp"
+#include <fstream>
+#include "Snowstorm/Utility/EnginePaths.hpp"
 #include "Snowstorm/Project/Project.hpp"
 
 #include "Platform/Vulkan/VulkanBindlessManager.hpp"
@@ -979,7 +982,9 @@ namespace Snowstorm
 		Ref<Material> base = CreateRef<Material>(pipeline);
 		ApplyMaterialAsset(*base, matAsset);
 
-		return CreateRef<MaterialInstance>(base);
+		Ref<MaterialInstance> mi = CreateRef<MaterialInstance>(base);
+		ApplyShaderParams(*mi, matAsset);
+		return mi;
 	}
 
 	Ref<MaterialInstance> AssetManagerSingleton::GetMaterialInstance(const AssetHandle handle)
@@ -1014,6 +1019,7 @@ namespace Snowstorm
 		ApplyMaterialAsset(*base, matAsset);
 
 		Ref<MaterialInstance> mi = CreateRef<MaterialInstance>(base);
+		ApplyShaderParams(*mi, matAsset);
 
 		m_MaterialInstanceCache[handle] = mi;
 		return mi;
@@ -1045,6 +1051,17 @@ namespace Snowstorm
 				pipeline->SetSampleCount(samples);
 			}
 		}
+	}
+
+	void AssetManagerSingleton::ApplyShaderParams(MaterialInstance& instance, const MaterialAsset& matAsset)
+	{
+		std::ifstream in(ResolveShaderSource(matAsset.FragmentShader));
+		if (!in)
+			return;
+		const std::string source((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		const std::vector<ShaderParam> params = ParseShaderParams(source);
+		if (!params.empty())
+			instance.SetPerInstanceCustomData(PackShaderParams(params, matAsset.ShaderParams));
 	}
 
 	void AssetManagerSingleton::ApplyMaterialAsset(Material& base, const MaterialAsset& matAsset)
