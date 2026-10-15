@@ -198,6 +198,8 @@ namespace Snowstorm
 
 		// Invoke `fn` for every live pipeline (the registry holds weak refs populated by Create). Used by the
 		// shader-reload sweep to find pipelines whose shader recompiled. Dead entries are pruned as it walks.
+		// Thread-safe against concurrent Create; `fn` runs outside the registry lock on a snapshot, so it may
+		// create pipelines. Reload() itself still needs the render thread at a frame boundary.
 		static void ForEachLive(const std::function<void(const Ref<Pipeline>&)>& fn);
 
 	protected:
