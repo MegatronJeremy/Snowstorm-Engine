@@ -136,8 +136,10 @@ namespace Snowstorm
 		Renderer::SetVSync(CVars::VSync.Get());
 
 		InitializeActiveWorld();
-		NoteProjectOpened(*activeProject);
-		if (showStartScreen)
+		// The default project behind the picker is a placeholder; recording it would reorder the user's recents.
+		if (!showStartScreen)
+			NoteProjectOpened(*activeProject);
+		else
 			m_ActiveWorld->GetSingleton<EditorCommandsSingleton>().ShowStartScreen = true;
 
 		LoadOrCreateStartupWorld();
