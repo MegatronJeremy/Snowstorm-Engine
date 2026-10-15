@@ -117,6 +117,7 @@ SDK installation is needed, since the loader, headers and validation layers all 
 Architecture, conventions, and the full build, debug and benchmarking workflow are in
 [`AGENTS.md`](AGENTS.md). The roadmap is in
 [issues](https://github.com/MegatronJeremy/Snowstorm-Engine/issues).
+Feature pages with images and measured numbers are in [`docs/showcase`](docs/showcase/README.md).
 
 ## Games
 
