@@ -29,6 +29,9 @@ namespace Snowstorm
 	// the Application exists) before anything asks for a path.
 	const std::filesystem::path& GetEngineRoot();
 
+	// Directory of the running executable (the working directory if the OS query fails).
+	std::filesystem::path GetExecutableDir();
+
 	// Resolves an engine-relative path ("Engine/Shaders/Foo.hlsl") against the root above. An absolute
 	// path passes through unchanged, so a caller may always route through this.
 	std::filesystem::path EngineAssetPath(std::string_view relative);
