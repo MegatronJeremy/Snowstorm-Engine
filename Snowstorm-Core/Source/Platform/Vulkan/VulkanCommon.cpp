@@ -33,6 +33,31 @@ namespace Snowstorm
 		return VulkanContext::Get().GetGraphicsQueueFamilyIndex();
 	}
 
+	namespace
+	{
+		DeferredDeletionQueue s_RetireQueue;
+	}
+
+	void RetireVulkanObject(std::function<void()> destroy)
+	{
+		s_RetireQueue.Retire(std::move(destroy));
+	}
+
+	void AdvanceVulkanRetireQueue()
+	{
+		s_RetireQueue.Advance();
+	}
+
+	void FlushVulkanRetireQueue()
+	{
+		s_RetireQueue.FlushAndDisable();
+	}
+
+	void EnableVulkanRetireQueue(const uint32_t framesInFlight)
+	{
+		s_RetireQueue.Enable(framesInFlight);
+	}
+
 	VmaAllocator GetAllocator()
 	{
 		return VulkanContext::Get().GetAllocator();
