@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Snowstorm/Render/CascadeMath.hpp"
+
 #include "CommandContext.hpp"
 #include "Material.hpp"
 #include "Mesh.hpp"
@@ -191,6 +193,16 @@ namespace Snowstorm
 		};
 		void SetSunShadowFit(const SunShadowFit& fit) { m_SunShadowFit = fit; }
 		[[nodiscard]] const SunShadowFit& GetSunShadowFit() const { return m_SunShadowFit; }
+
+		// Per-frame sun cascade fit from LightingSystem behind render.shadow.cascades.fit (#58). Unconsumed
+		// until the cascade atlas pass lands.
+		struct SunCascadeFit
+		{
+			bool Valid = false;
+			CascadeMath::CascadeFit Fit{};
+		};
+		void SetSunCascadeFit(const SunCascadeFit& fit) { m_SunCascadeFit = fit; }
+		[[nodiscard]] const SunCascadeFit& GetSunCascadeFit() const { return m_SunCascadeFit; }
 
 		// Set the baked IBL data the lit pass needs: bindless indices of the irradiance + prefiltered cubes
 		// and the BRDF LUT, plus the prefiltered mip count (drives the roughness->lod map). All zero = IBL
@@ -440,6 +452,7 @@ namespace Snowstorm
 		// pass (see SunShadowFit above). Not GPU FrameData, just a plain per-frame handoff between the
 		// two systems.
 		SunShadowFit m_SunShadowFit{};
+		SunCascadeFit m_SunCascadeFit{};
 
 		// GPU device address of this frame's RT reflection geometry table (#118); pushed by
 		// SetReflectionGeometryAddress, read into FrameCB in AcquireFrameSet. 0 = no table.
