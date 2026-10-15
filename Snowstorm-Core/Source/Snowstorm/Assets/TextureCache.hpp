@@ -36,6 +36,7 @@ namespace Snowstorm
 			BC1 = 1, // opaque colour, 8:1
 			BC3 = 2, // colour with alpha, 4:1
 			BC5 = 3, // tangent-space normals, 4:1; two 8-bit planes, Z reconstructed in the shader
+			BC7 = 4, // colour with alpha or high-quality opaque colour, 4:1 against RGBA8, 8 bpp
 		};
 		Encoding Format = Encoding::RGBA8;
 
@@ -49,14 +50,14 @@ namespace Snowstorm
 	{
 		uint8_t Role = 0;     // TextureRole
 		uint8_t MipSpace = 0; // MipSpace the chain was filtered in
-		uint8_t Compress = 0; // cook.textures.compress
+		uint8_t Compress = 0; // 0 off, 1 cook.textures.compress at quality 0, 2 at quality 1 (BC7 opaque colour)
 		uint8_t EncoderRevision = 0;
 
 		bool operator==(const TextureCookKey&) const = default;
 	};
 
 	// Bump when an encoder setting changes cooked bytes without a layout change.
-	inline constexpr uint8_t kTextureEncoderRevision = 1;
+	inline constexpr uint8_t kTextureEncoderRevision = 2; // 2: alpha colour BC3 -> BC7
 
 	class TextureCacheIO
 	{
