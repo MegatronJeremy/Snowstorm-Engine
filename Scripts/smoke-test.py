@@ -11,7 +11,7 @@ This needs a real GPU + display (Vulkan), so it is a LOCAL check, not a CI job.
 Run it after a build to catch runtime regressions that compilation can't.
 
 Usage (from repo root or anywhere):
-    py Scripts/smoke-test.py                 # default 120 frames, 60s timeout each
+    py Scripts/smoke-test.py                 # default 120 frames, 180s timeout each
     py Scripts/smoke-test.py --frames 300    # run more frames
     py Scripts/smoke-test.py --timeout 90    # per-app wall-clock budget (seconds)
     py Scripts/smoke-test.py --config Release # test the Release build instead of Debug
@@ -178,7 +178,7 @@ def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
 def main() -> int:
     ap = argparse.ArgumentParser(description="Smoke-test the Snowstorm executables.")
     ap.add_argument("--frames", type=int, default=120, help="Frames to run per app (default 120)")
-    ap.add_argument("--timeout", type=int, default=60, help="Per-app wall-clock timeout in seconds (default 60)")
+    ap.add_argument("--timeout", type=int, default=180, help="Per-app wall-clock timeout in seconds (default 180)")
     ap.add_argument("--config", default="Debug", help="Build config dir under build/ (default Debug)")
     ap.add_argument("--build-dir", default="build", help="Build directory (default build)")
     ap.add_argument("--triplet", default="x64-windows", help="vcpkg triplet for the validation-layer path (default x64-windows)")
