@@ -262,7 +262,10 @@ namespace Snowstorm
 
 			if (newest > lastModified)
 			{
-				Get(key)->Recompile();
+				// Async: the worker publishes through the shader's compile gate, so overlapping edits
+				// coalesce. Callers must not expect the new SPIR-V on return; the pipeline sweep picks it
+				// up by version once published. A failed compile keeps the previous result.
+				SubmitAsyncCompile(Get(key));
 				lastModified = newest;
 			}
 		}

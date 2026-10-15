@@ -1,10 +1,12 @@
 #include "EditorTheme.hpp"
 
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Utility/EnginePaths.hpp"
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <filesystem>
@@ -215,5 +217,35 @@ namespace Snowstorm::EditorTheme
 		ImGui::PopStyleColor();
 		ImGui::EndChild();
 		ImGui::PopStyleColor(2);
+	}
+
+	void DrawCrtOverlay()
+	{
+		if (!CVars::EditorCrt.Get())
+		{
+			return;
+		}
+
+		const float intensity = std::clamp(CVars::EditorCrtIntensity.Get(), 0.0f, 1.0f);
+		const ImGuiViewport* vp = ImGui::GetMainViewport();
+		ImDrawList* dl = ImGui::GetForegroundDrawList(const_cast<ImGuiViewport*>(vp));
+		const ImVec2 p0 = vp->Pos;
+		const ImVec2 p1(vp->Pos.x + vp->Size.x, vp->Pos.y + vp->Size.y);
+
+		// Every other row at a quarter of the intensity: 1px lines, subtle enough not to hide text.
+		const ImU32 line = IM_COL32(0, 0, 0, static_cast<int>(intensity * 0.5f * 255.0f));
+		for (float y = p0.y; y < p1.y; y += 3.0f)
+		{
+			dl->AddLine(ImVec2(p0.x, y), ImVec2(p1.x, y), line, 1.0f);
+		}
+
+		// Vignette: four edge gradients fading from transparent to dark.
+		const float edge = std::min(vp->Size.x, vp->Size.y) * 0.12f;
+		const ImU32 dark = IM_COL32(0, 0, 0, static_cast<int>(intensity * 255.0f));
+		const ImU32 clear = IM_COL32(0, 0, 0, 0);
+		dl->AddRectFilledMultiColor(p0, ImVec2(p1.x, p0.y + edge), dark, dark, clear, clear);
+		dl->AddRectFilledMultiColor(ImVec2(p0.x, p1.y - edge), p1, clear, clear, dark, dark);
+		dl->AddRectFilledMultiColor(p0, ImVec2(p0.x + edge, p1.y), dark, clear, clear, dark);
+		dl->AddRectFilledMultiColor(ImVec2(p1.x - edge, p0.y), p1, clear, dark, dark, clear);
 	}
 }

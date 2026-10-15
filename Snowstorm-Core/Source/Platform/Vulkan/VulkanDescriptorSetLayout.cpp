@@ -1,5 +1,6 @@
 ﻿#include "Platform/Vulkan/VulkanDescriptorSetLayout.hpp"
 
+#include "VulkanCommon.hpp"
 #include "Snowstorm/Core/Log.hpp"
 
 namespace Snowstorm
@@ -79,8 +80,8 @@ namespace Snowstorm
 	{
 		if (m_IsLayoutOwner && m_Layout != VK_NULL_HANDLE)
 		{
-			vkDeviceWaitIdle(m_Device);
-			vkDestroyDescriptorSetLayout(m_Device, m_Layout, nullptr);
+			RetireVulkanObject([device = m_Device, layout = m_Layout]
+			                   { vkDestroyDescriptorSetLayout(device, layout, nullptr); });
 			m_Layout = VK_NULL_HANDLE;
 		}
 	}

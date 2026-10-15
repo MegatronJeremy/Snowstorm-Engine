@@ -56,6 +56,7 @@ namespace Snowstorm
 		Renderer::ImGuiNewFrame();
 		ImGui::NewFrame();
 		ImGuizmo::BeginFrame(); // must follow ImGui::NewFrame each frame for gizmos to work
+		EditorTheme::DrawCrtOverlay();
 	}
 
 	void ImGuiService::PostUpdate(Timestep ts)
