@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 namespace Snowstorm::EditorTheme
 {
 	// ---- NERV-style chrome helpers (call inside an ImGui window) ----
@@ -7,6 +9,10 @@ namespace Snowstorm::EditorTheme
 	// A bold section header rendered as "// LABEL" in the amber accent, followed by a separator.
 	// Use at the top of a panel to give it the terminal look.
 	void SectionHeader(const char* label);
+
+	// Window title "// UPPER_SNAKE###label": the NERV title strings, with the ImGui ID taken from the
+	// plain `label` after "###" so docking and saved layouts address the window as "###label".
+	std::string PanelTitle(const char* label);
 
 	// A full-width amber PRIMARY action button (the NERV command-console look): bright amber fill,
 	// dark text, uppercased label. `width` <= 0 stretches to the content region. Returns true when
