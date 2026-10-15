@@ -108,6 +108,10 @@ namespace Snowstorm::CVars
 
 	CVar<bool> Fullscreen{"display.fullscreen", false, "Create the window borderless at the primary monitor's current video mode (no mode switch, so alt-tab stays instant) instead of a decorated 1280x720. Startup-only: the window is created once.", CVarFlags::Persist | CVarFlags::ReadOnly};
 
+	CVar<bool> EditorCrt{"editor.crt", false, "Draw a faint scanline and corner-vignette CRT overlay over the editor window (NERV theme flourish). Purely cosmetic.", CVarFlags::Persist};
+
+	CVar<float> EditorCrtIntensity{"editor.crt.intensity", 0.25f, "Opacity of the editor.crt overlay, 0..1", CVarFlags::Persist};
+
 	CVar<bool> AudioEnabled{"audio.enabled", true, "Open an audio output device at startup. Off = the engine runs silently (every AudioService call no-ops) and no device is claimed. Startup-only: the device is opened once.", CVarFlags::Persist | CVarFlags::ReadOnly};
 
 	CVar<float> AudioMasterVolume{"audio.volume", 1.0f, "Master volume over the whole mix: 0 = silence, 1 = unattenuated. Read every frame, so an edit from the CVar panel is audible immediately. Above 1 amplifies and can clip.", CVarFlags::Persist};
