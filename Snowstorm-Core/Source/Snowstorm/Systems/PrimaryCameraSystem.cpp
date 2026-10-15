@@ -43,4 +43,9 @@ namespace Snowstorm
 			}
 		}
 	}
+
+	void PrimaryCameraSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.ReadComponents<DoNotSerializeComponent>().WriteComponents<CameraComponent>().WriteResources<TrackingMapResource>();
+	}
 }

@@ -113,4 +113,9 @@ namespace Snowstorm
 			tr.Rotation = glm::vec3(pose.Pitch, pose.Yaw, 0.0f);
 		}
 	}
+
+	void CameraPathSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.ReadComponents<CameraControllerComponent, CameraPathComponent>().WriteComponents<TransformComponent>().ReadResources<RendererService, AssetManagerSingleton, ShaderLibrary>();
+	}
 }

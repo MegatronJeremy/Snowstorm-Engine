@@ -8,4 +8,9 @@ namespace Snowstorm
 	{
 		SingletonView<AssetManagerSingleton>().ProcessCompletedLoads();
 	}
+
+	void AssetLoadSystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.WriteResources<AssetManagerSingleton>();
+	}
 }

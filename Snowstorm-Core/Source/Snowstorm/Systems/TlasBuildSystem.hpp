@@ -21,6 +21,7 @@ namespace Snowstorm
 		}
 
 		void Execute(Timestep ts) override;
+		void DeclareAccess(SystemAccess& a) const override;
 
 		// TLAS builds must reflect authored transforms in the editor too (the RT shadows should match the
 		// raster ones while editing), so this runs in edit mode.

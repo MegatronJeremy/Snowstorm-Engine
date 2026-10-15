@@ -200,4 +200,9 @@ namespace Snowstorm
 			cache.Considered = considered.load(std::memory_order_relaxed);
 		}
 	}
+
+	void VisibilitySystem::DeclareAccess(SystemAccess& a) const
+	{
+		a.Structural().ReadComponents<TransformComponent, CameraComponent, CameraRuntimeComponent, CameraTargetComponent, CameraVisibilityComponent, MeshComponent, MaterialComponent, VisibilityComponent, ViewportComponent>().WriteComponents<VisibilityCacheComponent>().ReadResources<TrackingMapResource>();
+	}
 }

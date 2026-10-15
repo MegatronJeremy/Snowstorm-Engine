@@ -54,6 +54,90 @@ namespace Snowstorm
 		};
 	}
 
+	// Pseudo-resource for TrackedRegistry's unsynchronised change-tracking maps: any tracked mutator
+	// (patch/emplace/MarkChanged) writes it, any Init/Changed/FiniView reads it.
+	struct TrackingMapResource
+	{
+	};
+
+	// What a system touches, declared by hand because C++ cannot introspect the View<> calls in Execute.
+	// An undeclared system is exclusive and main-thread-only, so a future scheduler can never make an old
+	// system racy. Singletons and Services are resources here: most real conflicts are on them.
+	struct SystemAccess
+	{
+		std::vector<std::type_index> ReadComponents_, WriteComponents_;
+		std::vector<std::type_index> ReadResources_, WriteResources_;
+		bool Declared = false;
+		bool HasStructuralChange = false; // emplace/remove/destroy: needs a stage to itself
+		bool IsMainThread = true;         // ImGui, Vulkan, scripts, audio device: never a worker task
+
+		template <typename... T>
+		SystemAccess& ReadComponents()
+		{
+			(ReadComponents_.emplace_back(typeid(T)), ...);
+			return Declare();
+		}
+		template <typename... T>
+		SystemAccess& WriteComponents()
+		{
+			(WriteComponents_.emplace_back(typeid(T)), ...);
+			return Declare();
+		}
+		template <typename... T>
+		SystemAccess& ReadResources()
+		{
+			(ReadResources_.emplace_back(typeid(T)), ...);
+			return Declare();
+		}
+		template <typename... T>
+		SystemAccess& WriteResources()
+		{
+			(WriteResources_.emplace_back(typeid(T)), ...);
+			return Declare();
+		}
+		SystemAccess& Structural()
+		{
+			HasStructuralChange = true;
+			return Declare();
+		}
+
+		// An undeclared system is exclusive like a structural one.
+		[[nodiscard]] bool IsStructural() const { return !Declared || HasStructuralChange; }
+
+		// Two systems conflict when one writes something the other reads or writes.
+		[[nodiscard]] bool ConflictsWith(const SystemAccess& o) const
+		{
+			if (!Declared || !o.Declared || IsStructural() || o.IsStructural())
+			{
+				return true;
+			}
+			const auto hit = [](const auto& a, const auto& b)
+			{
+				for (const auto& x : a)
+				{
+					for (const auto& y : b)
+					{
+						if (x == y)
+						{
+							return true;
+						}
+					}
+				}
+				return false;
+			};
+			return hit(WriteComponents_, o.WriteComponents_) || hit(WriteComponents_, o.ReadComponents_) ||
+			       hit(ReadComponents_, o.WriteComponents_) || hit(WriteResources_, o.WriteResources_) ||
+			       hit(WriteResources_, o.ReadResources_) || hit(ReadResources_, o.WriteResources_);
+		}
+
+	private:
+		SystemAccess& Declare()
+		{
+			Declared = true;
+			return *this;
+		}
+	};
+
 	class System : public NonCopyable
 	{
 	public:
@@ -75,6 +159,9 @@ namespace Snowstorm
 		/// system set is mostly infra rather than gameplay). Consulted by SystemManager against
 		/// SimulationStateSingleton; in a packaged runtime (no sim state) everything runs regardless.
 		[[nodiscard]] virtual bool RunsInEditMode() const { return true; }
+
+		/// Fills what this system reads and writes. The default leaves it undeclared (exclusive, main thread).
+		virtual void DeclareAccess(SystemAccess& /*access*/) const {}
 
 	protected:
 		/// Standard entity view for active components

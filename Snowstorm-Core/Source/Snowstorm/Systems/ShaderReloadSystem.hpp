@@ -13,6 +13,7 @@ namespace Snowstorm
 		}
 
 		void Execute(Timestep ts) override;
+		void DeclareAccess(SystemAccess& a) const override;
 
 	private:
 		// DefaultLit RT-permutation swap state (#118 perf): track the last "any RT effect active" value so a
