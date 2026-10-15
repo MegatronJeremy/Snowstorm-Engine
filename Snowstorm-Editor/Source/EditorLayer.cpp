@@ -104,6 +104,7 @@ namespace Snowstorm
 				project->SetProjectDirectory(std::filesystem::current_path());
 			}
 			Project::SetActive(project);
+			CVarRegistry::Get().LoadProjectSettings(project->GetProjectDirectory());
 		}
 
 		// From this boundary onward every editor World/system may rely on an active project. Keep the
@@ -1228,7 +1229,10 @@ namespace Snowstorm
 		// the layer stack too, so without this guard they'd overwrite the config with test state.
 		if (CVars::SmokeFrames.Get() == 0)
 		{
-			CVarRegistry::Get().SaveConfig(CVarRegistry::kConfigPath);
+			if (const Ref<Project> project = Project::GetActive())
+			{
+				CVarRegistry::Get().SaveProjectSettings(project->GetProjectDirectory());
+			}
 		}
 	}
 
