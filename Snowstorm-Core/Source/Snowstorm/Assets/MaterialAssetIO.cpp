@@ -74,8 +74,8 @@ namespace Snowstorm
 		root["Roughness"] = asset.Roughness;
 		root["EmissiveColor"] = Vec3ToJson(asset.EmissiveColor);
 
-		// Alpha-cutout (glTF MASK). Written unconditionally; absent in old files -> defaults on load.
-		root["AlphaMask"] = asset.AlphaMask;
+		// "AlphaMode" replaces the legacy boolean "AlphaMask", which is read but no longer written.
+		root["AlphaMode"] = AlphaModeName(asset.Alpha);
 		root["AlphaCutoff"] = asset.AlphaCutoff;
 
 		if (!asset.ShaderParams.empty())
@@ -142,7 +142,10 @@ namespace Snowstorm
 			(void)JsonToVec3(root["EmissiveColor"], outAsset.EmissiveColor);
 
 		// Alpha-cutout fields (optional; absent -> struct defaults, so pre-alpha materials stay opaque).
-		outAsset.AlphaMask = root.value("AlphaMask", outAsset.AlphaMask);
+		if (root.contains("AlphaMode") && root["AlphaMode"].is_string())
+			outAsset.Alpha = AlphaModeFromName(root["AlphaMode"].get<std::string>(), outAsset.Alpha);
+		else if (root.value("AlphaMask", false))
+			outAsset.Alpha = AlphaMode::Mask;
 		outAsset.AlphaCutoff = root.value("AlphaCutoff", outAsset.AlphaCutoff);
 
 		if (root.contains("ShaderParams") && root["ShaderParams"].is_object())
