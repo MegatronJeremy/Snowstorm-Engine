@@ -249,6 +249,24 @@ cbuffer FrameCB : register(b0, space0)
 	uint DirShadowAtlasIndex; // bindless index of the secondary-directional shadow atlas (0 = none)
 	uint _FramePad1;
 	uint _FramePad2;
+
+	// Clustered light lists (#66). ClusterStride == 0: loop over all lights. Otherwise the list buffer at
+	// ClusterListAddr holds ClusterCount counts, then ClusterCount * ClusterStride light indices (points first,
+	// then spots, ascending); ClusterViewDepthRow gives positive view depth as dot(row, float4(posWS, 1)).
+	// Valid only for the presented camera at RenderTargetSize == the grid's size. MUST match RendererService.cpp.
+	float4 ClusterViewDepthRow;
+	uint ClusterListAddrLo;
+	uint ClusterListAddrHi;
+	uint ClusterStride;
+	uint ClusterTilePx;
+	uint ClusterTilesX;
+	uint ClusterTilesY;
+	uint ClusterCount;
+	uint ClusterSlices;
+	float ClusterNear;
+	float ClusterSliceScale; // Slices / log(Far / Near)
+	float _ClusterPad0;
+	float _ClusterPad1;
 };
 
 // --- SPACE 1: Material Data ---
