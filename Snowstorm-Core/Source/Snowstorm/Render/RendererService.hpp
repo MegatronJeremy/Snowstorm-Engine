@@ -298,6 +298,17 @@ namespace Snowstorm
 			uint64_t PathFrame = 0;     // route-local frame index; meaningless unless PathActive
 			bool PathActive = false;    // the scripted route is on AND has started (scene resident)
 		};
+		// Cluster light assignment statistics of the presented view (render.lights.cluster, #66); zeros when off.
+		struct ClusterStats
+		{
+			uint32_t Clusters = 0;
+			uint32_t Occupied = 0;
+			uint32_t MaxPerCluster = 0;
+			uint32_t Overflowed = 0;
+			uint32_t Lights = 0;
+		};
+		void SetClusterStats(const ClusterStats& s) { m_ClusterStats = s; }
+		[[nodiscard]] const ClusterStats& GetClusterStats() const { return m_ClusterStats; }
 		void SetFrameViewInfo(const FrameViewInfo& v) { m_FrameViewInfo = v; }
 		[[nodiscard]] const FrameViewInfo& GetFrameViewInfo() const { return m_FrameViewInfo; }
 
@@ -510,6 +521,7 @@ namespace Snowstorm
 
 		// Presented viewport extent + camera pose for this frame; see SetFrameViewInfo.
 		FrameViewInfo m_FrameViewInfo;
+		ClusterStats m_ClusterStats;
 
 		// Latest upscaled-vs-ground-truth image metrics (#45), set by RenderSystem when render.metrics is on.
 		MetricsResult m_Metrics;

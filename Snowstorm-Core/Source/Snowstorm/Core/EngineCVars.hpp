@@ -449,6 +449,8 @@ namespace Snowstorm::CVars
 	// tile of one shared atlas). 1 = primary only (default). Clamped to [1, MAX_DIRECTIONAL_LIGHTS]. Ray-traced
 	// shadows are unaffected: every casting directional traces.
 	extern CVar<int> ShadowDirectionals;
+	extern CVar<bool> LightClusterAssign;
+	extern CVar<int> LightClusterMaxPerCluster;
 
 	// Soft shadows: 3x3 PCF for the raster shadow map; cone-sampled penumbra for RT shadows. Off = hard.
 	extern CVar<bool> ShadowSoft;

@@ -116,4 +116,49 @@ namespace Snowstorm
 				out.push_back(i);
 		return out;
 	}
+
+	// Per-cluster light lists with a fixed stride, the layout the planned GPU buffer takes. Indices of cluster c
+	// live at [c * Stride, c * Stride + Counts[c]).
+	struct ClusterLightLists
+	{
+		uint32_t Stride = 0;
+		std::vector<uint32_t> Counts;
+		std::vector<uint32_t> Indices;
+		uint32_t Overflowed = 0; // clusters where at least one overlapping light was dropped
+		uint32_t Occupied = 0;   // clusters with at least one light
+		uint32_t MaxCount = 0;
+	};
+
+	// Lights are view-space spheres (see the convention on ClusterGrid). Brute force O(clusters x lights): the
+	// CPU reference for the compute cull, not a per-frame production path.
+	inline ClusterLightLists AssignClusterLights(const ClusterGrid& g, float tanHalfFovY, float aspect, const std::vector<ClusterSphere>& lights, uint32_t stride)
+	{
+		ClusterLightLists out;
+		out.Stride = stride;
+		out.Counts.assign(g.ClusterCount(), 0);
+		out.Indices.assign(static_cast<size_t>(g.ClusterCount()) * stride, 0);
+		for (uint32_t s = 0; s < g.Slices; ++s)
+			for (uint32_t y = 0; y < g.TilesY(); ++y)
+				for (uint32_t x = 0; x < g.TilesX(); ++x)
+				{
+					const ClusterAabb b = ClusterBounds(g, x, y, s, tanHalfFovY, aspect);
+					const uint32_t c = g.Index(x, y, s);
+					uint32_t n = 0;
+					bool dropped = false;
+					for (uint32_t i = 0; i < lights.size(); ++i)
+					{
+						if (!SphereOverlapsAabb(lights[i], b))
+							continue;
+						if (n < stride)
+							out.Indices[static_cast<size_t>(c) * stride + n++] = i;
+						else
+							dropped = true;
+					}
+					out.Counts[c] = n;
+					out.Occupied += n > 0 ? 1u : 0u;
+					out.Overflowed += dropped ? 1u : 0u;
+					out.MaxCount = std::max(out.MaxCount, n);
+				}
+		return out;
+	}
 }

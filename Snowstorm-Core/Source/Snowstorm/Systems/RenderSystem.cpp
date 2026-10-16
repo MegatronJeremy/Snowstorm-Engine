@@ -18,6 +18,7 @@
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Systems/ReflectionGeometrySingleton.hpp"
+#include "Snowstorm/Render/LightClusterMath.hpp"
 #include "Snowstorm/Render/RenderGraph.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
@@ -247,6 +248,40 @@ namespace Snowstorm
 				}
 			}
 			renderer.SetFrameViewInfo(view);
+
+			RendererService::ClusterStats clusterStats{};
+			if (CVars::LightClusterAssign.Get() && view.Width > 0 && view.Height > 0)
+			{
+				const CameraPick pick = FindCameraForViewport(reg, presentViewport);
+				if (pick.Cam && pick.Rt && pick.Cam->Projection == CameraComponent::ProjectionType::Perspective)
+				{
+					const glm::mat4& viewMatrix = pick.Rt->View;
+					const LightDataBlock& lights = renderer.GetLights();
+					// View space looks down -z; the cluster grid wants positive depth along the view.
+					std::vector<ClusterSphere> spheres;
+					auto add = [&](const glm::vec3& p, float range)
+					{
+						const glm::vec3 v = glm::vec3(viewMatrix * glm::vec4(p, 1.0f));
+						spheres.push_back({{v.x, v.y, -v.z}, range});
+					};
+					for (int i = 0; i < lights.PointCount; ++i)
+						add(lights.PointLights[i].Position, lights.PointLights[i].Range);
+					for (int i = 0; i < lights.SpotCount; ++i)
+						add(lights.SpotLights[i].Position, lights.SpotLights[i].Range); // cone ignored: sphere is conservative
+
+					ClusterGrid grid;
+					grid.Width = view.Width;
+					grid.Height = view.Height;
+					grid.Near = pick.Cam->PerspectiveNear;
+					grid.Far = pick.Cam->PerspectiveFar;
+					const float tanHalfFovY = std::tan(pick.Cam->PerspectiveFOV * 0.5f);
+					const float aspect = static_cast<float>(view.Width) / static_cast<float>(view.Height);
+					const uint32_t stride = static_cast<uint32_t>(std::max(CVars::LightClusterMaxPerCluster.Get(), 1));
+					const ClusterLightLists lists = AssignClusterLights(grid, tanHalfFovY, aspect, spheres, stride);
+					clusterStats = {grid.ClusterCount(), lists.Occupied, lists.MaxCount, lists.Overflowed, static_cast<uint32_t>(spheres.size())};
+				}
+			}
+			renderer.SetClusterStats(clusterStats);
 		}
 
 		// Compose the swapchain. Two mutually exclusive paths:
