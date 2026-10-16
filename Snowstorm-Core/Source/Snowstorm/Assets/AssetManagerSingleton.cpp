@@ -812,11 +812,12 @@ namespace Snowstorm
 			const auto list = [&](const char* kind, const std::unordered_map<uint64_t, std::string>& inFlight, const std::unordered_set<uint64_t>& queued)
 			{
 				for (const auto& [key, name] : inFlight)
-					detail += std::format("\n  {} {}: {}", kind, name, queued.contains(key) ? "decoded, waiting for GPU upload" : "still on a worker (decode/cook)");
+					detail += std::format("{}{} {} ({})", detail.empty() ? "" : "; ", kind, name, queued.contains(key) ? "decoded, awaiting GPU upload" : "on a worker");
 			};
 			list("mesh", m_InFlightMeshes, meshQueued);
 			list("texture", m_InFlightTextures, textureQueued);
-			return std::format("asset loading did not drain: {} / {} still pending{}", pending, m_PendingTotal, detail);
+			// One line: the smoke harness reports only the log lines carrying an error marker.
+			return std::format("asset loading did not drain: {} / {} still pending [pending: {}]", pending, m_PendingTotal, detail);
 		}
 		if (const uint32_t placeholders = PlaceholderSlotCount(); placeholders > 0)
 			return std::format("{} texture slot(s) still show the placeholder", placeholders);
