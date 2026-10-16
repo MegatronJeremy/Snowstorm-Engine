@@ -252,6 +252,8 @@ namespace Snowstorm::CVars
 
 	CVar<bool> IBL{"render.ibl", true, "Bake + use image-based lighting from the sky (off = analytic hemisphere ambient)", CVarFlags::Persist};
 
+	CVar<float> IBLSunQuantumDeg{"render.ibl.sun_quantum_deg", 2.0f, "Re-bake the IBL maps once the sun direction has moved this many degrees from the baked one (0 = any change)", CVarFlags::Persist};
+
 	CVar<float> IBLIntensity{"render.ibl.intensity", 0.75f, "Multiplier on the IBL ambient contribution", CVarFlags::Persist};
 
 	CVar<float> GISpecAmbientFade{"render.gi.spec_ambient_fade", 1.0f, "When RT GI is active, fade the un-occluded env-cube SPECULAR ambient by roughness (0 = off/old behavior, 1 = full linear roughness fade). Rough surfaces' wide env-specular lobe otherwise acts as a second un-occluded ambient overlapping the occluded diffuse GI, over-filling shadows vs the path-traced reference.", CVarFlags::Persist};

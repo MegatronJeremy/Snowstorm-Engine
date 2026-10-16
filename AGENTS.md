@@ -1111,6 +1111,14 @@ rendering shows solid colours that occlude. Alpha mode is an asset property, not
 material, `materials/AlphaBlend.ssmat` (`"AlphaMode": "Blend"`), and varies colour and alpha per entity through
 `BaseColor` overrides. Today it renders every pane opaque; it has no baselines yet.
 
+## IBL invalidation
+
+The IBL bake is keyed on the environment block and on the sun (`Lights[0]`, the source `IBLBakePass` bakes).
+`Render/IBLInvalidation.hpp` holds the pure rule: `SunNeedsRebake` compares against the last BAKED sun, re-baking
+when its direction moves past `render.ibl.sun_quantum_deg` (default 2) or its colour*intensity changes by more
+than 5%, or when the sun appears or disappears. A re-bake is still the full monolithic bake with a `WaitIdle`;
+`IBLInvalidationTests` cover the rule (#149).
+
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc
