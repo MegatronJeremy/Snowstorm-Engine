@@ -21,7 +21,6 @@ namespace Snowstorm
 		AppTick,
 		AppUpdate,
 		AppRender,
-		FileDrop,
 		KeyPressed,
 		KeyReleased,
 		KeyTyped,

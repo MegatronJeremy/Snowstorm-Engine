@@ -154,7 +154,7 @@ namespace Snowstorm
 		AssetHandle FindHandle(const std::filesystem::path& path, const AssetType type) const { return m_Registry.FindHandleByPath(path, type); }
 
 	private:
-		Ref<Pipeline> GetOrCreatePipeline(const std::string& fragmentShaderPath, AlphaMode alpha = AlphaMode::Opaque);
+		Ref<Pipeline> GetOrCreatePipeline(const std::string& fragmentShaderPath);
 
 		// Copy a loaded MaterialAsset's colors/factors/maps onto a base Material (shared by the cached
 		// and unique material-instance paths). Resolves each texture handle in the correct color space.
@@ -182,7 +182,7 @@ namespace Snowstorm
 		std::unordered_map<uint64_t, Ref<TextureView>> m_TextureViewCacheLinear; // linear views
 		std::unordered_map<uint64_t, Ref<MaterialInstance>> m_MaterialInstanceCache;
 
-		std::unordered_map<std::string, Ref<Pipeline>> m_PipelineCache; // key = fragment-shader path, blend variants append "|blend"
+		std::unordered_map<std::string, Ref<Pipeline>> m_PipelineCache; // key = fragment-shader path
 
 		// --- Async mesh loading (#84) ---
 		// A worker-completed CPU load waiting for main-thread GPU finalize.

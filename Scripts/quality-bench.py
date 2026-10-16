@@ -215,46 +215,6 @@ def flip(a: "np.ndarray", b: "np.ndarray"):
         return None
 
 
-def sanitize_hdr(img: "np.ndarray"):
-    """HDR capture [H,W,4] -> (linear RGB float32 [H,W,3], count of non-finite values replaced by 0).
-    FLIP rejects NaN/Inf and negative radiance, so they are counted and reported, never fed through."""
-    rgb = np.ascontiguousarray(img[..., :3], dtype=np.float32)
-    bad = ~np.isfinite(rgb)
-    n = int(bad.sum())
-    if n:
-        rgb = np.where(bad, 0.0, rgb).astype(np.float32)
-    return np.maximum(rgb, 0.0), n
-
-
-def flip_hdr(a: "np.ndarray", b: "np.ndarray"):
-    """Mean HDR-FLIP (Andersson et al. 2021) of linear scene radiance, lower = closer.
-    Returns (mean, params_used, bad_value_count) or None when flip-evaluator is unavailable or fails.
-    Exposure range is derived from the REFERENCE `a`, so every technique at a viewpoint is judged over the
-    same range; params_used records it. Reported only, never gated (run-to-run noise is unmeasured)."""
-    flip(np.zeros((8, 8, 3)), np.zeros((8, 8, 3)))  # load (or install) flip-evaluator once
-    fe = _FLIP_STATE["fn"]
-    if fe is None:
-        return None
-    ref, nr = sanitize_hdr(a)
-    test, nt = sanitize_hdr(b)
-    try:
-        _, mean_flip, params = fe.evaluate(ref, test, "HDR", inputsRGB=True, computeMeanError=True)
-    except Exception as e:
-        print(f"  note: HDR-FLIP evaluate failed ({e}) -- skipping HDR-FLIP.")
-        return None
-    clean = {k: (float(v) if isinstance(v, (int, float, np.floating)) else v)
-             for k, v in dict(params or {}).items() if k in ("startExposure", "stopExposure", "numExposures", "tonemapper")}
-    return float(mean_flip), clean, nr + nt
-
-
-def load_hdr(out_base: Path):
-    """The engine's <base>_hdr.npy (linear radiance, [H,W,4], f2/f4) resized to the canonical size, or None."""
-    f = out_base.with_name(out_base.name + "_hdr.npy")
-    if not f.exists():
-        return None
-    return _resize_bilinear(np.load(f).astype(np.float32), CANON_H, CANON_W).astype(np.float32)
-
-
 _LPIPS_STATE = {"tried": False, "fn": None}
 
 
@@ -316,9 +276,6 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
     ldr = out_base.with_name(out_base.name + "_ldr.npy")
     if ldr.exists():
         ldr.unlink()
-    hdr = out_base.with_name(out_base.name + "_hdr.npy")
-    if hdr.exists():
-        hdr.unlink()  # never pair a stale HDR with a fresh LDR
 
     env = os.environ.copy()
     if max_frames > 0:
@@ -403,7 +360,7 @@ def run_capture(env_overrides: dict, out_base: Path, frames: int, exe: Path, cwd
 # not be compared. Rankings within one sweep survived that; nothing across tools did.
 REF_FRAMES_DEFAULT = 400
 
-_REF_CACHE_VERSION = 3  # bump to invalidate all cached references on a format/keying change
+_REF_CACHE_VERSION = 2  # bump to invalidate all cached references on a format/keying change
 _PT_SOURCES = ["Engine/Shaders/PathTrace.comp.hlsl", "Engine/Shaders/Include/Engine.hlsli"]
 
 
@@ -468,40 +425,20 @@ def capture_reference(vp: str, pose, ref_frames: int, exe: Path, repo_root: Path
     key = _reference_key(repo_root, exe, scene, pose, ref_frames)
     cache_npy = cache_dir / f"{vp}__{key}.npy"
 
-    hdr_npy = cache_npy.with_name(cache_npy.stem + "_hdr.npy")
-    no_hdr = cache_npy.with_name(cache_npy.stem + "_hdr.none")  # engine fingerprint when the capture had no HDR
     if cache_npy.exists() and not fresh:
-        # A reference cached without HDR is reused only while the engine is the build that produced it;
-        # after a rebuild it is re-captured once, in case the new engine writes _hdr.npy.
-        hdr_ok = hdr_npy.exists() or (no_hdr.exists() and no_hdr.read_text().strip() == engine_fingerprint(exe))
-        if hdr_ok:
-            try:
-                img = np.load(cache_npy)
-                check_engine_fingerprint(cache_npy, exe)
-                return img, "", True
-            except Exception as e:
-                print(f"  note: cached reference unreadable ({e}); re-capturing.")
+        try:
+            img = np.load(cache_npy)
+            check_engine_fingerprint(cache_npy, exe)
+            return img, "", True
+        except Exception as e:
+            print(f"  note: cached reference unreadable ({e}); re-capturing.")
 
-    base = tmp / f"{vp}_ref"
-    img, dev = run_capture({**REF_ENV, **camera_env(pose)}, base, ref_frames, exe, repo_root,
+    img, dev = run_capture({**REF_ENV, **camera_env(pose)}, tmp / f"{vp}_ref", ref_frames, exe, repo_root,
                            timeout, layer_path, scene)
     if img is not None:
         np.save(cache_npy, img)
         cache_npy.with_suffix(".exe").write_text(engine_fingerprint(exe))
-        hdr = load_hdr(base)
-        if hdr is not None:
-            np.save(hdr_npy, hdr)
-            no_hdr.unlink(missing_ok=True)
-        else:
-            hdr_npy.unlink(missing_ok=True)
-            no_hdr.write_text(engine_fingerprint(exe))
     return img, dev, False
-
-
-def load_cached_hdr_reference(repo_root: Path, exe: Path, scene: str, pose, ref_frames: int, vp: str):
-    key = _reference_key(repo_root, exe, scene, pose, ref_frames)
-    f = repo_root / "Scripts" / ".quality-ref-cache" / f"{vp}__{key}_hdr.npy"
-    return np.load(f) if f.exists() else None
 
 
 def device_slug(device: str) -> str:
@@ -592,7 +529,6 @@ def main() -> int:
         ref_img, ref_dev, cached = capture_reference(vp, pose, args.ref_frames, exe, repo_root,
                                                      max(args.timeout, args.ref_frames // 2 + 60), layer_path,
                                                      args.scene, tmp, fresh=args.fresh_ref)
-        ref_hdr = load_cached_hdr_reference(repo_root, exe, args.scene, pose, args.ref_frames, vp)
         src = "cached reference" if cached else f"captured path-traced reference ({args.ref_frames} frames)"
         print(f"=== viewpoint '{vp}': {src} ===")
         if ref_img is None:
@@ -624,18 +560,9 @@ def main() -> int:
             cur = {"device": dev or ref_dev, "viewpoint": vp, "technique": tech,
                    "flip": flip(ref_img, img), "psnr": psnr(ref_img, img), "ssim": ssim(ref_img, img)}
             fl = f"{cur['flip']:.4f}" if cur["flip"] is not None else "n/a"
-            tech_hdr = load_hdr(tmp / f"{vp}_{tech}")
-            if ref_hdr is not None and tech_hdr is not None and tech_hdr.shape == ref_hdr.shape:
-                hf = flip_hdr(ref_hdr, tech_hdr)
-                if hf is not None:
-                    cur["flipHdr"] = hf[0]
-                    cur["flipHdrParams"] = hf[1]
-                    if hf[2]:
-                        print(f"  WARNING: {hf[2]} non-finite HDR value(s) replaced by 0 before HDR-FLIP.")
             lp = lpips_score(ref_img, img)
             lps = f"  LPIPS={lp:.4f} (not gated)" if lp is not None else ""
-            hdr_s = f"  HDR-FLIP={cur['flipHdr']:.4f} (not gated)" if "flipHdr" in cur else ""
-            print(f"  FLIP={fl}  PSNR={cur['psnr']:.2f}dB  SSIM={cur['ssim']:.4f}{lps}{hdr_s}")
+            print(f"  FLIP={fl}  PSNR={cur['psnr']:.2f}dB  SSIM={cur['ssim']:.4f}{lps}")
 
             bp = baseline_path(repo_root, cur["device"], vp, tech)
             if args.update_baseline:

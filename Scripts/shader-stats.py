@@ -11,18 +11,6 @@ replace RGA.
     py Scripts/shader-stats.py --compare 9070 5070  # capture both, print the cross-vendor table
     py Scripts/shader-stats.py --json <path>        # report an existing capture, no GPU run
     py Scripts/shader-stats.py --compare 9070 5070 --frames 400 --update-baseline
-    py Scripts/shader-stats.py --gate [--gpu 5070]  # capture, diff vs the committed baseline, PASS/FAIL
-    py Scripts/shader-stats.py --gate --json <path> # gate an existing capture, no GPU run
-
-GATE (#168): a capture is diffed against Scripts/shader-stats-baseline/<device-slug>.json. Exit 0 pass,
-1 regression, 2 nothing was compared (no baseline, device mismatch, or no executable matched).
-Fails on: a spill appearing (0 to >0, hard), and a register rise on a shader that costs occupancy (AMD:
-fewer waves by the shared rga-occupancy model; NVIDIA, with no public model: more than --threshold, default
-10%, AND at least 8 registers). Withheld columns (classify) are never gated. Executables are matched by
-(pipeline file, stage) and, because permutations share that key, by sorted register count within it; a
-count mismatch inside a key compares only the common prefix and reports the rest as unmatched. Coverage
-drift (baselined but not built this run, or new) is reported and never fails: the baseline is a record of
-what a run built, so RGA stays the authority for coverage.
 
 COVERAGE IS WHAT THE RUN BUILT, not the shader set, and this is the sharpest difference from RGA.
 Pipelines are created lazily, so a capture contains only what the app actually compiled: measured, two
@@ -278,81 +266,6 @@ def report(doc: dict) -> None:
     print()
 
 
-GATE_MIN_ABS_REGS = 8
-
-
-def group_executables(doc: dict, reg_key: str, spill_key: str) -> dict:
-    """(pipeline basename, stage) -> executables sorted by (registers, spill). Permutations of one shader
-    share the key, so sorted order is the only stable pairing available."""
-    groups: dict = {}
-    for e in doc["executables"]:
-        groups.setdefault((Path(e["pipeline"]).name, e["stages"]), []).append(e)
-    for es in groups.values():
-        es.sort(key=lambda e: (val(e, reg_key) or 0, val(e, spill_key) or 0))
-    return groups
-
-
-def gate(base: dict, cur: dict, threshold: float = 0.10, asic: str = "") -> tuple[list, list, int]:
-    """Diff a capture against its baseline. Returns (failures, notes, compared_count)."""
-    if base["device"] != cur["device"]:
-        return [], [f"baseline is for '{base['device']}', capture is '{cur['device']}': not compared"], 0
-    amd = is_amd_device(cur)
-    reg_key, spill_key = COMMON[0][1 if amd else 2], COMMON[1][1 if amd else 2]
-    _, sus_b, _ = classify(base)
-    _, sus_c, _ = classify(cur)
-    gate_regs = reg_key not in sus_b and reg_key not in sus_c
-    gate_spill = spill_key not in sus_b and spill_key not in sus_c
-    chip = amd_asic(cur["device"], asic) if amd else None
-    notes = []
-    if not gate_spill:
-        notes.append(f"spill column '{spill_key}' withheld, so spills are not gated on this adapter")
-    gb, gc = group_executables(base, reg_key, spill_key), group_executables(cur, reg_key, spill_key)
-    fails, compared = [], 0
-    for key in sorted(set(gb) | set(gc)):
-        name = f"{key[0]} [{key[1]}]"
-        if key not in gc:
-            notes.append(f"{name}: baselined but not built this run")
-            continue
-        if key not in gb:
-            notes.append(f"{name}: new since the baseline")
-            continue
-        if len(gb[key]) != len(gc[key]):
-            notes.append(f"{name}: {len(gb[key])} baselined vs {len(gc[key])} built; common prefix compared")
-        for eb, ec in zip(gb[key], gc[key]):
-            compared += 1
-            if gate_spill:
-                sb, sc = val(eb, spill_key) or 0, val(ec, spill_key) or 0
-                if sb == 0 and sc > 0:
-                    fails.append(f"{name}: spill appeared ({spill_key} 0 -> {sc})")
-            rb, rc = val(eb, reg_key), val(ec, reg_key)
-            if not gate_regs or rb is None or rc is None or rc <= rb:
-                continue
-            if amd:
-                ob, oc = occupancy(rb, True, chip), occupancy(rc, True, chip)
-                if ob and oc and oc[0] < ob[0]:
-                    fails.append(f"{name}: occupancy {ob[0]}/{ob[1]} -> {oc[0]}/{oc[1]} ({reg_key} {rb} -> {rc})")
-            elif rc - rb >= GATE_MIN_ABS_REGS and (rc - rb) / max(rb, 1) > threshold:
-                fails.append(f"{name}: {reg_key} {rb} -> {rc} (+{(rc - rb) / max(rb, 1) * 100:.0f}%)")
-    return fails, notes, compared
-
-
-def run_gate(repo_root: Path, cur: dict, threshold: float, asic: str) -> int:
-    path = baseline_path(repo_root, cur["device"])
-    if not path.is_file():
-        print(f"SKIP: no baseline at {path.relative_to(repo_root)}; nothing compared.")
-        return 2
-    fails, notes, compared = gate(json.loads(path.read_text(encoding="utf-8")), cur, threshold, asic)
-    for n in notes:
-        print(f"  note: {n}")
-    if compared == 0:
-        print("SKIP: no executable was compared.")
-        return 2
-    for f in fails:
-        print(f"  FAIL: {f}")
-    print(f"{'FAIL' if fails else 'PASS'}: {compared} executables compared on {cur['device']}, {len(fails)} regressions.")
-    return 1 if fails else 0
-
-
 def compare(a: dict, b: dict, asic_a: str = "", asic_b: str = "") -> None:
     def keyof(doc, common_idx):
         amd = "amd" in doc["device"].lower() or "radeon" in doc["device"].lower()
@@ -410,17 +323,10 @@ def main() -> int:
                     help="Override the AMD ASIC target for occupancy (e.g. gfx1200); default maps from device name")
     ap.add_argument("--update-baseline", action="store_true",
                     help="Write each capture to Scripts/shader-stats-baseline/<device-slug>.json")
-    ap.add_argument("--gate", action="store_true",
-                    help="Diff the capture (or --json) against the committed baseline; exit 0/1/2")
-    ap.add_argument("--threshold", type=float, default=0.10,
-                    help="NVIDIA register-rise fraction that fails the gate (default 0.10)")
     args = ap.parse_args()
 
     if args.json:
-        doc = json.loads(Path(args.json).read_text(encoding="utf-8"))
-        if args.gate:
-            return run_gate(repo_root, doc, args.threshold, args.asic)
-        report(doc)
+        report(json.loads(Path(args.json).read_text(encoding="utf-8")))
         return 0
 
     exe = repo_root / "build" / "Snowstorm-Editor" / args.config / "Snowstorm-Editor.exe"
@@ -449,7 +355,7 @@ def main() -> int:
     if args.update_baseline:
         print(f"  wrote {write_baseline(repo_root, doc).relative_to(repo_root)}")
     report(doc)
-    return run_gate(repo_root, doc, args.threshold, args.asic) if args.gate else 0
+    return 0
 
 
 if __name__ == "__main__":

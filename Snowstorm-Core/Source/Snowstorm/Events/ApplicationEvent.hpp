@@ -4,9 +4,6 @@
 
 #include "Event.hpp"
 
-#include <filesystem>
-#include <vector>
-
 namespace Snowstorm
 {
 	struct WindowResizeEvent final : Event
@@ -60,20 +57,5 @@ namespace Snowstorm
 
 		EVENT_CLASS_TYPE(AppRender)
 		EVENT_CLASS_CATEGORY(EventCategoryApplication)
-	};
-
-	// Files dropped onto the window from the OS. The cursor events GLFW sends before it have already
-	// moved the input state to the drop point.
-	struct FileDropEvent final : Event
-	{
-		explicit FileDropEvent(std::vector<std::filesystem::path> paths)
-		    : Paths(std::move(paths))
-		{
-		}
-
-		EVENT_CLASS_TYPE(FileDrop)
-		EVENT_CLASS_CATEGORY(EventCategoryApplication)
-
-		std::vector<std::filesystem::path> Paths;
 	};
 }

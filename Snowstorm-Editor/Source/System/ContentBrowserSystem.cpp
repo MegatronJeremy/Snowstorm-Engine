@@ -4,8 +4,6 @@
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Assets/MaterialAsset.hpp"
 #include "Snowstorm/Assets/MaterialAssetIO.hpp"
-#include "Snowstorm/Core/Application.hpp"
-#include "Snowstorm/Events/ApplicationEvent.hpp"
 #include "Snowstorm/Project/Project.hpp"
 #include "Singletons/EditorCommandsSingleton.hpp"
 #include "Singletons/EditorSelectionSingleton.hpp"
@@ -42,70 +40,6 @@ namespace Snowstorm
 			default:
 				return {0.6f, 0.6f, 0.6f, 1.0f};
 			}
-		}
-	}
-
-	ContentBrowserSystem::ContentBrowserSystem(const WorldRef world)
-	    : System(world)
-	{
-		if (Application::Exists())
-		{
-			m_FileDrop = Application::Get().GetEventBus().Subscribe<FileDropEvent>(
-			    [this](const FileDropEvent& e)
-			    {
-				    m_PendingDrop.insert(m_PendingDrop.end(), e.Paths.begin(), e.Paths.end());
-				    return false;
-			    });
-		}
-	}
-
-	void ContentBrowserSystem::ImportDroppedFiles(const bool overPanel)
-	{
-		const DropPlan plan = PlanDrop(m_PendingDrop, overPanel);
-		m_PendingDrop.clear();
-		if (plan.Items.empty() && plan.Refused == 0)
-		{
-			return;
-		}
-
-		auto& assets = m_World->GetSingleton<AssetManagerSingleton>();
-		auto& notify = SingletonView<EditorNotificationsSingleton>();
-		size_t imported = 0;
-		std::string firstError;
-		for (const DropItem& item : plan.Items)
-		{
-			const AssetManagerSingleton::ImportFileResult result = assets.ImportFile(item.Source);
-			if (result.Ok())
-			{
-				++imported;
-			}
-			else if (firstError.empty())
-			{
-				firstError = item.Source.filename().string() + ": " + result.Error;
-			}
-		}
-
-		if (imported > 0)
-		{
-			assets.SaveRegistry(Project::GetActive()->GetAssetRegistryPath());
-			Rescan();
-		}
-
-		const size_t failed = plan.Items.size() - imported + plan.Refused;
-		if (failed == 0)
-		{
-			notify.Push("Imported " + std::to_string(imported) + (imported == 1 ? " file" : " files"),
-			            EditorToastType::Success);
-		}
-		else if (imported == 0)
-		{
-			notify.Push("Nothing imported: " + (firstError.empty() ? "unsupported file type" : firstError),
-			            EditorToastType::Error);
-		}
-		else
-		{
-			notify.Push("Imported " + std::to_string(imported) + ", skipped " + std::to_string(failed),
-			            EditorToastType::Warning);
 		}
 	}
 
@@ -425,15 +359,6 @@ namespace Snowstorm
 			}
 		}
 		ImGui::EndChild();
-
-		if (!m_PendingDrop.empty())
-		{
-			const ImVec2 mouse = ImGui::GetMousePos();
-			const ImVec2 min = ImGui::GetWindowPos();
-			const ImVec2 size = ImGui::GetWindowSize();
-			ImportDroppedFiles(mouse.x >= min.x && mouse.y >= min.y && mouse.x < min.x + size.x &&
-			                   mouse.y < min.y + size.y);
-		}
 
 		ImGui::End();
 	}

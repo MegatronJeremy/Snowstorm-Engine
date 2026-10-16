@@ -249,23 +249,6 @@ inverts across vendors rather than across configs: on AMD stochastic wins outrig
 wins by 2.6x. The spec chain alone is 0.828 ms on the 9070 XT and 1.253 ms on the 5070. Sub-0.05 ms
 passes are ignored (timestamp noise).
 
-**`StochasticOverlap.world` plus `camera-paths/stochastic-overlap.json` is the repro for #170.** A 16 m
-corridor lit only by two shadow-casting point lights 3 m apart (range 9, so their falloffs overlap
-over the whole mid-section), with six columns on the camera side and three crates behind, so each
-occluder throws two crossing shadows and every penumbra edge sits in the overlap. The route strafes
-past both lights at 1 m/s, 1.8 m from the back wall. Sponza's aisle route (#169) reaches the overlap
-at one probe with the lights 7.2 m apart. Look at the raw estimator, since the a-trous masks the defect:
-
-```
-Snowstorm-Runtime --startup.scene=Projects/Sandbox/assets/scenes/StochasticOverlap.world \
-  --camera.path --camera.path.file=Projects/Sandbox/assets/camera-paths/stochastic-overlap.json \
-  --render.shadows.mode=2 --render.shadows.stochastic --render.shadows.denoise.iterations=0
-```
-
-Drop `--render.shadows.stochastic` for the inline control, which should show no seams. The scene has no
-baselines and is not wired into `quality-motion.py`. It was authored without a GPU and has not been
-rendered: that the artifact is visible in it is unconfirmed.
-
 **Warmup is detected, not assumed.** Sampling begins once the rolling 30-frame GPU-time window's
 peak-to-peak spread drops below `perf.bench.warmup.epsilon` (default 5%) of its mean, capped by
 `perf.bench.warmup.maxframes` (600, after which the run proceeds and logs that it is NOT from a steady
@@ -487,7 +470,7 @@ expected the old `#type` split and silently compiled nothing).
 static and needs no GPU, so hosted CI cooks the shaders and runs the occupancy gate on every shader
 change. RGA is cached across runs (actions/cache) so only the first pays the download.
 
-### Cross-vendor shader statistics (driver-reported; `--gate` is local and opt-in)
+### Cross-vendor shader statistics (driver-reported, not a gate)
 
 RGA is the *Radeon* GPU Analyzer, so the occupancy gate is structurally AMD-only and cannot see half of a
 cross-vendor comparison. `Scripts/shader-stats.py` is the other half: `VK_KHR_pipeline_executable_properties`
@@ -507,8 +490,6 @@ permutation offline and is deterministic, so **RGA stays the authority for AMD c
 gated**; use this for NVIDIA, where no offline analyser exists, and for the cross-vendor comparison on
 shaders present in both. `--frames 400` reliably builds the RT and denoise pipelines; the 90 default
 leaves `GI.comp` and `Reflection.comp` out entirely.
-
-`py Scripts/shader-stats.py --gate` (#168) diffs a capture, or `--json <path>`, against that baseline: exit 1 when a spill appears (0 to >0) or a register rise costs occupancy (AMD: fewer waves by `rga-occupancy.py`'s model; NVIDIA: over `--threshold` and at least 8 registers, an upper-bound model), exit 2 when nothing was compared. Withheld columns are never gated (so NVIDIA spills are not, today), and coverage drift is reported, not failed. Permutations share a (pipeline, stage) key and pair by sorted register count. `Scripts/test_shader_stats_gate.py` covers the pure logic; the gate has not run against a fresh GPU capture.
 
 `Scripts/shader-stats-baseline/<device-slug>.json` is the committed, citable record. Without it these
 numbers exist only in a gitignored `Engine/cache` file, which no reader can check.
@@ -574,17 +555,6 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   each technique line also prints LPIPS-AlexNet against the reference; otherwise a note says it is
   skipped. It is never auto-installed and not stored in the baselines, since it varies with the torch
   build and the weights download. In-engine LPIPS (#112) is not built: this is the offline path.
-- **HDR-FLIP is reported, not gated (#157).** When a capture leaves `<path>_hdr.npy` (linear scene radiance
-  from `v.SceneColor`, RGBA f2/f4, pre-exposure, so after TAA but before tonemap/FXAA/CAS), the script prints
-  `HDR-FLIP` next to LDR FLIP and, with `--update-baseline`, stores `flipHdr` and the exposure range FLIP
-  derived from the reference (`flipHdrParams`). Baselines without `flipHdr` are unaffected and the gate
-  never reads it. LDR-FLIP stays: it is the image the user sees, including FXAA/CAS, which HDR excludes.
-  Non-finite radiance is counted and zeroed with a warning. The HDR reference is cached beside the LDR one
-  (`_REF_CACHE_VERSION` 3); a reference cached without HDR is re-captured once after an engine rebuild, in case
-  the new build writes it. `Scripts/test_quality_bench_hdr.py` covers the metric plumbing on synthetic
-  arrays. The engine writes `_hdr.npy` (next bullet) but it has not run on a GPU, so no
-  HDR-FLIP number exists and the ordering against LDR-FLIP is unmeasured.
-- **HDR capture (#157).** With capture on, the engine also writes `<path>_hdr.npy` beside `_ldr.npy` (motion frames: `_f<N>_hdr.npy`): `v.SceneColor` as the tonemap chain receives it, linear pre-exposure radiance, HxWx4, top-down, `<f2` for the RGBA16F real-time path and `<f4` for the RGBA32F path tracer. `render.exposure` is logged with it, not applied. It is a 1:1 copy into a texture the capture effect owns (`TransferSrc` on no hot target, no cost when capture is off) read back in the same pass as the LDR present, so the pair is one frame. It excludes everything after `SceneColor`: FXAA and CAS (TAA and the upscaler are included), so it cannot replace the LDR numbers. Not run on a GPU as of its PR; the pure format rules are `QualityCaptureFormat.hpp`, tested in `QualityCaptureFormatTests`.
 - **Eight techniques**: `raster`, `ssao`, `rtao`, `ssr`, `rtrefl`, `ssgi`, `rtgi`, `all-rt`. Each is a
   full real-time render with that one technique on, TAA enabled.
 - **FLIP is pinned** to `flip-evaluator==1.7` (a perceptual metric that drifts between versions makes
@@ -1125,40 +1095,14 @@ build time. A controller system that writes `SetPerInstanceCustomData` per frame
 
 `MaterialAsset::Alpha` is `Opaque`, `Mask` or `Blend`, persisted as `"AlphaMode"` in `.ssmat` (the legacy boolean
 `"AlphaMask"` is read, never written). The GPU layouts carry only the mask flag, set when the mode is `Mask`, so
-`Blend` is opaque in every shader consumer (shadow maps, RT acceleration structure, path tracer) and is told apart
-only on the CPU, by pipeline.
-
-`render.transparent` (default off, #82) draws `Blend` materials in a sorted pass; off, `Blend` renders as opaque as before.
-On, `MaterialInstance::IsSortedTransparent` (CVar on, Blend, blend pipeline built) routes an instance through
-`RendererService::DrawMeshTransparent` instead of a batch, and the camera depth prepass, DepthNormal and velocity passes skip it.
-The prepass skip is required for correctness: glass depth there would reject everything behind it in the forward
-`LessOrEqual` test. `AssetManagerSingleton` builds the per-shader blend variant (`GetOrCreatePipeline(frag, Blend)`: blend on, depth write off,
-destination alpha kept; cached beside the opaque one) and stores it on the `Material` (`GetBlendPipeline`).
-
-`AddForwardPass` ends with the transparent flush: after the opaque `Flush` and the sky (the sky only fills uncovered
-pixels), in the same render pass. Before it the GI, AO, reflection, sun-shadow and demodulated-specular indices are
-zeroed, since those screen-space buffers describe the opaque surface behind the glass; the pane falls back to the
-analytic terms. `FlushTransparent` sorts far-first with `SortTransparentDraws` (view-axis depth of the world-space bounds centre, ties by
-submission order, `TransparentSortTests`) and merges adjacent runs of one (mesh, material) into a single instanced draw,
-under a `Transparent` GPU scope that appears only when something is drawn. Sorting is per instance: it cannot order faces within one
-mesh or between intersecting meshes. Blend writes no velocity, so TAA and the neural upscaler smear glass over a moving background. Shadow maps
-and RT still treat glass as a solid caster. `quality-bench` compares against the path tracer, which renders `Blend` as
-opaque, so keep `Blend` out of scenes with committed quality baselines.
+`Blend` renders as opaque in every pass until the sorted transparent pass lands (#82).
 
 **`AlphaBlend.world` is the testbed for the transparent pass.** Three overlapping half-alpha panes at distinct depths
 (red near, green mid, blue far) in front of an opaque cube, a low-alpha blend cube, and a `Mask` pane (`Sponza_mat0`) with a
-blend pane in front and one behind it. Run it with `--render.transparent`: every pane tints the ones behind it in depth order;
-without the flag the panes are solid and occlude. Alpha mode is an asset property, not an override, so the scene adds one
+blend pane in front and one behind it. Correct sorting shows every pane tinting the ones behind it in depth order; opaque
+rendering shows solid colours that occlude. Alpha mode is an asset property, not an override, so the scene adds one
 material, `materials/AlphaBlend.ssmat` (`"AlphaMode": "Blend"`), and varies colour and alpha per entity through
-`BaseColor` overrides. It has no baselines. Not yet run on a GPU: the sorted pass is unverified by smoke, perf-bench or eyes.
-
-## IBL invalidation
-
-The IBL bake is keyed on the environment block and on the sun (`Lights[0]`, the source `IBLBakePass` bakes).
-`Render/IBLInvalidation.hpp` holds the pure rule: `SunNeedsRebake` compares against the last BAKED sun, re-baking
-when its direction moves past `render.ibl.sun_quantum_deg` (default 2) or its colour*intensity changes by more
-than 5%, or when the sun appears or disappears. A re-bake is still the full monolithic bake with a `WaitIdle`;
-`IBLInvalidationTests` cover the rule (#149).
+`BaseColor` overrides. Today it renders every pane opaque; it has no baselines yet.
 
 ## Console variables (CVars)
 
@@ -1269,7 +1213,7 @@ see, so treat it as part of the feature, not an afterthought.
   `SystemManager` run each phase in `ScheduleOrder` (stage by stage, still serial, edit-mode skips applied before
   staging); nothing runs in parallel yet (#85). A new core system needs a declaration (`SystemAccessTests` fails otherwise).
 - **Cluster grid math:** `Render/LightClusterMath.hpp` is the pure, GPU-free core of the planned clustered light cull (#66): exponential depth slices, analytic view-space cluster bounds, sphere-AABB overlap and a CPU reference cull (ascending index, fixed stride, overflow dropped). Nothing renders from it yet.
-`AssignClusterLights` builds fixed-stride per-cluster lists from it; `render.lights.cluster` (default off) runs it per frame for the presented view (point and spot range spheres) and publishes `RendererService::GetClusterStats()`. `render.lights.cluster.shade` (default off, implies the assignment) uploads the lists (`PackClusterLightLists`: counts, then fixed-stride indices) to a per-frame-in-flight storage buffer that DefaultLit reads through its device address (`vk::RawBufferLoad`, no descriptor change; address, grid and `ClusterViewDepthRow` ride a FrameCB tail). DefaultLit visits only the cluster's point and spot lights, in the same ascending order as the full loops, so pixels match unless a cluster overflows `render.lights.cluster.max`. Only the presented camera at a scene-target size equal to the viewport uses the lists (`render.scale != 1` and every other pass loop over all lights); `ClusterIndexFromPixel` is the tested mirror of the shader's cluster lookup. Not yet measured on a GPU.
+`AssignClusterLights` builds fixed-stride per-cluster lists from it; `render.lights.cluster` (default off) runs it per frame for the presented view (point and spot range spheres) and publishes `RendererService::GetClusterStats()`. Nothing shades from the lists.
 - **Rendering:** backend-agnostic interfaces in `Render/` (`RendererAPI`, `Renderer`, `Pipeline`,
   `Shader`, `Buffer`, `Texture`, `Material`, `RenderGraph`, ...). The concrete implementation lives
   in `Platform/Vulkan/` (volk + Vulkan Memory Allocator + spirv-reflect; shaders compiled to SPIR-V

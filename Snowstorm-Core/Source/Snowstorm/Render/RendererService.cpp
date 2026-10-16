@@ -8,10 +8,8 @@
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/Shader.hpp"
 #include "Snowstorm/Render/Texture.hpp"
-#include "Snowstorm/Render/TransparentSort.hpp"
 #include "Snowstorm/Service/ServiceManager.hpp"
 
-#include <cmath>
 #include <cstring>
 
 namespace Snowstorm
@@ -151,22 +149,6 @@ namespace Snowstorm
 			uint32_t DirShadowAtlasIndex = 0; // secondary-directional shadow atlas (0 = none); mirrors Engine.hlsli
 			uint32_t _FramePad1 = 0;
 			uint32_t _FramePad2 = 0;
-
-			// Clustered light lists (#66), appended after the last row so no offset moves. ClusterStride == 0
-			// means "loop over all lights". Mirrors Engine.hlsli field-for-field.
-			glm::vec4 ClusterViewDepthRow{0.0f};
-			uint32_t ClusterListAddrLo = 0;
-			uint32_t ClusterListAddrHi = 0;
-			uint32_t ClusterStride = 0;
-			uint32_t ClusterTilePx = 0;
-			uint32_t ClusterTilesX = 0;
-			uint32_t ClusterTilesY = 0;
-			uint32_t ClusterCount = 0;
-			uint32_t ClusterSlices = 0;
-			float ClusterNear = 0.0f;
-			float ClusterSliceScale = 0.0f; // Slices / log(Far / Near)
-			float _ClusterPad0 = 0.0f;
-			float _ClusterPad1 = 0.0f;
 		};
 	}
 
@@ -219,7 +201,6 @@ namespace Snowstorm
 
 		m_Batches.clear();
 		m_BatchIndex.clear();
-		m_Transparent.clear();
 		m_Stats = RenderStats{};
 	}
 
@@ -261,68 +242,6 @@ namespace Snowstorm
 		instance.AlbedoTextureIndex = albedoTextureIndex;
 		instance.PerInstanceCustomData = perInstanceCustomData;
 		batch->Instances.push_back(instance);
-	}
-
-	void RendererService::DrawMeshTransparent(const glm::mat4& transform,
-	                                          const Ref<Mesh>& mesh,
-	                                          const Ref<MaterialInstance>& materialInstance,
-	                                          const glm::vec3& worldBoundsCenter,
-	                                          const uint32_t albedoTextureIndex,
-	                                          const glm::vec4& perInstanceCustomData)
-	{
-		SS_CORE_ASSERT(m_CommandContext, "DrawMeshTransparent called outside of BeginScene/EndScene");
-		SS_CORE_ASSERT(mesh && materialInstance, "Mesh and MaterialInstance must be valid");
-
-		TransparentEntry entry;
-		entry.Mesh = mesh;
-		entry.MaterialInstance = materialInstance;
-		entry.Instance.Model = transform;
-		entry.Instance.PrevModel = transform;
-		entry.Instance.AlbedoTextureIndex = albedoTextureIndex;
-		entry.Instance.PerInstanceCustomData = perInstanceCustomData;
-		entry.BoundsCenter = worldBoundsCenter;
-		m_Transparent.push_back(std::move(entry));
-	}
-
-	void RendererService::FlushTransparent(const glm::vec3& cameraForward)
-	{
-		if (!m_CommandContext || m_Transparent.empty())
-		{
-			return;
-		}
-
-		m_CommandContext->BeginGpuScope("Transparent");
-		std::vector<TransparentDraw> order(m_Transparent.size());
-		for (uint32_t i = 0; i < order.size(); ++i)
-		{
-			order[i].BoundsCenter = m_Transparent[i].BoundsCenter;
-			order[i].Sequence = i;
-		}
-		SortTransparentDraws(order, m_FrameData.CameraPosition, cameraForward);
-
-		BatchData run;
-		const auto flushRun = [&]()
-		{
-			if (!run.Instances.empty())
-			{
-				FlushBatch(run, m_CommandContext, m_FrameIndex, run.MaterialInstance->GetBaseMaterial()->GetBlendPipeline());
-			}
-			run = BatchData{};
-		};
-		for (const TransparentDraw& d : order)
-		{
-			TransparentEntry& e = m_Transparent[d.Sequence];
-			if (run.Mesh != e.Mesh || run.MaterialInstance != e.MaterialInstance)
-			{
-				flushRun();
-				run.Mesh = e.Mesh;
-				run.MaterialInstance = e.MaterialInstance;
-			}
-			run.Instances.push_back(e.Instance);
-		}
-		flushRun();
-		m_Transparent.clear();
-		m_CommandContext->EndGpuScope();
 	}
 
 	void RendererService::UploadLights(const LightDataBlock& lightData)
@@ -490,57 +409,11 @@ namespace Snowstorm
 		frame.SunShadowTextureIndex = m_ShadowTextureIndex;
 		frame.ShadowSpecTextureIndex = m_ShadowSpecTextureIndex;
 
-		// Clustered lights (#66): only for the camera and scene-target size the lists were built for.
-		if (m_ClusterShadingValid && m_ClusterShadingFrame == frameIndex && frameIndex < m_ClusterBuffers.size() && m_ClusterBuffers[frameIndex] &&
-		    m_GIRenderTargetSize == glm::vec2(static_cast<float>(m_ClusterShading.Width), static_cast<float>(m_ClusterShading.Height)) &&
-		    fd.CameraPosition == m_ClusterShading.CameraPosition)
-		{
-			const ClusterShading& c = m_ClusterShading;
-			const uint64_t addr = m_ClusterBuffers[frameIndex]->GetGPUAddress();
-			frame.ClusterViewDepthRow = c.ViewDepthRow;
-			frame.ClusterListAddrLo = static_cast<uint32_t>(addr & 0xFFFFFFFFull);
-			frame.ClusterListAddrHi = static_cast<uint32_t>(addr >> 32);
-			frame.ClusterStride = c.Stride;
-			frame.ClusterTilePx = c.TilePx;
-			frame.ClusterTilesX = c.TilesX;
-			frame.ClusterTilesY = c.TilesY;
-			frame.ClusterCount = c.ClusterCount;
-			frame.ClusterSlices = c.Slices;
-			frame.ClusterNear = c.Near;
-			frame.ClusterSliceScale = static_cast<float>(c.Slices) / std::log(c.Far / c.Near);
-		}
-
 		const Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
 		SS_CORE_ASSERT(frameUBO, "Frame UBO missing for frame descriptor set");
 		frameUBO->SetData(&frame, sizeof(FrameCB), 0);
 
 		return perFrameFrameSets[frameIndex];
-	}
-
-	void RendererService::SetClusterShading(const uint32_t frameIndex, const ClusterShading& info, const std::vector<uint32_t>& words)
-	{
-		if (words.empty() || info.Stride == 0)
-		{
-			m_ClusterShadingValid = false;
-			return;
-		}
-		if (m_ClusterBuffers.size() <= frameIndex)
-			m_ClusterBuffers.resize(frameIndex + 1);
-
-		// This frame index's previous submission has finished (its fence was waited before the frame began), so a
-		// larger buffer can replace the old one here. Grow-only, with headroom so a resize does not reallocate.
-		const size_t bytes = words.size() * sizeof(uint32_t);
-		if (!m_ClusterBuffers[frameIndex] || m_ClusterBuffers[frameIndex]->GetSize() < bytes)
-			m_ClusterBuffers[frameIndex] = Buffer::Create(bytes + bytes / 2, BufferUsage::Storage, nullptr, true, "ClusterLightLists");
-		if (!m_ClusterBuffers[frameIndex])
-		{
-			m_ClusterShadingValid = false;
-			return;
-		}
-		m_ClusterBuffers[frameIndex]->SetData(words.data(), bytes, 0);
-		m_ClusterShading = info;
-		m_ClusterShadingFrame = frameIndex;
-		m_ClusterShadingValid = true;
 	}
 
 	void RendererService::SetIBLData(const uint32_t irradianceIndex,
@@ -866,8 +739,7 @@ namespace Snowstorm
 
 	void RendererService::FlushBatch(BatchData& batch,
 	                                 const Ref<CommandContext>& commandContext,
-	                                 const uint32_t frameIndex,
-	                                 const Ref<Pipeline>& pipelineOverride)
+	                                 const uint32_t frameIndex)
 	{
 		if (batch.Instances.empty())
 			return;
@@ -882,9 +754,9 @@ namespace Snowstorm
 		m_Stats.Triangles += batchInstanceCount * (batch.Mesh->GetIndexCount() / 3u);
 
 		// Bind the pipeline (set 1 is bound below in the batched call, not by Apply).
-		batch.MaterialInstance->Apply(*commandContext, frameIndex, pipelineOverride);
+		batch.MaterialInstance->Apply(*commandContext, frameIndex);
 
-		const Ref<Pipeline>& pipeline = pipelineOverride ? pipelineOverride : batch.MaterialInstance->GetPipeline();
+		const Ref<Pipeline>& pipeline = batch.MaterialInstance->GetPipeline();
 		SS_CORE_ASSERT(pipeline, "MaterialInstance has no pipeline");
 
 		const auto& setLayouts = pipeline->GetSetLayouts();

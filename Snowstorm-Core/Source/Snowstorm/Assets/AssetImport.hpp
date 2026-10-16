@@ -5,7 +5,6 @@
 #include <filesystem>
 #include <span>
 #include <string_view>
-#include <vector>
 
 namespace Snowstorm
 {
@@ -40,23 +39,4 @@ namespace Snowstorm
 	// the first free "stem_N.ext", never overwriting a file the registry may already point at.
 	ImportPlan PlanImport(const std::filesystem::path& source, const std::filesystem::path& projectDir,
 	                      const std::filesystem::path& destFolderRel);
-
-	struct DropItem
-	{
-		std::filesystem::path Source;
-		AssetType Type = AssetType::None;
-		// DefaultImportFolder(Type); empty for meshes, which ImportModel places beside the model.
-		std::filesystem::path Folder;
-	};
-
-	struct DropPlan
-	{
-		std::vector<DropItem> Items;
-		// Dropped paths ImportFile would refuse (scenes, directories, unknown extensions).
-		size_t Refused = 0;
-	};
-
-	// Which of the files dropped from the OS get imported, and into which folder. A drop released outside
-	// the target panel imports nothing and refuses nothing, so the viewport or another panel can claim it.
-	DropPlan PlanDrop(std::span<const std::filesystem::path> dropped, bool overTarget);
 } // namespace Snowstorm

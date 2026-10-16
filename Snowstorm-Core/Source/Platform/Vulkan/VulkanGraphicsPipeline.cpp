@@ -509,9 +509,8 @@ namespace Snowstorm
 			a.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 			a.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 			a.colorBlendOp = VK_BLEND_OP_ADD;
-			const bool keepDstAlpha = enableBlend && m_Desc.Blend.Attachments[i].KeepDestinationAlpha;
-			a.srcAlphaBlendFactor = keepDstAlpha ? VK_BLEND_FACTOR_ZERO : VK_BLEND_FACTOR_ONE;
-			a.dstAlphaBlendFactor = keepDstAlpha ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_ZERO;
+			a.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+			a.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
 			a.alphaBlendOp = VK_BLEND_OP_ADD;
 
 			blendAttachments[i] = a;

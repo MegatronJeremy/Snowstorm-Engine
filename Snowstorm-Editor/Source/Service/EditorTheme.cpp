@@ -9,7 +9,6 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <cmath>
 #include <filesystem>
 #include <string>
 
@@ -228,29 +227,6 @@ namespace Snowstorm::EditorTheme
 		ImGui::PopStyleColor();
 		ImGui::EndChild();
 		ImGui::PopStyleColor(2);
-	}
-
-	float DrawStatusBlink(ImDrawList* dl, ImVec2 center, const char* label, bool alignRight)
-	{
-		constexpr float r = 4.0f;
-		constexpr float gap = 6.0f;
-		const ImVec2 textSize = ImGui::CalcTextSize(label);
-		const float width = r * 2.0f + gap + textSize.x;
-		const float left = alignRight ? center.x - width : center.x;
-
-		const bool lit = std::fmod(ImGui::GetTime(), 1.0) < 0.5;
-		const ImU32 red = ImGui::GetColorU32(Alert);
-		const ImVec2 dot(left + r, center.y);
-		if (lit)
-		{
-			dl->AddCircleFilled(dot, r, red);
-		}
-		else
-		{
-			dl->AddCircle(dot, r, red);
-		}
-		dl->AddText(ImVec2(left + r * 2.0f + gap, center.y - textSize.y * 0.5f), red, label);
-		return width;
 	}
 
 	void DrawCrtOverlay()

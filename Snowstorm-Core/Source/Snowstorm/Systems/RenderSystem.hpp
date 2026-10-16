@@ -5,7 +5,6 @@
 // Only the passes RenderSystem itself owns as members are included here (IBL bake + the shared Sky /
 // PostProcess builders back the AddForwardPass/AddTonemapPass helpers). Each per-effect-exclusive pass is
 // included by ViewportEffects.cpp, where its effect lives — not pulled through this header.
-#include "Snowstorm/Render/IBLInvalidation.hpp"
 #include "Snowstorm/Render/Passes/IBLBakePass.hpp"
 #include "Snowstorm/Render/Passes/PostProcessPass.hpp"
 #include "Snowstorm/Render/Passes/PresentPass.hpp"
@@ -144,6 +143,5 @@ namespace Snowstorm
 		// finished loading after the deferred startup load, so the first bake saw an empty/default world), we
 		// invalidate the bake so it re-runs against the real sky. nullopt = never baked. (#64)
 		std::optional<EnvironmentDataBlock> m_BakedEnvironment;
-		std::optional<IBLSunKey> m_BakedSun;
 	};
 }

@@ -96,20 +96,6 @@ namespace Snowstorm
 		              const glm::vec4& perInstanceCustomData = glm::vec4(0.0f),
 		              const glm::mat4& prevTransform = glm::mat4(1.0f));
 
-		// Submit one Blend-mode renderable for the sorted transparent flush. It is held per instance, not
-		// batched, until FlushTransparent orders it. `worldBoundsCenter` is the sort key's position.
-		void DrawMeshTransparent(const glm::mat4& transform,
-		                         const Ref<Mesh>& mesh,
-		                         const Ref<MaterialInstance>& materialInstance,
-		                         const glm::vec3& worldBoundsCenter,
-		                         uint32_t albedoTextureIndex = 0,
-		                         const glm::vec4& perInstanceCustomData = glm::vec4(0.0f));
-
-		// Draw the DrawMeshTransparent submissions far-first along `cameraForward` through each material's Blend
-		// pipeline, merging adjacent runs of one (mesh, material) into a single instanced draw. Call after the
-		// opaque Flush and the sky, inside the same render pass. Clears the list.
-		void FlushTransparent(const glm::vec3& cameraForward);
-
 		void UploadLights(const LightDataBlock& lightData);
 
 		// Scene environment (sky/ambient colors) for the current frame. Mirrors UploadLights; the values
@@ -334,29 +320,6 @@ namespace Snowstorm
 			uint32_t Lights = 0;
 		};
 		void SetClusterStats(const ClusterStats& s) { m_ClusterStats = s; }
-
-		// What DefaultLit needs to find a fragment's cluster list (render.lights.cluster.shade, #66). The lists
-		// themselves go to a per-frame-in-flight storage buffer read through its device address, so no
-		// descriptor layout changes. They are valid for one camera at one scene-target size; AcquireFrameSet
-		// publishes them only to passes with that camera and size, and every other pass loops over all lights.
-		struct ClusterShading
-		{
-			uint32_t Width = 0;
-			uint32_t Height = 0;
-			uint32_t TilePx = 0;
-			uint32_t TilesX = 0;
-			uint32_t TilesY = 0;
-			uint32_t Slices = 0;
-			uint32_t ClusterCount = 0;
-			uint32_t Stride = 0;
-			float Near = 0.0f;
-			float Far = 0.0f;
-			glm::vec4 ViewDepthRow{0.0f}; // dot(row, vec4(worldPos, 1)) = positive view depth
-			glm::vec3 CameraPosition{0.0f};
-		};
-		// `words` is PackClusterLightLists output. Writes frameIndex's buffer (growing it when needed).
-		void SetClusterShading(uint32_t frameIndex, const ClusterShading& info, const std::vector<uint32_t>& words);
-		void ClearClusterShading() { m_ClusterShadingValid = false; }
 		[[nodiscard]] const ClusterStats& GetClusterStats() const { return m_ClusterStats; }
 		void SetFrameViewInfo(const FrameViewInfo& v) { m_FrameViewInfo = v; }
 		[[nodiscard]] const FrameViewInfo& GetFrameViewInfo() const { return m_FrameViewInfo; }
@@ -464,8 +427,7 @@ namespace Snowstorm
 	private:
 		void FlushBatch(BatchData& batch,
 		                const Ref<CommandContext>& commandContext,
-		                uint32_t frameIndex,
-		                const Ref<Pipeline>& pipelineOverride = {});
+		                uint32_t frameIndex);
 
 		// Acquire (creating on first use) the per-(pipeline, frame) set=0 Frame descriptor set, and
 		// upload the current frame's FrameCB into its backing UBO. Shared by the mesh batches and the
@@ -529,15 +491,6 @@ namespace Snowstorm
 
 		std::vector<BatchData> m_Batches;
 
-		struct TransparentEntry
-		{
-			Ref<Mesh> Mesh;
-			Ref<MaterialInstance> MaterialInstance;
-			InstanceData Instance;
-			glm::vec3 BoundsCenter{0.0f};
-		};
-		std::vector<TransparentEntry> m_Transparent;
-
 		// Index into m_Batches keyed by the (mesh, material-instance) raw-pointer pair, so DrawMesh finds an
 		// existing batch in O(1) instead of a linear scan. Without this, N unique-material draws cost O(N^2)
 		// in batch matching (measured: ~11ms of superlinear overhead at 10k unique draws). Rebuilt each
@@ -582,10 +535,6 @@ namespace Snowstorm
 		// Presented viewport extent + camera pose for this frame; see SetFrameViewInfo.
 		FrameViewInfo m_FrameViewInfo;
 		ClusterStats m_ClusterStats;
-		ClusterShading m_ClusterShading;
-		bool m_ClusterShadingValid = false;
-		uint32_t m_ClusterShadingFrame = 0;
-		std::vector<Ref<Buffer>> m_ClusterBuffers; // per frame in flight
 
 		// Latest upscaled-vs-ground-truth image metrics (#45), set by RenderSystem when render.metrics is on.
 		MetricsResult m_Metrics;

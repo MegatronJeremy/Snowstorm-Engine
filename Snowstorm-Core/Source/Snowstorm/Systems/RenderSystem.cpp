@@ -1,7 +1,6 @@
 #include "RenderSystem.hpp"
 
 #include "Snowstorm/Components/CameraComponent.hpp"
-#include "Snowstorm/Math/Bounds.hpp"
 #include "Snowstorm/Components/CameraPathComponent.hpp"
 #include "Snowstorm/Components/CameraRuntimeComponent.hpp"
 #include "Snowstorm/Components/CameraTargetComponent.hpp"
@@ -251,9 +250,7 @@ namespace Snowstorm
 			renderer.SetFrameViewInfo(view);
 
 			RendererService::ClusterStats clusterStats{};
-			bool clusterShaded = false;
-			const bool clusterShade = CVars::LightClusterShade.Get();
-			if ((CVars::LightClusterAssign.Get() || clusterShade) && view.Width > 0 && view.Height > 0)
+			if (CVars::LightClusterAssign.Get() && view.Width > 0 && view.Height > 0)
 			{
 				const CameraPick pick = FindCameraForViewport(reg, presentViewport);
 				if (pick.Cam && pick.Rt && pick.Cam->Projection == CameraComponent::ProjectionType::Perspective)
@@ -282,29 +279,8 @@ namespace Snowstorm
 					const uint32_t stride = static_cast<uint32_t>(std::max(CVars::LightClusterMaxPerCluster.Get(), 1));
 					const ClusterLightLists lists = AssignClusterLights(grid, tanHalfFovY, aspect, spheres, stride);
 					clusterStats = {grid.ClusterCount(), lists.Occupied, lists.MaxCount, lists.Overflowed, static_cast<uint32_t>(spheres.size())};
-
-					if (clusterShade)
-					{
-						RendererService::ClusterShading shading;
-						shading.Width = grid.Width;
-						shading.Height = grid.Height;
-						shading.TilePx = grid.TilePx;
-						shading.TilesX = grid.TilesX();
-						shading.TilesY = grid.TilesY();
-						shading.Slices = grid.Slices;
-						shading.ClusterCount = grid.ClusterCount();
-						shading.Stride = stride;
-						shading.Near = grid.Near;
-						shading.Far = grid.Far;
-						shading.ViewDepthRow = -glm::vec4(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2], viewMatrix[3][2]);
-						shading.CameraPosition = view.CameraPosition;
-						renderer.SetClusterShading(frameIndex, shading, PackClusterLightLists(lists));
-						clusterShaded = true;
-					}
 				}
 			}
-			if (!clusterShaded)
-				renderer.ClearClusterShading();
 			renderer.SetClusterStats(clusterStats);
 		}
 
@@ -379,11 +355,7 @@ namespace Snowstorm
 		// env-change re-bake below re-runs when a scene's authored sky differs from what was baked.
 		const bool haveRealEnvironment = env.SkyIntensity > 0.0f;
 
-		// The sun lives in Lights[0], not in the environment block, so it is keyed separately (#149).
-		const IBLSunKey sunNow = MakeIBLSunKey(renderer.GetLights());
-		const bool sunMoved = m_BakedSun && SunNeedsRebake(*m_BakedSun, sunNow, CVars::IBLSunQuantumDeg.Get(), 0.05f);
-
-		if (m_IBLBakePass.IsBaked() && (!m_BakedEnvironment || *m_BakedEnvironment != env || sunMoved))
+		if (m_IBLBakePass.IsBaked() && (!m_BakedEnvironment || *m_BakedEnvironment != env))
 		{
 			m_IBLBakePass.Invalidate();
 		}
@@ -393,7 +365,6 @@ namespace Snowstorm
 			Renderer::WaitIdle();
 			m_IBLBakePass.AddBakePasses(fc.Graph, renderer.GetLights(), env);
 			m_BakedEnvironment = env;
-			m_BakedSun = sunNow;
 		}
 
 		// Deferred IBL cache save (#34): after a miss-path bake, the maps were read back into host buffers; a
@@ -818,13 +789,6 @@ namespace Snowstorm
 				                                    }
 
 				                                    const glm::vec4 customData = mat.MaterialInstance->GetPerInstanceCustomData();
-				                                    if (mat.MaterialInstance->IsSortedTransparent())
-				                                    {
-					                                    const glm::mat4 model = tr.GetTransformMatrix();
-					                                    const glm::vec3 center = TransformAABB(mesh.MeshInstance->GetBounds().Box, model).Center();
-					                                    fc.Renderer.DrawMeshTransparent(model, mesh.MeshInstance, mat.MaterialInstance, center, albedoIndex, customData);
-					                                    return;
-				                                    }
 				                                    fc.Renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, albedoIndex, customData);
 			                                    });
 
@@ -841,17 +805,6 @@ namespace Snowstorm
 				                  m_SkyPass.Draw(fc.Renderer, colorFmt, depthFmt);
 				                  c.EndGpuScope();
 			                  }
-
-			                  // Sorted Blend draws last: the sky only fills uncovered pixels, so glass must follow it. The
-			                  // screen-space inputs describe the opaque surface behind the glass, so the pane falls back
-			                  // to the analytic terms instead of lighting itself with its background's GI/AO/shadow.
-			                  fc.Renderer.SetGITexture(0, sceneSize);
-			                  fc.Renderer.SetAOTexture(0, sceneSize);
-			                  fc.Renderer.SetReflTexture(0, sceneSize);
-			                  fc.Renderer.SetShadowTexture(0, sceneSize);
-			                  fc.Renderer.SetShadowSpecTexture(0);
-			                  const glm::mat4& view = cam.Rt->View;
-			                  fc.Renderer.FlushTransparent(-glm::vec3(view[0][2], view[1][2], view[2][2]));
 
 			                  fc.Renderer.EndScene();
 		                  }});

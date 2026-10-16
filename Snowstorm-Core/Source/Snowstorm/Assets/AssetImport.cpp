@@ -155,24 +155,4 @@ namespace Snowstorm
 		plan.DestAbs = projectCanon / plan.DestRel;
 		return plan;
 	}
-
-	DropPlan PlanDrop(const std::span<const std::filesystem::path> dropped, const bool overTarget)
-	{
-		DropPlan plan;
-		if (!overTarget)
-		{
-			return plan;
-		}
-		for (const std::filesystem::path& path : dropped)
-		{
-			const AssetType type = AssetTypeFromPath(path);
-			if (type == AssetType::None || type == AssetType::Scene)
-			{
-				++plan.Refused;
-				continue;
-			}
-			plan.Items.push_back({path, type, type == AssetType::Mesh ? std::filesystem::path{} : DefaultImportFolder(type)});
-		}
-		return plan;
-	}
 } // namespace Snowstorm

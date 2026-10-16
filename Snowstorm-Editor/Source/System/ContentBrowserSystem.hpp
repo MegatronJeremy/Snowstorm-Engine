@@ -3,9 +3,7 @@
 #include "Snowstorm/ECS/System.hpp"
 #include "Snowstorm/Assets/AssetDirectoryWatcher.hpp"
 #include "Snowstorm/Assets/AssetTypes.hpp"
-#include "Snowstorm/Events/EventBus.hpp"
 
-#include <filesystem>
 #include <future>
 #include <string>
 #include <vector>
@@ -17,7 +15,10 @@ namespace Snowstorm
 	class ContentBrowserSystem final : public System
 	{
 	public:
-		explicit ContentBrowserSystem(WorldRef world);
+		explicit ContentBrowserSystem(const WorldRef world)
+		    : System(world)
+		{
+		}
 
 		void Execute(Timestep ts) override;
 
@@ -31,7 +32,6 @@ namespace Snowstorm
 
 		void Rescan();
 		void PollFileChanges();
-		void ImportDroppedFiles(bool overPanel);
 
 		std::vector<Entry> m_Entries;
 		bool m_Scanned = false;
@@ -46,10 +46,5 @@ namespace Snowstorm
 		std::future<DirectorySnapshot> m_PendingScan;
 		double m_NextPoll = 0.0;
 		bool m_WatchSeeded = false;
-
-		// Files dropped from the OS, queued by the event and imported on the next frame, when the panel's
-		// rect and the mouse position are both current.
-		EventBus::Connection m_FileDrop;
-		std::vector<std::filesystem::path> m_PendingDrop;
 	};
 }
