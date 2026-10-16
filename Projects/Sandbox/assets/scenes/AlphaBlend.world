@@ -1,0 +1,581 @@
+{
+  "Entities": [
+    {
+      "Components": {
+        "Snowstorm::DirectionalLightComponent": {
+          "CastShadows": true,
+          "Color": [
+            1.0,
+            0.97,
+            0.9
+          ],
+          "Direction": [
+            -0.399501,
+            -0.799002,
+            -0.449439
+          ],
+          "Enabled": true,
+          "Intensity": 6.0
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Sun (key)",
+      "UUID": "7419590676172780625"
+    },
+    {
+      "Components": {
+        "Snowstorm::EnvironmentComponent": {
+          "Background": "ProceduralSky",
+          "GroundColor": [
+            0.02,
+            0.02,
+            0.02
+          ],
+          "SkyHorizonColor": [
+            1.0,
+            0.82,
+            0.6
+          ],
+          "SkyIntensity": 1.5,
+          "SkyZenithColor": [
+            0.15,
+            0.3,
+            0.7
+          ]
+        }
+      },
+      "Name": "Environment",
+      "UUID": "8200000000000007919"
+    },
+    {
+      "Components": {
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0,
+            1.6,
+            8
+          ],
+          "Rotation": [
+            -0.14,
+            0,
+            0
+          ],
+          "Scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Snowstorm::CameraComponent": {
+          "Projection": "Perspective",
+          "PerspectiveFOV": 0.9,
+          "PerspectiveNear": 0.1,
+          "PerspectiveFar": 200.0,
+          "Primary": true
+        }
+      },
+      "Name": "Game Camera",
+      "UUID": "8200000000000015838"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.9,
+                0.9,
+                0.92,
+                1.0
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.8
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "12112538743247314239"
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0,
+            0,
+            0
+          ],
+          "Rotation": [
+            -1.5707963267948966,
+            0,
+            0
+          ],
+          "Scale": [
+            40,
+            40,
+            1
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Floor",
+      "UUID": "8200000000000023757"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "14863079243352112687"
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "5810267832183663728"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.8,
+                0.7,
+                0.2,
+                1
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.5
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0,
+            1.0,
+            -1.5
+          ],
+          "Rotation": [
+            0,
+            0,
+            0
+          ],
+          "Scale": [
+            2.0,
+            2.0,
+            0.4
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Opaque backdrop cube",
+      "UUID": "8200000000000031676"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "7096420111267686387"
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "12112538743247314239"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.9,
+                0.1,
+                0.1,
+                0.5
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.6
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            -0.6,
+            1.2,
+            2.0
+          ],
+          "Rotation": [
+            0,
+            0,
+            0
+          ],
+          "Scale": [
+            1.8,
+            1.8,
+            1
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Blend pane red (near)",
+      "UUID": "8200000000000039595"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "7096420111267686387"
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "12112538743247314239"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.1,
+                0.8,
+                0.2,
+                0.5
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.6
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0.0,
+            1.2,
+            1.0
+          ],
+          "Rotation": [
+            0,
+            0,
+            0
+          ],
+          "Scale": [
+            1.8,
+            1.8,
+            1
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Blend pane green (mid)",
+      "UUID": "8200000000000047514"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "7096420111267686387"
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "12112538743247314239"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.1,
+                0.2,
+                0.9,
+                0.5
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.6
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            0.6,
+            1.2,
+            0.0
+          ],
+          "Rotation": [
+            0,
+            0,
+            0
+          ],
+          "Scale": [
+            1.8,
+            1.8,
+            1
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Blend pane blue (far)",
+      "UUID": "8200000000000055433"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "7096420111267686387"
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "5810267832183663728"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.9,
+                0.9,
+                0.9,
+                0.25
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.6
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            -3.2,
+            0.6,
+            0.5
+          ],
+          "Rotation": [
+            0,
+            0,
+            0
+          ],
+          "Scale": [
+            1.2,
+            1.2,
+            1.2
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Blend cube (low alpha)",
+      "UUID": "8200000000000063352"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "17150243090848776623"
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "12112538743247314239"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 1.0
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            3.0,
+            1.2,
+            1.0
+          ],
+          "Rotation": [
+            0,
+            0,
+            0
+          ],
+          "Scale": [
+            1.8,
+            1.8,
+            1
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Mask quad over blend",
+      "UUID": "8200000000000071271"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "7096420111267686387"
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "12112538743247314239"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.9,
+                0.5,
+                0.1,
+                0.5
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.6
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            3.4,
+            1.2,
+            0.2
+          ],
+          "Rotation": [
+            0,
+            0,
+            0
+          ],
+          "Scale": [
+            1.8,
+            1.8,
+            1
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Blend pane behind mask",
+      "UUID": "8200000000000079190"
+    },
+    {
+      "Components": {
+        "Snowstorm::MaterialComponent": {
+          "$asset": "7096420111267686387"
+        },
+        "Snowstorm::MeshComponent": {
+          "$asset": "12112538743247314239"
+        },
+        "Snowstorm::MaterialOverridesComponent": {
+          "Overrides": [
+            {
+              "Name": "BaseColor",
+              "Type": "Color",
+              "Value": [
+                0.2,
+                0.8,
+                0.8,
+                0.5
+              ]
+            },
+            {
+              "Name": "Roughness",
+              "Type": "Float",
+              "Value": 0.6
+            },
+            {
+              "Name": "Metallic",
+              "Type": "Float",
+              "Value": 0.0
+            }
+          ]
+        },
+        "Snowstorm::TransformComponent": {
+          "Position": [
+            2.6,
+            1.2,
+            2.2
+          ],
+          "Rotation": [
+            0,
+            0,
+            0
+          ],
+          "Scale": [
+            1.8,
+            1.8,
+            1
+          ]
+        },
+        "Snowstorm::VisibilityComponent": {
+          "Mask": 3
+        }
+      },
+      "Name": "Blend pane in front of mask",
+      "UUID": "8200000000000087109"
+    }
+  ],
+  "Scene": {
+    "Name": "Reflections",
+    "Version": 1
+  }
+}

@@ -1097,6 +1097,13 @@ build time. A controller system that writes `SetPerInstanceCustomData` per frame
 `"AlphaMask"` is read, never written). The GPU layouts carry only the mask flag, set when the mode is `Mask`, so
 `Blend` renders as opaque in every pass until the sorted transparent pass lands (#82).
 
+**`AlphaBlend.world` is the testbed for the transparent pass.** Three overlapping half-alpha panes at distinct depths
+(red near, green mid, blue far) in front of an opaque cube, a low-alpha blend cube, and a `Mask` pane (`Sponza_mat0`) with a
+blend pane in front and one behind it. Correct sorting shows every pane tinting the ones behind it in depth order; opaque
+rendering shows solid colours that occlude. Alpha mode is an asset property, not an override, so the scene adds one
+material, `materials/AlphaBlend.ssmat` (`"AlphaMode": "Blend"`), and varies colour and alpha per entity through
+`BaseColor` overrides. Today it renders every pane opaque; it has no baselines yet.
+
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc
