@@ -487,7 +487,7 @@ expected the old `#type` split and silently compiled nothing).
 static and needs no GPU, so hosted CI cooks the shaders and runs the occupancy gate on every shader
 change. RGA is cached across runs (actions/cache) so only the first pays the download.
 
-### Cross-vendor shader statistics (driver-reported, not a gate)
+### Cross-vendor shader statistics (driver-reported; `--gate` is local and opt-in)
 
 RGA is the *Radeon* GPU Analyzer, so the occupancy gate is structurally AMD-only and cannot see half of a
 cross-vendor comparison. `Scripts/shader-stats.py` is the other half: `VK_KHR_pipeline_executable_properties`
@@ -507,6 +507,8 @@ permutation offline and is deterministic, so **RGA stays the authority for AMD c
 gated**; use this for NVIDIA, where no offline analyser exists, and for the cross-vendor comparison on
 shaders present in both. `--frames 400` reliably builds the RT and denoise pipelines; the 90 default
 leaves `GI.comp` and `Reflection.comp` out entirely.
+
+`py Scripts/shader-stats.py --gate` (#168) diffs a capture, or `--json <path>`, against that baseline: exit 1 when a spill appears (0 to >0) or a register rise costs occupancy (AMD: fewer waves by `rga-occupancy.py`'s model; NVIDIA: over `--threshold` and at least 8 registers, an upper-bound model), exit 2 when nothing was compared. Withheld columns are never gated (so NVIDIA spills are not, today), and coverage drift is reported, not failed. Permutations share a (pipeline, stage) key and pair by sorted register count. `Scripts/test_shader_stats_gate.py` covers the pure logic; the gate has not run against a fresh GPU capture.
 
 `Scripts/shader-stats-baseline/<device-slug>.json` is the committed, citable record. Without it these
 numbers exist only in a gitignored `Engine/cache` file, which no reader can check.
