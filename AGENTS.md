@@ -249,6 +249,23 @@ inverts across vendors rather than across configs: on AMD stochastic wins outrig
 wins by 2.6x. The spec chain alone is 0.828 ms on the 9070 XT and 1.253 ms on the 5070. Sub-0.05 ms
 passes are ignored (timestamp noise).
 
+**`StochasticOverlap.world` plus `camera-paths/stochastic-overlap.json` is the repro for #170.** A 16 m
+corridor lit only by two shadow-casting point lights 3 m apart (range 9, so their falloffs overlap
+over the whole mid-section), with six columns on the camera side and three crates behind, so each
+occluder throws two crossing shadows and every penumbra edge sits in the overlap. The route strafes
+past both lights at 1 m/s, 1.8 m from the back wall. Sponza's aisle route (#169) reaches the overlap
+at one probe with the lights 7.2 m apart. Look at the raw estimator, since the a-trous masks the defect:
+
+```
+Snowstorm-Runtime --startup.scene=Projects/Sandbox/assets/scenes/StochasticOverlap.world \
+  --camera.path --camera.path.file=Projects/Sandbox/assets/camera-paths/stochastic-overlap.json \
+  --render.shadows.mode=2 --render.shadows.stochastic --render.shadows.denoise.iterations=0
+```
+
+Drop `--render.shadows.stochastic` for the inline control, which should show no seams. The scene has no
+baselines and is not wired into `quality-motion.py`. It was authored without a GPU and has not been
+rendered: that the artifact is visible in it is unconfirmed.
+
 **Warmup is detected, not assumed.** Sampling begins once the rolling 30-frame GPU-time window's
 peak-to-peak spread drops below `perf.bench.warmup.epsilon` (default 5%) of its mean, capped by
 `perf.bench.warmup.maxframes` (600, after which the run proceeds and logs that it is NOT from a steady
@@ -1238,7 +1255,7 @@ see, so treat it as part of the feature, not an afterthought.
   `SystemManager` run each phase in `ScheduleOrder` (stage by stage, still serial, edit-mode skips applied before
   staging); nothing runs in parallel yet (#85). A new core system needs a declaration (`SystemAccessTests` fails otherwise).
 - **Cluster grid math:** `Render/LightClusterMath.hpp` is the pure, GPU-free core of the planned clustered light cull (#66): exponential depth slices, analytic view-space cluster bounds, sphere-AABB overlap and a CPU reference cull (ascending index, fixed stride, overflow dropped). Nothing renders from it yet.
-`AssignClusterLights` builds fixed-stride per-cluster lists from it; `render.lights.cluster` (default off) runs it per frame for the presented view (point and spot range spheres) and publishes `RendererService::GetClusterStats()`. Nothing shades from the lists.
+`AssignClusterLights` builds fixed-stride per-cluster lists from it; `render.lights.cluster` (default off) runs it per frame for the presented view (point and spot range spheres) and publishes `RendererService::GetClusterStats()`. `render.lights.cluster.shade` (default off, implies the assignment) uploads the lists (`PackClusterLightLists`: counts, then fixed-stride indices) to a per-frame-in-flight storage buffer that DefaultLit reads through its device address (`vk::RawBufferLoad`, no descriptor change; address, grid and `ClusterViewDepthRow` ride a FrameCB tail). DefaultLit visits only the cluster's point and spot lights, in the same ascending order as the full loops, so pixels match unless a cluster overflows `render.lights.cluster.max`. Only the presented camera at a scene-target size equal to the viewport uses the lists (`render.scale != 1` and every other pass loop over all lights); `ClusterIndexFromPixel` is the tested mirror of the shader's cluster lookup. Not yet measured on a GPU.
 - **Rendering:** backend-agnostic interfaces in `Render/` (`RendererAPI`, `Renderer`, `Pipeline`,
   `Shader`, `Buffer`, `Texture`, `Material`, `RenderGraph`, ...). The concrete implementation lives
   in `Platform/Vulkan/` (volk + Vulkan Memory Allocator + spirv-reflect; shaders compiled to SPIR-V

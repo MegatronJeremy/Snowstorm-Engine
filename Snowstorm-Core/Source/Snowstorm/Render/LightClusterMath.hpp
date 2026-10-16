@@ -129,6 +129,26 @@ namespace Snowstorm
 		uint32_t MaxCount = 0;
 	};
 
+	// Flat GPU image of the lists: Counts[ClusterCount] then Indices[ClusterCount * Stride]. Cluster c's list
+	// starts at word ClusterCount + c * Stride.
+	inline std::vector<uint32_t> PackClusterLightLists(const ClusterLightLists& lists)
+	{
+		std::vector<uint32_t> words;
+		words.reserve(lists.Counts.size() + lists.Indices.size());
+		words.insert(words.end(), lists.Counts.begin(), lists.Counts.end());
+		words.insert(words.end(), lists.Indices.begin(), lists.Indices.end());
+		return words;
+	}
+
+	// Cluster of a fragment: pixel (px, py) and positive view depth. DefaultLit.frag.hlsl repeats this
+	// arithmetic (ClusterIndexOf) with SliceScale = Slices / log(Far / Near); keep the two in step.
+	inline uint32_t ClusterIndexFromPixel(const ClusterGrid& g, uint32_t px, uint32_t py, float depth)
+	{
+		const uint32_t x = std::min(ClusterTileFromPixel(g, px), g.TilesX() - 1);
+		const uint32_t y = std::min(ClusterTileFromPixel(g, py), g.TilesY() - 1);
+		return g.Index(x, y, ClusterSliceFromDepth(g, depth));
+	}
+
 	// Lights are view-space spheres (see the convention on ClusterGrid). Brute force O(clusters x lights): the
 	// CPU reference for the compute cull, not a per-frame production path.
 	inline ClusterLightLists AssignClusterLights(const ClusterGrid& g, float tanHalfFovY, float aspect, const std::vector<ClusterSphere>& lights, uint32_t stride)

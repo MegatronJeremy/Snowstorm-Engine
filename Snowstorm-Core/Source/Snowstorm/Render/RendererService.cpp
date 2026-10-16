@@ -10,6 +10,7 @@
 #include "Snowstorm/Render/Texture.hpp"
 #include "Snowstorm/Service/ServiceManager.hpp"
 
+#include <cmath>
 #include <cstring>
 
 namespace Snowstorm
@@ -149,6 +150,22 @@ namespace Snowstorm
 			uint32_t DirShadowAtlasIndex = 0; // secondary-directional shadow atlas (0 = none); mirrors Engine.hlsli
 			uint32_t _FramePad1 = 0;
 			uint32_t _FramePad2 = 0;
+
+			// Clustered light lists (#66), appended after the last row so no offset moves. ClusterStride == 0
+			// means "loop over all lights". Mirrors Engine.hlsli field-for-field.
+			glm::vec4 ClusterViewDepthRow{0.0f};
+			uint32_t ClusterListAddrLo = 0;
+			uint32_t ClusterListAddrHi = 0;
+			uint32_t ClusterStride = 0;
+			uint32_t ClusterTilePx = 0;
+			uint32_t ClusterTilesX = 0;
+			uint32_t ClusterTilesY = 0;
+			uint32_t ClusterCount = 0;
+			uint32_t ClusterSlices = 0;
+			float ClusterNear = 0.0f;
+			float ClusterSliceScale = 0.0f; // Slices / log(Far / Near)
+			float _ClusterPad0 = 0.0f;
+			float _ClusterPad1 = 0.0f;
 		};
 	}
 
@@ -409,11 +426,57 @@ namespace Snowstorm
 		frame.SunShadowTextureIndex = m_ShadowTextureIndex;
 		frame.ShadowSpecTextureIndex = m_ShadowSpecTextureIndex;
 
+		// Clustered lights (#66): only for the camera and scene-target size the lists were built for.
+		if (m_ClusterShadingValid && m_ClusterShadingFrame == frameIndex && frameIndex < m_ClusterBuffers.size() && m_ClusterBuffers[frameIndex] &&
+		    m_GIRenderTargetSize == glm::vec2(static_cast<float>(m_ClusterShading.Width), static_cast<float>(m_ClusterShading.Height)) &&
+		    fd.CameraPosition == m_ClusterShading.CameraPosition)
+		{
+			const ClusterShading& c = m_ClusterShading;
+			const uint64_t addr = m_ClusterBuffers[frameIndex]->GetGPUAddress();
+			frame.ClusterViewDepthRow = c.ViewDepthRow;
+			frame.ClusterListAddrLo = static_cast<uint32_t>(addr & 0xFFFFFFFFull);
+			frame.ClusterListAddrHi = static_cast<uint32_t>(addr >> 32);
+			frame.ClusterStride = c.Stride;
+			frame.ClusterTilePx = c.TilePx;
+			frame.ClusterTilesX = c.TilesX;
+			frame.ClusterTilesY = c.TilesY;
+			frame.ClusterCount = c.ClusterCount;
+			frame.ClusterSlices = c.Slices;
+			frame.ClusterNear = c.Near;
+			frame.ClusterSliceScale = static_cast<float>(c.Slices) / std::log(c.Far / c.Near);
+		}
+
 		const Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];
 		SS_CORE_ASSERT(frameUBO, "Frame UBO missing for frame descriptor set");
 		frameUBO->SetData(&frame, sizeof(FrameCB), 0);
 
 		return perFrameFrameSets[frameIndex];
+	}
+
+	void RendererService::SetClusterShading(const uint32_t frameIndex, const ClusterShading& info, const std::vector<uint32_t>& words)
+	{
+		if (words.empty() || info.Stride == 0)
+		{
+			m_ClusterShadingValid = false;
+			return;
+		}
+		if (m_ClusterBuffers.size() <= frameIndex)
+			m_ClusterBuffers.resize(frameIndex + 1);
+
+		// This frame index's previous submission has finished (its fence was waited before the frame began), so a
+		// larger buffer can replace the old one here. Grow-only, with headroom so a resize does not reallocate.
+		const size_t bytes = words.size() * sizeof(uint32_t);
+		if (!m_ClusterBuffers[frameIndex] || m_ClusterBuffers[frameIndex]->GetSize() < bytes)
+			m_ClusterBuffers[frameIndex] = Buffer::Create(bytes + bytes / 2, BufferUsage::Storage, nullptr, true, "ClusterLightLists");
+		if (!m_ClusterBuffers[frameIndex])
+		{
+			m_ClusterShadingValid = false;
+			return;
+		}
+		m_ClusterBuffers[frameIndex]->SetData(words.data(), bytes, 0);
+		m_ClusterShading = info;
+		m_ClusterShadingFrame = frameIndex;
+		m_ClusterShadingValid = true;
 	}
 
 	void RendererService::SetIBLData(const uint32_t irradianceIndex,
