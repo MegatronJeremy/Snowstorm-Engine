@@ -250,7 +250,9 @@ namespace Snowstorm
 			renderer.SetFrameViewInfo(view);
 
 			RendererService::ClusterStats clusterStats{};
-			if (CVars::LightClusterAssign.Get() && view.Width > 0 && view.Height > 0)
+			bool clusterShaded = false;
+			const bool clusterShade = CVars::LightClusterShade.Get();
+			if ((CVars::LightClusterAssign.Get() || clusterShade) && view.Width > 0 && view.Height > 0)
 			{
 				const CameraPick pick = FindCameraForViewport(reg, presentViewport);
 				if (pick.Cam && pick.Rt && pick.Cam->Projection == CameraComponent::ProjectionType::Perspective)
@@ -279,8 +281,29 @@ namespace Snowstorm
 					const uint32_t stride = static_cast<uint32_t>(std::max(CVars::LightClusterMaxPerCluster.Get(), 1));
 					const ClusterLightLists lists = AssignClusterLights(grid, tanHalfFovY, aspect, spheres, stride);
 					clusterStats = {grid.ClusterCount(), lists.Occupied, lists.MaxCount, lists.Overflowed, static_cast<uint32_t>(spheres.size())};
+
+					if (clusterShade)
+					{
+						RendererService::ClusterShading shading;
+						shading.Width = grid.Width;
+						shading.Height = grid.Height;
+						shading.TilePx = grid.TilePx;
+						shading.TilesX = grid.TilesX();
+						shading.TilesY = grid.TilesY();
+						shading.Slices = grid.Slices;
+						shading.ClusterCount = grid.ClusterCount();
+						shading.Stride = stride;
+						shading.Near = grid.Near;
+						shading.Far = grid.Far;
+						shading.ViewDepthRow = -glm::vec4(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2], viewMatrix[3][2]);
+						shading.CameraPosition = view.CameraPosition;
+						renderer.SetClusterShading(frameIndex, shading, PackClusterLightLists(lists));
+						clusterShaded = true;
+					}
 				}
 			}
+			if (!clusterShaded)
+				renderer.ClearClusterShading();
 			renderer.SetClusterStats(clusterStats);
 		}
 
