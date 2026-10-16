@@ -2,6 +2,7 @@
 
 #include <entt/entity/entity.hpp>
 
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/CommandContext.hpp"
@@ -47,6 +48,11 @@ namespace Snowstorm
 		}
 
 		MarkDirty();
+	}
+
+	bool MaterialInstance::IsSortedTransparent() const
+	{
+		return CVars::TransparentPass.Get() && m_Base->GetAlphaMode() == AlphaMode::Blend && m_Base->GetBlendPipeline();
 	}
 
 	const Ref<Pipeline>& MaterialInstance::GetPipeline() const
@@ -172,7 +178,7 @@ namespace Snowstorm
 		}
 	}
 
-	void MaterialInstance::Apply(CommandContext& ctx, const uint32_t frameIndex)
+	void MaterialInstance::Apply(CommandContext& ctx, const uint32_t frameIndex, const Ref<Pipeline>& pipeline)
 	{
 		UpdateGPU(frameIndex);
 
@@ -180,6 +186,6 @@ namespace Snowstorm
 		// it together with sets 0 and 2 in a single contiguous BindDescriptorSets right before the draw
 		// (see RendererService::FlushBatch), so all per-draw sets land in one call. GetDescriptorSet
 		// exposes the set-1 handle for that batched bind.
-		ctx.BindPipeline(m_Base->GetPipeline());
+		ctx.BindPipeline(pipeline ? pipeline : m_Base->GetPipeline());
 	}
 }
