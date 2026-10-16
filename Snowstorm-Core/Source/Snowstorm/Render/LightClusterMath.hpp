@@ -181,4 +181,16 @@ namespace Snowstorm
 				}
 		return out;
 	}
+
+	// Edge detector for the overflow warning: true on the frame overflow starts, not while it persists.
+	struct OverflowEpisode
+	{
+		bool Active = false;
+		bool Update(uint32_t overflowedClusters)
+		{
+			const bool started = overflowedClusters > 0 && !Active;
+			Active = overflowedClusters > 0;
+			return started;
+		}
+	};
 }

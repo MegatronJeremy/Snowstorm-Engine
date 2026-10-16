@@ -6,6 +6,7 @@
 // PostProcess builders back the AddForwardPass/AddTonemapPass helpers). Each per-effect-exclusive pass is
 // included by ViewportEffects.cpp, where its effect lives — not pulled through this header.
 #include "Snowstorm/Render/IBLInvalidation.hpp"
+#include "Snowstorm/Render/LightClusterMath.hpp"
 #include "Snowstorm/Render/Passes/IBLBakePass.hpp"
 #include "Snowstorm/Render/Passes/PostProcessPass.hpp"
 #include "Snowstorm/Render/Passes/PresentPass.hpp"
@@ -112,6 +113,8 @@ namespace Snowstorm
 
 		// Frame-global shadow phase (owns the shared ShadowPass + its atlas targets). Delegated to from Execute.
 		ShadowRenderer m_ShadowRenderer;
+
+		OverflowEpisode m_ClusterOverflow;
 
 		// Shared render passes owned by the orchestrator because ≥2 effects (or a frame phase) use them: the IBL
 		// bake feeds every forward pass; SkyPass + PostProcessPass back the shared AddForwardPass/AddTonemapPass

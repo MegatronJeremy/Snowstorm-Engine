@@ -252,3 +252,13 @@ TEST_CASE("ClusterIndexFromPixel clamps depth and edge pixels into the grid", "[
 	CHECK(ClusterIndexFromPixel(g, g.Width - 1, g.Height - 1, 1e6f) == g.Index(g.TilesX() - 1, g.TilesY() - 1, g.Slices - 1));
 	CHECK(ClusterIndexFromPixel(g, g.Width + 500, 0, 1.0f) % g.TilesX() == g.TilesX() - 1);
 }
+
+TEST_CASE("OverflowEpisode reports only the frame overflow starts", "[render][clusters]")
+{
+	OverflowEpisode e;
+	CHECK_FALSE(e.Update(0));
+	CHECK(e.Update(3));
+	CHECK_FALSE(e.Update(5));
+	CHECK_FALSE(e.Update(0));
+	CHECK(e.Update(1));
+}

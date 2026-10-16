@@ -282,6 +282,10 @@ namespace Snowstorm
 					const ClusterLightLists lists = AssignClusterLights(grid, tanHalfFovY, aspect, spheres, stride);
 					clusterStats = {grid.ClusterCount(), lists.Occupied, lists.MaxCount, lists.Overflowed, static_cast<uint32_t>(spheres.size())};
 
+					if (m_ClusterOverflow.Update(lists.Overflowed))
+						SS_CORE_WARN("Cluster lights: {} of {} clusters overflow render.lights.cluster.max={}; lights past it are dropped{}", lists.Overflowed,
+						             grid.ClusterCount(), stride, clusterShade ? " from shading" : "");
+
 					if (clusterShade)
 					{
 						RendererService::ClusterShading shading;

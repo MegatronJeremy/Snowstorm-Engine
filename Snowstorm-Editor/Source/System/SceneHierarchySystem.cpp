@@ -949,6 +949,15 @@ namespace Snowstorm
 				}
 				ImGui::Text("Culled:     %u / %u", considered - visible, considered);
 
+				// Cluster light assignment (render.lights.cluster, #66): lights per cluster, and clusters that
+				// dropped lights past render.lights.cluster.max (red).
+				if (const auto& c = ServiceView<RendererService>().GetClusterStats(); c.Clusters > 0)
+				{
+					ImGui::Text("Clusters:   %u / %u occupied, max %u lights, %u lights", c.Occupied, c.Clusters, c.MaxPerCluster, c.Lights);
+					if (c.Overflowed > 0)
+						ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Cluster overflow: %u clusters", c.Overflowed);
+				}
+
 				ImGui::Spacing();
 				EditorTheme::SectionHeader("CPU phases / systems (ms)");
 				ImGui::TextDisabled("(Render includes GPU wait above)");
