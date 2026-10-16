@@ -1,5 +1,7 @@
 #pragma once
 
+#include <imgui.h>
+
 #include <string>
 
 namespace Snowstorm::EditorTheme
@@ -24,6 +26,11 @@ namespace Snowstorm::EditorTheme
 
 	// A red NERV-style warning banner: "■ <text>" on a dim red bar. For alerts/empty states.
 	void WarningBanner(const char* text);
+
+	// A blinking red status dot followed by `label` (e.g. "REC"), drawn on `dl` with its text vertically
+	// centred on `center`; `alignRight` makes `center` the right edge of the whole indicator. The dot is
+	// lit for the first half of each 1 s period. Returns the width used.
+	float DrawStatusBlink(ImDrawList* dl, ImVec2 center, const char* label, bool alignRight);
 
 	// Scanlines and a corner vignette over the main viewport, gated by the editor.crt CVar. Call once per
 	// frame between NewFrame and Render; it draws on the foreground draw list, so it sits over every panel.

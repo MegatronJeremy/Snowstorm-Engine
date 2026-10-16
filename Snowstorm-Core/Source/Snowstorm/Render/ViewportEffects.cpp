@@ -38,6 +38,7 @@
 #include "Snowstorm/Render/Passes/GIUpsamplePass.hpp"
 #include "Snowstorm/Render/Passes/MetricsPass.hpp"
 #include "Snowstorm/Render/Passes/QualityCapturePass.hpp" // #153: headless FLIP/PSNR/SSIM capture
+#include "Snowstorm/Render/QualityCaptureFormat.hpp"
 #include "Snowstorm/Render/Passes/NeuralUpscalePass.hpp"
 #include "Snowstorm/Render/Passes/SharpenPass.hpp"
 #include "Snowstorm/Render/Passes/TemporalResolvePass.hpp"
@@ -208,6 +209,10 @@ namespace Snowstorm
 					                  m_Owner.DrawVisibleMeshes(fc, cam,
 					                                            [&](entt::entity, const TransformComponent& tr, const MeshComponent& mesh, const MaterialComponent& mat)
 					                                            {
+						                                            if (mat.MaterialInstance->IsSortedTransparent())
+						                                            {
+							                                            return;
+						                                            }
 						                                            fc.Renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, 0,
 						                                                                 glm::vec4(0.0f), tr.GetTransformMatrix());
 					                                            });
@@ -1594,6 +1599,10 @@ namespace Snowstorm
 						                                            // Last frame's world matrix; PrevTransformSnapshotSystem writes it
 						                                            // end-of-frame. Missing (object created this frame) -> use current
 						                                            // => zero velocity (correct).
+						                                            if (mat.MaterialInstance->IsSortedTransparent())
+						                                            {
+							                                            return;
+						                                            }
 						                                            glm::mat4 prevModel = tr.GetTransformMatrix();
 						                                            if (const auto* pt = fc.Reg.try_get_const<PrevTransformComponent>(e))
 						                                            {
@@ -1725,8 +1734,9 @@ namespace Snowstorm
 							                                            // can disagree with this separate depth pass at cutout edges, so writing
 							                                            // its depth here early-Z-culls what's behind the holes -> grey. Cutout
 							                                            // geometry keeps its normal forward path (no early-Z, but correct); the
-							                                            // opaque bulk still gets the win. BLEND falls through as opaque (#82).
-							                                            if (mat.MaterialInstance && mat.MaterialInstance->GetConstants().AlphaMaskEnabled != 0)
+							                                            // opaque bulk still gets the win. BLEND is skipped too when
+							                                            // render.transparent draws it: its depth here would reject everything behind the glass.
+							                                            if (mat.MaterialInstance && (mat.MaterialInstance->GetConstants().AlphaMaskEnabled != 0 || mat.MaterialInstance->IsSortedTransparent()))
 							                                            {
 								                                            return;
 							                                            }
@@ -2364,22 +2374,72 @@ namespace Snowstorm
 				const std::string basePath = CVars::QualityCapturePath.Get();
 				const std::vector<uint64_t> wanted = ParseRouteFrameList(CVars::QualityCaptureAtPathFrames.Get());
 				const RendererService::FrameViewInfo view = fc.Renderer.GetFrameViewInfo();
+
+				// HDR half (#157): v.SceneColor is pre-exposure, pre-tonemap radiance. Copy it 1:1 into a target this
+				// effect owns (TransferSrc exists only here, so no hot target gains a usage flag and nothing runs
+				// unless capture is on), then read that back in the same pass as the LDR present, in both the
+				// converged and the motion-sequence mode.
+				Ref<Texture> hdrImg;
+				if (v.SceneColor.View && v.SceneColor.Texture &&
+				    QualityCaptureFormat::HdrDType(v.SceneColor.Texture->GetDesc().Format))
+				{
+					const Ref<Texture>& srcTex = v.SceneColor.Texture;
+					const TextureDesc& sd = srcTex->GetDesc();
+					const Ref<TextureView> srcView = v.SceneColor.View;
+					if (!m_HdrTarget || m_HdrTarget->GetDesc().Width != sd.Width || m_HdrTarget->GetDesc().Height != sd.Height ||
+					    m_HdrTarget->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format != sd.Format)
+					{
+						TextureDesc d{};
+						d.Dimension = TextureDimension::Texture2D;
+						d.Format = sd.Format; // RGBA16F, or RGBA32F for the path tracer: never narrowed
+						d.Usage = TextureUsage::ColorAttachment | TextureUsage::Sampled | TextureUsage::TransferSrc;
+						d.Width = sd.Width;
+						d.Height = sd.Height;
+						d.DebugName = "QualityCaptureHdr_Color";
+						const Ref<Texture> tex = Texture::Create(d);
+						RenderTargetDesc rt{};
+						rt.Width = sd.Width;
+						rt.Height = sd.Height;
+						rt.IsSwapchainTarget = false;
+						RenderTargetAttachment att{};
+						att.View = TextureView::Create(tex, MakeFullViewDesc(d));
+						att.AttachmentIndex = 0;
+						att.ClearColor = {0.0f, 0.0f, 0.0f, 1.0f};
+						att.LoadOp = RenderTargetLoadOp::Clear;
+						att.StoreOp = RenderTargetStoreOp::Store;
+						rt.ColorAttachments.push_back(att);
+						m_HdrTarget = RenderTarget::Create(rt);
+					}
+					hdrImg = m_HdrTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+					const PixelFormat hdrFmt = sd.Format;
+					fc.Graph.AddPass({.Name = "QualityCaptureHdrCopy" + v.Suffix,
+					                  .Target = m_HdrTarget,
+					                  .Reads = {{srcTex, RenderGraph::AccessState::Sampled}},
+					                  .Execute = [this, &fc, srcView, hdrFmt](CommandContext& c)
+					                  { m_HdrCopy.Draw(BorrowContext(c), fc.FrameIndex, srcView, hdrFmt); }});
+				}
+
+				std::vector<RenderGraph::ResourceAccess> reads = {{presentImg, RenderGraph::AccessState::Sampled}};
+				if (hdrImg)
+				{
+					reads.push_back({hdrImg, RenderGraph::AccessState::Sampled});
+				}
 				fc.Graph.AddPass({.Name = "QualityCapture" + v.Suffix,
 				                  .IsCompute = true, // no render target; records the readback copy
-				                  .Reads = {{presentImg, RenderGraph::AccessState::Sampled}},
-				                  .Execute = [this, presentImg, streamingDone, frame, minSettle, epsilon, maxFrame, exactWindow, basePath, wanted, view, &fc](CommandContext& c)
+				                  .Reads = reads,
+				                  .Execute = [this, presentImg, hdrImg, streamingDone, frame, minSettle, epsilon, maxFrame, exactWindow, basePath, wanted, view, &fc](CommandContext& c)
 				                  {
 					                  const Ref<CommandContext> cref(&c, [](CommandContext*) {});
 					                  if (wanted.empty())
 					                  {
-						                  const uint64_t written = m_Pass.Tick(cref, presentImg, streamingDone, frame, minSettle, epsilon, maxFrame, exactWindow, basePath);
+						                  const uint64_t written = m_Pass.Tick(cref, presentImg, streamingDone, frame, minSettle, epsilon, maxFrame, exactWindow, basePath, hdrImg);
 						                  fc.Renderer.SetQualityCaptureWritten(written);
 						                  fc.Renderer.SetQualityCaptureComplete(written > 0);
 						                  return;
 					                  }
 					                  const uint64_t written = m_Pass.TickSequence(cref, presentImg, streamingDone, frame,
 					                                                               view.PathFrame, view.PathActive, wanted,
-					                                                               basePath, view.CameraPosition, view.CameraRotation);
+					                                                               basePath, view.CameraPosition, view.CameraRotation, hdrImg);
 					                  fc.Renderer.SetQualityCaptureWritten(written);
 					                  fc.Renderer.SetQualityCaptureComplete(m_Pass.SequenceComplete());
 				                  }});
@@ -2387,7 +2447,9 @@ namespace Snowstorm
 
 		private:
 			RenderSystem& m_Owner;
-			QualityCapturePass m_Pass; // convergence detect + readback + .npy serialize; exclusive to this effect
+			QualityCapturePass m_Pass;     // convergence detect + readback + .npy serialize; exclusive to this effect
+			UpscalePass m_HdrCopy;         // reused as a 1:1 fullscreen copy, as PrevColorSnapshot does
+			Ref<RenderTarget> m_HdrTarget; // capture-only TransferSrc copy of SceneColor
 		};
 	}
 

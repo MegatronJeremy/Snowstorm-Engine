@@ -456,6 +456,7 @@ namespace Snowstorm::CVars
 
 	// Per-frame sun cascade fit (#58 PR 2). Computes matrices only; no pass or shader reads them yet.
 	extern CVar<bool> ShadowCascadeFit;
+	extern CVar<bool> TransparentPass;
 	extern CVar<int> ShadowCascadeCount;
 	extern CVar<float> ShadowCascadeLambda;
 

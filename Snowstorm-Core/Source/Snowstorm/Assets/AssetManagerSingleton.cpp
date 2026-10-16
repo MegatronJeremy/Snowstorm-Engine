@@ -1043,6 +1043,8 @@ namespace Snowstorm
 
 		Ref<Material> base = CreateRef<Material>(pipeline);
 		ApplyMaterialAsset(*base, matAsset);
+		if (matAsset.Alpha == AlphaMode::Blend)
+			base->SetBlendPipeline(GetOrCreatePipeline(matAsset.FragmentShader, AlphaMode::Blend));
 
 		Ref<MaterialInstance> mi = CreateRef<MaterialInstance>(base);
 		ApplyShaderParams(*mi, matAsset);
@@ -1079,6 +1081,8 @@ namespace Snowstorm
 
 		Ref<Material> base = CreateRef<Material>(pipeline);
 		ApplyMaterialAsset(*base, matAsset);
+		if (matAsset.Alpha == AlphaMode::Blend)
+			base->SetBlendPipeline(GetOrCreatePipeline(matAsset.FragmentShader, AlphaMode::Blend));
 
 		Ref<MaterialInstance> mi = CreateRef<MaterialInstance>(base);
 		ApplyShaderParams(*mi, matAsset);

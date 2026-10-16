@@ -1,6 +1,7 @@
 #include "RenderSystem.hpp"
 
 #include "Snowstorm/Components/CameraComponent.hpp"
+#include "Snowstorm/Math/Bounds.hpp"
 #include "Snowstorm/Components/CameraPathComponent.hpp"
 #include "Snowstorm/Components/CameraRuntimeComponent.hpp"
 #include "Snowstorm/Components/CameraTargetComponent.hpp"
@@ -821,6 +822,13 @@ namespace Snowstorm
 				                                    }
 
 				                                    const glm::vec4 customData = mat.MaterialInstance->GetPerInstanceCustomData();
+				                                    if (mat.MaterialInstance->IsSortedTransparent())
+				                                    {
+					                                    const glm::mat4 model = tr.GetTransformMatrix();
+					                                    const glm::vec3 center = TransformAABB(mesh.MeshInstance->GetBounds().Box, model).Center();
+					                                    fc.Renderer.DrawMeshTransparent(model, mesh.MeshInstance, mat.MaterialInstance, center, albedoIndex, customData);
+					                                    return;
+				                                    }
 				                                    fc.Renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, albedoIndex, customData);
 			                                    });
 
@@ -837,6 +845,17 @@ namespace Snowstorm
 				                  m_SkyPass.Draw(fc.Renderer, colorFmt, depthFmt);
 				                  c.EndGpuScope();
 			                  }
+
+			                  // Sorted Blend draws last: the sky only fills uncovered pixels, so glass must follow it. The
+			                  // screen-space inputs describe the opaque surface behind the glass, so the pane falls back
+			                  // to the analytic terms instead of lighting itself with its background's GI/AO/shadow.
+			                  fc.Renderer.SetGITexture(0, sceneSize);
+			                  fc.Renderer.SetAOTexture(0, sceneSize);
+			                  fc.Renderer.SetReflTexture(0, sceneSize);
+			                  fc.Renderer.SetShadowTexture(0, sceneSize);
+			                  fc.Renderer.SetShadowSpecTexture(0);
+			                  const glm::mat4& view = cam.Rt->View;
+			                  fc.Renderer.FlushTransparent(-glm::vec3(view[0][2], view[1][2], view[2][2]));
 
 			                  fc.Renderer.EndScene();
 		                  }});
