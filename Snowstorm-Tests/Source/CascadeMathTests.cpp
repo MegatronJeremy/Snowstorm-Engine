@@ -132,3 +132,22 @@ TEST_CASE("every slice corner projects inside the cascade NDC box", "[cascade]")
 		REQUIRE(n.z <= 1.0f + 1e-4f);
 	}
 }
+
+TEST_CASE("ComputeFit returns contiguous cascades with a matrix per slice", "[cascade]")
+{
+	const glm::mat4 vp = CameraViewProj(glm::vec3(2.0f, 1.0f, -3.0f), 0.4f);
+	const auto fit = CascadeMath::ComputeFit(glm::inverse(vp), kNear, kFar, kSun, 3, 0.7f, 1024, 20.0f);
+	REQUIRE(fit.Count == 3);
+	REQUIRE(fit.Splits[2] == Approx(kFar));
+	for (uint32_t i = 0; i < fit.Count; ++i)
+	{
+		REQUIRE(fit.Radius[i] > 0.0f);
+		if (i > 0)
+		{
+			REQUIRE(fit.Splits[i] > fit.Splits[i - 1]);
+			REQUIRE(fit.Radius[i] > fit.Radius[i - 1]);
+		}
+	}
+	const auto one = CascadeMath::ComputeFit(glm::inverse(vp), kNear, kFar, kSun, 9, 0.7f, 1024, 20.0f);
+	REQUIRE(one.Count == CascadeMath::kMaxCascades);
+}
