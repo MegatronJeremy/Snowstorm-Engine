@@ -1123,21 +1123,32 @@ build time. A controller system that writes `SetPerInstanceCustomData` per frame
 
 `MaterialAsset::Alpha` is `Opaque`, `Mask` or `Blend`, persisted as `"AlphaMode"` in `.ssmat` (the legacy boolean
 `"AlphaMask"` is read, never written). The GPU layouts carry only the mask flag, set when the mode is `Mask`, so
-`Blend` renders as opaque in every pass until the sorted transparent pass lands (#82).
+`Blend` is opaque in every shader consumer (shadow maps, RT acceleration structure, path tracer) and is told apart
+only on the CPU, by pipeline.
 
-Building blocks of that pass already in place, none drawn from yet: `SortTransparentDraws` (`Render/TransparentSort.hpp`) orders
-instances far-first by view-axis depth of the world-space bounds centre, ties broken by submission sequence for bit-stable
-output (`TransparentSortTests`). `AssetManagerSingleton::GetOrCreatePipeline(frag, AlphaMode::Blend)` returns a per-shader
-blend variant cached beside the opaque one (blend on, depth write off, destination alpha kept via
-`PipelineBlendAttachment::KeepDestinationAlpha`); `Opaque` and `Mask` share the original. `DefaultLit` outputs
-`albedo.a * BaseColor.a`, which only matters under a blend pipeline.
+`render.transparent` (default off, #82) draws `Blend` materials in a sorted pass; off, `Blend` renders as opaque as before.
+On, `MaterialInstance::IsSortedTransparent` (CVar on, Blend, blend pipeline built) routes an instance through
+`RendererService::DrawMeshTransparent` instead of a batch, and the camera depth prepass, DepthNormal and velocity passes skip it.
+The prepass skip is required for correctness: glass depth there would reject everything behind it in the forward
+`LessOrEqual` test. `AssetManagerSingleton` builds the per-shader blend variant (`GetOrCreatePipeline(frag, Blend)`: blend on, depth write off,
+destination alpha kept; cached beside the opaque one) and stores it on the `Material` (`GetBlendPipeline`).
+
+`AddForwardPass` ends with the transparent flush: after the opaque `Flush` and the sky (the sky only fills uncovered
+pixels), in the same render pass. Before it the GI, AO, reflection, sun-shadow and demodulated-specular indices are
+zeroed, since those screen-space buffers describe the opaque surface behind the glass; the pane falls back to the
+analytic terms. `FlushTransparent` sorts far-first with `SortTransparentDraws` (view-axis depth of the world-space bounds centre, ties by
+submission order, `TransparentSortTests`) and merges adjacent runs of one (mesh, material) into a single instanced draw,
+under a `Transparent` GPU scope that appears only when something is drawn. Sorting is per instance: it cannot order faces within one
+mesh or between intersecting meshes. Blend writes no velocity, so TAA and the neural upscaler smear glass over a moving background. Shadow maps
+and RT still treat glass as a solid caster. `quality-bench` compares against the path tracer, which renders `Blend` as
+opaque, so keep `Blend` out of scenes with committed quality baselines.
 
 **`AlphaBlend.world` is the testbed for the transparent pass.** Three overlapping half-alpha panes at distinct depths
 (red near, green mid, blue far) in front of an opaque cube, a low-alpha blend cube, and a `Mask` pane (`Sponza_mat0`) with a
-blend pane in front and one behind it. Correct sorting shows every pane tinting the ones behind it in depth order; opaque
-rendering shows solid colours that occlude. Alpha mode is an asset property, not an override, so the scene adds one
+blend pane in front and one behind it. Run it with `--render.transparent`: every pane tints the ones behind it in depth order;
+without the flag the panes are solid and occlude. Alpha mode is an asset property, not an override, so the scene adds one
 material, `materials/AlphaBlend.ssmat` (`"AlphaMode": "Blend"`), and varies colour and alpha per entity through
-`BaseColor` overrides. Today it renders every pane opaque; it has no baselines yet.
+`BaseColor` overrides. It has no baselines. Not yet run on a GPU: the sorted pass is unverified by smoke, perf-bench or eyes.
 
 ## IBL invalidation
 

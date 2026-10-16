@@ -8,6 +8,7 @@
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/Shader.hpp"
 #include "Snowstorm/Render/Texture.hpp"
+#include "Snowstorm/Render/TransparentSort.hpp"
 #include "Snowstorm/Service/ServiceManager.hpp"
 
 #include <cmath>
@@ -218,6 +219,7 @@ namespace Snowstorm
 
 		m_Batches.clear();
 		m_BatchIndex.clear();
+		m_Transparent.clear();
 		m_Stats = RenderStats{};
 	}
 
@@ -259,6 +261,68 @@ namespace Snowstorm
 		instance.AlbedoTextureIndex = albedoTextureIndex;
 		instance.PerInstanceCustomData = perInstanceCustomData;
 		batch->Instances.push_back(instance);
+	}
+
+	void RendererService::DrawMeshTransparent(const glm::mat4& transform,
+	                                          const Ref<Mesh>& mesh,
+	                                          const Ref<MaterialInstance>& materialInstance,
+	                                          const glm::vec3& worldBoundsCenter,
+	                                          const uint32_t albedoTextureIndex,
+	                                          const glm::vec4& perInstanceCustomData)
+	{
+		SS_CORE_ASSERT(m_CommandContext, "DrawMeshTransparent called outside of BeginScene/EndScene");
+		SS_CORE_ASSERT(mesh && materialInstance, "Mesh and MaterialInstance must be valid");
+
+		TransparentEntry entry;
+		entry.Mesh = mesh;
+		entry.MaterialInstance = materialInstance;
+		entry.Instance.Model = transform;
+		entry.Instance.PrevModel = transform;
+		entry.Instance.AlbedoTextureIndex = albedoTextureIndex;
+		entry.Instance.PerInstanceCustomData = perInstanceCustomData;
+		entry.BoundsCenter = worldBoundsCenter;
+		m_Transparent.push_back(std::move(entry));
+	}
+
+	void RendererService::FlushTransparent(const glm::vec3& cameraForward)
+	{
+		if (!m_CommandContext || m_Transparent.empty())
+		{
+			return;
+		}
+
+		m_CommandContext->BeginGpuScope("Transparent");
+		std::vector<TransparentDraw> order(m_Transparent.size());
+		for (uint32_t i = 0; i < order.size(); ++i)
+		{
+			order[i].BoundsCenter = m_Transparent[i].BoundsCenter;
+			order[i].Sequence = i;
+		}
+		SortTransparentDraws(order, m_FrameData.CameraPosition, cameraForward);
+
+		BatchData run;
+		const auto flushRun = [&]()
+		{
+			if (!run.Instances.empty())
+			{
+				FlushBatch(run, m_CommandContext, m_FrameIndex, run.MaterialInstance->GetBaseMaterial()->GetBlendPipeline());
+			}
+			run = BatchData{};
+		};
+		for (const TransparentDraw& d : order)
+		{
+			TransparentEntry& e = m_Transparent[d.Sequence];
+			if (run.Mesh != e.Mesh || run.MaterialInstance != e.MaterialInstance)
+			{
+				flushRun();
+				run.Mesh = e.Mesh;
+				run.MaterialInstance = e.MaterialInstance;
+			}
+			run.Instances.push_back(e.Instance);
+		}
+		flushRun();
+		m_Transparent.clear();
+		m_CommandContext->EndGpuScope();
 	}
 
 	void RendererService::UploadLights(const LightDataBlock& lightData)
@@ -802,7 +866,8 @@ namespace Snowstorm
 
 	void RendererService::FlushBatch(BatchData& batch,
 	                                 const Ref<CommandContext>& commandContext,
-	                                 const uint32_t frameIndex)
+	                                 const uint32_t frameIndex,
+	                                 const Ref<Pipeline>& pipelineOverride)
 	{
 		if (batch.Instances.empty())
 			return;
@@ -817,9 +882,9 @@ namespace Snowstorm
 		m_Stats.Triangles += batchInstanceCount * (batch.Mesh->GetIndexCount() / 3u);
 
 		// Bind the pipeline (set 1 is bound below in the batched call, not by Apply).
-		batch.MaterialInstance->Apply(*commandContext, frameIndex);
+		batch.MaterialInstance->Apply(*commandContext, frameIndex, pipelineOverride);
 
-		const Ref<Pipeline>& pipeline = batch.MaterialInstance->GetPipeline();
+		const Ref<Pipeline>& pipeline = pipelineOverride ? pipelineOverride : batch.MaterialInstance->GetPipeline();
 		SS_CORE_ASSERT(pipeline, "MaterialInstance has no pipeline");
 
 		const auto& setLayouts = pipeline->GetSetLayouts();
