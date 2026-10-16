@@ -355,7 +355,11 @@ namespace Snowstorm
 		// env-change re-bake below re-runs when a scene's authored sky differs from what was baked.
 		const bool haveRealEnvironment = env.SkyIntensity > 0.0f;
 
-		if (m_IBLBakePass.IsBaked() && (!m_BakedEnvironment || *m_BakedEnvironment != env))
+		// The sun lives in Lights[0], not in the environment block, so it is keyed separately (#149).
+		const IBLSunKey sunNow = MakeIBLSunKey(renderer.GetLights());
+		const bool sunMoved = m_BakedSun && SunNeedsRebake(*m_BakedSun, sunNow, CVars::IBLSunQuantumDeg.Get(), 0.05f);
+
+		if (m_IBLBakePass.IsBaked() && (!m_BakedEnvironment || *m_BakedEnvironment != env || sunMoved))
 		{
 			m_IBLBakePass.Invalidate();
 		}
@@ -365,6 +369,7 @@ namespace Snowstorm
 			Renderer::WaitIdle();
 			m_IBLBakePass.AddBakePasses(fc.Graph, renderer.GetLights(), env);
 			m_BakedEnvironment = env;
+			m_BakedSun = sunNow;
 		}
 
 		// Deferred IBL cache save (#34): after a miss-path bake, the maps were read back into host buffers; a
