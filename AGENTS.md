@@ -580,8 +580,9 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   Non-finite radiance is counted and zeroed with a warning. The HDR reference is cached beside the LDR one
   (`_REF_CACHE_VERSION` 3); a reference cached without HDR is re-captured once after an engine rebuild, in case
   the new build writes it. `Scripts/test_quality_bench_hdr.py` covers the metric plumbing on synthetic
-  arrays. The engine does not write `_hdr.npy` yet (design: capture-only copy of `SceneColor`), so no
+  arrays. The engine writes `_hdr.npy` (next bullet) but it has not run on a GPU, so no
   HDR-FLIP number exists and the ordering against LDR-FLIP is unmeasured.
+- **HDR capture (#157).** With capture on, the engine also writes `<path>_hdr.npy` beside `_ldr.npy` (motion frames: `_f<N>_hdr.npy`): `v.SceneColor` as the tonemap chain receives it, linear pre-exposure radiance, HxWx4, top-down, `<f2` for the RGBA16F real-time path and `<f4` for the RGBA32F path tracer. `render.exposure` is logged with it, not applied. It is a 1:1 copy into a texture the capture effect owns (`TransferSrc` on no hot target, no cost when capture is off) read back in the same pass as the LDR present, so the pair is one frame. It excludes everything after `SceneColor`: FXAA and CAS (TAA and the upscaler are included), so it cannot replace the LDR numbers. Not run on a GPU as of its PR; the pure format rules are `QualityCaptureFormat.hpp`, tested in `QualityCaptureFormatTests`.
 - **Eight techniques**: `raster`, `ssao`, `rtao`, `ssr`, `rtrefl`, `ssgi`, `rtgi`, `all-rt`. Each is a
   full real-time render with that one technique on, TAA enabled.
 - **FLIP is pinned** to `flip-evaluator==1.7` (a perceptual metric that drifts between versions makes
