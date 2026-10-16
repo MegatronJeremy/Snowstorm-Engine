@@ -38,4 +38,31 @@ namespace Snowstorm
 		}
 		return stages;
 	}
+
+	// Execution order for one phase: the systems flagged `active` (edit-mode gate applied before staging,
+	// so a skipped system never holds up its dependents), stage by stage, as indices into `systems`.
+	// Serial execution of this order is the schedule with threads off.
+	[[nodiscard]] inline std::vector<size_t> ScheduleOrder(const std::vector<SystemAccess>& systems, const std::vector<bool>& active)
+	{
+		std::vector<SystemAccess> live;
+		std::vector<size_t> origin;
+		for (size_t i = 0; i < systems.size(); ++i)
+		{
+			if (active[i])
+			{
+				live.push_back(systems[i]);
+				origin.push_back(i);
+			}
+		}
+		std::vector<size_t> order;
+		order.reserve(live.size());
+		for (const auto& stage : BuildSchedule(live))
+		{
+			for (const size_t k : stage)
+			{
+				order.push_back(origin[k]);
+			}
+		}
+		return order;
+	}
 }

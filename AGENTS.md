@@ -1209,8 +1209,9 @@ see, so treat it as part of the feature, not an afterthought.
   components and resources (Singletons, Services, and the `TrackingMapResource` pseudo-resource for tracked
   mutators and `Init/Changed/FiniView`) it reads and writes, plus `Structural()` when it emplaces, removes or
   destroys. Undeclared means exclusive and main-thread-only. `SystemManager::DeclaredAccess()` lists them and
-  `SystemAccess::ConflictsWith` is the pairwise rule, and `BuildSchedule` (`ECS/SystemSchedule.hpp`) layers one phase into stages from it; nothing executes from it yet
-  (#85). A new core system needs a declaration (`SystemAccessTests` fails otherwise).
+  `SystemAccess::ConflictsWith` is the pairwise rule, and `BuildSchedule` (`ECS/SystemSchedule.hpp`) layers one phase into stages from it; `ecs.schedule` (default off) makes
+  `SystemManager` run each phase in `ScheduleOrder` (stage by stage, still serial, edit-mode skips applied before
+  staging); nothing runs in parallel yet (#85). A new core system needs a declaration (`SystemAccessTests` fails otherwise).
 - **Cluster grid math:** `Render/LightClusterMath.hpp` is the pure, GPU-free core of the planned clustered light cull (#66): exponential depth slices, analytic view-space cluster bounds, sphere-AABB overlap and a CPU reference cull (ascending index, fixed stride, overflow dropped). Nothing renders from it yet.
 `AssignClusterLights` builds fixed-stride per-cluster lists from it; `render.lights.cluster` (default off) runs it per frame for the presented view (point and spot range spheres) and publishes `RendererService::GetClusterStats()`. Nothing shades from the lists.
 - **Rendering:** backend-agnostic interfaces in `Render/` (`RendererAPI`, `Renderer`, `Pipeline`,
