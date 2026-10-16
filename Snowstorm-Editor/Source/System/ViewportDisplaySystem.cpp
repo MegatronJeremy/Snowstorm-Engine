@@ -776,6 +776,10 @@ namespace Snowstorm
 				dl->AddTriangleFilled(ImVec2(c.x - r * 0.7f, c.y - r), ImVec2(c.x - r * 0.7f, c.y + r),
 				                      ImVec2(c.x + r, c.y), green);
 			}
+			if (playing)
+			{
+				EditorTheme::DrawStatusBlink(dl, ImVec2(bmin.x - 10.0f, c.y), "PLAY", true);
+			}
 			if (hovered)
 			{
 				ImGui::SetTooltip(playing            ? "Stop (return to Edit)"
