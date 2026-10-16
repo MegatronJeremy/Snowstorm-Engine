@@ -249,6 +249,23 @@ inverts across vendors rather than across configs: on AMD stochastic wins outrig
 wins by 2.6x. The spec chain alone is 0.828 ms on the 9070 XT and 1.253 ms on the 5070. Sub-0.05 ms
 passes are ignored (timestamp noise).
 
+**`StochasticOverlap.world` plus `camera-paths/stochastic-overlap.json` is the repro for #170.** A 16 m
+corridor lit only by two shadow-casting point lights 3 m apart (range 9, so their falloffs overlap
+over the whole mid-section), with six columns on the camera side and three crates behind, so each
+occluder throws two crossing shadows and every penumbra edge sits in the overlap. The route strafes
+past both lights at 1 m/s, 1.8 m from the back wall. Sponza's aisle route (#169) reaches the overlap
+at one probe with the lights 7.2 m apart. Look at the raw estimator, since the a-trous masks the defect:
+
+```
+Snowstorm-Runtime --startup.scene=Projects/Sandbox/assets/scenes/StochasticOverlap.world \
+  --camera.path --camera.path.file=Projects/Sandbox/assets/camera-paths/stochastic-overlap.json \
+  --render.shadows.mode=2 --render.shadows.stochastic --render.shadows.denoise.iterations=0
+```
+
+Drop `--render.shadows.stochastic` for the inline control, which should show no seams. The scene has no
+baselines and is not wired into `quality-motion.py`. It was authored without a GPU and has not been
+rendered: that the artifact is visible in it is unconfirmed.
+
 **Warmup is detected, not assumed.** Sampling begins once the rolling 30-frame GPU-time window's
 peak-to-peak spread drops below `perf.bench.warmup.epsilon` (default 5%) of its mean, capped by
 `perf.bench.warmup.maxframes` (600, after which the run proceeds and logs that it is NOT from a steady
