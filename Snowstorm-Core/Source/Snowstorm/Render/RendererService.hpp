@@ -96,6 +96,20 @@ namespace Snowstorm
 		              const glm::vec4& perInstanceCustomData = glm::vec4(0.0f),
 		              const glm::mat4& prevTransform = glm::mat4(1.0f));
 
+		// Submit one Blend-mode renderable for the sorted transparent flush. It is held per instance, not
+		// batched, until FlushTransparent orders it. `worldBoundsCenter` is the sort key's position.
+		void DrawMeshTransparent(const glm::mat4& transform,
+		                         const Ref<Mesh>& mesh,
+		                         const Ref<MaterialInstance>& materialInstance,
+		                         const glm::vec3& worldBoundsCenter,
+		                         uint32_t albedoTextureIndex = 0,
+		                         const glm::vec4& perInstanceCustomData = glm::vec4(0.0f));
+
+		// Draw the DrawMeshTransparent submissions far-first along `cameraForward` through each material's Blend
+		// pipeline, merging adjacent runs of one (mesh, material) into a single instanced draw. Call after the
+		// opaque Flush and the sky, inside the same render pass. Clears the list.
+		void FlushTransparent(const glm::vec3& cameraForward);
+
 		void UploadLights(const LightDataBlock& lightData);
 
 		// Scene environment (sky/ambient colors) for the current frame. Mirrors UploadLights; the values
@@ -450,7 +464,8 @@ namespace Snowstorm
 	private:
 		void FlushBatch(BatchData& batch,
 		                const Ref<CommandContext>& commandContext,
-		                uint32_t frameIndex);
+		                uint32_t frameIndex,
+		                const Ref<Pipeline>& pipelineOverride = {});
 
 		// Acquire (creating on first use) the per-(pipeline, frame) set=0 Frame descriptor set, and
 		// upload the current frame's FrameCB into its backing UBO. Shared by the mesh batches and the
@@ -513,6 +528,15 @@ namespace Snowstorm
 		uint32_t m_ShadowSpecTextureIndex = 0; // demodulated specular twin (0 = grey-vis specular fallback)
 
 		std::vector<BatchData> m_Batches;
+
+		struct TransparentEntry
+		{
+			Ref<Mesh> Mesh;
+			Ref<MaterialInstance> MaterialInstance;
+			InstanceData Instance;
+			glm::vec3 BoundsCenter{0.0f};
+		};
+		std::vector<TransparentEntry> m_Transparent;
 
 		// Index into m_Batches keyed by the (mesh, material-instance) raw-pointer pair, so DrawMesh finds an
 		// existing batch in O(1) instead of a linear scan. Without this, N unique-material draws cost O(N^2)

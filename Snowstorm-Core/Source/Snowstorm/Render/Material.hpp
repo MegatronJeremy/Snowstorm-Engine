@@ -70,6 +70,11 @@ namespace Snowstorm
 			m_DefaultConstants.AlphaMaskEnabled = mode == AlphaMode::Mask ? 1u : 0u;
 		}
 		[[nodiscard]] AlphaMode GetAlphaMode() const { return m_AlphaMode; }
+
+		// The Blend variant of this material's shader (blend on, depth write off); null unless the mode is Blend.
+		// The transparent pass binds it in place of GetPipeline().
+		void SetBlendPipeline(const Ref<Pipeline>& pipeline) { m_BlendPipeline = pipeline; }
+		[[nodiscard]] const Ref<Pipeline>& GetBlendPipeline() const { return m_BlendPipeline; }
 		void SetAlphaCutoff(const float cutoff) { m_DefaultConstants.AlphaCutoff = cutoff; }
 
 		void SetSampler(const Ref<Sampler>& sampler) { m_DefaultSampler = sampler; }
@@ -87,6 +92,7 @@ namespace Snowstorm
 
 	private:
 		Ref<Pipeline> m_Pipeline;
+		Ref<Pipeline> m_BlendPipeline;
 
 		Constants m_DefaultConstants{};
 		AlphaMode m_AlphaMode = AlphaMode::Opaque;

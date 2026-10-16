@@ -209,6 +209,10 @@ namespace Snowstorm
 					                  m_Owner.DrawVisibleMeshes(fc, cam,
 					                                            [&](entt::entity, const TransformComponent& tr, const MeshComponent& mesh, const MaterialComponent& mat)
 					                                            {
+						                                            if (mat.MaterialInstance->IsSortedTransparent())
+						                                            {
+							                                            return;
+						                                            }
 						                                            fc.Renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, 0,
 						                                                                 glm::vec4(0.0f), tr.GetTransformMatrix());
 					                                            });
@@ -1595,6 +1599,10 @@ namespace Snowstorm
 						                                            // Last frame's world matrix; PrevTransformSnapshotSystem writes it
 						                                            // end-of-frame. Missing (object created this frame) -> use current
 						                                            // => zero velocity (correct).
+						                                            if (mat.MaterialInstance->IsSortedTransparent())
+						                                            {
+							                                            return;
+						                                            }
 						                                            glm::mat4 prevModel = tr.GetTransformMatrix();
 						                                            if (const auto* pt = fc.Reg.try_get_const<PrevTransformComponent>(e))
 						                                            {
@@ -1726,8 +1734,9 @@ namespace Snowstorm
 							                                            // can disagree with this separate depth pass at cutout edges, so writing
 							                                            // its depth here early-Z-culls what's behind the holes -> grey. Cutout
 							                                            // geometry keeps its normal forward path (no early-Z, but correct); the
-							                                            // opaque bulk still gets the win. BLEND falls through as opaque (#82).
-							                                            if (mat.MaterialInstance && mat.MaterialInstance->GetConstants().AlphaMaskEnabled != 0)
+							                                            // opaque bulk still gets the win. BLEND is skipped too when
+							                                            // render.transparent draws it: its depth here would reject everything behind the glass.
+							                                            if (mat.MaterialInstance && (mat.MaterialInstance->GetConstants().AlphaMaskEnabled != 0 || mat.MaterialInstance->IsSortedTransparent()))
 							                                            {
 								                                            return;
 							                                            }

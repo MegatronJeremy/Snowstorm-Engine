@@ -25,6 +25,11 @@ namespace Snowstorm
 		[[nodiscard]] const Ref<Material>& GetBaseMaterial() const { return m_Base; }
 		[[nodiscard]] const Ref<Pipeline>& GetPipeline() const;
 
+		// True when render.transparent is on and this is a Blend material with its blend pipeline built: the
+		// sorted transparent pass draws it, and the opaque passes (forward, depth prepass, DepthNormal,
+		// velocity) skip it.
+		[[nodiscard]] bool IsSortedTransparent() const;
+
 		// Named setters - much better for an engine
 		void SetAlbedoTexture(const Ref<TextureView>& view);
 		void SetNormalTexture(const Ref<TextureView>& view);
@@ -58,7 +63,9 @@ namespace Snowstorm
 		void SetSampler(const Ref<Sampler>& sampler);
 
 		// Bind the pipeline for this instance (set 1 is bound by the caller in a batched BindDescriptorSets).
-		void Apply(CommandContext& ctx, uint32_t frameIndex);
+		// `pipeline` replaces the base material's (the transparent pass passes the Blend variant, which shares
+		// the shader and so the set layouts).
+		void Apply(CommandContext& ctx, uint32_t frameIndex, const Ref<Pipeline>& pipeline = {});
 
 		// Materials only own their specific data Set (not the global texture set)
 		[[nodiscard]] const Ref<DescriptorSet>& GetDescriptorSet(uint32_t frameIndex) const { return m_MaterialDataSets[frameIndex]; }
