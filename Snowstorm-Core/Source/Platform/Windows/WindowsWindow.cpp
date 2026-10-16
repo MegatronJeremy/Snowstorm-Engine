@@ -250,6 +250,17 @@ namespace Snowstorm
 
 			MouseMovedEvent event(static_cast<float>(xPos), static_cast<float>(yPos));
 			data.EventCallback(event); });
+
+		glfwSetDropCallback(m_Window, [](GLFWwindow* window, const int count, const char** paths)
+		                    {
+			const WindowData& data = *static_cast<WindowData*>(glfwGetWindowUserPointer(window));
+
+			std::vector<std::filesystem::path> files;
+			files.reserve(count);
+			for (int i = 0; i < count; ++i)
+				files.emplace_back(std::u8string(reinterpret_cast<const char8_t*>(paths[i])));
+			FileDropEvent event(std::move(files));
+			data.EventCallback(event); });
 	}
 
 	void WindowsWindow::Shutdown() const
