@@ -207,6 +207,9 @@ namespace Snowstorm::CVars
 	CVar<bool> LightClusterAssign{"render.lights.cluster", false, "EXPERIMENTAL (#66). Build per-cluster light lists on the CPU each frame (64 px tiles, 24 exponential depth slices, point and spot lights as range spheres) and keep their statistics for the Performance panel. Nothing shades from the lists yet, so it changes no pixels; it costs clusters x lights sphere tests per frame on the main thread.", CVarFlags::Persist};
 	CVar<int> LightClusterMaxPerCluster{"render.lights.cluster.max", 32, "Lights kept per cluster (fixed stride); overlapping lights past it are dropped and counted as overflow (render.lights.cluster)", CVarFlags::Persist};
 	CVar<int> ShadowDirectionals{"render.shadow.directionals", 1, "Directional lights that get a raster shadow map: the primary uses the sun map, up to 3 more share one atlas (each costs a full scene depth pass). 1 = primary only. Ray-traced shadows ignore this (every casting directional traces).", CVarFlags::Persist};
+	CVar<bool> ShadowCascadeFit{"render.shadow.cascades.fit", false, "Compute the per-frame sun cascade fit (CascadeMath) for the primary directional. Diagnostic only: nothing renders from it yet (#58)."};
+	CVar<int> ShadowCascadeCount{"render.shadow.cascades.count", 4, "Cascade count for the sun cascade fit, clamped to 1..4."};
+	CVar<float> ShadowCascadeLambda{"render.shadow.cascades.lambda", 0.7f, "Split blend for the sun cascade fit: 0 uniform, 1 logarithmic."};
 
 	CVar<bool> ShadowSoft{"render.shadow.soft", true, "Soft shadows: 3x3 PCF for the raster shadow map; cone-sampled penumbra for RT shadows (each shadow ray jittered within the light's size, TAA-denoised). Off = hard single tap / single ray. Needs TAA (render.aa = TAA) for a clean RT penumbra.", CVarFlags::Persist};
 

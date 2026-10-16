@@ -4,6 +4,8 @@
 #include "LightingUniforms.hpp"
 #include "PrimaryDirectional.hpp"
 
+#include "Snowstorm/Components/CameraComponent.hpp"
+#include "Snowstorm/Components/CameraRuntimeComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
@@ -120,6 +122,32 @@ namespace Snowstorm
 			sunFit.Valid = ShadowPass::ComputeSunViewProj(*m_World, sunDir, sunFit.LightViewProj);
 		}
 		renderer3DSingleton.SetSunShadowFit(sunFit);
+
+		// Cascade fit (#58 PR 2): diagnostic handoff only, nothing renders from it yet. Uses the first Primary
+		// perspective camera and its UNJITTERED view-projection so the fit does not shimmer with TAA jitter.
+		RendererService::SunCascadeFit cascadeFit{};
+		if (CVars::ShadowCascadeFit.Get() && haveSun && sunCasts && CVars::ShadowsRasterActive())
+		{
+			for (auto camView = View<CameraComponent, CameraRuntimeComponent>(); auto camEntity : camView)
+			{
+				const auto& cam = camView.get<CameraComponent>(camEntity);
+				if (!cam.Primary || cam.Projection != CameraComponent::ProjectionType::Perspective)
+				{
+					continue;
+				}
+				const glm::mat4 invViewProj = glm::inverse(camView.get<CameraRuntimeComponent>(camEntity).ViewProjection);
+				const uint32_t tile = static_cast<uint32_t>(std::max(CVars::ShadowResolution.Get(), 1));
+				const float lambda = std::clamp(CVars::ShadowCascadeLambda.Get(), 0.0f, 1.0f);
+				// Pullback: a fraction of the far distance so tall casters behind the slice still land in the map.
+				cascadeFit.Fit = CascadeMath::ComputeFit(
+				    invViewProj, cam.PerspectiveNear, cam.PerspectiveFar, sunDir,
+				    static_cast<uint32_t>(std::clamp(CVars::ShadowCascadeCount.Get(), 1, 4)), lambda, tile,
+				    cam.PerspectiveFar * 0.25f);
+				cascadeFit.Valid = true;
+				break;
+			}
+		}
+		renderer3DSingleton.SetSunCascadeFit(cascadeFit);
 
 		const bool shadowsEnabled = CVars::ShadowsRasterActive(); // raster atlas tiles (points + spots)
 		// Under RT shadows (#118) there is no atlas budget: every casting light gets a ray-traced shadow. We
@@ -276,6 +304,6 @@ namespace Snowstorm
 
 	void LightingSystem::DeclareAccess(SystemAccess& a) const
 	{
-		a.ReadComponents<DirectionalLightComponent, PointLightComponent, SpotLightComponent, TransformComponent>().WriteResources<RendererService>();
+		a.ReadComponents<DirectionalLightComponent, PointLightComponent, SpotLightComponent, TransformComponent, CameraComponent, CameraRuntimeComponent>().WriteResources<RendererService>();
 	}
 }
