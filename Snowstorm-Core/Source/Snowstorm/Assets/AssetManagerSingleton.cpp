@@ -504,7 +504,7 @@ namespace Snowstorm
 		// Submit the CPU cook/blob-read to a worker. GPU upload is deferred to ProcessCompletedLoads on the
 		// main thread. Capture by value (handle, paths) — the singleton outlives the app's JobSystem, which
 		// is joined at shutdown before this singleton is destroyed, so `this` stays valid for the job.
-		m_InFlightMeshes.insert(handle);
+		m_InFlightMeshes.emplace(handle, meta->Path.string());
 		++m_PendingTotal;
 
 		auto& jobs = Application::Get().GetServiceManager().GetService<JobSystem>();
@@ -750,7 +750,27 @@ namespace Snowstorm
 	std::string AssetManagerSingleton::UnsettledReason() const
 	{
 		if (const uint32_t pending = PendingLoadCount(); pending > 0)
-			return std::format("asset loading did not drain: {} / {} still pending", pending, m_PendingTotal);
+		{
+			// Stage: a key in a completed queue decoded fine and waits for the main-thread upload; any other
+			// is still on a worker (a stuck one points at the cook/decode, a queued one at the finalize loop).
+			std::unordered_set<uint64_t> meshQueued, textureQueued;
+			{
+				std::lock_guard lock(m_CompletedMutex);
+				for (const auto& m : m_CompletedMeshes)
+					meshQueued.insert(m.Handle.Value());
+				for (const auto& t : m_CompletedTextures)
+					textureQueued.insert(t.Key);
+			}
+			std::string detail;
+			const auto list = [&](const char* kind, const std::unordered_map<uint64_t, std::string>& inFlight, const std::unordered_set<uint64_t>& queued)
+			{
+				for (const auto& [key, name] : inFlight)
+					detail += std::format("\n  {} {}: {}", kind, name, queued.contains(key) ? "decoded, waiting for GPU upload" : "still on a worker (decode/cook)");
+			};
+			list("mesh", m_InFlightMeshes, meshQueued);
+			list("texture", m_InFlightTextures, textureQueued);
+			return std::format("asset loading did not drain: {} / {} still pending{}", pending, m_PendingTotal, detail);
+		}
 		if (const uint32_t placeholders = PlaceholderSlotCount(); placeholders > 0)
 			return std::format("{} texture slot(s) still show the placeholder", placeholders);
 		return {};
@@ -867,7 +887,7 @@ namespace Snowstorm
 		{
 			return placeholder;
 		}
-		m_InFlightTextures.insert(key);
+		m_InFlightTextures.emplace(key, meta->Path.filename().string());
 		++m_PendingTotal;
 
 		auto& jobs = Application::Get().GetServiceManager().GetService<JobSystem>();
