@@ -774,6 +774,11 @@
       "Handle": "12636449860268571349",
       "Path": "/Game/audio/test-tone.wav",
       "Type": "Audio"
+    },
+    {
+      "Handle": "7096420111267686387",
+      "Path": "/Game/materials/AlphaBlend.ssmat",
+      "Type": "Material"
     }
   ]
 }
