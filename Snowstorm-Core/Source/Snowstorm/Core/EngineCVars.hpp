@@ -449,6 +449,8 @@ namespace Snowstorm::CVars
 	// tile of one shared atlas). 1 = primary only (default). Clamped to [1, MAX_DIRECTIONAL_LIGHTS]. Ray-traced
 	// shadows are unaffected: every casting directional traces.
 	extern CVar<int> ShadowDirectionals;
+	extern CVar<bool> LightClusterAssign;
+	extern CVar<int> LightClusterMaxPerCluster;
 
 	// Per-frame sun cascade fit (#58 PR 2). Computes matrices only; no pass or shader reads them yet.
 	extern CVar<bool> ShadowCascadeFit;

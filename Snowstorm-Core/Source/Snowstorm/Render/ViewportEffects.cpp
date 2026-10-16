@@ -42,7 +42,7 @@
 #include "Snowstorm/Render/Passes/SharpenPass.hpp"
 #include "Snowstorm/Render/Passes/TemporalResolvePass.hpp"
 #include "Snowstorm/Render/Passes/UpscalePass.hpp"
-#include "Snowstorm/Render/Renderer.hpp" // Renderer::WaitIdle when recreating the lazy SSAA GT target
+#include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/Passes/VelocityPass.hpp"
 
 // Concrete per-viewport effects (#120) + RenderSystem::BuildViewportEffects. Each effect owns its stage's
@@ -2149,10 +2149,6 @@ namespace Snowstorm
 					const uint32_t ssH = gtDesc.Height * ssaa;
 					if (!m_GtSsaaTarget || m_GtSsaaW != ssW || m_GtSsaaH != ssH)
 					{
-						if (m_GtSsaaTarget)
-						{
-							Renderer::WaitIdle(); // drain before dropping a possibly in-flight target (rare: capture is fixed-size)
-						}
 						m_GtSsaaTarget = CreateDefaultSceneRenderTarget(ssW, ssH, "ViewportGTSSAA");
 						m_GtSsaaW = ssW;
 						m_GtSsaaH = ssH;
