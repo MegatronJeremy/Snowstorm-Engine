@@ -947,13 +947,16 @@ namespace Snowstorm
 		return placeholder;
 	}
 
-	Ref<Pipeline> AssetManagerSingleton::GetOrCreatePipeline(const std::string& fragmentShaderPath)
+	Ref<Pipeline> AssetManagerSingleton::GetOrCreatePipeline(const std::string& fragmentShaderPath, const AlphaMode alpha)
 	{
 		// Data-driven: the cache is keyed by the fragment-shader path the material named, so any custom
 		// shader gets its own pipeline with no engine change (the old fixed PipelinePreset enum is gone).
 		// All mesh materials share the standard mesh vertex stage; only the fragment differs.
 		const std::string fragPath = fragmentShaderPath.empty() ? kDefaultFragmentShader : fragmentShaderPath;
-		if (auto it = m_PipelineCache.find(fragPath); it != m_PipelineCache.end())
+		// Opaque and Mask share one pipeline; Blend gets its own copy (blend on, depth write off).
+		const bool blend = alpha == AlphaMode::Blend;
+		const std::string cacheKey = blend ? fragPath + "|blend" : fragPath;
+		if (auto it = m_PipelineCache.find(cacheKey); it != m_PipelineCache.end())
 			return it->second;
 
 		auto& shaderLib = Application::Get().GetServiceManager().GetService<ShaderLibrary>();
@@ -997,7 +1000,9 @@ namespace Snowstorm
 
 		p.DepthFormat = PixelFormat::D32_Float;
 		p.DepthStencil.EnableDepthTest = true; // TODO these shouldn't be enabled always...
-		p.DepthStencil.EnableDepthWrite = true;
+		p.DepthStencil.EnableDepthWrite = !blend;
+		if (blend)
+			p.Blend.Attachments = {{.EnableBlend = true, .KeepDestinationAlpha = true}};
 		// LessOrEqual (was Less) so the forward pass reuses the camera depth prepass's depth for early-Z: a
 		// visible fragment at == prepass depth passes, occluded fragments (>) are rejected before the fat
 		// shader. Image-identical to Less for opaque geometry with no prepass (GT path), so it's shared.
@@ -1006,10 +1011,10 @@ namespace Snowstorm
 		p.HasStencil = false;
 		// Debug name from the shader's stem (e.g. "DefaultLit" / "Mandelbrot") so RenderDoc/validation stay
 		// legible without the engine hardcoding any shader name.
-		p.DebugName = std::filesystem::path(fragPath).stem().string() + "Pipeline(Asset)";
+		p.DebugName = std::filesystem::path(fragPath).stem().string() + (blend ? "Pipeline(Asset,Blend)" : "Pipeline(Asset)");
 
 		Ref<Pipeline> pipeline = Pipeline::Create(p);
-		m_PipelineCache[fragPath] = pipeline;
+		m_PipelineCache[cacheKey] = pipeline;
 		return pipeline;
 	}
 
