@@ -121,3 +121,47 @@ TEST_CASE("Conv2D sums across input channels", "[neural][conv]")
 	// 2*3 + 10*5 + 1 = 57
 	CHECK(Conv2DReference(in, layer).At(0, 0, 0) == Approx(57.0f));
 }
+
+// The fused tail (NeuralConvAdd) must equal the unfused chain: base + the last conv's output, with the
+// non-zero weights the identity model lacks (its zero last layer passes any kernel that writes only base).
+TEST_CASE("Fused conv+add equals conv then add", "[neural][conv][fuse]")
+{
+	FeatureMap in;
+	in.Channels = 4;
+	in.Height = 5;
+	in.Width = 6;
+	in.Data.resize(static_cast<size_t>(4) * 5 * 6);
+	for (size_t i = 0; i < in.Data.size(); ++i)
+	{
+		in.Data[i] = static_cast<float>((i * 37) % 11) - 5.0f;
+	}
+	FeatureMap base = in;
+	base.Channels = 3;
+	base.Data.resize(static_cast<size_t>(3) * 5 * 6);
+
+	ConvLayer layer;
+	layer.InChannels = 4;
+	layer.OutChannels = 3;
+	layer.KernelSize = 3;
+	layer.Act = Activation::ReLU;
+	layer.Weights.resize(static_cast<size_t>(3) * 4 * 9);
+	for (size_t i = 0; i < layer.Weights.size(); ++i)
+	{
+		layer.Weights[i] = static_cast<float>((i * 13) % 7) * 0.1f - 0.3f;
+	}
+	layer.Bias = {0.1f, -0.2f, 0.3f};
+
+	const FeatureMap conv = Conv2DReference(in, layer);
+	const FeatureMap fused = Conv2DResidualReference(base, in, layer);
+	REQUIRE(fused.Channels == 3);
+	for (uint32_t c = 0; c < 3; ++c)
+	{
+		for (uint32_t y = 0; y < 5; ++y)
+		{
+			for (uint32_t x = 0; x < 6; ++x)
+			{
+				CHECK(fused.At(c, y, x) == Approx(base.At(c, y, x) + conv.At(c, y, x)));
+			}
+		}
+	}
+}
