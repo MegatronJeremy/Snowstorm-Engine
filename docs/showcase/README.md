@@ -10,3 +10,18 @@ Every measured number names its GPU, the commit that holds it and the date. Page
 | [RT shadows](rt-shadows.md) | Inline per-light shadows against the experimental stochastic pass | written |
 | RT ambient occlusion | | not written yet (#249) |
 | Reflections | | not written yet (#250) |
+
+## Gallery
+
+Sponza on a Radeon RX 9070 XT unless a caption says otherwise. Every image is under 500 KB; the pages above carry the numbers.
+
+| | |
+| --- | --- |
+| ![Sponza with ray-traced shadows, AO, reflections and GI](../images/hero-sponza-rt.jpg) | ![Editor with settings panel, viewport, console and performance readout](../images/editor.jpg) |
+| Full hybrid pipeline ([Hybrid RT pipeline](hybrid-rt-pipeline.md)) | The editor |
+| ![Shadow map: contact shadows detach from the urns](images/shadow_map.jpg) | ![Ray traced shadows anchored to the geometry](images/shadow_rt.jpg) |
+| Shadow map, mode 1 ([RT shadows](rt-shadows.md)) | Ray traced, mode 2 ([RT shadows](rt-shadows.md)) |
+| ![Isolated ambient occlusion term](../images/debug-ao.jpg) | ![Raw reflection buffer](../images/debug-reflections.jpg) |
+| AO term (page: #249) | Reflection buffer (page: #250) |
+
+Images shared with the top-level README live in `docs/images`; images specific to one page live in `docs/showcase/images`.
