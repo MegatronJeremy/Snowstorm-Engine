@@ -122,8 +122,35 @@ TEST_CASE("Conv2D sums across input channels", "[neural][conv]")
 	CHECK(Conv2DReference(in, layer).At(0, 0, 0) == Approx(57.0f));
 }
 
-// The fused tail (NeuralConvAdd) must equal the unfused chain: base + the last conv's output, with the
-// non-zero weights the identity model lacks (its zero last layer passes any kernel that writes only base).
+TEST_CASE("Residual reference matches hand-computed values", "[neural][conv][fuse]")
+{
+	FeatureMap in;
+	in.Channels = 1;
+	in.Height = 1;
+	in.Width = 1;
+	in.Data = {2.0f};
+	FeatureMap base;
+	base.Channels = 3;
+	base.Height = 1;
+	base.Width = 1;
+	base.Data = {10.0f, 10.0f, 10.0f};
+
+	ConvLayer layer;
+	layer.InChannels = 1;
+	layer.OutChannels = 3;
+	layer.KernelSize = 1;
+	layer.Act = Activation::ReLU;
+	layer.Weights = {1.0f, -3.0f, 0.5f};
+	layer.Bias = {0.0f, 0.0f, 0.25f};
+
+	// conv: 2, relu(-6) = 0, 1.25; the negative is clamped before the add, so channel 1 stays at base.
+	const FeatureMap fused = Conv2DResidualReference(base, in, layer);
+	CHECK(fused.At(0, 0, 0) == Approx(12.0f));
+	CHECK(fused.At(1, 0, 0) == Approx(10.0f));
+	CHECK(fused.At(2, 0, 0) == Approx(11.25f));
+}
+
+// Consistency of the oracle with Conv2DReference plus an add; the hand-computed case above is the real check.
 TEST_CASE("Fused conv+add equals conv then add", "[neural][conv][fuse]")
 {
 	FeatureMap in;

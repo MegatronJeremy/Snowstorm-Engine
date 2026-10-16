@@ -1141,7 +1141,7 @@ material, `materials/AlphaBlend.ssmat` (`"AlphaMode": "Blend"`), and varies colo
 
 ## Neural upscaler tail fusion
 
-`neural.fuse` (default off) replaces the last conv layer and the residual add with one `NeuralConvAdd.comp.hlsl` dispatch when the last layer has 3 output channels (else the unfused chain runs): one dispatch, one barrier and one descriptor set fewer, and the residual map is never written to memory. It is a naive per-pixel loop at both precisions. `Conv2DResidualReference` is its CPU oracle (`NeuralMathTests`). Not run on a GPU: no unfused-vs-fused ms or output comparison exists yet. `NeuralConvAdd.comp` is RGA-baselined at 13 VGPRs, no spills, on every ASIC (#101).
+`neural.fuse` (default off) replaces the last conv layer and the residual add with one `NeuralConvAdd.comp.hlsl` dispatch when the last layer has 3 output channels (else the unfused chain runs): one dispatch, one barrier and one descriptor set fewer, and the residual map is never written to memory. It is a naive per-pixel loop at both precisions. `Conv2DResidualReference` is the CPU reference for the fused math (`NeuralMathTests` pins it to hand-computed values); it does not exercise the shader. Not run on a GPU: no unfused-vs-fused ms or output comparison exists yet. `NeuralConvAdd.comp` is RGA-baselined at 13 VGPRs, no spills, on every ASIC (#101).
 
 ## IBL invalidation
 
