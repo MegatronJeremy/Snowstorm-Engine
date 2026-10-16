@@ -8,10 +8,12 @@
 #include <vector>
 
 #include "System.hpp"
+#include "SystemSchedule.hpp"
 #include "SystemPhase.hpp"
 #include "TrackedRegistry.hpp"
 
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Debug/Instrumentor.hpp"
 #include "Snowstorm/World/SimulationStateSingleton.hpp"
 
@@ -60,13 +62,37 @@ namespace Snowstorm
 			{
 				SS_PROFILE_SCOPE(SystemPhaseName(static_cast<SystemPhase>(i)));
 				const auto phaseStart = clock::now();
-				for (size_t j = 0; j < m_Phases[i].size(); ++j)
+				const size_t count = m_Phases[i].size();
+				std::vector<size_t> order;
+				order.reserve(count);
+				if (CVars::EcsSchedule.Get())
+				{
+					std::vector<SystemAccess> access(count);
+					std::vector<bool> active(count);
+					for (size_t j = 0; j < count; ++j)
+					{
+						m_Phases[i][j]->DeclareAccess(access[j]);
+						active[j] = !(editMode && !m_Phases[i][j]->RunsInEditMode());
+					}
+					order = ScheduleOrder(access, active);
+				}
+				else
+				{
+					for (size_t j = 0; j < count; ++j)
+					{
+						order.push_back(j);
+					}
+				}
+				for (size_t j = 0; j < count; ++j)
+				{
+					m_Timings[i][j].second = 0.0f; // skipped this frame unless executed below
+				}
+				for (const size_t j : order)
 				{
 					System& sys = *m_Phases[i][j];
 					if (editMode && !sys.RunsInEditMode())
 					{
-						m_Timings[i][j].second = 0.0f; // skipped this frame (Edit mode)
-						continue;
+						continue; // skipped this frame (Edit mode)
 					}
 					// Timeline event per system (profiler capture) alongside the always-on ms timing the
 					// Performance panel reads. Name comes from m_Timings (the reflected system type name).
