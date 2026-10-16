@@ -128,3 +128,38 @@ TEST_CASE("DefaultImportFolder follows the sample project's layout", "[assets][i
 	CHECK(DefaultImportFolder(AssetType::Scene).empty());
 	CHECK(DefaultImportFolder(AssetType::None).empty());
 }
+
+TEST_CASE("PlanDrop routes each dropped file to its type folder", "[assets][import]")
+{
+	const std::vector<fs::path> dropped = {"C:/in/wall.PNG", "C:/in/step.wav", "C:/in/lit.hlsl", "C:/in/rock.glb"};
+	const DropPlan plan = PlanDrop(dropped, true);
+
+	REQUIRE(plan.Items.size() == 4);
+	CHECK(plan.Refused == 0);
+	CHECK(plan.Items[0].Type == AssetType::Texture);
+	CHECK(plan.Items[0].Folder == DefaultImportFolder(AssetType::Texture));
+	CHECK(plan.Items[1].Type == AssetType::Audio);
+	CHECK(plan.Items[1].Folder == DefaultImportFolder(AssetType::Audio));
+	CHECK(plan.Items[3].Type == AssetType::Mesh);
+	CHECK(plan.Items[3].Folder.empty());
+}
+
+TEST_CASE("PlanDrop refuses scenes and unknown files, keeps the rest in order", "[assets][import]")
+{
+	const std::vector<fs::path> dropped = {"a.png", "level.world", "notes.txt", "b.png"};
+	const DropPlan plan = PlanDrop(dropped, true);
+
+	REQUIRE(plan.Items.size() == 2);
+	CHECK(plan.Items[0].Source == fs::path("a.png"));
+	CHECK(plan.Items[1].Source == fs::path("b.png"));
+	CHECK(plan.Refused == 2);
+}
+
+TEST_CASE("PlanDrop outside the target imports and refuses nothing", "[assets][import]")
+{
+	const std::vector<fs::path> dropped = {"a.png", "notes.txt"};
+	const DropPlan plan = PlanDrop(dropped, false);
+
+	CHECK(plan.Items.empty());
+	CHECK(plan.Refused == 0);
+}

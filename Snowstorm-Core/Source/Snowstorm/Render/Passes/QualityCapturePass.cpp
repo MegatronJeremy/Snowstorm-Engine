@@ -1,9 +1,11 @@
 #include "QualityCapturePass.hpp"
 
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/CommandContext.hpp"
 #include "Snowstorm/Render/DatasetExport/NpyWriter.hpp"
+#include "Snowstorm/Render/QualityCaptureFormat.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 
 #include <algorithm>
@@ -54,6 +56,24 @@ namespace Snowstorm
 		}
 	}
 
+	void QualityCapturePass::WriteHdr(const std::string& path, Buffer& buf, const uint32_t w, const uint32_t h,
+	                                  const PixelFormat fmt, const float exposure)
+	{
+		const auto dtype = QualityCaptureFormat::HdrDType(fmt);
+		const size_t rowBytes = static_cast<size_t>(w) * QualityCaptureFormat::HdrBytesPerPixel(fmt);
+		const auto* src = static_cast<const uint8_t*>(buf.Map());
+		// Same bottom-row-first readback as the LDR copy, reversed to top-down so the pair lines up.
+		std::vector<uint8_t> flipped(rowBytes * h);
+		for (uint32_t r = 0; r < h; ++r)
+		{
+			std::memcpy(flipped.data() + static_cast<size_t>(r) * rowBytes,
+			            src + (static_cast<size_t>(h) - 1 - r) * rowBytes, rowBytes);
+		}
+		buf.Unmap();
+		WriteNpy(path, flipped.data(), flipped.size(), {h, w, kChannels}, *dtype);
+		SS_CORE_INFO("Quality capture: wrote {} ({}x{}), linear pre-exposure radiance, render.exposure {}.", path, w, h, exposure);
+	}
+
 	void QualityCapturePass::WritePending(PendingCopy& slot, const std::string& basePath)
 	{
 		const size_t pixels = static_cast<size_t>(slot.W) * slot.H;
@@ -73,6 +93,11 @@ namespace Snowstorm
 		const std::string path = basePath + "_f" + FrameSuffix(slot.PathFrame) + "_ldr.npy";
 		WriteNpy(path, flipped.data(), bytes, {slot.H, slot.W, kChannels}, NpyDType::UInt8);
 		slot.Buf->Unmap();
+		if (slot.HdrFmt != PixelFormat::Unknown)
+		{
+			WriteHdr(QualityCaptureFormat::HdrPath(basePath, FrameSuffix(slot.PathFrame)), *slot.HdrBuf, slot.W,
+			         slot.H, slot.HdrFmt, slot.Exposure);
+		}
 
 		std::ostringstream e;
 		e.setf(std::ios::fixed);
@@ -91,7 +116,8 @@ namespace Snowstorm
 	                                          const bool streamingDone, const uint64_t frame, const uint64_t pathFrame,
 	                                          const bool pathActive, const std::vector<uint64_t>& wanted,
 	                                          const std::string& basePath, const glm::vec3& camPos,
-	                                          const glm::vec3& camRot)
+	                                          const glm::vec3& camRot,
+	                                          const Ref<Texture>& hdrImg)
 	{
 		if (!ctx || !presentImg || m_SequenceComplete || wanted.empty())
 		{
@@ -150,6 +176,20 @@ namespace Snowstorm
 						std::filesystem::create_directories(parent, ec);
 					}
 					ctx->CopyTextureToBuffer(presentImg, free->Buf);
+					free->HdrFmt = PixelFormat::Unknown;
+					if (hdrImg && QualityCaptureFormat::HdrDType(hdrImg->GetDesc().Format) && hdrImg->GetWidth() == pw &&
+					    hdrImg->GetHeight() == ph)
+					{
+						const PixelFormat hf = hdrImg->GetDesc().Format;
+						const size_t hneed = static_cast<size_t>(pw) * ph * QualityCaptureFormat::HdrBytesPerPixel(hf);
+						if (!free->HdrBuf || free->HdrBuf->GetSize() < hneed)
+						{
+							free->HdrBuf = Buffer::Create(hneed, BufferUsage::Readback, nullptr, true, "QualityCaptureSeqHdr");
+						}
+						ctx->CopyTextureToBuffer(hdrImg, free->HdrBuf);
+						free->HdrFmt = hf;
+						free->Exposure = CVars::Exposure.Get();
+					}
 					free->CopyFrame = static_cast<int64_t>(frame);
 					free->PathFrame = pathFrame;
 					free->W = pw;
@@ -186,7 +226,8 @@ namespace Snowstorm
 	uint64_t QualityCapturePass::Tick(const Ref<CommandContext>& ctx, const Ref<Texture>& presentImg,
 	                                  const bool streamingDone, const uint64_t frame, const uint64_t minSettleFrames,
 	                                  const float epsilon, const uint64_t maxFrame, const bool exactWindow,
-	                                  const std::string& basePath)
+	                                  const std::string& basePath,
+	                                  const Ref<Texture>& hdrImg)
 	{
 		if (!ctx || !presentImg || m_Written > 0)
 		{
@@ -256,6 +297,10 @@ namespace Snowstorm
 					SS_CORE_WARN("Quality capture: hit the {}-frame cap before convergence; captured anyway.", maxFrame);
 				}
 				m_Buffer->Unmap();
+				if (m_HdrFmt != PixelFormat::Unknown)
+				{
+					WriteHdr(QualityCaptureFormat::HdrPath(basePath), *m_HdrBuffer, m_W, m_H, m_HdrFmt, m_HdrExposure);
+				}
 				m_Written = 1;
 				return m_Written;
 			}
@@ -291,6 +336,20 @@ namespace Snowstorm
 				std::filesystem::create_directories(parent, ec);
 			}
 			ctx->CopyTextureToBuffer(presentImg, m_Buffer);
+			m_HdrFmt = PixelFormat::Unknown;
+			if (hdrImg && QualityCaptureFormat::HdrDType(hdrImg->GetDesc().Format) && hdrImg->GetWidth() == pw &&
+			    hdrImg->GetHeight() == ph)
+			{
+				const PixelFormat hf = hdrImg->GetDesc().Format;
+				const size_t hneed = static_cast<size_t>(pw) * ph * QualityCaptureFormat::HdrBytesPerPixel(hf);
+				if (!m_HdrBuffer || m_HdrBuffer->GetSize() < hneed)
+				{
+					m_HdrBuffer = Buffer::Create(hneed, BufferUsage::Readback, nullptr, true, "QualityCaptureHdr");
+				}
+				ctx->CopyTextureToBuffer(hdrImg, m_HdrBuffer);
+				m_HdrFmt = hf;
+				m_HdrExposure = CVars::Exposure.Get();
+			}
 			m_W = pw;
 			m_H = ph;
 			m_Fmt = pf;

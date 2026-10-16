@@ -451,6 +451,7 @@ namespace Snowstorm::CVars
 	// shadows are unaffected: every casting directional traces.
 	extern CVar<int> ShadowDirectionals;
 	extern CVar<bool> LightClusterAssign;
+	extern CVar<bool> LightClusterShade;
 	extern CVar<int> LightClusterMaxPerCluster;
 
 	// Per-frame sun cascade fit (#58 PR 2). Computes matrices only; no pass or shader reads them yet.
@@ -527,6 +528,8 @@ namespace Snowstorm::CVars
 	// Multiplier on the IBL ambient contribution. Separate from SkyIntensity because the irradiance cube
 	// is already cosine-convolved (different scale than the analytic hemisphere lerp); tune to taste.
 	extern CVar<float> IBLIntensity;
+
+	extern CVar<float> IBLSunQuantumDeg;
 
 	// #163: fade the un-occluded env-cube SPECULAR ambient by roughness when RT GI is active (0 = off, 1 =
 	// full). Corrects the RT-GI-on shadow over-fill that the path-traced reference exposed.

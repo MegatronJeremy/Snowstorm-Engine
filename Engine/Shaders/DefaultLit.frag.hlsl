@@ -664,10 +664,38 @@ float4 main(PSInput i) : SV_Target0
 		}
 	}
 
+	// --- Clustered lists (#66): the fragment's cluster picks which point and spot lights to visit. The lists hold
+	// light indices in ascending order (points, then spots), so the visit order matches the full loops below.
+	const bool useClusters = ClusterStride != 0u;
+	uint64_t clusterList = 0;
+	uint clusterLights = 0;
+	if (useClusters)
+	{
+		const uint cx = min(uint(i.PositionCS.x) / ClusterTilePx, ClusterTilesX - 1u);
+		const uint cy = min(uint(i.PositionCS.y) / ClusterTilePx, ClusterTilesY - 1u);
+		const float viewDepth = dot(ClusterViewDepthRow, float4(i.PositionWS, 1.0));
+		// Mirrors ClusterSliceFromDepth in LightClusterMath.hpp.
+		const uint slice = viewDepth > ClusterNear ? min(uint(log(viewDepth / ClusterNear) * ClusterSliceScale), ClusterSlices - 1u) : 0u;
+		const uint cluster = (slice * ClusterTilesY + cy) * ClusterTilesX + cx;
+		const uint64_t listBase = (uint64_t(ClusterListAddrHi) << 32) | uint64_t(ClusterListAddrLo);
+		clusterLights = min(vk::RawBufferLoad<uint>(listBase + uint64_t(cluster) * 4u, 4), ClusterStride);
+		clusterList = listBase + (uint64_t(ClusterCount) + uint64_t(cluster) * uint64_t(ClusterStride)) * 4u;
+	}
+
 	// --- Point lights: inverse-square falloff with a smooth windowed cutoff at Range (UE4/Frostbite).
 	const int pointCount = clamp(PointCount, 0, MAX_POINT_LIGHTS);
-	[loop] for (int p = 0; p < pointCount; ++p)
+	const int pointVisits = useClusters ? int(clusterLights) : pointCount;
+	[loop] for (int pv = 0; pv < pointVisits; ++pv)
 	{
+		int p = pv;
+		if (useClusters)
+		{
+			p = int(vk::RawBufferLoad<uint>(clusterList + uint64_t(pv) * 4u, 4));
+			if (p >= pointCount)
+			{
+				break; // ascending list: the rest are spots
+			}
+		}
 		const float3 toLight = PointLights[p].Position - i.PositionWS;
 		const float dist = length(toLight);
 		const float range = max(PointLights[p].Range, 1e-4);
@@ -698,8 +726,22 @@ float4 main(PSInput i) : SV_Target0
 
 	// --- Spot lights: point attenuation * smooth cone falloff.
 	const int spotCount = clamp(SpotCount, 0, MAX_SPOT_LIGHTS);
-	[loop] for (int s = 0; s < spotCount; ++s)
+	const int spotVisits = useClusters ? int(clusterLights) : spotCount;
+	[loop] for (int sv = 0; sv < spotVisits; ++sv)
 	{
+		int s = sv;
+		if (useClusters)
+		{
+			s = int(vk::RawBufferLoad<uint>(clusterList + uint64_t(sv) * 4u, 4)) - pointCount;
+			if (s < 0)
+			{
+				continue; // a point light
+			}
+			if (s >= spotCount)
+			{
+				break;
+			}
+		}
 		const float3 toLight = SpotLights[s].Position - i.PositionWS;
 		const float dist = length(toLight);
 		const float range = max(SpotLights[s].Range, 1e-4);
@@ -812,5 +854,5 @@ float4 main(PSInput i) : SV_Target0
 	// Output raw LINEAR HDR radiance into the HDR scene target. The exposure/ACES/sRGB output transform
 	// now lives once in the post-process pass (Tonemap.frag.hlsl, #53), which samples this target; the
 	// mesh and sky shaders no longer tonemap inline.
-	return float4(color, BaseColor.a);
+	return float4(color, albedoSample.a * BaseColor.a);
 }

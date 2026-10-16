@@ -207,6 +207,7 @@ namespace Snowstorm::CVars
 
 	CVar<bool> LightClusterAssign{"render.lights.cluster", false, "EXPERIMENTAL (#66). Build per-cluster light lists on the CPU each frame (64 px tiles, 24 exponential depth slices, point and spot lights as range spheres) and keep their statistics for the Performance panel. Nothing shades from the lists yet, so it changes no pixels; it costs clusters x lights sphere tests per frame on the main thread.", CVarFlags::Persist};
 	CVar<int> LightClusterMaxPerCluster{"render.lights.cluster.max", 32, "Lights kept per cluster (fixed stride); overlapping lights past it are dropped and counted as overflow (render.lights.cluster)", CVarFlags::Persist};
+	CVar<bool> LightClusterShade{"render.lights.cluster.shade", false, "EXPERIMENTAL (#66). DefaultLit shades point and spot lights from the per-cluster lists instead of looping over every light (implies the CPU assignment of render.lights.cluster). Same lights in the same order, so pixels match unless a cluster overflows render.lights.cluster.max. Only the presented camera at the scene-target size uses the lists; render.scale != 1 and every other pass loop over all lights.", CVarFlags::Persist};
 	CVar<int> ShadowDirectionals{"render.shadow.directionals", 1, "Directional lights that get a raster shadow map: the primary uses the sun map, up to 3 more share one atlas (each costs a full scene depth pass). 1 = primary only. Ray-traced shadows ignore this (every casting directional traces).", CVarFlags::Persist};
 	CVar<bool> ShadowCascadeFit{"render.shadow.cascades.fit", false, "Compute the per-frame sun cascade fit (CascadeMath) for the primary directional. Diagnostic only: nothing renders from it yet (#58)."};
 	CVar<int> ShadowCascadeCount{"render.shadow.cascades.count", 4, "Cascade count for the sun cascade fit, clamped to 1..4."};
@@ -251,6 +252,8 @@ namespace Snowstorm::CVars
 	CVar<float> ShadowSourceRadius{"render.shadow.source_radius", 0.1f, "Local light (spot/point) source radius in world units: it drives RT soft-shadow penumbra width (larger/closer source = softer). Only used by the RT soft path.", CVarFlags::Persist};
 
 	CVar<bool> IBL{"render.ibl", true, "Bake + use image-based lighting from the sky (off = analytic hemisphere ambient)", CVarFlags::Persist};
+
+	CVar<float> IBLSunQuantumDeg{"render.ibl.sun_quantum_deg", 2.0f, "Re-bake the IBL maps once the sun direction has moved this many degrees from the baked one (0 = any change)", CVarFlags::Persist};
 
 	CVar<float> IBLIntensity{"render.ibl.intensity", 0.75f, "Multiplier on the IBL ambient contribution", CVarFlags::Persist};
 
