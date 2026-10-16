@@ -110,4 +110,30 @@ namespace Snowstorm::CascadeMath
 	{
 		return 2.0f * radius / static_cast<float>(tileResolution);
 	}
+
+	struct CascadeFit
+	{
+		uint32_t Count = 0;
+		std::array<float, kMaxCascades> Splits{};
+		std::array<float, kMaxCascades> Radius{};
+		std::array<glm::mat4, kMaxCascades> ViewProj{};
+	};
+
+	// Whole per-frame fit: splits, slice corners, sphere and snapped matrix for each cascade.
+	inline CascadeFit ComputeFit(const glm::mat4& invViewProj, float camNear, float camFar, const glm::vec3& lightDir,
+	                             uint32_t count, float lambda, uint32_t tileResolution, float casterPullback)
+	{
+		CascadeFit fit;
+		fit.Count = glm::clamp(count, 1u, kMaxCascades);
+		fit.Splits = ComputeSplits(camNear, camFar, fit.Count, lambda);
+		float sliceNear = camNear;
+		for (uint32_t i = 0; i < fit.Count; ++i)
+		{
+			const Sphere s = FitSphere(SliceCorners(invViewProj, camNear, camFar, sliceNear, fit.Splits[i]));
+			fit.Radius[i] = s.Radius;
+			fit.ViewProj[i] = CascadeViewProj(s, lightDir, tileResolution, casterPullback);
+			sliceNear = fit.Splits[i];
+		}
+		return fit;
+	}
 }

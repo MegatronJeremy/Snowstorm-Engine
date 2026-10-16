@@ -452,6 +452,11 @@ namespace Snowstorm::CVars
 	extern CVar<bool> LightClusterAssign;
 	extern CVar<int> LightClusterMaxPerCluster;
 
+	// Per-frame sun cascade fit (#58 PR 2). Computes matrices only; no pass or shader reads them yet.
+	extern CVar<bool> ShadowCascadeFit;
+	extern CVar<int> ShadowCascadeCount;
+	extern CVar<float> ShadowCascadeLambda;
+
 	// Soft shadows: 3x3 PCF for the raster shadow map; cone-sampled penumbra for RT shadows. Off = hard.
 	extern CVar<bool> ShadowSoft;
 
