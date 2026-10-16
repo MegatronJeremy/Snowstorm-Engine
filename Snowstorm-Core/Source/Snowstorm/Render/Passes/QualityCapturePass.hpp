@@ -22,6 +22,12 @@ namespace Snowstorm
 	// on the LDR present is exactly right: it is the image the metric compares, and it unifies PT accumulation
 	// and real-time temporal convergence under one signal (#160/#159).
 	//
+	// HDR capture: when a `hdrImg` is passed (a capture-owned copy of the pre-tonemap SceneColor, recorded
+	// in the same invocation as the LDR present so the pair is one frame), the same frame's linear radiance
+	// is read back and written to <basePath>_hdr.npy (HxWx4, '<f2' or '<f4' by the copy's format). It sees
+	// everything up to SceneColor, so it excludes FXAA and CAS; the exposure applied before the tonemap is
+	// logged beside it, not baked in.
+	//
 	// One readback buffer + a CPU copy of the previous checkpoint. A recorded copy is mapped only after it has
 	// retired (frames-in-flight later), so the CPU never races the GPU.
 	class QualityCapturePass final
@@ -31,7 +37,8 @@ namespace Snowstorm
 		// Captures when the present delta < `epsilon` after `minSettleFrames` past streaming, or when `frame`
 		// reaches `maxFrame` (safety, logs a warning). Returns the running count written (0, then 1).
 		uint64_t Tick(const Ref<CommandContext>& ctx, const Ref<Texture>& presentImg, bool streamingDone,
-		              uint64_t frame, uint64_t minSettleFrames, float epsilon, uint64_t maxFrame, bool exactWindow, const std::string& basePath);
+		              uint64_t frame, uint64_t minSettleFrames, float epsilon, uint64_t maxFrame, bool exactWindow, const std::string& basePath,
+		              const Ref<Texture>& hdrImg = nullptr);
 
 		// Motion capture: write the present at each requested ROUTE frame, with no convergence test (a moving
 		// image has no fixed point to converge to). `wanted` is ascending route-frame indices; each becomes
@@ -45,7 +52,8 @@ namespace Snowstorm
 		uint64_t TickSequence(const Ref<CommandContext>& ctx, const Ref<Texture>& presentImg, bool streamingDone,
 		                      uint64_t frame, uint64_t pathFrame, bool pathActive,
 		                      const std::vector<uint64_t>& wanted, const std::string& basePath,
-		                      const glm::vec3& camPos, const glm::vec3& camRot);
+		                      const glm::vec3& camPos, const glm::vec3& camRot,
+		                      const Ref<Texture>& hdrImg = nullptr);
 
 		[[nodiscard]] uint64_t FramesWritten() const { return m_Written; }
 		[[nodiscard]] bool SequenceComplete() const { return m_SequenceComplete; }
@@ -60,12 +68,18 @@ namespace Snowstorm
 			uint32_t W = 0;
 			uint32_t H = 0;
 			PixelFormat Fmt = PixelFormat::RGBA8_sRGB;
+			Ref<Buffer> HdrBuf;                        // paired HDR readback; CopyFrame gates it too
+			PixelFormat HdrFmt = PixelFormat::Unknown; // Unknown = no HDR copy recorded for this slot
+			float Exposure = 1.0f;
 			glm::vec3 Pos{};
 			glm::vec3 Rot{};
 		};
 
 		// Write one retired copy to <basePath>_f<NNNNNN>_ldr.npy and record its manifest entry.
 		void WritePending(PendingCopy& slot, const std::string& basePath);
+
+		// Write one retired HDR readback (top-down rows) to `path` and log the exposure it was taken at.
+		static void WriteHdr(const std::string& path, Buffer& buf, uint32_t w, uint32_t h, PixelFormat fmt, float exposure);
 
 		static constexpr uint64_t kCheckEvery = 16; // frames between convergence checkpoints
 		bool m_ExactRecorded = false;               // exact mode records one copy, not a checkpoint series
@@ -74,6 +88,9 @@ namespace Snowstorm
 		std::vector<uint8_t> m_Prev; // previous checkpoint's bytes (CPU), for the delta
 		uint32_t m_W = 0, m_H = 0;
 		PixelFormat m_Fmt = PixelFormat::RGBA8_sRGB;
+		Ref<Buffer> m_HdrBuffer;
+		PixelFormat m_HdrFmt = PixelFormat::Unknown; // Unknown = the in-flight copy has no HDR half
+		float m_HdrExposure = 1.0f;
 		int64_t m_CopyFrame = -1;                // frame a copy was recorded (-1 = none in flight)
 		uint64_t m_StreamDoneFrame = UINT64_MAX; // frame streaming completed (reset while streaming)
 		uint64_t m_LastCheckFrame = 0;           // last checkpoint frame (throttles to kCheckEvery)
