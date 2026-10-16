@@ -527,6 +527,8 @@ namespace Snowstorm::CVars
 	// is already cosine-convolved (different scale than the analytic hemisphere lerp); tune to taste.
 	extern CVar<float> IBLIntensity;
 
+	extern CVar<float> IBLSunQuantumDeg;
+
 	// #163: fade the un-occluded env-cube SPECULAR ambient by roughness when RT GI is active (0 = off, 1 =
 	// full). Corrects the RT-GI-on shadow over-fill that the path-traced reference exposed.
 	extern CVar<float> GISpecAmbientFade;
