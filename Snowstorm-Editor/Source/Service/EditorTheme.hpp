@@ -28,7 +28,7 @@ namespace Snowstorm::EditorTheme
 	void WarningBanner(const char* text);
 
 	// A blinking red status dot followed by `label` (e.g. "REC"), drawn on `dl` with its text vertically
-	// centred on `center`; `align` right makes `center` the right edge of the whole indicator. The dot is
+	// centred on `center`; `alignRight` makes `center` the right edge of the whole indicator. The dot is
 	// lit for the first half of each 1 s period. Returns the width used.
 	float DrawStatusBlink(ImDrawList* dl, ImVec2 center, const char* label, bool alignRight);
 
