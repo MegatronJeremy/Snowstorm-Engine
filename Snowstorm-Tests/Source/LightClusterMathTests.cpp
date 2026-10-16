@@ -137,3 +137,50 @@ TEST_CASE("CPU cull keeps ascending order and drops overflow", "[render][cluster
 	CHECK(capped == std::vector<uint32_t>{0, 1, 3});
 	CHECK(CullClusterLights(b, {}, 4).empty());
 }
+
+TEST_CASE("AssignClusterLights matches the per-cluster reference cull", "[render][clusters]")
+{
+	ClusterGrid g = MakeGrid();
+	g.Slices = 8;
+	const float tanHalf = std::tan(0.5f * 0.785398f);
+	const float aspect = static_cast<float>(g.Width) / static_cast<float>(g.Height);
+	const std::vector<ClusterSphere> lights = {
+	    {{0.0f, 0.0f, 5.0f}, 2.0f},
+	    {{3.0f, 1.0f, 20.0f}, 6.0f},
+	    {{0.0f, 0.0f, -50.0f}, 1.0f}, // behind the camera: in no cluster
+	};
+	const ClusterLightLists r = AssignClusterLights(g, tanHalf, aspect, lights, 4);
+	REQUIRE(r.Counts.size() == g.ClusterCount());
+	REQUIRE(r.Indices.size() == g.ClusterCount() * 4u);
+	uint32_t withBehind = 0;
+	for (uint32_t s = 0; s < g.Slices; ++s)
+		for (uint32_t y = 0; y < g.TilesY(); ++y)
+			for (uint32_t x = 0; x < g.TilesX(); ++x)
+			{
+				const uint32_t c = g.Index(x, y, s);
+				const auto expected = CullClusterLights(ClusterBounds(g, x, y, s, tanHalf, aspect), lights, 4);
+				REQUIRE(r.Counts[c] == expected.size());
+				for (size_t k = 0; k < expected.size(); ++k)
+					CHECK(r.Indices[c * 4 + k] == expected[k]);
+				withBehind += std::find(expected.begin(), expected.end(), 2u) != expected.end();
+			}
+	CHECK(withBehind == 0);
+	CHECK(r.Occupied > 0);
+	CHECK(r.Overflowed == 0);
+}
+
+TEST_CASE("AssignClusterLights drops overflow and counts it", "[render][clusters]")
+{
+	ClusterGrid g;
+	g.Width = 64;
+	g.Height = 64;
+	g.Slices = 1;
+	const std::vector<ClusterSphere> lights(5, ClusterSphere{{0.0f, 0.0f, 10.0f}, 100.0f});
+	const ClusterLightLists r = AssignClusterLights(g, 1.0f, 1.0f, lights, 3);
+	REQUIRE(r.Counts.size() == 1);
+	CHECK(r.Counts[0] == 3);
+	CHECK(r.MaxCount == 3);
+	CHECK(r.Overflowed == 1);
+	CHECK(r.Indices[0] == 0);
+	CHECK(r.Indices[2] == 2);
+}
