@@ -129,6 +129,7 @@ namespace Snowstorm::CVars
 	// the main thread. Same build, one flag: the before/after switch for measuring the parallel win and a
 	// kill-switch if a parallel path ever misbehaves.
 	extern CVar<bool> EcsParallel;
+	extern CVar<bool> EcsSchedule;
 
 	// GPU analogue of ecs.parallel. Off runs AsyncCompute passes inline on the graphics queue in the same
 	// order, producing identical images, so one build gives the before/after for measuring the overlap and
