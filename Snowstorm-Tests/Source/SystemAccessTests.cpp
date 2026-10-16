@@ -139,3 +139,22 @@ TEST_CASE("BuildSchedule: core systems schedule every system exactly once, in or
 	}
 	CHECK(total == access.size());
 }
+
+TEST_CASE("ScheduleOrder: stage by stage over the active systems, skipped ones hold nothing up", "[ecs]")
+{
+	SystemAccess w = Declared(), r = Declared(), other = Declared();
+	w.WriteComponents<A>();
+	r.ReadComponents<A>();
+	other.WriteComponents<B>();
+
+	using Order = std::vector<size_t>;
+	CHECK(ScheduleOrder({}, {}).empty());
+	// {w, r, other}: stages {0, 2}, {1}.
+	CHECK(ScheduleOrder({w, r, other}, {true, true, true}) == Order{0, 2, 1});
+	// Without the writer, r has no predecessor and shares stage 0 with `other`.
+	CHECK(ScheduleOrder({w, r, other}, {false, true, true}) == Order{1, 2});
+	// Same set as the registration order, whatever the staging.
+	auto order = ScheduleOrder({w, r, other}, {true, true, true});
+	std::sort(order.begin(), order.end());
+	CHECK(order == Order{0, 1, 2});
+}
