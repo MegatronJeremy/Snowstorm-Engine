@@ -185,13 +185,9 @@ namespace Snowstorm
 		{
 			return;
 		}
-		// Reallocating the feature buffers / output texture while prior frames may still reference the old ones
-		// would destroy in-use resources. Resize is rare (first frame, or a viewport/scale change), so drain the
-		// GPU first — the same guard IBLBakePass uses for one-time resource creation. Not on the per-frame path,
-		// so the stall is a non-issue. Beyond GPU-idle, validation forbids destroying an image view while ANY
-		// descriptor set still references it, so also drop every ring slot's cached sets (they bind the old
-		// output view) before the reassignment below drops the old view.
-		Renderer::WaitIdle();
+		// Prior frames may still reference the old buffers, output texture and cached sets; they retire through
+		// the deferred queues when the references below drop, so no drain is needed. The cached sets are dropped
+		// first because they bind the old output view.
 		for (auto& slot : m_DispatchSlots)
 		{
 			slot.clear();
@@ -238,7 +234,7 @@ namespace Snowstorm
 			return false; // shaders still compiling (async)
 		}
 		EnsureModel();
-		EnsureSizedResources(outWidth, outHeight); // may WaitIdle + recreate bindless view — build-time only
+		EnsureSizedResources(outWidth, outHeight); // build-time only
 		return !m_Output.empty();
 	}
 
