@@ -812,5 +812,5 @@ float4 main(PSInput i) : SV_Target0
 	// Output raw LINEAR HDR radiance into the HDR scene target. The exposure/ACES/sRGB output transform
 	// now lives once in the post-process pass (Tonemap.frag.hlsl, #53), which samples this target; the
 	// mesh and sky shaders no longer tonemap inline.
-	return float4(color, BaseColor.a);
+	return float4(color, albedoSample.a * BaseColor.a);
 }

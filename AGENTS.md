@@ -1097,6 +1097,13 @@ build time. A controller system that writes `SetPerInstanceCustomData` per frame
 `"AlphaMask"` is read, never written). The GPU layouts carry only the mask flag, set when the mode is `Mask`, so
 `Blend` renders as opaque in every pass until the sorted transparent pass lands (#82).
 
+Building blocks of that pass already in place, none drawn from yet: `SortTransparentDraws` (`Render/TransparentSort.hpp`) orders
+instances far-first by view-axis depth of the world-space bounds centre, ties broken by submission sequence for bit-stable
+output (`TransparentSortTests`). `AssetManagerSingleton::GetOrCreatePipeline(frag, AlphaMode::Blend)` returns a per-shader
+blend variant cached beside the opaque one (blend on, depth write off, destination alpha kept via
+`PipelineBlendAttachment::KeepDestinationAlpha`); `Opaque` and `Mask` share the original. `DefaultLit` outputs
+`albedo.a * BaseColor.a`, which only matters under a blend pipeline.
+
 **`AlphaBlend.world` is the testbed for the transparent pass.** Three overlapping half-alpha panes at distinct depths
 (red near, green mid, blue far) in front of an opaque cube, a low-alpha blend cube, and a `Mask` pane (`Sponza_mat0`) with a
 blend pane in front and one behind it. Correct sorting shows every pane tinting the ones behind it in depth order; opaque

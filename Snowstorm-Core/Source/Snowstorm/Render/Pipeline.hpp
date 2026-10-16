@@ -131,6 +131,9 @@ namespace Snowstorm
 	struct PipelineBlendAttachment
 	{
 		bool EnableBlend = false;
+		// Colour blends as src-alpha / one-minus-src-alpha; with this set the destination alpha is kept instead of
+		// being replaced by the source alpha, so a translucent surface leaves the target's alpha untouched.
+		bool KeepDestinationAlpha = false;
 	};
 
 	struct PipelineBlendState
