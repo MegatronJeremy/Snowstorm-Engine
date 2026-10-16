@@ -110,8 +110,9 @@ namespace Snowstorm
 		if (m_Image == VK_NULL_HANDLE)
 			return;
 
-		const VmaAllocator allocator = GetAllocator();
-		vmaDestroyImage(allocator, m_Image, m_Allocation);
+		// In-flight frames may still sample the image; destroy once their fences have retired.
+		RetireVulkanObject([allocator = GetAllocator(), image = m_Image, allocation = m_Allocation]
+		                   { vmaDestroyImage(allocator, image, allocation); });
 
 		m_Image = VK_NULL_HANDLE;
 		m_Allocation = nullptr;
@@ -671,8 +672,17 @@ namespace Snowstorm
 		if (m_ImageView == VK_NULL_HANDLE)
 			return;
 
-		const VkDevice device = GetVulkanDevice();
-		vkDestroyImageView(device, m_ImageView, nullptr);
+		// Views of swapchain images stay immediate: the swapchain recreate drains and destroys them itself.
+		const auto vkTex = std::static_pointer_cast<VulkanTexture>(m_Texture);
+		if (vkTex && vkTex->OwnsImage())
+		{
+			RetireVulkanObject([device = GetVulkanDevice(), view = m_ImageView]
+			                   { vkDestroyImageView(device, view, nullptr); });
+		}
+		else
+		{
+			vkDestroyImageView(GetVulkanDevice(), m_ImageView, nullptr);
+		}
 		m_ImageView = VK_NULL_HANDLE;
 	}
 

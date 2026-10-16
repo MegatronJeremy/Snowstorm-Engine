@@ -139,16 +139,8 @@ namespace Snowstorm
 				const bool shadowScaleChanged = rt.ShadowTarget && (rt.ShadowTarget->GetDesc().Width != shadowW || rt.ShadowTarget->GetDesc().Height != shadowH);
 				if (missing || viewportResized || scaleChanged || giScaleChanged || aoScaleChanged || shadowScaleChanged || msaaChanged)
 				{
-					// Drain the GPU before dropping the old targets: replacing the Ref destroys the VkImage/
-					// view immediately, but in-flight frames may still be sampling them (the post-process pass
-					// reads the scene target through the bindless array, and ImGui samples the present target).
-					// Freeing a resource the GPU is mid-read of is a device-lost fault. Only when replacing an
-					// existing target (not first-time creation, where nothing is in flight yet).
-					if (!missing)
-					{
-						Renderer::WaitIdle();
-					}
-
+					// Dropping the old targets is safe mid-flight: texture images and views retire through the
+					// deferred-deletion queue, and bindless slots through their own quarantine.
 					auto& rtW = reg.Write<RenderTargetComponent>(vpEntity);
 					rtW.Target = CreateDefaultSceneRenderTarget(sw, sh, "Viewport"); // low-res when scale < 1
 					rtW.PresentTarget = CreatePresentTarget(w, h, "Viewport");
