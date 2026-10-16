@@ -320,6 +320,29 @@ namespace Snowstorm
 			uint32_t Lights = 0;
 		};
 		void SetClusterStats(const ClusterStats& s) { m_ClusterStats = s; }
+
+		// What DefaultLit needs to find a fragment's cluster list (render.lights.cluster.shade, #66). The lists
+		// themselves go to a per-frame-in-flight storage buffer read through its device address, so no
+		// descriptor layout changes. They are valid for one camera at one scene-target size; AcquireFrameSet
+		// publishes them only to passes with that camera and size, and every other pass loops over all lights.
+		struct ClusterShading
+		{
+			uint32_t Width = 0;
+			uint32_t Height = 0;
+			uint32_t TilePx = 0;
+			uint32_t TilesX = 0;
+			uint32_t TilesY = 0;
+			uint32_t Slices = 0;
+			uint32_t ClusterCount = 0;
+			uint32_t Stride = 0;
+			float Near = 0.0f;
+			float Far = 0.0f;
+			glm::vec4 ViewDepthRow{0.0f}; // dot(row, vec4(worldPos, 1)) = positive view depth
+			glm::vec3 CameraPosition{0.0f};
+		};
+		// `words` is PackClusterLightLists output. Writes frameIndex's buffer (growing it when needed).
+		void SetClusterShading(uint32_t frameIndex, const ClusterShading& info, const std::vector<uint32_t>& words);
+		void ClearClusterShading() { m_ClusterShadingValid = false; }
 		[[nodiscard]] const ClusterStats& GetClusterStats() const { return m_ClusterStats; }
 		void SetFrameViewInfo(const FrameViewInfo& v) { m_FrameViewInfo = v; }
 		[[nodiscard]] const FrameViewInfo& GetFrameViewInfo() const { return m_FrameViewInfo; }
@@ -535,6 +558,10 @@ namespace Snowstorm
 		// Presented viewport extent + camera pose for this frame; see SetFrameViewInfo.
 		FrameViewInfo m_FrameViewInfo;
 		ClusterStats m_ClusterStats;
+		ClusterShading m_ClusterShading;
+		bool m_ClusterShadingValid = false;
+		uint32_t m_ClusterShadingFrame = 0;
+		std::vector<Ref<Buffer>> m_ClusterBuffers; // per frame in flight
 
 		// Latest upscaled-vs-ground-truth image metrics (#45), set by RenderSystem when render.metrics is on.
 		MetricsResult m_Metrics;

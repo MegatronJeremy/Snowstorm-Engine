@@ -451,6 +451,7 @@ namespace Snowstorm::CVars
 	// shadows are unaffected: every casting directional traces.
 	extern CVar<int> ShadowDirectionals;
 	extern CVar<bool> LightClusterAssign;
+	extern CVar<bool> LightClusterShade;
 	extern CVar<int> LightClusterMaxPerCluster;
 
 	// Per-frame sun cascade fit (#58 PR 2). Computes matrices only; no pass or shader reads them yet.
