@@ -467,6 +467,13 @@ namespace Snowstorm
 			ImGui::EndTable();
 		}
 
+		section("Content Browser");
+		if (ImGui::BeginTable("content", 2, tableFlags))
+		{
+			row("Drop files from the OS", "Import them into the project (models, textures, shaders, audio)");
+			ImGui::EndTable();
+		}
+
 		section("Scene Hierarchy");
 		if (ImGui::BeginTable("hier", 2, tableFlags))
 		{
