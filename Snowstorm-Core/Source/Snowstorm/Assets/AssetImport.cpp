@@ -171,7 +171,7 @@ namespace Snowstorm
 				++plan.Refused;
 				continue;
 			}
-			plan.Items.push_back({path, type, DefaultImportFolder(type)});
+			plan.Items.push_back({path, type, type == AssetType::Mesh ? std::filesystem::path{} : DefaultImportFolder(type)});
 		}
 		return plan;
 	}
