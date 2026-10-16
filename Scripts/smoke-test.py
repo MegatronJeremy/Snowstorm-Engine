@@ -18,6 +18,8 @@ Usage (from repo root or anywhere):
     py Scripts/smoke-test.py --only Editor    # run a single target
     py Scripts/smoke-test.py --warnings-fail  # treat [warning] lines as failures too
     py Scripts/smoke-test.py --scene Projects/Sandbox/assets/scenes/Sponza.world   # boot a specific scene
+    py Scripts/smoke-test.py --all-scenes     # Runtime once per Sandbox scene (*.world), one verdict each
+    py Scripts/smoke-test.py --standalone     # launch Runtime the way the editor's Play Standalone does
     py Scripts/smoke-test.py --cold --scene Projects/Sandbox/assets/scenes/Sponza.world  # wipe cook caches first
 
 After the frame budget the app also waits for asset streaming to drain (PendingLoadCount() == 0)
@@ -97,7 +99,8 @@ def clear_cook_caches(repo_root: Path) -> None:
 
 def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
                warnings_fail: bool, layer_path: Path | None, strict: bool,
-               scene: str | None, max_frame_ms: int, vsync_stress: int) -> bool:
+               scene: str | None, max_frame_ms: int, vsync_stress: int,
+               cli_args: list[str] | None = None) -> bool:
     print(f"\n=== {name} :: {exe.name} ===")
     if not exe.exists():
         print(f"  FAIL: executable not found at {exe}")
@@ -140,7 +143,7 @@ def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
 
     try:
         proc = subprocess.run(
-            [str(exe)],
+            [str(exe), *(cli_args or [])],
             cwd=str(cwd),
             env=env,
             capture_output=True,
@@ -184,6 +187,28 @@ def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
     return ok
 
 
+SANDBOX_SCENES = Path("Projects/Sandbox/assets/scenes")
+
+
+def sandbox_scenes(cwd: Path) -> list[str]:
+    """Every scene the sample project ships, as paths relative to the engine root. The .editor
+    sidecars sit beside them and are not scenes."""
+    return sorted((SANDBOX_SCENES / p.name).as_posix() for p in (cwd / SANDBOX_SCENES).glob("*.world"))
+
+
+def standalone_args(cwd: Path, source_scene: str) -> list[str]:
+    """Mirror StandalonePlay.cpp: the scene is a serialized copy at <root>/Engine/cache/standalone-play.world,
+    handed to the Runtime as one `--startup.scene=<absolute path>` argument with the engine root as CWD."""
+    import shutil
+    src = cwd / source_scene
+    if not src.is_file():
+        raise FileNotFoundError(src)
+    dst = cwd / "Engine" / "cache" / "standalone-play.world"
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, dst)
+    return [f"--startup.scene={dst}"]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Smoke-test the Snowstorm executables.")
     ap.add_argument("--frames", type=int, default=120, help="Frames to run per app (default 120)")
@@ -202,6 +227,14 @@ def main() -> int:
     ap.add_argument("--cold", action="store_true", help="Delete cooked-asset caches first, to exercise the cold first-import path")
     ap.add_argument("--max-frame-ms", type=int, default=0, help="Fail if any single frame exceeds this many ms (0 = off). Catches per-frame stalls/freezes.")
     ap.add_argument("--vsync-stress", type=int, default=0, help="Toggle VSync every N frames (0 = off) to exercise swapchain recreation. Best with --strict; catches present-semaphore reuse bugs.")
+    ap.add_argument("--all-scenes", action="store_true",
+                    help="Boot the Runtime once per scene in Projects/Sandbox/assets/scenes (Reflections, AlphaBlend, "
+                         "StochasticOverlap, ...), one PASS/FAIL each. Use a generous --timeout; heavy scenes cook.")
+    ap.add_argument("--standalone", action="store_true",
+                    help="Launch the Runtime as the editor's Play Standalone does (scene copied to "
+                         "Engine/cache/standalone-play.world, passed as --startup.scene=<abs path>, CWD = engine root).")
+    ap.add_argument("--standalone-source", default="Projects/Sandbox/assets/scenes/Test.world",
+                    help="Scene serialized into standalone-play.world for --standalone")
     args = ap.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -236,6 +269,34 @@ def main() -> int:
         print(f"Stage dir : {stage_dir}")
 
     results = {}
+    if args.all_scenes or args.standalone:
+        # Dedicated modes run the Runtime only; the default invocation below is untouched.
+        rel = "Snowstorm-Runtime/{config}/Snowstorm-Runtime.exe"
+        if args.staged:
+            exe = stage_dir / Path(rel.format(config=args.config)).name
+            cwd = stage_dir
+        else:
+            exe = build_dir / rel.format(config=args.config)
+            cwd = repo_root
+        jobs = []
+        if args.all_scenes:
+            scenes = [args.scene] if args.scene else sandbox_scenes(cwd)
+            if not scenes:
+                print(f"  FAIL: no .world files under {cwd / SANDBOX_SCENES}")
+                return 1
+            jobs += [(f"Scene {Path(sc).name}", sc, None) for sc in scenes]
+        if args.standalone:
+            try:
+                cli = standalone_args(cwd, args.standalone_source)
+            except FileNotFoundError as e:
+                print(f"  FAIL: standalone source scene missing: {e}")
+                return 1
+            jobs.append(("Standalone play", None, cli))
+        for label, sc, cli in jobs:
+            results[label] = run_target(label, exe, cwd, args.frames, args.timeout,
+                                        args.warnings_fail, layer_path, args.strict, sc, args.max_frame_ms,
+                                        args.vsync_stress, cli)
+        targets = []
     for name, rel, default_scene in targets:
         if args.staged:
             # The stage is flat, and the working directory has to be the stage itself: a package resolves

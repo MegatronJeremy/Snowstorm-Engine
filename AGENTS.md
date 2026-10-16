@@ -159,7 +159,18 @@ py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime | Pon
 py Scripts/smoke-test.py --warnings-fail # treat [warning] lines as failures too
 py Scripts/smoke-test.py --staged        # run the PACKAGE in build/stage/<config>, not the build tree
 py Scripts/smoke-test.py --strict        # enable deeper Vulkan validation (see below)
+py Scripts/smoke-test.py --all-scenes    # Runtime once per Sandbox scene, one verdict each
+py Scripts/smoke-test.py --standalone    # Runtime launched the way the editor's Play Standalone does
 ```
+
+`--all-scenes` boots `Snowstorm-Runtime` on every `*.world` in `Projects/Sandbox/assets/scenes`
+(`--scene` narrows it to one), so a scene that only breaks when loaded (Reflections, AlphaBlend,
+StochasticOverlap) fails by name; give it a generous `--timeout` since a cold Sponza cooks. `--standalone`
+copies `--standalone-source` (default `Test.world`) to `Engine/cache/standalone-play.world` and runs the
+Runtime with the single argument `--startup.scene=<absolute path>` and the engine root as CWD, the
+launch `StandalonePlay.cpp` performs, then applies the usual exit-code, settle and `[error]` checks. It
+covers the Runtime half of Play Standalone only: the editor's project hand-off is not exercised.
+Both modes replace the default Editor/Runtime/Pong set for that invocation.
 
 `--strict` sets `SS_VALIDATION_EXTRA=1`, which enables **synchronization validation** (barrier/
 semaphore/fence hazards) and **best-practices** (perf/usage foot-guns) via `VkValidationFeaturesEXT`.
