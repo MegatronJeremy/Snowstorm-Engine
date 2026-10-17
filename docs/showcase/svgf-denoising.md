@@ -64,7 +64,7 @@ Source: committed baselines `Scripts/perf-baseline/<adapter>/+gi.json`, commit `
 | a-trous total | 0.333 ms | 0.313 ms |
 | GIUpsample | 0.046 ms | 0.048 ms |
 
-The chain is cheap because it runs at half resolution; the frame totals at that rung are 8.991 ms and 6.155 ms. Toggling the denoiser and diffing whole-frame totals gives about 0.07 ms, which is below the run-to-run spread of one configuration and should not be quoted as a cost. Read the per-pass rows.
+The chain is cheap because it runs at half resolution; the frame totals at that rung are 8.991 ms and 6.155 ms. Read the per-pass rows for the cost.
 
 The vendors disagree on the shape. The AMD chain is front-loaded (0.134 falling to 0.090 ms), the NVIDIA one inverts (0.091 rising to 0.129 ms). The shader's outer loop is deliberately rolled: unrolled it needed 191 VGPRs and ran at 8 of 16 waves; rolled it uses 72 VGPRs at 16 waves with no scratch. Measured on an RX 9060 XT (5 ABBA pairs, from the shader's comment), the full-res chains gained 36-47% and the half-res wide-stride iteration 25%, but the stride-1 iteration lost about 20%, net -12.9% frame time. Whether locality or occupancy drives the vendor asymmetry is not resolved by timestamps, which cannot separate them; memory counters would.
 
