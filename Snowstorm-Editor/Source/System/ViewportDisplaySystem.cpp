@@ -16,6 +16,7 @@
 #include "Snowstorm/Math/Bounds.hpp"
 #include "Snowstorm/Math/EulerContinuity.hpp"
 #include "Snowstorm/Math/Picking.hpp"
+#include "Snowstorm/Project/Project.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
 #include "Snowstorm/Render/Texture.hpp"
@@ -739,7 +740,10 @@ namespace Snowstorm
 				{
 					// The editor world is untouched: the Runtime gets a copy of the current (unsaved) scene.
 					auto& notify = SingletonView<EditorNotificationsSingleton>();
-					const std::string error = StandalonePlay::Launch(SceneSerializer::SerializeToString(*m_World));
+					const Ref<Project> project = Project::GetActive();
+					const std::filesystem::path ssproj =
+					    project ? project->GetProjectDirectory() / project->GetProjectFileName() : std::filesystem::path{};
+					const std::string error = StandalonePlay::Launch(SceneSerializer::SerializeToString(*m_World), ssproj);
 					if (error.empty())
 					{
 						notify.Push("Launched standalone Runtime", EditorToastType::Info);
