@@ -42,16 +42,23 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Targets: (display name, path under build/ to the exe, working dir relative to repo root).
+# Targets: (display name, path under build/ to the exe, scene, extra env).
 # Working dir is the repo root so relative Assets/... paths resolve (matches the VS
 # debugger working-directory setting).
-# The third element is a scene this target needs in order to do anything, or None to boot whatever its
-# startup project names. All three are None now that Pong boots its own project: a game executable that
-# needs its scene named on the command line is not really shipping a game. --scene overrides all of them.
+# The scene is what this target needs in order to do anything, or None to boot whatever its startup
+# project names. Editor, Runtime and Pong are None: a game executable that needs its scene named on the
+# command line is not really shipping a game. --scene overrides all of them.
+# The testbed targets run the Runtime on a scene no other target boots, so a scene that stops loading
+# (#282) or a feature flag that stops working fails a gate instead of waiting for someone to open it.
+# The extra env turns on the CVar the scene exists to exercise (CVar `a.b` is env `SS_A_B`).
 TARGETS = [
-    ("Editor", "Snowstorm-Editor/{config}/Snowstorm-Editor.exe", None),
-    ("Runtime", "Snowstorm-Runtime/{config}/Snowstorm-Runtime.exe", None),
-    ("Pong", "Games/Pong/{config}/Snowstorm-Pong.exe", None),
+    ("Editor", "Snowstorm-Editor/{config}/Snowstorm-Editor.exe", None, {}),
+    ("Runtime", "Snowstorm-Runtime/{config}/Snowstorm-Runtime.exe", None, {}),
+    ("Pong", "Games/Pong/{config}/Snowstorm-Pong.exe", None, {}),
+    ("Reflections", "Snowstorm-Runtime/{config}/Snowstorm-Runtime.exe",
+     "Projects/Sandbox/assets/scenes/Reflections.world", {}),
+    ("AlphaBlend", "Snowstorm-Runtime/{config}/Snowstorm-Runtime.exe",
+     "Projects/Sandbox/assets/scenes/AlphaBlend.world", {"SS_RENDER_TRANSPARENT": "1"}),
 ]
 
 # Default per-app budget in seconds when --timeout is not given. The Editor boots first, so it pays the
@@ -92,6 +99,11 @@ def scan_output(text: str, markers: list[str]) -> list[str]:
     return hits
 
 
+def missing_scenes(repo_root: Path, targets) -> list[str]:
+    """Scene paths named by targets that do not exist, so a rename fails fast instead of as a boot error."""
+    return [t[2] for t in targets if t[2] and not (repo_root / t[2]).is_file()]
+
+
 def clear_cook_caches(repo_root: Path) -> None:
     """Delete the cooked-asset caches so the next run exercises the cold first-import path."""
     import shutil
@@ -105,7 +117,7 @@ def clear_cook_caches(repo_root: Path) -> None:
 def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
                warnings_fail: bool, layer_path: Path | None, strict: bool,
                scene: str | None, max_frame_ms: int, vsync_stress: int,
-               project: str | None = None) -> bool:
+               extra_env: dict[str, str], project: str | None = None) -> bool:
     print(f"\n=== {name} :: {exe.name} ===")
     if not exe.exists():
         print(f"  FAIL: executable not found at {exe}")
@@ -138,6 +150,7 @@ def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
     # harness exercise a heavy scene (Sponza) headlessly instead of the default startup world.
     if scene:
         env["SS_STARTUP_SCENE"] = scene
+    env.update(extra_env)
     # Point Vulkan at the vcpkg validation layers, matching Generate-Solution.py and the
     # VS debugger environment. Without this the loader can't find the layers the engine
     # requests, and init crashes instead of running -> false failures.
@@ -200,7 +213,7 @@ def main() -> int:
     ap.add_argument("--config", default="Debug", help="Build config dir under build/ (default Debug)")
     ap.add_argument("--build-dir", default="build", help="Build directory (default build)")
     ap.add_argument("--triplet", default="x64-windows", help="vcpkg triplet for the validation-layer path (default x64-windows)")
-    ap.add_argument("--only", default=None, help="Run only this target by name (e.g. Editor)")
+    ap.add_argument("--only", default=None, help="Run only this target by name (e.g. Editor | Runtime | Pong | Reflections | AlphaBlend)")
     ap.add_argument("--warnings-fail", action="store_true", help="Treat [warning] lines as failures")
     ap.add_argument("--strict", action="store_true", help="Enable extra Vulkan validation (synchronization + best-practices)")
     ap.add_argument("--staged", action="store_true",
@@ -229,6 +242,12 @@ def main() -> int:
             print(f"No target named '{args.only}'. Known: {[t[0] for t in TARGETS]}")
             return 1
 
+    if not args.scene:
+        missing = missing_scenes(repo_root, targets)
+        if missing:
+            print(f"FAIL: target scene(s) not found: {missing}")
+            return 1
+
     print(f"Repo root : {repo_root}")
     print(f"Build dir : {build_dir}  (config: {args.config})")
     budget = f"{args.timeout}s" if args.timeout else "180s (Editor 480s)"
@@ -250,7 +269,7 @@ def main() -> int:
         print(f"Stage dir : {stage_dir}")
 
     results = {}
-    for name, rel, default_scene in targets:
+    for name, rel, default_scene, extra_env in targets:
         if args.staged:
             # The stage is flat, and the working directory has to be the stage itself: a package resolves
             # Projects/... against the CWD, so running it from the repo root would silently read the
@@ -264,7 +283,7 @@ def main() -> int:
         timeout = args.timeout or DEFAULT_TIMEOUT.get(name, DEFAULT_TIMEOUT_OTHER)
         results[name] = run_target(name, exe, cwd, args.frames, timeout,
                                    args.warnings_fail, layer_path, args.strict, scene, args.max_frame_ms,
-                                   args.vsync_stress, args.project)
+                                   args.vsync_stress, extra_env, args.project)
 
     print("\n=== Summary ===")
     all_ok = True
