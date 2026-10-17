@@ -66,7 +66,9 @@ namespace Snowstorm
 		{
 			// Zero for meshes (a model yields several handles) and on failure.
 			AssetHandle Handle{0};
-			// Meshes only: the entities ImportModel spawned.
+			// Meshes only: how many parts ImportModelAssets registered.
+			size_t Parts = 0;
+			// Meshes only: the entities InstantiateImportedModel spawned (empty unless `instantiate`).
 			std::vector<Entity> Entities;
 			// Empty on success; otherwise why the file was refused.
 			std::string Error;
