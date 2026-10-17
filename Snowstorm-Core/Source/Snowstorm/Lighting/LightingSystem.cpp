@@ -33,7 +33,7 @@ namespace Snowstorm
 			{
 				return dl.Direction;
 			}
-			const glm::mat3 rotation(registry.get<TransformComponent>(entity).GetTransformMatrix());
+			const glm::mat3 rotation(registry.Read<TransformComponent>(entity).GetTransformMatrix());
 			return RotatedLightDirection(rotation, dl.Direction);
 		};
 		auto& renderer3DSingleton = ServiceView<RendererService>();
