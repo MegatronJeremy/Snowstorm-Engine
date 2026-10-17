@@ -17,6 +17,7 @@ Every measured number names its GPU, the commit that holds it and the date. Page
 | [Editor](editor.md) | Panels, Play and Play Standalone, content browser, material editor, CVar panel, NERV theme | written |
 | [Performance](performance.md) | perf-bench config ladder, paired A/B gate, RGA occupancy, driver shader stats | written |
 | [Neural upscaler](neural-upscaler.md) | Spatial and temporal CNN refiners over a low-res render, the LPIPS-against-PSNR selection trap, what was and was not beaten | written (experimental) |
+| [Sorted transparency](sorted-transparency.md) | `Blend` materials in a far-first sorted pass behind `render.transparent`, the `AlphaBlend.world` testbed, what it cannot order | written (experimental, no render yet) |
 
 ## Gallery
 
