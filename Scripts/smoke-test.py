@@ -11,7 +11,7 @@ This needs a real GPU + display (Vulkan), so it is a LOCAL check, not a CI job.
 Run it after a build to catch runtime regressions that compilation can't.
 
 Usage (from repo root or anywhere):
-    py Scripts/smoke-test.py                 # default 120 frames, 180s timeout each
+    py Scripts/smoke-test.py                 # default 120 frames, 180s timeout each (Editor 480s)
     py Scripts/smoke-test.py --frames 300    # run more frames
     py Scripts/smoke-test.py --timeout 90    # per-app wall-clock budget (seconds)
     py Scripts/smoke-test.py --config Release # test the Release build instead of Debug
@@ -53,6 +53,13 @@ TARGETS = [
     ("Runtime", "Snowstorm-Runtime/{config}/Snowstorm-Runtime.exe", None),
     ("Pong", "Games/Pong/{config}/Snowstorm-Pong.exe", None),
 ]
+
+# Default per-app budget in seconds when --timeout is not given. The Editor boots first, so it pays the
+# cold cook of Sponza's 94 assets; its Debug texture encodes (BC3/BC7 on 2K images, CPU, unoptimised) leave
+# 7-9 textures on workers past 170 s on the Z2, while Runtime and Pong then settle against the warm cache.
+# Editor + Runtime + Pong at their worst stay inside the PC check's 15 minute step.
+DEFAULT_TIMEOUT = {"Editor": 480}
+DEFAULT_TIMEOUT_OTHER = 180
 
 # Substrings that mark a failure in captured output. Case-insensitive.
 # The log pattern is "[HH:MM:SS] [level] LOGGER: msg". A genuine Vulkan validation ERROR is logged
@@ -187,7 +194,8 @@ def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
 def main() -> int:
     ap = argparse.ArgumentParser(description="Smoke-test the Snowstorm executables.")
     ap.add_argument("--frames", type=int, default=120, help="Frames to run per app (default 120)")
-    ap.add_argument("--timeout", type=int, default=180, help="Per-app wall-clock timeout in seconds (default 180)")
+    ap.add_argument("--timeout", type=int, default=None,
+                    help="Per-app wall-clock timeout in seconds (default 180; Editor 480, since it pays the cold cook)")
     ap.add_argument("--config", default="Debug", help="Build config dir under build/ (default Debug)")
     ap.add_argument("--build-dir", default="build", help="Build directory (default build)")
     ap.add_argument("--triplet", default="x64-windows", help="vcpkg triplet for the validation-layer path (default x64-windows)")
@@ -218,7 +226,8 @@ def main() -> int:
 
     print(f"Repo root : {repo_root}")
     print(f"Build dir : {build_dir}  (config: {args.config})")
-    print(f"Frames    : {args.frames}   Timeout: {args.timeout}s/app   Strict: {args.strict}")
+    budget = f"{args.timeout}s" if args.timeout else "180s (Editor 480s)"
+    print(f"Frames    : {args.frames}   Timeout: {budget}/app   Strict: {args.strict}")
 
     if args.cold:
         clear_cook_caches(repo_root)
@@ -247,7 +256,8 @@ def main() -> int:
             exe = build_dir / rel.format(config=args.config)
             cwd = repo_root
         scene = args.scene or default_scene
-        results[name] = run_target(name, exe, cwd, args.frames, args.timeout,
+        timeout = args.timeout or DEFAULT_TIMEOUT.get(name, DEFAULT_TIMEOUT_OTHER)
+        results[name] = run_target(name, exe, cwd, args.frames, timeout,
                                    args.warnings_fail, layer_path, args.strict, scene, args.max_frame_ms,
                                    args.vsync_stress)
 
