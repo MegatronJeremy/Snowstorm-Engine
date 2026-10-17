@@ -156,6 +156,7 @@ TEST_CASE("Cascade atlas tiles are disjoint, in bounds, and match their UV rects
 {
 	constexpr uint32_t kTile = 1024;
 	constexpr uint32_t kAtlas = kTile * CascadeMath::kCascadeAtlasCols;
+	constexpr auto kAtlasF = static_cast<float>(kAtlas);
 	static_assert(CascadeMath::kCascadeAtlasCols * CascadeMath::kCascadeAtlasCols >= CascadeMath::kMaxCascades);
 	for (uint32_t i = 0; i < CascadeMath::kMaxCascades; ++i)
 	{
@@ -165,10 +166,10 @@ TEST_CASE("Cascade atlas tiles are disjoint, in bounds, and match their UV rects
 		REQUIRE(t.Y + t.Size <= kAtlas);
 
 		const glm::vec4 uv = CascadeMath::AtlasUvRect(i);
-		REQUIRE(uv.x == Approx(static_cast<float>(t.X) / kAtlas));
-		REQUIRE(uv.y == Approx(static_cast<float>(t.Y) / kAtlas));
-		REQUIRE(uv.z == Approx(static_cast<float>(t.Size) / kAtlas));
-		REQUIRE(uv.w == Approx(static_cast<float>(t.Size) / kAtlas));
+		REQUIRE(uv.x == Approx(static_cast<float>(t.X) / kAtlasF));
+		REQUIRE(uv.y == Approx(static_cast<float>(t.Y) / kAtlasF));
+		REQUIRE(uv.z == Approx(static_cast<float>(t.Size) / kAtlasF));
+		REQUIRE(uv.w == Approx(static_cast<float>(t.Size) / kAtlasF));
 
 		for (uint32_t j = i + 1; j < CascadeMath::kMaxCascades; ++j)
 		{
