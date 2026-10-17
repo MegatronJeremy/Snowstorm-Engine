@@ -11,6 +11,7 @@ Every measured number names its GPU, the commit that holds it and the date. Page
 | [RT ambient occlusion](rt-ambient-occlusion.md) | Traced AO against SSAO: term, quality against the path tracer, cost | written |
 | [Reflections](reflections.md) | SSR and RT reflections, roughness cutoff, why the denoiser is off | written |
 | [RT global illumination](rt-global-illumination.md) | Traced and screen-space GI: quality against the path tracer, cost, the ReSTIR experiment | written |
+| [SVGF-style denoising](svgf-denoising.md) | The shared temporal plus a-trous chain: what it buys, where it hurts, per-pass cost | written |
 
 ## Gallery
 
@@ -24,7 +25,7 @@ Sponza on a Radeon RX 9070 XT unless a caption says otherwise. Every image is un
 | Shadow map, mode 1 ([RT shadows](rt-shadows.md)) | Ray traced, mode 2 ([RT shadows](rt-shadows.md)) |
 | ![Isolated ambient occlusion term](../images/debug-ao.jpg) | ![Raw reflection buffer](../images/debug-reflections.jpg) |
 | AO term ([RT ambient occlusion](rt-ambient-occlusion.md)) | Reflection buffer ([Reflections](reflections.md)) |
-| ![Isolated indirect diffuse term](../images/debug-gi.jpg) | |
-| GI term ([RT global illumination](rt-global-illumination.md)) | |
+| ![Isolated indirect diffuse term](../images/debug-gi.jpg) | ![Raw half-res GI irradiance before denoising](images/gi_irradiance_raw.jpg) |
+| GI term ([RT global illumination](rt-global-illumination.md)) | Raw GI buffer before the denoiser ([SVGF-style denoising](svgf-denoising.md)) |
 
 Images shared with the top-level README live in `docs/images`; images specific to one page live in `docs/showcase/images`.
