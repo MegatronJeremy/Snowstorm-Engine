@@ -18,6 +18,7 @@ Every measured number names its GPU, the commit that holds it and the date. Page
 | [Performance](performance.md) | perf-bench config ladder, paired A/B gate, RGA occupancy, driver shader stats | written |
 | [Neural upscaler](neural-upscaler.md) | Spatial and temporal CNN refiners over a low-res render, the LPIPS-against-PSNR selection trap, what was and was not beaten | written (experimental) |
 | [Sorted transparency](sorted-transparency.md) | `Blend` materials in a far-first sorted pass behind `render.transparent`, the `AlphaBlend.world` testbed, what it cannot order | written (experimental, no render yet) |
+| [Clustered light culling](clustered-lights.md) | Cluster grid, CPU light assignment, the DefaultLit shade path behind `render.lights.cluster.shade`, the overflow rule | written (experimental, not measured on a GPU) |
 
 ## Gallery
 
