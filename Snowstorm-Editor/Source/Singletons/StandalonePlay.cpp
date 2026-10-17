@@ -25,9 +25,14 @@ namespace Snowstorm::StandalonePlay
 		return out;
 	}
 
-	std::wstring BuildCommandLine(const fs::path& runtimeExe, const fs::path& scene)
+	std::wstring BuildCommandLine(const fs::path& runtimeExe, const fs::path& scene, const fs::path& project)
 	{
-		return L"\"" + runtimeExe.wstring() + L"\" \"--startup.scene=" + scene.wstring() + L"\"";
+		std::wstring cmd = L"\"" + runtimeExe.wstring() + L"\" \"--startup.scene=" + scene.wstring() + L"\"";
+		if (!project.empty())
+		{
+			cmd += L" \"--startup.project=" + project.wstring() + L"\"";
+		}
+		return cmd;
 	}
 
 	fs::path WriteTempScene(const fs::path& cacheDir, const std::string& sceneJson)
@@ -45,7 +50,7 @@ namespace Snowstorm::StandalonePlay
 		return out ? path : fs::path{};
 	}
 
-	std::string Launch(const std::string& sceneJson)
+	std::string Launch(const std::string& sceneJson, const fs::path& project)
 	{
 #ifdef SS_PLATFORM_WINDOWS
 		fs::path runtimeExe;
@@ -69,7 +74,7 @@ namespace Snowstorm::StandalonePlay
 			return "Could not write the temporary scene file.";
 		}
 
-		std::wstring cmd = BuildCommandLine(runtimeExe, scene);
+		std::wstring cmd = BuildCommandLine(runtimeExe, scene, project);
 		const std::wstring cwd = GetEngineRoot().wstring();
 		STARTUPINFOW si{};
 		si.cb = sizeof(si);
@@ -83,6 +88,7 @@ namespace Snowstorm::StandalonePlay
 		return {};
 #else
 		(void)sceneJson;
+		(void)project;
 		return "Standalone play is only available on Windows.";
 #endif
 	}
