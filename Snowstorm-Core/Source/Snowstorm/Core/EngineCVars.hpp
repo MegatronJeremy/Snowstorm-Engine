@@ -251,6 +251,11 @@ namespace Snowstorm::CVars
 	// instead of a decorated 1280x720. Startup-only (the window is created once).
 	extern CVar<bool> Fullscreen;
 
+	// Headless GPU mode (SS_HEADLESS=1 / --headless): the window is created hidden, no VkSurface or
+	// swapchain exists, and presentation is skipped. The frame graph renders into offscreen images that
+	// stand in for the swapchain, so smoke and perf runs work on a locked or absent desktop.
+	extern CVar<bool> Headless;
+
 	// Editor CRT overlay: faint horizontal scanlines and a corner vignette drawn over the main viewport
 	// with an ImGui foreground draw list (no shader). Off by default.
 	extern CVar<bool> EditorCrt;

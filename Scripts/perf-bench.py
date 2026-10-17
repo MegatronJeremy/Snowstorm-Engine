@@ -548,6 +548,14 @@ def compare(name: str, current: dict, baseline: dict, threshold_pct: float, abs_
     return ok
 
 
+def headless_mode(flag: bool) -> bool:
+    """True when the engine runs headless (hidden window, no surface/swapchain/present). `--headless` sets
+    SS_HEADLESS=1 for every child process; an SS_HEADLESS already in the environment counts too."""
+    if flag:
+        os.environ["SS_HEADLESS"] = "1"
+    return os.environ.get("SS_HEADLESS", "").strip().lower() not in ("", "0", "false", "off", "no")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="GPU perf benchmark + regression gate.")
     ap.add_argument("--frames", type=int, default=300, help="Frames averaged per config (default 300)")
@@ -584,7 +592,13 @@ def main() -> int:
     ap.add_argument("--pin-clocks-mhz", type=int, default=0,
                     help="Clock to lock to (default: the adapter's max graphics clock; lower it if that throttles)")
     ap.add_argument("--update-baseline", action="store_true", help="Write current results as the new baseline")
+    ap.add_argument("--headless", action="store_true",
+                    help="Run with SS_HEADLESS=1: hidden window, no surface/swapchain/present, so a locked or absent desktop does not matter (also on when SS_HEADLESS is set)")
     args = ap.parse_args()
+    headless = headless_mode(args.headless)
+    print(f"Mode: {'HEADLESS (no window, surface, swapchain or present)' if headless else 'windowed (needs an unlocked desktop)'}")
+    if headless and args.update_baseline:
+        print("WARNING: --update-baseline in headless mode; the numbers skip present, so capture committed baselines windowed.")
 
     script_dir = Path(__file__).resolve().parent
     repo_root = find_repo_root(script_dir)

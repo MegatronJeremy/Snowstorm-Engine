@@ -288,13 +288,30 @@ namespace Snowstorm
 		// 2. Acquire an image from the swapchain. On OUT_OF_DATE (surface changed, e.g. resize) the
 		// swapchain is unusable: rebuild it and retry. SUBOPTIMAL still works for this frame; we
 		// rebuild after present instead. Note: m_ImageIndex may differ from m_CurrentFrameIndex.
-		VkResult result = vkAcquireNextImageKHR(
-		    device,
-		    context.GetSwapchain(),
-		    UINT64_MAX,
-		    m_ImageAvailableSemaphores[m_CurrentFrameIndex],
-		    VK_NULL_HANDLE,
-		    &m_ImageIndex);
+		VkResult result = VK_SUCCESS;
+		if (context.IsHeadless())
+		{
+			// No swapchain to acquire from: pick the next offscreen image round-robin and signal the
+			// image-available semaphore with an empty submit so the frame's wait is satisfied.
+			m_ImageIndex = (m_ImageIndex + 1) % static_cast<uint32_t>(context.GetSwapchainImages().size());
+			VkSemaphoreSubmitInfo signal{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+			                             .semaphore = m_ImageAvailableSemaphores[m_CurrentFrameIndex],
+			                             .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};
+			VkSubmitInfo2 submit{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+			submit.signalSemaphoreInfoCount = 1;
+			submit.pSignalSemaphoreInfos = &signal;
+			result = vkQueueSubmit2(context.GetGraphicsQueue(), 1, &submit, VK_NULL_HANDLE);
+		}
+		else
+		{
+			result = vkAcquireNextImageKHR(
+			    device,
+			    context.GetSwapchain(),
+			    UINT64_MAX,
+			    m_ImageAvailableSemaphores[m_CurrentFrameIndex],
+			    VK_NULL_HANDLE,
+			    &m_ImageIndex);
+		}
 
 		if (result == VK_ERROR_OUT_OF_DATE_KHR)
 		{
@@ -477,6 +494,21 @@ namespace Snowstorm
 		}
 
 		VkSemaphore signalSemaphores[] = {m_RenderFinishedSemaphores[m_ImageIndex]};
+
+		if (context.IsHeadless())
+		{
+			// No present: consume the render-finished binary semaphore with an empty wait-only submit, so
+			// the next use of this image index does not signal a semaphore that is still signaled.
+			VkSemaphoreSubmitInfo wait{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+			                           .semaphore = signalSemaphores[0],
+			                           .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};
+			VkSubmitInfo2 consume{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+			consume.waitSemaphoreInfoCount = 1;
+			consume.pWaitSemaphoreInfos = &wait;
+			vkQueueSubmit2(context.GetGraphicsQueue(), 1, &consume, VK_NULL_HANDLE);
+			m_CurrentFrameIndex = (m_CurrentFrameIndex + 1) % s_MaxFramesInFlight;
+			return;
+		}
 
 		// 4. Present
 		VkPresentInfoKHR presentInfo{};
