@@ -34,8 +34,6 @@ TEST_CASE("StandalonePlay command line is the full Runtime argument list for a n
 	CHECK(cmd == L"\"C:/My Tools/build/Snowstorm-Runtime.exe\""
 	             L" \"--startup.scene=C:/Users/some one/Snowstorm/Engine/cache/standalone-play.world\""
 	             L" \"--startup.project=D:/My Games/Space Game/SpaceGame.ssproj\"");
-	CHECK(cmd.find(L"--startup.project=") != std::wstring::npos);
-	CHECK(cmd.find(L"--startup.scene=") != std::wstring::npos);
 }
 
 TEST_CASE("StandalonePlay command line omits startup.project without an active project", "[editor][standalone]")
