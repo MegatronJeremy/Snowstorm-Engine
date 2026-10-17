@@ -895,6 +895,10 @@ Two selection traps, both of which produced a wrong verdict here before being ca
 
 Report both anyway. The point is which one decides.
 
+## Best-practices notes (#81)
+
+`--strict` logs two recurring notes. Small host-mapped buffers are already pooled (`SmallBufferPool.hpp`, #78); a note that remains comes from a device-local or readback buffer, or a driver that requires a dedicated allocation. The eager `UNDEFINED -> SHADER_READ_ONLY` transition in `VulkanTextureView::CreateImageView` is load-bearing for Sampled render targets: temporal history is read before any pass writes it, and the bindless descriptor declares `SHADER_READ_ONLY`, so skipping it trades the note for a layout error. `vulkan.diag.alloc` names the buffers and textures behind each note; run it with `--validation.extra` on a GPU before changing either path.
+
 ## Descriptor sets
 
 Non-bindless `DescriptorSet`s allocate from `VulkanDescriptorAllocator`: pools shared by layout shape

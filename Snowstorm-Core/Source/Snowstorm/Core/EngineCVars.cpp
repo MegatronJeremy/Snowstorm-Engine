@@ -98,6 +98,8 @@ namespace Snowstorm::CVars
 
 	CVar<bool> ValidationExtra{"validation.extra", false, "Enable synchronization + best-practices Vulkan validation", CVarFlags::ReadOnly};
 
+	CVar<bool> DiagAlloc{"vulkan.diag.alloc", false, "Log the sources of two best-practices notes (#81): each buffer whose driver requires or prefers a dedicated allocation (with its debug name and size), and each Sampled render target or storage image that takes the eager UNDEFINED -> SHADER_READ_ONLY transition at view creation. Read once per resource; for use with --validation.extra.", CVarFlags::ReadOnly};
+
 	CVar<bool> ValidationGpu{"validation.gpu", false, "Enable GPU-assisted validation (instruments shaders/AS builds to catch on-device OOB descriptor/buffer-address access; much heavier than validation.extra)", CVarFlags::ReadOnly};
 
 	// render.shaders.debug is ReadOnly (startup-only), NOT Persist: it re-keys the .spv cache and recompiling
