@@ -19,3 +19,9 @@ TEST_CASE("StandalonePlay command line quotes exe and scene", "[editor][standalo
 	const auto cmd = StandalonePlay::BuildCommandLine("C:/a b/Snowstorm-Runtime.exe", "C:/c d/s.world");
 	CHECK(cmd == L"\"C:/a b/Snowstorm-Runtime.exe\" \"--startup.scene=C:/c d/s.world\"");
 }
+
+TEST_CASE("StandalonePlay command line carries the editor's project", "[editor][standalone]")
+{
+	const auto cmd = StandalonePlay::BuildCommandLine("r.exe", "s.world", "C:/p q/Game.ssproj");
+	CHECK(cmd == L"\"r.exe\" \"--startup.scene=s.world\" \"--startup.project=C:/p q/Game.ssproj\"");
+}
