@@ -153,7 +153,7 @@ becomes a failure instead of blocking), checks the exit code, and scans the log 
 (`[error]`/`[critical]`, Vulkan validation, assertion text). Exit 0 = all pass.
 
 ```
-py Scripts/smoke-test.py                 # 120 frames, 180s timeout/app, Debug build
+py Scripts/smoke-test.py                 # 120 frames, 180s timeout/app (Editor 480s: it pays the cold cook), Debug build
 py Scripts/smoke-test.py --frames 300    # longer soak
 py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime | Pong)
 py Scripts/smoke-test.py --warnings-fail # treat [warning] lines as failures too
