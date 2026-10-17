@@ -140,7 +140,7 @@ namespace Snowstorm
 		return handle;
 	}
 
-	AssetManagerSingleton::ImportFileResult AssetManagerSingleton::ImportFile(const std::filesystem::path& source)
+	AssetManagerSingleton::ImportFileResult AssetManagerSingleton::ImportFile(const std::filesystem::path& source, const bool instantiate)
 	{
 		ImportFileResult result;
 		const AssetType type = AssetTypeFromPath(source);
@@ -159,9 +159,12 @@ namespace Snowstorm
 
 		if (type == AssetType::Mesh)
 		{
-			result.Entities = ImportModel(source);
-			if (result.Entities.empty())
+			const std::vector<ImportedModelPart> parts = ImportModelAssets(source);
+			result.Parts = parts.size();
+			if (parts.empty())
 				result.Error = "model could not be read (see log)";
+			else if (instantiate)
+				result.Entities = InstantiateImportedModel(parts);
 			return result;
 		}
 
@@ -187,7 +190,12 @@ namespace Snowstorm
 
 	std::vector<Entity> AssetManagerSingleton::ImportModel(const std::filesystem::path& path)
 	{
-		std::vector<Entity> created;
+		return InstantiateImportedModel(ImportModelAssets(path));
+	}
+
+	std::vector<AssetManagerSingleton::ImportedModelPart> AssetManagerSingleton::ImportModelAssets(const std::filesystem::path& path)
+	{
+		std::vector<ImportedModelPart> created;
 		const Ref<Project> project = Project::GetActive();
 		if (!project && path.is_relative())
 		{
@@ -398,23 +406,33 @@ namespace Snowstorm
 			                                 ? (modelStem + "/" + aiSub->mName.C_Str())
 			                                 : (modelStem + "/mesh" + std::to_string(i));
 
-			Entity e = m_World->CreateEntity(partName);
+			created.push_back({partName, meshHandle, matHandle});
+		}
+
+		SS_CORE_INFO("ImportModel: {} -> {} parts, {} materials", path.string(), created.size(), scene->mNumMaterials);
+		return created;
+	}
+
+	std::vector<Entity> AssetManagerSingleton::InstantiateImportedModel(const std::vector<ImportedModelPart>& parts)
+	{
+		std::vector<Entity> created;
+		for (const ImportedModelPart& part : parts)
+		{
+			Entity e = m_World->CreateEntity(part.Name);
 			e.AddComponent<TransformComponent>(); // identity: vertices are already pre-transformed
 
 			auto& mc = e.AddComponent<MeshComponent>();
-			mc.MeshHandle = meshHandle;
+			mc.MeshHandle = part.Mesh;
 			mc.MeshInstance.reset(); // resolved by MeshResolveSystem
 
 			auto& matc = e.AddComponent<MaterialComponent>();
-			matc.Material = matHandle;
+			matc.Material = part.Material;
 			matc.MaterialInstance.reset(); // resolved by MaterialResolveSystem
 
 			e.AddComponent<VisibilityComponent>().Mask = Visibility::Scene | Visibility::Game;
 
 			created.push_back(e);
 		}
-
-		SS_CORE_INFO("ImportModel: {} -> {} entities, {} materials", path.string(), created.size(), scene->mNumMaterials);
 		return created;
 	}
 
