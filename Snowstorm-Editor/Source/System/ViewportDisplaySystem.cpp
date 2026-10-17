@@ -802,7 +802,7 @@ namespace Snowstorm
 			ImGui::EndDisabled();
 			if (ImGui::BeginPopup("##playmodepopup"))
 			{
-				if (ImGui::MenuItem("In Editor (PIE)", nullptr, !m_PlayStandalone))
+				if (ImGui::MenuItem("In Editor (Simulate)", nullptr, !m_PlayStandalone))
 				{
 					m_PlayStandalone = false;
 				}

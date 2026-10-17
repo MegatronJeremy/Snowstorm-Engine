@@ -986,6 +986,10 @@ path tracer, the sky disc and IBL, which read `Lights[0]` only. Each secondary c
 
 `Render/CascadeMath.hpp` holds the pure cascade math for a future sun CSM (#58): practical split scheme, slice corners, sphere fit and texel-snapped ortho matrix. `CascadeMathTests` cover it. `LightingSystem` runs `CascadeMath::ComputeFit` per frame for the primary directional behind `render.shadow.cascades.fit` (default off; `.count`, `.lambda`), using the primary perspective camera's unjittered view-projection, and hands the result to `RendererService::GetSunCascadeFit`. Nothing consumes it yet.
 
+## Play modes
+
+`SimulationStateSingleton::Mode` is `Edit`, `Play` or `PlayGame`. `Play` is the in-editor run where the editor camera and selection stay live (Unreal's Simulate; the toolbar entry is "In Editor (Simulate)"); Standalone (#67) launches `Snowstorm-Runtime` and leaves the editor world untouched. `PlayGame` is reserved for possessed play-in-editor (#68: the game's camera and input replace the editor's) and nothing selects it yet. `IsPlaying()` is true for both play modes, so the snapshot/restore and the `RunsInEditMode()` gate cover them alike; `IsPossessing()` is true only in `PlayGame`. The remaining steps are planned in the shared workspace's `design/68-play-in-editor.md`.
+
 ## Audio
 
 `AudioService` (miniaudio) owns the device and the mixer; `AudioSystem` turns `AudioSourceComponent`

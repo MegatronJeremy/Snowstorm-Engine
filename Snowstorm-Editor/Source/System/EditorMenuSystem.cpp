@@ -462,8 +462,8 @@ namespace Snowstorm
 		section("Play (viewport toolbar)");
 		if (ImGui::BeginTable("play", 2, tableFlags))
 		{
-			row("Play button", "Run the scene (PIE) / Stop");
-			row("Arrow next to Play", "Pick In Editor (PIE) or Standalone (launches Snowstorm-Runtime)");
+			row("Play button", "Run the scene (Simulate) / Stop");
+			row("Arrow next to Play", "Pick In Editor (Simulate) or Standalone (launches Snowstorm-Runtime)");
 			ImGui::EndTable();
 		}
 
