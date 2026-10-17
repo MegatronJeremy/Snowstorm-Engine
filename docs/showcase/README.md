@@ -16,6 +16,7 @@ Every measured number names its GPU, the commit that holds it and the date. Page
 | [Asset pipeline](asset-pipeline.md) | Content-hash cook cache, mounted virtual paths, role-based BCn texture compression: sizes, GPU time, quality cost | written |
 | [Editor](editor.md) | Panels, Play and Play Standalone, content browser, material editor, CVar panel, NERV theme | written |
 | [Performance](performance.md) | perf-bench config ladder, paired A/B gate, RGA occupancy, driver shader stats | written |
+| [Neural upscaler](neural-upscaler.md) | Spatial and temporal CNN refiners over a low-res render, the LPIPS-against-PSNR selection trap, what was and was not beaten | written (experimental) |
 
 ## Gallery
 
