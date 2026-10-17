@@ -12,6 +12,7 @@ Every measured number names its GPU, the commit that holds it and the date. Page
 | [Reflections](reflections.md) | SSR and RT reflections, roughness cutoff, why the denoiser is off | written |
 | [RT global illumination](rt-global-illumination.md) | Traced and screen-space GI: quality against the path tracer, cost, the ReSTIR experiment | written |
 | [SVGF-style denoising](svgf-denoising.md) | The shared temporal plus a-trous chain: what it buys, where it hurts, per-pass cost | written |
+| [Path-traced reference and quality benches](path-traced-reference.md) | The converged path tracer as ground truth; FLIP, tFLIP and JOD gates, static and under motion | written |
 
 ## Gallery
 
