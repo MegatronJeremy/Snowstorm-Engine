@@ -1,6 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "Snowstorm/Assets/AssetImport.hpp"
+#include "Snowstorm/Assets/AssetManagerSingleton.hpp"
+#include "Snowstorm/Components/MeshComponent.hpp"
+#include "Snowstorm/World/World.hpp"
 
 #include <algorithm>
 #include <fstream>
@@ -162,4 +165,26 @@ TEST_CASE("PlanDrop outside the target imports and refuses nothing", "[assets][i
 
 	CHECK(plan.Items.empty());
 	CHECK(plan.Refused == 0);
+}
+
+TEST_CASE("ImportModelAssets registers parts without creating entities; Instantiate spawns them", "[assets][import]")
+{
+	TempDir dir;
+	const fs::path obj = dir.Root / "outside" / "tri.obj";
+	{
+		std::ofstream out(obj);
+		out << "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
+	}
+
+	World world;
+	AssetManagerSingleton assets(&world);
+
+	const auto parts = assets.ImportModelAssets(obj);
+	REQUIRE(parts.size() == 1);
+	CHECK(parts[0].Mesh.Value() != 0);
+	CHECK(world.GetRegistry().view<MeshComponent>().size() == 0);
+
+	const auto entities = assets.InstantiateImportedModel(parts);
+	REQUIRE(entities.size() == parts.size());
+	CHECK(world.GetRegistry().view<MeshComponent>().size() == 1);
 }
