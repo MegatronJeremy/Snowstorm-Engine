@@ -104,7 +104,8 @@ def clear_cook_caches(repo_root: Path) -> None:
 
 def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
                warnings_fail: bool, layer_path: Path | None, strict: bool,
-               scene: str | None, max_frame_ms: int, vsync_stress: int) -> bool:
+               scene: str | None, max_frame_ms: int, vsync_stress: int,
+               project: str | None = None) -> bool:
     print(f"\n=== {name} :: {exe.name} ===")
     if not exe.exists():
         print(f"  FAIL: executable not found at {exe}")
@@ -147,7 +148,7 @@ def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
 
     try:
         proc = subprocess.run(
-            [str(exe)],
+            [str(exe)] + ([f"--startup.project={project}"] if project else []),
             cwd=str(cwd),
             env=env,
             capture_output=True,
@@ -207,6 +208,10 @@ def main() -> int:
                          "the stage as the working directory. Checks that the PACKAGE works, which no "
                          "other gate does. Build the 'stage' target first.")
     ap.add_argument("--scene", default=None, help="Boot directly into this scene (sets SS_STARTUP_SCENE), e.g. Projects/Sandbox/assets/scenes/Sponza.world")
+    ap.add_argument("--project", default=None,
+                    help="Boot with --startup.project=<path> (the hand-off Editor > Play Standalone makes), e.g. "
+                         "Projects/Pong/Pong.ssproj. Pair with --only Runtime; the settle check then fails on "
+                         "assets of that project that never load.")
     ap.add_argument("--cold", action="store_true", help="Delete cooked-asset caches first, to exercise the cold first-import path")
     ap.add_argument("--max-frame-ms", type=int, default=0, help="Fail if any single frame exceeds this many ms (0 = off). Catches per-frame stalls/freezes.")
     ap.add_argument("--vsync-stress", type=int, default=0, help="Toggle VSync every N frames (0 = off) to exercise swapchain recreation. Best with --strict; catches present-semaphore reuse bugs.")
@@ -259,7 +264,7 @@ def main() -> int:
         timeout = args.timeout or DEFAULT_TIMEOUT.get(name, DEFAULT_TIMEOUT_OTHER)
         results[name] = run_target(name, exe, cwd, args.frames, timeout,
                                    args.warnings_fail, layer_path, args.strict, scene, args.max_frame_ms,
-                                   args.vsync_stress)
+                                   args.vsync_stress, args.project)
 
     print("\n=== Summary ===")
     all_ok = True
