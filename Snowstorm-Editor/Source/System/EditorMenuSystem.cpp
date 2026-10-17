@@ -6,6 +6,7 @@
 #include "Snowstorm/Render/Renderer.hpp"
 
 #include "Extension/EditorExtension.hpp"
+#include "Service/EditorTheme.hpp"
 #include "System/ConsoleSystem.hpp"
 #include "System/CVarPanelSystem.hpp"
 #include "System/DockspaceSetupSystem.hpp"
@@ -381,7 +382,7 @@ namespace Snowstorm
 		const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
 		ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 		ImGui::SetNextWindowSize(ImVec2(440.0f, 0.0f), ImGuiCond_FirstUseEver);
-		if (!ImGui::Begin("Keyboard & Mouse Shortcuts", &m_ShowShortcuts))
+		if (!ImGui::Begin(EditorTheme::PanelTitle("Keyboard & Mouse Shortcuts").c_str(), &m_ShowShortcuts))
 		{
 			ImGui::End();
 			return;
@@ -391,7 +392,7 @@ namespace Snowstorm
 		const auto section = [](const char* title)
 		{
 			ImGui::Spacing();
-			ImGui::SeparatorText(title);
+			EditorTheme::SectionHeader(title);
 		};
 
 		const auto row = [](const char* keys, const char* action)
