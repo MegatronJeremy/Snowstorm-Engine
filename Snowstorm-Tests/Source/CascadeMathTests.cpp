@@ -151,3 +151,41 @@ TEST_CASE("ComputeFit returns contiguous cascades with a matrix per slice", "[ca
 	const auto one = CascadeMath::ComputeFit(glm::inverse(vp), kNear, kFar, kSun, 9, 0.7f, 1024, 20.0f);
 	REQUIRE(one.Count == CascadeMath::kMaxCascades);
 }
+
+TEST_CASE("Cascade atlas tiles are disjoint, in bounds, and match their UV rects", "[cascade]")
+{
+	constexpr uint32_t kTile = 1024;
+	constexpr uint32_t kAtlas = kTile * CascadeMath::kCascadeAtlasCols;
+	static_assert(CascadeMath::kCascadeAtlasCols * CascadeMath::kCascadeAtlasCols >= CascadeMath::kMaxCascades);
+	for (uint32_t i = 0; i < CascadeMath::kMaxCascades; ++i)
+	{
+		const auto t = CascadeMath::AtlasTile(i, kTile);
+		REQUIRE(t.Size == kTile);
+		REQUIRE(t.X + t.Size <= kAtlas);
+		REQUIRE(t.Y + t.Size <= kAtlas);
+
+		const glm::vec4 uv = CascadeMath::AtlasUvRect(i);
+		REQUIRE(uv.x == Approx(static_cast<float>(t.X) / kAtlas));
+		REQUIRE(uv.y == Approx(static_cast<float>(t.Y) / kAtlas));
+		REQUIRE(uv.z == Approx(static_cast<float>(t.Size) / kAtlas));
+		REQUIRE(uv.w == Approx(static_cast<float>(t.Size) / kAtlas));
+
+		for (uint32_t j = i + 1; j < CascadeMath::kMaxCascades; ++j)
+		{
+			const auto o = CascadeMath::AtlasTile(j, kTile);
+			REQUIRE((t.X != o.X || t.Y != o.Y));
+		}
+	}
+}
+
+TEST_CASE("Cascade bias scale is the radius ratio against cascade 0", "[cascade]")
+{
+	const auto vp = CameraViewProj({0, 2, 0});
+	const auto fit = CascadeMath::ComputeFit(glm::inverse(vp), kNear, kFar, kSun, 4, 0.7f, 1024, 20.0f);
+	REQUIRE(CascadeMath::BiasScale(fit.Radius[0], fit.Radius[0]) == Approx(1.0f));
+	for (uint32_t i = 1; i < fit.Count; ++i)
+	{
+		REQUIRE(CascadeMath::BiasScale(fit.Radius[i], fit.Radius[0]) > 1.0f);
+	}
+	REQUIRE(CascadeMath::BiasScale(5.0f, 0.0f) == Approx(1.0f));
+}

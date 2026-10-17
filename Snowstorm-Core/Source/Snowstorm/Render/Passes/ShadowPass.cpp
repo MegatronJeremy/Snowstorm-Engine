@@ -259,6 +259,19 @@ namespace Snowstorm
 		return m_DirAtlas;
 	}
 
+	const Ref<RenderTarget>& ShadowPass::GetOrCreateCascadeAtlas()
+	{
+		const int requested = std::clamp(CVars::ShadowResolution.Get(), 256, 8192);
+		const auto atlasSize = static_cast<uint32_t>(requested) * CascadeMath::kCascadeAtlasCols;
+
+		if (!m_CascadeAtlas || m_CascadeAtlas->GetWidth() != atlasSize)
+		{
+			m_CascadeAtlas = CreateShadowDepthTarget(atlasSize, "CascadeAtlas");
+			SS_CORE_ASSERT(m_CascadeAtlas, "Failed to create cascade shadow atlas");
+		}
+		return m_CascadeAtlas;
+	}
+
 	glm::mat4 ShadowPass::ComputePointFaceViewProj(const glm::vec3& position, const int face, const float range)
 	{
 		// Cube-face look directions + up vectors, in the order +X,-X,+Y,-Y,+Z,-Z. The up choices are the

@@ -218,6 +218,11 @@ namespace Snowstorm
 		void SetSunCascadeFit(const SunCascadeFit& fit) { m_SunCascadeFit = fit; }
 		[[nodiscard]] const SunCascadeFit& GetSunCascadeFit() const { return m_SunCascadeFit; }
 
+		// Bindless index of the sun cascade atlas rendered under render.shadow.cascades.render (0 = none). A plain
+		// handoff, not FrameData: no shader samples it until the cascade FrameCB block lands (#58).
+		void SetCascadeAtlasIndex(const uint32_t index) { m_CascadeAtlasIndex = index; }
+		[[nodiscard]] uint32_t GetCascadeAtlasIndex() const { return m_CascadeAtlasIndex; }
+
 		// Set the baked IBL data the lit pass needs: bindless indices of the irradiance + prefiltered cubes
 		// and the BRDF LUT, plus the prefiltered mip count (drives the roughness->lod map). All zero = IBL
 		// off (DefaultLit falls back to the analytic hemisphere ambient). The bake pass owns the maps and
@@ -502,6 +507,7 @@ namespace Snowstorm
 		// two systems.
 		SunShadowFit m_SunShadowFit{};
 		SunCascadeFit m_SunCascadeFit{};
+		uint32_t m_CascadeAtlasIndex = 0;
 
 		// GPU device address of this frame's RT reflection geometry table (#118); pushed by
 		// SetReflectionGeometryAddress, read into FrameCB in AcquireFrameSet. 0 = no table.
