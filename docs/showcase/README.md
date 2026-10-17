@@ -20,6 +20,7 @@ Every measured number names its GPU, the commit that holds it and the date. Page
 | [Sorted transparency](sorted-transparency.md) | `Blend` materials in a far-first sorted pass behind `render.transparent`, the `AlphaBlend.world` testbed, what it cannot order | written (experimental, no render yet) |
 | [Clustered light culling](clustered-lights.md) | Cluster grid, CPU light assignment, the DefaultLit shade path behind `render.lights.cluster.shade`, the overflow rule | written (experimental, not measured on a GPU) |
 | [Dynamic-sun IBL re-bake](dynamic-sun-ibl.md) | The `SunNeedsRebake` rule (direction quantum, 5% radiance, appear/disappear), the `SunSweep.world` testbed, what a re-bake costs | written (experimental, not measured on a GPU) |
+| [ECS scheduling](ecs-scheduling.md) | `SystemAccess` declarations, `BuildSchedule` staging behind `ecs.schedule`, `ParallelForEach` and `ParallelGather`, the `ecs.parallel` A/B | written (experimental, not measured) |
 
 ## Gallery
 
