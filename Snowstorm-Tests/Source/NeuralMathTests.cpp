@@ -121,3 +121,74 @@ TEST_CASE("Conv2D sums across input channels", "[neural][conv]")
 	// 2*3 + 10*5 + 1 = 57
 	CHECK(Conv2DReference(in, layer).At(0, 0, 0) == Approx(57.0f));
 }
+
+TEST_CASE("Residual reference matches hand-computed values", "[neural][conv][fuse]")
+{
+	FeatureMap in;
+	in.Channels = 1;
+	in.Height = 1;
+	in.Width = 1;
+	in.Data = {2.0f};
+	FeatureMap base;
+	base.Channels = 3;
+	base.Height = 1;
+	base.Width = 1;
+	base.Data = {10.0f, 10.0f, 10.0f};
+
+	ConvLayer layer;
+	layer.InChannels = 1;
+	layer.OutChannels = 3;
+	layer.KernelSize = 1;
+	layer.Act = Activation::ReLU;
+	layer.Weights = {1.0f, -3.0f, 0.5f};
+	layer.Bias = {0.0f, 0.0f, 0.25f};
+
+	// conv: 2, relu(-6) = 0, 1.25; the negative is clamped before the add, so channel 1 stays at base.
+	const FeatureMap fused = Conv2DResidualReference(base, in, layer);
+	CHECK(fused.At(0, 0, 0) == Approx(12.0f));
+	CHECK(fused.At(1, 0, 0) == Approx(10.0f));
+	CHECK(fused.At(2, 0, 0) == Approx(11.25f));
+}
+
+// Consistency of the oracle with Conv2DReference plus an add; the hand-computed case above is the real check.
+TEST_CASE("Fused conv+add equals conv then add", "[neural][conv][fuse]")
+{
+	FeatureMap in;
+	in.Channels = 4;
+	in.Height = 5;
+	in.Width = 6;
+	in.Data.resize(static_cast<size_t>(4) * 5 * 6);
+	for (size_t i = 0; i < in.Data.size(); ++i)
+	{
+		in.Data[i] = static_cast<float>((i * 37) % 11) - 5.0f;
+	}
+	FeatureMap base = in;
+	base.Channels = 3;
+	base.Data.resize(static_cast<size_t>(3) * 5 * 6);
+
+	ConvLayer layer;
+	layer.InChannels = 4;
+	layer.OutChannels = 3;
+	layer.KernelSize = 3;
+	layer.Act = Activation::ReLU;
+	layer.Weights.resize(static_cast<size_t>(3) * 4 * 9);
+	for (size_t i = 0; i < layer.Weights.size(); ++i)
+	{
+		layer.Weights[i] = static_cast<float>((i * 13) % 7) * 0.1f - 0.3f;
+	}
+	layer.Bias = {0.1f, -0.2f, 0.3f};
+
+	const FeatureMap conv = Conv2DReference(in, layer);
+	const FeatureMap fused = Conv2DResidualReference(base, in, layer);
+	REQUIRE(fused.Channels == 3);
+	for (uint32_t c = 0; c < 3; ++c)
+	{
+		for (uint32_t y = 0; y < 5; ++y)
+		{
+			for (uint32_t x = 0; x < 6; ++x)
+			{
+				CHECK(fused.At(c, y, x) == Approx(base.At(c, y, x) + conv.At(c, y, x)));
+			}
+		}
+	}
+}
