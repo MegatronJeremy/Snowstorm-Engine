@@ -6,6 +6,7 @@
 
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Components/CameraRuntimeComponent.hpp"
+#include "Snowstorm/Components/RotatorComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
@@ -23,6 +24,18 @@ namespace Snowstorm
 	void LightingSystem::Execute(Timestep ts)
 	{
 		auto lightView = View<DirectionalLightComponent>();
+		// A directional light that also carries a Rotator and a Transform is turned by that transform, so the
+		// RotatorSystem can sweep a sun without a bespoke animation component. Others keep the authored Direction.
+		const auto lightDirection = [this](const entt::entity entity, const DirectionalLightComponent& dl)
+		{
+			const auto& registry = m_World->GetRegistry();
+			if (!registry.all_of<RotatorComponent, TransformComponent>(entity))
+			{
+				return dl.Direction;
+			}
+			const glm::mat3 rotation(registry.get<TransformComponent>(entity).GetTransformMatrix());
+			return glm::normalize(rotation * glm::normalize(dl.Direction));
+		};
 		auto& renderer3DSingleton = ServiceView<RendererService>();
 
 		LightDataBlock lightData;
@@ -35,7 +48,7 @@ namespace Snowstorm
 		{
 			const auto& dl = lightView.get<DirectionalLightComponent>(entity);
 			candidates.push_back({dl.Enabled, dl.CastShadows});
-			candidateDirs.push_back(dl.Direction);
+			candidateDirs.push_back(lightDirection(entity, dl));
 		}
 		const size_t sunIndex = FindPrimaryDirectional(candidates);
 		const bool haveSun = sunIndex < candidates.size();
@@ -75,7 +88,7 @@ namespace Snowstorm
 				if (shadowSlot > 0)
 				{
 					GPUDirShadow& payload = lightData.DirShadows[shadowSlot - 1];
-					if (ShadowPass::ComputeSunViewProj(*m_World, directionalLight.Direction, payload.ViewProj))
+					if (ShadowPass::ComputeSunViewProj(*m_World, candidateDirs[lightIndex], payload.ViewProj))
 					{
 						constexpr float inv = 1.0f / static_cast<float>(ShadowPass::kDirAtlasCols);
 						const int tile = shadowSlot - 1;
@@ -90,7 +103,7 @@ namespace Snowstorm
 				}
 			}
 			lightData.Lights[lightData.LightCount++] = {
-			    .Direction = glm::normalize(directionalLight.Direction),
+			    .Direction = glm::normalize(candidateDirs[lightIndex]),
 			    .Intensity = directionalLight.Intensity,
 			    .Color = directionalLight.Color,
 			    .ShadowSlot = shadowSlot};
@@ -304,6 +317,6 @@ namespace Snowstorm
 
 	void LightingSystem::DeclareAccess(SystemAccess& a) const
 	{
-		a.ReadComponents<DirectionalLightComponent, PointLightComponent, SpotLightComponent, TransformComponent, CameraComponent, CameraRuntimeComponent>().WriteResources<RendererService>();
+		a.ReadComponents<DirectionalLightComponent, RotatorComponent, PointLightComponent, SpotLightComponent, TransformComponent, CameraComponent, CameraRuntimeComponent>().WriteResources<RendererService>();
 	}
 }
