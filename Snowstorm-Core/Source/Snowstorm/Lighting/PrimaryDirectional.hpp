@@ -4,6 +4,8 @@
 #include <span>
 #include <vector>
 
+#include <glm/glm.hpp>
+
 namespace Snowstorm
 {
 	struct DirectionalShadowCandidate
@@ -26,6 +28,13 @@ namespace Snowstorm
 			}
 		}
 		return lights.size();
+	}
+
+	// World direction of a directional light: the authored Direction turned by the entity's rotation (the
+	// upper 3x3 of its transform; uniform scale cancels in the normalize).
+	[[nodiscard]] inline glm::vec3 RotatedLightDirection(const glm::mat3& rotation, const glm::vec3& authored)
+	{
+		return glm::normalize(rotation * glm::normalize(authored));
 	}
 
 	// Raster shadow slot per candidate, in the same order: -1 unshadowed, 0 the sun map (the primary, when
