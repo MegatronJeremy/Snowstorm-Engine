@@ -216,11 +216,11 @@ namespace Snowstorm
 
 		// Handles with an async load submitted but not yet finalized. Main-thread only (GetMeshAsync +
 		// ProcessCompletedLoads both run there), so no lock needed for this set.
-		std::unordered_set<uint64_t> m_InFlightMeshes;
+		std::unordered_map<uint64_t, std::string> m_InFlightMeshes; // handle -> asset path, for UnsettledReason
 
 		// Worker threads push finished CPU loads here; the main thread drains them in ProcessCompletedLoads.
 		// Guarded because producers (JobSystem workers) and the consumer (main thread) race on it.
-		std::mutex m_CompletedMutex;
+		mutable std::mutex m_CompletedMutex;
 		std::vector<CompletedMeshLoad> m_CompletedMeshes;
 
 		uint32_t m_PendingTotal = 0; // high-water mark of in-flight loads since the queue was last empty
@@ -238,8 +238,8 @@ namespace Snowstorm
 			std::string DebugName;
 		};
 
-		std::unordered_set<uint64_t> m_InFlightTextures;       // (handle,srgb) keys currently decoding
-		std::vector<CompletedTextureLoad> m_CompletedTextures; // guarded by m_CompletedMutex (shared w/ meshes)
+		std::unordered_map<uint64_t, std::string> m_InFlightTextures; // (handle,srgb) key -> file name; decoding or awaiting upload
+		std::vector<CompletedTextureLoad> m_CompletedTextures;        // guarded by m_CompletedMutex (shared w/ meshes)
 
 		// Shared 1x1 placeholder sampled by materials whose real texture hasn't arrived yet. Each async
 		// texture gets its OWN view of this (its own bindless slot), so the slot can be rewritten to the
