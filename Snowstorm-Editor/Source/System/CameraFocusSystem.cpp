@@ -17,7 +17,7 @@ namespace Snowstorm
 		// WantCaptureKeyboard for keyboard-nav, which would wrongly swallow F over the viewport — the exact
 		// place F should work. WantTextInput is true only while editing text (console/rename), where F must
 		// type instead of framing.
-		if (input.WantTextInput || !input.PressedThisFrame.test(static_cast<size_t>(Key::F)))
+		if (input.EditorKeysBlocked() || !input.PressedThisFrame.test(static_cast<size_t>(Key::F)))
 		{
 			return;
 		}
