@@ -324,7 +324,7 @@ median paired delta larger than the pair-to-pair spread) AND over `--threshold` 
 An inconclusive result passes, because the A/B could not show a regression. Exit 1 on a resolved
 regression or a failed run. Without `--gate` the A/B stays an instrument and exits non-zero only when a run
 fails, so a green exit then means "the runs completed", never "perf is fine". It prints one `VERDICT`
-line per config and a closing PASS/FAIL.
+line per config and a closing PASS/FAIL. A failed run ends the log with `FAIL: a run failed during the A/B in: <config> (pair N A|B (exe), exit <code>|timeout <s>s|no JSON written)`, so the cause survives a truncated log tail.
 
 **The two readouts use different verdict rules on purpose.** `compare` gates, so a finding must clear
 `--abs-threshold` as well as the statistical test: materiality. `print_ab` measures, so it asks only
