@@ -31,7 +31,7 @@ The Performance tab shows frame, per-phase and per-system CPU milliseconds and p
 ## Edit, Play and undo
 
 - **Undo and redo** go through `EditorHistorySingleton`: `Ctrl+Z`, `Ctrl+Y` or `Ctrl+Shift+Z`. Menu labels name the command. Entity delete snapshots the entity first, so undo restores the same UUID.
-- **Play** (viewport toolbar) runs the scene in the editor (PIE). In edit mode the simulation systems are skipped so the authored scene stays still; Stop restores the snapshot taken before Play. The chevron beside the button is disabled while playing.
+- **Play** (viewport toolbar) runs the scene in the editor (Simulate: the editor camera and selection stay live). In edit mode the simulation systems are skipped so the authored scene stays still; Stop restores the snapshot taken before Play. The chevron beside the button is disabled while playing.
 - **Play Standalone** (chevron > *Standalone (Runtime)*) serializes the open scene to `Engine/cache/standalone-play.world` and launches `Snowstorm-Runtime` on it as a detached process, so the scene runs in the editor-free player with its own window. The runtime is looked up beside the editor (a staged package) and then in the sibling build directory with the same configuration. A missing runtime comes back as a toast with the reason.
 - **Play indicator.** While playing, the viewport shows a blinking red `PLAY` dot, drawn by `EditorTheme::DrawStatusBlink` (lit for the first half of each second).
 
