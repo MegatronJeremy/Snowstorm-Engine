@@ -115,10 +115,10 @@ namespace Snowstorm
 		const uint32_t count = static_cast<uint32_t>(instances.size());
 		m_InstanceCount = count;
 
-		// The previous AS/backing must be torn down before we build a new one (rebuild-each-call). The GPU
-		// isn't using it here — TlasBuildSystem runs in PreRender, before this frame's ray-query pass, and the
-		// prior build's ImmediateSubmit already fenced. The drain stays: the host-visible instance and scratch
-		// buffers are reused across rebuilds, so a GPU read of them in an earlier frame would race the write.
+		// The drain cannot become a retire: the bindless TLAS binding (2) is PARTIALLY_BOUND but not
+		// UPDATE_AFTER_BIND (acceleration structures cannot be), so WriteAccelerationStructure after this Build
+		// requires that no pending command buffer uses the set. The instance and scratch buffers are not the
+		// reason: ImmediateSubmit fences, so the GPU is done with them when Build returns.
 		vkDeviceWaitIdle(device);
 		Destroy();
 
