@@ -50,6 +50,20 @@ namespace Snowstorm::StandalonePlay
 		return out ? path : fs::path{};
 	}
 
+	LaunchPlan PlanLaunch(const std::filesystem::path& project, bool projectFileExists)
+	{
+		if (project.empty())
+		{
+			return {false, "Standalone play needs a project: no project is open."};
+		}
+		if (!projectFileExists)
+		{
+			return {false, "Standalone play cancelled: project file '" + project.string() +
+			                   "' is missing or unreadable, the Runtime would load a different project."};
+		}
+		return {true, {}};
+	}
+
 	std::string Launch(const std::string& sceneJson, const fs::path& project)
 	{
 #ifdef SS_PLATFORM_WINDOWS

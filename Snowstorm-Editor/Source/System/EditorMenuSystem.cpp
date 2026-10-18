@@ -80,7 +80,7 @@ namespace Snowstorm
 		// Scene file shortcuts (edge-triggered, suppressed while typing). Hazel's bindings:
 		// Ctrl+N new scene, Ctrl+O open scene, Ctrl+S save, Ctrl+Shift+S save as. Shared with the
 		// File menu below so behavior + toasts match. Keep DrawShortcutsWindow in sync (CLAUDE.md).
-		if (ctrlDown && !input.WantTextInput)
+		if (ctrlDown && !input.EditorKeysBlocked())
 		{
 			if (input.PressedThisFrame.test(Key::S) && !shiftDown)
 			{
@@ -108,7 +108,7 @@ namespace Snowstorm
 		// Scale-gizmo key, so it is deliberately not used here).
 		auto& history = SingletonView<EditorHistorySingleton>();
 		auto& status = SingletonView<EditorStatusBarSingleton>();
-		if (ctrlDown && !input.WantTextInput)
+		if (ctrlDown && !input.EditorKeysBlocked())
 		{
 			const bool shift = input.Down.test(Key::LeftShift) || input.Down.test(Key::RightShift);
 
@@ -125,7 +125,7 @@ namespace Snowstorm
 		// Backtick toggles the developer console (the classic Quake/Unreal console key). Edge-triggered and
 		// suppressed while typing, so pressing ` inside the console's own input types a character instead of
 		// closing it.
-		if (input.PressedThisFrame.test(Key::GraveAccent) && !input.WantTextInput)
+		if (input.PressedThisFrame.test(Key::GraveAccent) && !input.EditorKeysBlocked())
 		{
 			ConsoleSystem::s_Open = !ConsoleSystem::s_Open;
 		}

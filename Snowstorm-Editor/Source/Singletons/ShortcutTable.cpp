@@ -53,6 +53,13 @@ namespace Snowstorm::Shortcuts
 		    {"Ctrl + Shift + Z", "Redo (alternate)", CtrlShift(Key::Z)},
 		}};
 
+		constexpr std::array<Row, 4> kPossess = {{
+		    {"Escape", "Release input to the editor; Escape again stops", {}},
+		    {"Shift + F1", "Release input to the editor", {}},
+		    {"Left Mouse (viewport)", "Take input back after a release", {}},
+		    {"While the game holds input", "Editor shortcuts and the fly camera are off", {}},
+		}};
+
 		constexpr std::array<Row, 4> kScene = {{
 		    {"Ctrl + N", "New (empty) scene", Ctrl(Key::N)},
 		    {"Ctrl + O", "Open scene...", Ctrl(Key::O)},
@@ -82,9 +89,10 @@ namespace Snowstorm::Shortcuts
 		    {"Up / Down (in console)", "Cycle command history", Plain(Key::Up)},
 		}};
 
-		constexpr std::array<Section, 9> kSections = {{
+		constexpr std::array<Section, 10> kSections = {{
 		    {"cam", "Camera (hold Right Mouse Button in viewport)", kCamera},
 		    {"sel", "Selection & Gizmos", kSelection},
+		    {"possess", "Play (Possess)", kPossess},
 		    {"frame", "Camera Framing", kFraming},
 		    {"edit", "Edit", kEdit},
 		    {"scene", "Scene", kScene},
