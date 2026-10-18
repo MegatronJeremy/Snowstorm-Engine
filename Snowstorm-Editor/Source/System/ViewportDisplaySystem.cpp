@@ -441,7 +441,7 @@ namespace Snowstorm
 		// Escape clears the selection (and thus the gizmo, which only draws for a selected entity) — the
 		// standard editor deselect (Unity/Unreal/Godot). Gated on !WantTextInput so pressing Esc while
 		// typing in the console/a field just cancels the field (ImGui handles that) instead of deselecting.
-		if (selection.Selected && input.PressedThisFrame.test(Key::Escape) && !input.WantTextInput)
+		if (selection.Selected && input.PressedThisFrame.test(Key::Escape) && !input.EditorKeysBlocked())
 		{
 			selection.Selected = {};
 		}
@@ -573,7 +573,7 @@ namespace Snowstorm
 			// Cycle gizmo operation with W/E/R while the viewport is hovered — but not while ImGui owns the
 			// keyboard (e.g. typing in the console / a text field), so those letters don't double as gizmo
 			// hotkeys mid-edit.
-			if (ImGui::IsWindowHovered() && !input.WantTextInput)
+			if (ImGui::IsWindowHovered() && !input.EditorKeysBlocked())
 			{
 				if (input.PressedThisFrame.test(Key::W))
 					m_GizmoOp = ImGuizmo::TRANSLATE;
@@ -737,6 +737,11 @@ namespace Snowstorm
 				{
 					editorState.Current = SimulationStateSingleton::Mode::Edit;
 				}
+				else if (m_PlayPossess)
+				{
+					editorState.Current = SimulationStateSingleton::Mode::PlayGame;
+					input.GameCaptured = true;
+				}
 				else if (m_PlayStandalone)
 				{
 					// The editor world is untouched: the Runtime gets a copy of the current (unsaved) scene.
@@ -799,6 +804,7 @@ namespace Snowstorm
 			if (hovered)
 			{
 				ImGui::SetTooltip(playing            ? "Stop (return to Edit)"
+				                  : m_PlayPossess    ? "Play (possess: the game takes keyboard and mouse; Esc releases, Esc again stops)"
 				                  : m_PlayStandalone ? "Play Standalone (launch Snowstorm-Runtime with this scene)"
 				                                     : "Play (run the scene in the editor)");
 			}
@@ -814,13 +820,20 @@ namespace Snowstorm
 			ImGui::EndDisabled();
 			if (ImGui::BeginPopup("##playmodepopup"))
 			{
-				if (ImGui::MenuItem("In Editor (Simulate)", nullptr, !m_PlayStandalone))
+				if (ImGui::MenuItem("In Editor (Simulate)", nullptr, !m_PlayStandalone && !m_PlayPossess))
 				{
 					m_PlayStandalone = false;
+					m_PlayPossess = false;
+				}
+				if (ImGui::MenuItem("In Editor (Possess)", nullptr, m_PlayPossess))
+				{
+					m_PlayStandalone = false;
+					m_PlayPossess = true;
 				}
 				if (ImGui::MenuItem("Standalone (Runtime)", nullptr, m_PlayStandalone))
 				{
 					m_PlayStandalone = true;
+					m_PlayPossess = false;
 				}
 				ImGui::EndPopup();
 			}

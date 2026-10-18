@@ -2,6 +2,8 @@
 
 #include "Snowstorm/ECS/Singleton.hpp"
 
+#include "Snowstorm/Input/PlayInputRouting.hpp"
+
 #include <glm/vec2.hpp>
 #include <bitset>
 #include <cstdint>
@@ -56,5 +58,12 @@ namespace Snowstorm
 		bool WantCaptureMouse = false;
 		bool WantCaptureKeyboard = false;
 		bool WantTextInput = false;
+
+		// Possessed play (#68) holds the keyboard and mouse for the game: set by the editor while
+		// Mode::PlayGame has captured input. Editor-only bindings gate on EditorKeysBlocked(), not on
+		// WantTextInput alone.
+		bool GameCaptured = false;
+
+		[[nodiscard]] bool EditorKeysBlocked() const { return Snowstorm::EditorKeysBlocked(WantTextInput, GameCaptured); }
 	};
 }
