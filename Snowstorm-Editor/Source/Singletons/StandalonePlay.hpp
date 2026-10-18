@@ -20,6 +20,16 @@ namespace Snowstorm::StandalonePlay
 	// Writes `sceneJson` to <cacheDir>/standalone-play.world and returns its path (empty on failure).
 	std::filesystem::path WriteTempScene(const std::filesystem::path& cacheDir, const std::string& sceneJson);
 
+	// What the editor does before launching. The Runtime reads the registry and the .ssproj from disk, so
+	// the registry is saved first; a missing project file blocks the launch, since GameLayer would fall back
+	// to an implicit project and the scene would load without its assets.
+	struct LaunchPlan
+	{
+		bool SaveRegistry = false;
+		std::string Error;
+	};
+	LaunchPlan PlanLaunch(const std::filesystem::path& project, bool projectFileExists);
+
 	// Serialized scene -> temp file -> detached Snowstorm-Runtime process. Returns an empty string on
 	// success, otherwise a user-facing reason.
 	std::string Launch(const std::string& sceneJson, const std::filesystem::path& project = {});
