@@ -49,4 +49,31 @@ namespace Snowstorm
 		const float ref = std::max(glm::length(baked.Radiance), 1e-6f);
 		return glm::length(now.Radiance - baked.Radiance) > radianceRelTol * ref;
 	}
+
+	// Degrees between two sun directions; 0 when either is absent.
+	inline float SunAngleDeg(const IBLSunKey& a, const IBLSunKey& b)
+	{
+		if (!a.Present || !b.Present)
+			return 0.0f;
+		return glm::degrees(std::acos(glm::clamp(glm::dot(a.ToSun, b.ToSun), -1.0f, 1.0f)));
+	}
+
+	// Running cost of re-bakes after the first bake: the WaitIdle stall each one pays, and what triggered it.
+	struct IBLRebakeStats
+	{
+		int Count = 0;
+		int SunTriggered = 0;
+		double TotalStallMs = 0.0;
+		double MaxStallMs = 0.0;
+
+		void Record(double stallMs, bool sunTriggered)
+		{
+			++Count;
+			SunTriggered += sunTriggered ? 1 : 0;
+			TotalStallMs += stallMs;
+			MaxStallMs = std::max(MaxStallMs, stallMs);
+		}
+
+		double MeanStallMs() const { return Count > 0 ? TotalStallMs / Count : 0.0; }
+	};
 }
