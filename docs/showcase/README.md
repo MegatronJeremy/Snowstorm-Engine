@@ -14,6 +14,7 @@ Every measured number names its GPU, the commit that holds it and the date. Page
 | [SVGF-style denoising](svgf-denoising.md) | The shared temporal plus a-trous chain: what it buys, where it hurts, per-pass cost | written |
 | [Path-traced reference and quality benches](path-traced-reference.md) | The converged path tracer as ground truth; FLIP, tFLIP and JOD gates, static and under motion | written |
 | [Asset pipeline](asset-pipeline.md) | Content-hash cook cache, mounted virtual paths, role-based BCn texture compression: sizes, GPU time, quality cost | written |
+| [Texture block compression](texture-compression.md) | Role-based BC1/BC3/BC5 (BC7 opt-in), why normals are not BC1, cache, VRAM, Forward-pass and FLIP cost | written |
 | [Editor](editor.md) | Panels, Play and Play Standalone, content browser, material editor, CVar panel, NERV theme | written |
 | [Performance](performance.md) | perf-bench config ladder, paired A/B gate, RGA occupancy, driver shader stats | written |
 | [Neural upscaler](neural-upscaler.md) | Spatial and temporal CNN refiners over a low-res render, the LPIPS-against-PSNR selection trap, what was and was not beaten | written (experimental) |
