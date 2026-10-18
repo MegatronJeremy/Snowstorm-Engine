@@ -61,8 +61,8 @@ namespace Snowstorm::Shortcuts
 		}};
 
 		constexpr std::array<Row, 2> kPlay = {{
-		    {"Play button", "Run the scene (PIE) / Stop", {}},
-		    {"Arrow next to Play", "Pick In Editor (PIE) or Standalone (launches Snowstorm-Runtime)", {}},
+		    {"Play button", "Run the scene (Simulate) / Stop", {}},
+		    {"Arrow next to Play", "Pick In Editor (Simulate) or Standalone (launches Snowstorm-Runtime)", {}},
 		}};
 
 		constexpr std::array<Row, 1> kContent = {{
