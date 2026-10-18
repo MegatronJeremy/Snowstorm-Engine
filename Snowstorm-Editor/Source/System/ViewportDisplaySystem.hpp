@@ -31,6 +31,7 @@ namespace Snowstorm
 
 		// Play button target: false = Simulate in the editor, true = launch Snowstorm-Runtime with a copy of the scene.
 		bool m_PlayStandalone = false;
+		bool m_PlayPossess = false;
 
 		// Gizmo-drag tracking for a single undo step per drag (not per frame). On the frame the drag
 		// begins we capture the transform before any edit; on release we push one TransformCommand.
