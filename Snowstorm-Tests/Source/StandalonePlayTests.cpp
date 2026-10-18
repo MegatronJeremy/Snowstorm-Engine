@@ -41,3 +41,24 @@ TEST_CASE("StandalonePlay command line omits startup.project without an active p
 	const auto cmd = StandalonePlay::BuildCommandLine("r.exe", "s.world", {});
 	CHECK(cmd.find(L"--startup.project") == std::wstring::npos);
 }
+
+TEST_CASE("StandalonePlay plan saves the registry when the project file exists", "[editor][standalone]")
+{
+	const auto plan = StandalonePlay::PlanLaunch("C:/p/Game.ssproj", true);
+	CHECK(plan.SaveRegistry);
+	CHECK(plan.Error.empty());
+}
+
+TEST_CASE("StandalonePlay plan blocks on a missing project file and names it", "[editor][standalone]")
+{
+	const auto plan = StandalonePlay::PlanLaunch("C:/p/Game.ssproj", false);
+	CHECK_FALSE(plan.SaveRegistry);
+	CHECK(plan.Error.find("C:/p/Game.ssproj") != std::string::npos);
+}
+
+TEST_CASE("StandalonePlay plan blocks without a project", "[editor][standalone]")
+{
+	const auto plan = StandalonePlay::PlanLaunch({}, false);
+	CHECK_FALSE(plan.SaveRegistry);
+	CHECK_FALSE(plan.Error.empty());
+}
