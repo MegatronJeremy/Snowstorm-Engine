@@ -1,8 +1,11 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "Snowstorm/Lighting/PrimaryDirectional.hpp"
 
 #include <vector>
+
+#include <glm/gtc/matrix_transform.hpp>
 
 using namespace Snowstorm;
 
@@ -71,4 +74,24 @@ TEST_CASE("Shadow slots: secondary tiles never exceed the atlas capacity", "[lig
 	const auto sel = SelectShadowDirectionals(lights, 4, 1);
 	REQUIRE(sel.Slots == std::vector<int>{0, 1, -1});
 	REQUIRE(sel.Dropped == 1);
+}
+
+TEST_CASE("Rotated light direction applies the entity rotation to the authored direction", "[lighting]")
+{
+	constexpr float eps = 1e-5f;
+	const glm::vec3 authored(-1.0f, 0.0f, 0.0f);
+
+	const glm::vec3 same = RotatedLightDirection(glm::mat3(1.0f), authored);
+	REQUIRE(same.x == Catch::Approx(-1.0f).margin(eps));
+	REQUIRE(same.y == Catch::Approx(0.0f).margin(eps));
+
+	const glm::mat3 quarterZ(glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0, 0, 1)));
+	const glm::vec3 turned = RotatedLightDirection(quarterZ, authored);
+	REQUIRE(turned.x == Catch::Approx(0.0f).margin(eps));
+	REQUIRE(turned.y == Catch::Approx(-1.0f).margin(eps));
+	REQUIRE(turned.z == Catch::Approx(0.0f).margin(eps));
+
+	const glm::vec3 unnormalized = RotatedLightDirection(quarterZ, glm::vec3(-3.0f, 0.0f, 0.0f));
+	REQUIRE(glm::length(unnormalized) == Catch::Approx(1.0f).margin(eps));
+	REQUIRE(unnormalized.y == Catch::Approx(-1.0f).margin(eps));
 }
