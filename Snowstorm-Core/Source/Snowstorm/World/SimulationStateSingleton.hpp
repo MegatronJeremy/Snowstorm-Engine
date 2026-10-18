@@ -8,7 +8,7 @@ namespace Snowstorm
 	// (scripts, rotators — anything that returns RunsInEditMode() == false) are skipped, so the authored
 	// scene doesn't move under the cursor and the gizmo doesn't fight an animation. In Play the whole
 	// system set runs so the world simulates. "Play" is the umbrella for every non-Edit mode: today it's
-	// the in-editor variant where the EDITOR camera + selection stay live (Unreal would call this
+	// the in-editor variant (Mode::Play) where the EDITOR camera + selection stay live (Unreal would call this
 	// Simulate), and a future true Play-In-Editor (possess a player, #68) or Standalone (#67) are further
 	// play modes. This is also the gate the temporal-upscaling work needs: motion (jitter / history
 	// accumulation) is tied to Play.
@@ -23,11 +23,15 @@ namespace Snowstorm
 		enum class Mode : uint8_t
 		{
 			Edit,
-			Play
+			Play,
+			// Possessed play (#68): like Play, but the game's camera and input replace the editor's.
+			// Nothing selects it yet.
+			PlayGame
 		};
 
 		Mode Current = Mode::Edit;
 
-		[[nodiscard]] bool IsPlaying() const { return Current == Mode::Play; }
+		[[nodiscard]] bool IsPlaying() const { return Current != Mode::Edit; }
+		[[nodiscard]] bool IsPossessing() const { return Current == Mode::PlayGame; }
 	};
 }
