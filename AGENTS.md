@@ -162,6 +162,8 @@ py Scripts/smoke-test.py --staged        # run the PACKAGE in build/stage/<confi
 py Scripts/smoke-test.py --strict        # enable deeper Vulkan validation (see below)
 ```
 
+`--scene` and `--project` skip `Pong`, which boots its own project: forcing a Sandbox scene on it resolves the scene's handles against Pong's registry and fails with "mesh handle not found".
+
 `--project <.ssproj>` passes `--startup.project=` to each target it runs, the hand-off *Play Standalone* makes. Use it with `--only Runtime` and a project other than Sandbox; the settle rule below then fails on that project's assets that never resolve. `StandalonePlayTests` pin the full argument list GPU-free. The settle check's behaviour on a project's unresolved assets is unverified on a GPU.
 
 `--strict` sets `SS_VALIDATION_EXTRA=1`, which enables **synchronization validation** (barrier/

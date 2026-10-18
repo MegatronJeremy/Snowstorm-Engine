@@ -47,10 +47,14 @@ from pathlib import Path
 # debugger working-directory setting).
 # The scene is what this target needs in order to do anything, or None to boot whatever its startup
 # project names. Editor, Runtime and Pong are None: a game executable that needs its scene named on the
-# command line is not really shipping a game. --scene overrides all of them.
+# command line is not really shipping a game. --scene overrides every target except OWN_PROJECT_TARGETS.
 # The testbed targets run the Runtime on a scene no other target boots, so a scene that stops loading
 # (#282) or a feature flag that stops working fails a gate instead of waiting for someone to open it.
 # The extra env turns on the CVar the scene exists to exercise (CVar `a.b` is env `SS_A_B`).
+# Targets that boot their own project. A Sandbox scene or project forced on them resolves its asset handles
+# against the wrong registry, so --scene and --project skip them.
+OWN_PROJECT_TARGETS = {"Pong"}
+
 TARGETS = [
     ("Editor", "Snowstorm-Editor/{config}/Snowstorm-Editor.exe", None, {}),
     ("Runtime", "Snowstorm-Runtime/{config}/Snowstorm-Runtime.exe", None, {}),
@@ -279,11 +283,12 @@ def main() -> int:
         else:
             exe = build_dir / rel.format(config=args.config)
             cwd = repo_root
-        scene = args.scene or default_scene
+        own = name in OWN_PROJECT_TARGETS
+        scene = default_scene if own else args.scene or default_scene
         timeout = args.timeout or DEFAULT_TIMEOUT.get(name, DEFAULT_TIMEOUT_OTHER)
         results[name] = run_target(name, exe, cwd, args.frames, timeout,
                                    args.warnings_fail, layer_path, args.strict, scene, args.max_frame_ms,
-                                   args.vsync_stress, extra_env, args.project)
+                                   args.vsync_stress, extra_env, None if own else args.project)
 
     print("\n=== Summary ===")
     all_ok = True
