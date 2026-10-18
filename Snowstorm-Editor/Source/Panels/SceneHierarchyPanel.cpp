@@ -228,7 +228,7 @@ namespace Snowstorm
 		// Delete key removes the selected entity (same deferred path as the right-click Delete). Gated
 		// on the keyboard not being captured (e.g. a rename field) so typing never deletes.
 		if (const auto& input = m_World->GetSingleton<InputStateSingleton>();
-		    input.PressedThisFrame.test(Key::Delete) && !input.WantTextInput)
+		    input.PressedThisFrame.test(Key::Delete) && !input.EditorKeysBlocked())
 		{
 			if (const Entity sel = GetSelected(); sel && IsDeletable(sel))
 			{
