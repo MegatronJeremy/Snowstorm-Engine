@@ -48,7 +48,10 @@
 #include "Singletons/EditorHistorySingleton.hpp"
 #include "Singletons/EditorSelectionSingleton.hpp"
 #include "Snowstorm/World/EditorHooksSingleton.hpp"
+#include "Snowstorm/Components/ViewportInteractionComponent.hpp"
+#include "Snowstorm/Core/KeyCodes.hpp"
 #include "Snowstorm/Input/InputStateSingleton.hpp"
+#include "Snowstorm/Input/PlayInputRouting.hpp"
 #include "Snowstorm/World/SimulationStateSingleton.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
 #include <chrono>
@@ -1293,6 +1296,27 @@ namespace Snowstorm
 			input.WantCaptureKeyboard = io.WantCaptureKeyboard;
 			input.WantCaptureMouse = io.WantCaptureMouse;
 			input.WantTextInput = io.WantTextInput; // precise "a text field is active" (see InputStateSingleton)
+
+			auto& sim = m_ActiveWorld->GetSingleton<SimulationStateSingleton>();
+			bool viewportClicked = false;
+			if (sim.IsPossessing() && input.MousePressedThisFrame.test(0))
+			{
+				auto& reg = m_ActiveWorld->GetRegistry();
+				for (const entt::entity e : reg.view<ViewportInteractionComponent>())
+				{
+					viewportClicked = viewportClicked || reg.Read<ViewportInteractionComponent>(e).Hovered;
+				}
+			}
+			const bool shift = input.Down.test(Key::LeftShift) || input.Down.test(Key::RightShift);
+			const PlayInputStep step = StepPlayInput(
+			    sim.IsPossessing(), input.GameCaptured,
+			    {input.PressedThisFrame.test(Key::Escape), shift && input.PressedThisFrame.test(Key::F1), viewportClicked,
+			     io.WantTextInput});
+			input.GameCaptured = step.Captured;
+			if (step.Stop)
+			{
+				sim.Current = SimulationStateSingleton::Mode::Edit;
+			}
 		}
 
 		// Apply a deferred scene open at the frame boundary. A scene load is heavy (deserialize + asset
