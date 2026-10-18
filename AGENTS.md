@@ -991,6 +991,10 @@ path tracer, the sky disc and IBL, which read `Lights[0]` only. Each secondary c
 
 `Render/CascadeMath.hpp` holds the pure cascade math for a future sun CSM (#58): practical split scheme, slice corners, sphere fit and texel-snapped ortho matrix. `CascadeMathTests` cover it. `LightingSystem` runs `CascadeMath::ComputeFit` per frame for the primary directional behind `render.shadow.cascades.fit` (default off; `.count`, `.lambda`), using the primary perspective camera's unjittered view-projection, and hands the result to `RendererService::GetSunCascadeFit`. Nothing consumes it yet.
 
+## Play modes
+
+`SimulationStateSingleton::Mode` is `Edit`, `Play` or `PlayGame`. `Play` is the in-editor run where the editor camera and selection stay live (Unreal's Simulate; the toolbar entry is "In Editor (Simulate)"); Standalone (#67) launches `Snowstorm-Runtime` and leaves the editor world untouched. `PlayGame` is reserved for possessed play-in-editor (#68: the game's camera and input replace the editor's) and nothing selects it yet. `IsPlaying()` is true for both play modes, so the snapshot/restore and the `RunsInEditMode()` gate cover them alike; `IsPossessing()` is true only in `PlayGame`. The toolbar's *In Editor (Possess)* starts `PlayGame` with `InputStateSingleton::GameCaptured` set: editor-only bindings gate on `EditorKeysBlocked()`, the editor fly camera stands down and the cursor locks. `StepPlayInput` (`Input/PlayInputRouting.hpp`, pure, `PlayInputRoutingTests`) decides capture: Escape or Shift+F1 releases, Escape again stops, a viewport click recaptures, and an active text field keeps its own keys. Not yet in place: the game view target (the editor camera still renders) and a PlayerStart spawn, so the viewport shows the editor camera. Cursor lock and key routing are unverified on a GPU. The remaining steps are planned in the shared workspace's `design/68-play-in-editor.md`.
+
 ## Audio
 
 `AudioService` (miniaudio) owns the device and the mixer; `AudioSystem` turns `AudioSourceComponent`
@@ -1164,6 +1168,10 @@ The IBL bake is keyed on the environment block and on the sun (`Lights[0]`, the 
 when its direction moves past `render.ibl.sun_quantum_deg` (default 2) or its colour*intensity changes by more
 than 5%, or when the sun appears or disappears. A re-bake is still the full monolithic bake with a `WaitIdle`;
 `IBLInvalidationTests` cover the rule (#149).
+
+A directional light that also has a `RotatorComponent` and a `TransformComponent` is turned by that transform (`LightingSystem`: authored `Direction` rotated by the entity's rotation), so `RotatorSystem` can sweep a sun; every consumer (raster and RT shadows, sky disc, IBL bake via `Lights[0]`) sees the rotated direction. Without a Rotator, `Direction` is used as authored.
+
+**`SunSweep.world` plus `camera-paths/sun-sweep.json` is the repro for #149's re-bake.** An open ground plane with six columns and three crates under the Sponza procedural sky, and one shadow-casting sun (`Direction` -x, slightly down) rotating about Z at 6 deg/s: dusk to noon in 15 s, setting after 30 s. At the default 2 degree quantum that is about three re-bakes a second, each a full monolithic bake with a `WaitIdle`, so frame-time spikes at that cadence are the symptom. The route is a 15 s lateral pass 4 m in front of the props at 1 m/s. Run with `--startup.scene=Projects/Sandbox/assets/scenes/SunSweep.world --camera.path --camera.path.file=Projects/Sandbox/assets/camera-paths/sun-sweep.json`, and compare `--render.ibl.sun_quantum_deg=10`. No baselines, and it has not been rendered or run on a GPU, and neither has the Rotator-driven sun path.
 
 ## Console variables (CVars)
 
