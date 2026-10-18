@@ -1,5 +1,6 @@
 #include "ViewportDisplaySystem.hpp"
 
+#include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Components/CameraRuntimeComponent.hpp"
 #include "Snowstorm/Components/CameraTargetComponent.hpp"
@@ -743,7 +744,18 @@ namespace Snowstorm
 					const Ref<Project> project = Project::GetActive();
 					const std::filesystem::path ssproj =
 					    project ? project->GetProjectDirectory() / project->GetProjectFileName() : std::filesystem::path{};
-					const std::string error = StandalonePlay::Launch(SceneSerializer::SerializeToString(*m_World), ssproj);
+					const StandalonePlay::LaunchPlan plan =
+					    StandalonePlay::PlanLaunch(ssproj, !ssproj.empty() && std::filesystem::exists(ssproj));
+					std::string error = plan.Error;
+					if (error.empty())
+					{
+						if (plan.SaveRegistry && !SingletonView<AssetManagerSingleton>().SaveRegistry(project->GetAssetRegistryPath()))
+						{
+							notify.Push("Could not save the asset registry; unsaved imports may not resolve in the Runtime",
+							            EditorToastType::Warning);
+						}
+						error = StandalonePlay::Launch(SceneSerializer::SerializeToString(*m_World), ssproj);
+					}
 					if (error.empty())
 					{
 						notify.Push("Launched standalone Runtime", EditorToastType::Info);
