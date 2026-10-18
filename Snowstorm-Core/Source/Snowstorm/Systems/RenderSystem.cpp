@@ -807,7 +807,7 @@ namespace Snowstorm
 				                                    {
 					                                    for (const MaterialOverride& o : ov->Overrides)
 					                                    {
-						                                    if (o.Type == MaterialOverrideType::Texture && o.Name == "AlbedoTexture" && o.Texture != 0)
+						                                    if (o.Type == MaterialOverrideType::Texture && o.Name == "AlbedoTexture" && o.Texture.Value() != 0)
 						                                    {
 							                                    if (const Ref<TextureView> view = assets.GetTextureView(o.Texture))
 							                                    {
