@@ -26,7 +26,7 @@ namespace Snowstorm
 	// Runs `destroy` once every in-flight frame that could reference the resource has completed (immediately
 	// when the renderer is not running). Use in destructors of GPU objects instead of vkDeviceWaitIdle.
 	// Textures and their views retire through it too. Drains that remain on purpose: renderer/bindless shutdown, swapchain recreate (old images are
-	// re-wrapped as textures), and VulkanTlas::Build (host-visible instance/scratch buffers are reused).
+	// re-wrapped as textures), and VulkanTlas::Build (the bindless TLAS binding is not UPDATE_AFTER_BIND).
 	void RetireVulkanObject(std::function<void()> destroy);
 	void AdvanceVulkanRetireQueue();
 	void FlushVulkanRetireQueue();
