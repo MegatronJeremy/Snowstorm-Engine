@@ -51,8 +51,8 @@ namespace Snowstorm
 			uint32_t PointCount = 0;
 			uint32_t SpotCount = 0;
 
-			uint32_t EnvNee = 1; // 1 = environment (sky) NEE + MIS
-			uint32_t _pad0 = 0;
+			uint32_t EnvNee = 1;  // 1 = environment (sky) NEE + MIS
+			uint32_t Sampler = 0; // 0 = PCG, 1 = Owen-scrambled Sobol
 			uint32_t _pad1 = 0;
 			uint32_t _pad2 = 0;
 
@@ -148,6 +148,7 @@ namespace Snowstorm
 		cb.GroundColor = pr.GroundColor;
 		cb.FireflyClamp = pr.FireflyClamp;
 		cb.EnvNee = pr.EnvNee;
+		cb.Sampler = pr.Sampler;
 		cb.ReflGeoTableAddrLo = static_cast<uint32_t>(pr.TableAddress & 0xFFFFFFFFull);
 		cb.ReflGeoTableAddrHi = static_cast<uint32_t>(pr.TableAddress >> 32);
 
