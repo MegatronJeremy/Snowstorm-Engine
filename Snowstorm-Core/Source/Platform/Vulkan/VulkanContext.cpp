@@ -50,6 +50,7 @@ namespace Snowstorm
 	void VulkanContext::Init(void* windowHandle)
 	{
 		m_WindowHandle = windowHandle;
+		m_Headless = CVars::Headless.Get();
 
 		// 0. Initialize Volk
 		// We use a local check to ensure we don't re-init if already done
@@ -249,7 +250,10 @@ namespace Snowstorm
 
 		// 2. Surface (GLFW)
 		GLFWwindow* glfwWindow = static_cast<GLFWwindow*>(m_WindowHandle);
-		VK_CHECK(glfwCreateWindowSurface(m_Instance, glfwWindow, nullptr, &m_Surface));
+		if (!m_Headless)
+		{
+			VK_CHECK(glfwCreateWindowSurface(m_Instance, glfwWindow, nullptr, &m_Surface));
+		}
 
 		// 3. Physical Device
 		uint32_t deviceCount = 0;
@@ -275,8 +279,11 @@ namespace Snowstorm
 			vkGetPhysicalDeviceQueueFamilyProperties(device, &queueCount, props.data());
 			for (uint32_t i = 0; i < queueCount; ++i)
 			{
-				VkBool32 presentSupport = false;
-				vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_Surface, &presentSupport);
+				VkBool32 presentSupport = m_Headless;
+				if (!m_Headless)
+				{
+					vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_Surface, &presentSupport);
+				}
 				if (props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT && presentSupport)
 				{
 					VkPhysicalDeviceProperties dp{};
@@ -882,8 +889,60 @@ namespace Snowstorm
 		return as.accelerationStructure == VK_TRUE && rq.rayQuery == VK_TRUE;
 	}
 
+	bool VulkanContext::CreateHeadlessSwapchain()
+	{
+		// Four images exceed the two frames in flight plus the one being recorded, so round-robin reuse
+		// never touches an image the GPU still owns (the in-flight fence gates the frame, not the image).
+		constexpr uint32_t kImageCount = 4;
+		int fbWidth = 0;
+		int fbHeight = 0;
+		glfwGetFramebufferSize(static_cast<GLFWwindow*>(m_WindowHandle), &fbWidth, &fbHeight);
+		m_SwapchainExtent.width = fbWidth > 0 ? static_cast<uint32_t>(fbWidth) : 1280u;
+		m_SwapchainExtent.height = fbHeight > 0 ? static_cast<uint32_t>(fbHeight) : 720u;
+		m_SwapchainFormat = VK_FORMAT_B8G8R8A8_UNORM;
+
+		VkImageCreateInfo imageInfo{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+		imageInfo.imageType = VK_IMAGE_TYPE_2D;
+		imageInfo.format = m_SwapchainFormat;
+		imageInfo.extent = {m_SwapchainExtent.width, m_SwapchainExtent.height, 1};
+		imageInfo.mipLevels = 1;
+		imageInfo.arrayLayers = 1;
+		imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+		imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+		imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+		imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+		VmaAllocationCreateInfo allocInfo{};
+		allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+		allocInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+
+		m_SwapchainImages.resize(kImageCount);
+		m_SwapchainImageViews.resize(kImageCount);
+		m_HeadlessAllocations.resize(kImageCount);
+		for (uint32_t i = 0; i < kImageCount; ++i)
+		{
+			VK_CHECK(vmaCreateImage(m_Allocator, &imageInfo, &allocInfo, &m_SwapchainImages[i], &m_HeadlessAllocations[i], nullptr));
+
+			VkImageViewCreateInfo viewInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+			viewInfo.image = m_SwapchainImages[i];
+			viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			viewInfo.format = m_SwapchainFormat;
+			viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+			VK_CHECK(vkCreateImageView(m_Device, &viewInfo, nullptr, &m_SwapchainImageViews[i]));
+		}
+		SS_CORE_INFO("Headless: {} offscreen swapchain images, {}x{}; no surface, no present.", kImageCount,
+		             m_SwapchainExtent.width, m_SwapchainExtent.height);
+		return true;
+	}
+
 	bool VulkanContext::CreateSwapchain()
 	{
+		if (m_Headless)
+		{
+			return CreateHeadlessSwapchain();
+		}
+
 		VkSurfaceCapabilitiesKHR caps;
 		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_PhysicalDevice, m_Surface, &caps);
 
@@ -984,12 +1043,18 @@ namespace Snowstorm
 		return true;
 	}
 
-	void VulkanContext::DestroySwapchain() const
+	void VulkanContext::DestroySwapchain()
 	{
 		for (const auto view : m_SwapchainImageViews)
 		{
 			vkDestroyImageView(m_Device, view, nullptr);
 		}
+
+		for (size_t i = 0; i < m_HeadlessAllocations.size(); ++i)
+		{
+			vmaDestroyImage(m_Allocator, m_SwapchainImages[i], m_HeadlessAllocations[i]);
+		}
+		m_HeadlessAllocations.clear();
 
 		if (m_Swapchain != VK_NULL_HANDLE)
 		{
@@ -1172,7 +1237,7 @@ namespace Snowstorm
 		return CreateSwapchain();
 	}
 
-	void VulkanContext::Shutdown() const
+	void VulkanContext::Shutdown()
 	{
 		// Flush driver-reported shader statistics while the device is still alive; the query needs it.
 		VulkanPipelineStats::Write();
@@ -1184,7 +1249,10 @@ namespace Snowstorm
 		}
 
 		DestroySwapchain();
-		vkDestroySurfaceKHR(m_Instance, m_Surface, nullptr);
+		if (m_Surface != VK_NULL_HANDLE)
+		{
+			vkDestroySurfaceKHR(m_Instance, m_Surface, nullptr);
+		}
 
 		// Same alias check as the transfer pool below: the compute pool is m_GraphicsCommandPool when the GPU
 		// has no dedicated async-compute family, and destroying it twice would be a double-free.
