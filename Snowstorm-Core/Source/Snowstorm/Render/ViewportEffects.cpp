@@ -1827,6 +1827,7 @@ namespace Snowstorm
 				const bool wantTemporal = v.Dlaa || upscalerMode == 2;
 				m_NeuralPass.SetTemporal(wantTemporal);
 				m_NeuralPass.SetWeightsPath(CVars::NeuralWeightsPath.Get());
+				m_NeuralPass.SetFuseTail(CVars::NeuralFuseTail.Get());
 				const bool neuralModeOn = v.Dlaa || upscalerMode == 1 || upscalerMode == 2;
 				const bool neural = neuralModeOn && m_NeuralPass.PrepareResources(upW, upH);
 
