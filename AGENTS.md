@@ -158,6 +158,7 @@ py Scripts/smoke-test.py --frames 300    # longer soak
 py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime | Pong | Reflections | AlphaBlend | Sprites)
 py Scripts/smoke-test.py --only Runtime --project Projects/Pong/Pong.ssproj   # boot a non-Sandbox project the way Play Standalone does
 py Scripts/smoke-test.py --warnings-fail # treat [warning] lines as failures too
+py Scripts/smoke-test.py --from-exe-dir  # working directory = the exe's folder, as a double-click launches it
 py Scripts/smoke-test.py --staged        # run the PACKAGE in build/stage/<config>, not the build tree
 py Scripts/smoke-test.py --strict        # enable deeper Vulkan validation (see below)
 ```
@@ -207,6 +208,14 @@ neither notices a broken exact-string expectation: `PerfBenchTests` asserts the 
 writes, character for character. Run `ctest --test-dir build -C Debug --output-on-failure` (or the
 `Snowstorm-Tests` target) before pushing any change to a serialization or report format, since CI
 runs it and a green smoke run says nothing about it.
+
+## Scene capture gate (does it LOOK right)
+
+Smoke proves a scene boots and settles; it cannot see a frame that is all magenta (the Runtime shown only a magenta sky on 2026-10-19 passed it). `Scripts/scene-capture-check.py` captures Sponza, Reflections, AlphaBlend and Pong headlessly and fails on two things: an error frame (one colour, magenta or black over most of the frame; no golden needed) and a FLIP above `--threshold` (0.10) against the committed golden `Scripts/scene-golden/<adapter-slug>/<scene>.npz`. A missing golden is exit 2 (SKIP), never a pass, though the error-frame check still runs. Each run writes PNGs to `Scripts/.scene-captures/`; `--update-golden` records new goldens, only after looking at those PNGs. `Scripts/test_scene_capture_check.py` covers the detector GPU-free. The gate has not run on a GPU yet and no golden is committed.
+
+**A PR that changes rendering attaches before and after captures from the Z2** (the PNGs above, same scene, same adapter), and a showcase page shows a real capture of its scene, not a debug buffer.
+
+**The Runtime resolves `startup.project` and `startup.scene` against the working directory first, then the engine root** (`ResolveStartupPath`), so a double-click works. A project, registry or scene it cannot load logs `[error]`, shows a message box (headless runs only log) and exits; it never renders an engine default sky over an empty world.
 
 ## GPU perf benchmark (run before/after any render-path change)
 
@@ -628,6 +637,8 @@ white one beside a bright procedural sky, a five-cube roughness ladder (0.05 to 
 roughness cutoff and roughness-driven kernels, and the girl mesh for a non-box silhouette. Only
 existing assets and per-entity overrides are used, so it needs no registry rows. It has no committed
 baselines and no emissive surfaces (a material override cannot set emissive).
+
+`render.reflections.mode` defaults to SSR (1), so Reflections.world shows mirror and glossy reflections without touching Settings (it was Off, which left a mirror reflecting only the dark ground of the env cube, solid black). `quality-bench.py` pins AO, reflections and GI off in every technique that does not measure them, so the default does not leak into its baselines.
 
 Every run sets `SS_CONFIG_IGNORE=1`, so a capture is code defaults plus the technique's overrides and
 never this machine's persisted `SnowstormConfig.cfg`. Note that only `all-rt` overrides

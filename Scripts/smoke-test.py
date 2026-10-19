@@ -239,6 +239,9 @@ def main() -> int:
                     help="Boot with --startup.project=<path> (the hand-off Editor > Play Standalone makes), e.g. "
                          "Projects/Pong/Pong.ssproj. Pair with --only Runtime; the settle check then fails on "
                          "assets of that project that never load.")
+    ap.add_argument("--from-exe-dir", action="store_true",
+                    help="Run each app with its own folder as the working directory, the way a double-click does. "
+                         "Startup paths are repo-relative, so this catches a player that only boots from the repo root.")
     ap.add_argument("--cold", action="store_true", help="Delete cooked-asset caches first, to exercise the cold first-import path")
     ap.add_argument("--max-frame-ms", type=int, default=0, help="Fail if any single frame exceeds this many ms (0 = off). Catches per-frame stalls/freezes.")
     ap.add_argument("--vsync-stress", type=int, default=0, help="Toggle VSync every N frames (0 = off) to exercise swapchain recreation. Best with --strict; catches present-semaphore reuse bugs.")
@@ -296,7 +299,7 @@ def main() -> int:
             cwd = stage_dir
         else:
             exe = build_dir / rel.format(config=args.config)
-            cwd = repo_root
+            cwd = exe.parent if args.from_exe_dir else repo_root
         own = name in OWN_PROJECT_TARGETS
         scene = default_scene if own else args.scene or default_scene
         timeout = args.timeout or DEFAULT_TIMEOUT.get(name, DEFAULT_TIMEOUT_OTHER)

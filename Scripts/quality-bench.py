@@ -84,7 +84,7 @@ REF_ENV = {
 
 # Technique name -> render-mode env overrides (SS_RENDER_*). Each is a full real-time render with that
 # technique on; all use TAA (the realistic config the RT effects assume). Compared against the PT reference.
-TECHNIQUES = {
+_TECHNIQUES = {
     "raster": {"SS_RENDER_AA": "2"},  # baseline: shadow map, no AO/refl/GI
     "ssao": {"SS_RENDER_AO_MODE": "1", "SS_RENDER_AA": "2"},
     "rtao": {"SS_RENDER_AO_MODE": "2", "SS_RENDER_AA": "2"},
@@ -110,6 +110,11 @@ TECHNIQUES = {
     "megalights-nospec": {"SS_RENDER_SHADOWS_MODE": "2", "SS_RENDER_SHADOWS_STOCHASTIC": "1",
                           "SS_RENDER_SHADOWS_SPECULAR_DEMODULATED": "0", "SS_RENDER_AA": "2"},
 }
+
+# render.reflections.mode defaults to SSR, so every technique pins the effects it does not measure to
+# off; otherwise "raster" would silently include SSR reflections and every baseline would shift.
+_EFFECTS_OFF = {"SS_RENDER_AO_MODE": "0", "SS_RENDER_REFLECTIONS_MODE": "0", "SS_RENDER_GI_MODE": "0"}
+TECHNIQUES = {name: {**_EFFECTS_OFF, **env} for name, env in _TECHNIQUES.items()}
 
 
 # Canonical metric resolution. The capture size = the editor viewport = window minus panels, which is
