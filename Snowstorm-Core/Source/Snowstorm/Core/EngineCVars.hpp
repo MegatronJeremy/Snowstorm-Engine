@@ -326,6 +326,9 @@ namespace Snowstorm::CVars
 	// and pushed to the pass (SetWeightsPath); the pass reloads lazily on change.
 	extern CVar<std::string> NeuralWeightsPath;
 
+	// Fuse the neural upscaler's last conv layer with the residual add into one dispatch (#101). Read per-frame.
+	extern CVar<bool> NeuralFuseTail;
+
 	// One-shot: write the built-in identity refiner .ssnn to this path then exit (#99). The reference the
 	// Python writer's byte-parity test checks against. Empty = off.
 	extern CVar<std::string> NeuralDumpIdentity;
