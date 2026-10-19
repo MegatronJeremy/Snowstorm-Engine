@@ -70,6 +70,11 @@ namespace Snowstorm
 		}
 	}
 
+	void NeuralUpscalePass::SetFuseTail(const bool fuse)
+	{
+		m_FuseTail = fuse;
+	}
+
 	void NeuralUpscalePass::EnsurePipelines()
 	{
 		if (m_ConvPipeline)
@@ -81,13 +86,14 @@ namespace Snowstorm
 		const Ref<Shader> upCs = shaderLib.Load("Engine/Shaders/NeuralUpsampleIn.comp.hlsl");
 		const Ref<Shader> warpCs = shaderLib.Load("Engine/Shaders/NeuralWarpHistory.comp.hlsl");
 		const Ref<Shader> convCs = shaderLib.Load("Engine/Shaders/NeuralConv.comp.hlsl");
+		const Ref<Shader> convAddCs = shaderLib.Load("Engine/Shaders/NeuralConvAdd.comp.hlsl");
 		const Ref<Shader> addCs = shaderLib.Load("Engine/Shaders/NeuralResidualAdd.comp.hlsl");
-		if (!upCs || !warpCs || !convCs || !addCs)
+		if (!upCs || !warpCs || !convCs || !addCs || !convAddCs)
 		{
 			SS_CORE_ERROR("[Neural] failed to load upscaler compute shaders");
 			return;
 		}
-		if (!upCs->IsReady() || !warpCs->IsReady() || !convCs->IsReady() || !addCs->IsReady())
+		if (!upCs->IsReady() || !warpCs->IsReady() || !convCs->IsReady() || !addCs->IsReady() || !convAddCs->IsReady())
 		{
 			return; // async compile; retry next frame
 		}
@@ -104,6 +110,7 @@ namespace Snowstorm
 		m_WarpPipeline = makePipe(warpCs, "NeuralWarpHistoryPipeline");
 		m_ConvPipeline = makePipe(convCs, "NeuralConvPipeline");
 		m_AddPipeline = makePipe(addCs, "NeuralResidualAddPipeline");
+		m_ConvAddPipeline = makePipe(convAddCs, "NeuralConvAddPipeline");
 
 		SamplerDesc sd{};
 		sd.MinFilter = Filter::Linear;
@@ -353,7 +360,10 @@ namespace Snowstorm
 		Ref<Buffer> cur = featBase;
 		Ref<Buffer> next = featA;
 		Ref<Buffer> other = featB; // the free scratch not currently cur/next
-		for (size_t i = 0; i < m_Model.Layers.size(); ++i)
+		// The fused tail replaces the last conv and the residual add; it needs the 3-channel residual.
+		const bool fuseTail = m_FuseTail && m_ConvAddPipeline && !m_Model.Layers.empty() && m_Model.Layers.back().OutChannels == 3;
+		const size_t convCount = fuseTail ? m_Model.Layers.size() - 1 : m_Model.Layers.size();
+		for (size_t i = 0; i < convCount; ++i)
 		{
 			const Neural::ConvLayer& l = m_Model.Layers[i];
 
@@ -392,12 +402,39 @@ namespace Snowstorm
 			cur = producedInto;
 		}
 
-		// ---- Stage 3: output = base + residual (cur holds the last conv output). ----
+		// ---- Stage 3: output = base + residual (cur holds the last conv output, or the fused tail's input). ----
 		ctx->BarrierComputeStorage();
 		// The output texture is bound as a storage image (RWTexture2D); move it to GENERAL first. The descriptor
 		// records the expected GENERAL layout but does not itself transition the image, so do it explicitly
 		// (first frame it's UNDEFINED; later frames it's SHADER_READ from the prior frame's end-of-Infer).
 		ctx->TransitionToStorage(output);
+		if (fuseTail)
+		{
+			const Neural::ConvLayer& l = m_Model.Layers.back();
+			ConvCB cb{};
+			cb.Size = outSize;
+			cb.InChannels = l.InChannels;
+			cb.OutChannels = l.OutChannels;
+			cb.KernelSize = l.KernelSize;
+			cb.Activation = static_cast<uint32_t>(l.Act);
+			const size_t weightCount = static_cast<size_t>(l.OutChannels) * l.InChannels * l.KernelSize * l.KernelSize;
+			cb.WeightOffset = static_cast<uint32_t>(m_LayerOffsets.back());
+			cb.BiasOffset = static_cast<uint32_t>(m_LayerOffsets.back() + weightCount);
+			DispatchResources& res = acquire(m_ConvAddPipeline, &cb, sizeof(ConvCB), "NeuralConvAddCB");
+			const Ref<Buffer>& ubo = res.Ubo;
+			const Ref<DescriptorSet>& set = res.Set;
+			set->SetBuffer(0, {.Buffer = cur, .Offset = 0, .Range = featureBytes});
+			set->SetBuffer(1, {.Buffer = m_Weights, .Offset = 0, .Range = m_Weights->GetSize()});
+			set->SetTexture(2, outputView);
+			set->SetBuffer(3, {.Buffer = ubo, .Offset = 0, .Range = sizeof(ConvCB)});
+			set->SetBuffer(4, {.Buffer = featBase, .Offset = 0, .Range = featureBytes});
+			set->Commit();
+
+			ctx->BindPipeline(m_ConvAddPipeline);
+			ctx->BindDescriptorSet(set, 0);
+			ctx->Dispatch(gx, gy, 1);
+		}
+		else
 		{
 			SizeCB cb{};
 			cb.OutSize = outSize;
