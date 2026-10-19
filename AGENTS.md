@@ -1239,10 +1239,11 @@ link Core and add it to their include path. All targets are **C++20** (the root 
 sets C++17 globally, although every target overrides to 20, so treat the project as C++20).
 
 **Keep the in-editor shortcut reference current.** The editor has a *Help > Keyboard & Mouse
-Shortcuts* window (`Snowstorm-Editor/Source/System/EditorMenuSystem.cpp`, `DrawShortcutsWindow`)
-that documents every keyboard/mouse binding. Whenever you add, remove, or change a shortcut (camera
-controls, gizmo keys, framing, save, selection, hierarchy actions, …), update that window in the
-same change so the docs never drift from the real bindings. It is the single source of truth users
+Shortcuts* window (`EditorMenuSystem::DrawShortcutsWindow`) that documents every keyboard/mouse
+binding. It draws the data table in `Snowstorm-Editor/Source/Singletons/ShortcutTable.cpp`.
+Whenever you add, remove, or change a shortcut (camera controls, gizmo keys, framing, save,
+selection, hierarchy actions, …), edit that table in the same change; `ShortcutTableTests` pins
+unique chords per section and the presence of the bindings the editor handles. It is the single source of truth users
 see, so treat it as part of the feature, not an afterthought.
 
 ## Architecture (Core)
