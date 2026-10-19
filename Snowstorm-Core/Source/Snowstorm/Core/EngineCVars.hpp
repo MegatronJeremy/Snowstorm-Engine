@@ -219,6 +219,9 @@ namespace Snowstorm::CVars
 	// validation message above it). Independent of validation.extra.
 	extern CVar<bool> ValidationGpu;
 
+	// Names the resources behind the two recurring best-practices notes (#81). Diagnostic only.
+	extern CVar<bool> DiagAlloc;
+
 	// Shader optimization escape hatch (Unreal r.Shaders.Optimize model). Off (default, ship behavior) =
 	// dxc-optimized SPIR-V in EVERY C++ config; on = unoptimized (-Od) + debug info (-Zi/-fspv-debug) so a
 	// dev can source-step a shader in RenderDoc/PIX. Read at compile time (VulkanShader), keys the .spv cache
