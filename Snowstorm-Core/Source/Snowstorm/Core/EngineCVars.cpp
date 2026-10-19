@@ -181,6 +181,8 @@ namespace Snowstorm::CVars
 
 	CVar<std::string> NeuralWeightsPath{"neural.weights", "", "Path to a trained .ssnn weights file for the neural upscaler (#99). Empty = the built-in identity refiner (reproduces bilinear). Loaded lazily when it changes. Used when render.upscaler = 1 (spatial, 3-ch input) or 2 (temporal, 8-ch input); the model's first-layer width must match the selected mode, or the pass falls back to identity.", CVarFlags::Persist};
 
+	CVar<bool> NeuralFuseTail{"neural.fuse", false, "Fuse the neural upscaler's last conv layer (3 output channels) with the residual add into one NeuralConvAdd dispatch (#101): one dispatch, one barrier and one descriptor set fewer, and the residual feature map is never round-tripped through memory. Output matches the unfused chain to float tolerance. Falls back to the unfused chain when the last layer is not 3-channel. Not yet measured on a GPU."};
+
 	CVar<std::string> NeuralDumpIdentity{"neural.dump_identity", "", "One-shot: write the built-in identity refiner to this .ssnn path, then exit (#99). The canonical reference the Python .ssnn writer's byte-parity test compares against. Empty = off."};
 
 	CVar<int> AAMode{"render.aa", 0, "Anti-aliasing: 0 = None, 1 = FXAA (spatial post-process), 2 = TAA (classical temporal accumulation via jitter + motion vectors, #44), 3 = DLAA (the #98 neural temporal network run at native res as the temporal resolve, replacing TAA)", CVarFlags::Persist};
