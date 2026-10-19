@@ -12,11 +12,11 @@ namespace Snowstorm
 	// The recipe that turns one HLSL stage into SPIR-V: the dxc command line and the cache key. Pure, with
 	// no engine services, so the runtime and a future cook tool share one definition and cannot drift.
 
-	// 64-bit FNV-1a.
-	[[nodiscard]] inline uint64_t ShaderHash64(const void* data, const size_t size)
+	// 64-bit FNV-1a, continuing from `seed`.
+	[[nodiscard]] inline uint64_t ShaderHash64(const void* data, const size_t size, uint64_t seed = 1469598103934665603ull)
 	{
 		const auto* p = static_cast<const uint8_t*>(data);
-		uint64_t h = 1469598103934665603ull;
+		uint64_t h = seed;
 		for (size_t i = 0; i < size; ++i)
 		{
 			h ^= p[i];
@@ -32,20 +32,36 @@ namespace Snowstorm
 		return {buf};
 	}
 
-	// Cache key for one stage. headersHash covers every Include/*.hlsli; flagsTag names the stage profile
-	// and flag set. Each term is XOR-folded, so the result is order-insensitive (key v4 behaviour).
+	// Appends one length-prefixed field to a running key. The prefix keeps field boundaries in the hash
+	// ("ab","c" differs from "a","bc") and the chaining makes the result order-sensitive.
+	[[nodiscard]] inline uint64_t ShaderKeyAppend(const uint64_t acc, const std::string_view field)
+	{
+		const uint64_t len = field.size();
+		return ShaderHash64(field.data(), field.size(), ShaderHash64(&len, sizeof(len), acc));
+	}
+
+	// Folds one include header into the running headers hash; callers pass headers in sorted name order.
+	[[nodiscard]] inline uint64_t ShaderHeaderAppend(const uint64_t acc, const std::string_view name,
+	                                                 const std::string_view text)
+	{
+		return ShaderKeyAppend(ShaderKeyAppend(acc, name), text);
+	}
+
+	// Cache key (v5) for one stage. headersHash covers every Include/*.hlsli (ShaderHeaderAppend); flagsTag
+	// names the stage profile and flag set. Fields are length-prefixed and chained, so define order matters
+	// and a define repeated twice does not cancel (the v4 XOR-fold did both).
 	[[nodiscard]] inline uint64_t ComputeShaderKey(const std::string_view sourceText, const uint64_t headersHash,
 	                                               const std::string_view flagsTag,
 	                                               const std::vector<std::string>& defines, const bool debug)
 	{
-		uint64_t h = 0;
-		h ^= ShaderHash64(sourceText.data(), sourceText.size());
-		h ^= headersHash;
-		h ^= ShaderHash64(flagsTag.data(), flagsTag.size());
+		uint64_t h = 1469598103934665603ull;
+		h = ShaderKeyAppend(h, sourceText);
+		const std::string_view headers(reinterpret_cast<const char*>(&headersHash), sizeof(headersHash));
+		h = ShaderKeyAppend(h, headers);
+		h = ShaderKeyAppend(h, flagsTag);
 		for (const std::string& def : defines)
-			h ^= ShaderHash64(def.data(), def.size());
-		if (debug)
-			h ^= ShaderHash64("Od", 2);
+			h = ShaderKeyAppend(h, def);
+		h = ShaderKeyAppend(h, debug ? "Od" : "");
 		return h;
 	}
 

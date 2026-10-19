@@ -487,7 +487,7 @@ trap: a `--update-baseline` from there deletes the entries for shaders no editor
 and dynamic permutations live in `Scripts/shader-permutations.txt`: add a line there when a call site
 starts passing a new define. The flags need no sync, since the runtime and the cook share
 `BuildDxcCommandLine`; `py Scripts/cook-shaders.py --dry-run` prints the planned command lines
-without dxc. `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
+without dxc. The runtime cache key (`ComputeShaderKey`, flags tag `v5_...`) length-prefixes and chains its fields, so define order matters and a repeated define cannot cancel; the dxc version is not in it yet, so clear `Engine/cache/shaders` after upgrading `Tools/dxc`. `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
 expected the old `#type` split and silently compiled nothing).
 
 **This gate runs in CI** (`.github/workflows/shaders.yml`): unlike smoke-test and perf-bench, RGA is
