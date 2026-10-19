@@ -118,6 +118,8 @@ namespace Snowstorm::CVars
 
 	CVar<bool> Fullscreen{"display.fullscreen", false, "Create the window borderless at the primary monitor's current video mode (no mode switch, so alt-tab stays instant) instead of a decorated 1280x720. Startup-only: the window is created once.", CVarFlags::Persist | CVarFlags::ReadOnly};
 
+	CVar<bool> Headless{"headless", false, "Headless GPU mode: hidden window, no VkSurface/swapchain, no present. The frame graph renders into offscreen images standing in for the swapchain; device, queues, streaming and the settle check are unchanged. Lets smoke-test.py and perf-bench.py run on a locked or absent desktop (SS_HEADLESS=1). Startup-only.", CVarFlags::ReadOnly};
+
 	CVar<bool> EditorCrt{"editor.crt", false, "Draw a faint scanline and corner-vignette CRT overlay over the editor window (NERV theme flourish). Purely cosmetic.", CVarFlags::Persist};
 
 	CVar<float> EditorCrtIntensity{"editor.crt.intensity", 0.25f, "Opacity of the editor.crt overlay, 0..1", CVarFlags::Persist};
