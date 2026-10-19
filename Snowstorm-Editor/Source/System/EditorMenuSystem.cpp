@@ -604,7 +604,7 @@ namespace Snowstorm
 			if (ImGui::Button("Import", ImVec2(120.0f, 0.0f)))
 			{
 				auto& assets = SingletonView<AssetManagerSingleton>();
-				const AssetManagerSingleton::ImportFileResult result = assets.ImportFile(m_ImportPathBuffer);
+				const AssetManagerSingleton::ImportFileResult result = assets.ImportFile(m_ImportPathBuffer, true);
 				if (result.Ok())
 				{
 					if (Project::GetActive())
