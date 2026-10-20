@@ -64,13 +64,16 @@ namespace Snowstorm
 	                                                const TextureRole role, const bool srgb)
 	{
 		// CPU-only, worker-safe. Fast path: the cooked .sstex blob (no stb decode + no mip-gen). The blob is
-		// keyed by role, mip space and the compress CVar (TextureCookKey). Only cache handle-backed assets — handle 0 (inline/handle-less textures)
+		// keyed by role, mip space and the compress/quality CVars (TextureCookKey). Only cache handle-backed assets — handle 0 (inline/handle-less textures)
 		// would all collide on one "0.sstex", so skip the cache for those.
 		const bool useCache = (handle.Value() != 0);
 		const MipSpace mipSpace = MipSpaceFor(role, srgb);
-		const bool highQuality = CVars::TextureQuality.Get() > 0;
-		const TextureCookKey cookKey{static_cast<uint8_t>(role), static_cast<uint8_t>(mipSpace),
-		                             static_cast<uint8_t>(!CVars::CompressTextures.Get() ? 0 : (highQuality ? 2 : 1)), kTextureEncoderRevision};
+		// Read once: both are live-editable, and the key must describe the bytes this call encodes.
+		const bool compress = CVars::CompressTextures.Get();
+		const int quality = CVars::TextureQuality.Get();
+		const bool highQuality = quality > 0;
+		const TextureCookKey cookKey{static_cast<uint8_t>(role), static_cast<uint8_t>(mipSpace), CookCompressField(compress, quality),
+		                             kTextureEncoderRevision};
 		if (useCache)
 		{
 			if (auto blob = TextureCacheIO::Load(handle, filePath, cookKey))
@@ -118,7 +121,7 @@ namespace Snowstorm
 
 		// Block-compress AFTER the mip chain is built, never before: downsampling decompressed blocks
 		// compounds the error, which is why every cooker mips first and compresses each level.
-		if (CVars::CompressTextures.Get())
+		if (compress)
 		{
 			const bool tangentNormal = role == TextureRole::Normal && IsTangentSpaceNormalMap(cooked.Levels[0]);
 			if (role == TextureRole::Normal && !tangentNormal)
@@ -145,7 +148,7 @@ namespace Snowstorm
 					return std::nullopt;
 				}
 				cooked.Levels[i] = bc7 ? CompressLevelBC7(cooked.Levels[i], lw, lh, mipSpace == MipSpace::SRGB, g_CookAborted,
-				                                          ExhaustiveBC7Search(CVars::TextureQuality.Get()))
+				                                          ExhaustiveBC7Search(quality))
 				                       : CompressLevel(cooked.Levels[i], lw, lh, squishFormat, g_CookAborted);
 				if (cooked.Levels[i].empty())
 				{
