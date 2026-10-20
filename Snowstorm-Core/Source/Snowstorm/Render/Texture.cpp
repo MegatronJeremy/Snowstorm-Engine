@@ -145,7 +145,7 @@ namespace Snowstorm
 					return std::nullopt;
 				}
 				cooked.Levels[i] = bc7 ? CompressLevelBC7(cooked.Levels[i], lw, lh, mipSpace == MipSpace::SRGB, g_CookAborted,
-				                                          CVars::TextureQuality.Get() > 1)
+				                                          ExhaustiveBC7Search(CVars::TextureQuality.Get()))
 				                       : CompressLevel(cooked.Levels[i], lw, lh, squishFormat, g_CookAborted);
 				if (cooked.Levels[i].empty())
 				{
