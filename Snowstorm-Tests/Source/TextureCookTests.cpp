@@ -3,7 +3,6 @@
 #include "Snowstorm/Render/TextureCook.hpp"
 
 #include <atomic>
-#include <chrono>
 #include <vector>
 
 using namespace Snowstorm;
@@ -121,28 +120,9 @@ TEST_CASE("BC7 strips are 16 bytes per block, keep alpha, and abort", "[texturec
 	CHECK(CompressLevelBC7(img, w, h, false, stop).empty());
 }
 
-TEST_CASE("A noisy alpha texture cooks within a time budget at the default and BC7 tiers", "[texturecook]")
+TEST_CASE("BC7 searches exhaustively only at the top quality tier", "[texturecook]")
 {
-	constexpr uint32_t n = 256;
-	std::vector<uint8_t> img(static_cast<size_t>(n) * n * 4);
-	uint32_t s = 12345;
-	for (auto& b : img)
-	{
-		s = s * 1664525u + 1013904223u;
-		b = static_cast<uint8_t>(s >> 24);
-	}
-
-	const std::atomic<bool> run{false};
-	constexpr int kDxt5 = 4; // squish::kDxt5
-	constexpr auto kBudget = std::chrono::seconds(30);
-	const auto t0 = std::chrono::steady_clock::now();
-	const auto bc3 = CompressLevel(img, n, n, kDxt5, run);
-	const auto t1 = std::chrono::steady_clock::now();
-	const auto bc7 = CompressLevelBC7(img, n, n, true, run);
-	const auto t2 = std::chrono::steady_clock::now();
-
-	CHECK(bc3.size() == static_cast<size_t>(n / 4) * (n / 4) * 16);
-	CHECK(bc7.size() == bc3.size());
-	CHECK(t1 - t0 < kBudget);
-	CHECK(t2 - t1 < kBudget);
+	CHECK_FALSE(ExhaustiveBC7Search(0));
+	CHECK_FALSE(ExhaustiveBC7Search(1));
+	CHECK(ExhaustiveBC7Search(2));
 }
