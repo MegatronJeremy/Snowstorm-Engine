@@ -125,6 +125,7 @@ namespace Snowstorm
 			// No graph will run this frame, so nothing would consume what PreRender queued and the queue
 			// would grow by one entry per skipped frame while minimized.
 			renderer.DiscardTextureUploads();
+			renderer.DiscardGraphPasses();
 			return;
 		}
 
@@ -155,6 +156,14 @@ namespace Snowstorm
 			               {
 				               renderer.RecordTextureUploads(c, frameIndex);
 			               }});
+		}
+
+		// Ahead of every viewport pass, and BuildSchedule only moves compute passes earlier and keeps graphics
+		// passes in order, so these stay ahead of a Forward pass that samples their output through bindless
+		// without declaring the read.
+		for (RenderGraph::Pass& pass : renderer.DrainGraphPasses())
+		{
+			graph.AddPass(std::move(pass));
 		}
 
 		// RT reflections (#118): hand the per-instance geometry-table address (TlasBuildSystem filled it in
