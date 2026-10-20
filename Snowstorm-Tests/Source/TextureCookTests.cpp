@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "Snowstorm/Assets/TextureCache.hpp"
 #include "Snowstorm/Render/TextureCook.hpp"
 
 #include <atomic>
@@ -125,4 +126,18 @@ TEST_CASE("BC7 searches exhaustively only at the top quality tier", "[texturecoo
 	CHECK_FALSE(ExhaustiveBC7Search(0));
 	CHECK_FALSE(ExhaustiveBC7Search(1));
 	CHECK(ExhaustiveBC7Search(2));
+}
+
+TEST_CASE("Every quality tier cooks under its own cache key", "[texturecook]")
+{
+	CHECK(CookCompressField(false, 0) == 0);
+	CHECK(CookCompressField(false, 2) == 0);
+
+	// 1 and 2 are what blobs cooked at tiers 0 and 1 already store; changing them would re-cook every cache
+	CHECK(CookCompressField(true, 0) == 1);
+	CHECK(CookCompressField(true, 1) == 2);
+	CHECK(CookCompressField(true, 2) == 3);
+
+	CHECK(CookCompressField(true, -1) == CookCompressField(true, 0));
+	CHECK(CookCompressField(true, 1000) == 255);
 }
