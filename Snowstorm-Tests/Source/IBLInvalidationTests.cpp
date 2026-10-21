@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
@@ -80,4 +81,24 @@ TEST_CASE("Quantum 0 re-bakes on any direction change", "[render][ibl]")
 	const IBLSunKey baked = MakeIBLSunKey(SunBlock(Rotated(0)));
 	REQUIRE(SunNeedsRebake(baked, MakeIBLSunKey(SunBlock(Rotated(0.1f))), 0.0f, kTol));
 	REQUIRE_FALSE(SunNeedsRebake(baked, baked, 0.0f, kTol));
+}
+
+TEST_CASE("SunAngleDeg measures the angle between two suns and is 0 without one", "[ibl]")
+{
+	const IBLSunKey a = MakeIBLSunKey(SunBlock(Rotated(0)));
+	REQUIRE(SunAngleDeg(a, MakeIBLSunKey(SunBlock(Rotated(2.5f)))) == Catch::Approx(2.5f).margin(1e-3f));
+	REQUIRE(SunAngleDeg(a, a) == Catch::Approx(0.0f).margin(1e-3f));
+	REQUIRE(SunAngleDeg(a, IBLSunKey{}) == 0.0f);
+}
+
+TEST_CASE("IBLRebakeStats accumulates count, mean and max stall", "[ibl]")
+{
+	IBLRebakeStats s;
+	REQUIRE(s.MeanStallMs() == 0.0);
+	s.Record(2.0, true);
+	s.Record(6.0, false);
+	REQUIRE(s.Count == 2);
+	REQUIRE(s.SunTriggered == 1);
+	REQUIRE(s.MeanStallMs() == Catch::Approx(4.0));
+	REQUIRE(s.MaxStallMs == Catch::Approx(6.0));
 }
