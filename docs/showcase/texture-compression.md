@@ -15,7 +15,7 @@ The role comes from the material slot a texture is referenced through (`AssetMan
 | tangent normal | BC5, 8 bpp | two independent 8-bit planes; z reconstructed in the shader |
 | metallic-roughness, AO | BC1, 4 bpp | measured adequate: 44.7 dB on roughness, 44.0 dB on metallic |
 
-Mips are filtered in the role's colour space (`MipSpaceFor`): albedo in linear light, normals and masks as byte averages, alpha always linear. The cache blob header carries role, mip space, compress flag and an encoder revision, so a mismatch re-cooks. BC7 is an opt-in tier: it doubles opaque albedo to 8 bpp (51 MB to 102 MB on Sponza), and its FLIP delta is not measured.
+Mips are filtered in the role's colour space (`MipSpaceFor`): albedo in linear light, normals and masks as byte averages, alpha always linear. The cache blob header carries role, mip space, compress flag with quality tier, and an encoder revision, so a mismatch re-cooks. BC7 is an opt-in tier: it doubles opaque albedo to 8 bpp (51 MB to 102 MB on Sponza), and its FLIP delta is not measured.
 
 ## Why normals are not BC1
 

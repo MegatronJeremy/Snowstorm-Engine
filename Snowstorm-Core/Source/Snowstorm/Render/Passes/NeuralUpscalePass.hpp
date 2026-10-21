@@ -56,6 +56,8 @@ namespace Snowstorm
 		// trained-weights path (SetWeightsPath) overrides the identity model but the input width must still match
 		// what the pass populates, so keep this in sync with how RenderSystem calls Infer.
 		void SetTemporal(bool temporal);
+		// Fuse the last (3-channel) conv with the residual add (#101); ignored when the last layer is not 3-channel.
+		void SetFuseTail(bool fuse);
 
 		// The full-res storage texture Infer() writes for the given frame-in-flight slot — the one the neural
 		// pass will write THIS frame. Pass the SAME frameIndex you'll pass to Infer, at graph-build time, so
@@ -83,11 +85,13 @@ namespace Snowstorm
 		Ref<Pipeline> m_WarpPipeline;
 		Ref<Pipeline> m_ConvPipeline;
 		Ref<Pipeline> m_AddPipeline;
+		Ref<Pipeline> m_ConvAddPipeline; // last conv + residual add (neural.fuse)
 		Ref<Sampler> m_LinearClamp;
 
 		// Temporal (#98) vs spatial (#47) inference. Selects the identity model's input width and whether Infer
 		// runs the history-warp stage. Changing it rebuilds the model + feature buffers (via m_ModelDirty).
 		bool m_Temporal = false;
+		bool m_FuseTail = false;
 
 		// The network + its GPU weight buffer (weights..bias per layer, contiguous) + per-layer float offsets.
 		Neural::NeuralModel m_Model;

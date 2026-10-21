@@ -221,6 +221,11 @@ namespace Snowstorm
 		return CookedTexture::Encoding::BC1;
 	}
 
+	bool ExhaustiveBC7Search(const int textureQuality)
+	{
+		return textureQuality > 1;
+	}
+
 	PixelFormat PixelFormatFor(const CookedTexture::Encoding encoding, const bool srgb)
 	{
 		switch (encoding)

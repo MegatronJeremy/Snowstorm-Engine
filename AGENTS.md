@@ -191,6 +191,8 @@ instead of a raw `VkImage 0x...` handle.
 
 `Reflections` and `AlphaBlend` are the Runtime booted on the testbed scenes of the same names (`AlphaBlend` with `SS_RENDER_TRANSPARENT=1`), so a scene or flag that stops loading fails the gate (#282). A target whose scene file is missing fails before anything launches; `--scene` overrides every target's scene. Neither has run on a GPU yet.
 
+**Headless mode (`SS_HEADLESS=1`, or `--headless` on `smoke-test.py` and `perf-bench.py`) needs no unlocked desktop.** The `headless` CVar creates the GLFW window hidden (ImGui's GLFW backend and input still get a window handle), creates no `VkSurfaceKHR` or swapchain, and makes `VulkanContext` own four offscreen BGRA8 images in the swapchain's place. `BeginFrame` signals the image-available semaphore with an empty submit instead of acquiring, and the end of the frame consumes the render-finished semaphore with an empty wait-only submit instead of presenting. Device and queues, the frame graph, asset streaming and the settle check run as before. Both scripts print `Mode:` as `HEADLESS` or `windowed`. Headless perf numbers skip present, so capture committed perf baselines windowed.
+
 **A run passes only once assets settle.** After the frame budget the app keeps running until
 `AssetManagerSingleton::PendingLoadCount() == 0` and no bindless slot is still the placeholder
 (`UnsettledReason`, reached through `Layer::SmokeUnsettled`), until `smoke.settle.seconds` have passed since process start
@@ -485,7 +487,7 @@ trap: a `--update-baseline` from there deletes the entries for shaders no editor
 and dynamic permutations live in `Scripts/shader-permutations.txt`: add a line there when a call site
 starts passing a new define. The flags need no sync, since the runtime and the cook share
 `BuildDxcCommandLine`; `py Scripts/cook-shaders.py --dry-run` prints the planned command lines
-without dxc. `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
+without dxc. The runtime cache key (`ComputeShaderKey`, flags tag `v5_...`) length-prefixes and chains its fields, so define order matters and a repeated define cannot cancel; the dxc version is not in it yet, so clear `Engine/cache/shaders` after upgrading `Tools/dxc`. `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
 expected the old `#type` split and silently compiled nothing).
 
 **This gate runs in CI** (`.github/workflows/shaders.yml`): unlike smoke-test and perf-bench, RGA is
@@ -590,6 +592,7 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   arrays. The engine writes `_hdr.npy` (next bullet) but it has not run on a GPU, so no
   HDR-FLIP number exists and the ordering against LDR-FLIP is unmeasured.
 - **HDR capture (#157).** With capture on, the engine also writes `<path>_hdr.npy` beside `_ldr.npy` (motion frames: `_f<N>_hdr.npy`): `v.SceneColor` as the tonemap chain receives it, linear pre-exposure radiance, HxWx4, top-down, `<f2` for the RGBA16F real-time path and `<f4` for the RGBA32F path tracer. `render.exposure` is logged with it, not applied. It is a 1:1 copy into a texture the capture effect owns (`TransferSrc` on no hot target, no cost when capture is off) read back in the same pass as the LDR present, so the pair is one frame. It excludes everything after `SceneColor`: FXAA and CAS (TAA and the upscaler are included), so it cannot replace the LDR numbers. Not run on a GPU as of its PR; the pure format rules are `QualityCaptureFormat.hpp`, tested in `QualityCaptureFormatTests`.
+- **`render.pathtrace.sampler` (#156) changes only the PT's low-sample error.** 0 (default) is PCG white noise seeded with the frame counter; 1 is Owen-scrambled 2D Sobol padded per decision (`Include/PtSampler.hlsli`, mirrored in `Render/QmcSampler.hpp` and tested by `QmcSamplerTests`), seeded per pixel only, so a Reset replays the same sequence. Fixed pair ids per decision keep an early-terminated path from shifting later dimensions. The estimator and pdfs are unchanged, so the converged reference (and every committed quality baseline) is unaffected while the default stays 0; switching it restarts accumulation. Not yet run on a GPU, and the fixed-spp error ratio against PCG (the stop rule in the design) is unmeasured.
 - **Eight techniques**: `raster`, `ssao`, `rtao`, `ssr`, `rtrefl`, `ssgi`, `rtgi`, `all-rt`. Each is a
   full real-time render with that one technique on, TAA enabled.
 - **FLIP is pinned** to `flip-evaluator==1.7` (a perceptual metric that drifts between versions makes
@@ -897,6 +900,10 @@ Two selection traps, both of which produced a wrong verdict here before being ca
 
 Report both anyway. The point is which one decides.
 
+## Best-practices notes (#81)
+
+`--strict` logs two recurring notes. Small host-mapped buffers are already pooled (`SmallBufferPool.hpp`, #78); a note that remains comes from a device-local or readback buffer, or a driver that requires a dedicated allocation. The eager `UNDEFINED -> SHADER_READ_ONLY` transition in `VulkanTextureView::CreateImageView` is load-bearing for Sampled render targets: temporal history is read before any pass writes it, and the bindless descriptor declares `SHADER_READ_ONLY`, so skipping it trades the note for a layout error. `vulkan.diag.alloc` names the buffers and textures behind each note; run it with `--validation.extra` on a GPU before changing either path.
+
 ## Descriptor sets
 
 Non-bindless `DescriptorSet`s allocate from `VulkanDescriptorAllocator`: pools shared by layout shape
@@ -929,7 +936,7 @@ texture leaves it Unknown and the conservative colour encoding wins.
 **Mips are filtered in the colour space of the role** (`MipSpaceFor`, `Render/TextureCook.cpp`): albedo in
 linear light (sRGB EOTF LUT, exact OETF on write), normals and masks as plain byte averages, alpha always
 linear. A role-Unknown texture follows the caller's `srgb` flag. The cache blob header carries role, mip
-space, compress flag and an encoder revision; a mismatch re-cooks.
+space, compress flag with quality tier, and an encoder revision; a mismatch re-cooks.
 
 **BC7 is an opt-in quality tier, not the default.** It is 8 bpp, the same as BC3 and double BC1, so
 `cook.textures.quality=1` promotes opaque albedo to BC7 (51 MB -> 102 MB on Sponza, half the saving
@@ -1161,6 +1168,10 @@ without the flag the panes are solid and occlude. Alpha mode is an asset propert
 material, `materials/AlphaBlend.ssmat` (`"AlphaMode": "Blend"`), and varies colour and alpha per entity through
 `BaseColor` overrides. It has no baselines. Not yet run on a GPU: the sorted pass is unverified by smoke, perf-bench or eyes.
 
+## Neural upscaler tail fusion
+
+`neural.fuse` (default off) replaces the last conv layer and the residual add with one `NeuralConvAdd.comp.hlsl` dispatch when the last layer has 3 output channels (else the unfused chain runs): one dispatch, one barrier and one descriptor set fewer, and the residual map is never written to memory. It is a naive per-pixel loop at both precisions. `Conv2DResidualReference` is the CPU reference for the fused math (`NeuralMathTests` pins it to hand-computed values); it does not exercise the shader. Not run on a GPU: no unfused-vs-fused ms or output comparison exists yet. `NeuralConvAdd.comp` is RGA-baselined at 13 VGPRs, no spills, on every ASIC (#101).
+
 ## IBL invalidation
 
 The IBL bake is keyed on the environment block and on the sun (`Lights[0]`, the source `IBLBakePass` bakes).
@@ -1235,10 +1246,11 @@ link Core and add it to their include path. All targets are **C++20** (the root 
 sets C++17 globally, although every target overrides to 20, so treat the project as C++20).
 
 **Keep the in-editor shortcut reference current.** The editor has a *Help > Keyboard & Mouse
-Shortcuts* window (`Snowstorm-Editor/Source/System/EditorMenuSystem.cpp`, `DrawShortcutsWindow`)
-that documents every keyboard/mouse binding. Whenever you add, remove, or change a shortcut (camera
-controls, gizmo keys, framing, save, selection, hierarchy actions, …), update that window in the
-same change so the docs never drift from the real bindings. It is the single source of truth users
+Shortcuts* window (`EditorMenuSystem::DrawShortcutsWindow`) that documents every keyboard/mouse
+binding. It draws the data table in `Snowstorm-Editor/Source/Singletons/ShortcutTable.cpp`.
+Whenever you add, remove, or change a shortcut (camera controls, gizmo keys, framing, save,
+selection, hierarchy actions, …), edit that table in the same change; `ShortcutTableTests` pins
+unique chords per section and the presence of the bindings the editor handles. It is the single source of truth users
 see, so treat it as part of the feature, not an afterthought.
 
 ## Architecture (Core)
