@@ -10,10 +10,20 @@ namespace Snowstorm
 	{
 		using namespace rttr;
 
+		registration::enumeration<SpriteFilter>("SpriteFilter")(
+		    value("Nearest", SpriteFilter::Nearest),
+		    value("Linear", SpriteFilter::Linear));
+
 		registration::class_<SpriteComponent>("Snowstorm::SpriteComponent")
-		    .constructor()
-		    .property("TilingFactor", &SpriteComponent::TilingFactor)(metadata("Min", 0.0f), metadata("Speed", 0.1f))
-		    .property("TintColor", &SpriteComponent::TintColor)(metadata("Color", true)); // inspector: color picker
+		    .property("Texture", &SpriteComponent::Texture)(metadata("AssetType", static_cast<int>(AssetType::Texture)))
+		    .property("Size", &SpriteComponent::Size)(metadata("Speed", 0.05f))
+		    .property("Pivot", &SpriteComponent::Pivot)(metadata("Speed", 0.01f))
+		    .property("Tint", &SpriteComponent::Tint)(metadata("Color", true))
+		    .property("FlipX", &SpriteComponent::FlipX)
+		    .property("FlipY", &SpriteComponent::FlipY)
+		    .property("Layer", &SpriteComponent::Layer)
+		    .property("Order", &SpriteComponent::Order)
+		    .property("Filter", &SpriteComponent::Filter);
 	}
 
 	AUTO_REGISTER_COMPONENT(SpriteComponent);

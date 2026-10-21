@@ -59,6 +59,8 @@ TARGETS = [
      "Projects/Sandbox/assets/scenes/Reflections.world", {}),
     ("AlphaBlend", "Snowstorm-Runtime/{config}/Snowstorm-Runtime.exe",
      "Projects/Sandbox/assets/scenes/AlphaBlend.world", {"SS_RENDER_TRANSPARENT": "1"}),
+    ("Sprites", "Snowstorm-Runtime/{config}/Snowstorm-Runtime.exe",
+     "Projects/Sandbox/assets/scenes/Sprites.world", {}),
 ]
 
 # Default per-app budget in seconds when --timeout is not given. The Editor boots first, so it pays the
@@ -221,7 +223,7 @@ def main() -> int:
     ap.add_argument("--config", default="Debug", help="Build config dir under build/ (default Debug)")
     ap.add_argument("--build-dir", default="build", help="Build directory (default build)")
     ap.add_argument("--triplet", default="x64-windows", help="vcpkg triplet for the validation-layer path (default x64-windows)")
-    ap.add_argument("--only", default=None, help="Run only this target by name (e.g. Editor | Runtime | Pong | Reflections | AlphaBlend)")
+    ap.add_argument("--only", default=None, help="Run only this target by name (e.g. Editor | Runtime | Pong | Reflections | AlphaBlend | Sprites)")
     ap.add_argument("--warnings-fail", action="store_true", help="Treat [warning] lines as failures")
     ap.add_argument("--strict", action="store_true", help="Enable extra Vulkan validation (synchronization + best-practices)")
     ap.add_argument("--staged", action="store_true",

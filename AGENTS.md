@@ -155,7 +155,7 @@ becomes a failure instead of blocking), checks the exit code, and scans the log 
 ```
 py Scripts/smoke-test.py                 # 120 frames, 180s timeout/app (Editor 480s: it pays the cold cook), Debug build
 py Scripts/smoke-test.py --frames 300    # longer soak
-py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime | Pong | Reflections | AlphaBlend)
+py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime | Pong | Reflections | AlphaBlend | Sprites)
 py Scripts/smoke-test.py --only Runtime --project Projects/Pong/Pong.ssproj   # boot a non-Sandbox project the way Play Standalone does
 py Scripts/smoke-test.py --warnings-fail # treat [warning] lines as failures too
 py Scripts/smoke-test.py --staged        # run the PACKAGE in build/stage/<config>, not the build tree
@@ -1167,6 +1167,33 @@ blend pane in front and one behind it. Run it with `--render.transparent`: every
 without the flag the panes are solid and occlude. Alpha mode is an asset property, not an override, so the scene adds one
 material, `materials/AlphaBlend.ssmat` (`"AlphaMode": "Blend"`), and varies colour and alpha per entity through
 `BaseColor` overrides. It has no baselines. Not yet run on a GPU: the sorted pass is unverified by smoke, perf-bench or eyes.
+
+## 2D render path
+
+`CameraComponent::RenderPath` is `Scene3D` (default) or `Canvas2D` (#338), the Bevy `Camera2d` / Unity URP 2D Renderer
+model: one ECS and one `TransformComponent` for both, separate render paths. A `Canvas2D` viewport runs `RenderCanvas2D`
+and none of the Scene3D chain (no prepass, lighting, tonemap or TAA): one `Sprites` pass draws every
+`SpriteComponent` into the present target, cleared to the camera's `BackgroundColor` through a second `RenderTarget`
+object over the same image. It uses the unjittered `ViewProjection`. The frame-global IBL bake and shadow maps still run (#344).
+
+Draw order is `Layer`, then `Order`, then entity id, never z (`SortSpriteDraws`, `SpriteBatchTests`). `Size` is in world
+units times the transform's scale; a flip mirrors about `Pivot`. Sprites are unlit and straight-alpha blended with the
+destination alpha kept, since ImGui blends the viewport image by it. `Filter` picks a per-sprite point or linear sampler.
+`OrthographicSize` is the full view height, not the half height.
+
+`SpriteResolveSystem` resolves `Texture` to the runtime `View`. With `Texture` at 0 the system leaves `View` alone, which is
+how a game binds a texture it writes; `ResolvedFrom` records which views the system set, so clearing `Texture` drops only
+those. The sprite shaders include no `Engine.hlsli` and keep their resources in set 1, so they never touch the shared sets
+0 and 2. All viewports' instances for a frame share one buffer per frame in flight, uploaded by the first sprite pass to
+execute, with a push-constant base instance per viewport.
+
+A texture asset referenced only by sprites has role `Unknown` and is cooked block-compressed with mips (#339). The
+editor's Scene view takes the scene's Primary camera's render path and background on open, still flying in perspective
+(#341). `quality.capture` is a Scene3D effect and does not capture a Canvas2D frame.
+
+**`Sprites.world` is the testbed**, booted by smoke as `Sprites`: a 64x64 checkerboard magnified with `Nearest` and with
+`Linear`, a layer -1 logo 2 units nearer the camera that still draws under them, two layer 1 logos over them (one `FlipX`,
+tinted at 0.7 alpha), and a rotated layer 1, order 1 checker over the logo it overlaps.
 
 ## Neural upscaler tail fusion
 

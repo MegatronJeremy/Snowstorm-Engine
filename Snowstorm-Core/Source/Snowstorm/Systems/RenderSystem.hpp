@@ -10,6 +10,7 @@
 #include "Snowstorm/Render/Passes/PostProcessPass.hpp"
 #include "Snowstorm/Render/Passes/PresentPass.hpp"
 #include "Snowstorm/Render/Passes/SkyPass.hpp"
+#include "Snowstorm/Render/Passes/SpritePass.hpp"
 #include "Snowstorm/Render/RenderPhaseContext.hpp"
 #include "Snowstorm/Render/RendererService.hpp" // TonemapParams (used in the effect-chain helper signatures)
 #include "Snowstorm/Render/ShadowRenderer.hpp"
@@ -106,6 +107,11 @@ namespace Snowstorm
 		// change; the same dangling-capture rule as the Setup* phases applies (see SetupDirectionalShadow).
 		void RenderViewport(FrameContext& fc, entt::entity vpEntity, const std::string& passSuffix);
 
+		// The whole frame of a Canvas2D viewport: sorted sprites into the present target, cleared to the
+		// camera's background. None of the Scene3D chain runs.
+		void RenderCanvas2D(FrameContext& fc, const CameraPick& cam, const RenderTargetComponent& vpRT,
+		                    const std::string& passSuffix);
+
 		// Build the ordered per-viewport effect list once (lazy, on first RenderViewport). Effects are added
 		// as they're extracted from the RenderViewport monolith (#120).
 		void BuildViewportEffects();
@@ -126,6 +132,8 @@ namespace Snowstorm
 		// there's no ImGui backend (the editor composes via its ImGui pass instead). Owned here like the
 		// other shared passes; unused in the editor.
 		PresentPass m_PresentPass;
+
+		SpritePass m_SpritePass;
 
 		// The ordered per-viewport effect chain (#120). Built once (BuildViewportEffects); RenderViewport runs
 		// it: for each effect, if ShouldRun, Contribute. Effects are migrated into this list one increment at a
