@@ -64,9 +64,10 @@ namespace Snowstorm
 	                                                const TextureRole role, const bool srgb)
 	{
 		// CPU-only, worker-safe. Fast path: the cooked .sstex blob (no stb decode + no mip-gen). The blob is
-		// keyed by role, mip space and the compress CVar (TextureCookKey). Only cache handle-backed assets — handle 0 (inline/handle-less textures)
+		// keyed by role, mip space and the compress/quality CVars (TextureCookKey). Only cache handle-backed assets — handle 0 (inline/handle-less textures)
 		// would all collide on one "0.sstex", so skip the cache for those.
 		const bool useCache = (handle.Value() != 0);
+		// Read once: both are live-editable, and the plan must describe the bytes this call encodes.
 		const TextureCookPlan plan = PlanTextureCook(role, srgb, CVars::CompressTextures.Get(), CVars::TextureQuality.Get());
 		const MipSpace mipSpace = plan.Space;
 		const TextureCookKey& cookKey = plan.Key;
@@ -144,7 +145,7 @@ namespace Snowstorm
 					return std::nullopt;
 				}
 				cooked.Levels[i] = bc7 ? CompressLevelBC7(cooked.Levels[i], lw, lh, mipSpace == MipSpace::SRGB, g_CookAborted,
-				                                          ExhaustiveBC7Search(CVars::TextureQuality.Get()))
+				                                          ExhaustiveBC7Search(plan.Quality))
 				                       : CompressLevel(cooked.Levels[i], lw, lh, squishFormat, g_CookAborted);
 				if (cooked.Levels[i].empty())
 				{

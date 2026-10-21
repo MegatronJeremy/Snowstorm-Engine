@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "Snowstorm/Assets/TextureCache.hpp"
 #include "Snowstorm/Render/TextureCook.hpp"
 
 #include <atomic>
@@ -162,6 +163,12 @@ TEST_CASE("Material roles keep mips and follow the compress setting", "[texturec
 	CHECK(high.Key.Compress == 2);
 	CHECK(high.Space == MipSpace::Linear);
 	CHECK(high.Key.EncoderRevision == kTextureEncoderRevision);
+
+	// The exhaustive BC7 tier cooks different bytes, so it needs its own key too.
+	const TextureCookPlan exhaustive = PlanTextureCook(TextureRole::Albedo, true, true, 2);
+	CHECK(exhaustive.Quality == 2);
+	CHECK(exhaustive.Key.Compress == CookCompressField(true, 2));
+	CHECK(exhaustive.Key.Compress != high.Key.Compress);
 }
 
 TEST_CASE("Sprite blobs live beside the material blob, not over it", "[texturecook]")
@@ -170,4 +177,18 @@ TEST_CASE("Sprite blobs live beside the material blob, not over it", "[textureco
 	CHECK(TextureCacheIO::GetCachePath(handle, TextureRole::Sprite).filename() == "1234.sprite.sstex");
 	CHECK(TextureCacheIO::GetCachePath(handle, TextureRole::Albedo).filename() == "1234.sstex");
 	CHECK(TextureCacheIO::GetCachePath(handle, TextureRole::Unknown) == TextureCacheIO::GetCachePath(handle, TextureRole::Mask));
+}
+
+TEST_CASE("Every quality tier cooks under its own cache key", "[texturecook]")
+{
+	CHECK(CookCompressField(false, 0) == 0);
+	CHECK(CookCompressField(false, 2) == 0);
+
+	// 1 and 2 are what blobs cooked at tiers 0 and 1 already store; changing them would re-cook every cache
+	CHECK(CookCompressField(true, 0) == 1);
+	CHECK(CookCompressField(true, 1) == 2);
+	CHECK(CookCompressField(true, 2) == 3);
+
+	CHECK(CookCompressField(true, -1) == CookCompressField(true, 0));
+	CHECK(CookCompressField(true, 1000) == 255);
 }

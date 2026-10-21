@@ -2,6 +2,7 @@
 
 #include "Snowstorm/Assets/AssetTypes.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -45,16 +46,23 @@ namespace Snowstorm
 
 	// The inputs besides the source file that decide the cooked bytes. A blob whose stored key differs from
 	// the requested one is a miss, so a material edit that moves a texture to another role, or flipping
-	// cook.textures.compress, re-cooks instead of serving the old encoding.
+	// cook.textures.compress or cook.textures.quality, re-cooks instead of serving the old encoding.
 	struct TextureCookKey
 	{
 		uint8_t Role = 0;     // TextureRole
 		uint8_t MipSpace = 0; // MipSpace the chain was filtered in
-		uint8_t Compress = 0; // 0 off, 1 cook.textures.compress at quality 0, 2 at quality 1 (BC7 opaque colour)
+		uint8_t Compress = 0; // CookCompressField
 		uint8_t EncoderRevision = 0;
 
 		bool operator==(const TextureCookKey&) const = default;
 	};
+
+	// 0 = uncompressed, else 1 + cook.textures.quality. The raw tier rather than the encoder's thresholds, so a
+	// new tier gets its own key without this having to know where the thresholds sit.
+	[[nodiscard]] constexpr uint8_t CookCompressField(const bool compress, const int textureQuality)
+	{
+		return compress ? static_cast<uint8_t>(1 + std::clamp(textureQuality, 0, 254)) : 0;
+	}
 
 	// Bump when an encoder setting changes cooked bytes without a layout change.
 	inline constexpr uint8_t kTextureEncoderRevision = 3; // 3: alpha colour BC7 -> BC3 at the default tier, BC7 quick

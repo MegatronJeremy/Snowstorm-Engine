@@ -62,9 +62,10 @@ namespace Snowstorm
 		const bool sprite = role == TextureRole::Sprite;
 		plan.BuildMips = !sprite;
 		plan.Compress = compressSetting && !sprite;
+		plan.Quality = textureQuality;
 		plan.HighQuality = textureQuality > 0;
-		const uint8_t compressByte = !plan.Compress ? 0 : (plan.HighQuality ? 2 : 1);
-		plan.Key = {static_cast<uint8_t>(role), static_cast<uint8_t>(plan.Space), compressByte, kTextureEncoderRevision};
+		plan.Key = {static_cast<uint8_t>(role), static_cast<uint8_t>(plan.Space), CookCompressField(plan.Compress, textureQuality),
+		            kTextureEncoderRevision};
 		return plan;
 	}
 

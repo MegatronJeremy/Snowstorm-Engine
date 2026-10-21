@@ -33,6 +33,7 @@ namespace Snowstorm
 		bool BuildMips = true;
 		bool Compress = false;
 		bool HighQuality = false;
+		int Quality = 0; // cook.textures.quality as read for this cook
 	};
 
 	// A sprite keeps one exact sRGB level whatever cook.textures.compress says, so flipping that setting
