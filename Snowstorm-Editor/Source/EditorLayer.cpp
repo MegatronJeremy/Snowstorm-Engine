@@ -538,6 +538,7 @@ namespace Snowstorm
 		}
 
 		PrewarmSceneTextures();
+		MatchSceneViewRenderPath();
 
 		m_ActiveScenePath = scenePath;
 
@@ -1106,6 +1107,35 @@ namespace Snowstorm
 		return {};
 	}
 
+	void EditorLayer::MatchSceneViewRenderPath() const
+	{
+		const Entity editorCam = FindEditorCamera();
+		if (!editorCam)
+		{
+			return;
+		}
+
+		auto& reg = m_ActiveWorld->GetRegistry();
+		const CameraComponent defaults{};
+		const CameraComponent* primary = &defaults;
+		for (const entt::entity e : reg.view<CameraComponent>())
+		{
+			if (reg.any_of<DoNotSerializeComponent>(e))
+			{
+				continue;
+			}
+			if (const auto& cc = reg.Read<CameraComponent>(e); cc.Primary)
+			{
+				primary = &cc;
+				break;
+			}
+		}
+
+		auto& cc = reg.Write<CameraComponent>(editorCam.Handle());
+		cc.RenderPath = primary->RenderPath;
+		cc.BackgroundColor = primary->BackgroundColor;
+	}
+
 	namespace
 	{
 		// The editor camera viewpoint lives beside its scene as "<scene>.editor": editor-only metadata,
@@ -1356,6 +1386,7 @@ namespace Snowstorm
 			m_HasPendingNewScene = false;
 			Renderer::WaitIdle();
 			m_ActiveWorld->ClearSceneEntities(); // OnSceneCleared hook resets selection + drops undo history
+			MatchSceneViewRenderPath();
 			m_ActiveScenePath.clear();
 			SS_CORE_INFO("New scene created.");
 		}

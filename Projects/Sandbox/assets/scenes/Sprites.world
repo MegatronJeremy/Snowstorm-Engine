@@ -1,0 +1,312 @@
+{
+ "Entities": [
+  {
+   "Name": "Main Camera",
+   "UUID": "1697955810757244958",
+   "Components": {
+    "Snowstorm::CameraComponent": {
+     "Projection": "Orthographic",
+     "RenderPath": "Canvas2D",
+     "BackgroundColor": [
+      0.02,
+      0.03,
+      0.08,
+      1.0
+     ],
+     "OrthographicSize": 10.0,
+     "OrthographicNear": -10.0,
+     "OrthographicFar": 10.0,
+     "Primary": true
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      0.0,
+      0.0,
+      5.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    }
+   }
+  },
+  {
+   "Name": "Checker Nearest",
+   "UUID": "7394473305323759832",
+   "Components": {
+    "Snowstorm::SpriteComponent": {
+     "Texture": "12465655103903380530",
+     "Size": [
+      4.0,
+      4.0
+     ],
+     "Pivot": [
+      0.5,
+      0.5
+     ],
+     "Tint": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+     ],
+     "FlipX": false,
+     "FlipY": false,
+     "Layer": 0,
+     "Order": 0,
+     "Filter": "Nearest"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      -3.5,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    }
+   }
+  },
+  {
+   "Name": "Checker Linear",
+   "UUID": "2497562429404208362",
+   "Components": {
+    "Snowstorm::SpriteComponent": {
+     "Texture": "12465655103903380530",
+     "Size": [
+      4.0,
+      4.0
+     ],
+     "Pivot": [
+      0.5,
+      0.5
+     ],
+     "Tint": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+     ],
+     "FlipX": false,
+     "FlipY": false,
+     "Layer": 0,
+     "Order": 0,
+     "Filter": "Linear"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      3.5,
+      0.0,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    }
+   }
+  },
+  {
+   "Name": "Logo Behind",
+   "UUID": "9106421144283291457",
+   "Components": {
+    "Snowstorm::SpriteComponent": {
+     "Texture": "5408720500040009833",
+     "Size": [
+      2.5,
+      2.5
+     ],
+     "Pivot": [
+      0.5,
+      0.5
+     ],
+     "Tint": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+     ],
+     "FlipX": false,
+     "FlipY": false,
+     "Layer": -1,
+     "Order": 0,
+     "Filter": "Linear"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      -3.5,
+      -2.5,
+      2.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    }
+   }
+  },
+  {
+   "Name": "Logo Over",
+   "UUID": "6143027202709551312",
+   "Components": {
+    "Snowstorm::SpriteComponent": {
+     "Texture": "5408720500040009833",
+     "Size": [
+      3.0,
+      3.0
+     ],
+     "Pivot": [
+      0.5,
+      0.5
+     ],
+     "Tint": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+     ],
+     "FlipX": false,
+     "FlipY": false,
+     "Layer": 1,
+     "Order": 0,
+     "Filter": "Linear"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      -1.5,
+      1.5,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    }
+   }
+  },
+  {
+   "Name": "Logo Flipped",
+   "UUID": "8900190843663707650",
+   "Components": {
+    "Snowstorm::SpriteComponent": {
+     "Texture": "5408720500040009833",
+     "Size": [
+      3.0,
+      3.0
+     ],
+     "Pivot": [
+      0.5,
+      0.5
+     ],
+     "Tint": [
+      1.0,
+      0.6,
+      0.6,
+      0.7
+     ],
+     "FlipX": true,
+     "FlipY": false,
+     "Layer": 1,
+     "Order": 0,
+     "Filter": "Linear"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      1.5,
+      1.5,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    }
+   }
+  },
+  {
+   "Name": "Checker Rotated",
+   "UUID": "7925443463824477233",
+   "Components": {
+    "Snowstorm::SpriteComponent": {
+     "Texture": "12465655103903380530",
+     "Size": [
+      1.5,
+      1.5
+     ],
+     "Pivot": [
+      0.5,
+      0.5
+     ],
+     "Tint": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+     ],
+     "FlipX": false,
+     "FlipY": false,
+     "Layer": 1,
+     "Order": 1,
+     "Filter": "Nearest"
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      -0.5,
+      0.5,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.785398
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    }
+   }
+  }
+ ],
+ "Scene": "Sprites"
+}

@@ -451,6 +451,26 @@
       "isa_size": 776.0,
       "permutations": 2
     },
+    "Sprite.frag": {
+      "vgprs": 13.0,
+      "sgprs": 26.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 432.0,
+      "permutations": 2
+    },
+    "Sprite.vert": {
+      "vgprs": 22.0,
+      "sgprs": 42.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 544.0,
+      "permutations": 2
+    },
     "TemporalResolve.frag": {
       "vgprs": 61.0,
       "sgprs": 38.0,
