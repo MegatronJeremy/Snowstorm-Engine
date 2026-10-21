@@ -1200,8 +1200,8 @@ execute, with a push-constant base instance per viewport.
 
 **Sprite textures cook as `TextureRole::Sprite`** (#339, Unity's Sprite texture type, Unreal's Paper2D texture
 settings): `GetSpriteTextureViewAsync` requests the role rather than deriving it, and `PlanTextureCook` gives it one exact
-sRGB level, never block-compressed, so the compress setting never re-cooks a sprite. The blob is `<handle>.sprite.sstex`
-and the view sits in its own cache, so a texture used by a sprite and a material keeps both cooks and both GPU images.
+sRGB level, never block-compressed, so the compress setting never re-cooks a sprite. The role is part of the blob's
+content key and the view sits in its own cache, so a texture used by a sprite and a material keeps both cooks and both GPU images.
 With one level, a sprite drawn much smaller than its texture aliases; mips and compression per asset wait for `.meta`.
 `cook.assets` walks the registry, which cannot know scene usage, so sprite variants cook on first use.
 
@@ -1467,8 +1467,11 @@ Worked example, the **asset pipeline** (the engine's biggest deliberate simplifi
 - **What Snowstorm does instead, deliberately:** `Import` adds a `handle → path` row to a JSON registry,
   where the path is a mounted name (`/Game/...`) rather than wherever the file sat on the authoring
   machine. There IS a cook step now: meshes, textures, shaders and IBL cook to artifacts under
-  `Engine/cache`, keyed on a **content hash** (mtime is only a cheap gate), driven by `--cook.assets` or
-  *File > Cook Assets*. What is still missing is the `.meta` sidecar, hot-reload, async streaming, and a
+  `Engine/cache`, named by a **content hash** of the source and every cook input (`DerivedDataKey`, the
+  Unreal DDC model), driven by `--cook.assets` or *File > Cook Assets*. Two versions of one asset are two
+  entries, never one overwritten file. `SourceHashIndex` (`Engine/cache/source-index.json`, per checkout,
+  like git's index) maps a source's size and mtime to its hash, so a hit reads only the blob; a changed
+  stamp rehashes, and unchanged bytes still hit. What is still missing is the `.meta` sidecar, hot-reload, async streaming, and a
   GUID separate from the path. The honest upgrade path from here: `.meta` sidecars (which is also what
   would let a texture's compression role be overridden per asset rather than derived from material
   slots) → a file watcher → async streaming. Treat `AssetRegistry` / `AssetManagerSingleton` as the seam

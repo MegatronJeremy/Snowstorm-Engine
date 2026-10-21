@@ -4,6 +4,7 @@
 
 #include <ranges>
 
+#include "Snowstorm/Assets/SourceHashIndex.hpp"
 #include "Snowstorm/Core/CoreServices.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/JobSystem.hpp"
@@ -59,6 +60,7 @@ namespace Snowstorm
 		// Abort cold texture cooks first, otherwise this wait lasts for the whole compression queue.
 		Texture::AbortCooking();
 		m_ServiceManager->GetService<JobSystem>().WaitAll();
+		SourceHashIndex::Get().Save();
 
 		// Finish all in-flight GPU work before tearing down layers/worlds, which destroy GPU
 		// resources (textures, descriptor sets, views). Without this they can be destroyed while
