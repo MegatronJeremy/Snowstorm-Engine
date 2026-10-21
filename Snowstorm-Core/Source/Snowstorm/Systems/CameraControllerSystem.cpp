@@ -73,6 +73,13 @@ namespace Snowstorm
 
 		const float dt = ts.GetSeconds();
 
+		// Possessed play owns the mouse: the editor fly camera stands down and the cursor stays locked.
+		if (input.GameCaptured)
+		{
+			SetCursorLocked(true);
+			return;
+		}
+
 		const auto vpInteractView = View<ViewportInteractionComponent>();
 
 		// Ensure runtime state for newly created controller cameras

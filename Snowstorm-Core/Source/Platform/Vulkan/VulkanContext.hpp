@@ -21,7 +21,7 @@ namespace Snowstorm
 	{
 	public:
 		void Init(void* windowHandle); // GLFWwindow*, HWND, etc.
-		void Shutdown() const;
+		void Shutdown();
 
 		// Rebuild the swapchain + image views after the surface changes (window resize / out-of-date).
 		// Blocks until the GPU is idle first. Returns false (and leaves the old swapchain torn down)
@@ -34,6 +34,10 @@ namespace Snowstorm
 		[[nodiscard]] bool IsVSync() const { return m_VSync; }
 
 		static VulkanContext& Get();
+
+		// True in headless mode: no surface or swapchain; GetSwapchainImages() are offscreen images
+		// (owned here) and the caller must not present them.
+		[[nodiscard]] bool IsHeadless() const { return m_Headless; }
 
 		VkInstance GetInstance() const { return m_Instance; }
 
@@ -126,7 +130,8 @@ namespace Snowstorm
 		// (Re)build m_Swapchain + image views from the current surface capabilities. Used by Init and
 		// RecreateSwapchain. Returns false when the surface extent is zero (minimized window).
 		bool CreateSwapchain();
-		void DestroySwapchain() const;
+		void DestroySwapchain();
+		bool CreateHeadlessSwapchain();
 
 		// Vulkan core
 		VkInstance m_Instance = VK_NULL_HANDLE;
@@ -197,6 +202,9 @@ namespace Snowstorm
 		VkExtent2D m_SwapchainExtent{};
 		std::vector<VkImage> m_SwapchainImages;
 		std::vector<VkImageView> m_SwapchainImageViews;
+
+		bool m_Headless = false;
+		std::vector<VmaAllocation> m_HeadlessAllocations; // parallel to m_SwapchainImages in headless mode
 
 		// Window handle (used in Init)
 		void* m_WindowHandle = nullptr;

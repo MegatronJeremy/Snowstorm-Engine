@@ -140,7 +140,7 @@ namespace Snowstorm
 		return handle;
 	}
 
-	AssetManagerSingleton::ImportFileResult AssetManagerSingleton::ImportFile(const std::filesystem::path& source)
+	AssetManagerSingleton::ImportFileResult AssetManagerSingleton::ImportFile(const std::filesystem::path& source, const bool instantiate)
 	{
 		ImportFileResult result;
 		const AssetType type = AssetTypeFromPath(source);
@@ -159,9 +159,12 @@ namespace Snowstorm
 
 		if (type == AssetType::Mesh)
 		{
-			result.Entities = ImportModel(source);
-			if (result.Entities.empty())
+			const std::vector<ImportedModelPart> parts = ImportModelAssets(source);
+			result.Parts = parts.size();
+			if (parts.empty())
 				result.Error = "model could not be read (see log)";
+			else if (instantiate)
+				result.Entities = InstantiateImportedModel(parts);
 			return result;
 		}
 
@@ -187,7 +190,12 @@ namespace Snowstorm
 
 	std::vector<Entity> AssetManagerSingleton::ImportModel(const std::filesystem::path& path)
 	{
-		std::vector<Entity> created;
+		return InstantiateImportedModel(ImportModelAssets(path));
+	}
+
+	std::vector<AssetManagerSingleton::ImportedModelPart> AssetManagerSingleton::ImportModelAssets(const std::filesystem::path& path)
+	{
+		std::vector<ImportedModelPart> created;
 		const Ref<Project> project = Project::GetActive();
 		if (!project && path.is_relative())
 		{
@@ -398,23 +406,33 @@ namespace Snowstorm
 			                                 ? (modelStem + "/" + aiSub->mName.C_Str())
 			                                 : (modelStem + "/mesh" + std::to_string(i));
 
-			Entity e = m_World->CreateEntity(partName);
+			created.push_back({partName, meshHandle, matHandle});
+		}
+
+		SS_CORE_INFO("ImportModel: {} -> {} parts, {} materials", path.string(), created.size(), scene->mNumMaterials);
+		return created;
+	}
+
+	std::vector<Entity> AssetManagerSingleton::InstantiateImportedModel(const std::vector<ImportedModelPart>& parts)
+	{
+		std::vector<Entity> created;
+		for (const ImportedModelPart& part : parts)
+		{
+			Entity e = m_World->CreateEntity(part.Name);
 			e.AddComponent<TransformComponent>(); // identity: vertices are already pre-transformed
 
 			auto& mc = e.AddComponent<MeshComponent>();
-			mc.MeshHandle = meshHandle;
+			mc.MeshHandle = part.Mesh;
 			mc.MeshInstance.reset(); // resolved by MeshResolveSystem
 
 			auto& matc = e.AddComponent<MaterialComponent>();
-			matc.Material = matHandle;
+			matc.Material = part.Material;
 			matc.MaterialInstance.reset(); // resolved by MaterialResolveSystem
 
 			e.AddComponent<VisibilityComponent>().Mask = Visibility::Scene | Visibility::Game;
 
 			created.push_back(e);
 		}
-
-		SS_CORE_INFO("ImportModel: {} -> {} entities, {} materials", path.string(), created.size(), scene->mNumMaterials);
 		return created;
 	}
 
@@ -551,7 +569,7 @@ namespace Snowstorm
 		// Submit the CPU cook/blob-read to a worker. GPU upload is deferred to ProcessCompletedLoads on the
 		// main thread. Capture by value (handle, paths) — the singleton outlives the app's JobSystem, which
 		// is joined at shutdown before this singleton is destroyed, so `this` stays valid for the job.
-		m_InFlightMeshes.insert(handle);
+		m_InFlightMeshes.emplace(handle, meta->Path.string());
 		++m_PendingTotal;
 
 		auto& jobs = Application::Get().GetServiceManager().GetService<JobSystem>();
@@ -797,7 +815,28 @@ namespace Snowstorm
 	std::string AssetManagerSingleton::UnsettledReason() const
 	{
 		if (const uint32_t pending = PendingLoadCount(); pending > 0)
-			return std::format("asset loading did not drain: {} / {} still pending", pending, m_PendingTotal);
+		{
+			// Stage: a key in a completed queue decoded fine and waits for the main-thread upload; any other
+			// is still on a worker (a stuck one points at the cook/decode, a queued one at the finalize loop).
+			std::unordered_set<uint64_t> meshQueued, textureQueued;
+			{
+				std::lock_guard lock(m_CompletedMutex);
+				for (const auto& m : m_CompletedMeshes)
+					meshQueued.insert(m.Handle.Value());
+				for (const auto& t : m_CompletedTextures)
+					textureQueued.insert(t.Key);
+			}
+			std::string detail;
+			const auto list = [&](const char* kind, const std::unordered_map<uint64_t, std::string>& inFlight, const std::unordered_set<uint64_t>& queued)
+			{
+				for (const auto& [key, name] : inFlight)
+					detail += std::format("{}{} {} ({})", detail.empty() ? "" : "; ", kind, name, queued.contains(key) ? "decoded, awaiting GPU upload" : "on a worker");
+			};
+			list("mesh", m_InFlightMeshes, meshQueued);
+			list("texture", m_InFlightTextures, textureQueued);
+			// One line: the smoke harness reports only the log lines carrying an error marker.
+			return std::format("asset loading did not drain: {} / {} still pending [pending: {}]", pending, m_PendingTotal, detail);
+		}
 		if (const uint32_t placeholders = PlaceholderSlotCount(); placeholders > 0)
 			return std::format("{} texture slot(s) still show the placeholder", placeholders);
 		return {};
@@ -914,7 +953,7 @@ namespace Snowstorm
 		{
 			return placeholder;
 		}
-		m_InFlightTextures.insert(key);
+		m_InFlightTextures.emplace(key, meta->Path.filename().string());
 		++m_PendingTotal;
 
 		auto& jobs = Application::Get().GetServiceManager().GetService<JobSystem>();

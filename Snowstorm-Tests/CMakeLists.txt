@@ -23,6 +23,7 @@ set(EDITOR_UNDO_SOURCES
     ${SS_ENGINE_SOURCE_DIR}/Snowstorm-Editor/Source/Singletons/EditorCommands.cpp
     ${SS_ENGINE_SOURCE_DIR}/Snowstorm-Editor/Source/Singletons/EditorHistorySingleton.cpp
     ${SS_ENGINE_SOURCE_DIR}/Snowstorm-Editor/Source/Singletons/StandalonePlay.cpp
+    ${SS_ENGINE_SOURCE_DIR}/Snowstorm-Editor/Source/Singletons/ShortcutTable.cpp
 )
 target_sources(Snowstorm-Tests PRIVATE ${TEST_SOURCES} ${EDITOR_UNDO_SOURCES})
 

@@ -115,4 +115,22 @@ namespace Snowstorm::Neural
 		}
 		return out;
 	}
+
+	// Oracle for NeuralConvAdd.comp.hlsl, the last conv fused with the residual add: out = base + conv(in) over
+	// the first 3 channels of base. The fused kernel must match the unfused conv-then-add chain.
+	inline FeatureMap Conv2DResidualReference(const FeatureMap& base, const FeatureMap& in, const ConvLayer& layer)
+	{
+		FeatureMap out = Conv2DReference(in, layer);
+		for (uint32_t c = 0; c < layer.OutChannels && c < base.Channels; ++c)
+		{
+			for (uint32_t y = 0; y < out.Height; ++y)
+			{
+				for (uint32_t x = 0; x < out.Width; ++x)
+				{
+					out.At(c, y, x) += base.At(c, y, x);
+				}
+			}
+		}
+		return out;
+	}
 }

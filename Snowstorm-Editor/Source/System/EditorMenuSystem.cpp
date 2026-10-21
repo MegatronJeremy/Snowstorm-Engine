@@ -6,10 +6,12 @@
 #include "Snowstorm/Render/Renderer.hpp"
 
 #include "Extension/EditorExtension.hpp"
+#include "Service/EditorTheme.hpp"
 #include "System/ConsoleSystem.hpp"
 #include "System/CVarPanelSystem.hpp"
 #include "System/DockspaceSetupSystem.hpp"
 #include "Singletons/EditorCommandsSingleton.hpp"
+#include "Singletons/ShortcutTable.hpp"
 #include "Singletons/EditorHistorySingleton.hpp"
 #include "Snowstorm/World/World.hpp"
 #include "Snowstorm/World/Entity.hpp"
@@ -79,7 +81,7 @@ namespace Snowstorm
 		// Scene file shortcuts (edge-triggered, suppressed while typing). Hazel's bindings:
 		// Ctrl+N new scene, Ctrl+O open scene, Ctrl+S save, Ctrl+Shift+S save as. Shared with the
 		// File menu below so behavior + toasts match. Keep DrawShortcutsWindow in sync (CLAUDE.md).
-		if (ctrlDown && !input.WantTextInput)
+		if (ctrlDown && !input.EditorKeysBlocked())
 		{
 			if (input.PressedThisFrame.test(Key::S) && !shiftDown)
 			{
@@ -107,7 +109,7 @@ namespace Snowstorm
 		// Scale-gizmo key, so it is deliberately not used here).
 		auto& history = SingletonView<EditorHistorySingleton>();
 		auto& status = SingletonView<EditorStatusBarSingleton>();
-		if (ctrlDown && !input.WantTextInput)
+		if (ctrlDown && !input.EditorKeysBlocked())
 		{
 			const bool shift = input.Down.test(Key::LeftShift) || input.Down.test(Key::RightShift);
 
@@ -124,7 +126,7 @@ namespace Snowstorm
 		// Backtick toggles the developer console (the classic Quake/Unreal console key). Edge-triggered and
 		// suppressed while typing, so pressing ` inside the console's own input types a character instead of
 		// closing it.
-		if (input.PressedThisFrame.test(Key::GraveAccent) && !input.WantTextInput)
+		if (input.PressedThisFrame.test(Key::GraveAccent) && !input.EditorKeysBlocked())
 		{
 			ConsoleSystem::s_Open = !ConsoleSystem::s_Open;
 		}
@@ -381,17 +383,17 @@ namespace Snowstorm
 		const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
 		ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 		ImGui::SetNextWindowSize(ImVec2(440.0f, 0.0f), ImGuiCond_FirstUseEver);
-		if (!ImGui::Begin("Keyboard & Mouse Shortcuts", &m_ShowShortcuts))
+		if (!ImGui::Begin(EditorTheme::PanelTitle("Keyboard & Mouse Shortcuts").c_str(), &m_ShowShortcuts))
 		{
 			ImGui::End();
 			return;
 		}
 
-		// A two-column key/action table. Keep these rows in sync with the real bindings (CLAUDE.md).
+		// Rows live in Singletons/ShortcutTable.cpp; ShortcutTableTests guards them.
 		const auto section = [](const char* title)
 		{
 			ImGui::Spacing();
-			ImGui::SeparatorText(title);
+			EditorTheme::SectionHeader(title);
 		};
 
 		const auto row = [](const char* keys, const char* action)
@@ -407,90 +409,17 @@ namespace Snowstorm
 
 		ImGui::TextDisabled("Camera navigation requires holding the right mouse button in the viewport.");
 
-		section("Camera (hold Right Mouse Button in viewport)");
-		if (ImGui::BeginTable("cam", 2, tableFlags))
+		for (const Shortcuts::Section& sec : Shortcuts::Sections())
 		{
-			row("Right Mouse (hold)", "Look around / enable fly controls");
-			row("W / A / S / D", "Move forward / left / back / right");
-			row("E / Q", "Move up / down");
-			row("Left Shift", "Sprint (move faster)");
-			row("Left Ctrl", "Move slower (precision)");
-			row("Mouse Wheel (RMB held)", "Adjust fly speed");
-			row("Mouse Wheel (no RMB)", "Zoom / dolly (perspective) or zoom (ortho)");
-			ImGui::EndTable();
-		}
-
-		section("Selection & Gizmos");
-		if (ImGui::BeginTable("sel", 2, tableFlags))
-		{
-			row("Left Mouse (viewport)", "Select entity under cursor");
-			row("Escape", "Clear selection (hides the gizmo)");
-			row("W", "Translate gizmo");
-			row("E", "Rotate gizmo");
-			row("R", "Scale gizmo");
-			ImGui::EndTable();
-		}
-
-		section("Camera Framing");
-		if (ImGui::BeginTable("frame", 2, tableFlags))
-		{
-			row("F", "Frame selected entity (or whole scene if none)");
-			row("Shift + F", "Frame the whole scene");
-			row("Double-click entity", "Focus camera on it (hierarchy or viewport)");
-			ImGui::EndTable();
-		}
-
-		section("Edit");
-		if (ImGui::BeginTable("edit", 2, tableFlags))
-		{
-			row("Ctrl + Z", "Undo");
-			row("Ctrl + Y", "Redo");
-			row("Ctrl + Shift + Z", "Redo (alternate)");
-			ImGui::EndTable();
-		}
-
-		section("Scene");
-		if (ImGui::BeginTable("scene", 2, tableFlags))
-		{
-			row("Ctrl + N", "New (empty) scene");
-			row("Ctrl + O", "Open scene...");
-			row("Ctrl + S", "Save current scene");
-			row("Ctrl + Shift + S", "Save scene as...");
-			ImGui::EndTable();
-		}
-
-		section("Play (viewport toolbar)");
-		if (ImGui::BeginTable("play", 2, tableFlags))
-		{
-			row("Play button", "Run the scene (PIE) / Stop");
-			row("Arrow next to Play", "Pick In Editor (PIE) or Standalone (launches Snowstorm-Runtime)");
-			ImGui::EndTable();
-		}
-
-		section("Content Browser");
-		if (ImGui::BeginTable("content", 2, tableFlags))
-		{
-			row("Drop files from the OS", "Import them into the project (models, textures, shaders, audio)");
-			ImGui::EndTable();
-		}
-
-		section("Scene Hierarchy");
-		if (ImGui::BeginTable("hier", 2, tableFlags))
-		{
-			row("Delete", "Delete the selected entity");
-			row("Right-click > Rename", "Rename the entity");
-			row("Right-click > Duplicate", "Duplicate the entity");
-			row("Right-click > Delete", "Delete the entity");
-			ImGui::EndTable();
-		}
-
-		section("Debug / Console");
-		if (ImGui::BeginTable("debug", 2, tableFlags))
-		{
-			row("`  (backtick)", "Toggle the developer console");
-			row("Tab (in console)", "Autocomplete command / CVar (repeat to cycle)");
-			row("Up / Down (in console)", "Cycle command history");
-			ImGui::EndTable();
+			section(sec.Title);
+			if (ImGui::BeginTable(sec.TableId, 2, tableFlags))
+			{
+				for (const Shortcuts::Row& r : sec.Rows)
+				{
+					row(r.Keys, r.Action);
+				}
+				ImGui::EndTable();
+			}
 		}
 
 		ImGui::End();
@@ -593,7 +522,7 @@ namespace Snowstorm
 			if (ImGui::Button("Import", ImVec2(120.0f, 0.0f)))
 			{
 				auto& assets = SingletonView<AssetManagerSingleton>();
-				const AssetManagerSingleton::ImportFileResult result = assets.ImportFile(m_ImportPathBuffer);
+				const AssetManagerSingleton::ImportFileResult result = assets.ImportFile(m_ImportPathBuffer, true);
 				if (result.Ok())
 				{
 					if (Project::GetActive())

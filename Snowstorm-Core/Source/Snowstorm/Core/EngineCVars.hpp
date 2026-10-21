@@ -219,6 +219,9 @@ namespace Snowstorm::CVars
 	// validation message above it). Independent of validation.extra.
 	extern CVar<bool> ValidationGpu;
 
+	// Names the resources behind the two recurring best-practices notes (#81). Diagnostic only.
+	extern CVar<bool> DiagAlloc;
+
 	// Shader optimization escape hatch (Unreal r.Shaders.Optimize model). Off (default, ship behavior) =
 	// dxc-optimized SPIR-V in EVERY C++ config; on = unoptimized (-Od) + debug info (-Zi/-fspv-debug) so a
 	// dev can source-step a shader in RenderDoc/PIX. Read at compile time (VulkanShader), keys the .spv cache
@@ -250,6 +253,11 @@ namespace Snowstorm::CVars
 	// Borderless fullscreen: create the window undecorated at the primary monitor's current video mode
 	// instead of a decorated 1280x720. Startup-only (the window is created once).
 	extern CVar<bool> Fullscreen;
+
+	// Headless GPU mode (SS_HEADLESS=1 / --headless): the window is created hidden, no VkSurface or
+	// swapchain exists, and presentation is skipped. The frame graph renders into offscreen images that
+	// stand in for the swapchain, so smoke and perf runs work on a locked or absent desktop.
+	extern CVar<bool> Headless;
 
 	// Editor CRT overlay: faint horizontal scanlines and a corner vignette drawn over the main viewport
 	// with an ImGui foreground draw list (no shader). Off by default.
@@ -320,6 +328,9 @@ namespace Snowstorm::CVars
 	// Path to a trained .ssnn for the neural upscaler (#99). Empty = built-in identity refiner. Read per-frame
 	// and pushed to the pass (SetWeightsPath); the pass reloads lazily on change.
 	extern CVar<std::string> NeuralWeightsPath;
+
+	// Fuse the neural upscaler's last conv layer with the residual add into one dispatch (#101). Read per-frame.
+	extern CVar<bool> NeuralFuseTail;
 
 	// One-shot: write the built-in identity refiner .ssnn to this path then exit (#99). The reference the
 	// Python writer's byte-parity test checks against. Empty = off.
@@ -763,6 +774,7 @@ namespace Snowstorm::CVars
 	// Off: sky arrives only via continuation rays (the pre-NEE integrator, bit-identical). Unbiased either way;
 	// the converged image is the same, only convergence speed differs. Mostly a dev/A-B knob.
 	extern CVar<bool> PathTraceEnvNee;
+	extern CVar<int> PathTraceSampler;
 	// True when the reference path tracer should run (render.pathtrace on AND an RT-capable device). Gates the
 	// PT pass AND the skip of the normal scene path (forward/G-buffer/upscale/temporal) so PT owns the frame.
 	[[nodiscard]] bool PathTraceActive();

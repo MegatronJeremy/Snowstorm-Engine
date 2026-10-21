@@ -191,6 +191,8 @@ instead of a raw `VkImage 0x...` handle.
 
 `Reflections` and `AlphaBlend` are the Runtime booted on the testbed scenes of the same names (`AlphaBlend` with `SS_RENDER_TRANSPARENT=1`), so a scene or flag that stops loading fails the gate (#282). A target whose scene file is missing fails before anything launches; `--scene` overrides every target's scene. Neither has run on a GPU yet.
 
+**Headless mode (`SS_HEADLESS=1`, or `--headless` on `smoke-test.py` and `perf-bench.py`) needs no unlocked desktop.** The `headless` CVar creates the GLFW window hidden (ImGui's GLFW backend and input still get a window handle), creates no `VkSurfaceKHR` or swapchain, and makes `VulkanContext` own four offscreen BGRA8 images in the swapchain's place. `BeginFrame` signals the image-available semaphore with an empty submit instead of acquiring, and the end of the frame consumes the render-finished semaphore with an empty wait-only submit instead of presenting. Device and queues, the frame graph, asset streaming and the settle check run as before. Both scripts print `Mode:` as `HEADLESS` or `windowed`. Headless perf numbers skip present, so capture committed perf baselines windowed.
+
 **A run passes only once assets settle.** After the frame budget the app keeps running until
 `AssetManagerSingleton::PendingLoadCount() == 0` and no bindless slot is still the placeholder
 (`UnsettledReason`, reached through `Layer::SmokeUnsettled`), until `smoke.settle.seconds` have passed since process start
@@ -485,7 +487,7 @@ trap: a `--update-baseline` from there deletes the entries for shaders no editor
 and dynamic permutations live in `Scripts/shader-permutations.txt`: add a line there when a call site
 starts passing a new define. The flags need no sync, since the runtime and the cook share
 `BuildDxcCommandLine`; `py Scripts/cook-shaders.py --dry-run` prints the planned command lines
-without dxc. `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
+without dxc. The runtime cache key (`ComputeShaderKey`, flags tag `v5_...`) length-prefixes and chains its fields, so define order matters and a repeated define cannot cancel; the dxc version is not in it yet, so clear `Engine/cache/shaders` after upgrading `Tools/dxc`. `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
 expected the old `#type` split and silently compiled nothing).
 
 **This gate runs in CI** (`.github/workflows/shaders.yml`): unlike smoke-test and perf-bench, RGA is
@@ -590,6 +592,7 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   arrays. The engine writes `_hdr.npy` (next bullet) but it has not run on a GPU, so no
   HDR-FLIP number exists and the ordering against LDR-FLIP is unmeasured.
 - **HDR capture (#157).** With capture on, the engine also writes `<path>_hdr.npy` beside `_ldr.npy` (motion frames: `_f<N>_hdr.npy`): `v.SceneColor` as the tonemap chain receives it, linear pre-exposure radiance, HxWx4, top-down, `<f2` for the RGBA16F real-time path and `<f4` for the RGBA32F path tracer. `render.exposure` is logged with it, not applied. It is a 1:1 copy into a texture the capture effect owns (`TransferSrc` on no hot target, no cost when capture is off) read back in the same pass as the LDR present, so the pair is one frame. It excludes everything after `SceneColor`: FXAA and CAS (TAA and the upscaler are included), so it cannot replace the LDR numbers. Not run on a GPU as of its PR; the pure format rules are `QualityCaptureFormat.hpp`, tested in `QualityCaptureFormatTests`.
+- **`render.pathtrace.sampler` (#156) changes only the PT's low-sample error.** 0 (default) is PCG white noise seeded with the frame counter; 1 is Owen-scrambled 2D Sobol padded per decision (`Include/PtSampler.hlsli`, mirrored in `Render/QmcSampler.hpp` and tested by `QmcSamplerTests`), seeded per pixel only, so a Reset replays the same sequence. Fixed pair ids per decision keep an early-terminated path from shifting later dimensions. The estimator and pdfs are unchanged, so the converged reference (and every committed quality baseline) is unaffected while the default stays 0; switching it restarts accumulation. Not yet run on a GPU, and the fixed-spp error ratio against PCG (the stop rule in the design) is unmeasured.
 - **Eight techniques**: `raster`, `ssao`, `rtao`, `ssr`, `rtrefl`, `ssgi`, `rtgi`, `all-rt`. Each is a
   full real-time render with that one technique on, TAA enabled.
 - **FLIP is pinned** to `flip-evaluator==1.7` (a perceptual metric that drifts between versions makes
@@ -897,6 +900,10 @@ Two selection traps, both of which produced a wrong verdict here before being ca
 
 Report both anyway. The point is which one decides.
 
+## Best-practices notes (#81)
+
+`--strict` logs two recurring notes. Small host-mapped buffers are already pooled (`SmallBufferPool.hpp`, #78); a note that remains comes from a device-local or readback buffer, or a driver that requires a dedicated allocation. The eager `UNDEFINED -> SHADER_READ_ONLY` transition in `VulkanTextureView::CreateImageView` is load-bearing for Sampled render targets: temporal history is read before any pass writes it, and the bindless descriptor declares `SHADER_READ_ONLY`, so skipping it trades the note for a layout error. `vulkan.diag.alloc` names the buffers and textures behind each note; run it with `--validation.extra` on a GPU before changing either path.
+
 ## Descriptor sets
 
 Non-bindless `DescriptorSet`s allocate from `VulkanDescriptorAllocator`: pools shared by layout shape
@@ -929,7 +936,7 @@ texture leaves it Unknown and the conservative colour encoding wins.
 **Mips are filtered in the colour space of the role** (`MipSpaceFor`, `Render/TextureCook.cpp`): albedo in
 linear light (sRGB EOTF LUT, exact OETF on write), normals and masks as plain byte averages, alpha always
 linear. A role-Unknown texture follows the caller's `srgb` flag. The cache blob header carries role, mip
-space, compress flag and an encoder revision; a mismatch re-cooks.
+space, compress flag with quality tier, and an encoder revision; a mismatch re-cooks.
 
 **BC7 is an opt-in quality tier, not the default.** It is 8 bpp, the same as BC3 and double BC1, so
 `cook.textures.quality=1` promotes opaque albedo to BC7 (51 MB -> 102 MB on Sponza, half the saving
@@ -990,6 +997,10 @@ directional traces. Secondary directionals still light the scene but are invisib
 path tracer, the sky disc and IBL, which read `Lights[0]` only. Each secondary costs one full scene depth pass.
 
 `Render/CascadeMath.hpp` holds the pure cascade math for a future sun CSM (#58): practical split scheme, slice corners, sphere fit and texel-snapped ortho matrix. `CascadeMathTests` cover it. `LightingSystem` runs `CascadeMath::ComputeFit` per frame for the primary directional behind `render.shadow.cascades.fit` (default off; `.count`, `.lambda`), using the primary perspective camera's unjittered view-projection, and hands the result to `RendererService::GetSunCascadeFit`. Nothing consumes it yet.
+
+## Play modes
+
+`SimulationStateSingleton::Mode` is `Edit`, `Play` or `PlayGame`. `Play` is the in-editor run where the editor camera and selection stay live (Unreal's Simulate; the toolbar entry is "In Editor (Simulate)"); Standalone (#67) launches `Snowstorm-Runtime` and leaves the editor world untouched. `PlayGame` is reserved for possessed play-in-editor (#68: the game's camera and input replace the editor's) and nothing selects it yet. `IsPlaying()` is true for both play modes, so the snapshot/restore and the `RunsInEditMode()` gate cover them alike; `IsPossessing()` is true only in `PlayGame`. The toolbar's *In Editor (Possess)* starts `PlayGame` with `InputStateSingleton::GameCaptured` set: editor-only bindings gate on `EditorKeysBlocked()`, the editor fly camera stands down and the cursor locks. `StepPlayInput` (`Input/PlayInputRouting.hpp`, pure, `PlayInputRoutingTests`) decides capture: Escape or Shift+F1 releases, Escape again stops, a viewport click recaptures, and an active text field keeps its own keys. Not yet in place: the game view target (the editor camera still renders) and a PlayerStart spawn, so the viewport shows the editor camera. Cursor lock and key routing are unverified on a GPU. The remaining steps are planned in the shared workspace's `design/68-play-in-editor.md`.
 
 ## Audio
 
@@ -1157,6 +1168,10 @@ without the flag the panes are solid and occlude. Alpha mode is an asset propert
 material, `materials/AlphaBlend.ssmat` (`"AlphaMode": "Blend"`), and varies colour and alpha per entity through
 `BaseColor` overrides. It has no baselines. Not yet run on a GPU: the sorted pass is unverified by smoke, perf-bench or eyes.
 
+## Neural upscaler tail fusion
+
+`neural.fuse` (default off) replaces the last conv layer and the residual add with one `NeuralConvAdd.comp.hlsl` dispatch when the last layer has 3 output channels (else the unfused chain runs): one dispatch, one barrier and one descriptor set fewer, and the residual map is never written to memory. It is a naive per-pixel loop at both precisions. `Conv2DResidualReference` is the CPU reference for the fused math (`NeuralMathTests` pins it to hand-computed values); it does not exercise the shader. Not run on a GPU: no unfused-vs-fused ms or output comparison exists yet. `NeuralConvAdd.comp` is RGA-baselined at 13 VGPRs, no spills, on every ASIC (#101).
+
 ## IBL invalidation
 
 The IBL bake is keyed on the environment block and on the sun (`Lights[0]`, the source `IBLBakePass` bakes).
@@ -1164,6 +1179,10 @@ The IBL bake is keyed on the environment block and on the sun (`Lights[0]`, the 
 when its direction moves past `render.ibl.sun_quantum_deg` (default 2) or its colour*intensity changes by more
 than 5%, or when the sun appears or disappears. A re-bake is still the full monolithic bake with a `WaitIdle`;
 `IBLInvalidationTests` cover the rule (#149).
+
+A directional light that also has a `RotatorComponent` and a `TransformComponent` is turned by that transform (`LightingSystem`: authored `Direction` rotated by the entity's rotation), so `RotatorSystem` can sweep a sun; every consumer (raster and RT shadows, sky disc, IBL bake via `Lights[0]`) sees the rotated direction. Without a Rotator, `Direction` is used as authored.
+
+**`SunSweep.world` plus `camera-paths/sun-sweep.json` is the repro for #149's re-bake.** An open ground plane with six columns and three crates under the Sponza procedural sky, and one shadow-casting sun (`Direction` -x, slightly down) rotating about Z at 6 deg/s: dusk to noon in 15 s, setting after 30 s. At the default 2 degree quantum that is about three re-bakes a second, each a full monolithic bake with a `WaitIdle`, so frame-time spikes at that cadence are the symptom. The route is a 15 s lateral pass 4 m in front of the props at 1 m/s. Run with `--startup.scene=Projects/Sandbox/assets/scenes/SunSweep.world --camera.path --camera.path.file=Projects/Sandbox/assets/camera-paths/sun-sweep.json`, and compare `--render.ibl.sun_quantum_deg=10`. No baselines, and it has not been rendered or run on a GPU, and neither has the Rotator-driven sun path.
 
 ## Console variables (CVars)
 
@@ -1227,10 +1246,11 @@ link Core and add it to their include path. All targets are **C++20** (the root 
 sets C++17 globally, although every target overrides to 20, so treat the project as C++20).
 
 **Keep the in-editor shortcut reference current.** The editor has a *Help > Keyboard & Mouse
-Shortcuts* window (`Snowstorm-Editor/Source/System/EditorMenuSystem.cpp`, `DrawShortcutsWindow`)
-that documents every keyboard/mouse binding. Whenever you add, remove, or change a shortcut (camera
-controls, gizmo keys, framing, save, selection, hierarchy actions, …), update that window in the
-same change so the docs never drift from the real bindings. It is the single source of truth users
+Shortcuts* window (`EditorMenuSystem::DrawShortcutsWindow`) that documents every keyboard/mouse
+binding. It draws the data table in `Snowstorm-Editor/Source/Singletons/ShortcutTable.cpp`.
+Whenever you add, remove, or change a shortcut (camera controls, gizmo keys, framing, save,
+selection, hierarchy actions, …), edit that table in the same change; `ShortcutTableTests` pins
+unique chords per section and the presence of the bindings the editor handles. It is the single source of truth users
 see, so treat it as part of the feature, not an afterthought.
 
 ## Architecture (Core)
@@ -1408,7 +1428,10 @@ Worked example, the **asset pipeline** (the engine's biggest deliberate simplifi
   **`AssetManagerSingleton::ImportFile` is the one way a file enters the project** (*File > Import Asset*).
   It dispatches on `AssetTypeFromPath`; non-mesh types go through `PlanImport` into `<assets>/<type>/`
   (`DefaultImportFolder`), never overwriting (a different file at the same name takes `_N`, an identical
-  one is reused), and meshes go through `ImportModel`. It does not save the registry.
+  one is reused), and meshes go through `ImportModelAssets` (copy, `.ssmat` generation, registry rows; no entities).
+  `InstantiateImportedModel` spawns the entities and runs only when `ImportFile(path, true)` asks (*Import Asset* and
+  the `--scene.bake` path through `ImportModel`); a Content Browser drop imports assets only, like Unity, Unreal and Godot.
+  It does not save the registry.
 
   **An asset's identity is `AssetRegistry`'s `Canonicalize`, and it has exactly one spelling.** A path
   arrives mounted, absolute, or in the legacy project-relative form, and all three must key to one

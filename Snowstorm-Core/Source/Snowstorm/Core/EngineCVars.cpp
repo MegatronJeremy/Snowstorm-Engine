@@ -98,6 +98,8 @@ namespace Snowstorm::CVars
 
 	CVar<bool> ValidationExtra{"validation.extra", false, "Enable synchronization + best-practices Vulkan validation", CVarFlags::ReadOnly};
 
+	CVar<bool> DiagAlloc{"vulkan.diag.alloc", false, "Log the sources of two best-practices notes (#81): each buffer whose driver requires or prefers a dedicated allocation (with its debug name and size), and each Sampled render target or storage image that takes the eager UNDEFINED -> SHADER_READ_ONLY transition at view creation. Read once per resource; for use with --validation.extra.", CVarFlags::ReadOnly};
+
 	CVar<bool> ValidationGpu{"validation.gpu", false, "Enable GPU-assisted validation (instruments shaders/AS builds to catch on-device OOB descriptor/buffer-address access; much heavier than validation.extra)", CVarFlags::ReadOnly};
 
 	// render.shaders.debug is ReadOnly (startup-only), NOT Persist: it re-keys the .spv cache and recompiling
@@ -115,6 +117,8 @@ namespace Snowstorm::CVars
 	CVar<bool> VSync{"display.vsync", true, "VSync on (FIFO, locked to refresh) or off (uncapped present)", CVarFlags::Persist};
 
 	CVar<bool> Fullscreen{"display.fullscreen", false, "Create the window borderless at the primary monitor's current video mode (no mode switch, so alt-tab stays instant) instead of a decorated 1280x720. Startup-only: the window is created once.", CVarFlags::Persist | CVarFlags::ReadOnly};
+
+	CVar<bool> Headless{"headless", false, "Headless GPU mode: hidden window, no VkSurface/swapchain, no present. The frame graph renders into offscreen images standing in for the swapchain; device, queues, streaming and the settle check are unchanged. Lets smoke-test.py and perf-bench.py run on a locked or absent desktop (SS_HEADLESS=1). Startup-only.", CVarFlags::ReadOnly};
 
 	CVar<bool> EditorCrt{"editor.crt", false, "Draw a faint scanline and corner-vignette CRT overlay over the editor window (NERV theme flourish). Purely cosmetic.", CVarFlags::Persist};
 
@@ -180,6 +184,8 @@ namespace Snowstorm::CVars
 	CVar<int> Upscaler{"render.upscaler", 0, "Upscale method when render.scale < 1: 0 = Bilinear (baseline), 1 = Neural Spatial (compute CNN residual refiner, single frame, #47), 2 = Neural Temporal (adds MV-warped previous-output + motion vector as extra inputs, DLSS/XeSS-style, #98). Both neural modes run the loaded .ssnn model; with the default identity weights each reproduces bilinear (the correctness baseline). Read per-frame; only active when upscaling (scale < 1). The temporal mode also forces the velocity pass on.", CVarFlags::Persist};
 
 	CVar<std::string> NeuralWeightsPath{"neural.weights", "", "Path to a trained .ssnn weights file for the neural upscaler (#99). Empty = the built-in identity refiner (reproduces bilinear). Loaded lazily when it changes. Used when render.upscaler = 1 (spatial, 3-ch input) or 2 (temporal, 8-ch input); the model's first-layer width must match the selected mode, or the pass falls back to identity.", CVarFlags::Persist};
+
+	CVar<bool> NeuralFuseTail{"neural.fuse", false, "Fuse the neural upscaler's last conv layer (3 output channels) with the residual add into one NeuralConvAdd dispatch (#101): one dispatch, one barrier and one descriptor set fewer, and the residual feature map is never round-tripped through memory. Output matches the unfused chain to float tolerance. Falls back to the unfused chain when the last layer is not 3-channel. Not yet measured on a GPU."};
 
 	CVar<std::string> NeuralDumpIdentity{"neural.dump_identity", "", "One-shot: write the built-in identity refiner to this .ssnn path, then exit (#99). The canonical reference the Python .ssnn writer's byte-parity test compares against. Empty = off."};
 
@@ -728,6 +734,7 @@ namespace Snowstorm::CVars
 	CVar<float> PathTraceWeightClamp{"render.pathtrace.weightclamp", 8.0f, "Reference path tracer path regularization: max per-bounce BSDF sample weight (throughput multiplier). A near-mirror indirect bounce at a grazing/low-pdf direction makes BSDF/pdf blow up into a fixed hot pixel that never converges; clamping the weight bounds it without blurring reflections. Small bias on rare high-weight paths. 0 = off (unbiased ground truth); ~4-16 for a clean interactive preview. Set 0 for final reference captures.", CVarFlags::Persist};
 
 	CVar<bool> PathTraceEnvNee{"render.pathtrace.envnee", true, "Reference path tracer environment (sky) next-event estimation with MIS: each hit samples the analytic sky directly (a shadow ray) and MIS-combines it with the BSDF-continuation sky hit, cutting sky-lit variance (especially on glossy surfaces). Unbiased (the converged image is unchanged; only convergence speed differs). Off = sky arrives only via continuation rays (the pre-NEE integrator). Mainly a dev/A-B knob.", CVarFlags::Persist};
+	CVar<int> PathTraceSampler{"render.pathtrace.sampler", 0, "Reference path tracer sample generator (#156): 0 = PCG white noise (default), 1 = Owen-scrambled Sobol, padded per decision, seeded per pixel only (a function of pixel and sample index, so a Reset replays it). Unbiased: the converged image matches 0; only the low-sample error differs. Changing it restarts accumulation. Clamped to [0, 1].", CVarFlags::Persist};
 
 	int ClampedPathTraceSpp()
 	{

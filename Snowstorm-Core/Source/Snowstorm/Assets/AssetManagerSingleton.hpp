@@ -46,11 +46,29 @@ namespace Snowstorm
 		// Returns the created entities (empty on failure). Does NOT save the registry — caller decides.
 		std::vector<Entity> ImportModel(const std::filesystem::path& path);
 
+		// One submesh of an imported model: its registry handles, without an entity.
+		struct ImportedModelPart
+		{
+			std::string Name;
+			AssetHandle Mesh{0};
+			AssetHandle Material{0};
+		};
+
+		// The asset half of ImportModel: copy into the project, generate the .ssmat files, register meshes,
+		// materials and textures. Creates no entities, so a Content Browser drop leaves the scene untouched
+		// (Unity, Unreal and Godot import into the folder and never spawn). Empty on failure. Does NOT save the registry.
+		std::vector<ImportedModelPart> ImportModelAssets(const std::filesystem::path& path);
+
+		// The scene half: one entity per part (Transform + Mesh + Material + Visibility).
+		std::vector<Entity> InstantiateImportedModel(const std::vector<ImportedModelPart>& parts);
+
 		struct ImportFileResult
 		{
 			// Zero for meshes (a model yields several handles) and on failure.
 			AssetHandle Handle{0};
-			// Meshes only: the entities ImportModel spawned.
+			// Meshes only: how many parts ImportModelAssets registered.
+			size_t Parts = 0;
+			// Meshes only: the entities InstantiateImportedModel spawned (empty unless `instantiate`).
 			std::vector<Entity> Entities;
 			// Empty on success; otherwise why the file was refused.
 			std::string Error;
@@ -60,9 +78,10 @@ namespace Snowstorm
 
 		// Single entry point for bringing one file into the project, dispatched on its extension
 		// (AssetTypeFromPath). Non-mesh types follow PlanImport into the project's per-type folder and
-		// register through Import; meshes go through ImportModel. Scenes and unknown extensions are refused
+		// register through Import; meshes go through ImportModelAssets, and InstantiateImportedModel only when
+		// `instantiate` is set (the menu; a drop imports assets only). Scenes and unknown extensions are refused
 		// with a reason. Does NOT save the registry, so a batch saves once.
-		ImportFileResult ImportFile(const std::filesystem::path& source);
+		ImportFileResult ImportFile(const std::filesystem::path& source, bool instantiate = false);
 
 		Ref<Mesh> GetMesh(AssetHandle handle);
 
@@ -197,11 +216,11 @@ namespace Snowstorm
 
 		// Handles with an async load submitted but not yet finalized. Main-thread only (GetMeshAsync +
 		// ProcessCompletedLoads both run there), so no lock needed for this set.
-		std::unordered_set<uint64_t> m_InFlightMeshes;
+		std::unordered_map<uint64_t, std::string> m_InFlightMeshes; // handle -> asset path, for UnsettledReason
 
 		// Worker threads push finished CPU loads here; the main thread drains them in ProcessCompletedLoads.
 		// Guarded because producers (JobSystem workers) and the consumer (main thread) race on it.
-		std::mutex m_CompletedMutex;
+		mutable std::mutex m_CompletedMutex;
 		std::vector<CompletedMeshLoad> m_CompletedMeshes;
 
 		uint32_t m_PendingTotal = 0; // high-water mark of in-flight loads since the queue was last empty
@@ -219,8 +238,8 @@ namespace Snowstorm
 			std::string DebugName;
 		};
 
-		std::unordered_set<uint64_t> m_InFlightTextures;       // (handle,srgb) keys currently decoding
-		std::vector<CompletedTextureLoad> m_CompletedTextures; // guarded by m_CompletedMutex (shared w/ meshes)
+		std::unordered_map<uint64_t, std::string> m_InFlightTextures; // (handle,srgb) key -> file name; decoding or awaiting upload
+		std::vector<CompletedTextureLoad> m_CompletedTextures;        // guarded by m_CompletedMutex (shared w/ meshes)
 
 		// Shared 1x1 placeholder sampled by materials whose real texture hasn't arrived yet. Each async
 		// texture gets its OWN view of this (its own bindless slot), so the slot can be rewritten to the
