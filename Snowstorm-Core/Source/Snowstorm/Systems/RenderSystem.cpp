@@ -1,5 +1,7 @@
 #include "RenderSystem.hpp"
 
+#include <chrono>
+
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Math/Bounds.hpp"
 #include "Snowstorm/Components/CameraPathComponent.hpp"
@@ -385,12 +387,26 @@ namespace Snowstorm
 
 		if (m_IBLBakePass.IsBaked() && (!m_BakedEnvironment || *m_BakedEnvironment != env || sunMoved))
 		{
+			m_IBLRebakePending = true;
+			m_IBLRebakeSunTriggered = sunMoved && m_BakedEnvironment && *m_BakedEnvironment == env;
+			m_IBLRebakeSunDeg = m_BakedSun ? SunAngleDeg(*m_BakedSun, sunNow) : 0.0f;
 			m_IBLBakePass.Invalidate();
 		}
 
 		if (CVars::IBL.Get() && haveRealEnvironment && !m_IBLBakePass.IsBaked())
 		{
+			const auto stallStart = std::chrono::steady_clock::now();
 			Renderer::WaitIdle();
+			const double stallMs =
+			    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - stallStart).count();
+			if (m_IBLRebakePending)
+			{
+				m_IBLRebakes.Record(stallMs, m_IBLRebakeSunTriggered);
+				SS_CORE_INFO("IBL re-bake #{} ({}, sun moved {:.2f} deg): WaitIdle stall {:.2f} ms (mean {:.2f}, max {:.2f}, {} sun-triggered)",
+				             m_IBLRebakes.Count, m_IBLRebakeSunTriggered ? "sun" : "environment", m_IBLRebakeSunDeg, stallMs,
+				             m_IBLRebakes.MeanStallMs(), m_IBLRebakes.MaxStallMs, m_IBLRebakes.SunTriggered);
+				m_IBLRebakePending = false;
+			}
 			m_IBLBakePass.AddBakePasses(fc.Graph, renderer.GetLights(), env);
 			m_BakedEnvironment = env;
 			m_BakedSun = sunNow;

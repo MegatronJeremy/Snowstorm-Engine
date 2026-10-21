@@ -145,5 +145,9 @@ namespace Snowstorm
 		// invalidate the bake so it re-runs against the real sky. nullopt = never baked. (#64)
 		std::optional<EnvironmentDataBlock> m_BakedEnvironment;
 		std::optional<IBLSunKey> m_BakedSun;
+		IBLRebakeStats m_IBLRebakes;
+		bool m_IBLRebakePending = false;
+		bool m_IBLRebakeSunTriggered = false;
+		float m_IBLRebakeSunDeg = 0.0f;
 	};
 }

@@ -1180,7 +1180,7 @@ The IBL bake is keyed on the environment block and on the sun (`Lights[0]`, the 
 `Render/IBLInvalidation.hpp` holds the pure rule: `SunNeedsRebake` compares against the last BAKED sun, re-baking
 when its direction moves past `render.ibl.sun_quantum_deg` (default 2) or its colour*intensity changes by more
 than 5%, or when the sun appears or disappears. A re-bake is still the full monolithic bake with a `WaitIdle`;
-`IBLInvalidationTests` cover the rule (#149).
+`IBLInvalidationTests` cover the rule (#149). Each re-bake after the first logs its `WaitIdle` stall, trigger and sun angle (`IBLRebakeStats`); unobserved on a GPU.
 
 A directional light that also has a `RotatorComponent` and a `TransformComponent` is turned by that transform (`LightingSystem`: authored `Direction` rotated by the entity's rotation), so `RotatorSystem` can sweep a sun; every consumer (raster and RT shadows, sky disc, IBL bake via `Lights[0]`) sees the rotated direction. Without a Rotator, `Direction` is used as authored.
 
