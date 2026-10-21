@@ -4,6 +4,7 @@
 #include "VulkanContext.hpp"
 #include "Snowstorm/Render/SmallBufferPool.hpp"
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 
 namespace Snowstorm
@@ -107,6 +108,21 @@ namespace Snowstorm
 			result = vmaCreateBuffer(GetAllocator(), &bufferInfo, &allocInfo, &m_Buffer, &m_Allocation, &m_AllocInfo);
 		}
 		SS_CORE_ASSERT(result == VK_SUCCESS, "Failed to create Vulkan buffer");
+
+		if (CVars::DiagAlloc.Get())
+		{
+			VkMemoryDedicatedRequirements dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS};
+			VkMemoryRequirements2 requirements{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, &dedicated};
+			VkBufferMemoryRequirementsInfo2 info{VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2};
+			info.buffer = m_Buffer;
+			vkGetBufferMemoryRequirements2(GetVulkanDevice(), &info, &requirements);
+			if (dedicated.requiresDedicatedAllocation || dedicated.prefersDedicatedAllocation)
+			{
+				SS_CORE_WARN("vulkan.diag.alloc: buffer '{}' ({} B, hostVisible {}, pooled {}) {} a dedicated allocation",
+				             debugName, size, hostVisible, smallPool != nullptr && UsesSmallHostBufferPool(size, hostVisible, isReadback),
+				             dedicated.requiresDedicatedAllocation ? "requires" : "prefers");
+			}
+		}
 
 		// Query memory properties so we can decide whether flushing is needed
 		vmaGetAllocationMemoryProperties(

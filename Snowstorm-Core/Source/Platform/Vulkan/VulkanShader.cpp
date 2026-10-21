@@ -36,11 +36,6 @@ namespace Snowstorm
 			return ss.str();
 		}
 
-		uint64_t Hash64(const void* data, const size_t size)
-		{
-			return ShaderHash64(data, size);
-		}
-
 		std::string ToHex64(const uint64_t v)
 		{
 			return ShaderKeyToHex(v);
@@ -57,7 +52,7 @@ namespace Snowstorm
 		// the stale shader keeps the old cbuffer layout while C++ uploads the new one, silently
 		// corrupting every cbuffer read (symptom: black/unlit geometry). A full #include dependency
 		// parse is overkill for a single flat include dir; hashing all headers in it is a deliberately
-		// smaller version that catches any header edit. Headers are sorted so the hash is order-stable.
+		// smaller version that catches any header edit. Headers are sorted and hashed with their names, so the hash is order-stable.
 		uint64_t HashIncludeHeaders()
 		{
 			const fs::path includeDir = GetEngineRoot() / "Engine" / "Shaders" / "Include";
@@ -81,7 +76,7 @@ namespace Snowstorm
 			for (const fs::path& header : headers)
 			{
 				const std::string text = ReadTextFileOrEmpty(header);
-				h ^= Hash64(text.data(), text.size());
+				h = ShaderHeaderAppend(h, header.filename().string(), text);
 			}
 			return h;
 		}
@@ -457,8 +452,8 @@ namespace Snowstorm
 			std::string vert, frag;
 			// SM 6.5 (was 6.0): the fragment stage may use inline ray query for RT sun shadows (#118); it's a
 			// strict superset so vertex/fragment shaders that don't use it compile identically.
-			if (!CompileStageFileToSpirvCache(m_VertPath, L"vs_6_5", "v4_vulkan1.2_dxlayout_Zpr_preservebind_vs65", defines, debug, vert) ||
-			    !CompileStageFileToSpirvCache(m_FragPath, L"ps_6_5", "v4_vulkan1.2_dxlayout_Zpr_preservebind_ps65", defines, debug, frag))
+			if (!CompileStageFileToSpirvCache(m_VertPath, L"vs_6_5", "v5_vulkan1.2_dxlayout_Zpr_preservebind_vs65", defines, debug, vert) ||
+			    !CompileStageFileToSpirvCache(m_FragPath, L"ps_6_5", "v5_vulkan1.2_dxlayout_Zpr_preservebind_ps65", defines, debug, frag))
 			{
 				SS_CORE_ERROR("VulkanShader: failed to compile graphics shader {}", m_Filepath);
 				return; // leaves m_Ready false: the pipeline never builds, rather than building from garbage
@@ -485,7 +480,7 @@ namespace Snowstorm
 		}
 
 		std::string comp;
-		if (!CompileStageFileToSpirvCache(m_VertPath, L"cs_6_5", "v4_vulkan1.2_dxlayout_Zpr_preservebind_cs65", defines, debug, comp))
+		if (!CompileStageFileToSpirvCache(m_VertPath, L"cs_6_5", "v5_vulkan1.2_dxlayout_Zpr_preservebind_cs65", defines, debug, comp))
 		{
 			SS_CORE_ERROR("VulkanShader: failed to compile compute shader {}", m_VertPath);
 			return;
