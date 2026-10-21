@@ -111,6 +111,35 @@ namespace Snowstorm::CascadeMath
 		return 2.0f * radius / static_cast<float>(tileResolution);
 	}
 
+	// Cascades share one square atlas of kCascadeAtlasCols^2 tiles, tile i holding cascade i (row-major).
+	constexpr uint32_t kCascadeAtlasCols = 2;
+
+	struct TileRect
+	{
+		uint32_t X = 0, Y = 0, Size = 0; // pixels
+	};
+
+	inline TileRect AtlasTile(uint32_t cascade, uint32_t tileResolution)
+	{
+		return {(cascade % kCascadeAtlasCols) * tileResolution, (cascade / kCascadeAtlasCols) * tileResolution,
+		        tileResolution};
+	}
+
+	// UV rect of tile `cascade`: xy offset, zw scale, the layout SampleShadowFactor takes for the spot atlas.
+	inline glm::vec4 AtlasUvRect(uint32_t cascade)
+	{
+		constexpr float s = 1.0f / static_cast<float>(kCascadeAtlasCols);
+		return {static_cast<float>(cascade % kCascadeAtlasCols) * s, static_cast<float>(cascade / kCascadeAtlasCols) * s,
+		        s, s};
+	}
+
+	// Bias multiplier of cascade i against cascade 0: a constant NDC bias is a different world bias per cascade,
+	// so it scales with the texel size ratio (equal tile resolutions, hence the radius ratio).
+	inline float BiasScale(float radius, float radius0)
+	{
+		return radius0 > 0.0f ? radius / radius0 : 1.0f;
+	}
+
 	struct CascadeFit
 	{
 		uint32_t Count = 0;
