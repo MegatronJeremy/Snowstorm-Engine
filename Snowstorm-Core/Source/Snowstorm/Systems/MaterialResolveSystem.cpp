@@ -111,7 +111,7 @@ namespace Snowstorm
 			{
 				for (const MaterialOverride& o : ov->Overrides)
 				{
-					if (o.Type == MaterialOverrideType::Texture && o.Texture != 0)
+					if (o.Type == MaterialOverrideType::Texture && o.Texture.Value() != 0)
 					{
 						(void)assets.GetTextureViewAsync(o.Texture);
 					}
