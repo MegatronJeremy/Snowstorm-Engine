@@ -13,6 +13,7 @@
 #include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/PrevTransformComponent.hpp"
 #include "Snowstorm/Components/RenderTargetComponent.hpp"
+#include "Snowstorm/Components/SpriteComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Components/VisibilityCacheComponent.hpp"
@@ -27,6 +28,7 @@
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/RenderTarget.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
+#include "Snowstorm/Render/SpriteBatch.hpp"
 #include "Snowstorm/Render/VelocityPolicy.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
@@ -447,6 +449,12 @@ namespace Snowstorm
 			return;
 		}
 
+		if (cam.Cam->RenderPath == CameraComponent::RenderPathType::Canvas2D)
+		{
+			RenderCanvas2D(fc, cam, vpRT, passSuffix);
+			return;
+		}
+
 		// Compare mode (#43 part 2) renders the scene a SECOND time at full native res (ground truth) and
 		// shows it split against the upscaled result. To keep the A/B clean (only the upscaler differs),
 		// FXAA is disabled on BOTH sides while comparing.
@@ -682,6 +690,64 @@ namespace Snowstorm
 		}
 	}
 
+	void RenderSystem::RenderCanvas2D(FrameContext& fc, const CameraPick& cam, const RenderTargetComponent& vpRT,
+	                                  const std::string& passSuffix)
+	{
+		if (!vpRT.PresentTarget || vpRT.PresentTarget->GetDesc().ColorAttachments.empty())
+		{
+			return;
+		}
+
+		std::vector<SpriteDraw> draws;
+		for (const auto e : View<const TransformComponent, const SpriteComponent>())
+		{
+			const auto& sprite = fc.Reg.Read<SpriteComponent>(e);
+			if (!sprite.View)
+			{
+				continue; // unresolved asset, or a game that has not bound its texture yet
+			}
+			SpriteDraw d;
+			d.Transform = fc.Reg.Read<TransformComponent>(e).GetTransformMatrix();
+			d.Size = sprite.Size;
+			d.Pivot = sprite.Pivot;
+			d.Tint = sprite.Tint;
+			d.FlipX = sprite.FlipX;
+			d.FlipY = sprite.FlipY;
+			d.Linear = sprite.Filter == SpriteFilter::Linear;
+			d.Layer = sprite.Layer;
+			d.Order = sprite.Order;
+			d.Sequence = static_cast<uint32_t>(entt::to_integral(e));
+			d.TextureIndex = sprite.View->GetGlobalBindlessIndex();
+			draws.push_back(d);
+		}
+
+		const uint64_t frameCounter = fc.Renderer.GetFrameCounter();
+		const SpritePass::Batch batch = m_SpritePass.Stage(frameCounter, BuildSpriteInstances(draws));
+
+		// A second target object over the present image, so this viewport clears to its camera's colour
+		// without mutating the target the Scene3D chain and the editor share.
+		RenderTargetAttachment color = vpRT.PresentTarget->GetDesc().ColorAttachments[0];
+		color.ClearColor = cam.Cam->BackgroundColor;
+		color.LoadOp = RenderTargetLoadOp::Clear;
+		RenderTargetDesc desc{};
+		desc.Width = vpRT.PresentTarget->GetWidth();
+		desc.Height = vpRT.PresentTarget->GetHeight();
+		desc.ColorAttachments = {color};
+		const Ref<RenderTarget> target = RenderTarget::Create(desc);
+
+		const PixelFormat viewFormat = color.View->GetDesc().Format;
+		const PixelFormat format = viewFormat != PixelFormat::Unknown ? viewFormat : color.View->GetTexture()->GetDesc().Format;
+		const glm::mat4 viewProjection = cam.Rt->ViewProjection;
+		const uint32_t frameIndex = fc.FrameIndex;
+
+		fc.Graph.AddPass({.Name = "Sprites" + passSuffix,
+		                  .Target = target,
+		                  .Execute = [this, frameIndex, frameCounter, viewProjection, batch, format](CommandContext& c)
+		                  {
+			                  m_SpritePass.Draw(c, frameIndex, frameCounter, viewProjection, batch, format);
+		                  }});
+	}
+
 	void RenderSystem::DrawVisibleMeshes(FrameContext& fc, const CameraPick& cam,
 	                                     const std::function<void(entt::entity, const TransformComponent&,
 	                                                              const MeshComponent&, const MaterialComponent&)>& draw)
@@ -897,6 +963,6 @@ namespace Snowstorm
 
 	void RenderSystem::DeclareAccess(SystemAccess& a) const
 	{
-		a.ReadComponents<ViewportComponent, RenderTargetComponent, TransformComponent, CameraComponent, CameraTargetComponent, CameraRuntimeComponent, CameraVisibilityComponent, MeshComponent, MaterialComponent, VisibilityComponent, CameraPathComponent>().WriteResources<RendererService, AssetManagerSingleton, ReflectionGeometrySingleton>();
+		a.ReadComponents<ViewportComponent, RenderTargetComponent, TransformComponent, CameraComponent, CameraTargetComponent, CameraRuntimeComponent, CameraVisibilityComponent, MeshComponent, MaterialComponent, VisibilityComponent, CameraPathComponent, SpriteComponent>().WriteResources<RendererService, AssetManagerSingleton, ReflectionGeometrySingleton>();
 	}
 }

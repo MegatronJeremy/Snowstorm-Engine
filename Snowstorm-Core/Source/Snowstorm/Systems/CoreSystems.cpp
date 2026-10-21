@@ -21,6 +21,7 @@
 #include "Snowstorm/Systems/RuntimeInitSystem.hpp"
 #include "Snowstorm/Systems/ScriptSystem.hpp"
 #include "Snowstorm/Systems/ShaderReloadSystem.hpp"
+#include "Snowstorm/Systems/SpriteResolveSystem.hpp"
 #include "Snowstorm/Systems/TlasBuildSystem.hpp"
 #include "Snowstorm/Systems/VisibilitySystem.hpp"
 
@@ -48,6 +49,7 @@ namespace Snowstorm
 		sm.RegisterSystem<CameraRuntimeUpdateSystem>(SystemPhase::Resolve);
 		sm.RegisterSystem<MeshResolveSystem>(SystemPhase::Resolve);
 		sm.RegisterSystem<MaterialResolveSystem>(SystemPhase::Resolve);
+		sm.RegisterSystem<SpriteResolveSystem>(SystemPhase::Resolve);
 		// After the asset manager is populated (it resolves clip handles to paths) and before anything
 		// gameplay-side would want to trigger a sound.
 		sm.RegisterSystem<AudioSystem>(SystemPhase::Resolve);
