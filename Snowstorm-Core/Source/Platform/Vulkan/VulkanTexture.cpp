@@ -409,13 +409,15 @@ namespace Snowstorm
 		// --- Graphics queue: ACQUIRE the image so it's usable for sampling. Only needed for a real
 		// cross-family transfer; when the transfer queue IS the graphics queue the release above already
 		// left the image in finalLayout for this queue. TransferSubmit waited on its fence, so the copies
-		// are complete before this acquire records. ---
+		// are complete before this acquire records. The acquire must repeat the release's layout pair
+		// exactly: the transition executes once, between the two halves. With synchronization2 enabled a
+		// finalLayout -> finalLayout acquire is "no transition", so validation still tracks TRANSFER_DST. ---
 		if (ownershipTransfer)
 		{
 			ImmediateSubmit([&](const VkCommandBuffer cmd)
 			                {
 				VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-				b.oldLayout = finalLayout;
+				b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 				b.newLayout = finalLayout;
 				b.srcQueueFamilyIndex = xferFamily;
 				b.dstQueueFamilyIndex = gfxFamily;

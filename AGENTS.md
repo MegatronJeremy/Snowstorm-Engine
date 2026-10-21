@@ -936,7 +936,7 @@ texture leaves it Unknown and the conservative colour encoding wins.
 **Mips are filtered in the colour space of the role** (`MipSpaceFor`, `Render/TextureCook.cpp`): albedo in
 linear light (sRGB EOTF LUT, exact OETF on write), normals and masks as plain byte averages, alpha always
 linear. A role-Unknown texture follows the caller's `srgb` flag. The cache blob header carries role, mip
-space, compress flag and an encoder revision; a mismatch re-cooks.
+space, compress flag with quality tier, and an encoder revision; a mismatch re-cooks.
 
 **BC7 is an opt-in quality tier, not the default.** It is 8 bpp, the same as BC3 and double BC1, so
 `cook.textures.quality=1` promotes opaque albedo to BC7 (51 MB -> 102 MB on Sponza, half the saving
