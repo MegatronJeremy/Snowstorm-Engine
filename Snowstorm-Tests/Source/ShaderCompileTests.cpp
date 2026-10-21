@@ -52,23 +52,30 @@ TEST_CASE("ShaderCompile: debug adds source debug info except with ray tracing",
 TEST_CASE("ShaderCompile: key reacts to every input", "[shader]")
 {
 	const std::vector<std::string> none;
-	const uint64_t base = ComputeShaderKey("src", 1, "v4_ps65", none, false);
-	REQUIRE(base == ComputeShaderKey("src", 1, "v4_ps65", none, false));
-	REQUIRE(base != ComputeShaderKey("srC", 1, "v4_ps65", none, false));
-	REQUIRE(base != ComputeShaderKey("src", 2, "v4_ps65", none, false));
-	REQUIRE(base != ComputeShaderKey("src", 1, "v4_cs65", none, false));
-	REQUIRE(base != ComputeShaderKey("src", 1, "v4_ps65", {"SS_FP16=1"}, false));
-	REQUIRE(base != ComputeShaderKey("src", 1, "v4_ps65", none, true));
+	const uint64_t base = ComputeShaderKey("src", 1, "v5_ps65", none, false);
+	REQUIRE(base == ComputeShaderKey("src", 1, "v5_ps65", none, false));
+	REQUIRE(base != ComputeShaderKey("srC", 1, "v5_ps65", none, false));
+	REQUIRE(base != ComputeShaderKey("src", 2, "v5_ps65", none, false));
+	REQUIRE(base != ComputeShaderKey("src", 1, "v5_cs65", none, false));
+	REQUIRE(base != ComputeShaderKey("src", 1, "v5_ps65", {"SS_FP16=1"}, false));
+	REQUIRE(base != ComputeShaderKey("src", 1, "v5_ps65", none, true));
 }
 
-TEST_CASE("ShaderCompile: key matches the pre-extraction recipe", "[shader]")
+TEST_CASE("ShaderCompile: key is order- and boundary-sensitive", "[shader]")
 {
-	// Same XOR-fold the runtime used before the extraction; a change here re-keys every user cache.
-	const std::string src = "float4 main() { return 0; }";
-	const std::string tag = "v4_vulkan1.2_dxlayout_Zpr_preservebind_ps65";
-	const std::string def = "SS_RAYTRACING=1";
-	uint64_t expected = ShaderHash64(src.data(), src.size()) ^ 7ull ^ ShaderHash64(tag.data(), tag.size()) ^
-	                    ShaderHash64(def.data(), def.size());
-	REQUIRE(ComputeShaderKey(src, 7, tag, {def}, false) == expected);
+	const uint64_t ab = ComputeShaderKey("s", 1, "t", {"A", "B"}, false);
+	REQUIRE(ab != ComputeShaderKey("s", 1, "t", {"B", "A"}, false));
+	REQUIRE(ab != ComputeShaderKey("s", 1, "t", {"AB"}, false));
+	// A repeated define used to cancel itself under XOR.
+	REQUIRE(ComputeShaderKey("s", 1, "t", {"A", "A"}, false) != ComputeShaderKey("s", 1, "t", {}, false));
+	REQUIRE(ComputeShaderKey("ab", 1, "c", {}, false) != ComputeShaderKey("a", 1, "bc", {}, false));
+}
+
+TEST_CASE("ShaderCompile: headers hash covers names, contents and order", "[shader]")
+{
+	const uint64_t base = ShaderHeaderAppend(ShaderHeaderAppend(0, "A.hlsli", "x"), "B.hlsli", "y");
+	REQUIRE(base == ShaderHeaderAppend(ShaderHeaderAppend(0, "A.hlsli", "x"), "B.hlsli", "y"));
+	REQUIRE(base != ShaderHeaderAppend(ShaderHeaderAppend(0, "A.hlsli", "y"), "B.hlsli", "x"));
+	REQUIRE(base != ShaderHeaderAppend(ShaderHeaderAppend(0, "B.hlsli", "y"), "A.hlsli", "x"));
 	REQUIRE(ShaderKeyToHex(0xabcull) == "0000000000000abc");
 }
