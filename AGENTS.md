@@ -1069,6 +1069,12 @@ save deletes the block from the `.world`. That is why the editor links both game
 is running. `GameRegistrationTests` asserts a game's components survived, and was verified to fail
 without the flag.
 
+**A game adds GPU work with `RendererService::EnqueueGraphPass`**, from any phase before Render. The pass
+joins that frame's render graph after the texture uploads and ahead of IBL, shadows and every viewport,
+once per frame. A texture it writes that a material samples through bindless must end Sampled, through a
+trailing pass that declares the read and has a no-op `Execute`: the graph transitions only declared
+accesses, and a bindless read is undeclared.
+
 ## Staging a runnable build
 
 `cmake --build build --config Debug --target stage` produces `build/stage/<config>/`: a directory the
