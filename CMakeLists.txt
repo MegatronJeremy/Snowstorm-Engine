@@ -68,6 +68,7 @@ set(SS_STAGE_STAMP "${SS_STAGE_DIR}/.stamp-engine")
 file(GLOB_RECURSE SS_STAGE_INPUTS CONFIGURE_DEPENDS
     "${SS_ENGINE_SOURCE_DIR}/Engine/Shaders/*"
     "${SS_ENGINE_SOURCE_DIR}/Engine/Fonts/*"
+    "${SS_ENGINE_SOURCE_DIR}/Engine/Icons/*"
 )
 
 add_custom_command(
@@ -76,6 +77,8 @@ add_custom_command(
             "${SS_ENGINE_SOURCE_DIR}/Engine/Shaders" "${SS_STAGE_DIR}/Engine/Shaders"
     COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
             "${SS_ENGINE_SOURCE_DIR}/Engine/Fonts" "${SS_STAGE_DIR}/Engine/Fonts"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+            "${SS_ENGINE_SOURCE_DIR}/Engine/Icons" "${SS_STAGE_DIR}/Engine/Icons"
     # dxc is needed only to COMPILE a shader, so a stage shipping a warm cache does not need it. Staged
     # anyway because the shader cache is keyed on source content, and a stage built here may still meet
     # a cold shader elsewhere.
