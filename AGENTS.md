@@ -1170,6 +1170,8 @@ without the flag the panes are solid and occlude. Alpha mode is an asset propert
 material, `materials/AlphaBlend.ssmat` (`"AlphaMode": "Blend"`), and varies colour and alpha per entity through
 `BaseColor` overrides. It has no baselines. Not yet run on a GPU: the sorted pass is unverified by smoke, perf-bench or eyes.
 
+`Render/EmissiveLightMath.hpp` holds the pure math for emissive-surface next-event estimation in the path tracer (#154): uniform triangle sampling, area-to-solid-angle pdf, the balance weight and a power CDF. `EmissiveLightMathTests` cover it. Nothing consumes it yet; the path tracer still gathers emission only through BSDF-continuation hits.
+
 ## 2D render path
 
 `CameraComponent::RenderPath` is `Scene3D` (default) or `Canvas2D` (#338), the Bevy `Camera2d` / Unity URP 2D Renderer
