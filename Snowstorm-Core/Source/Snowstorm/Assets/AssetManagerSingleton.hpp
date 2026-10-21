@@ -134,6 +134,10 @@ namespace Snowstorm
 		// pop in. Deduped per (handle, srgb).
 		Ref<TextureView> GetTextureViewAsync(AssetHandle handle, bool srgb = true);
 
+		// GetTextureViewAsync for the sprite renderer: cooked as TextureRole::Sprite (one exact sRGB level,
+		// never block-compressed), cached apart from the material variants of the same texture.
+		Ref<TextureView> GetSpriteTextureViewAsync(AssetHandle handle);
+
 		/// Unique material instance
 		Ref<MaterialInstance> CreateMaterialInstanceUnique(AssetHandle handle);
 
@@ -186,6 +190,17 @@ namespace Snowstorm
 		// classic "registry stale/missing" failure and otherwise fails silently (nothing renders).
 		const AssetMetadata* ResolveMetaOrWarn(AssetHandle handle, AssetType expected, const char* what);
 
+		// How a texture is cooked and sampled. One source texture can be resident as several of these.
+		enum class TextureVariant : uint8_t
+		{
+			Linear,
+			Srgb,
+			Sprite,
+		};
+		[[nodiscard]] static uint64_t TextureVariantKey(AssetHandle handle, TextureVariant variant);
+		std::unordered_map<uint64_t, Ref<TextureView>>& TextureViewCache(TextureVariant variant);
+		Ref<TextureView> RequestTextureAsync(AssetHandle handle, TextureVariant variant);
+
 	private:
 		AssetRegistry m_Registry;
 		std::unordered_map<uint64_t, TextureRole> m_TextureRoles; // rebuilt from materials, never serialized
@@ -196,9 +211,11 @@ namespace Snowstorm
 
 		std::unordered_map<uint64_t, Ref<Mesh>> m_MeshCache;
 		std::unordered_map<uint64_t, Ref<Shader>> m_ShaderCache;
-		// Keyed by (handle, srgb): a texture can be sampled both as sRGB (albedo) and linear (data).
+		// Keyed by handle, one map per TextureVariant: a texture can be sampled as sRGB (albedo), linear
+		// (data) and as a sprite.
 		std::unordered_map<uint64_t, Ref<TextureView>> m_TextureViewCache;       // srgb views
 		std::unordered_map<uint64_t, Ref<TextureView>> m_TextureViewCacheLinear; // linear views
+		std::unordered_map<uint64_t, Ref<TextureView>> m_TextureViewCacheSprite; // sprite views
 		std::unordered_map<uint64_t, Ref<MaterialInstance>> m_MaterialInstanceCache;
 
 		std::unordered_map<std::string, Ref<Pipeline>> m_PipelineCache; // key = fragment-shader path, blend variants append "|blend"
@@ -229,16 +246,16 @@ namespace Snowstorm
 		// A worker-completed CPU decode waiting for main-thread GPU upload + bindless slot rewrite.
 		struct CompletedTextureLoad
 		{
-			uint64_t Key = 0; // (handle, srgb) cache key — matches m_TextureViewCache/-Linear
+			uint64_t Key = 0; // TextureVariantKey
 			AssetHandle Handle{};
-			bool Srgb = true;
+			TextureVariant Variant = TextureVariant::Srgb;
 			uint32_t Slot = 0; // the stable bindless slot the placeholder view occupies
 			CookedTexture Cooked;
 			bool Success = false;
 			std::string DebugName;
 		};
 
-		std::unordered_map<uint64_t, std::string> m_InFlightTextures; // (handle,srgb) key -> file name; decoding or awaiting upload
+		std::unordered_map<uint64_t, std::string> m_InFlightTextures; // TextureVariantKey -> file name; decoding or awaiting upload
 		std::vector<CompletedTextureLoad> m_CompletedTextures;        // guarded by m_CompletedMutex (shared w/ meshes)
 
 		// Shared 1x1 placeholder sampled by materials whose real texture hasn't arrived yet. Each async
@@ -246,7 +263,7 @@ namespace Snowstorm
 		// real image on completion independently. Created lazily on the main thread.
 		Ref<Texture> m_PlaceholderTexture;
 		// Kept alive so their images/slots survive after the placeholder slot is repointed to them. Keyed
-		// by (handle,srgb). Value holds the real texture + its view (see ProcessCompletedLoads).
+		// by TextureVariantKey. Value holds the real texture + its view (see ProcessCompletedLoads).
 		std::unordered_map<uint64_t, Ref<Texture>> m_ResidentTextures;
 
 		Ref<TextureView> EnsurePlaceholderView(const std::string& debugName);

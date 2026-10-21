@@ -58,16 +58,19 @@ namespace Snowstorm
 		return AssetType::None;
 	}
 
-	// What a texture is FOR, which decides how it is block-compressed: a tangent-space normal wants BC5
-	// (two independent 8-bit planes, third component reconstructed) where colour wants BC1/BC3. Derived
-	// from the material slot a texture is referenced through rather than stored per asset, so it costs no
-	// registry migration; a per-asset override belongs in the .meta sidecar when that exists.
+	// What a texture is FOR, which decides how it is cooked: a tangent-space normal wants BC5 (two
+	// independent 8-bit planes, third component reconstructed) where colour wants BC1/BC3. The material
+	// roles are derived from the slot a texture is referenced through rather than stored per asset, so they
+	// cost no registry migration; a per-asset override belongs in the .meta sidecar when that exists.
 	enum class TextureRole : uint8_t
 	{
 		Unknown = 0,
 		Albedo,
 		Normal,
 		Mask, // metallic-roughness, AO: linear data, no reconstructable component
+		// Requested by the sprite renderer, never derived (cf. Unity's Sprite texture type): exact sRGB
+		// texels, one mip, never block-compressed, since pixel art does not survive 4x4 blocks.
+		Sprite,
 	};
 
 	struct AssetMetadata

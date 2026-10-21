@@ -62,8 +62,9 @@ namespace Snowstorm
 	class TextureCacheIO
 	{
 	public:
-		// Engine/cache/texture/<handle>.sstex
-		static std::filesystem::path GetCachePath(AssetHandle handle);
+		// Engine/cache/texture/<handle>.sstex, or <handle>.sprite.sstex: a texture can be both a sprite and a
+		// material texture, and one path would make each consumer re-cook over the other's blob.
+		static std::filesystem::path GetCachePath(AssetHandle handle, TextureRole role);
 
 		// Load the cooked pixels if present AND matching sourceWriteTime (else nullopt -> caller re-decodes).
 		static std::optional<CookedTexture> Load(AssetHandle handle, const std::filesystem::path& sourcePath, const TextureCookKey& key);

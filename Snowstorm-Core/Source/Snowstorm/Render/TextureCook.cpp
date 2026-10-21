@@ -43,6 +43,7 @@ namespace Snowstorm
 		switch (role)
 		{
 		case TextureRole::Albedo:
+		case TextureRole::Sprite:
 			return MipSpace::SRGB;
 		case TextureRole::Normal:
 		case TextureRole::Mask:
@@ -51,6 +52,20 @@ namespace Snowstorm
 		default:
 			return srgbRequested ? MipSpace::SRGB : MipSpace::Linear;
 		}
+	}
+
+	TextureCookPlan PlanTextureCook(const TextureRole role, const bool srgbRequested, const bool compressSetting,
+	                                const int textureQuality)
+	{
+		TextureCookPlan plan;
+		plan.Space = MipSpaceFor(role, srgbRequested);
+		const bool sprite = role == TextureRole::Sprite;
+		plan.BuildMips = !sprite;
+		plan.Compress = compressSetting && !sprite;
+		plan.HighQuality = textureQuality > 0;
+		const uint8_t compressByte = !plan.Compress ? 0 : (plan.HighQuality ? 2 : 1);
+		plan.Key = {static_cast<uint8_t>(role), static_cast<uint8_t>(plan.Space), compressByte, kTextureEncoderRevision};
+		return plan;
 	}
 
 	std::vector<uint8_t> DownsampleRGBA8(const std::vector<uint8_t>& src, const uint32_t sw, const uint32_t sh, const uint32_t dw,

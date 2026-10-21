@@ -41,7 +41,7 @@ namespace Snowstorm
 			}
 			// Async: a stable placeholder slot now, rewritten in place when the decode lands.
 			SpriteComponent& w = reg.Write<SpriteComponent>(e);
-			w.View = assets.GetTextureViewAsync(w.Texture);
+			w.View = assets.GetSpriteTextureViewAsync(w.Texture);
 			w.ResolvedFrom = w.Texture;
 		}
 	}
