@@ -193,6 +193,8 @@ instead of a raw `VkImage 0x...` handle.
 
 `Reflections` and `AlphaBlend` are the Runtime booted on the testbed scenes of the same names (`AlphaBlend` with `SS_RENDER_TRANSPARENT=1`), so a scene or flag that stops loading fails the gate (#282). A target whose scene file is missing fails before anything launches; `--scene` overrides every target's scene. Neither has run on a GPU yet.
 
+**Headless mode (`SS_HEADLESS=1`, or `--headless` on `smoke-test.py` and `perf-bench.py`) needs no unlocked desktop.** The `headless` CVar creates the GLFW window hidden (ImGui's GLFW backend and input still get a window handle), creates no `VkSurfaceKHR` or swapchain, and makes `VulkanContext` own four offscreen BGRA8 images in the swapchain's place. `BeginFrame` signals the image-available semaphore with an empty submit instead of acquiring, and the end of the frame consumes the render-finished semaphore with an empty wait-only submit instead of presenting. Device and queues, the frame graph, asset streaming and the settle check run as before. Both scripts print `Mode:` as `HEADLESS` or `windowed`. Headless perf numbers skip present, so capture committed perf baselines windowed.
+
 **A run passes only once assets settle.** After the frame budget the app keeps running until
 `AssetManagerSingleton::PendingLoadCount() == 0` and no bindless slot is still the placeholder
 (`UnsettledReason`, reached through `Layer::SmokeUnsettled`), until `smoke.settle.seconds` have passed since process start
@@ -326,7 +328,7 @@ median paired delta larger than the pair-to-pair spread) AND over `--threshold` 
 An inconclusive result passes, because the A/B could not show a regression. Exit 1 on a resolved
 regression or a failed run. Without `--gate` the A/B stays an instrument and exits non-zero only when a run
 fails, so a green exit then means "the runs completed", never "perf is fine". It prints one `VERDICT`
-line per config and a closing PASS/FAIL.
+line per config and a closing PASS/FAIL. A failed run ends the log with `FAIL: a run failed during the A/B in: <config> (pair N A|B (exe), exit <code>|timeout <s>s|no JSON written)`, so the cause survives a truncated log tail.
 
 **The two readouts use different verdict rules on purpose.** `compare` gates, so a finding must clear
 `--abs-threshold` as well as the statistical test: materiality. `print_ab` measures, so it asks only
@@ -592,6 +594,7 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   arrays. The engine writes `_hdr.npy` (next bullet) but it has not run on a GPU, so no
   HDR-FLIP number exists and the ordering against LDR-FLIP is unmeasured.
 - **HDR capture (#157).** With capture on, the engine also writes `<path>_hdr.npy` beside `_ldr.npy` (motion frames: `_f<N>_hdr.npy`): `v.SceneColor` as the tonemap chain receives it, linear pre-exposure radiance, HxWx4, top-down, `<f2` for the RGBA16F real-time path and `<f4` for the RGBA32F path tracer. `render.exposure` is logged with it, not applied. It is a 1:1 copy into a texture the capture effect owns (`TransferSrc` on no hot target, no cost when capture is off) read back in the same pass as the LDR present, so the pair is one frame. It excludes everything after `SceneColor`: FXAA and CAS (TAA and the upscaler are included), so it cannot replace the LDR numbers. Not run on a GPU as of its PR; the pure format rules are `QualityCaptureFormat.hpp`, tested in `QualityCaptureFormatTests`.
+- **`render.pathtrace.sampler` (#156) changes only the PT's low-sample error.** 0 (default) is PCG white noise seeded with the frame counter; 1 is Owen-scrambled 2D Sobol padded per decision (`Include/PtSampler.hlsli`, mirrored in `Render/QmcSampler.hpp` and tested by `QmcSamplerTests`), seeded per pixel only, so a Reset replays the same sequence. Fixed pair ids per decision keep an early-terminated path from shifting later dimensions. The estimator and pdfs are unchanged, so the converged reference (and every committed quality baseline) is unaffected while the default stays 0; switching it restarts accumulation. Not yet run on a GPU, and the fixed-spp error ratio against PCG (the stop rule in the design) is unmeasured.
 - **Eight techniques**: `raster`, `ssao`, `rtao`, `ssr`, `rtrefl`, `ssgi`, `rtgi`, `all-rt`. Each is a
   full real-time render with that one technique on, TAA enabled.
 - **FLIP is pinned** to `flip-evaluator==1.7` (a perceptual metric that drifts between versions makes
@@ -899,6 +902,10 @@ Two selection traps, both of which produced a wrong verdict here before being ca
 
 Report both anyway. The point is which one decides.
 
+## Best-practices notes (#81)
+
+`--strict` logs two recurring notes. Small host-mapped buffers are already pooled (`SmallBufferPool.hpp`, #78); a note that remains comes from a device-local or readback buffer, or a driver that requires a dedicated allocation. The eager `UNDEFINED -> SHADER_READ_ONLY` transition in `VulkanTextureView::CreateImageView` is load-bearing for Sampled render targets: temporal history is read before any pass writes it, and the bindless descriptor declares `SHADER_READ_ONLY`, so skipping it trades the note for a layout error. `vulkan.diag.alloc` names the buffers and textures behind each note; run it with `--validation.extra` on a GPU before changing either path.
+
 ## Descriptor sets
 
 Non-bindless `DescriptorSet`s allocate from `VulkanDescriptorAllocator`: pools shared by layout shape
@@ -931,7 +938,7 @@ texture leaves it Unknown and the conservative colour encoding wins.
 **Mips are filtered in the colour space of the role** (`MipSpaceFor`, `Render/TextureCook.cpp`): albedo in
 linear light (sRGB EOTF LUT, exact OETF on write), normals and masks as plain byte averages, alpha always
 linear. A role-Unknown texture follows the caller's `srgb` flag. The cache blob header carries role, mip
-space, compress flag and an encoder revision; a mismatch re-cooks.
+space, compress flag with quality tier, and an encoder revision; a mismatch re-cooks.
 
 **BC7 is an opt-in quality tier, not the default.** It is 8 bpp, the same as BC3 and double BC1, so
 `cook.textures.quality=1` promotes opaque albedo to BC7 (51 MB -> 102 MB on Sponza, half the saving
@@ -991,7 +998,7 @@ render unshadowed with a one-shot warning. `GPUDirectionalLight::ShadowSlot` car
 directional traces. Secondary directionals still light the scene but are invisible to GI, reflections, the
 path tracer, the sky disc and IBL, which read `Lights[0]` only. Each secondary costs one full scene depth pass.
 
-`Render/CascadeMath.hpp` holds the pure cascade math for a future sun CSM (#58): practical split scheme, slice corners, sphere fit and texel-snapped ortho matrix. `CascadeMathTests` cover it. `LightingSystem` runs `CascadeMath::ComputeFit` per frame for the primary directional behind `render.shadow.cascades.fit` (default off; `.count`, `.lambda`), using the primary perspective camera's unjittered view-projection, and hands the result to `RendererService::GetSunCascadeFit`. Nothing consumes it yet.
+`Render/CascadeMath.hpp` holds the pure cascade math for a future sun CSM (#58): practical split scheme, slice corners, sphere fit and texel-snapped ortho matrix. `CascadeMathTests` cover it. `LightingSystem` runs `CascadeMath::ComputeFit` per frame for the primary directional behind `render.shadow.cascades.fit` (default off; `.count`, `.lambda`), using the primary perspective camera's unjittered view-projection, and hands the result to `RendererService::GetSunCascadeFit`. `render.shadow.cascades.render` (default off, needs `.fit`) adds a `CascadeShadows` pass that draws every caster into a 2x2 `CascadeAtlas` (`render.shadow.resolution` per tile, tile i = cascade i, `CascadeMath::AtlasTile`/`AtlasUvRect`), one depth pass per cascade without per-cascade culling, and publishes the atlas bindless index through `RendererService::GetCascadeAtlasIndex`. No shader samples the atlas and FrameCB is unchanged, so lighting is identical with it on; selection, per-cascade bias (`CascadeMath::BiasScale`) and the FrameCB block come next.
 
 ## Play modes
 
@@ -1165,13 +1172,17 @@ material, `materials/AlphaBlend.ssmat` (`"AlphaMode": "Blend"`), and varies colo
 
 `Render/EmissiveLightMath.hpp` holds the pure math for emissive-surface next-event estimation in the path tracer (#154): uniform triangle sampling, area-to-solid-angle pdf, the balance weight and a power CDF. `EmissiveLightMathTests` cover it. Nothing consumes it yet; the path tracer still gathers emission only through BSDF-continuation hits.
 
+## Neural upscaler tail fusion
+
+`neural.fuse` (default off) replaces the last conv layer and the residual add with one `NeuralConvAdd.comp.hlsl` dispatch when the last layer has 3 output channels (else the unfused chain runs): one dispatch, one barrier and one descriptor set fewer, and the residual map is never written to memory. It is a naive per-pixel loop at both precisions. `Conv2DResidualReference` is the CPU reference for the fused math (`NeuralMathTests` pins it to hand-computed values); it does not exercise the shader. Not run on a GPU: no unfused-vs-fused ms or output comparison exists yet. `NeuralConvAdd.comp` is RGA-baselined at 13 VGPRs, no spills, on every ASIC (#101).
+
 ## IBL invalidation
 
 The IBL bake is keyed on the environment block and on the sun (`Lights[0]`, the source `IBLBakePass` bakes).
 `Render/IBLInvalidation.hpp` holds the pure rule: `SunNeedsRebake` compares against the last BAKED sun, re-baking
 when its direction moves past `render.ibl.sun_quantum_deg` (default 2) or its colour*intensity changes by more
 than 5%, or when the sun appears or disappears. A re-bake is still the full monolithic bake with a `WaitIdle`;
-`IBLInvalidationTests` cover the rule (#149).
+`IBLInvalidationTests` cover the rule (#149). Each re-bake after the first logs its `WaitIdle` stall, trigger and sun angle (`IBLRebakeStats`); unobserved on a GPU.
 
 A directional light that also has a `RotatorComponent` and a `TransformComponent` is turned by that transform (`LightingSystem`: authored `Direction` rotated by the entity's rotation), so `RotatorSystem` can sweep a sun; every consumer (raster and RT shadows, sky disc, IBL bake via `Lights[0]`) sees the rotated direction. Without a Rotator, `Direction` is used as authored.
 

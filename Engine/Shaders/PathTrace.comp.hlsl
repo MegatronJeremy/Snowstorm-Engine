@@ -55,7 +55,7 @@ cbuffer PTCB : register(b1, space0)
 	uint SpotCount;  // # valid spot lights below
 
 	uint EnvNee; // 1 = environment (sky) NEE + MIS enabled (render.pathtrace.envnee)
-	uint _ptPad0;
+	uint Sampler; // 0 = PCG white noise, 1 = Owen-scrambled Sobol (render.pathtrace.sampler)
 	uint _ptPad1;
 	uint _ptPad2;
 
@@ -101,14 +101,36 @@ uint PcgHash(uint v)
 	uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
 	return (word >> 22u) ^ word;
 }
+#include "Include/PtSampler.hlsli"
+
+// Sampler 1 draws decision `slot` of bounce `bounce` from a fixed pair id, so an early-terminated path or a
+// different light count never shifts a later decision's dimension. Slot 0 of "bounce 0" is the pixel jitter.
+static const uint PT_SLOT_SUN = 0u;
+static const uint PT_SLOT_ENV = 1u;
+static const uint PT_SLOT_LOBE = 2u;
+static const uint PT_SLOT_BSDF = 3u;
+static const uint PT_SLOT_RR = 4u;
+static const uint PT_SLOT_POINT = 5u;
+static const uint PT_SLOT_SPOT = PT_SLOT_POINT + MAX_PT_POINT_LIGHTS;
+static const uint PT_SLOTS_PER_BOUNCE = PT_SLOT_SPOT + MAX_PT_SPOT_LIGHTS;
+
 struct Rng
 {
 	uint s;
+	uint mode;
+	uint pixelSeed;
+	uint index;
+	uint bounce;
 };
 Rng SeedRng(uint2 px, uint sampleIdx)
 {
 	Rng r;
-	r.s = PcgHash(px.x * 1973u + px.y * 9277u + sampleIdx * 26699u + FrameCounter * 60493u + 1u);
+	r.mode = Sampler;
+	r.pixelSeed = PcgHash(px.x * 1973u + px.y * 9277u + 1u);
+	r.index = sampleIdx;
+	r.bounce = 0u;
+	// Sampler 1 must not depend on FrameCounter: the stream is a function of (pixel, sample index) so a Reset replays it.
+	r.s = PcgHash(px.x * 1973u + px.y * 9277u + sampleIdx * 26699u + ((Sampler == 0u) ? FrameCounter * 60493u : 0u) + 1u);
 	return r;
 }
 float NextFloat(inout Rng r)
@@ -116,6 +138,21 @@ float NextFloat(inout Rng r)
 	r.s = r.s * 747796405u + 2891336453u;
 	uint word = ((r.s >> ((r.s >> 28u) + 4u)) ^ r.s) * 277803737u;
 	return float((word >> 22u) ^ word) * (1.0 / 4294967296.0);
+}
+
+float2 Next2(inout Rng r, uint slot)
+{
+	if (r.mode == 0u)
+	{
+		const float a = NextFloat(r);
+		const float b = NextFloat(r);
+		return float2(a, b);
+	}
+	return PtSample2D(r.index, 1u + r.bounce * PT_SLOTS_PER_BOUNCE + slot, r.pixelSeed);
+}
+float Next1(inout Rng r, uint slot)
+{
+	return (r.mode == 0u) ? NextFloat(r) : Next2(r, slot).x;
 }
 
 // OnbFromNormal / ToWorld / SampleCone live in Include/LightSampling.hlsli, shared with the two real-time
@@ -451,11 +488,12 @@ bool SampleBsdf(Hit h, float3 V, inout Rng rng, out float3 L, out float3 weight,
 
 	// Pick a lobe and sample a direction from it. The WEIGHT is computed once below from the mixture pdf, so
 	// both lobes' pdfs count regardless of which lobe generated L (correct one-sample MIS).
-	if (NextFloat(rng) < pDiff)
+	if (Next1(rng, PT_SLOT_LOBE) < pDiff)
 	{
 		// Cosine-weighted diffuse hemisphere.
-		const float u1 = NextFloat(rng);
-		const float u2 = NextFloat(rng);
+		const float2 u = Next2(rng, PT_SLOT_BSDF);
+		const float u1 = u.x;
+		const float u2 = u.y;
 		const float r = sqrt(u1);
 		const float phi = 2.0 * PI * u2;
 		const float3 local = float3(r * cos(phi), r * sin(phi), sqrt(max(0.0, 1.0 - u1)));
@@ -464,8 +502,9 @@ bool SampleBsdf(Hit h, float3 V, inout Rng rng, out float3 L, out float3 weight,
 	else
 	{
 		// GGX NDF sample of the half-vector, reflect V about it.
-		const float u1 = NextFloat(rng);
-		const float u2 = NextFloat(rng);
+		const float2 u = Next2(rng, PT_SLOT_BSDF);
+		const float u1 = u.x;
+		const float u2 = u.y;
 		const float phi = 2.0 * PI * u1;
 		const float cosT = sqrt((1.0 - u2) / max(1.0 + (a * a - 1.0) * u2, 1e-8));
 		const float sinT = sqrt(max(0.0, 1.0 - cosT * cosT));
@@ -522,7 +561,7 @@ void main(uint3 id : SV_DispatchThreadID)
 		Rng rng = SeedRng(id.xy, globalIdx);
 
 		// Primary ray with per-sample sub-pixel jitter (box filter AA).
-		const float2 jitter = float2(NextFloat(rng), NextFloat(rng));
+		const float2 jitter = (rng.mode == 0u) ? Next2(rng, 0u) : PtSample2D(rng.index, 0u, rng.pixelSeed);
 		const float2 uv = (float2(id.xy) + jitter) / float2(OutSize);
 		const float2 ndc = uv * 2.0 - 1.0;
 		float4 farH = mul(float4(ndc, 1.0, 1.0), InvViewProj);
@@ -539,6 +578,7 @@ void main(uint3 id : SV_DispatchThreadID)
 
 		for (uint bounce = 0; bounce < bounces; ++bounce)
 		{
+			rng.bounce = bounce;
 			uint instId; uint prim; float2 bary; float tHit;
 			if (!TraceClosest(origin, dir, 1e30, tableAddr, instId, prim, bary, tHit))
 			{
@@ -572,8 +612,9 @@ void main(uint3 id : SV_DispatchThreadID)
 			// soft sun shadows for free (the shadow ray follows the jittered L), matching the RT soft path.
 			if (LightCount > 0)
 			{
-				const float su1 = NextFloat(rng);
-				const float su2 = NextFloat(rng);
+				const float2 su = Next2(rng, PT_SLOT_SUN);
+				const float su1 = su.x;
+				const float su2 = su.y;
 				const float3 L = SampleCone(toSun, SunCosThetaMax, su1, su2);
 				const float ndl = dot(h.N, L);
 				if (ndl > 0.0)
@@ -600,7 +641,8 @@ void main(uint3 id : SV_DispatchThreadID)
 				// Finite light size: sample within the cone the light's sphere subtends, so its reflection on
 				// smooth surfaces is a converging soft highlight, not a delta hot pixel. radius 0 => delta.
 				const float3 toL = d / dist;
-				const float3 L = SampleCone(toL, LightConeCos(LightSourceRadius, dist), NextFloat(rng), NextFloat(rng));
+				const float2 pu = Next2(rng, PT_SLOT_POINT + pli);
+				const float3 L = SampleCone(toL, LightConeCos(LightSourceRadius, dist), pu.x, pu.y);
 				if (dot(h.N, L) <= 0.0)
 				{
 					continue;
@@ -636,7 +678,8 @@ void main(uint3 id : SV_DispatchThreadID)
 				{
 					continue;
 				}
-				const float3 L = SampleCone(toL, LightConeCos(LightSourceRadius, dist), NextFloat(rng), NextFloat(rng));
+				const float2 pu = Next2(rng, PT_SLOT_SPOT + sli);
+				const float3 L = SampleCone(toL, LightConeCos(LightSourceRadius, dist), pu.x, pu.y);
 				if (dot(h.N, L) <= 0.0)
 				{
 					continue;
@@ -653,7 +696,8 @@ void main(uint3 id : SV_DispatchThreadID)
 			// the complementary weight, so the two strategies partition the sky contribution (wA + wB = 1).
 			if (EnvNee != 0u)
 			{
-				const float3 Lenv = SampleCosineHemisphere(h.N, NextFloat(rng), NextFloat(rng));
+				const float2 eu = Next2(rng, PT_SLOT_ENV);
+				const float3 Lenv = SampleCosineHemisphere(h.N, eu.x, eu.y);
 				const float pEnv = EnvPdf(h.N, Lenv);
 				if (pEnv > 1e-6)
 				{
@@ -679,7 +723,7 @@ void main(uint3 id : SV_DispatchThreadID)
 			if (bounce >= 3u)
 			{
 				const float p = clamp(max(throughput.r, max(throughput.g, throughput.b)), 0.05, 1.0);
-				if (NextFloat(rng) > p)
+				if (Next1(rng, PT_SLOT_RR) > p)
 				{
 					break;
 				}

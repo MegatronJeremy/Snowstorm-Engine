@@ -2,7 +2,7 @@
 
 *Adapted from [Vuk Đorđević's master's thesis (ETF Belgrade, 2026)](https://github.com/MegatronJeremy/RG2/tree/master/master-rad/teza), updated to the engine as it is now.*
 
-The IBL maps (irradiance, prefiltered specular, BRDF LUT) are convolved from the procedural sky plus the sun, so a moving sun leaves ambient lit from where the sun used to be. `RenderSystem` therefore compares the sun against the one the maps were baked with and re-bakes when it has moved enough (#149). **No image or timing below is a measurement:** the rule is covered by unit tests, the testbed scene has not been rendered on a GPU, and the cost of a re-bake is not measured.
+The IBL maps (irradiance, prefiltered specular, BRDF LUT) are convolved from the procedural sky plus the sun, so a moving sun leaves ambient lit from where the sun used to be. `RenderSystem` therefore compares the sun against the one the maps were baked with and re-bakes when it has moved enough (#149). **No image or timing below is a measurement:** the rule is covered by unit tests, the testbed scene has not been rendered on a GPU, and the cost of a re-bake is not measured (a per-re-bake stall log now exists to measure it).
 
 ## The rule
 
@@ -20,6 +20,8 @@ The IBL maps (irradiance, prefiltered specular, BRDF LUT) are convolved from the
 ## What a re-bake costs
 
 `Invalidate()` followed by a new bake is the full monolithic path, not an incremental update: `RenderSystem` calls `Renderer::WaitIdle()` before appending the bake passes, so every re-bake stalls the GPU once. The disk cache (`Engine/cache/ibl/<hash>.ssibl`) is keyed by a hash of the sky and the lights, so a sun position that was baked before is uploaded instead of re-computed. Inference from the code, not observed: a continuous sweep hashes to a new key at nearly every re-bake, so it mostly misses and writes one cache file per baked angle.
+
+Every re-bake after the first logs one `[info]` line from `RenderSystem`: `IBL re-bake #N (sun|environment, sun moved X deg): WaitIdle stall Y ms (mean, max, sun-triggered count)`. The stall is the wall-clock time of `Renderer::WaitIdle()` only, not the bake dispatches, which run later in the graph. Read the sweep's cost from these lines (run `SunSweep.world`, filter on `IBL re-bake`); `IBLRebakeStats` and `SunAngleDeg` hold the arithmetic and are unit tested. The line format and stall values have not been observed on a GPU.
 
 The quantum is the whole budget control. At 2 degrees, a sun turning at 6 degrees per second re-bakes about three times a second (arithmetic, not a measured rate). Raising the quantum trades ambient accuracy for fewer stalls; the right value for a given scene is not measured.
 

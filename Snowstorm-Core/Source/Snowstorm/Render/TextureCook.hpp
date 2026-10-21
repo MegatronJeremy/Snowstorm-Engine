@@ -48,6 +48,9 @@ namespace Snowstorm
 	// tier colour with alpha is BC3 and opaque colour BC1; tangent-space normals stay BC5.
 	[[nodiscard]] CookedTexture::Encoding ChooseEncoding(bool tangentNormal, bool hasAlpha, bool highQuality);
 
+	// Exhaustive BC7 only at cook.textures.quality >= 2: it takes minutes per 2K level and stalls a scene load.
+	[[nodiscard]] bool ExhaustiveBC7Search(int textureQuality);
+
 	// Vulkan format for a cooked encoding. BC5 has no sRGB variant.
 	[[nodiscard]] PixelFormat PixelFormatFor(CookedTexture::Encoding encoding, bool srgb);
 }
