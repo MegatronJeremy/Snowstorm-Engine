@@ -67,13 +67,10 @@ namespace Snowstorm
 		// keyed by role, mip space and the compress/quality CVars (TextureCookKey). Only cache handle-backed assets — handle 0 (inline/handle-less textures)
 		// would all collide on one "0.sstex", so skip the cache for those.
 		const bool useCache = (handle.Value() != 0);
-		const MipSpace mipSpace = MipSpaceFor(role, srgb);
-		// Read once: both are live-editable, and the key must describe the bytes this call encodes.
-		const bool compress = CVars::CompressTextures.Get();
-		const int quality = CVars::TextureQuality.Get();
-		const bool highQuality = quality > 0;
-		const TextureCookKey cookKey{static_cast<uint8_t>(role), static_cast<uint8_t>(mipSpace), CookCompressField(compress, quality),
-		                             kTextureEncoderRevision};
+		// Read once: both are live-editable, and the plan must describe the bytes this call encodes.
+		const TextureCookPlan plan = PlanTextureCook(role, srgb, CVars::CompressTextures.Get(), CVars::TextureQuality.Get());
+		const MipSpace mipSpace = plan.Space;
+		const TextureCookKey& cookKey = plan.Key;
 		if (useCache)
 		{
 			if (auto blob = TextureCacheIO::Load(handle, filePath, cookKey))
@@ -104,7 +101,7 @@ namespace Snowstorm
 		// upload is a pure staging->image copy per level (no vkCmdBlitImage) — so the whole upload can run on
 		// a transfer-only queue without touching the graphics queue. (Old path blitted mips on the graphics
 		// queue at upload time, stalling the frame.)
-		const uint32_t mipCount = MipCountFor(cooked.Width, cooked.Height);
+		const uint32_t mipCount = plan.BuildMips ? MipCountFor(cooked.Width, cooked.Height) : 1u;
 		cooked.Levels.resize(mipCount);
 		cooked.Levels[0].assign(pixels, pixels + static_cast<size_t>(w) * h * 4);
 		stbi_image_free(pixels);
@@ -121,7 +118,7 @@ namespace Snowstorm
 
 		// Block-compress AFTER the mip chain is built, never before: downsampling decompressed blocks
 		// compounds the error, which is why every cooker mips first and compresses each level.
-		if (compress)
+		if (plan.Compress)
 		{
 			const bool tangentNormal = role == TextureRole::Normal && IsTangentSpaceNormalMap(cooked.Levels[0]);
 			if (role == TextureRole::Normal && !tangentNormal)
@@ -130,7 +127,7 @@ namespace Snowstorm
 				             "(non-unit vectors or z<0); encoding it as colour instead.",
 				             filePath.string());
 			}
-			cooked.Format = ChooseEncoding(tangentNormal, !tangentNormal && UsesAlpha(cooked.Levels[0]), highQuality);
+			cooked.Format = ChooseEncoding(tangentNormal, !tangentNormal && UsesAlpha(cooked.Levels[0]), plan.HighQuality);
 			const bool bc7 = cooked.Format == CookedTexture::Encoding::BC7;
 			int squishFormat = 0;
 			if (!bc7)
@@ -148,7 +145,7 @@ namespace Snowstorm
 					return std::nullopt;
 				}
 				cooked.Levels[i] = bc7 ? CompressLevelBC7(cooked.Levels[i], lw, lh, mipSpace == MipSpace::SRGB, g_CookAborted,
-				                                          ExhaustiveBC7Search(quality))
+				                                          ExhaustiveBC7Search(plan.Quality))
 				                       : CompressLevel(cooked.Levels[i], lw, lh, squishFormat, g_CookAborted);
 				if (cooked.Levels[i].empty())
 				{

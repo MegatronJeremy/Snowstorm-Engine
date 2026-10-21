@@ -58,6 +58,7 @@ TEST_CASE("Mip space follows the role, Unknown follows the caller", "[texturecoo
 	CHECK(MipSpaceFor(TextureRole::Albedo, false) == MipSpace::SRGB);
 	CHECK(MipSpaceFor(TextureRole::Normal, true) == MipSpace::Linear);
 	CHECK(MipSpaceFor(TextureRole::Mask, true) == MipSpace::Linear);
+	CHECK(MipSpaceFor(TextureRole::Sprite, false) == MipSpace::SRGB);
 	CHECK(MipSpaceFor(TextureRole::Unknown, true) == MipSpace::SRGB);
 	CHECK(MipSpaceFor(TextureRole::Unknown, false) == MipSpace::Linear);
 }
@@ -126,6 +127,56 @@ TEST_CASE("BC7 searches exhaustively only at the top quality tier", "[texturecoo
 	CHECK_FALSE(ExhaustiveBC7Search(0));
 	CHECK_FALSE(ExhaustiveBC7Search(1));
 	CHECK(ExhaustiveBC7Search(2));
+}
+
+TEST_CASE("A sprite cooks one uncompressed level whatever the compress setting", "[texturecook]")
+{
+	for (const bool compress : {false, true})
+	{
+		for (const int quality : {0, 1, 2})
+		{
+			const TextureCookPlan plan = PlanTextureCook(TextureRole::Sprite, true, compress, quality);
+			CHECK_FALSE(plan.BuildMips);
+			CHECK_FALSE(plan.Compress);
+			CHECK(plan.Space == MipSpace::SRGB);
+			CHECK(plan.Key.Compress == 0);
+			CHECK(plan.Key.Role == static_cast<uint8_t>(TextureRole::Sprite));
+		}
+	}
+	// Flipping the setting must not re-cook a sprite, so its key is the same either way.
+	CHECK(PlanTextureCook(TextureRole::Sprite, true, false, 0).Key == PlanTextureCook(TextureRole::Sprite, true, true, 1).Key);
+}
+
+TEST_CASE("Material roles keep mips and follow the compress setting", "[texturecook]")
+{
+	const TextureCookPlan off = PlanTextureCook(TextureRole::Albedo, true, false, 0);
+	CHECK(off.BuildMips);
+	CHECK_FALSE(off.Compress);
+	CHECK(off.Key.Compress == 0);
+
+	const TextureCookPlan bc = PlanTextureCook(TextureRole::Albedo, true, true, 0);
+	CHECK(bc.Compress);
+	CHECK(bc.Key.Compress == 1);
+
+	const TextureCookPlan high = PlanTextureCook(TextureRole::Normal, false, true, 1);
+	CHECK(high.HighQuality);
+	CHECK(high.Key.Compress == 2);
+	CHECK(high.Space == MipSpace::Linear);
+	CHECK(high.Key.EncoderRevision == kTextureEncoderRevision);
+
+	// The exhaustive BC7 tier cooks different bytes, so it needs its own key too.
+	const TextureCookPlan exhaustive = PlanTextureCook(TextureRole::Albedo, true, true, 2);
+	CHECK(exhaustive.Quality == 2);
+	CHECK(exhaustive.Key.Compress == CookCompressField(true, 2));
+	CHECK(exhaustive.Key.Compress != high.Key.Compress);
+}
+
+TEST_CASE("Sprite blobs live beside the material blob, not over it", "[texturecook]")
+{
+	const AssetHandle handle{1234};
+	CHECK(TextureCacheIO::GetCachePath(handle, TextureRole::Sprite).filename() == "1234.sprite.sstex");
+	CHECK(TextureCacheIO::GetCachePath(handle, TextureRole::Albedo).filename() == "1234.sstex");
+	CHECK(TextureCacheIO::GetCachePath(handle, TextureRole::Unknown) == TextureCacheIO::GetCachePath(handle, TextureRole::Mask));
 }
 
 TEST_CASE("Every quality tier cooks under its own cache key", "[texturecook]")

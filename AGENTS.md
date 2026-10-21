@@ -934,6 +934,7 @@ texture leaves it Unknown and the conservative colour encoding wins.
 | albedo, alpha | BC3, 8 bpp (BC7 at `cook.textures.quality>=1`) | BC1's 1-bit alpha decodes transparent black and bleeds halos; BC3 encodes in seconds where exhaustive BC7 takes minutes per 2K texture |
 | tangent normal | **BC5**, 8 bpp | two independent 8-bit planes; z reconstructed in the shader |
 | metallic-roughness, AO | BC1, 4 bpp | measured adequate, see below |
+| sprite | RGBA8, one level, whatever `cook.textures.compress` and `.quality` say | exact texels; see the 2D render path |
 
 **Mips are filtered in the colour space of the role** (`MipSpaceFor`, `Render/TextureCook.cpp`): albedo in
 linear light (sRGB EOTF LUT, exact OETF on write), normals and masks as plain byte averages, alpha always
@@ -1197,8 +1198,14 @@ those. The sprite shaders include no `Engine.hlsli` and keep their resources in 
 0 and 2. All viewports' instances for a frame share one buffer per frame in flight, uploaded by the first sprite pass to
 execute, with a push-constant base instance per viewport.
 
-A texture asset referenced only by sprites has role `Unknown` and is cooked block-compressed with mips (#339). The
-editor's Scene view takes the scene's Primary camera's render path and background on open, still flying in perspective
+**Sprite textures cook as `TextureRole::Sprite`** (#339, Unity's Sprite texture type, Unreal's Paper2D texture
+settings): `GetSpriteTextureViewAsync` requests the role rather than deriving it, and `PlanTextureCook` gives it one exact
+sRGB level, never block-compressed, so the compress setting never re-cooks a sprite. The blob is `<handle>.sprite.sstex`
+and the view sits in its own cache, so a texture used by a sprite and a material keeps both cooks and both GPU images.
+With one level, a sprite drawn much smaller than its texture aliases; mips and compression per asset wait for `.meta`.
+`cook.assets` walks the registry, which cannot know scene usage, so sprite variants cook on first use.
+
+The editor's Scene view takes the scene's Primary camera's render path and background on open, still flying in perspective
 (#341). `quality.capture` is a Scene3D effect and does not capture a Canvas2D frame.
 
 **`Sprites.world` is the testbed**, booted by smoke as `Sprites`: a 64x64 checkerboard magnified with `Nearest` and with

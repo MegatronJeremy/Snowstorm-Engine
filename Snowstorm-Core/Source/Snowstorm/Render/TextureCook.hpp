@@ -24,6 +24,22 @@ namespace Snowstorm
 	// of the caller, never a guess.
 	[[nodiscard]] MipSpace MipSpaceFor(TextureRole role, bool srgbRequested);
 
+	// Every cook decision besides decoding the source, so the key a blob is stored under and the bytes in it
+	// cannot disagree.
+	struct TextureCookPlan
+	{
+		TextureCookKey Key;
+		MipSpace Space = MipSpace::Linear;
+		bool BuildMips = true;
+		bool Compress = false;
+		bool HighQuality = false;
+		int Quality = 0; // cook.textures.quality as read for this cook
+	};
+
+	// A sprite keeps one exact sRGB level whatever cook.textures.compress says, so flipping that setting
+	// never re-cooks sprites.
+	[[nodiscard]] TextureCookPlan PlanTextureCook(TextureRole role, bool srgbRequested, bool compressSetting, int textureQuality);
+
 	// Box-downsample one RGBA8 level to the next (half size, min 1). Odd extents reuse the last row/column.
 	[[nodiscard]] std::vector<uint8_t> DownsampleRGBA8(const std::vector<uint8_t>& src, uint32_t sw, uint32_t sh, uint32_t dw, uint32_t dh,
 	                                                   MipSpace space);

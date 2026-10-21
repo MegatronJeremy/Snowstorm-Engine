@@ -31,18 +31,18 @@ namespace Snowstorm
 		};
 	}
 
-	std::filesystem::path TextureCacheIO::GetCachePath(const AssetHandle handle)
+	std::filesystem::path TextureCacheIO::GetCachePath(const AssetHandle handle, const TextureRole role)
 	{
 		std::filesystem::path p = EngineAssetPath("Engine/cache/texture");
 		p /= handle.ToString();
-		p += ".sstex";
+		p += role == TextureRole::Sprite ? ".sprite.sstex" : ".sstex";
 		return p;
 	}
 
 	std::optional<CookedTexture> TextureCacheIO::Load(const AssetHandle handle, const std::filesystem::path& sourcePath,
 	                                                  const TextureCookKey& key)
 	{
-		const auto path = GetCachePath(handle);
+		const auto path = GetCachePath(handle, static_cast<TextureRole>(key.Role));
 
 		std::ifstream in(path, std::ios::binary);
 		if (!in.is_open())
@@ -92,7 +92,7 @@ namespace Snowstorm
 		if (tex.Levels.empty() || tex.Width == 0 || tex.Height == 0)
 			return false;
 
-		const auto path = GetCachePath(handle);
+		const auto path = GetCachePath(handle, static_cast<TextureRole>(key.Role));
 		std::error_code ec;
 		std::filesystem::create_directories(path.parent_path(), ec);
 
