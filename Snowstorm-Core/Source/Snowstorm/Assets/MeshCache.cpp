@@ -1,8 +1,7 @@
 #include "MeshCache.hpp"
 
-#include "Snowstorm/Assets/AssetFileTime.hpp"
-
-#include "Snowstorm/Utility/EnginePaths.hpp"
+#include "Snowstorm/Assets/DerivedData.hpp"
+#include "Snowstorm/Assets/SourceHashIndex.hpp"
 
 #include "Snowstorm/Core/Log.hpp"
 
@@ -12,48 +11,39 @@ namespace Snowstorm
 {
 	namespace
 	{
-		// On-disk header. Magic + version guard against stale/foreign files. Freshness records BOTH the
-		// source mtime (the cheap gate, so a warm load never opens the source) and its content hash (the
-		// authority, so the blob survives a checkout, copy or touch that moves the timestamp). That second
-		// field is what makes this artifact shippable instead of valid only on the machine that cooked it.
-		// Bumping Version (e.g. if Vertex layout changes) forces a re-cook of every mesh.
+		// Bumping Version (e.g. if the Vertex layout or the import flags change) forces a re-cook of every mesh.
 		constexpr uint32_t kMagic = 0x484D5353; // "SSMH"
-		constexpr uint32_t kVersion = 2;        // +SourceHash
+		constexpr uint32_t kVersion = 3;        // content-addressed name, no mtime in the header
 
 		struct Header
 		{
 			uint32_t Magic = kMagic;
 			uint32_t Version = kVersion;
-			uint64_t SourceWriteTime = 0;
-			uint64_t SourceHash = 0;
+			uint64_t SourceHash = 0; // guards against a key collision
 			uint64_t VertexCount = 0;
 			uint64_t IndexCount = 0;
 		};
 	}
 
-	std::filesystem::path MeshCacheIO::GetCachePath(const AssetHandle handle)
+	std::filesystem::path MeshCacheIO::GetCachePath(const uint64_t sourceHash, const int submeshIndex)
 	{
-		std::filesystem::path p = EngineAssetPath("Engine/cache/mesh");
-		p /= handle.ToString();
-		p += ".ssmesh";
-		return p;
+		return DerivedDataPath("mesh", DerivedDataKey(sourceHash, kVersion, std::as_bytes(std::span(&submeshIndex, 1))), ".ssmesh");
 	}
 
-	std::optional<CookedMesh> MeshCacheIO::Load(const AssetHandle handle, const std::filesystem::path& sourcePath)
+	std::optional<CookedMesh> MeshCacheIO::Load(const std::filesystem::path& sourcePath, const int submeshIndex)
 	{
-		const auto path = GetCachePath(handle);
+		const uint64_t sourceHash = SourceHashIndex::Get().Hash(sourcePath);
+		if (sourceHash == 0)
+			return std::nullopt;
 
+		const auto path = GetCachePath(sourceHash, submeshIndex);
 		std::ifstream in(path, std::ios::binary);
 		if (!in.is_open())
 			return std::nullopt;
 
 		Header h{};
 		in.read(reinterpret_cast<char*>(&h), sizeof(h));
-		if (!in || h.Magic != kMagic || h.Version != kVersion)
-			return std::nullopt;
-
-		// Stale: source changed since this blob was cooked. Caller re-parses + re-cooks.
-		if (!SourceIsUnchanged(sourcePath, h.SourceWriteTime, h.SourceHash))
+		if (!in || h.Magic != kMagic || h.Version != kVersion || h.SourceHash != sourceHash)
 			return std::nullopt;
 
 		if (h.VertexCount == 0 || h.IndexCount == 0)
@@ -78,45 +68,27 @@ namespace Snowstorm
 		return mesh;
 	}
 
-	bool MeshCacheIO::Save(const AssetHandle handle, const std::filesystem::path& sourcePath, const CookedMesh& mesh)
+	bool MeshCacheIO::Save(const std::filesystem::path& sourcePath, const int submeshIndex, const CookedMesh& mesh)
 	{
 		if (mesh.Vertices.empty() || mesh.Indices.empty())
 			return false;
 
-		const auto path = GetCachePath(handle);
-		std::error_code ec;
-		std::filesystem::create_directories(path.parent_path(), ec);
+		const uint64_t sourceHash = SourceHashIndex::Get().Hash(sourcePath);
+		if (sourceHash == 0)
+			return false;
 
 		Header h{};
-		h.SourceWriteTime = GetFileWriteTimeU64(sourcePath);
-		h.SourceHash = HashFileContents(sourcePath);
+		h.SourceHash = sourceHash;
 		h.VertexCount = mesh.Vertices.size();
 		h.IndexCount = mesh.Indices.size();
 
-		// Atomic-ish: write a temp then rename, so a crash mid-write never leaves a half-cooked blob that
-		// would pass the header check. Mirrors MeshMetaCacheIO::Save.
-		const auto tmp = path.string() + ".tmp";
-		{
-			std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-			if (!out.is_open())
-				return false;
-
+		return WriteFileAtomic(GetCachePath(sourceHash, submeshIndex), [&](std::ostream& out)
+		                       {
 			out.write(reinterpret_cast<const char*>(&h), sizeof(h));
 			out.write(reinterpret_cast<const char*>(mesh.Vertices.data()),
 			          static_cast<std::streamsize>(h.VertexCount * sizeof(Vertex)));
 			out.write(reinterpret_cast<const char*>(mesh.Indices.data()),
 			          static_cast<std::streamsize>(h.IndexCount * sizeof(uint32_t)));
-			if (!out)
-				return false;
-		}
-
-		std::filesystem::rename(tmp, path, ec);
-		if (ec)
-		{
-			std::filesystem::remove(path, ec);
-			ec.clear();
-			std::filesystem::rename(tmp, path, ec);
-		}
-		return !ec;
+			return static_cast<bool>(out); });
 	}
 }

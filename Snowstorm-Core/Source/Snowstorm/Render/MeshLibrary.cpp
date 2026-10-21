@@ -222,7 +222,7 @@ namespace Snowstorm
 		return lock;
 	}
 
-	std::optional<CookedMesh> MeshLibrary::LoadCookedCPU(const std::string& filepath, const int submeshIndex, const AssetHandle handle)
+	std::optional<CookedMesh> MeshLibrary::LoadCookedCPU(const std::string& filepath, const int submeshIndex)
 	{
 		// CPU-only: safe on a worker thread. No m_Meshes access (that map holds GPU resources and is
 		// main-thread-only); the caller finalizes on the main thread via FinalizeCooked.
@@ -232,7 +232,7 @@ namespace Snowstorm
 		const uint64_t sourceTime = GetFileWriteTimeU64(filepath);
 
 		// Fast path: this submesh's cooked blob already on disk (no Assimp).
-		if (auto blob = MeshCacheIO::Load(handle, filepath))
+		if (auto blob = MeshCacheIO::Load(filepath, submeshIndex))
 		{
 			return blob;
 		}
@@ -244,7 +244,7 @@ namespace Snowstorm
 		std::lock_guard parseGuard(*fileLock);
 
 		// Another worker may have written this blob while we waited on the lock — recheck disk.
-		if (auto blob = MeshCacheIO::Load(handle, filepath))
+		if (auto blob = MeshCacheIO::Load(filepath, submeshIndex))
 		{
 			return blob;
 		}
@@ -279,7 +279,7 @@ namespace Snowstorm
 		{
 			return std::nullopt;
 		}
-		(void)MeshCacheIO::Save(handle, filepath, cooked); // persist so next startup skips the parse entirely
+		(void)MeshCacheIO::Save(filepath, submeshIndex, cooked); // persist so next startup skips the parse entirely
 		return cooked;
 	}
 
@@ -301,7 +301,7 @@ namespace Snowstorm
 		return result;
 	}
 
-	Ref<Mesh> MeshLibrary::LoadCached(const std::string& filepath, const int submeshIndex, const AssetHandle handle)
+	Ref<Mesh> MeshLibrary::LoadCached(const std::string& filepath, const int submeshIndex)
 	{
 		const std::string cacheKey = filepath + "?submesh=" + std::to_string(submeshIndex);
 		if (const auto it = m_Meshes.find(cacheKey); it != m_Meshes.end())
@@ -309,7 +309,7 @@ namespace Snowstorm
 			return it->second;
 		}
 
-		auto cooked = LoadCookedCPU(filepath, submeshIndex, handle);
+		auto cooked = LoadCookedCPU(filepath, submeshIndex);
 		if (!cooked)
 		{
 			return nullptr;

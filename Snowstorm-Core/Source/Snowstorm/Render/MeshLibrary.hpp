@@ -29,17 +29,17 @@ namespace Snowstorm
 		// this is what model import uses to spawn one entity per part. submeshIndex must be in range.
 		Ref<Mesh> Load(const std::string& filepath, int submeshIndex);
 
-		// Cooked-cache load: tries the on-disk cooked blob for `handle` first (no Assimp parse), and only
+		// Cooked-cache load: tries the on-disk cooked blob for this source and submesh first (no Assimp parse), and only
 		// re-parses the source + re-cooks on a cache miss/stale. This is the fast startup path — the plain
 		// Load() overloads above re-parse the whole file every call (fine for one-off imports, but O(N-full-
-		// parses) for an N-submesh scene). Prefer this from GetMesh where a stable handle exists.
-		Ref<Mesh> LoadCached(const std::string& filepath, int submeshIndex, AssetHandle handle);
+		// parses) for an N-submesh scene). Prefer this from GetMesh.
+		Ref<Mesh> LoadCached(const std::string& filepath, int submeshIndex);
 
 		// CPU-only cook/load: returns the packed vertex/index data (from the cooked blob if fresh, else by
 		// parsing the source once and writing the blob). Creates NO GPU buffers, so it is safe to call from
 		// a JobSystem worker thread — the caller builds the Mesh (GPU upload) on the main thread from the
 		// result (see AssetManagerSingleton async load). Returns nullopt on parse failure.
-		std::optional<CookedMesh> LoadCookedCPU(const std::string& filepath, int submeshIndex, AssetHandle handle);
+		std::optional<CookedMesh> LoadCookedCPU(const std::string& filepath, int submeshIndex);
 
 		// Build + cache the GPU Mesh from already-cooked CPU data (main thread only — creates Vulkan
 		// buffers). Keyed like LoadCached so a subsequent LoadCached/LoadCookedCPU hits the cache.
