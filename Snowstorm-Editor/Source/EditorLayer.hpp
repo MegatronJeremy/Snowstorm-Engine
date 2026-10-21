@@ -103,6 +103,10 @@ namespace Snowstorm
 		// scene is authored through the 2D path. Scene3D when the scene has no Primary camera.
 		void MatchSceneViewRenderPath() const;
 
+		// Put the Scene-view camera at the scene's Primary camera pose (false if the scene has none), so a
+		// scene with no saved viewpoint opens on the view its author chose rather than a bounds fit.
+		bool AlignEditorCameraToPrimary() const;
+
 		// Position the primary camera so the whole scene's renderable bounds are in view and fit the
 		// near/far planes to its size. Pure camera move (no lights, no save). Shares the framing math
 		// with the editor's Frame command so an unknown-scale import (e.g. Sponza) is never off-screen.

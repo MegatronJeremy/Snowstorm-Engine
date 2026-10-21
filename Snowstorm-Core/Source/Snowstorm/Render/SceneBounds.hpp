@@ -34,4 +34,8 @@ namespace Snowstorm
 	// different ways). "TargetViewportEntity" is the resolved link CameraTargetComponent carries; a camera
 	// with no target, or targeting a different viewport, is not a candidate. Read-only; no side effects.
 	[[nodiscard]] entt::entity ResolveViewportCamera(const TrackedRegistry& reg, entt::entity viewport);
+
+	// The scene's authored main camera (Unity Camera.main): the first camera flagged Primary, never the editor's
+	// Scene-view camera (DoNotSerializeComponent). entt::null when the scene has none.
+	[[nodiscard]] entt::entity FindScenePrimaryCamera(const TrackedRegistry& reg);
 }
