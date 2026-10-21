@@ -1268,6 +1268,11 @@ default project (recent list, New, Open, Continue); *File > Recent Projects* off
 The Runtime keeps its implicit CWD project, and the Editor still falls back to one when the
 .ssproj is unreadable, so `Project::GetActive()` is non-null before the picker is dismissed.
 
+Opening a scene places the Scene-view camera from the first of: `camera.override`, the
+`<scene>.world.editor` sidecar (rewritten on scene close), the scene's Primary camera pose
+(`FindScenePrimaryCamera`), a fit to the renderable bounds. The bounds fit stays last because in a scene whose floor spans the bounds it can land
+at floor height, leaving the floor edge-on and invisible.
+
 ## Layout
 
 ```

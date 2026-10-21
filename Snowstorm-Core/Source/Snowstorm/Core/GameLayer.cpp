@@ -23,6 +23,7 @@
 #include "Snowstorm/Components/VisibilityComponents.hpp"
 
 #include "Snowstorm/Render/RendererUtils.hpp"
+#include "Snowstorm/Render/SceneBounds.hpp"
 
 namespace Snowstorm
 {
@@ -157,16 +158,7 @@ namespace Snowstorm
 		// camera by grabbing an arbitrary non-Primary one, so which camera you see is always the authored
 		// choice, never entt iteration order. (The editor's Scene-view camera is DoNotSerialize + editor-only,
 		// so it never appears in the runtime.)
-		entt::entity authored = entt::null;
-		for (const entt::entity e : reg.view<CameraComponent>())
-		{
-			if (reg.Read<CameraComponent>(e).Primary)
-			{
-				authored = e;
-				break;
-			}
-		}
-
+		const entt::entity authored = FindScenePrimaryCamera(reg);
 		if (authored == entt::null)
 		{
 			// No Primary camera → a defined, safe no-camera state: nothing renders to the swapchain, so the

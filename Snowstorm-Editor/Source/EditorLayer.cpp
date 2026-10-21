@@ -544,10 +544,11 @@ namespace Snowstorm
 
 		// Restore this scene's saved editor camera viewpoint (editor-only sidecar). Absolute transform, so
 		// no dependency on async-streamed bounds. If there's no sidecar (first time opening the scene),
-		// frame the camera to the scene's renderable bounds so it opens looking at content, not at nothing.
-		// camera.override outranks both: a benchmark pins its viewpoint in code, and must not inherit
+		// start at the scene's Primary camera, else frame the renderable bounds so it opens looking at
+		// content, not at nothing. A bounds fit can land at floor height in a scene whose floor spans it.
+		// camera.override outranks all of them: a benchmark pins its viewpoint in code, and must not inherit
 		// whatever pose this machine happened to leave in the sidecar.
-		if (!ApplyCameraOverride() && !LoadEditorCameraSidecar(scenePath))
+		if (!ApplyCameraOverride() && !LoadEditorCameraSidecar(scenePath) && !AlignEditorCameraToPrimary())
 		{
 			FrameImportedSceneCamera();
 		}
@@ -1117,23 +1118,33 @@ namespace Snowstorm
 
 		auto& reg = m_ActiveWorld->GetRegistry();
 		const CameraComponent defaults{};
-		const CameraComponent* primary = &defaults;
-		for (const entt::entity e : reg.view<CameraComponent>())
-		{
-			if (reg.any_of<DoNotSerializeComponent>(e))
-			{
-				continue;
-			}
-			if (const auto& cc = reg.Read<CameraComponent>(e); cc.Primary)
-			{
-				primary = &cc;
-				break;
-			}
-		}
+		const entt::entity primaryEntity = FindScenePrimaryCamera(reg);
+		const CameraComponent& primary = primaryEntity != entt::null ? reg.Read<CameraComponent>(primaryEntity) : defaults;
 
 		auto& cc = reg.Write<CameraComponent>(editorCam.Handle());
-		cc.RenderPath = primary->RenderPath;
-		cc.BackgroundColor = primary->BackgroundColor;
+		cc.RenderPath = primary.RenderPath;
+		cc.BackgroundColor = primary.BackgroundColor;
+	}
+
+	bool EditorLayer::AlignEditorCameraToPrimary() const
+	{
+		const Entity editorCam = FindEditorCamera();
+		auto& reg = m_ActiveWorld->GetRegistry();
+		const entt::entity primary = FindScenePrimaryCamera(reg);
+		if (!editorCam || primary == entt::null || !reg.all_of<TransformComponent>(primary))
+		{
+			return false;
+		}
+
+		const TransformComponent from = reg.Read<TransformComponent>(primary);
+		auto& tr = reg.Write<TransformComponent>(editorCam.Handle());
+		tr.Position = from.Position;
+		tr.Rotation = from.Rotation;
+		if (reg.any_of<CameraControllerRuntimeComponent>(editorCam.Handle()))
+		{
+			reg.Write<CameraControllerRuntimeComponent>(editorCam.Handle()).Initialized = false;
+		}
+		return true;
 	}
 
 	namespace
