@@ -114,6 +114,10 @@ NO_TIMESTAMPS = object()
 # floor applied only where a verdict can fail the run.
 NOISE_FLOOR_MS = 0.05
 
+# Why the last run_config call returned None ("timeout 120s", "exit -1073741819", "no JSON"). The PC
+# check keeps only the tail of the log, so the final FAIL line has to name the failing run itself.
+LAST_FAILURE = ""
+
 
 def median(vals: list[float]) -> float:
     v = sorted(vals)
@@ -132,6 +136,8 @@ def run_config(name: str, env_overrides: dict, exe: Path, cwd: Path, frames: int
     Returns the parsed perf JSON, NO_TIMESTAMPS if the device cannot be measured, or None on a
     real run failure (timeout, non-zero exit, no JSON).
     """
+    global LAST_FAILURE
+    LAST_FAILURE = ""
     out_path = Path(tempfile.gettempdir()) / f"perf-bench-{name}.json"
     if out_path.exists():
         out_path.unlink()
@@ -164,12 +170,15 @@ def run_config(name: str, env_overrides: dict, exe: Path, cwd: Path, frames: int
                               capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         print(f"  {name}: FAIL (timed out after {timeout}s)")
+        LAST_FAILURE = f"timeout {timeout}s"
         return None
     if proc.returncode != 0:
         print(f"  {name}: FAIL (exit code {proc.returncode})")
+        LAST_FAILURE = f"exit {proc.returncode}"
         return None
     if not out_path.exists():
         print(f"  {name}: FAIL (no JSON written to {out_path})")
+        LAST_FAILURE = "no JSON written"
         return None
 
     data = json.loads(out_path.read_text())
@@ -243,6 +252,7 @@ def paired_ab(name: str, env_overrides: dict, exe_a: Path, exe_b: Path, pairs: i
     Reports the MEDIAN paired delta plus the pair-to-pair spread. A median delta smaller than that spread
     means the pairs disagree about the size (or sign) of the effect, i.e. the measurement resolved nothing.
     """
+    global LAST_FAILURE
     a_runs, b_runs = [], []
     for i in range(pairs):
         # ABBA counterbalancing: alternate which build runs first. Whichever goes SECOND in a pair inherits
@@ -250,15 +260,19 @@ def paired_ab(name: str, env_overrides: dict, exe_a: Path, exe_b: Path, pairs: i
         # -4.9% in favour of the second slot. Plain ABAB would book that warm-up as the change under test.
         # Alternating the order makes the position effect cancel across pairs instead of accumulating.
         a_first = (i % 2 == 0)
-        if a_first:
-            a = run_config(name, env_overrides, exe_a, **kw)
-            b = run_config(name, env_overrides, exe_b, **kw)
-        else:
-            b = run_config(name, env_overrides, exe_b, **kw)
-            a = run_config(name, env_overrides, exe_a, **kw)
-        if a is None or b is None:
-            print("  pair {}: run failed, aborting A/B".format(i + 1))
+        failed = ""
+        order = (("A", exe_a), ("B", exe_b)) if a_first else (("B", exe_b), ("A", exe_a))
+        got = {}
+        for arm, arm_exe in order:
+            got[arm] = run_config(name, env_overrides, arm_exe, **kw)
+            if got[arm] is None:
+                failed = "pair {} {} ({}), {}".format(i + 1, arm, arm_exe.name, LAST_FAILURE)
+                break
+        if failed:
+            LAST_FAILURE = failed
+            print("  pair {}: run failed, aborting A/B ({})".format(i + 1, failed))
             return None
+        a, b = got["A"], got["B"]
         a_runs.append(a)
         b_runs.append(b)
         d = (b["totalGpuMs"] - a["totalGpuMs"]) / a["totalGpuMs"] * 100.0
@@ -639,6 +653,7 @@ def main() -> int:
         print(f"          B = {exe}")
         print(f"          {args.pairs} interleaved pairs per config\n")
         ab_ok = True
+        ab_failed = []
         regressions = []
         for name, env_overrides in configs:
             print(f"=== {name} ===")
@@ -647,6 +662,7 @@ def main() -> int:
                             layer_path=layer_path, scene=args.scene, gpu=args.gpu)
             if res is None:
                 ab_ok = False
+                ab_failed.append("{} ({})".format(name, LAST_FAILURE))
                 continue
             print_ab(res, NOISE_FLOOR_MS)
             if args.gate:
@@ -662,7 +678,7 @@ def main() -> int:
             print("")
         if args.gate:
             if not ab_ok:
-                print("FAIL: a run failed during the A/B")
+                print("FAIL: a run failed during the A/B in: " + "; ".join(ab_failed))
             elif regressions:
                 print("FAIL: resolved regression in: " + ", ".join(regressions))
             else:
@@ -672,6 +688,7 @@ def main() -> int:
 
     all_ok = True
     ungated = []
+    run_failed = []
     for name, env_overrides in configs:
         print(f"=== {name} ===")
         runs = []
@@ -691,6 +708,7 @@ def main() -> int:
             continue
         if not runs:
             all_ok = False
+            run_failed.append("{} ({})".format(name, LAST_FAILURE))
             continue
         current = aggregate_runs(runs)
         current["clocksPinned"] = clocks_pinned
@@ -724,6 +742,8 @@ def main() -> int:
 
     print("=== Summary ===")
     if not all_ok:
+        if run_failed:
+            print("FAIL: a run failed in: " + "; ".join(run_failed))
         print("FAIL (regression or run failure)")
         return 1
     if ungated:
