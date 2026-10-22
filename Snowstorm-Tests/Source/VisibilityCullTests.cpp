@@ -24,7 +24,7 @@ using namespace Snowstorm;
 namespace
 {
 	constexpr size_t kParallelGrain = 256;
-	const MeshBounds kUnitCube{Sphere{glm::vec3(0.0f), 0.866025f}, AABB{glm::vec3(-0.5f), glm::vec3(0.5f)}};
+	const MeshBounds kUnitCube{AABB{glm::vec3(-0.5f), glm::vec3(0.5f)}, Sphere{glm::vec3(0.0f), 0.866025f}};
 
 	Frustum CameraAtOriginLookingDownNegZ()
 	{
