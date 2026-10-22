@@ -257,8 +257,11 @@ TEST_CASE("PublishSampled counts as a write for dependencies", "[render][graph]"
 	REQUIRE(deps[1].size() == 1);
 	CHECK(deps[1][0].Producer == 0);
 	CHECK(deps[1][0].Kind == RenderGraph::Hazard::ReadAfterWrite);
-	REQUIRE(deps[2].size() >= 1);
-	CHECK(deps[2][0].Producer == 0);
+	REQUIRE(deps[2].size() == 2);
+	CHECK(deps[2][0].Producer == 1);
+	CHECK(deps[2][0].Kind == RenderGraph::Hazard::WriteAfterRead);
+	CHECK(deps[2][1].Producer == 0);
+	CHECK(deps[2][1].Kind == RenderGraph::Hazard::WriteAfterWrite);
 }
 
 TEST_CASE("A pass that only publishes a texture is not unconstrained against a later writer", "[render][graph]")
