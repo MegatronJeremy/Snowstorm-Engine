@@ -51,9 +51,9 @@ namespace Snowstorm
 			uint32_t PointCount = 0;
 			uint32_t SpotCount = 0;
 
-			uint32_t EnvNee = 1;  // 1 = environment (sky) NEE + MIS
-			uint32_t Sampler = 0; // 0 = PCG, 1 = Owen-scrambled Sobol
-			uint32_t _pad1 = 0;
+			uint32_t EnvNee = 1;          // 1 = environment (sky) NEE + MIS
+			uint32_t Sampler = 0;         // 0 = PCG, 1 = Owen-scrambled Sobol
+			uint32_t ValidReflection = 0; // 1 = Cycles ensure_valid_reflection on the specular lobe
 			uint32_t _pad2 = 0;
 
 			// Raw-packed point/spot lights (mirror the float4 arrays in PathTrace.comp.hlsl exactly). Point:
@@ -149,6 +149,7 @@ namespace Snowstorm
 		cb.FireflyClamp = pr.FireflyClamp;
 		cb.EnvNee = pr.EnvNee;
 		cb.Sampler = pr.Sampler;
+		cb.ValidReflection = pr.ValidReflection;
 		cb.ReflGeoTableAddrLo = static_cast<uint32_t>(pr.TableAddress & 0xFFFFFFFFull);
 		cb.ReflGeoTableAddrHi = static_cast<uint32_t>(pr.TableAddress >> 32);
 

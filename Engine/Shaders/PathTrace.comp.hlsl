@@ -56,7 +56,7 @@ cbuffer PTCB : register(b1, space0)
 
 	uint EnvNee; // 1 = environment (sky) NEE + MIS enabled (render.pathtrace.envnee)
 	uint Sampler; // 0 = PCG white noise, 1 = Owen-scrambled Sobol (render.pathtrace.sampler)
-	uint _ptPad1;
+	uint ValidReflection; // 1 = specular lobe uses Cycles' ensure_valid_reflection normal (render.pathtrace.validreflection)
 	uint _ptPad2;
 
 	// Positional lights for NEE, world space, raw-packed into float4 rows (avoids struct cbuffer packing
@@ -227,6 +227,7 @@ struct Hit
 	float3 pos;
 	float3 Ng;      // geometric normal (world)
 	float3 N;       // shading normal (normal-mapped if a map exists)
+	float3 Nr;      // normal of the specular lobe: N, or N bent so the reflection stays above Ng (ValidReflection)
 	float3 albedo;  // base color * albedo tex
 	float metallic;
 	float roughness; // perceptual, clamped
@@ -296,6 +297,56 @@ float4 LoadVertexTangent(uint64_t vertexAddr, uint index)
 {
 	const uint64_t a = vertexAddr + uint64_t(index) * 48ull + 32ull;
 	return float4(vk::RawBufferLoad<float>(a, 4), vk::RawBufferLoad<float>(a + 4, 4), vk::RawBufferLoad<float>(a + 8, 4), vk::RawBufferLoad<float>(a + 12, 4));
+}
+
+// Cycles ensure_valid_reflection (Render/ValidReflection.hpp is the tested CPU mirror; keep them identical).
+float3 EnsureValidReflection(float3 Ng, float3 I, float3 N)
+{
+	const float3 R = 2.0 * dot(N, I) * N - I;
+	const float threshold = min(0.9 * dot(Ng, I), 0.01);
+	if (dot(Ng, R) >= threshold)
+	{
+		return N;
+	}
+	const float NdotNg = dot(N, Ng);
+	const float3 xRaw = N - NdotNg * Ng;
+	if (dot(xRaw, xRaw) < 1e-12)
+	{
+		return Ng;
+	}
+	const float3 X = normalize(xRaw);
+	const float Ix = dot(I, X);
+	const float Iz = dot(I, Ng);
+	const float A = Ix * Ix + Iz * Iz;
+	const float b = sqrt(max(Ix * Ix * (A - threshold * threshold), 0.0));
+	const float c = Iz * threshold + A;
+	const float fac = 0.5 / A;
+	const float origX = sqrt(max(1.0 - NdotNg * NdotNg, 0.0));
+	float bestDot = -2.0;
+	float3 best = Ng;
+	[unroll] for (uint k = 0; k < 2; ++k)
+	{
+		const float z = fac * (k == 0 ? c + b : c - b);
+		if (!(z > 1e-5 && z <= 1.0 + 1e-5))
+		{
+			continue;
+		}
+		const float nz = sqrt(min(z, 1.0));
+		const float nx = sqrt(max(1.0 - z, 0.0));
+		const float3 Nn = nx * X + nz * Ng;
+		const float3 Rn = 2.0 * dot(Nn, I) * Nn - I;
+		if (dot(Ng, Rn) < threshold - 1e-4)
+		{
+			continue;
+		}
+		const float closeness = nx * origX + nz * NdotNg;
+		if (closeness > bestDot)
+		{
+			bestDot = closeness;
+			best = Nn;
+		}
+	}
+	return best;
 }
 
 // Resolve a committed hit to the full PBR surface via the geometry table (#153 PBR block).
@@ -369,6 +420,7 @@ Hit ResolvePbrHit(uint64_t tableAddr, uint instId, uint prim, float2 bary, float
 
 	h.Ng = Ng; // flat: ray offsets + shadow-ray origin + terminator reference
 	h.N = Ns;  // shading normal (normal-mapped, view-hemisphere-adapted): BRDF shading
+	h.Nr = (ValidReflection != 0u) ? EnsureValidReflection(Ng, V, Ns) : Ns;
 
 	float3 albedo = rec.BaseColor.rgb;
 	if (rec.AlbedoTextureIndex != 0)
@@ -407,17 +459,23 @@ float3 EvalBsdf(Hit h, float3 V, float3 L)
 		return float3(0.0, 0.0, 0.0);
 	}
 	const float3 H = normalize(V + L);
-	const float NoH = saturate(dot(h.N, H));
+	const float NoLr = dot(h.Nr, L);
+	const float NoVr = dot(h.Nr, V);
+	const float NoH = saturate(dot(h.Nr, H));
 	const float VoH = saturate(dot(V, H));
 
 	const float3 f0 = lerp(float3(0.04, 0.04, 0.04), h.albedo, h.metallic);
 	const float3 diffuse = h.albedo * (1.0 - h.metallic) * INV_PI;
 
-	const float a = h.roughness * h.roughness;
-	const float D = D_GGX(NoH, a);
-	const float Vis = V_SmithGGX(saturate(NoV), saturate(NoL), a);
-	const float3 F = F_Schlick(VoH, f0);
-	const float3 spec = D * Vis * F; // height-correlated Smith V already includes the 1/(4 NoV NoL) denominator
+	float3 spec = float3(0.0, 0.0, 0.0);
+	if (NoLr > 0.0 && NoVr > 0.0)
+	{
+		const float a = h.roughness * h.roughness;
+		const float D = D_GGX(NoH, a);
+		const float Vis = V_SmithGGX(saturate(NoVr), saturate(NoLr), a);
+		const float3 F = F_Schlick(VoH, f0);
+		spec = D * Vis * F; // height-correlated Smith V already includes the 1/(4 NoV NoL) denominator
+	}
 
 	return (diffuse + spec) * NoL;
 }
@@ -441,10 +499,11 @@ float BsdfPdf(Hit h, float3 V, float3 L)
 	const float pDiff = 1.0 - pSpec;
 	const float a = h.roughness * h.roughness;
 	const float3 H = normalize(V + L);
-	const float NoH = saturate(dot(h.N, H));
+	const float NoH = saturate(dot(h.Nr, H));
 	const float VoH = saturate(dot(V, H));
 	const float pdfDiff = NoL * INV_PI;
-	const float pdfSpec = (VoH > 0.0) ? (D_GGX(NoH, a) * NoH / (4.0 * VoH)) : 0.0;
+	const bool specValid = dot(h.Nr, L) > 0.0 && dot(h.Nr, V) > 0.0;
+	const float pdfSpec = (VoH > 0.0 && specValid) ? (D_GGX(NoH, a) * NoH / (4.0 * VoH)) : 0.0;
 	return pDiff * pdfDiff + pSpec * pdfSpec;
 }
 
@@ -509,7 +568,7 @@ bool SampleBsdf(Hit h, float3 V, inout Rng rng, out float3 L, out float3 weight,
 		const float cosT = sqrt((1.0 - u2) / max(1.0 + (a * a - 1.0) * u2, 1e-8));
 		const float sinT = sqrt(max(0.0, 1.0 - cosT * cosT));
 		const float3 Hlocal = float3(sinT * cos(phi), sinT * sin(phi), cosT);
-		const float3 H = normalize(ToWorld(Hlocal, h.N));
+		const float3 H = normalize(ToWorld(Hlocal, h.Nr));
 		L = reflect(-V, H);
 	}
 
