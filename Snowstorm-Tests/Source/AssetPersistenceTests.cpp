@@ -224,7 +224,7 @@ TEST_CASE("MaterialAssetIO writes AlphaMode and sparse fields only", "[materiali
 	CHECK(root["Shader"] == kDefaultFragmentShader);
 }
 
-TEST_CASE("MaterialAssetIO reads the legacy AlphaMask boolean", "[materialio]")
+TEST_CASE("MaterialAssetIO loads a legacy AlphaMask boolean from a saved file", "[materialio]")
 {
 	TempDir dir;
 
