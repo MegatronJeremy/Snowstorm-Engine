@@ -1,6 +1,12 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <filesystem>
+#include <fstream>
+#include <regex>
+#include <set>
+#include <sstream>
+#include <string>
 #include <vector>
 
 #include "Snowstorm/Render/QmcSampler.hpp"
@@ -132,4 +138,42 @@ TEST_CASE("qmc: pairs of one decision stay uncorrelated across pixels", "[qmc]")
 		same += (p.X == q.X && p.Y == q.Y);
 	}
 	REQUIRE(same == 0);
+}
+
+namespace
+{
+	std::set<std::string> UnsignedLiterals(const std::filesystem::path& file)
+	{
+		std::ifstream in(file);
+		REQUIRE(in.good());
+		std::stringstream ss;
+		ss << in.rdbuf();
+		const std::string text = ss.str();
+		std::set<std::string> out;
+		const std::regex literal(R"(\b(0x[0-9a-fA-F]+|[0-9]+)u\b)");
+		for (auto it = std::sregex_iterator(text.begin(), text.end(), literal); it != std::sregex_iterator(); ++it)
+		{
+			std::string v = (*it)[1];
+			for (char& c : v)
+			{
+				c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+			}
+			out.insert(v);
+		}
+		return out;
+	}
+}
+
+TEST_CASE("qmc: the shader and the C++ mirror use the same integer constants", "[qmc]")
+{
+	const std::filesystem::path root = SS_REPO_ROOT;
+	const auto shader = UnsignedLiterals(root / "Engine/Shaders/Include/PtSampler.hlsli");
+	const auto cpp = UnsignedLiterals(root / "Snowstorm-Core/Source/Snowstorm/Render/QmcSampler.hpp");
+	REQUIRE_FALSE(shader.empty());
+	// Every constant in the shader must exist in the mirror; the mirror may add C++-only masks and shifts.
+	for (const std::string& c : shader)
+	{
+		INFO("shader literal missing from QmcSampler.hpp: " << c);
+		REQUIRE(cpp.count(c) == 1);
+	}
 }
