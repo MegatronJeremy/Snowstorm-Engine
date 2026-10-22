@@ -76,6 +76,7 @@ The two temporal metrics disagree usefully: `rtgi` has the best tFLIP (0.0081, t
 - Both gates need a real GPU and run locally, not in CI. Absolute motionPenalty values changed by roughly 4 to 10 times when the capture protocol cleared temporal history on entering steady state (60d154d); never compare numbers across that boundary.
 - The motion baselines exist for the 9070 XT only.
 - The reference is unbiased but finite: after enough accumulation frames it is converged for these scenes, not exact. `--ref-frames` sets it, and `--fresh-ref` is needed after a change that could move the reference itself.
+- `render.pathtrace.emissivenee` (off by default) samples emissive triangles directly and MIS-weights them against BSDF hits, which changes convergence of emitter-lit regions only, not the converged image. No convergence or baseline numbers exist for it yet.
 
 ## Reproduce
 

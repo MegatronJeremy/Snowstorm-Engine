@@ -56,6 +56,11 @@ namespace Snowstorm
 			uint32_t _pad1 = 0;
 			uint32_t _pad2 = 0;
 
+			uint32_t EmissiveNee = 0; // 1 = emissive-triangle NEE + MIS
+			uint32_t EmissiveCount = 0;
+			uint32_t EmissiveAddrLo = 0;
+			uint32_t EmissiveAddrHi = 0;
+
 			// Raw-packed point/spot lights (mirror the float4 arrays in PathTrace.comp.hlsl exactly). Point:
 			// [2i] = pos.xyz,range; [2i+1] = color.xyz,intensity. Spot: [4i] = pos.xyz,range; [4i+1] =
 			// color.xyz,intensity; [4i+2] = dir.xyz,cosInner; [4i+3].x = cosOuter.
@@ -149,6 +154,10 @@ namespace Snowstorm
 		cb.FireflyClamp = pr.FireflyClamp;
 		cb.EnvNee = pr.EnvNee;
 		cb.Sampler = pr.Sampler;
+		cb.EmissiveNee = pr.EmissiveNee;
+		cb.EmissiveCount = pr.EmissiveCount;
+		cb.EmissiveAddrLo = static_cast<uint32_t>(pr.EmissiveAddress & 0xFFFFFFFFull);
+		cb.EmissiveAddrHi = static_cast<uint32_t>(pr.EmissiveAddress >> 32);
 		cb.ReflGeoTableAddrLo = static_cast<uint32_t>(pr.TableAddress & 0xFFFFFFFFull);
 		cb.ReflGeoTableAddrHi = static_cast<uint32_t>(pr.TableAddress >> 32);
 

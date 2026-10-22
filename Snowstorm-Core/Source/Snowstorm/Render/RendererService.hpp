@@ -237,6 +237,13 @@ namespace Snowstorm
 		// vk::RawBufferLoad. 0 = no table this frame (reflection falls back to the sky cube). Mirrors
 		// SetIBLData/SetShadowData (a plain per-frame handoff, not GPU FrameData).
 		void SetReflectionGeometryAddress(const uint64_t address) { m_ReflectionTableAddress = address; }
+		void SetEmissiveLightList(const uint64_t address, const uint32_t count)
+		{
+			m_EmissiveListAddress = address;
+			m_EmissiveListCount = count;
+		}
+		[[nodiscard]] uint64_t GetEmissiveListAddress() const { return m_EmissiveListAddress; }
+		[[nodiscard]] uint32_t GetEmissiveListCount() const { return m_EmissiveListCount; }
 		// The per-instance geometry-table device address published this frame (0 = no table). The half-res GI
 		// compute pass (#124) reads it to resolve ray hits, same as the inline reflection/GI path via FrameCB.
 		[[nodiscard]] uint64_t GetReflectionGeometryAddress() const { return m_ReflectionTableAddress; }
@@ -529,6 +536,8 @@ namespace Snowstorm
 		// GPU device address of this frame's RT reflection geometry table (#118); pushed by
 		// SetReflectionGeometryAddress, read into FrameCB in AcquireFrameSet. 0 = no table.
 		uint64_t m_ReflectionTableAddress = 0;
+		uint64_t m_EmissiveListAddress = 0; // path tracer emissive triangle list (0 = none)
+		uint32_t m_EmissiveListCount = 0;
 
 		// Half-res GI consumption (#124): the full-res upsampled GI target's bindless index (0 = no GI) + the
 		// scene target's pixel size, pushed per-viewport by SetGITexture, read into FrameCB in AcquireFrameSet.
