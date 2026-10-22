@@ -7,6 +7,8 @@
 #include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/CommandContext.hpp"
 #include "Snowstorm/Render/DescriptorSet.hpp"
+#include "Snowstorm/Render/IBLInvalidation.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Render/Shader.hpp"
 #include "Snowstorm/Service/ServiceManager.hpp"
@@ -210,12 +212,15 @@ namespace Snowstorm
 		const glm::vec3 toSun = haveSun ? glm::normalize(-lights.Lights[0].Direction) : glm::vec3(0.0f);
 		const glm::vec3 sunColor = haveSun ? lights.Lights[0].Color * lights.Lights[0].Intensity : glm::vec3(0.0f);
 
+		const IBLBakePlan plan = PlanIBLBake(m_OutputsBaked);
+		const uint32_t retireDelay = Renderer::GetFramesInFlight() + 1;
+
 		// ---- Pass 1: capture the sky into the env cube (6 faces) ----
 		// Writes envCube as Storage; the graph transitions it to GENERAL before the dispatches.
 		graph.AddPass({.Name = "IBLCapture",
 		               .IsCompute = true,
 		               .Writes = {{m_EnvCube, RenderGraph::AccessState::Storage}},
-		               .Execute = [this, environment, toSun, sunColor](CommandContext& ctx)
+		               .Execute = [this, environment, toSun, sunColor, retireDelay](CommandContext& ctx)
 		               {
 			               ctx.BindPipeline(m_CapturePipeline);
 			               const auto& layouts = m_CapturePipeline->GetSetLayouts();
@@ -244,9 +249,9 @@ namespace Snowstorm
 				               ctx.BindDescriptorSet(set, 0);
 				               ctx.Dispatch((kEnvCubeSize + 7) / 8, (kEnvCubeSize + 7) / 8, 1);
 
-				               m_BakeKeepAlive.push_back(ubo);
-				               m_BakeKeepAlive.push_back(set);
-				               m_BakeKeepAlive.push_back(faceView);
+				               m_BakeRetire.Push(ubo, retireDelay);
+				               m_BakeRetire.Push(set, retireDelay);
+				               m_BakeRetire.Push(faceView, retireDelay);
 			               }
 		               }});
 
@@ -256,7 +261,7 @@ namespace Snowstorm
 		               .IsCompute = true,
 		               .Reads = {{m_EnvCube, RenderGraph::AccessState::Sampled}},
 		               .Writes = {{m_IrradianceCube, RenderGraph::AccessState::Storage}},
-		               .Execute = [this](CommandContext& ctx)
+		               .Execute = [this, retireDelay](CommandContext& ctx)
 		               {
 			               ctx.BindPipeline(m_IrradiancePipeline);
 			               const auto& layouts = m_IrradiancePipeline->GetSetLayouts();
@@ -282,9 +287,9 @@ namespace Snowstorm
 				               ctx.BindDescriptorSet(set, 0);
 				               ctx.Dispatch((kIrradianceCubeSize + 7) / 8, (kIrradianceCubeSize + 7) / 8, 1);
 
-				               m_BakeKeepAlive.push_back(ubo);
-				               m_BakeKeepAlive.push_back(set);
-				               m_BakeKeepAlive.push_back(faceView);
+				               m_BakeRetire.Push(ubo, retireDelay);
+				               m_BakeRetire.Push(set, retireDelay);
+				               m_BakeRetire.Push(faceView, retireDelay);
 			               }
 		               }});
 
@@ -293,7 +298,7 @@ namespace Snowstorm
 		               .IsCompute = true,
 		               .Reads = {{m_EnvCube, RenderGraph::AccessState::Sampled}},
 		               .Writes = {{m_PrefilteredCube, RenderGraph::AccessState::Storage}},
-		               .Execute = [this](CommandContext& ctx)
+		               .Execute = [this, retireDelay](CommandContext& ctx)
 		               {
 			               ctx.BindPipeline(m_PrefilterPipeline);
 			               const auto& layouts = m_PrefilterPipeline->GetSetLayouts();
@@ -324,34 +329,38 @@ namespace Snowstorm
 					               ctx.BindDescriptorSet(set, 0);
 					               ctx.Dispatch((mipSize + 7) / 8, (mipSize + 7) / 8, 1);
 
-					               m_BakeKeepAlive.push_back(ubo);
-					               m_BakeKeepAlive.push_back(set);
-					               m_BakeKeepAlive.push_back(faceView);
+					               m_BakeRetire.Push(ubo, retireDelay);
+					               m_BakeRetire.Push(set, retireDelay);
+					               m_BakeRetire.Push(faceView, retireDelay);
 				               }
 			               }
 		               }});
 
 		// ---- Pass 4: BRDF integration LUT (2D, environment-independent) ----
-		graph.AddPass({.Name = "IBLBRDFLut",
-		               .IsCompute = true,
-		               .Writes = {{m_BRDFLut, RenderGraph::AccessState::Storage}},
-		               .Execute = [this](CommandContext& ctx)
-		               {
-			               ctx.BindPipeline(m_BRDFLutPipeline);
-			               const auto& layouts = m_BRDFLutPipeline->GetSetLayouts();
-			               SS_CORE_ASSERT(!layouts.empty(), "[IBL] BRDF LUT pipeline has no set layout");
-			               DescriptorSetDesc dsd{};
-			               dsd.DebugName = "IBLBRDFLutSet";
-			               Ref<DescriptorSet> set = DescriptorSet::Create(layouts[0], dsd);
-			               set->SetTexture(0, m_BRDFLutView); // u0 storage 2D LUT
-			               set->Commit();
+		if (plan.BakeBRDFLut)
+		{
+			graph.AddPass({.Name = "IBLBRDFLut",
+			               .IsCompute = true,
+			               .Writes = {{m_BRDFLut, RenderGraph::AccessState::Storage}},
+			               .Execute = [this, retireDelay](CommandContext& ctx)
+			               {
+				               ctx.BindPipeline(m_BRDFLutPipeline);
+				               const auto& layouts = m_BRDFLutPipeline->GetSetLayouts();
+				               SS_CORE_ASSERT(!layouts.empty(), "[IBL] BRDF LUT pipeline has no set layout");
+				               DescriptorSetDesc dsd{};
+				               dsd.DebugName = "IBLBRDFLutSet";
+				               Ref<DescriptorSet> set = DescriptorSet::Create(layouts[0], dsd);
+				               set->SetTexture(0, m_BRDFLutView); // u0 storage 2D LUT
+				               set->Commit();
 
-			               ctx.BindDescriptorSet(set, 0);
-			               ctx.Dispatch((kBRDFLutSize + 7) / 8, (kBRDFLutSize + 7) / 8, 1);
-			               m_BakeKeepAlive.push_back(set);
-		               }});
+				               ctx.BindDescriptorSet(set, 0);
+				               ctx.Dispatch((kBRDFLutSize + 7) / 8, (kBRDFLutSize + 7) / 8, 1);
+				               m_BakeRetire.Push(set, retireDelay);
+			               }});
+		}
 
 		m_Baked = true;
+		m_OutputsBaked = true;
 		SS_CORE_INFO("[IBL] baked all maps -- irradiance={} prefiltered={} (cube bindless) brdfLut={} (2d bindless)",
 		             m_IrradianceCubeView->GetGlobalBindlessIndex(),
 		             m_PrefilteredCubeView->GetGlobalBindlessIndex(),
@@ -360,8 +369,11 @@ namespace Snowstorm
 		// Read the freshly-baked maps back so PumpCacheSave() can write the .ssibl next frame. The readback
 		// pass runs after the bake passes above (same frame), reading each map Sampled. Cold path only — a
 		// cache hit returned early and never reaches here.
-		m_PendingEnvHash = envHash;
-		AddReadbackPass(graph);
+		if (plan.Persist)
+		{
+			m_PendingEnvHash = envHash;
+			AddReadbackPass(graph);
+		}
 	}
 
 	void IBLBakePass::UploadFromCache(const CookedIBL& ibl)
@@ -370,6 +382,7 @@ namespace Snowstorm
 		m_PrefilteredCube->SetCubeData(ibl.Prefiltered);
 		m_BRDFLut->SetData(ibl.BRDFLut.data(), static_cast<uint32_t>(ibl.BRDFLut.size()));
 		m_Baked = true;
+		m_OutputsBaked = true;
 	}
 
 	void IBLBakePass::AddReadbackPass(RenderGraph& graph)

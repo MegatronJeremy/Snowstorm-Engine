@@ -58,6 +58,20 @@ namespace Snowstorm
 		return glm::degrees(std::acos(glm::clamp(glm::dot(a.ToSun, b.ToSun), -1.0f, 1.0f)));
 	}
 
+	// What a GPU bake has to do. The BRDF LUT does not depend on the environment, so only the first bake
+	// computes it; the .ssibl cache is keyed on one exact sun, so only the first bake reads back and saves
+	// (a continuous sun would otherwise write a ~1.6 MB file per distinct angle).
+	struct IBLBakePlan
+	{
+		bool BakeBRDFLut = true;
+		bool Persist = true;
+	};
+
+	inline IBLBakePlan PlanIBLBake(bool outputsAlreadyBaked)
+	{
+		return {.BakeBRDFLut = !outputsAlreadyBaked, .Persist = !outputsAlreadyBaked};
+	}
+
 	// Running cost of re-bakes after the first bake: the WaitIdle stall each one pays, and what triggered it.
 	struct IBLRebakeStats
 	{

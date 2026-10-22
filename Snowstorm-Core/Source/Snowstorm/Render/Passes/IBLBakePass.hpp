@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Snowstorm/Assets/UnreferencedEviction.hpp"
 #include "Snowstorm/Lighting/LightingUniforms.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
@@ -37,6 +38,12 @@ namespace Snowstorm
 		// fence retired), map the readback buffers, assemble a CookedIBL, and write it to disk. No-op unless a
 		// save is pending. Call once per frame from RenderSystem after the bake frame. Cold path only.
 		void PumpCacheSave();
+
+		// Release bake objects whose frames have retired. Call once per frame, baked or not.
+		void AdvanceFrame() { m_BakeRetire.Advance(); }
+
+		// Bake objects still waiting for their frames to retire (bounded; pinned by a test of the queue).
+		[[nodiscard]] size_t PendingRetireCount() const { return m_BakeRetire.Size(); }
 
 		[[nodiscard]] bool IsBaked() const { return m_Baked; }
 
@@ -103,9 +110,12 @@ namespace Snowstorm
 		int m_CacheSaveCountdown = 0;
 		uint64_t m_PendingEnvHash = 0;
 
-		// Per-face UBOs / descriptor sets / face views recorded into the bake command buffer; they must
-		// outlive the in-flight frame. Parked here for the session (the bake runs once; freeing them needs
-		// deferred-deletion infra to avoid a use-after-free on the still-in-flight bake submission).
-		std::vector<Ref<void>> m_BakeKeepAlive;
+		// Per-face UBOs / descriptor sets / face views recorded into a bake command buffer. They are pushed
+		// while the graph executes and freed (GetFramesInFlight()+1) AdvanceFrame() calls later, once no
+		// frame in flight can still read them.
+		RetireQueue<Ref<void>> m_BakeRetire;
+
+		// True once the output maps hold a bake (GPU or cache). Later bakes skip the BRDF LUT and the readback.
+		bool m_OutputsBaked = false;
 	};
 }
