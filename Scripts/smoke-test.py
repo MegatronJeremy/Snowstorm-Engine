@@ -110,6 +110,17 @@ def missing_scenes(repo_root: Path, targets) -> list[str]:
     return [t[2] for t in targets if t[2] and not (repo_root / t[2]).is_file()]
 
 
+def external_target(exe_arg: str, cwd_arg: str | None, base: Path) -> tuple[str, Path, Path]:
+    """(name, exe, cwd) for --exe: a game built outside this tree. A relative exe or cwd is taken against
+    `base` (the caller's working directory); with no --cwd the game runs from `base`, since a consuming
+    repository resolves its own Projects/... against its root, not against the exe's build directory."""
+    exe = Path(exe_arg)
+    exe = exe if exe.is_absolute() else base / exe
+    cwd = Path(cwd_arg) if cwd_arg else base
+    cwd = cwd if cwd.is_absolute() else base / cwd
+    return exe.stem, exe, cwd
+
+
 def clear_cook_caches(repo_root: Path) -> None:
     """Delete the cooked-asset caches so the next run exercises the cold first-import path."""
     import shutil
@@ -239,6 +250,13 @@ def main() -> int:
                     help="Boot with --startup.project=<path> (the hand-off Editor > Play Standalone makes), e.g. "
                          "Projects/Pong/Pong.ssproj. Pair with --only Runtime; the settle check then fails on "
                          "assets of that project that never load.")
+    ap.add_argument("--exe", default=None,
+                    help="Smoke-test this one executable from another repository (a game consuming the engine as "
+                         "a submodule) instead of the built-in targets: same environment, settle rule, timeout and "
+                         "log scan. Validation layers still resolve to this repository's vcpkg tree. Not with "
+                         "--only or --staged.")
+    ap.add_argument("--cwd", default=None,
+                    help="Working directory for --exe (default: the directory the script is run from)")
     ap.add_argument("--cold", action="store_true", help="Delete cooked-asset caches first, to exercise the cold first-import path")
     ap.add_argument("--max-frame-ms", type=int, default=0, help="Fail if any single frame exceeds this many ms (0 = off). Catches per-frame stalls/freezes.")
     ap.add_argument("--vsync-stress", type=int, default=0, help="Toggle VSync every N frames (0 = off) to exercise swapchain recreation. Best with --strict; catches present-semaphore reuse bugs.")
@@ -252,8 +270,17 @@ def main() -> int:
     build_dir = (repo_root / args.build_dir).resolve()
     layer_path = (repo_root / "vcpkg" / "installed" / args.triplet / "bin").resolve()
 
+    if args.exe and (args.only or args.staged):
+        print("FAIL: --exe runs one external executable; it cannot be combined with --only or --staged")
+        return 1
+    if args.cwd and not args.exe:
+        print("FAIL: --cwd only applies to --exe")
+        return 1
+
     targets = TARGETS
-    if args.only:
+    if args.exe:
+        targets = []
+    elif args.only:
         targets = [t for t in TARGETS if t[0].lower() == args.only.lower()]
         if not targets:
             print(f"No target named '{args.only}'. Known: {[t[0] for t in TARGETS]}")
@@ -287,6 +314,15 @@ def main() -> int:
         print(f"Stage dir : {stage_dir}")
 
     results = {}
+    if args.exe:
+        name, exe, cwd = external_target(args.exe, args.cwd, Path.cwd())
+        if not cwd.is_dir():
+            print(f"FAIL: --cwd {cwd} is not a directory")
+            return 1
+        timeout = args.timeout or DEFAULT_TIMEOUT.get(name, DEFAULT_TIMEOUT_OTHER)
+        results[name] = run_target(name, exe, cwd, args.frames, timeout,
+                                   args.warnings_fail, layer_path, args.strict, args.scene, args.max_frame_ms,
+                                   args.vsync_stress, {}, args.project)
     for name, rel, default_scene, extra_env in targets:
         if args.staged:
             # The stage is flat, and the working directory has to be the stage itself: a package resolves
