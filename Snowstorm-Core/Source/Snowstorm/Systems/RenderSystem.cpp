@@ -726,6 +726,10 @@ namespace Snowstorm
 			d.Layer = sprite.Layer;
 			d.Order = sprite.Order;
 			d.Sequence = static_cast<uint32_t>(entt::to_integral(e));
+			if (!SpriteIntersectsView(d, cam.Rt->ViewProjection))
+			{
+				continue;
+			}
 			d.TextureIndex = sprite.View->GetGlobalBindlessIndex();
 			draws.push_back(d);
 		}

@@ -3,6 +3,7 @@
 
 #include "Snowstorm/Render/SpriteBatch.hpp"
 
+#include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
 
 #include <vector>
@@ -129,4 +130,57 @@ TEST_CASE("Instances carry texture, tint and filter in draw order", "[render][sp
 	CHECK(inst[0].Tint.y == Approx(0.5f));
 	CHECK(inst[1].TextureIndex == 7);
 	CHECK(inst[1].Flags == kSpriteFlagLinear);
+}
+
+TEST_CASE("Sprite culling keeps sprites that touch the view and drops those clear of it", "[render][sprite]")
+{
+	// Ortho view spanning x in [-4, 4], y in [-2, 2].
+	const glm::mat4 vp = glm::ortho(-4.0f, 4.0f, -2.0f, 2.0f, -1.0f, 1.0f);
+	auto at = [](const float x, const float y)
+	{
+		SpriteDraw d;
+		d.Transform = glm::translate(glm::mat4(1.0f), {x, y, 0.0f});
+		return d; // unit size, centred pivot
+	};
+
+	CHECK(SpriteIntersectsView(at(0, 0), vp));
+	CHECK(SpriteIntersectsView(at(4.4f, 0), vp)); // straddles the right edge
+	CHECK_FALSE(SpriteIntersectsView(at(4.6f, 0), vp));
+	CHECK_FALSE(SpriteIntersectsView(at(-4.6f, 0), vp));
+	CHECK_FALSE(SpriteIntersectsView(at(0, 2.6f), vp));
+	CHECK_FALSE(SpriteIntersectsView(at(0, -2.6f), vp));
+	CHECK(SpriteIntersectsView(at(4.5f, 0), vp)); // edge contact is kept
+	// z is ignored: a sprite outside the ortho depth range still draws.
+	SpriteDraw deep = at(0, 0);
+	deep.Transform = glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, 50.0f});
+	CHECK(SpriteIntersectsView(deep, vp));
+}
+
+TEST_CASE("Sprite culling covers rotation, scale and flips", "[render][sprite]")
+{
+	const glm::mat4 vp = glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f, -1.0f, 1.0f);
+	SpriteDraw d;
+	d.Size = {1.0f, 1.0f};
+	// A 45 degree turn widens the footprint to half-diagonal 0.707: centre at 1.6 reaches x = 0.89.
+	d.Transform = glm::rotate(glm::translate(glm::mat4(1.0f), {1.6f, 0.0f, 0.0f}), 0.7853982f, {0.0f, 0.0f, 1.0f});
+	CHECK(SpriteIntersectsView(d, vp));
+	d.Transform = glm::translate(glm::mat4(1.0f), {1.6f, 0.0f, 0.0f});
+	CHECK_FALSE(SpriteIntersectsView(d, vp));
+	d.Size = {4.0f, 1.0f}; // scaled wide enough to reach back in
+	CHECK(SpriteIntersectsView(d, vp));
+	d.FlipX = true;
+	CHECK(SpriteIntersectsView(d, vp));
+}
+
+TEST_CASE("Sprite culling is conservative behind a perspective eye", "[render][sprite]")
+{
+	const glm::mat4 vp = glm::perspective(1.0f, 1.0f, 0.1f, 100.0f) * glm::lookAt(glm::vec3(0, 0, 5), glm::vec3(0), glm::vec3(0, 1, 0));
+	SpriteDraw front;
+	CHECK(SpriteIntersectsView(front, vp));
+	SpriteDraw wayOff;
+	wayOff.Transform = glm::translate(glm::mat4(1.0f), {100.0f, 0.0f, 0.0f});
+	CHECK_FALSE(SpriteIntersectsView(wayOff, vp));
+	SpriteDraw behind;
+	behind.Transform = glm::translate(glm::mat4(1.0f), {100.0f, 0.0f, 20.0f});
+	CHECK(SpriteIntersectsView(behind, vp));
 }
