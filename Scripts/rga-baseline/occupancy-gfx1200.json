@@ -302,13 +302,13 @@
       "permutations": 2
     },
     "PathTrace.comp": {
-      "vgprs": 95.0,
+      "vgprs": 100.0,
       "sgprs": 98.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 28412.0,
+      "isa_size": 34384.0,
       "permutations": 2
     },
     "Pick.comp": {
