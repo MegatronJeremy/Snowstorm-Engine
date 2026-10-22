@@ -1192,6 +1192,13 @@ units times the transform's scale; a flip mirrors about `Pivot`. Sprites are unl
 destination alpha kept, since ImGui blends the viewport image by it. `Filter` picks a per-sprite point or linear sampler.
 `OrthographicSize` is the full view height, not the half height.
 
+`Rect` is a texel sub-rectangle (x, y, width, height; origin top-left, the order rows are stored): sprite sheets and tilesets
+(Unity Sprite Editor slices, Bevy `TextureAtlas`). A zero width or height draws the whole texture. `SpriteUvRect`
+(`SpriteBatch.hpp`, `SpriteBatchTests`) clamps it to the texture and maps it to the offset and scale carried in
+`SpriteInstance::UvRect`, which `Sprite.vert` applies to the quad's UV; a rect outside the texture falls back to the whole texture.
+`Size` is not derived from `Rect`, and packing and slicing UI are out of scope. A flip mirrors the quad, so it flips the cell.
+The `Linear` filter samples across the cell edge with no padding, so bleed from neighbouring cells is possible; `Nearest` is exact.
+
 `SpriteResolveSystem` resolves `Texture` to the runtime `View`. With `Texture` at 0 the system leaves `View` alone, which is
 how a game binds a texture it writes; `ResolvedFrom` records which views the system set, so clearing `Texture` drops only
 those. The sprite shaders include no `Engine.hlsli` and keep their resources in set 1, so they never touch the shared sets
@@ -1210,7 +1217,7 @@ The editor's Scene view takes the scene's Primary camera's render path and backg
 
 **`Sprites.world` is the testbed**, booted by smoke as `Sprites`: a 64x64 checkerboard magnified with `Nearest` and with
 `Linear`, a layer -1 logo 2 units nearer the camera that still draws under them, two layer 1 logos over them (one `FlipX`,
-tinted at 0.7 alpha), and a rotated layer 1, order 1 checker over the logo it overlaps.
+tinted at 0.7 alpha), and a rotated layer 1, order 1 checker over the logo it overlaps, and `Checker Rect`, the top-left 32x32 texels of the checker at 2x2 units. The `Rect` path (shader UV offset and scale, instance layout) has not run on a GPU.
 
 ## Neural upscaler tail fusion
 
