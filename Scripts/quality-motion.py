@@ -158,8 +158,9 @@ def run_motion_capture(tech_env: dict, out_base: Path, exe: Path, repo_root: Pat
     Images come back at the canonical metric resolution, like quality-bench's, so the two gates'
     numbers stay comparable. ({}, {}, RT_UNSUPPORTED) when the adapter cannot run the technique.
     """
-    for stale in out_base.parent.glob(out_base.name + "_f*_ldr.npy"):
-        stale.unlink()
+    for stale in (*out_base.parent.glob(out_base.name + "_f*_ldr.npy"),
+                  *out_base.parent.glob(out_base.name + "_f*_hdr.npy")):
+        stale.unlink()  # never pair a stale HDR with a fresh LDR
     manifest_path = out_base.with_name(out_base.name + "_poses.json")
     manifest_path.unlink(missing_ok=True)
 
@@ -224,6 +225,21 @@ def run_motion_capture(tech_env: dict, out_base: Path, exe: Path, repo_root: Pat
     return imgs, poses, device
 
 
+def load_motion_hdr(out_base: Path, frames) -> dict:
+    """{frame: linear radiance [H,W,4]} for the route frames whose <base>_f<N>_hdr.npy the engine wrote.
+    Frames without one are absent, so a build that predates HDR capture yields {} and HDR-FLIP reads n/a."""
+    out = {}
+    for f in frames:
+        hdr = qb.load_hdr(out_base.with_name(f"{out_base.name}_f{f:06d}"))
+        if hdr is not None:
+            out[f] = hdr
+    return out
+
+
+def motion_reference_hdr_path(cache_npy: Path) -> Path:
+    return cache_npy.with_name(cache_npy.stem + "_hdr.npy")
+
+
 _REF_CACHE_VERSION = 3  # bump to invalidate every cached motion reference
 
 
@@ -273,7 +289,21 @@ def capture_motion_reference(frame: int, ref_frames: int, exe: Path, repo_root: 
     if img is not None:
         np.save(cache_npy, img)
         cache_npy.with_suffix(".exe").write_text(qb.engine_fingerprint(exe))
+        hdr = qb.load_hdr(tmp / f"ref_f{frame:06d}")
+        hdr_npy = motion_reference_hdr_path(cache_npy)
+        if hdr is not None:
+            np.save(hdr_npy, hdr)
+        else:
+            hdr_npy.unlink(missing_ok=True)
     return img, dev, False
+
+
+def load_motion_reference_hdr(repo_root: Path, exe: Path, scene: str, frame: int, ref_frames: int):
+    """The cached HDR twin of a frozen-frame reference, or None (references cached before HDR capture
+    stay without one until --fresh-ref)."""
+    key = _motion_reference_key(repo_root, exe, scene, frame, ref_frames)
+    f = motion_reference_hdr_path(repo_root / "Scripts" / ".quality-ref-cache" / f"motion-f{frame:06d}__{key}.npy")
+    return np.load(f) if f.exists() else None
 
 
 def _control_key(repo_root: Path, exe: Path, scene: str, tech_env: dict, frame: int) -> str:
@@ -420,8 +450,11 @@ def colorvideovdp(imgs, refs, probe_names, fps: float = 60.0):
         return None, {}
 
 
-def evaluate(imgs, refs, probe_names, statics=None):
-    """Per-frame spatial metrics, the per-pair temporal term, and the motion penalty."""
+def evaluate(imgs, refs, probe_names, statics=None, hdr_imgs=None, hdr_refs=None):
+    """Per-frame spatial metrics, the per-pair temporal term, and the motion penalty.
+
+    HDR-FLIP (#157) is reported per frame when both HDR images exist, else None; the gate never reads it."""
+    hdr_imgs, hdr_refs = hdr_imgs or {}, hdr_refs or {}
     per_frame, per_pair = [], []
     for name in probe_names:
         f0, f1 = PROBES[name]
@@ -431,6 +464,8 @@ def evaluate(imgs, refs, probe_names, statics=None):
                 "flip": qb.flip(refs[f], imgs[f]),
                 "psnr": qb.psnr(refs[f], imgs[f]),
                 "ssim": qb.ssim(refs[f], imgs[f]),
+                "flipHdr": (hf[0] if (hf := qb.flip_hdr(hdr_refs[f], hdr_imgs[f])) else None)
+                           if f in hdr_imgs and f in hdr_refs and hdr_imgs[f].shape == hdr_refs[f].shape else None,
             })
         # Motion penalty: how far the moving frame sits from THIS renderer's own converged still at the
         # identical pose. Measured directly, image against image, with the reference not involved.
@@ -464,6 +499,7 @@ def evaluate(imgs, refs, probe_names, statics=None):
         "flip": mean_of(per_frame, "flip"),
         "psnr": mean_of(per_frame, "psnr"),
         "ssim": mean_of(per_frame, "ssim"),
+        "flipHdr": mean_of(per_frame, "flipHdr"),
         "tflip": mean_of(per_pair, "tflip"),
         "motionPenalty": mean_of(per_pair, "motionPenalty"),
         "perFrame": per_frame,
@@ -598,15 +634,18 @@ def main() -> int:
             print()
             continue
 
+        hdr_imgs = load_motion_hdr(tmp / f"motion_{tech}", frames)
+        hdr_refs = {f: h for f in frames
+                    if (h := load_motion_reference_hdr(repo_root, exe, args.scene, f, args.ref_frames)) is not None}
         statics = capture_static_controls(tech_env, tmp / f"motion_{tech}", exe, repo_root,
                                           args.timeout, layer_path, args.scene, probe_names)
-        result = evaluate(imgs, ref_cache, probe_names, statics)
+        result = evaluate(imgs, ref_cache, probe_names, statics, hdr_imgs, hdr_refs)
         result["cvvdpJod"], result["cvvdpPerProbe"] = colorvideovdp(imgs, ref_cache, probe_names)
         ran_any = True
 
         for row in result["perFrame"]:
             print(f"    {row['probe']:<9} f{row['frame']:<5} FLIP {fmt(row['flip'])}  "
-                  f"PSNR {fmt(row['psnr'])}  SSIM {fmt(row['ssim'])}")
+                  f"PSNR {fmt(row['psnr'])}  SSIM {fmt(row['ssim'])}  HDR-FLIP {fmt(row['flipHdr'])} (not gated)")
         for row in result["perPair"]:
             jod = result["cvvdpPerProbe"].get(row["probe"])
             print(f"    {row['probe']:<9} pair  tFLIP {fmt(row['tflip'])}  "
@@ -620,6 +659,7 @@ def main() -> int:
         bp = baseline_path(repo_root, device, tech, args.route)
         record = {"device": device, "technique": tech, "route": ROUTE, "probes": probe_names,
                   "flip": result["flip"], "psnr": result["psnr"], "ssim": result["ssim"],
+                  "flipHdr": result["flipHdr"],
                   "tflip": result["tflip"], "motionPenalty": result["motionPenalty"],
                   "cvvdpJod": result["cvvdpJod"],
                   "cvvdpPerProbe": result["cvvdpPerProbe"],
