@@ -100,7 +100,8 @@ namespace Snowstorm
 				// blending them mid-accumulation would corrupt the A/B (they converge to the same image but must
 				// not be averaged together).
 				const uint32_t sampler = CVars::PathTraceSampler.Get() > 0 ? 1u : 0u; // a sampler switch restarts the mean, like env-NEE
-				const bool moved = (st.LastVP != vp) || v.PathTraceSceneSettling || (st.EnvNee != envNee) || (st.Sampler != sampler);
+				const uint32_t validReflection = CVars::PathTraceValidReflection.Get() ? 1u : 0u;
+				const bool moved = (st.LastVP != vp) || v.PathTraceSceneSettling || (st.EnvNee != envNee) || (st.Sampler != sampler) || (st.ValidReflection != validReflection);
 				const uint32_t spp = static_cast<uint32_t>(CVars::ClampedPathTraceSpp());
 				const uint32_t base = moved ? 0u : st.Samples;
 
@@ -128,6 +129,7 @@ namespace Snowstorm
 				p.FireflyClamp = CVars::PathTraceClamp.Get();
 				p.MaxBounceWeight = CVars::PathTraceWeightClamp.Get(); // path regularization (kills indirect throughput spikes)
 				p.Sampler = sampler;
+				p.ValidReflection = validReflection;
 				p.EnvNee = envNee; // environment (sky) NEE + MIS (render.pathtrace.envnee)
 				p.SkyZenithColor = fd.Environment.SkyZenithColor;
 				p.SkyHorizonColor = fd.Environment.SkyHorizonColor;
@@ -144,6 +146,7 @@ namespace Snowstorm
 				st.LastVP = vp;
 				st.EnvNee = envNee;
 				st.Sampler = sampler;
+				st.ValidReflection = validReflection;
 				st.Samples = base + spp;
 
 				// Publish the accumulated HDR buffer as THE scene color; the LDR chain tonemaps it (the tonemap
@@ -161,8 +164,9 @@ namespace Snowstorm
 			{
 				glm::mat4 LastVP{0.0f};
 				uint32_t Samples = 0;
-				uint32_t EnvNee = 1;  // last-used env-NEE toggle; a change restarts accumulation
-				uint32_t Sampler = 0; // last-used sampler; a change restarts accumulation
+				uint32_t EnvNee = 1;          // last-used env-NEE toggle; a change restarts accumulation
+				uint32_t Sampler = 0;         // last-used sampler; a change restarts accumulation
+				uint32_t ValidReflection = 0; // last-used render.pathtrace.validreflection
 			};
 			std::unordered_map<entt::entity, State> m_State; // per-viewport accumulated sample count + last VP
 		};
