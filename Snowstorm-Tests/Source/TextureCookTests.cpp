@@ -3,7 +3,6 @@
 #include "Snowstorm/Assets/TextureCache.hpp"
 #include "Snowstorm/Render/TextureCook.hpp"
 
-#include <array>
 #include <atomic>
 #include <vector>
 
@@ -79,7 +78,12 @@ TEST_CASE("Alpha and normal-map content checks", "[texturecook]")
 	// Decal-style map: half the texels are the (0,255,0) padding fill, the rest are up-facing.
 	std::vector<uint8_t> padded;
 	for (int i = 0; i < 16; ++i)
-		padded.insert(padded.end(), i % 2 ? std::array<uint8_t, 4>{0, 255, 0, 255} : std::array<uint8_t, 4>{128, 128, 255, 255});
+	{
+		if (i % 2)
+			padded.insert(padded.end(), {0, 255, 0, 255});
+		else
+			padded.insert(padded.end(), {128, 128, 255, 255});
+	}
 	CHECK(IsTangentSpaceNormalMap(padded));
 
 	std::vector<uint8_t> allFill;
