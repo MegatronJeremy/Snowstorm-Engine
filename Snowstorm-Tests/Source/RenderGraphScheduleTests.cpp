@@ -140,3 +140,34 @@ TEST_CASE("Graphics passes keep their relative order", "[render][graph]")
 
 	CHECK(g.BuildSchedule(nullptr) == std::vector<uint32_t>{0, 1, 2});
 }
+
+TEST_CASE("An async batch owns the unique textures of its contiguous compute run", "[render][graph][async]")
+{
+	const auto a = Tex();
+	const auto b = Tex();
+	const auto c = Tex();
+	RenderGraph g;
+	g.AddPass(Compute("c0", {a}, {b}));
+	g.AddPass(Compute("c1", {b}, {c}));
+	g.AddPass(Compute("gfx", {c}, {}, GpuQueue::Graphics));
+	g.AddPass(Compute("c2", {}, {Tex()}));
+
+	const std::vector<uint32_t> schedule{0, 1, 2, 3};
+	const auto batch = g.AsyncBatchTextures(schedule, 0, true);
+	// b is read and written inside the run but transferred once; c is touched by c1 only within the run.
+	CHECK(batch == std::vector<Ref<Texture>>{a, b, c});
+
+	// The run ends at the graphics pass, so the texture c2 writes belongs to the next batch.
+	CHECK(g.AsyncBatchTextures(schedule, 3, true).size() == 1);
+}
+
+TEST_CASE("An async batch is empty when async compute is unavailable or the slot is graphics", "[render][graph][async]")
+{
+	RenderGraph g;
+	g.AddPass(Compute("c0", {}, {Tex()}));
+	g.AddPass(Compute("gfx", {}, {}, GpuQueue::Graphics));
+
+	const std::vector<uint32_t> schedule{0, 1};
+	CHECK(g.AsyncBatchTextures(schedule, 0, false).empty());
+	CHECK(g.AsyncBatchTextures(schedule, 1, true).empty());
+}
