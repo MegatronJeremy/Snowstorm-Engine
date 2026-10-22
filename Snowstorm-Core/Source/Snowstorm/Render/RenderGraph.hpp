@@ -120,12 +120,12 @@ namespace Snowstorm
 		// graphics segment after each join) from the Renderer itself, so `ctx` is only the starting one.
 		void Execute(CommandContext& ctx) const;
 
-	private:
 		// Unique textures the contiguous async run starting at `slot` reads or writes. These are what the
 		// fork transfers to the compute queue and the join transfers back, as one pair per batch.
 		[[nodiscard]] std::vector<Ref<Texture>> AsyncBatchTextures(const std::vector<uint32_t>& schedule,
 		                                                           size_t slot, bool asyncAvailable) const;
 
+	private:
 		std::vector<Pass> m_Passes;
 	};
 }
