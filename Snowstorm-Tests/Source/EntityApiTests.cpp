@@ -9,6 +9,8 @@ using namespace Snowstorm;
 
 namespace
 {
+	constexpr entt::entity kNull = entt::null;
+
 	struct Health
 	{
 		int hp = 0;
@@ -29,7 +31,7 @@ TEST_CASE("Entity: default-constructed entity is invalid", "[entity]")
 	const Entity e;
 	CHECK_FALSE(e.IsValid());
 	CHECK_FALSE(static_cast<bool>(e));
-	CHECK(e.Handle() == entt::null);
+	CHECK((e.Handle() == kNull));
 	CHECK(e.GetWorld() == nullptr);
 }
 
@@ -165,10 +167,10 @@ TEST_CASE("Entity: equality compares handle and world", "[entity]")
 	const Entity e2 = a.CreateEntity();
 	const Entity copy = e1;
 
-	CHECK(e1 == copy);
-	CHECK(e1 != e2);
-	CHECK(Entity{e1.Handle(), &b} != e1);
-	CHECK(Entity{} == Entity{});
+	CHECK((e1 == copy));
+	CHECK((e1 != e2));
+	CHECK((Entity{e1.Handle(), &b} != e1));
+	CHECK((Entity{} == Entity{}));
 }
 
 TEST_CASE("Entity: conversions expose the underlying handle", "[entity]")
@@ -177,7 +179,7 @@ TEST_CASE("Entity: conversions expose the underlying handle", "[entity]")
 	const Entity e = world.CreateEntity();
 
 	const entt::entity handle = e;
-	CHECK(handle == e.Handle());
+	CHECK((handle == e.Handle()));
 	CHECK(static_cast<uint32_t>(e) == static_cast<uint32_t>(e.Handle()));
 
 	const Entity e2 = world.CreateEntity();
@@ -209,7 +211,7 @@ TEST_CASE("Entity: a destroyed handle stays invalid after its slot is recycled",
 	const Entity fresh = world.CreateEntity();
 	CHECK(fresh.IsValid());
 	CHECK_FALSE(stale.IsValid());
-	CHECK(stale != fresh);
+	CHECK((stale != fresh));
 }
 
 TEST_CASE("Entity: destroying an invalid entity is a no-op and double destroy is safe", "[entity]")
@@ -233,8 +235,8 @@ TEST_CASE("Entity: FindEntityByUUID round-trips and misses return an invalid ent
 	const UUID id{12345};
 	const Entity e = world.CreateEntityWithUUID(id, "Named");
 
-	CHECK(e.GetComponent<IDComponent>().Id == id);
-	CHECK(world.FindEntityByUUID(id) == e);
+	CHECK((e.GetComponent<IDComponent>().Id == id));
+	CHECK((world.FindEntityByUUID(id) == e));
 
 	const Entity miss = world.FindEntityByUUID(UUID{54321});
 	CHECK_FALSE(miss.IsValid());
