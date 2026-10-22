@@ -952,10 +952,12 @@ The quality tier is global; a per-texture override waits for `.meta` sidecars. T
 `TextureCookKey`, so flipping it re-cooks; the FLIP delta of `quality=1` is not measured yet.
 
 **Normals are what the role split is for.** BC1 pushes a unit vector through one shared RGB565 line:
-3.47 degrees of mean angular error against BC5's 1.13, over the 22 conforming maps. **Two Sponza images
-sitting in `NormalTexture` slots are not normal maps** (vector length ~1.3, 25-40% of texels with z<0),
-and BC5 raises their error rather than lowering it, so `IsTangentSpaceNormalMap` checks content and falls
-back to colour encoding with a warning. The slot alone cannot be trusted.
+3.47 degrees of mean angular error against BC5's 1.13, over the 22 maps measured. The slot alone
+cannot be trusted, so `IsTangentSpaceNormalMap` checks content (mean vector length <= 1.1, <= 5% of texels
+with z<0) and falls back to colour encoding with a warning when it fails. Sponza's lion-head and shield
+decals (mat23, mat3) are genuine normal maps whose padding is the (0,255,0) fill, which decodes to
+(-1,+1,-1); the check skips that corner, so they encode as BC5. Before that skip they measured length 1.2-1.3
+with 26-40% z<0 and warned.
 
 **Masks stay BC1, measured rather than assumed.** On the channels the shader actually reads
 (`mr.g` roughness, `mr.b` metallic) BC1 gives 44.7 dB and 44.0 dB, against normals' 31 dB that needed
