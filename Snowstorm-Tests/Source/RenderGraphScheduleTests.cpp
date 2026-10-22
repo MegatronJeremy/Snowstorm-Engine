@@ -171,3 +171,66 @@ TEST_CASE("An async batch is empty when async compute is unavailable or the slot
 	CHECK(g.AsyncBatchTextures(schedule, 0, false).empty());
 	CHECK(g.AsyncBatchTextures(schedule, 1, true).empty());
 }
+
+TEST_CASE("A read with no earlier writer, a pass with no accesses and a self read-write have no edges", "[render][graph]")
+{
+	const auto a = Tex();
+	const auto b = Tex();
+	RenderGraph g;
+	g.AddPass(Compute("readFirst", {a}, {}));
+	g.AddPass(Compute("noAccess", {}, {}));
+	g.AddPass(Compute("readWriteSelf", {b}, {b}));
+
+	for (const auto& deps : g.BuildDependencies())
+	{
+		CHECK(deps.empty());
+	}
+}
+
+TEST_CASE("Dependencies keep only the latest producer per hazard", "[render][graph]")
+{
+	const auto a = Tex();
+	RenderGraph g;
+	g.AddPass(Compute("w0", {}, {a}));
+	g.AddPass(Compute("w1", {}, {a}));
+	g.AddPass(Compute("r", {a}, {}));
+
+	const auto deps = g.BuildDependencies();
+	REQUIRE(deps[1].size() == 1);
+	CHECK(deps[1][0].Producer == 0);
+	CHECK(deps[1][0].Kind == RenderGraph::Hazard::WriteAfterWrite);
+	// The read depends on w1 alone; w0 is implied through w1.
+	REQUIRE(deps[2].size() == 1);
+	CHECK(deps[2][0].Producer == 1);
+	CHECK(deps[2][0].Kind == RenderGraph::Hazard::ReadAfterWrite);
+}
+
+TEST_CASE("A writer waits for the reader of the previous contents even when compute is preferred", "[render][graph]")
+{
+	const ReorderOn on;
+	const auto a = Tex();
+	const auto y = Tex();
+	RenderGraph g;
+	g.AddPass(Compute("gfxWrite", {}, {a}, GpuQueue::Graphics));
+	g.AddPass(Compute("gfxRead", {a}, {}, GpuQueue::Graphics));
+	g.AddPass(Compute("cOverwrite", {}, {a}));
+	g.AddPass(Compute("cIndependent", {}, {y}));
+
+	// cIndependent is ready as soon as pass 0 is placed and wins the compute preference over gfxRead;
+	// cOverwrite has a WAR edge on gfxRead and a WAW edge on gfxWrite, so it stays behind gfxRead.
+	CHECK(g.BuildSchedule(nullptr) == std::vector<uint32_t>{0, 3, 1, 2});
+}
+
+TEST_CASE("A pass targeting the swapchain is scheduled after every other ready pass", "[render][graph]")
+{
+	const ReorderOn on;
+	const Ref<RenderTarget> swapchain = CreateRef<FakeTarget>();
+	RenderGraph g;
+	auto present = Compute("present", {}, {}, GpuQueue::Graphics);
+	present.Target = swapchain;
+	g.AddPass(std::move(present));
+	g.AddPass(Compute("gfx", {}, {}, GpuQueue::Graphics));
+	g.AddPass(Compute("c", {}, {Tex()}));
+
+	CHECK(g.BuildSchedule(swapchain) == std::vector<uint32_t>{2, 1, 0});
+}
