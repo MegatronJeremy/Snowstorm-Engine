@@ -79,3 +79,22 @@ TEST_CASE("ShaderCompile: headers hash covers names, contents and order", "[shad
 	REQUIRE(base != ShaderHeaderAppend(ShaderHeaderAppend(0, "B.hlsli", "y"), "A.hlsli", "x"));
 	REQUIRE(ShaderKeyToHex(0xabcull) == "0000000000000abc");
 }
+
+TEST_CASE("ShaderCompile: cached SPIR-V lookup tries directories in order", "[shader]")
+{
+	const std::string name = "Mesh.vert_" + ShaderKeyToHex(0xabcull) + ".spv";
+	const auto only = [&](const std::string& path)
+	{ return [path](const std::string& p)
+	  { return p == path; }; };
+
+	REQUIRE(FindCachedSpirv({"cache", "cooked"}, "Mesh.vert", 0xabcull, [](const std::string&)
+	                        { return false; })
+	            .empty());
+	REQUIRE(FindCachedSpirv({"cache", "cooked"}, "Mesh.vert", 0xabcull, only("cooked/" + name)) == "cooked/" + name);
+	REQUIRE(FindCachedSpirv({"cache", "cooked"}, "Mesh.vert", 0xabcull, [](const std::string&)
+	                        { return true; }) == "cache/" + name);
+	REQUIRE(FindCachedSpirv({"cache"}, "Mesh.vert", 0xabcdull, only("cache/" + name)).empty());
+	REQUIRE(FindCachedSpirv({}, "Mesh.vert", 0xabcull, [](const std::string&)
+	                        { return true; })
+	            .empty());
+}

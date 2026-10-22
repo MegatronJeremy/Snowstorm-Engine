@@ -86,6 +86,11 @@ namespace Snowstorm
 			return GetEngineRoot() / "Engine" / "cache" / "shaders";
 		}
 
+		fs::path GetCookedShaderDir()
+		{
+			return GetEngineRoot() / "Engine" / "cooked" / "shaders";
+		}
+
 		bool RunProcessCaptureExitCode(const std::wstring& exePath,
 		                               const std::wstring& cmdLine,
 		                               DWORD& outExitCode,
@@ -295,6 +300,16 @@ namespace Snowstorm
 			if (fs::exists(outSpvPath))
 			{
 				outSpv = outSpvPath.string();
+				return true;
+			}
+
+			// A packaged build ships cooked SPIR-V under the same key; a hit there needs no dxc.
+			const std::string cooked = FindCachedSpirv({GetCookedShaderDir().string()}, stem, h,
+			                                           [](const std::string& p)
+			                                           { return fs::exists(p); });
+			if (!cooked.empty())
+			{
+				outSpv = cooked;
 				return true;
 			}
 
