@@ -1,6 +1,7 @@
 #include "RenderSystem.hpp"
 
 #include <chrono>
+#include <string_view>
 
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Math/Bounds.hpp"
@@ -755,6 +756,25 @@ namespace Snowstorm
 		                  {
 			                  m_SpritePass.Draw(c, frameIndex, frameCounter, viewProjection, batch, format);
 		                  }});
+
+		// Headless capture (#348): the same effect as the Scene3D chain, so the settle rule and the .npy layout
+		// cannot diverge. Its Sampled read of the present image orders it after Sprites.
+		if (CVars::QualityCaptureFrames.Get() > 0)
+		{
+			if (m_ViewportEffects.empty())
+			{
+				BuildViewportEffects();
+			}
+			ViewportRenderContext v{.Frame = fc, .RT = vpRT, .Cam = cam, .Suffix = passSuffix};
+			v.PathTraceSceneSettling = SingletonView<AssetManagerSingleton>().PendingLoadCount() > 0;
+			for (const Scope<IViewportEffect>& effect : m_ViewportEffects)
+			{
+				if (std::string_view(effect->Name()) == "QualityCapture" && effect->ShouldRun(v))
+				{
+					effect->Contribute(v);
+				}
+			}
+		}
 	}
 
 	void RenderSystem::DrawVisibleMeshes(FrameContext& fc, const CameraPick& cam,

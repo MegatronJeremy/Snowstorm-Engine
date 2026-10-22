@@ -2385,8 +2385,17 @@ namespace Snowstorm
 				// unless capture is on), then read that back in the same pass as the LDR present, in both the
 				// converged and the motion-sequence mode.
 				Ref<Texture> hdrImg;
-				if (v.SceneColor.View && v.SceneColor.Texture &&
-				    QualityCaptureFormat::HdrDType(v.SceneColor.Texture->GetDesc().Format))
+				if (v.Cam.Cam && v.Cam.Cam->RenderPath == CameraComponent::RenderPathType::Canvas2D)
+				{
+					// A Canvas2D frame is unlit sprites with no linear scene colour, so there is nothing to pair.
+					if (!m_WarnedNoHdr2D)
+					{
+						m_WarnedNoHdr2D = true;
+						SS_CORE_INFO("Quality capture: Canvas2D viewport has no linear scene colour; _hdr.npy is skipped.");
+					}
+				}
+				else if (v.SceneColor.View && v.SceneColor.Texture &&
+				         QualityCaptureFormat::HdrDType(v.SceneColor.Texture->GetDesc().Format))
 				{
 					const Ref<Texture>& srcTex = v.SceneColor.Texture;
 					const TextureDesc& sd = srcTex->GetDesc();
@@ -2455,6 +2464,7 @@ namespace Snowstorm
 			QualityCapturePass m_Pass;     // convergence detect + readback + .npy serialize; exclusive to this effect
 			UpscalePass m_HdrCopy;         // reused as a 1:1 fullscreen copy, as PrevColorSnapshot does
 			Ref<RenderTarget> m_HdrTarget; // capture-only TransferSrc copy of SceneColor
+			bool m_WarnedNoHdr2D = false;
 		};
 	}
 
