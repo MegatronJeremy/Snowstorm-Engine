@@ -216,9 +216,17 @@ TEST_CASE("A writer waits for the reader of the previous contents even when comp
 	g.AddPass(Compute("cOverwrite", {}, {a}));
 	g.AddPass(Compute("cIndependent", {}, {y}));
 
-	// cIndependent is ready as soon as pass 0 is placed and wins the compute preference over gfxRead;
-	// cOverwrite has a WAR edge on gfxRead and a WAW edge on gfxWrite, so it stays behind gfxRead.
-	CHECK(g.BuildSchedule(nullptr) == std::vector<uint32_t>{0, 3, 1, 2});
+	// Without the WAR edge cOverwrite (compute) would jump ahead of gfxRead.
+	const auto deps = g.BuildDependencies();
+	REQUIRE(deps[2].size() == 2);
+	CHECK(deps[2][0].Producer == 1);
+	CHECK(deps[2][0].Kind == RenderGraph::Hazard::WriteAfterRead);
+	CHECK(deps[2][1].Producer == 0);
+	CHECK(deps[2][1].Kind == RenderGraph::Hazard::WriteAfterWrite);
+
+	// cIndependent is ready from the start and wins the compute preference over gfxWrite;
+	// cOverwrite stays behind gfxRead and is placed last.
+	CHECK(g.BuildSchedule(nullptr) == std::vector<uint32_t>{3, 0, 1, 2});
 }
 
 TEST_CASE("A pass targeting the swapchain is scheduled after every other ready pass", "[render][graph]")
