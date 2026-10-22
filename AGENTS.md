@@ -363,9 +363,9 @@ without timestamp support the JSON sets `timestampsSupported:false` and the run 
 **Baselines are keyed by adapter**: `Scripts/perf-baseline/<device-slug>/<config>.json`, where the slug
 comes from the device name the run reports. GPU differences make ms non-comparable, so a run only ever
 diffs against the set captured on the adapter it is running on, and a box with two cards keeps two
-independent sets (the repo holds `amd-radeon-rx-9070-xt`, `nvidia-geforce-rtx-5070`, and an
-`amd-radeon-rx-7900-xtx` set from another machine, the last predating the resolution/pose stamping
-below and so of unknown viewpoint until that box re-captures). Cross-vendor comparison is then a deliberate read
+independent sets (the repo holds `amd-radeon-rx-9070-xt` and `nvidia-geforce-rtx-5070`, plus sets from other machines:
+`amd-radeon-rx-7900-xtx`, which predates the resolution/pose stamping below and so has an unknown viewpoint,
+and `amd-radeon-rx-9060-xt` and `amd-radeon-tm-8060s-graphics`, stamped at 1717 wide). Cross-vendor comparison is then a deliberate read
 across two directories rather than an accidental mixture inside one set, which would turn every
 cross-config delta into effect-cost plus hardware difference. Missing set = the gate prints the raw
 numbers and exits **2** (SKIP), which is not a pass: it compared nothing, so it cannot claim one.
@@ -391,8 +391,8 @@ that big and the editor panel just displays the result scaled.
 
 Changing `BENCH_CAMERA` or `BENCH_RESOLUTION` invalidates every baseline, so re-capture all adapters
 in the same commit. A baseline predating these fields carries none of them and is compared without the
-check; the `amd-radeon-rx-9060-xt` and `amd-radeon-rx-7900-xtx` sets are in that state, captured on
-other machines before the resolution was pinned.
+check; the `amd-radeon-rx-7900-xtx` set is in that state. The `amd-radeon-rx-9060-xt` and
+`amd-radeon-tm-8060s-graphics` sets carry a 1717-wide stamp from before the pin, so they SKIP until re-captured.
 
 **Nondeterministic GPU numbers across runs point at the shader cache first.** Clear
 `Engine/cache/shaders/*.spv` and re-run before trusting any before/after comparison; a stale cache
@@ -432,7 +432,7 @@ occupancy drops (fewer waves), a spill appears (0 to >0, hard fail), or LDS/ISA 
 `--threshold` (default 10%). Raw VGPR% is intentionally not gated -- a VGPR rise that doesn't cross a
 wave boundary costs nothing. The occupancy is *theoretical* and VGPR-only (LDS occupancy needs the
 workgroup size RGA offline reports as 0); measure achieved occupancy with RGP. Baselines are committed
-for `gfx1100` (RX 7900 XTX) and `gfx1200` (RX 9060 XT). On `gfx1200` exactly two of 47 shaders are
+for `gfx1100` (RX 7900 XTX), `gfx1200` (RX 9060 XT) and `gfx1201`. On `gfx1200` exactly two of 47 shaders are
 occupancy-limited, `DefaultLit.frag[inlineshadow]` (127 VGPRs, 10/16) and `GI.comp[restir]` (103, 12/16);
 every other shader hits 16/16, and only `NeuralConv.comp` carries any scratch (272 bytes), off the render
 path. `GIDenoise.comp` was the worst offender at 191 VGPRs / 8 waves until d74cb76 rolled its outer
@@ -599,8 +599,9 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
 - **HDR capture (#157).** With capture on, the engine also writes `<path>_hdr.npy` beside `_ldr.npy` (motion frames: `_f<N>_hdr.npy`): `v.SceneColor` as the tonemap chain receives it, linear pre-exposure radiance, HxWx4, top-down, `<f2` for the RGBA16F real-time path and `<f4` for the RGBA32F path tracer. `render.exposure` is logged with it, not applied. It is a 1:1 copy into a texture the capture effect owns (`TransferSrc` on no hot target, no cost when capture is off) read back in the same pass as the LDR present, so the pair is one frame. It excludes everything after `SceneColor`: FXAA and CAS (TAA and the upscaler are included), so it cannot replace the LDR numbers. Not run on a GPU as of its PR; the pure format rules are `QualityCaptureFormat.hpp`, tested in `QualityCaptureFormatTests`.
 - **`render.pathtrace.sampler` (#156) changes only the PT's low-sample error.** 0 (default) is PCG white noise seeded with the frame counter; 1 is Owen-scrambled 2D Sobol padded per decision (`Include/PtSampler.hlsli`, mirrored in `Render/QmcSampler.hpp` and tested by `QmcSamplerTests`), seeded per pixel only, so a Reset replays the same sequence. Fixed pair ids per decision keep an early-terminated path from shifting later dimensions. Every decision draws from it (pixel jitter, sun/point/spot/env NEE, lobe choice, BSDF, Russian roulette); `QmcSamplerTests` also fail when an integer constant in the shader copy is missing from the C++ mirror. The estimator and pdfs are unchanged, so the converged reference (and every committed quality baseline) is unaffected while the default stays 0; switching it restarts accumulation. Not yet run on a GPU, and the fixed-spp error ratio against PCG (the stop rule in the design) is unmeasured.
 - **`render.pathtrace.validreflection` (#155) keeps the specular reflection above the geometric surface.** `ResolvePbrHit` already bends `Ns` into the view hemisphere (`dot(Ns, V) > 0`, the black-rim fix); that does not stop `R = 2 (Ns.V) Ns - V` from dipping below `Ng` at grazing glossy edges. On (default off), `Hit::Nr` is Cycles' `ensure_valid_reflection(Ng, V, Ns)` (`intern/cycles/kernel/closure/bsdf_util.h`, Schussler 2017): when `dot(Ng, R)` is under `min(0.9 dot(Ng, V), 0.01)`, solve the quadratic in `N'.z^2` for the smallest rotation of `Ns` towards `Ng` that meets it, pick the valid root closest to `Ns`, and return `Ng` if none is valid. One deviation from Cycles: squaring admits a root with the wrong sign of `Ix`, so a root is accepted only when the reflection it produces actually clears the threshold. `EvalBsdf`, `BsdfPdf` and the GGX half-vector sampling use `Nr` for the specular lobe; the diffuse lobe, env-NEE and the `NoL` rejection test keep `Ns`, as Cycles applies the fix per glossy closure only. Off, `Nr == N` and every term is arithmetically identical, so the converged reference and the committed quality baselines are unchanged. Known limit: where `dot(Nr, L) <= 0` the specular term is 0 while the sampler's pdf is not, which loses a little energy on those rare samples; a lobe-aware sampler would need the pdf renormalised. `ValidReflection.hpp` is the CPU mirror, `ValidReflectionTests` check unit length, coplanarity with `Ns` and `Ng`, and the threshold over 20000 random grazing cases (a standalone build of the mirror held over 1.2M). Not run on a GPU: no grazing-glossy image compares on against off yet, so whether the artifact is visible in a scene is unconfirmed.
-- **Eight techniques**: `raster`, `ssao`, `rtao`, `ssr`, `rtrefl`, `ssgi`, `rtgi`, `all-rt`. Each is a
-  full real-time render with that one technique on, TAA enabled.
+- **Eleven techniques**: `raster`, `ssao`, `rtao`, `ssr`, `rtrefl`, `ssgi`, `rtgi`, `all-rt`, plus the
+  shadow A/B `rtshadow`, `megalights` and `megalights-nospec`. Each is a full real-time render with that
+  one technique on, TAA enabled; only `all-rt` and the shadow entries override the shadow mode.
 - **FLIP is pinned** to `flip-evaluator==1.7` (a perceptual metric that drifts between versions makes
   a committed baseline meaningless, same reasoning as the clang-format and RGA pins). It is optional:
   without the package the gate still runs on PSNR/SSIM, although it then reports the primary metric
@@ -634,9 +635,9 @@ existing assets and per-entity overrides are used, so it needs no registry rows.
 baselines and no emissive surfaces (a material override cannot set emissive).
 
 Every run sets `SS_CONFIG_IGNORE=1`, so a capture is code defaults plus the technique's overrides and
-never this machine's persisted `SnowstormConfig.cfg`. Note that only `all-rt` overrides
-`render.shadows.mode`: every other technique renders with the default shadow map, so shadowing is a
-constant in the matrix rather than something the gate measures.
+never this machine's persisted `SnowstormConfig.cfg`. Note that only `all-rt` and the
+three shadow entries override `render.shadows.mode`: every other technique renders with the default
+shadow map, so shadowing is a constant across them rather than something they measure.
 
 ## Image-quality gate UNDER MOTION (run after any change to TAA, a denoiser, or reprojection)
 
@@ -1251,7 +1252,7 @@ harnesses set so a run depends on code defaults plus its own overrides, never on
 A CVar named `validation.extra` is set by env `SS_VALIDATION_EXTRA` **or** CLI `--validation.extra`
 (dots→`_`, uppercased, `SS_` prefix for env). Bools accept presence (`--flag`, or env set to
 anything but `0`/`false`/`off`/`no`). Run any executable with `--list-cvars` (or `--help`) to print
-every CVar with its value, type, env name, and description. `EngineCVars.cpp` declares ~126 of them
+every CVar with its value, type, env name, and description. `EngineCVars.cpp` declares ~170 of them
 (rendering technique modes, denoiser knobs, path tracer, benchmark hooks, validation); treat
 `--list-cvars` as the authoritative list rather than any enumeration here. Startup resolution runs
 once, but CVars can also be **edited live at runtime** from the editor's *Debug > Console Variables*
