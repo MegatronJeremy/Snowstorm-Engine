@@ -162,6 +162,8 @@ py Scripts/smoke-test.py --staged        # run the PACKAGE in build/stage/<confi
 py Scripts/smoke-test.py --strict        # enable deeper Vulkan validation (see below)
 ```
 
+`--exe <path> [--cwd <dir>]` smoke-tests one executable built outside this repository (a game consuming the engine as a submodule, such as Snowstorm-Doom): same environment, settle rule, timeout, `--frames`, `--strict`, `--headless`, `--scene`/`--project` and log scan as a built-in target, named after the exe's stem. A relative `--exe` and `--cwd` resolve against the directory the script is run from, which is also the default working directory, since a game resolves its own `Projects/...` against its root. Validation layers still come from this repository's vcpkg tree (`--triplet`). It excludes `--only` and `--staged`. `Scripts/test_smoke_test_exe.py` covers the resolution and flag rules GPU-free; a real run of an external game is unverified.
+
 `--scene` and `--project` skip `Pong`, which boots its own project: forcing a Sandbox scene on it resolves the scene's handles against Pong's registry and fails with "mesh handle not found".
 
 `--project <.ssproj>` passes `--startup.project=` to each target it runs, the hand-off *Play Standalone* makes. Use it with `--only Runtime` and a project other than Sandbox; the settle rule below then fails on that project's assets that never resolve. `StandalonePlayTests` pin the full argument list GPU-free. The settle check's behaviour on a project's unresolved assets is unverified on a GPU.
