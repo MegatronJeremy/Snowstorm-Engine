@@ -251,33 +251,49 @@ float SampleSunShadow(DirectionalLight light, float3 positionWS, float3 Ng, floa
 	{
 		return 1.0;
 	}
+	// One SampleShadowFactor call site for every raster slot: each inlined copy is a full PCF loop, so a
+	// call per slot multiplies ISA size.
+	uint texIndex = DirShadowAtlasIndex;
+	float4x4 viewProj = LightViewProj;
+	float4 atlasRect = float4(0, 0, 1, 1);
+	float biasScale = 1.0;
 	if (light.ShadowSlot == 0)
 	{
+		texIndex = ShadowMapIndex;
 		if (CascadeCount != 0u && CascadeAtlasIndex != 0u)
 		{
 			// Hard cascade selection by the fit camera's view depth; past the last split the sun is unshadowed.
 			const float viewDepth = dot(CascadeViewDepthRow, float4(positionWS, 1.0));
-			[unroll] for (uint c = 0; c < 4; ++c)
+			uint cascade = 0;
+			[unroll] for (uint c = 0; c < 3; ++c)
 			{
-				if (c < CascadeCount && viewDepth < CascadeSplits[c])
-				{
-					return SampleShadowFactor(CascadeAtlasIndex, CascadeViewProj[c], CascadeAtlasRect[c], positionWS, Ng, NdotL, CascadeBiasScale[c]);
-				}
+				cascade += (c + 1 < CascadeCount && viewDepth >= CascadeSplits[c]) ? 1u : 0u;
 			}
-			return 1.0;
+			if (viewDepth >= CascadeSplits[cascade])
+			{
+				return 1.0;
+			}
+			texIndex = CascadeAtlasIndex;
+			viewProj = CascadeViewProj[cascade];
+			atlasRect = CascadeAtlasRect[cascade];
+			biasScale = CascadeBiasScale[cascade];
 		}
-		if (ShadowMapIndex == 0)
+	}
+	else
+	{
+		if (DirShadowAtlasIndex == 0)
 		{
 			return 1.0;
 		}
-		return SampleShadowFactor(ShadowMapIndex, LightViewProj, float4(0, 0, 1, 1), positionWS, Ng, NdotL);
+		const DirShadow payload = DirShadows[light.ShadowSlot - 1];
+		viewProj = payload.ViewProj;
+		atlasRect = payload.AtlasRect;
 	}
-	if (DirShadowAtlasIndex == 0)
+	if (texIndex == 0)
 	{
 		return 1.0;
 	}
-	const DirShadow payload = DirShadows[light.ShadowSlot - 1];
-	return SampleShadowFactor(DirShadowAtlasIndex, payload.ViewProj, payload.AtlasRect, positionWS, Ng, NdotL);
+	return SampleShadowFactor(texIndex, viewProj, atlasRect, positionWS, Ng, NdotL, biasScale);
 }
 
 // Spot shadow: RT ray query (when RTShadowEnabled and this spot casts) or the shared raster atlas at the
