@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
 #include <string_view>
 
 namespace Snowstorm
@@ -28,6 +29,12 @@ namespace Snowstorm
 	// Computed once on first call and cached, so the CVar must be resolved (which EntryPoint does before
 	// the Application exists) before anything asks for a path.
 	const std::filesystem::path& GetEngineRoot();
+
+	// The resolution above over explicit inputs, so every rule is testable against a temp tree. An empty
+	// `configured` skips rule 1, an empty `sourceDir` skips rule 3.
+	std::filesystem::path ResolveEngineRoot(
+	    const std::string& configured, const std::filesystem::path& exeDir, const std::filesystem::path& sourceDir,
+	    const std::filesystem::path& workingDir);
 
 	// Directory of the running executable (the working directory if the OS query fails).
 	std::filesystem::path GetExecutableDir();

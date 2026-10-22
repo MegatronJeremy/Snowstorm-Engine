@@ -37,39 +37,48 @@ namespace Snowstorm
 		return GetExeDir();
 	}
 
+	fs::path ResolveEngineRoot(
+	    const std::string& configured, const fs::path& exeDir, const fs::path& sourceDir, const fs::path& workingDir)
+	{
+		if (!configured.empty())
+		{
+			return fs::path(configured);
+		}
+
+		std::error_code ec;
+		for (fs::path dir = exeDir; !dir.empty(); dir = dir.parent_path())
+		{
+			if (fs::exists(dir / "Engine" / "Shaders", ec))
+			{
+				return dir;
+			}
+			if (dir == dir.root_path())
+			{
+				break;
+			}
+		}
+		// The tree this engine was CONFIGURED from. Below the walk-up on purpose: a staged or packaged
+		// build has Engine/ beside the exe and must win, or it would silently read shaders out of a
+		// stale checkout on the build machine. The exists() guard makes this self-disabling when the
+		// source tree is gone, degrading to the working directory rather than to a wrong path.
+		if (!sourceDir.empty() && fs::exists(sourceDir / "Engine" / "Shaders", ec))
+		{
+			return sourceDir;
+		}
+
+		return workingDir;
+	}
+
 	const fs::path& GetEngineRoot()
 	{
 		static const fs::path root = []
 		{
-			if (const std::string& configured = CVars::EngineRoot.Get(); !configured.empty())
-			{
-				return fs::path(configured);
-			}
-
-			std::error_code ec;
-			for (fs::path dir = GetExeDir(); !dir.empty(); dir = dir.parent_path())
-			{
-				if (fs::exists(dir / "Engine" / "Shaders", ec))
-				{
-					return dir;
-				}
-				if (dir == dir.root_path())
-				{
-					break;
-				}
-			}
-			// The tree this engine was CONFIGURED from. Below the walk-up on purpose: a staged or packaged
-			// build has Engine/ beside the exe and must win, or it would silently read shaders out of a
-			// stale checkout on the build machine. The exists() guard makes this self-disabling when the
-			// source tree is gone, degrading to the working directory rather than to a wrong path.
 #ifdef SS_ENGINE_SOURCE_DIR
-			if (fs::path configured(SS_ENGINE_SOURCE_DIR); fs::exists(configured / "Engine" / "Shaders", ec))
-			{
-				return configured;
-			}
+			const fs::path sourceDir(SS_ENGINE_SOURCE_DIR);
+#else
+			const fs::path sourceDir;
 #endif
-
-			return fs::current_path();
+			return ResolveEngineRoot(CVars::EngineRoot.Get(), GetExeDir(), sourceDir, fs::current_path());
 		}();
 		return root;
 	}
