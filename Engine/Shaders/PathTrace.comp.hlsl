@@ -668,7 +668,7 @@ float3 EmissiveNeeSample(Hit h, float3 V, inout Rng rng, uint64_t tableAddr)
 	uint pr;
 	float2 bb;
 	float tt;
-	if (TraceClosest(OffsetRay(h.pos, h.Ng), L, dist * 0.999, tableAddr, i, pr, bb, tt))
+	if (TraceClosest(OffsetRay(h.pos, h.Ng), L, max(dist - max(1e-3, dist * 1e-5), 0.0), tableAddr, i, pr, bb, tt))
 	{
 		return float3(0.0, 0.0, 0.0);
 	}
