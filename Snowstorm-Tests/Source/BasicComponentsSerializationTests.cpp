@@ -12,6 +12,9 @@
 #include <nlohmann/json.hpp>
 #include <rttr/type>
 
+#include <cstdint>
+#include <string>
+
 using namespace Snowstorm;
 
 namespace
@@ -26,10 +29,11 @@ namespace
 		REQUIRE(SceneSerializer::DeserializeFromString(loaded, SceneSerializer::SerializeToString(world)));
 	}
 
-	bool HasProperty(const char* typeName, const char* name)
+	template <typename T>
+	bool HasProperty(const std::string& name)
 	{
-		const rttr::type t = rttr::type::get_by_name(std::string(typeName));
-		return t.is_valid() && t.get_property(std::string(name)).is_valid();
+		const rttr::type type = rttr::type::get<T>();
+		return type.is_valid() && type.get_property(name).is_valid();
 	}
 
 	const ComponentInfo* FindInfo(const char* typeName)
@@ -47,11 +51,11 @@ namespace
 
 TEST_CASE("Rotator, AudioListener, Tag and ID register their reflected properties", "[serialize][basic]")
 {
-	CHECK(HasProperty("Snowstorm::RotatorComponent", "Axis"));
-	CHECK(HasProperty("Snowstorm::RotatorComponent", "SpeedDegPerSec"));
-	CHECK(HasProperty("AudioListenerComponent", "Enabled"));
-	CHECK(HasProperty("Snowstorm::TagComponent", "Tag"));
-	CHECK(HasProperty("Snowstorm::IDComponent", "Id"));
+	CHECK(HasProperty<RotatorComponent>("Axis"));
+	CHECK(HasProperty<RotatorComponent>("SpeedDegPerSec"));
+	CHECK(HasProperty<AudioListenerComponent>("Enabled"));
+	CHECK(HasProperty<TagComponent>("Tag"));
+	CHECK(HasProperty<IDComponent>("Id"));
 }
 
 TEST_CASE("Tag and ID are structural, Rotator and AudioListener are not", "[serialize][basic]")
