@@ -568,8 +568,7 @@ float4 main(PSInput i) : SV_Target0
 	// -> `ao` keeps just the material AO map. Replaces the old inline per-pixel RayTraceAO (deleted).
 	if (RTAOTextureIndex != 0)
 	{
-		// Subtract the TAA jitter (UV units) so the AO is sampled at the SAME sub-pixel spot the jittered
-		// geometry occupies, giving TAA sub-pixel variation to average, so half-res AO edges anti-alias.
+		// The G-buffer shares the forward pass's jitter, so plain UV hits the same sub-pixel spot.
 		const float2 aoUv = i.PositionCS.xy / max(RenderTargetSize, float2(1.0, 1.0)); // plain UV: effects jittered like geometry now
 		ao *= Textures[NonUniformResourceIndex(RTAOTextureIndex)].SampleLevel(LinearSampler, aoUv, 0).r;
 	}
