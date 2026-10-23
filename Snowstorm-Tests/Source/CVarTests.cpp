@@ -80,6 +80,9 @@ TEST_CASE("CVar tracks its default: IsAtDefault + ResetToDefault", "[cvar]")
 
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <string>
+#include <vector>
 
 TEST_CASE("Project settings path is under the project's Saved directory", "[cvar][settings]")
 {
@@ -111,4 +114,152 @@ TEST_CASE("Project settings load, save, and yield to higher-priority sources", "
 	REQUIRE(overridden.Get() == 1); // a skipped (env/CLI-set) CVar keeps its value
 
 	fs::remove_all(dir);
+}
+
+namespace
+{
+	namespace fs = std::filesystem;
+
+	// Moves the working directory so the cwd-relative SnowstormConfig.cfg and SnowstormStartup.cfg resolve inside
+	// a scratch directory, never the repo checkout.
+	struct ScratchCwd
+	{
+		fs::path previous = fs::current_path();
+		fs::path dir;
+
+		explicit ScratchCwd(const char* name) : dir(fs::temp_directory_path() / name)
+		{
+			fs::remove_all(dir);
+			fs::create_directories(dir);
+			fs::current_path(dir);
+		}
+		~ScratchCwd()
+		{
+			fs::current_path(previous);
+			fs::remove_all(dir);
+		}
+	};
+
+	void WriteFile(const fs::path& path, const std::string& text)
+	{
+		fs::create_directories(path.parent_path());
+		std::ofstream(path, std::ios::trunc) << text;
+	}
+
+	std::string ReadFile(const fs::path& path)
+	{
+		std::ifstream in(path);
+		return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+	}
+
+	// config.ignore is resolved by Initialize only; restore it so later cases see the on-disk layers again.
+	void InitializeWith(std::initializer_list<const char*> args)
+	{
+		std::vector<char*> argv{const_cast<char*>("tests")};
+		for (const char* a : args)
+			argv.push_back(const_cast<char*>(a));
+		CVarRegistry::Get().Initialize(static_cast<int>(argv.size()), argv.data());
+	}
+}
+
+TEST_CASE("SaveProjectSettings writes only persistent CVars that differ from their default", "[cvar][settings]")
+{
+	static CVar<int> changed{"test.save.changed", 1, "", CVarFlags::Persist};
+	static CVar<int> atDefault{"test.save.atdefault", 1, "", CVarFlags::Persist};
+	static CVar<int> transient{"test.save.transient", 1, ""};
+	ScratchCwd cwd("ss_cvar_save_only_persist");
+
+	changed.Set(5);
+	atDefault.Set(1);
+	transient.Set(9);
+	CVarRegistry::Get().SaveProjectSettings(cwd.dir / "proj");
+
+	const std::string text = ReadFile(ProjectSettingsPath(cwd.dir / "proj"));
+	REQUIRE(text.find("test.save.changed = 5") != std::string::npos);
+	REQUIRE(text.find("test.save.atdefault") == std::string::npos);
+	REQUIRE(text.find("test.save.transient") == std::string::npos);
+}
+
+TEST_CASE("Project settings file ignores non-persistent keys and unknown keys", "[cvar][settings]")
+{
+	static CVar<int> persisted{"test.load.persisted", 1, "", CVarFlags::Persist};
+	static CVar<int> transient{"test.load.transient", 1, ""};
+	ScratchCwd cwd("ss_cvar_load_persist_only");
+
+	WriteFile(ProjectSettingsPath(cwd.dir / "proj"),
+	          "# comment\n\ntest.load.persisted = 4\ntest.load.transient = 8\ntest.load.nosuchkey = 3\nmalformed line\n");
+	CVarRegistry::Get().LoadProjectSettings(cwd.dir / "proj");
+
+	REQUIRE(persisted.Get() == 4);
+	REQUIRE(transient.Get() == 1); // a hand-edited settings file cannot flip a one-shot CVar
+}
+
+TEST_CASE("Settings precedence: project file < startup file < env/CLI", "[cvar][settings]")
+{
+	static CVar<int> projectOnly{"test.prec.project", 1, "", CVarFlags::Persist};
+	static CVar<int> startupBeatsProject{"test.prec.startup", 1, "", CVarFlags::Persist};
+	static CVar<int> cliBeatsProject{"test.prec.cli", 1, "", CVarFlags::Persist};
+	static CVar<int> startupTransient{"test.prec.startup.transient", 1, ""};
+	ScratchCwd cwd("ss_cvar_precedence");
+
+	WriteFile(cwd.dir / CVarRegistry::kStartupConfigPath,
+	          "test.prec.startup = 20\ntest.prec.startup.transient = 30\n");
+	WriteFile(ProjectSettingsPath(cwd.dir / "proj"),
+	          "test.prec.project = 11\ntest.prec.startup = 12\ntest.prec.cli = 13\n");
+
+	InitializeWith({"--test.prec.cli=40"});
+	CVarRegistry::Get().LoadProjectSettings(cwd.dir / "proj");
+
+	REQUIRE(projectOnly.Get() == 11);
+	REQUIRE(startupBeatsProject.Get() == 20);
+	REQUIRE(cliBeatsProject.Get() == 40);
+	REQUIRE(startupTransient.Get() == 30); // the startup file honors any CVar, unlike the project file
+}
+
+TEST_CASE("config.ignore skips the startup file and both project loads and saves", "[cvar][settings]")
+{
+	static CVar<int> persisted{"test.ignore.persisted", 1, "", CVarFlags::Persist};
+	static CVar<int> startup{"test.ignore.startup", 1, ""};
+	ScratchCwd cwd("ss_cvar_config_ignore");
+
+	WriteFile(cwd.dir / CVarRegistry::kStartupConfigPath, "test.ignore.startup = 5\n");
+	WriteFile(ProjectSettingsPath(cwd.dir / "proj"), "test.ignore.persisted = 6\n");
+	WriteFile(cwd.dir / CVarRegistry::kConfigPath, "test.ignore.persisted = 7\n");
+
+	InitializeWith({"--config.ignore"});
+	CVarRegistry::Get().LoadProjectSettings(cwd.dir / "proj");
+	REQUIRE(startup.Get() == 1);
+	REQUIRE(persisted.Get() == 1);
+
+	persisted.Set(2);
+	CVarRegistry::Get().SaveProjectSettings(cwd.dir / "proj");
+	REQUIRE(ReadFile(ProjectSettingsPath(cwd.dir / "proj")) == "test.ignore.persisted = 6\n"); // not rewritten
+
+	InitializeWith({"--config.ignore=0"}); // leave the process-global flag as it was
+	CVarRegistry::Get().LoadProjectSettings(cwd.dir / "proj");
+	REQUIRE(persisted.Get() == 6);
+}
+
+TEST_CASE("Legacy SnowstormConfig.cfg migrates once, only while the project has no settings file", "[cvar][settings]")
+{
+	static CVar<int> legacy{"test.legacy.value", 1, "", CVarFlags::Persist};
+	static CVar<int> legacyTransient{"test.legacy.transient", 1, ""};
+	ScratchCwd cwd("ss_cvar_legacy_migration");
+	InitializeWith({"--config.ignore=0"});
+	auto& reg = CVarRegistry::Get();
+	const fs::path project = cwd.dir / "proj";
+
+	WriteFile(cwd.dir / CVarRegistry::kConfigPath, "test.legacy.value = 3\ntest.legacy.transient = 4\n");
+	reg.LoadProjectSettings(project);
+	REQUIRE(legacy.Get() == 3);
+	REQUIRE(legacyTransient.Get() == 1); // the legacy file is persistent-only too
+
+	// The editor's shutdown save creates the project file; from then on the legacy file is never read.
+	reg.SaveProjectSettings(project);
+	REQUIRE(fs::exists(ProjectSettingsPath(project)));
+
+	WriteFile(cwd.dir / CVarRegistry::kConfigPath, "test.legacy.value = 99\n");
+	legacy.Set(1);
+	reg.LoadProjectSettings(project);
+	REQUIRE(legacy.Get() == 3); // from the project file, not the changed legacy one
 }
