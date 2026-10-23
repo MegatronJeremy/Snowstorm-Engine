@@ -10,7 +10,7 @@ using namespace Snowstorm;
 
 namespace
 {
-	std::vector<int>& Log()
+	std::vector<int>& CallLog()
 	{
 		static std::vector<int> log;
 		return log;
@@ -22,8 +22,8 @@ namespace
 	class RecordingScript final : public ScriptableEntity
 	{
 	protected:
-		void OnCreate() override { Log().push_back(kCreate); }
-		void OnUpdate(Timestep) override { Log().push_back(kUpdate); }
+		void OnCreate() override { CallLog().push_back(kCreate); }
+		void OnUpdate(Timestep) override { CallLog().push_back(kUpdate); }
 	};
 
 	void RunFrame(World& world, ScriptSystem& system)
@@ -55,36 +55,36 @@ TEST_CASE("ScriptSystem does not tick in edit mode", "[scripts]")
 
 TEST_CASE("ScriptSystem creates a script on its first frame and updates it in the same frame", "[scripts]")
 {
-	Log().clear();
+	CallLog().clear();
 	World world;
 	ScriptSystem system(&world);
 	const entt::entity e = AddScript(world);
 
 	RunFrame(world, system);
-	CHECK(Log() == std::vector<int>{kCreate, kUpdate});
+	CHECK(CallLog() == std::vector<int>{kCreate, kUpdate});
 
 	Release(world, e);
 }
 
 TEST_CASE("ScriptSystem only updates an already created script on later frames", "[scripts]")
 {
-	Log().clear();
+	CallLog().clear();
 	World world;
 	ScriptSystem system(&world);
 	const entt::entity e = AddScript(world);
 
 	RunFrame(world, system);
-	Log().clear();
+	CallLog().clear();
 	RunFrame(world, system);
 	RunFrame(world, system);
-	CHECK(Log() == std::vector<int>{kUpdate, kUpdate});
+	CHECK(CallLog() == std::vector<int>{kUpdate, kUpdate});
 
 	Release(world, e);
 }
 
 TEST_CASE("ScriptSystem gives every script one create and one update per frame", "[scripts]")
 {
-	Log().clear();
+	CallLog().clear();
 	World world;
 	ScriptSystem system(&world);
 	const entt::entity a = AddScript(world);
@@ -93,7 +93,7 @@ TEST_CASE("ScriptSystem gives every script one create and one update per frame",
 	RunFrame(world, system);
 	int creates = 0;
 	int updates = 0;
-	for (const int call : Log())
+	for (const int call : CallLog())
 	{
 		creates += call == kCreate ? 1 : 0;
 		updates += call == kUpdate ? 1 : 0;
@@ -109,9 +109,9 @@ TEST_CASE("ScriptSystem gives every script one create and one update per frame",
 
 TEST_CASE("ScriptSystem on a world without scripts calls nothing", "[scripts]")
 {
-	Log().clear();
+	CallLog().clear();
 	World world;
 	ScriptSystem system(&world);
 	RunFrame(world, system);
-	CHECK(Log().empty());
+	CHECK(CallLog().empty());
 }
