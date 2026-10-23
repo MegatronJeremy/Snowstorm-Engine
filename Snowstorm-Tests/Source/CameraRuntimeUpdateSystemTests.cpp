@@ -105,7 +105,7 @@ TEST_CASE("CameraRuntimeUpdateSystem builds perspective view, projection and vie
 
 TEST_CASE("CameraRuntimeUpdateSystem perspective aspect follows the viewport unless fixed", "[camera]")
 {
-	Rig rig({800.0f, 400.0f});
+	Rig rig(glm::vec2(800.0f, 400.0f));
 	rig.Frame();
 	CHECK(rig.Runtime().Projection[1][1] / rig.Runtime().Projection[0][0] == Catch::Approx(2.0f));
 
@@ -123,7 +123,7 @@ TEST_CASE("CameraRuntimeUpdateSystem perspective aspect follows the viewport unl
 
 TEST_CASE("CameraRuntimeUpdateSystem orthographic size is the full view height", "[camera]")
 {
-	Rig rig({800.0f, 400.0f});
+	Rig rig(glm::vec2(800.0f, 400.0f));
 	rig.PatchCamera([](CameraComponent& c)
 	                { c.Projection = CameraComponent::ProjectionType::Orthographic; c.OrthographicSize = 8.0f; });
 	rig.Frame();
@@ -143,9 +143,9 @@ TEST_CASE("CameraRuntimeUpdateSystem frustum matches the view-projection", "[cam
 	rig.Frame();
 
 	// Looking down -Z from (1,2,5): a point straight ahead is inside, one behind the camera is outside
-	CHECK(rig.Runtime().frustum.IntersectsSphere({1.0f, 2.0f, 0.0f}, 0.1f));
-	CHECK_FALSE(rig.Runtime().frustum.IntersectsSphere({1.0f, 2.0f, 50.0f}, 0.1f));
-	CHECK_FALSE(rig.Runtime().frustum.IntersectsSphere({101.0f, 2.0f, 0.0f}, 0.1f));
+	CHECK(rig.Runtime().frustum.IntersectsSphere(glm::vec3(1.0f, 2.0f, 0.0f), 0.1f));
+	CHECK_FALSE(rig.Runtime().frustum.IntersectsSphere(glm::vec3(1.0f, 2.0f, 50.0f), 0.1f));
+	CHECK_FALSE(rig.Runtime().frustum.IntersectsSphere(glm::vec3(101.0f, 2.0f, 0.0f), 0.1f));
 }
 
 TEST_CASE("CameraRuntimeUpdateSystem does not touch an unchanged camera", "[camera]")
@@ -204,7 +204,7 @@ TEST_CASE("CameraRuntimeUpdateSystem skips cameras without a usable target", "[c
 
 	SECTION("viewport smaller than one pixel")
 	{
-		Rig rig({0.0f, 0.0f});
+		Rig rig(glm::vec2(0.0f, 0.0f));
 		rig.Frame();
 		// The component is emplaced before the size check, so it exists but keeps its defaults
 		REQUIRE(rig.HasRuntime());
