@@ -22,7 +22,7 @@ namespace
 		REQUIRE(type.is_valid());
 		const rttr::property prop = type.get_property(property);
 		REQUIRE(prop.is_valid());
-		const rttr::variant v = prop.get_metadata(key);
+		const rttr::variant v = prop.get_metadata(std::string(key));
 		if (!v.is_valid() || !v.can_convert<float>())
 			return std::nullopt;
 		return v.get_value<float>();
