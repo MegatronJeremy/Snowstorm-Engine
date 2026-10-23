@@ -13,7 +13,6 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <cmath>
-#include <functional>
 
 using namespace Snowstorm;
 
@@ -28,7 +27,11 @@ namespace
 		entt::entity viewport = entt::null;
 		entt::entity camera = entt::null;
 
-		explicit Rig(const glm::vec2 size = {1600.0f, 900.0f})
+		Rig() : Rig(glm::vec2(1600.0f, 900.0f))
+		{
+		}
+
+		explicit Rig(const glm::vec2& size)
 		{
 			auto& reg = world.GetRegistry();
 			viewport = reg.create();
@@ -63,7 +66,8 @@ namespace
 			                                             { v.Size = size; });
 		}
 
-		void PatchCamera(const std::function<void(CameraComponent&)>& fn)
+		template <typename Fn>
+		void PatchCamera(Fn fn)
 		{
 			world.GetRegistry().patch<CameraComponent>(camera, fn);
 		}
@@ -133,7 +137,7 @@ TEST_CASE("CameraRuntimeUpdateSystem orthographic size is the full view height",
 	CHECK(p[0][0] == Catch::Approx(2.0f / 16.0f)); // width = height * aspect(2)
 
 	const auto& cam = rig.world.GetRegistry().Read<CameraComponent>(rig.camera);
-	CheckMatNear(p, glm::ortho(-8.0f, 8.0f, -4.0f, 4.0f, cam.OrthographicNear, cam.OrthographicFar));
+	CheckMatNear(p, glm::orthoRH_ZO(-8.0f, 8.0f, -4.0f, 4.0f, cam.OrthographicNear, cam.OrthographicFar));
 	CheckMatNear(rig.Runtime().ViewProjection, p * rig.Runtime().View);
 }
 
