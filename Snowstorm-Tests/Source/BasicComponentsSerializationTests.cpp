@@ -26,9 +26,10 @@ namespace
 		REQUIRE(SceneSerializer::DeserializeFromString(loaded, SceneSerializer::SerializeToString(world)));
 	}
 
-	bool HasProperty(const rttr::type& t, const char* name)
+	bool HasProperty(const char* typeName, const char* name)
 	{
-		return t.is_valid() && t.get_property(name).is_valid();
+		const rttr::type t = rttr::type::get_by_name(std::string(typeName));
+		return t.is_valid() && t.get_property(std::string(name)).is_valid();
 	}
 
 	const ComponentInfo* FindInfo(const char* typeName)
@@ -46,11 +47,11 @@ namespace
 
 TEST_CASE("Rotator, AudioListener, Tag and ID register their reflected properties", "[serialize][basic]")
 {
-	CHECK(HasProperty(rttr::type::get_by_name("Snowstorm::RotatorComponent"), "Axis"));
-	CHECK(HasProperty(rttr::type::get_by_name("Snowstorm::RotatorComponent"), "SpeedDegPerSec"));
-	CHECK(HasProperty(rttr::type::get_by_name("AudioListenerComponent"), "Enabled"));
-	CHECK(HasProperty(rttr::type::get_by_name("Snowstorm::TagComponent"), "Tag"));
-	CHECK(HasProperty(rttr::type::get_by_name("Snowstorm::IDComponent"), "Id"));
+	CHECK(HasProperty("Snowstorm::RotatorComponent", "Axis"));
+	CHECK(HasProperty("Snowstorm::RotatorComponent", "SpeedDegPerSec"));
+	CHECK(HasProperty("AudioListenerComponent", "Enabled"));
+	CHECK(HasProperty("Snowstorm::TagComponent", "Tag"));
+	CHECK(HasProperty("Snowstorm::IDComponent", "Id"));
 }
 
 TEST_CASE("Tag and ID are structural, Rotator and AudioListener are not", "[serialize][basic]")
@@ -92,7 +93,7 @@ TEST_CASE("Missing rotator keys load the component defaults", "[serialize][basic
 	const Entity e = SceneSerializer::DeserializeEntity(world, EntityJson(R"({"Snowstorm::RotatorComponent": {}})"));
 	REQUIRE(e);
 	REQUIRE(e.HasComponent<RotatorComponent>());
-	const RotatorComponent d;
+	const RotatorComponent d{};
 	CHECK(e.GetComponent<RotatorComponent>().Axis == d.Axis);
 	CHECK(e.GetComponent<RotatorComponent>().SpeedDegPerSec == d.SpeedDegPerSec);
 }
