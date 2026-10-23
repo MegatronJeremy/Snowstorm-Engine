@@ -24,8 +24,9 @@ namespace Snowstorm
 	}
 
 	// Adding to the z column's x/y rows scales with w, so the shift survives the perspective divide as a
-	// constant NDC offset at every depth. Only the color pass reads the result; `viewProjection` stays canonical
-	// for motion vectors and culling. A target under 1 px (not resolved yet, mid-resize) stays unjittered.
+	// constant NDC offset at every depth: -Ndc, since a right-handed projection has
+	// w = -z_view. Only the color pass reads the result; `viewProjection` stays canonical for motion vectors and
+	// culling. A target under 1 px (not resolved yet, mid-resize) stays unjittered.
 	inline CameraJitter InjectJitter(const glm::mat4& projection, const glm::mat4& view, const glm::mat4& viewProjection,
 	                                 const glm::vec2 jitterPixels, const float renderWidth, const float renderHeight)
 	{

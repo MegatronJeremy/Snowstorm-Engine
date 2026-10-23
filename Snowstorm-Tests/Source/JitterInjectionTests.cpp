@@ -53,7 +53,9 @@ TEST_CASE("Jitter pixels convert to NDC at the render resolution", "[math][jitte
 	CHECK(b.x == Approx(a.x * 2.0f));
 }
 
-TEST_CASE("Injected jitter shifts a projected point by exactly the NDC offset at any depth", "[math][jitter]")
+// glm is right-handed here (only depth 0..1 is forced), so clip.w = -z_view. Adding Ndc to P[2][0] adds
+// Ndc * z_view to clip.x, which the divide turns into a shift of -Ndc, the same at every depth.
+TEST_CASE("Injected jitter shifts a projected point by -Ndc at any depth", "[math][jitter]")
 {
 	const glm::mat4 projection = glm::perspective(glm::radians(60.0f), 16.0f / 9.0f, 0.1f, 100.0f);
 	const glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f));
@@ -71,8 +73,8 @@ TEST_CASE("Injected jitter shifts a projected point by exactly the NDC offset at
 			const glm::vec2 before = ProjectNdc(viewProjection, p);
 			const glm::vec2 after = ProjectNdc(result.JitteredViewProjection, p);
 			CAPTURE(res.x, p.z);
-			CHECK(after.x - before.x == Approx(result.Ndc.x).margin(1e-5));
-			CHECK(after.y - before.y == Approx(result.Ndc.y).margin(1e-5));
+			CHECK(after.x - before.x == Approx(-result.Ndc.x).margin(1e-5));
+			CHECK(after.y - before.y == Approx(-result.Ndc.y).margin(1e-5));
 		}
 	}
 }
