@@ -196,6 +196,8 @@ TEST_CASE("TextureCache: damaged header is a miss", "[assets][texturecache]")
 	Fixture f;
 	REQUIRE(TextureCacheIO::Save(f.Handle, f.Source, MakeRgba8(), f.Key));
 	const std::vector<char> good = f.ReadBlob();
+	// magic 4, version 4, write time 8, hash 8, then Encoding, Key, Width, Height, MipLevels as u32
+	constexpr size_t kHeaderBytes = 4 + 4 + 8 + 8 + 5 * 4;
 
 	SECTION("magic")
 	{
@@ -211,11 +213,18 @@ TEST_CASE("TextureCache: damaged header is a miss", "[assets][texturecache]")
 		f.WriteBlob(b);
 		CHECK_FALSE(TextureCacheIO::Load(f.Handle, f.Source, f.Key).has_value());
 	}
+	SECTION("zero mip level count")
+	{
+		std::vector<char> b = good;
+		for (size_t i = kHeaderBytes - 4; i < kHeaderBytes; ++i)
+			b[i] = 0;
+		f.WriteBlob(b);
+		CHECK_FALSE(TextureCacheIO::Load(f.Handle, f.Source, f.Key).has_value());
+	}
 	SECTION("zero length level prefix")
 	{
-		// The first level prefix follows the 40-byte header (4+4+8+8, then five u32).
 		std::vector<char> b = good;
-		for (size_t i = 40; i < 48; ++i)
+		for (size_t i = kHeaderBytes; i < kHeaderBytes + 8; ++i)
 			b[i] = 0;
 		f.WriteBlob(b);
 		CHECK_FALSE(TextureCacheIO::Load(f.Handle, f.Source, f.Key).has_value());
