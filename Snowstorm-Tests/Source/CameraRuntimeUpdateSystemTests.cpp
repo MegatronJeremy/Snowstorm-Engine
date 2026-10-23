@@ -224,7 +224,7 @@ TEST_CASE("CameraRuntimeUpdateSystem re-resolves a target whose viewport entity 
 {
 	Rig rig;
 	rig.Frame();
-	REQUIRE(rig.world.GetRegistry().Read<CameraTargetComponent>(rig.camera).TargetViewportEntity == rig.viewport);
+	REQUIRE((rig.world.GetRegistry().Read<CameraTargetComponent>(rig.camera).TargetViewportEntity == rig.viewport));
 
 	auto& reg = rig.world.GetRegistry();
 	const entt::entity replacement = reg.create();
@@ -236,6 +236,6 @@ TEST_CASE("CameraRuntimeUpdateSystem re-resolves a target whose viewport entity 
 	                                 { t.TargetViewportUUID = UUID(kViewportId + 5); });
 	rig.Frame();
 
-	CHECK(reg.Read<CameraTargetComponent>(rig.camera).TargetViewportEntity == replacement);
+	CHECK((reg.Read<CameraTargetComponent>(rig.camera).TargetViewportEntity == replacement));
 	CHECK(rig.Runtime().Projection[0][0] == Catch::Approx(rig.Runtime().Projection[1][1]));
 }
