@@ -208,15 +208,15 @@ TEST_CASE("CameraRuntimeUpdateSystem skips cameras without a usable target", "[c
 		rig.Frame();
 		// The component is emplaced before the size check, so it exists but keeps its defaults
 		REQUIRE(rig.HasRuntime());
-		const CameraRuntimeComponent defaults{};
-		CheckMatNear(rig.Runtime().View, defaults.View);
-		CheckMatNear(rig.Runtime().Projection, defaults.Projection);
-		CheckMatNear(rig.Runtime().ViewProjection, defaults.ViewProjection);
+		const glm::mat4 identity(1.0f);
+		CheckMatNear(rig.Runtime().View, identity);
+		CheckMatNear(rig.Runtime().Projection, identity);
+		CheckMatNear(rig.Runtime().ViewProjection, identity);
 
 		rig.SetViewportSize({640.0f, 480.0f});
 		rig.Frame();
 		REQUIRE(rig.HasRuntime());
-		CHECK(rig.Runtime().Projection != defaults.Projection);
+		CHECK(rig.Runtime().Projection[1][1] == Catch::Approx(1.0f / std::tan(rig.world.GetRegistry().Read<CameraComponent>(rig.camera).PerspectiveFOV * 0.5f)));
 	}
 }
 
