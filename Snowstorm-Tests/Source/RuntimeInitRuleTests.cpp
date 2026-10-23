@@ -4,6 +4,11 @@
 
 using namespace Snowstorm;
 
+namespace
+{
+	constexpr entt::entity kNone = entt::null;
+}
+
 TEST_CASE("RuntimeInitRule: viewport size guard", "[runtimeinit]")
 {
 	CHECK(IsValidViewportSize(64u, 64u));
@@ -24,7 +29,7 @@ TEST_CASE("RuntimeInitRule: UUID resolution", "[runtimeinit]")
 
 	SECTION("unset UUID resolves to null")
 	{
-		CHECK(ResolveUuid(map, 0) == entt::null);
+		CHECK(ResolveUuid(map, 0) == kNone);
 	}
 	SECTION("known UUID resolves to its entity")
 	{
@@ -33,13 +38,13 @@ TEST_CASE("RuntimeInitRule: UUID resolution", "[runtimeinit]")
 	}
 	SECTION("unknown UUID resolves to null")
 	{
-		CHECK(ResolveUuid(map, 33) == entt::null);
+		CHECK(ResolveUuid(map, 33) == kNone);
 	}
 	SECTION("UUID 0 is never registered")
 	{
 		RegisterUuid(map, 0, a);
 		CHECK(map.size() == 2);
-		CHECK(ResolveUuid(map, 0) == entt::null);
+		CHECK(ResolveUuid(map, 0) == kNone);
 	}
 	SECTION("a duplicate UUID keeps the entity registered last")
 	{
@@ -49,6 +54,6 @@ TEST_CASE("RuntimeInitRule: UUID resolution", "[runtimeinit]")
 	}
 	SECTION("an empty map resolves everything to null")
 	{
-		CHECK(ResolveUuid(UuidEntityMap{}, 11) == entt::null);
+		CHECK(ResolveUuid(UuidEntityMap{}, 11) == kNone);
 	}
 }
