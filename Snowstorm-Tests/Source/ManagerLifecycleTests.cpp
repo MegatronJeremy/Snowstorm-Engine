@@ -42,17 +42,21 @@ namespace
 		~TracedSingletonB() override { g_Log->push_back("SingletonB"); }
 	};
 
-	struct TickService final : Service
+	template <int Tag>
+	struct TickServiceT final : Service
 	{
-		explicit TickService(const char* name)
+		explicit TickServiceT(const char* name)
 		    : Name(name)
 		{
 		}
-		~TickService() override { g_Log->push_back(std::string("~") + Name); }
+		~TickServiceT() override { g_Log->push_back(std::string("~") + Name); }
 		void OnUpdate(Timestep) override { g_Log->push_back(std::string("update ") + Name); }
 		void PostUpdate(Timestep) override { g_Log->push_back(std::string("post ") + Name); }
 		const char* Name;
 	};
+
+	using TickService = TickServiceT<0>;
+	using TickServiceB = TickServiceT<1>;
 
 	struct FirstService final : Service
 	{
@@ -111,6 +115,7 @@ TEST_CASE("Two SingletonManagers do not share instances", "[singleton][manager]"
 TEST_CASE("SingletonManager destroys singletons in registration order", "[singleton][manager]")
 {
 	LogScope log;
+	// Relies on the container destroying elements front to back, which std::vector does in practice but the standard leaves unspecified.
 	{
 		SingletonManager manager;
 		manager.RegisterSingleton<TracedSingletonB>();
@@ -135,33 +140,35 @@ TEST_CASE("ServiceManager registration is get-or-create and keeps the first inst
 	REQUIRE(first.Value == 11);
 }
 
-TEST_CASE("ServiceManager ticks every service in registration order, and passive services opt out", "[service][manager]")
+TEST_CASE("ServiceManager ticks services in registration order, and passive services opt out", "[service][manager]")
 {
 	LogScope log;
 	ServiceManager manager;
-	manager.RegisterService<TickService>("A");
+	manager.RegisterService<TickServiceB>("B");
 	manager.RegisterService<PassiveService>();
-	manager.RegisterService<FirstService>();
+	manager.RegisterService<TickService>("A");
 
 	manager.ExecuteUpdate(Timestep(0.016f));
 	manager.ExecutePostUpdate(Timestep(0.016f));
 
-	REQUIRE(log.Events == std::vector<std::string>{"update A", "post A"});
+	REQUIRE(log.Events == std::vector<std::string>{"update B", "update A", "post B", "post A"});
 }
 
-TEST_CASE("ServiceManager runs every OnUpdate before any PostUpdate, each in registration order", "[service][manager]")
+TEST_CASE("ServiceManager runs a whole phase before the next, and drops a duplicate registration", "[service][manager]")
 {
 	LogScope log;
 	ServiceManager manager;
 	manager.RegisterService<TickService>("A");
 	manager.RegisterService<TickService>("ignored");
-	manager.RegisterService<PassiveService>();
+	manager.RegisterService<TickServiceB>("B");
+
+	REQUIRE(std::string(manager.GetService<TickService>().Name) == "A");
 
 	manager.ExecuteUpdate(Timestep(0.016f));
 	manager.ExecutePostUpdate(Timestep(0.016f));
 	manager.ExecuteUpdate(Timestep(0.016f));
 
-	REQUIRE(log.Events == std::vector<std::string>{"update A", "post A", "update A"});
+	REQUIRE(log.Events == std::vector<std::string>{"update A", "update B", "post A", "post B", "update A", "update B"});
 }
 
 TEST_CASE("ServiceManager destroys services in registration order", "[service][manager]")
