@@ -145,6 +145,7 @@ TEST_CASE("CameraRuntimeUpdateSystem frustum matches the view-projection", "[cam
 	// Looking down -Z from (1,2,5): a point straight ahead is inside, one behind the camera is outside
 	CHECK(rig.Runtime().frustum.IntersectsSphere({1.0f, 2.0f, 0.0f}, 0.1f));
 	CHECK_FALSE(rig.Runtime().frustum.IntersectsSphere({1.0f, 2.0f, 50.0f}, 0.1f));
+	CHECK_FALSE(rig.Runtime().frustum.IntersectsSphere({101.0f, 2.0f, 0.0f}, 0.1f));
 }
 
 TEST_CASE("CameraRuntimeUpdateSystem does not touch an unchanged camera", "[camera]")
@@ -205,11 +206,17 @@ TEST_CASE("CameraRuntimeUpdateSystem skips cameras without a usable target", "[c
 	{
 		Rig rig({0.0f, 0.0f});
 		rig.Frame();
-		CHECK_FALSE(rig.HasRuntime());
+		// The component is emplaced before the size check, so it exists but keeps its defaults
+		REQUIRE(rig.HasRuntime());
+		const CameraRuntimeComponent defaults{};
+		CheckMatNear(rig.Runtime().View, defaults.View);
+		CheckMatNear(rig.Runtime().Projection, defaults.Projection);
+		CheckMatNear(rig.Runtime().ViewProjection, defaults.ViewProjection);
 
 		rig.SetViewportSize({640.0f, 480.0f});
 		rig.Frame();
-		CHECK(rig.HasRuntime());
+		REQUIRE(rig.HasRuntime());
+		CHECK(rig.Runtime().Projection != defaults.Projection);
 	}
 }
 
