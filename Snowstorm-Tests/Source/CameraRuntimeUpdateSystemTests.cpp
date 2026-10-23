@@ -35,13 +35,13 @@ namespace
 		{
 			auto& reg = world.GetRegistry();
 			viewport = reg.create();
-			reg.emplace<IDComponent>(viewport).Id = UUID(kViewportId);
+			reg.emplace<IDComponent>(viewport).Id = Snowstorm::UUID(kViewportId);
 			reg.emplace<ViewportComponent>(viewport).Size = size;
 
 			camera = reg.create();
 			reg.emplace<TransformComponent>(camera).Position = {1.0f, 2.0f, 5.0f};
 			reg.emplace<CameraComponent>(camera);
-			reg.emplace<CameraTargetComponent>(camera).TargetViewportUUID = UUID(kViewportId);
+			reg.emplace<CameraTargetComponent>(camera).TargetViewportUUID = Snowstorm::UUID(kViewportId);
 		}
 
 		void Frame()
@@ -201,7 +201,7 @@ TEST_CASE("CameraRuntimeUpdateSystem skips cameras without a usable target", "[c
 	{
 		Rig rig;
 		rig.world.GetRegistry().patch<CameraTargetComponent>(rig.camera, [](CameraTargetComponent& t)
-		                                                     { t.TargetViewportUUID = UUID(kViewportId + 1); });
+		                                                     { t.TargetViewportUUID = Snowstorm::UUID(kViewportId + 1); });
 		rig.Frame();
 		CHECK_FALSE(rig.HasRuntime());
 	}
@@ -232,12 +232,12 @@ TEST_CASE("CameraRuntimeUpdateSystem re-resolves a target whose viewport entity 
 
 	auto& reg = rig.world.GetRegistry();
 	const entt::entity replacement = reg.create();
-	reg.emplace<IDComponent>(replacement).Id = UUID(kViewportId + 5);
+	reg.emplace<IDComponent>(replacement).Id = Snowstorm::UUID(kViewportId + 5);
 	reg.emplace<ViewportComponent>(replacement).Size = {300.0f, 300.0f};
 
 	reg.destroy(rig.viewport);
 	reg.patch<CameraTargetComponent>(rig.camera, [](CameraTargetComponent& t)
-	                                 { t.TargetViewportUUID = UUID(kViewportId + 5); });
+	                                 { t.TargetViewportUUID = Snowstorm::UUID(kViewportId + 5); });
 	rig.Frame();
 
 	CHECK((reg.Read<CameraTargetComponent>(rig.camera).TargetViewportEntity == replacement));
