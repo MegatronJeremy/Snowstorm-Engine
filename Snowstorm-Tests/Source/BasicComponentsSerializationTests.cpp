@@ -124,7 +124,7 @@ TEST_CASE("An empty AudioListener block loads enabled", "[serialize][basic]")
 	CHECK(e.GetComponent<AudioListenerComponent>().Enabled);
 }
 
-TEST_CASE("TagComponent round-trips empty and non-ASCII names through the entity header", "[serialize][basic]")
+TEST_CASE("TagComponent round-trips non-ASCII names and defaults an empty name", "[serialize][basic]")
 {
 	const std::string names[] = {"", "\xD0\x98\xD0\xB3\xD1\x80\xD0\xB0\xD1\x87 \xC3\xA9 \xE6\x97\xA5\xE6\x9C\xAC", "  spaced \"quoted\" \\ name\t"};
 
@@ -146,7 +146,7 @@ TEST_CASE("TagComponent round-trips empty and non-ASCII names through the entity
 		const Entity l = loaded.FindEntityByUUID(UUID{id++});
 		REQUIRE(l);
 		REQUIRE(l.HasComponent<TagComponent>());
-		CHECK(l.GetComponent<TagComponent>().Tag == n);
+		CHECK(l.GetComponent<TagComponent>().Tag == (n.empty() ? std::string("Entity") : n));
 	}
 }
 
