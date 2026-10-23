@@ -61,15 +61,15 @@ TEST_CASE("Rotator, AudioListener, Tag and ID register their reflected propertie
 TEST_CASE("Tag and ID are structural, Rotator and AudioListener are not", "[serialize][basic]")
 {
 	const ComponentInfo* tag = FindInfo("Snowstorm::TagComponent");
-	const ComponentInfo* id = FindInfo("Snowstorm::IDComponent");
+	const ComponentInfo* idInfo = FindInfo("Snowstorm::IDComponent");
 	const ComponentInfo* rotator = FindInfo("Snowstorm::RotatorComponent");
 	const ComponentInfo* listener = FindInfo("AudioListenerComponent");
 	REQUIRE(tag);
-	REQUIRE(id);
+	REQUIRE(idInfo);
 	REQUIRE(rotator);
 	REQUIRE(listener);
 	CHECK(tag->Structural);
-	CHECK(id->Structural);
+	CHECK(idInfo->Structural);
 	CHECK_FALSE(rotator->Structural);
 	CHECK_FALSE(listener->Structural);
 }
@@ -134,10 +134,10 @@ TEST_CASE("TagComponent round-trips non-ASCII names and defaults an empty name",
 	const std::string names[] = {"", "\xD0\x98\xD0\xB3\xD1\x80\xD0\xB0\xD1\x87 \xC3\xA9 \xE6\x97\xA5\xE6\x9C\xAC", "  spaced \"quoted\" \\ name\t"};
 
 	World world;
-	uint64_t id = 10;
+	uint64_t nextId = 10;
 	for (const auto& n : names)
 	{
-		world.CreateEntityWithUUID(UUID{id++}, n);
+		world.CreateEntityWithUUID(UUID{nextId++}, n);
 	}
 
 	const nlohmann::json doc = nlohmann::json::parse(SceneSerializer::SerializeToString(world));
@@ -145,10 +145,10 @@ TEST_CASE("TagComponent round-trips non-ASCII names and defaults an empty name",
 
 	World loaded;
 	Reload(world, loaded);
-	id = 10;
+	nextId = 10;
 	for (const auto& n : names)
 	{
-		const Entity l = loaded.FindEntityByUUID(UUID{id++});
+		const Entity l = loaded.FindEntityByUUID(UUID{nextId++});
 		REQUIRE(l);
 		REQUIRE(l.HasComponent<TagComponent>());
 		CHECK(l.GetComponent<TagComponent>().Tag == (n.empty() ? std::string("Entity") : n));
@@ -157,18 +157,18 @@ TEST_CASE("TagComponent round-trips non-ASCII names and defaults an empty name",
 
 TEST_CASE("IDComponent UUID survives save and load in the entity header", "[serialize][basic]")
 {
-	const uint64_t big = 0xFEDCBA9876543210ull;
+	const uint64_t bigValue = 0xFEDCBA9876543210ull;
 
 	World world;
-	world.CreateEntityWithUUID(UUID{big}, "Big");
+	world.CreateEntityWithUUID(UUID{bigValue}, "Big");
 
 	const nlohmann::json doc = nlohmann::json::parse(SceneSerializer::SerializeToString(world));
 	CHECK(doc.dump().find("IDComponent") == std::string::npos);
 
 	World loaded;
 	Reload(world, loaded);
-	const Entity l = loaded.FindEntityByUUID(UUID{big});
+	const Entity l = loaded.FindEntityByUUID(UUID{bigValue});
 	REQUIRE(l);
 	REQUIRE(l.HasComponent<IDComponent>());
-	CHECK(l.GetComponent<IDComponent>().Id.Value() == big);
+	CHECK(l.GetComponent<IDComponent>().Id.Value() == bigValue);
 }
