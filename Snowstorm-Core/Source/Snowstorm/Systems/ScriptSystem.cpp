@@ -19,6 +19,7 @@ namespace Snowstorm
 
 			scriptComponent.InstantiateScript();
 			scriptComponent.Instance->m_Entity = Entity{entity, m_World};
+			m_Live[entity] = scriptComponent.Instance;
 			scriptComponent.Instance->OnCreate();
 		}
 
@@ -31,14 +32,18 @@ namespace Snowstorm
 			scriptComponent.Instance->OnUpdate(ts);
 		}
 
-		// Destroy scripts that are removed
+		// FiniView lists entities whose component is already gone, so the instance comes from m_Live.
 		for (const auto entity : nativeScriptFiniView)
 		{
-			auto [scriptComponent] = nativeScriptView.get(entity);
-			SS_CORE_ASSERT(scriptComponent.Instance);
+			const auto live = m_Live.find(entity);
+			if (live == m_Live.end())
+			{
+				continue;
+			}
 
-			scriptComponent.Instance->OnDestroy();
-			scriptComponent.DestroyScript();
+			live->second->OnDestroy();
+			delete live->second;
+			m_Live.erase(live);
 		}
 	}
 
