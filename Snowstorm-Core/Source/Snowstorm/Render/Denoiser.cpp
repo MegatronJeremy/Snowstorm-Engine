@@ -21,7 +21,7 @@ namespace Snowstorm
 		// Temporal off (or no velocity buffer this frame): drop the valid flag so re-enabling starts clean, and
 		// pass the raw trace straight through (the à-trous filters it directly — spatial-only).
 		const DenoiserTemporalDecision decision =
-			DecideDenoiserTemporal(cfg.TemporalActive, velocity != nullptr, inst.HistoryValid, fc.Renderer.GetFrameCounter());
+		    DecideDenoiserTemporal(cfg.TemporalActive, velocity != nullptr, inst.HistoryValid, fc.Renderer.GetFrameCounter());
 		inst.HistoryValid = decision.NextHistoryValid;
 		if (decision.PassThrough)
 		{
