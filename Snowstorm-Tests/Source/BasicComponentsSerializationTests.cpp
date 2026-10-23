@@ -77,14 +77,14 @@ TEST_CASE("Tag and ID are structural, Rotator and AudioListener are not", "[seri
 TEST_CASE("RotatorComponent round-trips Axis and SpeedDegPerSec without normalizing", "[serialize][basic]")
 {
 	World world;
-	Entity e = world.CreateEntityWithUUID(UUID{1}, "Spin");
+	Entity e = world.CreateEntityWithUUID(Snowstorm::UUID{1}, "Spin");
 	auto& r = e.AddComponent<RotatorComponent>();
 	r.Axis = {0.5f, -2.0f, 4.0f};
 	r.SpeedDegPerSec = -135.5f;
 
 	World loaded;
 	Reload(world, loaded);
-	const Entity l = loaded.FindEntityByUUID(UUID{1});
+	const Entity l = loaded.FindEntityByUUID(Snowstorm::UUID{1});
 	REQUIRE(l);
 	REQUIRE(l.HasComponent<RotatorComponent>());
 	CHECK(l.GetComponent<RotatorComponent>().Axis == glm::vec3{0.5f, -2.0f, 4.0f});
@@ -105,13 +105,13 @@ TEST_CASE("Missing rotator keys load the component defaults", "[serialize][basic
 TEST_CASE("AudioListenerComponent round-trips Enabled in both states", "[serialize][basic]")
 {
 	World world;
-	world.CreateEntityWithUUID(UUID{2}, "Off").AddComponent<AudioListenerComponent>().Enabled = false;
-	world.CreateEntityWithUUID(UUID{3}, "On").AddComponent<AudioListenerComponent>().Enabled = true;
+	world.CreateEntityWithUUID(Snowstorm::UUID{2}, "Off").AddComponent<AudioListenerComponent>().Enabled = false;
+	world.CreateEntityWithUUID(Snowstorm::UUID{3}, "On").AddComponent<AudioListenerComponent>().Enabled = true;
 
 	World loaded;
 	Reload(world, loaded);
-	const Entity off = loaded.FindEntityByUUID(UUID{2});
-	const Entity on = loaded.FindEntityByUUID(UUID{3});
+	const Entity off = loaded.FindEntityByUUID(Snowstorm::UUID{2});
+	const Entity on = loaded.FindEntityByUUID(Snowstorm::UUID{3});
 	REQUIRE(off);
 	REQUIRE(on);
 	REQUIRE(off.HasComponent<AudioListenerComponent>());
@@ -137,7 +137,7 @@ TEST_CASE("TagComponent round-trips non-ASCII names and defaults an empty name",
 	uint64_t nextId = 10;
 	for (const auto& n : names)
 	{
-		world.CreateEntityWithUUID(UUID{nextId++}, n);
+		world.CreateEntityWithUUID(Snowstorm::UUID{nextId++}, n);
 	}
 
 	const nlohmann::json doc = nlohmann::json::parse(SceneSerializer::SerializeToString(world));
@@ -148,7 +148,7 @@ TEST_CASE("TagComponent round-trips non-ASCII names and defaults an empty name",
 	nextId = 10;
 	for (const auto& n : names)
 	{
-		const Entity l = loaded.FindEntityByUUID(UUID{nextId++});
+		const Entity l = loaded.FindEntityByUUID(Snowstorm::UUID{nextId++});
 		REQUIRE(l);
 		REQUIRE(l.HasComponent<TagComponent>());
 		CHECK(l.GetComponent<TagComponent>().Tag == (n.empty() ? std::string("Entity") : n));
@@ -160,14 +160,14 @@ TEST_CASE("IDComponent UUID survives save and load in the entity header", "[seri
 	const uint64_t bigValue = 0xFEDCBA9876543210ull;
 
 	World world;
-	world.CreateEntityWithUUID(UUID{bigValue}, "Big");
+	world.CreateEntityWithUUID(Snowstorm::UUID{bigValue}, "Big");
 
 	const nlohmann::json doc = nlohmann::json::parse(SceneSerializer::SerializeToString(world));
 	CHECK(doc.dump().find("IDComponent") == std::string::npos);
 
 	World loaded;
 	Reload(world, loaded);
-	const Entity l = loaded.FindEntityByUUID(UUID{bigValue});
+	const Entity l = loaded.FindEntityByUUID(Snowstorm::UUID{bigValue});
 	REQUIRE(l);
 	REQUIRE(l.HasComponent<IDComponent>());
 	CHECK(l.GetComponent<IDComponent>().Id.Value() == bigValue);
