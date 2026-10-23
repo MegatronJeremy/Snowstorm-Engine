@@ -3,6 +3,10 @@
 #include "Snowstorm/Components/RotatorComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 
+#include <entt/entt.hpp>
+
+#include <cstdint>
+
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -38,5 +42,18 @@ namespace Snowstorm
 		glm::extractEulerAngleYXZ(glm::mat4_cast(next), yaw, pitch, roll);
 
 		tr.Rotation = glm::vec3(pitch, yaw, roll);
+	}
+
+	// A fixed-step or route-driven run advances only when its clock moved; a free-running one every call.
+	// lastFrame starts at UINT64_MAX so the first tick always runs.
+	inline bool RotatorTickDue(const bool fixedStep, const bool routeDriven, const uint64_t clock, const uint64_t lastFrame)
+	{
+		return !((fixedStep || routeDriven) && clock == lastFrame);
+	}
+
+	// The entity the editor gizmo holds keeps its manual edit; entt::null holds nothing.
+	inline bool RotatorSkipsEntity(const entt::entity e, const entt::entity gizmoHeld)
+	{
+		return gizmoHeld != entt::null && e == gizmoHeld;
 	}
 }
