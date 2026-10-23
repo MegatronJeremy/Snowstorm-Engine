@@ -105,7 +105,7 @@ TEST_CASE("CameraControllerMath: move composition", "[camera][controller]")
 	}
 	SECTION("opposing keys cancel")
 	{
-		const glm::vec3 d = ComposeMoveDir({.W = true, .S = true, .A = true, .D = true}, fwd, right, true);
+		const glm::vec3 d = ComposeMoveDir({.W = true, .A = true, .S = true, .D = true}, fwd, right, true);
 		RequireVec(d, {0, 0, 0});
 		RequireVec(TargetVelocity(d, 5.0f), {0, 0, 0});
 	}
