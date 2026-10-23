@@ -99,8 +99,9 @@ TEST_CASE("CameraTargetComponent round-trips the target UUID and not the runtime
 	REQUIRE(r);
 	REQUIRE(r.HasComponent<CameraTargetComponent>());
 	const auto& g = r.GetComponent<CameraTargetComponent>();
-	CHECK(g.TargetViewportUUID == UUID{0xABCDEF123ull});
-	CHECK(g.TargetViewportEntity == entt::null);
+	CHECK(g.TargetViewportUUID.Value() == 0xABCDEF123ull);
+	constexpr entt::entity none = entt::null;
+	CHECK(g.TargetViewportEntity == none);
 }
 
 TEST_CASE("CameraTargetComponent loads the legacy TargetViewport key", "[serialize][camera]")
@@ -115,7 +116,7 @@ TEST_CASE("CameraTargetComponent loads the legacy TargetViewport key", "[seriali
 	const Entity e = SceneSerializer::DeserializeEntity(world, EntityJson(components.dump()));
 	REQUIRE(e);
 	REQUIRE(e.HasComponent<CameraTargetComponent>());
-	CHECK(e.GetComponent<CameraTargetComponent>().TargetViewportUUID == target);
+	CHECK(e.GetComponent<CameraTargetComponent>().TargetViewportUUID.Value() == target.Value());
 }
 
 TEST_CASE("ViewportComponent round-trips Size", "[serialize][camera]")
