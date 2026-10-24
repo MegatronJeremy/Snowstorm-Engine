@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -63,6 +64,22 @@ namespace Snowstorm
 			h = ShaderKeyAppend(h, def);
 		h = ShaderKeyAppend(h, debug ? "Od" : "");
 		return h;
+	}
+
+	// Where a stage's SPIR-V is looked up before dxc runs: the writable runtime cache first, then the
+	// read-only cooked directory shipped with a package. Both name files <stem>_<hex key>.spv. Returns the
+	// first candidate for which `exists` is true, or an empty string when dxc is the only way to get one.
+	[[nodiscard]] inline std::string FindCachedSpirv(const std::vector<std::string>& dirs, const std::string_view stem,
+	                                                 const uint64_t key, const std::function<bool(const std::string&)>& exists)
+	{
+		const std::string file = std::string(stem) + "_" + ShaderKeyToHex(key) + ".spv";
+		for (const std::string& dir : dirs)
+		{
+			std::string path = dir.empty() ? file : dir + "/" + file;
+			if (exists(path))
+				return path;
+		}
+		return {};
 	}
 
 	struct DxcRequest
