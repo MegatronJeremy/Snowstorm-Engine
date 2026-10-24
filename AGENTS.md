@@ -1193,6 +1193,8 @@ and none of the Scene3D chain (no prepass, lighting, tonemap or TAA): one `Sprit
 `SpriteComponent` into the present target, cleared to the camera's `BackgroundColor` through a second `RenderTarget`
 object over the same image. It uses the unjittered `ViewProjection`. The frame-global IBL bake and shadow maps still run (#344).
 
+Sprites outside the camera's x/y clip planes are dropped before the sort (`SpriteIntersectsView`, conservative: all four corners outside one plane; a corner behind the eye keeps the sprite; depth is not tested). The gather stays a serial loop, not `ParallelGather`: it reads components through the registry and the per-sprite test is a few mat4 ops, unmeasured on a GPU or stress scene.
+
 Draw order is `Layer`, then `Order`, then entity id, never z (`SortSpriteDraws`, `SpriteBatchTests`). `Size` is in world
 units times the transform's scale; a flip mirrors about `Pivot`. Sprites are unlit and straight-alpha blended with the
 destination alpha kept, since ImGui blends the viewport image by it. `Filter` picks a per-sprite point or linear sampler.

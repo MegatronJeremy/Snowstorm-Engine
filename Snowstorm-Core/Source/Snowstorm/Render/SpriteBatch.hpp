@@ -49,6 +49,25 @@ namespace Snowstorm
 		return d.Transform * local;
 	}
 
+	// Conservative: false only when all four corners lie outside the same side of the view's x or y clip planes.
+	// Depth is not tested (draw order ignores z), and a corner behind the eye (w <= 0) keeps the sprite.
+	[[nodiscard]] inline bool SpriteIntersectsView(const SpriteDraw& d, const glm::mat4& viewProjection)
+	{
+		const glm::mat4 clip = viewProjection * SpriteModelMatrix(d);
+		bool outLeft = true, outRight = true, outBottom = true, outTop = true;
+		for (const glm::vec2 uv : {glm::vec2{0, 0}, glm::vec2{1, 0}, glm::vec2{0, 1}, glm::vec2{1, 1}})
+		{
+			const glm::vec4 p = clip * glm::vec4(uv, 0.0f, 1.0f);
+			if (p.w <= 0.0f)
+				return true;
+			outLeft = outLeft && p.x < -p.w;
+			outRight = outRight && p.x > p.w;
+			outBottom = outBottom && p.y < -p.w;
+			outTop = outTop && p.y > p.w;
+		}
+		return !(outLeft || outRight || outBottom || outTop);
+	}
+
 	// Back to front: the first instance is drawn first, so it ends up underneath.
 	inline void SortSpriteDraws(std::vector<SpriteDraw>& draws)
 	{
