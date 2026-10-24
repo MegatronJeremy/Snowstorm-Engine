@@ -21,7 +21,8 @@ namespace Snowstorm
 	{
 		using ViewportResizeRule::Extent;
 
-		Extent ExtentOf(const Ref<RenderTarget>& t)
+		template <typename T>
+		Extent ExtentOf(const Ref<T>& t)
 		{
 			return {t->GetDesc().Width, t->GetDesc().Height};
 		}
