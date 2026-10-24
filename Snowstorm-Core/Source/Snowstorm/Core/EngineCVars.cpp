@@ -736,6 +736,7 @@ namespace Snowstorm::CVars
 
 	CVar<bool> PathTraceEnvNee{"render.pathtrace.envnee", true, "Reference path tracer environment (sky) next-event estimation with MIS: each hit samples the analytic sky directly (a shadow ray) and MIS-combines it with the BSDF-continuation sky hit, cutting sky-lit variance (especially on glossy surfaces). Unbiased (the converged image is unchanged; only convergence speed differs). Off = sky arrives only via continuation rays (the pre-NEE integrator). Mainly a dev/A-B knob.", CVarFlags::Persist};
 	CVar<int> PathTraceSampler{"render.pathtrace.sampler", 0, "Reference path tracer sample generator (#156): 0 = PCG white noise (default), 1 = Owen-scrambled Sobol, padded per decision, seeded per pixel only (a function of pixel and sample index, so a Reset replays it). Unbiased: the converged image matches 0; only the low-sample error differs. Changing it restarts accumulation. Clamped to [0, 1].", CVarFlags::Persist};
+	CVar<bool> PathTraceValidReflection{"render.pathtrace.validreflection", false, "Reference path tracer (#155): bend the specular lobe's normal, per Cycles ensure_valid_reflection (two-root solve), so the reflection stays above the geometric surface at grazing glossy edges. Diffuse keeps the shading normal. Off by default: the converged image and committed quality baselines are unchanged. Changing it restarts accumulation.", CVarFlags::Persist};
 
 	int ClampedPathTraceSpp()
 	{

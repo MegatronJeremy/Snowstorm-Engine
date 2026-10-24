@@ -776,6 +776,7 @@ namespace Snowstorm::CVars
 	// the converged image is the same, only convergence speed differs. Mostly a dev/A-B knob.
 	extern CVar<bool> PathTraceEnvNee;
 	extern CVar<int> PathTraceSampler;
+	extern CVar<bool> PathTraceValidReflection;
 	// True when the reference path tracer should run (render.pathtrace on AND an RT-capable device). Gates the
 	// PT pass AND the skip of the normal scene path (forward/G-buffer/upscale/temporal) so PT owns the frame.
 	[[nodiscard]] bool PathTraceActive();
