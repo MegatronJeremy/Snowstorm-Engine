@@ -6,6 +6,7 @@
 #include "Snowstorm/Render/CommandContext.hpp"
 #include "Snowstorm/Render/DatasetExport/NpyWriter.hpp"
 #include "Snowstorm/Render/QualityCaptureFormat.hpp"
+#include "Snowstorm/Render/QualityCaptureSchedule.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 
 #include <algorithm>
@@ -32,13 +33,6 @@ namespace Snowstorm
 			default:
 				return 0;
 			}
-		}
-
-		// Zero-padded so the sequence sorts lexicographically, which is how the harness globs it.
-		std::string FrameSuffix(const uint64_t pathFrame)
-		{
-			std::string n = std::to_string(pathFrame);
-			return std::string(n.size() >= 6 ? 0 : 6 - n.size(), '0') + n;
 		}
 
 		// Mean absolute per-channel difference over RGB (ignore alpha), as a fraction of full white [0,1].
@@ -90,12 +84,12 @@ namespace Snowstorm
 			            src + (static_cast<size_t>(slot.H) - 1 - r) * rowBytes, rowBytes);
 		}
 
-		const std::string path = basePath + "_f" + FrameSuffix(slot.PathFrame) + "_ldr.npy";
+		const std::string path = basePath + "_f" + QualityCaptureSchedule::FrameSuffix(slot.PathFrame) + "_ldr.npy";
 		WriteNpy(path, flipped.data(), bytes, {slot.H, slot.W, kChannels}, NpyDType::UInt8);
 		slot.Buf->Unmap();
 		if (slot.HdrFmt != PixelFormat::Unknown)
 		{
-			WriteHdr(QualityCaptureFormat::HdrPath(basePath, FrameSuffix(slot.PathFrame)), *slot.HdrBuf, slot.W,
+			WriteHdr(QualityCaptureFormat::HdrPath(basePath, QualityCaptureSchedule::FrameSuffix(slot.PathFrame)), *slot.HdrBuf, slot.W,
 			         slot.H, slot.HdrFmt, slot.Exposure);
 		}
 
@@ -140,18 +134,20 @@ namespace Snowstorm
 			}
 		}
 
+		const QualityCaptureSchedule::SequenceStep step =
+		    QualityCaptureSchedule::DecideSequenceStep(wanted, m_NextWanted, pathFrame, pathActive, streamingDone);
 		if (pathActive && streamingDone)
 		{
 			// A requested frame already behind us was missed. Say so loudly: silently dropping it would leave
 			// the harness comparing a pair that is not actually consecutive.
-			while (m_NextWanted < wanted.size() && wanted[m_NextWanted] < pathFrame)
+			for (size_t i = 0; i < step.Missed; ++i)
 			{
 				SS_CORE_ERROR("Quality capture: route frame {} was requested but already passed (now at {}).",
-				              wanted[m_NextWanted], pathFrame);
-				++m_NextWanted;
+				              wanted[m_NextWanted + i], pathFrame);
 			}
+			m_NextWanted += step.Missed;
 
-			if (m_NextWanted < wanted.size() && wanted[m_NextWanted] == pathFrame)
+			if (step.Capture)
 			{
 				const auto free = std::ranges::find_if(m_Slots, [](const PendingCopy& s)
 				                                       { return s.CopyFrame < 0; });
