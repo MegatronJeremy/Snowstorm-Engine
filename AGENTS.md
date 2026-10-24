@@ -1212,7 +1212,7 @@ With one level, a sprite drawn much smaller than its texture aliases; mips and c
 `cook.assets` walks the registry, which cannot know scene usage, so sprite variants cook on first use.
 
 The editor's Scene view takes the scene's Primary camera's render path and background on open, still flying in perspective
-(#341). `quality.capture` is a Scene3D effect and does not capture a Canvas2D frame.
+(#341). `quality.capture` also captures a Canvas2D viewport: `RenderCanvas2D` runs the same capture effect after the `Sprites` pass, with the same settle rule, writing `<path>_ldr.npy` from the present target. `_hdr.npy` is skipped (no linear scene colour; the log says so). Not run on a GPU: that `Sprites.world` captures headlessly and matches a window capture is unconfirmed.
 
 **`Sprites.world` is the testbed**, booted by smoke as `Sprites`: a 64x64 checkerboard magnified with `Nearest` and with
 `Linear`, a layer -1 logo 2 units nearer the camera that still draws under them, two layer 1 logos over them (one `FlipX`,
