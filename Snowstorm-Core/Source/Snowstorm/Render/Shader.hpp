@@ -114,14 +114,14 @@ namespace Snowstorm
 		// Two-path graphics: separate vertex + fragment files (each a plain single-`main` HLSL file).
 		static Ref<Shader> Create(const std::string& vertPath, const std::string& fragPath, ShaderDefines features = {});
 
-	protected:
-		virtual void Compile() = 0;
-
 		// True from the moment a library job is queued for this shader until its Recompile() returns, so a
 		// queued job that has not yet reached the gate still reads as in flight.
 		[[nodiscard]] bool IsCompiling() const { return m_Queued.load(std::memory_order_acquire) > 0; }
 		void NoteCompileQueued() { m_Queued.fetch_add(1, std::memory_order_acq_rel); }
 		void NoteCompileDone() { m_Queued.fetch_sub(1, std::memory_order_acq_rel); }
+
+	protected:
+		virtual void Compile() = 0;
 
 	private:
 		CompileGate m_Gate;
