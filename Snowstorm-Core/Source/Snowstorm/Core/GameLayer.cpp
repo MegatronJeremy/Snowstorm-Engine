@@ -24,9 +24,41 @@
 
 #include "Snowstorm/Render/RendererUtils.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
+#include "Snowstorm/Core/PlatformDetection.hpp"
+#include <spdlog/fmt/fmt.h>
+#include "Snowstorm/Utility/EnginePaths.hpp"
+
+#ifdef SS_PLATFORM_WINDOWS
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#endif
 
 namespace Snowstorm
 {
+	namespace
+	{
+		// A player that cannot show what it was asked to show says so and exits: the alternative is an
+		// engine default sky over no geometry, which reads as a rendering bug. Headless runs (smoke, perf,
+		// quality capture) only log, since a modal dialog would hang them; the [error] fails their gate.
+		void FailBoot(const std::string& what)
+		{
+			SS_CORE_ERROR("Runtime: {}", what);
+#ifdef SS_PLATFORM_WINDOWS
+			const bool headless = CVars::SmokeFrames.Get() > 0 || CVars::PerfBenchFrames.Get() > 0;
+			if (!headless)
+			{
+				MessageBoxA(nullptr, what.c_str(), "Snowstorm-Runtime cannot start", MB_OK | MB_ICONERROR);
+			}
+#endif
+			Application::Get().Close();
+		}
+	}
+
 	GameLayer::GameLayer(std::function<void(World&)> registerGameSystems, std::string defaultProject)
 	    : Layer("GameLayer"), m_RegisterGameSystems(std::move(registerGameSystems)),
 	      m_DefaultProject(std::move(defaultProject))
@@ -55,6 +87,9 @@ namespace Snowstorm
 			{
 				ssproj = m_DefaultProject;
 			}
+			// Repo-root-relative paths must also resolve when the working directory is the exe's own folder
+			// (a double-click, Explorer, a shortcut).
+			ssproj = ResolveStartupPath(ssproj);
 			Ref<Project> project = CreateRef<Project>();
 			if (!ssproj.empty() && std::filesystem::exists(ssproj) && ProjectSerializer::Deserialize(*project, ssproj))
 			{
@@ -81,7 +116,14 @@ namespace Snowstorm
 		}
 
 		// Resolve the asset handles referenced by the scene.
-		m_World->GetSingleton<AssetManagerSingleton>().LoadRegistry(activeProject->GetAssetRegistryPath());
+		if (!m_World->GetSingleton<AssetManagerSingleton>().LoadRegistry(activeProject->GetAssetRegistryPath()))
+		{
+			FailBoot(fmt::format("Failed to load the asset registry '{}' (project '{}', working directory '{}'). "
+			                     "Every mesh and material in the scene would be missing.",
+			                     activeProject->GetAssetRegistryPath().string(), activeProject->GetProjectDirectory().string(),
+			                     std::filesystem::current_path().string()));
+			return;
+		}
 
 		// The SAME engine systems the editor runs, minus the editor/UI systems on top.
 		RegisterCoreSystems(*m_World);
@@ -104,13 +146,15 @@ namespace Snowstorm
 		m_ScenePath = activeProject->GetStartScenePath().string();
 		if (const std::string& sceneOverride = CVars::StartupScene.Get(); !sceneOverride.empty())
 		{
-			m_ScenePath = sceneOverride;
+			m_ScenePath = ResolveStartupPath(sceneOverride).string();
 		}
 		if (!SceneSerializer::Deserialize(*m_World, m_ScenePath))
 		{
-			SS_CORE_ERROR("Runtime: failed to load startup scene '{}'. "
-			              "Run the editor once to author and save it.",
-			              m_ScenePath);
+			FailBoot(fmt::format("Failed to load the startup scene '{}' (project '{}', working directory '{}'). "
+			                     "Check that the file exists and that startup.project / startup.scene name it.",
+			                     m_ScenePath, activeProject->GetProjectDirectory().string(),
+			                     std::filesystem::current_path().string()));
+			return;
 		}
 
 		// Cooking is a mode, not a scene: everything the registry names is loaded regardless of what the
