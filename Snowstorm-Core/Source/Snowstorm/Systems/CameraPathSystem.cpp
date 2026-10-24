@@ -6,6 +6,7 @@
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Math/CameraPathPlayback.hpp"
 #include "Snowstorm/Math/CameraRoute.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/Shader.hpp"
@@ -66,32 +67,10 @@ namespace Snowstorm
 
 			auto& path = reg.Ensure<CameraPathComponent>(e);
 
-			if (fixedStep)
-			{
-				if (!path.Started)
-				{
-					// Hold at the frame-0 pose while the scene streams in, so history and streaming both warm
-					// up at the pose the path actually begins from.
-					if (ready)
-					{
-						path.StartFrame = renderFrame;
-						path.Started = true;
-					}
-				}
-				path.Frame = path.Started ? renderFrame - path.StartFrame : 0;
-				// Replaying to a frame and holding there is what gives a moving frame a still scene to
-				// path-trace as its reference (sim.freeze_frame).
-				if (const int freeze = CVars::SimFreezeFrame.Get();
-				    freeze >= 0 && path.Frame > static_cast<uint64_t>(freeze))
-				{
-					path.Frame = static_cast<uint64_t>(freeze);
-				}
-				path.Time = CameraPathTimeAtFrame(path.Frame);
-			}
-			else
-			{
-				path.Time += ts.GetSeconds();
-			}
+			// Replaying to a frame and holding there (sim.freeze_frame) is what gives a moving frame a still
+			// scene to path-trace as its reference. Until the scene is ready the path holds at its frame-0 pose,
+			// so history and streaming both warm up at the pose the path actually begins from.
+			AdvanceCameraPath(path, fixedStep, ready, renderFrame, CVars::SimFreezeFrame.Get(), ts.GetSeconds());
 
 			if (!path.RouteLoadAttempted)
 			{
@@ -102,9 +81,7 @@ namespace Snowstorm
 				}
 			}
 
-			const OrbitPose pose = path.Route.Empty()
-			                           ? OrbitPoseAt(path.Center, path.Radius, path.Height, path.SpeedRadPerSec, path.Time)
-			                           : path.Route.PoseAtTime(path.Time);
+			const OrbitPose pose = CameraPathPoseAt(path);
 
 			// reg.Write marks TransformComponent Changed so CameraRuntimeUpdateSystem (Resolve) rebuilds
 			// View/Projection this frame. Roll (z) stays 0 for a level horizon.
