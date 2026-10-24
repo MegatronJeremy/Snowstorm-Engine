@@ -171,12 +171,17 @@ TEST_CASE("Material roles keep mips and follow the compress setting", "[texturec
 	CHECK(exhaustive.Key.Compress != high.Key.Compress);
 }
 
-TEST_CASE("Sprite blobs live beside the material blob, not over it", "[texturecook]")
+TEST_CASE("A texture blob is named by its source content and cook key", "[texturecook]")
 {
-	const AssetHandle handle{1234};
-	CHECK(TextureCacheIO::GetCachePath(handle, TextureRole::Sprite).filename() == "1234.sprite.sstex");
-	CHECK(TextureCacheIO::GetCachePath(handle, TextureRole::Albedo).filename() == "1234.sstex");
-	CHECK(TextureCacheIO::GetCachePath(handle, TextureRole::Unknown) == TextureCacheIO::GetCachePath(handle, TextureRole::Mask));
+	constexpr uint64_t source = 0x1234;
+	const TextureCookKey sprite = PlanTextureCook(TextureRole::Sprite, true, true, 0).Key;
+	const TextureCookKey albedo = PlanTextureCook(TextureRole::Albedo, true, true, 0).Key;
+
+	// A texture used as a sprite and as a material texture keeps both blobs
+	CHECK(TextureCacheIO::GetCachePath(source, sprite) != TextureCacheIO::GetCachePath(source, albedo));
+	CHECK(TextureCacheIO::GetCachePath(source, albedo) == TextureCacheIO::GetCachePath(source, albedo));
+	CHECK(TextureCacheIO::GetCachePath(source + 1, albedo) != TextureCacheIO::GetCachePath(source, albedo));
+	CHECK(TextureCacheIO::GetCachePath(source, albedo).extension() == ".sstex");
 }
 
 TEST_CASE("Every quality tier cooks under its own cache key", "[texturecook]")

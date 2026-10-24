@@ -1,6 +1,5 @@
-﻿#pragma once
+#pragma once
 
-#include "Snowstorm/Assets/AssetTypes.hpp"
 #include "Snowstorm/Math/Bounds.hpp"
 
 #include <filesystem>
@@ -8,25 +7,16 @@
 
 namespace Snowstorm
 {
-	struct MeshMetaCache
-	{
-		static constexpr uint32_t Version = 1;
-
-		AssetHandle Handle{};
-		std::filesystem::path SourcePath;
-		uint64_t SourceWriteTime = 0; // epoch-ish, stable as uint64 in json
-		MeshBounds Bounds{};
-	};
-
+	// A mesh's bounds, cached so culling has them before the geometry streams in.
 	class MeshMetaCacheIO
 	{
 	public:
-		static std::filesystem::path GetCachePath(AssetHandle handle);
+		// Engine/cache/mesh/<DerivedDataKey>.json over the source bytes and the submesh (-1 = whole file).
+		static std::filesystem::path GetCachePath(uint64_t sourceHash, int submeshIndex);
 
-		// Loads cache file; returns nullopt if missing/invalid
-		static std::optional<MeshMetaCache> Load(AssetHandle handle);
+		static std::optional<MeshBounds> Load(const std::filesystem::path& sourcePath, int submeshIndex);
 
-		// Save cache (creates directories). Returns false on failure.
-		static bool Save(const MeshMetaCache& meta);
+		// Returns false on failure; the next load then recomputes.
+		static bool Save(const std::filesystem::path& sourcePath, int submeshIndex, const MeshBounds& bounds);
 	};
 }

@@ -6,7 +6,7 @@ Source files (`.obj`, `.png`, `.jpg`, shaders) are cooked once into GPU-ready ar
 
 ## Cook cache
 
-Meshes, textures, shaders and IBL cook to `Engine/cache`, keyed on a **content hash**; mtime is only a cheap pre-gate, so touching a file without changing it re-cooks nothing. The cache blob header of a texture carries its role, mip space, compress flag and an encoder revision; a mismatch re-cooks, so changing the encoder or the quality tier invalidates exactly the textures it affects (`TextureCookKey`).
+Meshes, textures, shaders and IBL cook to `Engine/cache`, each artifact named by a **content hash** of its source and every cook input (`DerivedDataKey`, Unreal's DDC key model), so two versions of one asset are two entries rather than one overwritten file. A texture's inputs are its role, mip space, compress flag with quality tier and an encoder revision (`TextureCookKey`), so changing the encoder or the quality tier misses exactly the textures it affects. `SourceHashIndex` records each source's size, mtime and hash per checkout, the way git's index does: a cache hit reads only the blob, and touching a file without changing it rehashes once and re-cooks nothing.
 
 Cooking is loading: `CookAllRegistryAssets` (`--cook.assets`, or *File > Cook Assets*) loads every mesh, texture and material the registry names through the same path a running scene uses, so the two cannot disagree. A lazy cache holds only what some run touched; a full cook is what a package needs.
 

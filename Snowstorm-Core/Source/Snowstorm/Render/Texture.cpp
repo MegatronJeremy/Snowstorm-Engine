@@ -60,23 +60,17 @@ namespace Snowstorm
 		g_CookAborted.store(true, std::memory_order_relaxed);
 	}
 
-	std::optional<CookedTexture> Texture::DecodeCPU(const std::filesystem::path& filePath, const AssetHandle handle, const uint64_t sourceWriteTime,
-	                                                const TextureRole role, const bool srgb)
+	std::optional<CookedTexture> Texture::DecodeCPU(const std::filesystem::path& filePath, const TextureRole role, const bool srgb)
 	{
-		// CPU-only, worker-safe. Fast path: the cooked .sstex blob (no stb decode + no mip-gen). The blob is
-		// keyed by role, mip space and the compress/quality CVars (TextureCookKey). Only cache handle-backed assets — handle 0 (inline/handle-less textures)
-		// would all collide on one "0.sstex", so skip the cache for those.
-		const bool useCache = (handle.Value() != 0);
+		// CPU-only, worker-safe. Fast path: the cooked .sstex blob (no stb decode + no mip-gen), named by the
+		// source bytes and the cook key (role, mip space, the compress/quality CVars).
 		// Read once: both are live-editable, and the plan must describe the bytes this call encodes.
 		const TextureCookPlan plan = PlanTextureCook(role, srgb, CVars::CompressTextures.Get(), CVars::TextureQuality.Get());
 		const MipSpace mipSpace = plan.Space;
 		const TextureCookKey& cookKey = plan.Key;
-		if (useCache)
+		if (auto blob = TextureCacheIO::Load(filePath, cookKey))
 		{
-			if (auto blob = TextureCacheIO::Load(handle, filePath, cookKey))
-			{
-				return blob;
-			}
+			return blob;
 		}
 
 		if (g_CookAborted.load(std::memory_order_relaxed))
@@ -156,10 +150,7 @@ namespace Snowstorm
 			}
 		}
 
-		if (useCache)
-		{
-			(void)TextureCacheIO::Save(handle, filePath, cooked, cookKey); // decode+mip once; next load reads the blob
-		}
+		(void)TextureCacheIO::Save(filePath, cooked, cookKey); // decode+mip once; next load reads the blob
 		return cooked;
 	}
 
@@ -195,8 +186,7 @@ namespace Snowstorm
 	{
 		// Synchronous convenience path (kept for non-async callers): decode on the calling thread, upload.
 		// The async loader instead calls DecodeCPU on a worker and CreateFromPixels on the main thread.
-		const uint64_t sourceTime = GetFileWriteTimeU64(filePath);
-		auto cooked = DecodeCPU(filePath, AssetHandle{0}, sourceTime, TextureRole::Unknown, srgb);
+		auto cooked = DecodeCPU(filePath, TextureRole::Unknown, srgb);
 		SS_CORE_ASSERT(cooked, "Failed to load texture image: {}", filePath.string());
 		if (!cooked)
 		{

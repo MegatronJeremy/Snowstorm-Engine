@@ -479,32 +479,19 @@ namespace Snowstorm
 		// operate on the right file and part. A plain mesh has SubmeshIndex == -1 (whole file).
 		const VirtualPath::AssetRef sub = VirtualPath::SplitSubResource(meta->Path.string());
 		const std::filesystem::path filePath = ResolveAssetPath(sub.Path);
-		const uint64_t sourceTime = GetFileWriteTimeU64(filePath);
 
 		MeshBounds bounds{};
 		bool haveBounds = false;
 
-		if (auto cached = MeshMetaCacheIO::Load(handle))
+		if (auto cached = MeshMetaCacheIO::Load(filePath, sub.SubResource))
 		{
-			if (cached->SourceWriteTime == sourceTime && !cached->SourcePath.empty())
-			{
-				bounds = cached->Bounds;
-				haveBounds = true;
-			}
+			bounds = *cached;
+			haveBounds = true;
 		}
-
-		if (!haveBounds)
+		else if (ComputeMeshBoundsAssimp(filePath, sub.SubResource, bounds))
 		{
-			if (ComputeMeshBoundsAssimp(filePath, sub.SubResource, bounds))
-			{
-				MeshMetaCache out{};
-				out.Handle = handle;
-				out.SourcePath = filePath;
-				out.SourceWriteTime = sourceTime;
-				out.Bounds = bounds;
-				(void)MeshMetaCacheIO::Save(out);
-				haveBounds = true;
-			}
+			(void)MeshMetaCacheIO::Save(filePath, sub.SubResource, bounds);
+			haveBounds = true;
 		}
 
 		auto& meshLib = Application::Get().GetServiceManager().GetService<MeshLibrary>();
@@ -512,7 +499,7 @@ namespace Snowstorm
 		// source file at most once total, not once per part. Whole-file loads keep the plain path (they
 		// flatten every submesh and aren't the startup hot spot).
 		Ref<Mesh> mesh = (sub.SubResource >= 0)
-		                     ? meshLib.LoadCached(filePath.string(), sub.SubResource, handle)
+		                     ? meshLib.LoadCached(filePath.string(), sub.SubResource)
 		                     : meshLib.Load(filePath.string());
 
 		if (mesh && haveBounds)
@@ -587,7 +574,7 @@ namespace Snowstorm
 
 			// CPU-only work on the worker: read the cooked blob or parse+cook the source. No GPU, no
 			// m_MeshCache/m_Meshes access (those are main-thread-only).
-			if (auto cooked = meshLib.LoadCookedCPU(filePath, submeshIndex, handle))
+			if (auto cooked = meshLib.LoadCookedCPU(filePath, submeshIndex))
 			{
 				done.Cooked = std::move(*cooked);
 				done.Success = true;
@@ -697,20 +684,15 @@ namespace Snowstorm
 					// Assimp, and works cold; persist it so later loads hit the sidecar.
 					MeshBounds bounds{};
 					bool haveBounds = false;
-					if (auto cachedMeta = MeshMetaCacheIO::Load(done.Handle))
+					if (auto cachedMeta = MeshMetaCacheIO::Load(done.FilePath, done.SubmeshIndex))
 					{
-						bounds = cachedMeta->Bounds;
+						bounds = *cachedMeta;
 						haveBounds = true;
 					}
 					else if (ComputeMeshBoundsFromVertices(done.Cooked.Vertices, bounds))
 					{
 						haveBounds = true;
-						MeshMetaCache out{};
-						out.Handle = done.Handle;
-						out.SourcePath = done.FilePath;
-						out.SourceWriteTime = GetFileWriteTimeU64(done.FilePath);
-						out.Bounds = bounds;
-						(void)MeshMetaCacheIO::Save(out);
+						(void)MeshMetaCacheIO::Save(done.FilePath, done.SubmeshIndex, bounds);
 					}
 					if (haveBounds)
 					{
@@ -996,14 +978,13 @@ namespace Snowstorm
 		auto& jobs = Application::Get().GetServiceManager().GetService<JobSystem>();
 		const std::string path = ResolveAssetPath(meta->Path).string();
 		const std::string debugName = meta->Path.filename().string();
-		const uint64_t sourceTime = GetFileWriteTimeU64(path);
 		// Resolved here: the worker has no registry access. A sprite is requested, never derived.
 		const TextureRole role = variant == TextureVariant::Sprite ? TextureRole::Sprite : GetTextureRole(handle);
 		const bool srgb = variant != TextureVariant::Linear;
 		const uint32_t slot = placeholder->GetGlobalBindlessIndex();
 		m_PlaceholderSlots.insert(slot); // slot now shows the placeholder; cleared when the real image is uploaded
 
-		(void)jobs.Submit([this, key, handle, variant, srgb, slot, path, sourceTime, role, debugName]()
+		(void)jobs.Submit([this, key, handle, variant, srgb, slot, path, role, debugName]()
 		                  {
 			CompletedTextureLoad done;
 			done.Key = key;
@@ -1013,7 +994,7 @@ namespace Snowstorm
 			done.DebugName = debugName;
 
 			// CPU-only on the worker: cooked-blob read or stb decode (+ cache write). No GPU.
-			if (auto cooked = Texture::DecodeCPU(path, handle, sourceTime, role, srgb))
+			if (auto cooked = Texture::DecodeCPU(path, role, srgb))
 			{
 				done.Cooked = std::move(*cooked);
 				done.Success = true;
