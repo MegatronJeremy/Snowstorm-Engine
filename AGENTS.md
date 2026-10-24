@@ -1191,7 +1191,7 @@ material, `materials/AlphaBlend.ssmat` (`"AlphaMode": "Blend"`), and varies colo
 model: one ECS and one `TransformComponent` for both, separate render paths. A `Canvas2D` viewport runs `RenderCanvas2D`
 and none of the Scene3D chain (no prepass, lighting, tonemap or TAA): one `Sprites` pass draws every
 `SpriteComponent` into the present target, cleared to the camera's `BackgroundColor` through a second `RenderTarget`
-object over the same image. It uses the unjittered `ViewProjection`. The frame-global IBL bake and shadow maps still run (#344).
+object over the same image. It uses the unjittered `ViewProjection`. The frame-global IBL bake and shadow maps are skipped when no rendering viewport uses `Scene3D` (`NeedsSceneGlobalPasses`, `FrameGlobalPassGateTests`, #344); one Scene3D viewport next to a Canvas2D one keeps them. Frame-time effect on a 2D-only scene is unmeasured, and the gate has not run on a GPU.
 
 Draw order is `Layer`, then `Order`, then entity id, never z (`SortSpriteDraws`, `SpriteBatchTests`). `Size` is in world
 units times the transform's scale; a flip mirrors about `Pivot`. Sprites are unlit and straight-alpha blended with the
