@@ -5,6 +5,8 @@
 
 namespace Snowstorm
 {
+	class Shader;
+
 	class ShaderReloadSystem final : public System
 	{
 	public:
