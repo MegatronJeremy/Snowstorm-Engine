@@ -12,6 +12,7 @@
 #include "Snowstorm/Service/ServiceManager.hpp"
 #include "Snowstorm/World/World.hpp"
 #include "Snowstorm/World/Entity.hpp"
+#include "Snowstorm/Render/AlphaModeRules.hpp"
 #include "Snowstorm/Render/MeshLibrary.hpp"
 #include "Snowstorm/Render/Shader.hpp"
 #include "Snowstorm/Render/Texture.hpp"
@@ -1032,7 +1033,7 @@ namespace Snowstorm
 		// All mesh materials share the standard mesh vertex stage; only the fragment differs.
 		const std::string fragPath = fragmentShaderPath.empty() ? kDefaultFragmentShader : fragmentShaderPath;
 		// Opaque and Mask share one pipeline; Blend gets its own copy (blend on, depth write off).
-		const bool blend = alpha == AlphaMode::Blend;
+		const bool blend = AlphaModeUsesBlendPipeline(alpha);
 		const std::string cacheKey = blend ? fragPath + "|blend" : fragPath;
 		if (auto it = m_PipelineCache.find(cacheKey); it != m_PipelineCache.end())
 			return it->second;
