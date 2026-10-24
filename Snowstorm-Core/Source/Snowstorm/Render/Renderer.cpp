@@ -1,6 +1,7 @@
 ﻿#include "Renderer.hpp"
 
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Render/FrameRingIndex.hpp"
 #include "Snowstorm/Render/Sampler.hpp"
 #include "Platform/Vulkan/VulkanRendererAPI.hpp"
 
@@ -59,7 +60,7 @@ namespace Snowstorm
 
 		// Allocate per-frame uniform rings after backend init (so frames-in-flight is known)
 		const uint32_t frames = s_API->GetFramesInFlight();
-		SS_CORE_ASSERT(frames > 0, "RendererAPI returned 0 frames in flight");
+		SS_CORE_ASSERT(IsValidFramesInFlight(frames), "RendererAPI returned 0 frames in flight");
 
 		s_FrameUniformRings.clear();
 		s_FrameUniformRings.resize(frames);
@@ -150,7 +151,7 @@ namespace Snowstorm
 		// Reset the current frame ring before any draws
 		{
 			const uint32_t frameIndex = s_API->GetCurrentFrameIndex();
-			SS_CORE_ASSERT(frameIndex < s_FrameUniformRings.size(), "Frame index out of range");
+			SS_CORE_ASSERT(IsValidFrameRingIndex(frameIndex, s_FrameUniformRings.size()), "Frame index out of range");
 			s_FrameUniformRings[frameIndex].BeginFrame();
 		}
 
@@ -221,7 +222,7 @@ namespace Snowstorm
 	{
 		SS_CORE_ASSERT(s_API, "Renderer not initialized");
 		const uint32_t frameIndex = s_API->GetCurrentFrameIndex();
-		SS_CORE_ASSERT(frameIndex < s_FrameUniformRings.size(), "Frame index out of range");
+		SS_CORE_ASSERT(IsValidFrameRingIndex(frameIndex, s_FrameUniformRings.size()), "Frame index out of range");
 		return s_FrameUniformRings[frameIndex];
 	}
 
