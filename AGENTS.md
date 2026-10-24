@@ -1029,6 +1029,8 @@ therefore just sets an atomic and the mixer callback does the discard on its nex
 `ma_pcm_rb_reset` or `seek_read` from a game thread does not merely lose a flush: it can leave the write
 cursor an arbitrary distance ahead of the read cursor, and the reader treats what lies between as PCM.
 
+The ring, flush and underrun rules live in `Audio/StreamRing` (miniaudio hidden behind a pimpl), which needs no device; `StreamRingTests` pin them GPU-free and device-free. `AudioService` stream calls forward to it.
+
 **Pan law is per instance and defaults to miniaudio's balance.** `PanLaw::Balance` attenuates only the
 channel you pan away from, so a centred sound is 6 dB louder than a hard-panned one; `PanLaw::ConstantSum`
 moves energy across and keeps L+R fixed, which is what a mono point source needs and what Doom's own
