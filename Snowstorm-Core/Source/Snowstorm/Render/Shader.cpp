@@ -195,12 +195,14 @@ namespace Snowstorm
 		}
 		m_PendingCompiles.fetch_add(1, std::memory_order_relaxed);
 		++m_PendingCompileTotal;
+		shader->NoteCompileQueued();
 
 		// No JobSystem (e.g. a headless unit-test context without an Application) -> compile synchronously so
 		// behaviour degrades safely instead of never becoming ready.
 		if (!Application::Get().GetServiceManager().ServiceRegistered<JobSystem>())
 		{
 			shader->Recompile();
+			shader->NoteCompileDone();
 			m_PendingCompiles.fetch_sub(1, std::memory_order_relaxed);
 			return;
 		}
@@ -211,6 +213,7 @@ namespace Snowstorm
 		(void)jobs.Submit([this, shader]
 		                  {
 			shader->Recompile();
+			shader->NoteCompileDone();
 			m_PendingCompiles.fetch_sub(1, std::memory_order_relaxed); });
 	}
 

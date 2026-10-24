@@ -1222,6 +1222,12 @@ tinted at 0.7 alpha), and a rotated layer 1, order 1 checker over the logo it ov
 
 `neural.fuse` (default off) replaces the last conv layer and the residual add with one `NeuralConvAdd.comp.hlsl` dispatch when the last layer has 3 output channels (else the unfused chain runs): one dispatch, one barrier and one descriptor set fewer, and the residual map is never written to memory. It is a naive per-pixel loop at both precisions. `Conv2DResidualReference` is the CPU reference for the fused math (`NeuralMathTests` pins it to hand-computed values); it does not exercise the shader. Not run on a GPU: no unfused-vs-fused ms or output comparison exists yet. `NeuralConvAdd.comp` is RGA-baselined at 13 VGPRs, no spills, on every ASIC (#101).
 
+## Shader hot-reload
+
+`ShaderReloadSystem` (AssetSync phase) never compiles on the main thread. A source edit found by `ShaderLibrary::ReloadAll` and a DefaultLit permutation flip (`RequestRecompile`) both queue `Shader::Recompile()` on a JobSystem worker. The shader keeps its previous SPIR-V until the new result is published as one `CompiledShader` snapshot, and a failed compile publishes nothing, so the old pipeline keeps rendering. `CompileGate` coalesces overlapping requests into at most one live chain whose last run reads the latest inputs. `Shader::IsCompiling()` is true from queueing until `Recompile()` returns.
+
+A permutation swap is tracked by `LitSwapState` (`Systems/ShaderReloadRule.hpp`, `ShaderReloadRuleTests`): `BeginLitSwap` records the version at the first request (a superseding request keeps it), `PollLitSwap` reports `Pending` while compiling, then `Succeeded` (version advanced: the pipeline sweep runs) or `Failed` (no version change: logged at `[error]`, old pipeline kept), once. `Pipeline::Reload` still drains the device (#11), which is now the remaining hitch. Not run on a GPU: the worker swap and the failure path are unverified outside the unit tests.
+
 ## IBL invalidation
 
 The IBL bake is keyed on the environment block and on the sun (`Lights[0]`, the source `IBLBakePass` bakes).

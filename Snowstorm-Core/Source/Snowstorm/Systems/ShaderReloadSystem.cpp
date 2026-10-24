@@ -42,13 +42,35 @@ namespace Snowstorm
 					{
 						lit->SetPermutation(desired);
 						lit->SetDynamicDefines(std::move(dynamic));
-						lit->Recompile(); // synchronous; warm .spv cache makes this a fs::exists check after first build
-						needPipelineRebuild = true;
-						SS_CORE_INFO("DefaultLit permutation -> {}{}", wantRT ? "RT" : "non-RT",
+						// Off the main thread: the old pipeline keeps rendering until the swap resolves below.
+						BeginLitSwap(m_LitSwap, lit->GetVersion());
+						m_LitShader = lit;
+						shaderLibrary.RequestRecompile(lit);
+						SS_CORE_INFO("DefaultLit permutation -> {} (compiling){}", wantRT ? "RT" : "non-RT",
 						             wantInlineShadows ? " +inline-shadows" : "");
 					}
 					m_Lit = {true, wantRT, wantInlineShadows};
 				}
+			}
+		}
+
+		if (m_LitShader)
+		{
+			switch (PollLitSwap(m_LitSwap, m_LitShader->GetVersion(), m_LitShader->IsCompiling()))
+			{
+			case LitSwapPhase::Succeeded:
+				needPipelineRebuild = true;
+				m_LitShader.reset();
+				break;
+			case LitSwapPhase::Failed:
+				SS_CORE_ERROR("DefaultLit permutation recompile failed; keeping the previous pipeline");
+				m_LitShader.reset();
+				break;
+			case LitSwapPhase::Idle:
+				m_LitShader.reset();
+				break;
+			case LitSwapPhase::Pending:
+				break;
 			}
 		}
 
