@@ -130,3 +130,48 @@ TEST_CASE("Instances carry texture, tint and filter in draw order", "[render][sp
 	CHECK(inst[1].TextureIndex == 7);
 	CHECK(inst[1].Flags == kSpriteFlagLinear);
 }
+
+TEST_CASE("A zero-size rect selects the whole texture", "[render][sprite]")
+{
+	const glm::vec4 whole{0.0f, 0.0f, 1.0f, 1.0f};
+	CHECK(SpriteUvRect({0.0f, 0.0f, 0.0f, 0.0f}, 64, 64) == whole);
+	CHECK(SpriteUvRect({8.0f, 8.0f, 0.0f, 16.0f}, 64, 64) == whole);
+	CHECK(SpriteUvRect({8.0f, 8.0f, 16.0f, 0.0f}, 64, 64) == whole);
+}
+
+TEST_CASE("A texel rect maps to a UV offset and scale", "[render][sprite]")
+{
+	// Second 16x16 cell of the top row in a 64x32 sheet.
+	const glm::vec4 uv = SpriteUvRect({16.0f, 0.0f, 16.0f, 16.0f}, 64, 32);
+	CHECK(uv.x == Approx(0.25f));
+	CHECK(uv.y == Approx(0.0f));
+	CHECK(uv.z == Approx(0.25f));
+	CHECK(uv.w == Approx(0.5f));
+}
+
+TEST_CASE("A rect clamps to the texture and degenerate rects fall back", "[render][sprite]")
+{
+	const glm::vec4 clamped = SpriteUvRect({48.0f, 16.0f, 32.0f, 32.0f}, 64, 32);
+	CHECK(clamped.x == Approx(0.75f));
+	CHECK(clamped.y == Approx(0.5f));
+	CHECK(clamped.z == Approx(0.25f));
+	CHECK(clamped.w == Approx(0.5f));
+
+	const glm::vec4 whole{0.0f, 0.0f, 1.0f, 1.0f};
+	CHECK(SpriteUvRect({100.0f, 0.0f, 8.0f, 8.0f}, 64, 32) == whole); // entirely outside
+	CHECK(SpriteUvRect({-20.0f, 0.0f, 10.0f, 8.0f}, 64, 32) == whole);
+	CHECK(SpriteUvRect({0.0f, 0.0f, 8.0f, 8.0f}, 0, 0) == whole); // size unknown
+}
+
+TEST_CASE("The rect reaches the instance and a default draw is the whole texture", "[render][sprite]")
+{
+	SpriteDraw plain;
+	SpriteDraw cropped;
+	cropped.Sequence = 1;
+	cropped.UvRect = {0.5f, 0.0f, 0.5f, 0.5f};
+	std::vector<SpriteDraw> draws = {plain, cropped};
+	const auto inst = BuildSpriteInstances(draws);
+	REQUIRE(inst.size() == 2);
+	CHECK(inst[0].UvRect == glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
+	CHECK(inst[1].UvRect == glm::vec4(0.5f, 0.0f, 0.5f, 0.5f));
+}

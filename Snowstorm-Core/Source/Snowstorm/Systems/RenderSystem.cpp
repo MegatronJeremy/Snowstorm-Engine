@@ -720,6 +720,8 @@ namespace Snowstorm
 			d.Size = sprite.Size;
 			d.Pivot = sprite.Pivot;
 			d.Tint = sprite.Tint;
+			if (const auto& tex = sprite.View->GetTexture())
+				d.UvRect = SpriteUvRect(sprite.Rect, tex->GetWidth(), tex->GetHeight());
 			d.FlipX = sprite.FlipX;
 			d.FlipY = sprite.FlipY;
 			d.Linear = sprite.Filter == SpriteFilter::Linear;
