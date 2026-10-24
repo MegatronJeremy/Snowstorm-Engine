@@ -2,6 +2,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -72,5 +76,20 @@ namespace Snowstorm
 			}
 		}
 		return evicted;
+	}
+
+	// EvictUnreferenced for a path-keyed cache of shared_ptr<T> where `cacheHeld` names objects a second
+	// cache also holds one reference to. Evicted pointers are appended to `evicted` so that cache can
+	// drop them.
+	template <typename T, typename Retired>
+	size_t EvictUnreferencedHeldBy(std::unordered_map<std::string, std::shared_ptr<T>>& map, Retired& retired, const uint32_t retireDelay,
+	                               const std::unordered_set<const T*>& cacheHeld, std::vector<const T*>& evicted)
+	{
+		return EvictUnreferenced(
+		    map, retired, retireDelay,
+		    [&evicted](const std::string&, const std::shared_ptr<T>& value)
+		    { evicted.push_back(value.get()); },
+		    [&cacheHeld](const std::shared_ptr<T>& value) -> size_t
+		    { return cacheHeld.contains(value.get()) ? 1 : 0; });
 	}
 }
