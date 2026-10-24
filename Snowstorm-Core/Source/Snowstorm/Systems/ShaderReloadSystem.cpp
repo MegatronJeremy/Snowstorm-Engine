@@ -1,6 +1,7 @@
 #include "ShaderReloadSystem.hpp"
 
 #include "Snowstorm/Assets/MaterialAsset.hpp"
+#include "ShaderReloadRule.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
@@ -29,7 +30,7 @@ namespace Snowstorm
 				// Second axis within the RT variant: the inline ray-query shadow path is dead whenever the
 				// stochastic pass supplies a visibility texture instead, so it is compiled out there.
 				const bool wantInlineShadows = CVars::LitInlineRTShadowsActive();
-				if (!m_LitInitialized || wantRT != m_LastWantRT || wantInlineShadows != m_LastWantInlineShadows)
+				if (LitVariantNeedsCheck(m_Lit, wantRT, wantInlineShadows))
 				{
 					const ShaderPermutation desired = wantRT ? ShaderPermutation::Auto : ShaderPermutation::ForceNonRT;
 					ShaderDefines dynamic;
@@ -41,15 +42,35 @@ namespace Snowstorm
 					{
 						lit->SetPermutation(desired);
 						lit->SetDynamicDefines(std::move(dynamic));
-						lit->Recompile(); // synchronous; warm .spv cache makes this a fs::exists check after first build
-						needPipelineRebuild = true;
-						SS_CORE_INFO("DefaultLit permutation -> {}{}", wantRT ? "RT" : "non-RT",
+						// Off the main thread: the old pipeline keeps rendering until the swap resolves below.
+						BeginLitSwap(m_LitSwap, lit->GetVersion());
+						m_LitShader = lit;
+						shaderLibrary.RequestRecompile(lit);
+						SS_CORE_INFO("DefaultLit permutation -> {} (compiling){}", wantRT ? "RT" : "non-RT",
 						             wantInlineShadows ? " +inline-shadows" : "");
 					}
-					m_LastWantRT = wantRT;
-					m_LastWantInlineShadows = wantInlineShadows;
-					m_LitInitialized = true;
+					m_Lit = {true, wantRT, wantInlineShadows};
 				}
+			}
+		}
+
+		if (m_LitShader)
+		{
+			switch (PollLitSwap(m_LitSwap, m_LitShader->GetVersion(), m_LitShader->IsCompiling()))
+			{
+			case LitSwapPhase::Succeeded:
+				needPipelineRebuild = true;
+				m_LitShader.reset();
+				break;
+			case LitSwapPhase::Failed:
+				SS_CORE_ERROR("DefaultLit permutation recompile failed; keeping the previous pipeline");
+				m_LitShader.reset();
+				break;
+			case LitSwapPhase::Idle:
+				m_LitShader.reset();
+				break;
+			case LitSwapPhase::Pending:
+				break;
 			}
 		}
 
@@ -59,16 +80,14 @@ namespace Snowstorm
 		// model — the old live checkbox froze the editor). Change it in SnowstormStartup.cfg / CLI and relaunch.
 
 		static float timeSinceLastCheck = 0.0f;
-		timeSinceLastCheck += ts.GetSeconds();
 
 		//-- check for source edits every 1 second (hot reload)
-		if (timeSinceLastCheck > 1.0f)
+		if (AdvanceReloadTimer(timeSinceLastCheck, ts.GetSeconds()))
 		{
 			// Recompile any shader whose source (or an included header) changed -> compiled on a worker, which bumps
 			// its version once the fresh SPIR-V is published. (ReloadAll self-skips unchanged shaders.)
 			shaderLibrary.ReloadAll();
 			needPipelineRebuild = true; // a changed shader bumps its version; the sweep below self-skips otherwise
-			timeSinceLastCheck = 0.0f;
 		}
 
 		if (needPipelineRebuild)

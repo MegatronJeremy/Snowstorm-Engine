@@ -19,6 +19,16 @@ namespace Snowstorm
 {
 	namespace
 	{
+		// Releases the in-flight count even if Recompile() throws, so a swap never stays Pending.
+		struct CompileDoneGuard
+		{
+			Shader& Target;
+			~CompileDoneGuard() { Target.NoteCompileDone(); }
+		};
+	} // namespace
+
+	namespace
+	{
 		// Library key = source path(s), then the feature defines after a '#'. Mirrors the existing "vert|frag"
 		// composite: a key is parsed back to its file(s) by stripping the suffix, never stored separately.
 		std::string MakeShaderKey(const std::string& base, const ShaderDefines& features)
@@ -195,11 +205,13 @@ namespace Snowstorm
 		}
 		m_PendingCompiles.fetch_add(1, std::memory_order_relaxed);
 		++m_PendingCompileTotal;
+		shader->NoteCompileQueued();
 
 		// No JobSystem (e.g. a headless unit-test context without an Application) -> compile synchronously so
 		// behaviour degrades safely instead of never becoming ready.
 		if (!Application::Get().GetServiceManager().ServiceRegistered<JobSystem>())
 		{
+			const CompileDoneGuard done{*shader};
 			shader->Recompile();
 			m_PendingCompiles.fetch_sub(1, std::memory_order_relaxed);
 			return;
@@ -210,6 +222,7 @@ namespace Snowstorm
 		// entry is replaced. Recompile() is thread-safe (see VulkanShader::Compile).
 		(void)jobs.Submit([this, shader]
 		                  {
+			const CompileDoneGuard done{*shader};
 			shader->Recompile();
 			m_PendingCompiles.fetch_sub(1, std::memory_order_relaxed); });
 	}
