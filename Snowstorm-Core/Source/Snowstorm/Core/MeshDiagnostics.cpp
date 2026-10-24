@@ -16,23 +16,6 @@ namespace Snowstorm
 {
 	namespace
 	{
-		// Per-submesh tally of the geometry facts that drive mirrored-UV normal mapping.
-		struct SubmeshReport
-		{
-			std::string Name;
-			uint32_t Triangles = 0;
-			uint32_t UvPositiveWinding = 0; // triangles whose UV parametrization is right-handed (det > 0)
-			uint32_t UvNegativeWinding = 0; // ... left-handed (det < 0) => a MIRRORED chart
-			uint32_t UvDegenerate = 0;      // |det| ~ 0 (zero-area UV triangle)
-			// Correlation of baked handedness w with UV winding. What matters is whether the two are LINKED,
-			// not the absolute agree count (the reference sign is an arbitrary per-mesh convention). If w
-			// tracks winding, every triangle lands in the SAME bucket (all-agree OR all-disagree) =>
-			// consistency ~100%. If w is broken on the mirrored half, the buckets split => consistency ~50%.
-			uint32_t TangentWAgree = 0;    // wSign == uvSign
-			uint32_t TangentWDisagree = 0; // wSign != uvSign
-			uint32_t TangentWChecked = 0;  // triangles with a well-defined w sign (denominator)
-		};
-
 		// The baked tangent handedness the engine stores per vertex (mirror of MeshLibrary::ReadVertex).
 		float BakedHandedness(const aiMesh* m, const uint32_t idx)
 		{
@@ -54,67 +37,77 @@ namespace Snowstorm
 			const glm::vec2 e2 = uvc - uva;
 			return e1.x * e2.y - e1.y * e2.x;
 		}
+	}
 
-		SubmeshReport AnalyzeSubmesh(const aiMesh* m)
+	MeshTangentStats AnalyzeMeshTangents(const aiMesh* m)
+	{
+		MeshTangentStats r;
+		r.Name = m->mName.length > 0 ? m->mName.C_Str() : "(unnamed)";
+
+		const bool hasUV = m->HasTextureCoords(0);
+		const bool hasTBN = m->HasTangentsAndBitangents() && m->HasNormals();
+
+		for (uint32_t f = 0; f < m->mNumFaces; ++f)
 		{
-			SubmeshReport r;
-			r.Name = m->mName.length > 0 ? m->mName.C_Str() : "(unnamed)";
-
-			const bool hasUV = m->HasTextureCoords(0);
-			const bool hasTBN = m->HasTangentsAndBitangents() && m->HasNormals();
-
-			for (uint32_t f = 0; f < m->mNumFaces; ++f)
+			const aiFace& face = m->mFaces[f];
+			if (face.mNumIndices != 3)
 			{
-				const aiFace& face = m->mFaces[f];
-				if (face.mNumIndices != 3)
-				{
-					continue; // triangulated at import; skip anything unexpected
-				}
-				++r.Triangles;
-				if (!hasUV)
-				{
-					continue;
-				}
+				continue; // triangulated at import; skip anything unexpected
+			}
+			++r.Triangles;
+			if (!hasUV)
+			{
+				continue;
+			}
 
-				const uint32_t i0 = face.mIndices[0];
-				const uint32_t i1 = face.mIndices[1];
-				const uint32_t i2 = face.mIndices[2];
+			const uint32_t i0 = face.mIndices[0];
+			const uint32_t i1 = face.mIndices[1];
+			const uint32_t i2 = face.mIndices[2];
 
-				const float uvArea = UvSignedArea(m, i0, i1, i2);
-				constexpr float kEps = 1e-12f;
-				if (std::fabs(uvArea) < kEps)
-				{
-					++r.UvDegenerate;
-					continue;
-				}
-				const float uvSign = uvArea > 0.0f ? 1.0f : -1.0f;
-				if (uvSign > 0.0f)
-					++r.UvPositiveWinding;
-				else
-					++r.UvNegativeWinding;
+			const float uvArea = UvSignedArea(m, i0, i1, i2);
+			constexpr float kEps = 1e-12f;
+			if (std::fabs(uvArea) < kEps)
+			{
+				++r.UvDegenerate;
+				continue;
+			}
+			const float uvSign = uvArea > 0.0f ? 1.0f : -1.0f;
+			if (uvSign > 0.0f)
+				++r.UvPositiveWinding;
+			else
+				++r.UvNegativeWinding;
 
-				if (hasTBN)
+			if (hasTBN)
+			{
+				// The engine reconstructs B as cross(N,T)*w in the shader. For that to reproduce the
+				// TRUE bitangent implied by the UV gradient, sign(w) must equal sign(UV winding). If a
+				// triangle's baked w disagrees with its UV winding, the shader's bitangent points the
+				// wrong way on that triangle -> exactly the mirrored-seam artifact. Compare the two.
+				// Use the winding sign as the reference chirality and the average of the tri's three
+				// baked handedness values (they should agree within a tri away from a weld seam).
+				const float wAvg = (BakedHandedness(m, i0) + BakedHandedness(m, i1) + BakedHandedness(m, i2)) / 3.0f;
+				if (std::fabs(wAvg) > 0.34f) // at least 2/3 agree -> a well-defined sign for the tri
 				{
-					// The engine reconstructs B as cross(N,T)*w in the shader. For that to reproduce the
-					// TRUE bitangent implied by the UV gradient, sign(w) must equal sign(UV winding). If a
-					// triangle's baked w disagrees with its UV winding, the shader's bitangent points the
-					// wrong way on that triangle -> exactly the mirrored-seam artifact. Compare the two.
-					// Use the winding sign as the reference chirality and the average of the tri's three
-					// baked handedness values (they should agree within a tri away from a weld seam).
-					const float wAvg = (BakedHandedness(m, i0) + BakedHandedness(m, i1) + BakedHandedness(m, i2)) / 3.0f;
-					if (std::fabs(wAvg) > 0.34f) // at least 2/3 agree -> a well-defined sign for the tri
-					{
-						++r.TangentWChecked;
-						const float wSign = wAvg > 0.0f ? 1.0f : -1.0f;
-						if (wSign == uvSign)
-							++r.TangentWAgree;
-						else
-							++r.TangentWDisagree;
-					}
+					++r.TangentWChecked;
+					const float wSign = wAvg > 0.0f ? 1.0f : -1.0f;
+					if (wSign == uvSign)
+						++r.TangentWAgree;
+					else
+						++r.TangentWDisagree;
 				}
 			}
-			return r;
 		}
+		return r;
+	}
+
+	// Consistency = the larger bucket / total. The absolute agree/disagree split is meaningless (the
+	// reference sign is an arbitrary per-mesh convention); what matters is that w and winding move
+	// TOGETHER, so nearly all triangles land in one bucket. ~100% => w correctly tracks the mirror;
+	// ~50% => w is decorrelated from the UVs (a genuine import bug).
+	float TangentConsistencyPercent(const MeshTangentStats& r)
+	{
+		const uint32_t larger = r.TangentWAgree > r.TangentWDisagree ? r.TangentWAgree : r.TangentWDisagree;
+		return r.TangentWChecked > 0 ? (100.0f * static_cast<float>(larger) / static_cast<float>(r.TangentWChecked)) : 100.0f;
 	}
 
 	bool DumpMeshTangentReport(const std::string& modelPath)
@@ -143,22 +136,15 @@ namespace Snowstorm
 
 		for (uint32_t i = 0; i < scene->mNumMeshes; ++i)
 		{
-			const SubmeshReport r = AnalyzeSubmesh(scene->mMeshes[i]);
+			const MeshTangentStats r = AnalyzeMeshTangents(scene->mMeshes[i]);
 
 			// A submesh is "mixed/mirrored" if it contains BOTH windings — that's where a single scalar w
 			// per vertex has to represent two chiralities and the seam appears.
-			const bool mixed = r.UvPositiveWinding > 0 && r.UvNegativeWinding > 0;
+			const bool mixed = r.IsMixedWinding();
 			if (mixed)
 				++totalMirroredMeshes;
 
-			// Consistency = the larger bucket / total. The absolute agree/disagree split is meaningless (the
-			// reference sign is an arbitrary per-mesh convention); what matters is that w and winding move
-			// TOGETHER, so nearly all triangles land in one bucket. ~100% => w correctly tracks the mirror;
-			// ~50% => w is decorrelated from the UVs (a genuine import bug).
-			const uint32_t larger = r.TangentWAgree > r.TangentWDisagree ? r.TangentWAgree : r.TangentWDisagree;
-			const float consistencyPct = r.TangentWChecked > 0
-			                                 ? (100.0f * static_cast<float>(larger) / static_cast<float>(r.TangentWChecked))
-			                                 : 100.0f;
+			const float consistencyPct = TangentConsistencyPercent(r);
 			if (mixed && consistencyPct < 90.0f)
 				++worstConsistencyMeshes;
 
