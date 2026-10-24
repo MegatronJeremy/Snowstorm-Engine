@@ -6,6 +6,7 @@
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Components/CameraTargetComponent.hpp"
 #include "Snowstorm/Components/CameraRuntimeComponent.hpp"
+#include "Snowstorm/Render/PixelPerfect.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -35,7 +36,13 @@ namespace Snowstorm
 		// This uses glm defaults. If you use Vulkan (0..1 Z) you likely want:
 		// - glm::perspectiveRH_ZO
 		// - and possibly flip Y (proj[1][1] *= -1)
-		glm::mat4 BuildProjection(const CameraComponent& cam, float aspect)
+		bool IsPixelPerfect(const CameraComponent& cam)
+		{
+			return cam.RenderPath == CameraComponent::RenderPathType::Canvas2D &&
+			       cam.Projection == CameraComponent::ProjectionType::Orthographic && cam.PixelsPerUnit > 0.0f;
+		}
+
+		glm::mat4 BuildProjection(const CameraComponent& cam, float aspect, const ViewportComponent& vp)
 		{
 			if (cam.Projection == CameraComponent::ProjectionType::Perspective)
 			{
@@ -43,7 +50,13 @@ namespace Snowstorm
 			}
 
 			// OrthographicSize is “height” in world units (common convention)
-			const float halfH = cam.OrthographicSize * 0.5f;
+			float size = cam.OrthographicSize;
+			if (IsPixelPerfect(cam))
+			{
+				const int scale = PixelPerfectScale(vp.Size.x, vp.Size.y, cam.ReferenceResolution.x, cam.ReferenceResolution.y);
+				size = PixelPerfectOrthographicSize(vp.Size.y, cam.PixelsPerUnit, scale);
+			}
+			const float halfH = size * 0.5f;
 			const float halfW = halfH * aspect;
 
 			return glm::ortho(-halfW, halfW, -halfH, halfH, cam.OrthographicNear, cam.OrthographicFar);
@@ -164,9 +177,14 @@ namespace Snowstorm
 			// this line) still gets a fresh prev == current each frame instead of a stale value.
 
 			// TransformComponent in your code behaves like a matrix already
-			const glm::mat4 world = tr;
+			glm::mat4 world = tr;
+			if (IsPixelPerfect(cam))
+			{
+				world[3][0] = SnapToTexel(world[3][0], cam.PixelsPerUnit);
+				world[3][1] = SnapToTexel(world[3][1], cam.PixelsPerUnit);
+			}
 			rt.View = glm::inverse(world);
-			rt.Projection = BuildProjection(cam, aspect);
+			rt.Projection = BuildProjection(cam, aspect, vp);
 			rt.ViewProjection = rt.Projection * rt.View;
 
 			// Update frustum from VP
