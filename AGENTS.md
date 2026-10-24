@@ -1078,9 +1078,12 @@ without the flag.
 
 **A game adds GPU work with `RendererService::EnqueueGraphPass`**, from any phase before Render. The pass
 joins that frame's render graph after the texture uploads and ahead of IBL, shadows and every viewport,
-once per frame. A texture it writes that a material samples through bindless must end Sampled, through a
-trailing pass that declares the read and has a no-op `Execute`: the graph transitions only declared
-accesses, and a bindless read is undeclared.
+once per frame. A texture it writes that a material samples through bindless goes in the pass's `PublishSampled`: the graph
+transitions it to Sampled right after the pass (graphics queue only), since it transitions only declared
+accesses and a bindless read is undeclared. `PublishSampled` counts as a write in `BuildDependencies`, so a
+declared reader still orders after the writer; the ordering of an undeclared bindless reader (the material
+draw in `Forward`) still rests on graphics passes keeping their order. `RenderGraphScheduleTests` pin the
+edge; the transition itself has not run on a GPU.
 
 ## Staging a runnable build
 

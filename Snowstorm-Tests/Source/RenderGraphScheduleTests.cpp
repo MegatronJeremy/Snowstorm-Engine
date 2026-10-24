@@ -242,3 +242,37 @@ TEST_CASE("A pass targeting the swapchain is scheduled after every other ready p
 
 	CHECK(g.BuildSchedule(swapchain) == std::vector<uint32_t>{2, 1, 0});
 }
+
+TEST_CASE("PublishSampled counts as a write for dependencies", "[render][graph]")
+{
+	const auto tex = Tex();
+	RenderGraph g;
+	RenderGraph::Pass writer = Compute("writer", {}, {}, GpuQueue::Graphics);
+	writer.PublishSampled.push_back(tex);
+	g.AddPass(std::move(writer));
+	g.AddPass(Compute("reader", {tex}, {}, GpuQueue::Graphics));
+	g.AddPass(Compute("overwriter", {}, {tex}));
+
+	const auto deps = g.BuildDependencies();
+	REQUIRE(deps[1].size() == 1);
+	CHECK(deps[1][0].Producer == 0);
+	CHECK(deps[1][0].Kind == RenderGraph::Hazard::ReadAfterWrite);
+	REQUIRE(deps[2].size() == 2);
+	CHECK(deps[2][0].Producer == 1);
+	CHECK(deps[2][0].Kind == RenderGraph::Hazard::WriteAfterRead);
+	CHECK(deps[2][1].Producer == 0);
+	CHECK(deps[2][1].Kind == RenderGraph::Hazard::WriteAfterWrite);
+}
+
+TEST_CASE("A pass that only publishes a texture is not unconstrained against a later writer", "[render][graph]")
+{
+	const ReorderOn on;
+	const auto tex = Tex();
+	RenderGraph g;
+	RenderGraph::Pass writer = Compute("writer", {}, {}, GpuQueue::Graphics);
+	writer.PublishSampled.push_back(tex);
+	g.AddPass(std::move(writer));
+	g.AddPass(Compute("later", {}, {tex}));
+
+	CHECK(g.BuildSchedule(nullptr) == std::vector<uint32_t>{0, 1});
+}

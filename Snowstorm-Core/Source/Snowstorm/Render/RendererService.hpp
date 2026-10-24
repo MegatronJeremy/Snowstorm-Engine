@@ -467,9 +467,9 @@ namespace Snowstorm
 		// (cf. Unreal's FSceneViewExtension). Enqueue from any phase before Render. The queue is drained every
 		// frame, so recurring work is enqueued every frame.
 		//
-		// A texture the pass writes and a later pass samples through a bindless index must be left Sampled by
-		// a pass that declares that read: the graph transitions only declared accesses, and a material reaching
-		// the texture through bindless declares none.
+		// A texture the pass writes and a later pass samples through a bindless index is listed in the pass's
+		// PublishSampled: the graph transitions only declared accesses, and a material reaching the texture
+		// through bindless declares none.
 		void EnqueueGraphPass(RenderGraph::Pass pass) { m_PendingGraphPasses.push_back(std::move(pass)); }
 
 		[[nodiscard]] std::vector<RenderGraph::Pass> DrainGraphPasses() { return std::exchange(m_PendingGraphPasses, {}); }
