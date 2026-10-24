@@ -267,6 +267,19 @@ cbuffer FrameCB : register(b0, space0)
 	float ClusterSliceScale; // Slices / log(Far / Near)
 	float _ClusterPad0;
 	float _ClusterPad1;
+
+	// Sun cascades (#58). CascadeCount == 0: single sun map. Splits and CascadeViewDepthRow are in the fit
+	// camera's view depth; CascadeBiasScale scales the depth and normal-offset bias per cascade. MUST match
+	// RendererService.cpp field-for-field.
+	float4x4 CascadeViewProj[4];
+	float4 CascadeAtlasRect[4];
+	float4 CascadeSplits;
+	float4 CascadeBiasScale;
+	float4 CascadeViewDepthRow;
+	uint CascadeCount;
+	uint CascadeAtlasIndex;
+	uint _CascadePad0;
+	uint _CascadePad1;
 };
 
 // --- SPACE 1: Material Data ---
