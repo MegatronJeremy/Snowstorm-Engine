@@ -1,6 +1,7 @@
 #include "ShaderReloadSystem.hpp"
 
 #include "Snowstorm/Assets/MaterialAsset.hpp"
+#include "ShaderReloadRule.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
@@ -29,7 +30,7 @@ namespace Snowstorm
 				// Second axis within the RT variant: the inline ray-query shadow path is dead whenever the
 				// stochastic pass supplies a visibility texture instead, so it is compiled out there.
 				const bool wantInlineShadows = CVars::LitInlineRTShadowsActive();
-				if (!m_LitInitialized || wantRT != m_LastWantRT || wantInlineShadows != m_LastWantInlineShadows)
+				if (LitVariantNeedsCheck(m_Lit, wantRT, wantInlineShadows))
 				{
 					const ShaderPermutation desired = wantRT ? ShaderPermutation::Auto : ShaderPermutation::ForceNonRT;
 					ShaderDefines dynamic;
@@ -46,9 +47,7 @@ namespace Snowstorm
 						SS_CORE_INFO("DefaultLit permutation -> {}{}", wantRT ? "RT" : "non-RT",
 						             wantInlineShadows ? " +inline-shadows" : "");
 					}
-					m_LastWantRT = wantRT;
-					m_LastWantInlineShadows = wantInlineShadows;
-					m_LitInitialized = true;
+					m_Lit = {true, wantRT, wantInlineShadows};
 				}
 			}
 		}
@@ -59,16 +58,14 @@ namespace Snowstorm
 		// model — the old live checkbox froze the editor). Change it in SnowstormStartup.cfg / CLI and relaunch.
 
 		static float timeSinceLastCheck = 0.0f;
-		timeSinceLastCheck += ts.GetSeconds();
 
 		//-- check for source edits every 1 second (hot reload)
-		if (timeSinceLastCheck > 1.0f)
+		if (AdvanceReloadTimer(timeSinceLastCheck, ts.GetSeconds()))
 		{
 			// Recompile any shader whose source (or an included header) changed -> compiled on a worker, which bumps
 			// its version once the fresh SPIR-V is published. (ReloadAll self-skips unchanged shaders.)
 			shaderLibrary.ReloadAll();
 			needPipelineRebuild = true; // a changed shader bumps its version; the sweep below self-skips otherwise
-			timeSinceLastCheck = 0.0f;
 		}
 
 		if (needPipelineRebuild)
