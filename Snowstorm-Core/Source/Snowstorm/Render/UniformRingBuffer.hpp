@@ -7,6 +7,7 @@
 #include "Snowstorm/Core/Base.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
+#include "Snowstorm/Render/UniformRingMath.hpp"
 
 namespace Snowstorm
 {
@@ -78,23 +79,23 @@ namespace Snowstorm
 			SS_CORE_ASSERT(alignmentBytes > 0, "UniformRingBuffer::Alloc alignmentBytes must be > 0");
 			SS_CORE_ASSERT((alignmentBytes & (alignmentBytes - 1)) == 0, "UniformRingBuffer::Alloc alignment must be power of two");
 
-			uint32_t alignedHead = AlignUp(m_Head, alignmentBytes);
+			const RingAllocResult placement = RingAllocate(m_Head, m_Size, sizeBytes, alignmentBytes);
 
 			// Release-safe overflow handling: never write past the mapped buffer. In debug this
 			// asserts; in release it logs and reuses an in-bounds region (overflowing allocations
 			// this frame may glitch visually, but no memory corruption occurs).
-			if (alignedHead + sizeBytes > m_Size)
+			if (placement.Status != RingAllocStatus::Fits)
 			{
 				SS_CORE_ASSERT(false, "UniformRingBuffer overflow. Increase ring size or reduce per-frame allocations.");
-				SS_CORE_ERROR("UniformRingBuffer overflow ({0}+{1} > {2}); clamping. Increase ring size.", alignedHead, sizeBytes, m_Size);
+				SS_CORE_ERROR("UniformRingBuffer overflow ({0}+{1} > {2}); clamping. Increase ring size.", RingAlignUp(m_Head, alignmentBytes), sizeBytes, m_Size);
 
-				if (sizeBytes > m_Size)
+				if (placement.Status == RingAllocStatus::TooLarge)
 				{
 					// A single allocation larger than the whole ring cannot be satisfied.
 					return UniformRingAllocation{};
 				}
-				alignedHead = m_Size - sizeBytes;
 			}
+			const uint32_t alignedHead = placement.Offset;
 
 			UniformRingAllocation a{};
 			a.Buffer = m_Buffer;
@@ -118,12 +119,6 @@ namespace Snowstorm
 		[[nodiscard]] const Ref<Buffer>& GetBuffer() const { return m_Buffer; }
 		[[nodiscard]] uint32_t GetCapacityBytes() const { return m_Size; }
 		[[nodiscard]] uint32_t GetUsedBytes() const { return m_Head; }
-
-	private:
-		static uint32_t AlignUp(const uint32_t v, const uint32_t a)
-		{
-			return (v + (a - 1u)) & ~(a - 1u);
-		}
 
 	private:
 		Ref<Buffer> m_Buffer;
