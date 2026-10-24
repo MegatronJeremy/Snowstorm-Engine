@@ -10,19 +10,19 @@ using namespace Snowstorm;
 // local table, so the parse is tested without depending on the real engine CVars.
 namespace
 {
-	CVar<bool> g_Flag{"consolecmd.flag", false, ""};
-	CVar<int> g_Count{"consolecmd.count", 3, ""};
-	CVar<float> g_Scale{"consolecmd.scale", 1.0f, ""};
-	CVar<std::string> g_Path{"consolecmd.path", "a", ""};
-	CVar<int> g_Locked{"consolecmd.locked", 7, "", CVarFlags::ReadOnly};
+	CVar<bool> g_Flag{"test.consolecmd.flag", false, ""};
+	CVar<int> g_Count{"test.consolecmd.count", 3, ""};
+	CVar<float> g_Scale{"test.consolecmd.scale", 1.0f, ""};
+	CVar<std::string> g_Path{"test.consolecmd.path", "a", ""};
+	CVar<int> g_Locked{"test.consolecmd.locked", 7, "", CVarFlags::ReadOnly};
 
 	ConsoleCommand Parse(const std::string& line)
 	{
-		const std::unordered_map<std::string, ICVar*> table = {{"consolecmd.flag", &g_Flag},
-		                                                       {"consolecmd.count", &g_Count},
-		                                                       {"consolecmd.scale", &g_Scale},
-		                                                       {"consolecmd.path", &g_Path},
-		                                                       {"consolecmd.locked", &g_Locked}};
+		const std::unordered_map<std::string, ICVar*> table = {{"test.consolecmd.flag", &g_Flag},
+		                                                       {"test.consolecmd.count", &g_Count},
+		                                                       {"test.consolecmd.scale", &g_Scale},
+		                                                       {"test.consolecmd.path", &g_Path},
+		                                                       {"test.consolecmd.locked", &g_Locked}};
 		return ParseConsoleCommand(line,
 		                           [&](const std::string& name)
 		                           {
@@ -40,9 +40,9 @@ TEST_CASE("Console: blank lines are empty", "[console]")
 
 TEST_CASE("Console: trims spaces and tabs at both ends", "[console]")
 {
-	const ConsoleCommand c = Parse(" \t consolecmd.count 5 \t ");
-	REQUIRE(c.Trimmed == "consolecmd.count 5");
-	REQUIRE(c.Verb == "consolecmd.count");
+	const ConsoleCommand c = Parse(" \t test.consolecmd.count 5 \t ");
+	REQUIRE(c.Trimmed == "test.consolecmd.count 5");
+	REQUIRE(c.Verb == "test.consolecmd.count");
 	REQUIRE(c.Rest == "5");
 	REQUIRE(c.Kind == ConsoleCommandKind::SetCVar);
 }
@@ -59,7 +59,7 @@ TEST_CASE("Console: built-ins", "[console]")
 
 TEST_CASE("Console: a bare name shows the value, a bare unknown name warns", "[console]")
 {
-	REQUIRE(Parse("consolecmd.flag").Kind == ConsoleCommandKind::ShowCVar);
+	REQUIRE(Parse("test.consolecmd.flag").Kind == ConsoleCommandKind::ShowCVar);
 	REQUIRE(Parse("nope").Kind == ConsoleCommandKind::UnknownName);
 }
 
@@ -73,7 +73,7 @@ TEST_CASE("Console: unknown name with a value is UnknownCVar", "[console]")
 
 TEST_CASE("Console: a ReadOnly CVar is rejected, not set", "[console]")
 {
-	const ConsoleCommand c = Parse("consolecmd.locked 9");
+	const ConsoleCommand c = Parse("test.consolecmd.locked 9");
 	REQUIRE(c.Kind == ConsoleCommandKind::SetReadOnly);
 	REQUIRE(g_Locked.Get() == 7);
 }
@@ -88,12 +88,12 @@ TEST_CASE("Console: a built-in verb wins over a value-less lookup", "[console]")
 
 TEST_CASE("Console: value coercion per CVar type", "[console]")
 {
-	ConsoleCommand c = Parse("consolecmd.flag off");
+	ConsoleCommand c = Parse("test.consolecmd.flag off");
 	REQUIRE(c.Kind == ConsoleCommandKind::SetCVar);
 	g_Flag.Set(true);
 	c.CVar->SetFromString(c.Rest);
 	REQUIRE_FALSE(g_Flag.Get());
-	Parse("consolecmd.flag TRUE").CVar->SetFromString("TRUE");
+	Parse("test.consolecmd.flag TRUE").CVar->SetFromString("TRUE");
 	REQUIRE(g_Flag.Get());
 	for (const char* off : {"0", "false", "No", "OFF"})
 	{
@@ -103,17 +103,17 @@ TEST_CASE("Console: value coercion per CVar type", "[console]")
 	c.CVar->SetFromString("anything");
 	REQUIRE(g_Flag.Get());
 
-	c = Parse("consolecmd.count 42");
+	c = Parse("test.consolecmd.count 42");
 	c.CVar->SetFromString(c.Rest);
 	REQUIRE(g_Count.Get() == 42);
 	c.CVar->SetFromString("-5");
 	REQUIRE(g_Count.Get() == -5);
 
-	c = Parse("consolecmd.scale 0.25");
+	c = Parse("test.consolecmd.scale 0.25");
 	c.CVar->SetFromString(c.Rest);
 	REQUIRE(g_Scale.Get() == 0.25f);
 
-	c = Parse("consolecmd.path some dir/x y");
+	c = Parse("test.consolecmd.path some dir/x y");
 	REQUIRE(c.Rest == "some dir/x y");
 	c.CVar->SetFromString(c.Rest);
 	REQUIRE(g_Path.Get() == "some dir/x y");
@@ -123,8 +123,8 @@ TEST_CASE("Console: bad numeric input keeps the previous value", "[console]")
 {
 	g_Count.Set(11);
 	g_Scale.Set(2.0f);
-	Parse("consolecmd.count abc").CVar->SetFromString("abc");
-	Parse("consolecmd.scale xyz").CVar->SetFromString("xyz");
+	Parse("test.consolecmd.count abc").CVar->SetFromString("abc");
+	Parse("test.consolecmd.scale xyz").CVar->SetFromString("xyz");
 	REQUIRE(g_Count.Get() == 11);
 	REQUIRE(g_Scale.Get() == 2.0f);
 }
