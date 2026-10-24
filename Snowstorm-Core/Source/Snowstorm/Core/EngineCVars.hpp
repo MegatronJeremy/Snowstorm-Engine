@@ -775,6 +775,7 @@ namespace Snowstorm::CVars
 	// Off: sky arrives only via continuation rays (the pre-NEE integrator, bit-identical). Unbiased either way;
 	// the converged image is the same, only convergence speed differs. Mostly a dev/A-B knob.
 	extern CVar<bool> PathTraceEnvNee;
+	extern CVar<bool> PathTraceEmissiveNee; // #154: emissive-surface NEE + MIS in the path tracer
 	extern CVar<int> PathTraceSampler;
 	// True when the reference path tracer should run (render.pathtrace on AND an RT-capable device). Gates the
 	// PT pass AND the skip of the normal scene path (forward/G-buffer/upscale/temporal) so PT owns the frame.

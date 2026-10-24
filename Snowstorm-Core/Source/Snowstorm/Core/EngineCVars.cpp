@@ -737,6 +737,8 @@ namespace Snowstorm::CVars
 	CVar<bool> PathTraceEnvNee{"render.pathtrace.envnee", true, "Reference path tracer environment (sky) next-event estimation with MIS: each hit samples the analytic sky directly (a shadow ray) and MIS-combines it with the BSDF-continuation sky hit, cutting sky-lit variance (especially on glossy surfaces). Unbiased (the converged image is unchanged; only convergence speed differs). Off = sky arrives only via continuation rays (the pre-NEE integrator). Mainly a dev/A-B knob.", CVarFlags::Persist};
 	CVar<int> PathTraceSampler{"render.pathtrace.sampler", 0, "Reference path tracer sample generator (#156): 0 = PCG white noise (default), 1 = Owen-scrambled Sobol, padded per decision, seeded per pixel only (a function of pixel and sample index, so a Reset replays it). Unbiased: the converged image matches 0; only the low-sample error differs. Changing it restarts accumulation. Clamped to [0, 1].", CVarFlags::Persist};
 
+	CVar<bool> PathTraceEmissiveNee{"render.pathtrace.emissivenee", false, "Reference path tracer emissive-surface next-event estimation with MIS (#154): each hit samples a point on an emissive triangle (power-proportional, area-uniform) and MIS-combines it with the BSDF-continuation emissive hit. Unbiased: the converged image is unchanged, only the convergence of emissive lighting differs (small bright emitters stop being found only by chance). Textured emitters are picked by their factor only. Changing it restarts accumulation and rebuilds the TLAS.", CVarFlags::Persist};
+
 	int ClampedPathTraceSpp()
 	{
 		const int n = PathTraceSpp.Get();

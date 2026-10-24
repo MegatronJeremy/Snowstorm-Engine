@@ -37,6 +37,11 @@ namespace Snowstorm
 		[[nodiscard]] uint32_t GetVertexCount() const { return m_VertexCount; }
 		[[nodiscard]] uint32_t GetIndexCount() const { return m_IndexCount; }
 
+		// CPU copy of positions and 32-bit indices, kept only on a ray-tracing device (the emissive light list of the
+		// path tracer is built from it). Empty otherwise.
+		[[nodiscard]] const std::vector<glm::vec3>& GetCpuPositions() const { return m_CpuPositions; }
+		[[nodiscard]] const std::vector<uint32_t>& GetCpuIndices() const { return m_CpuIndices; }
+
 		[[nodiscard]] const MeshBounds& GetBounds() const { return m_Bounds; }
 		void SetBounds(const MeshBounds& b) { m_Bounds = b; }
 
@@ -59,6 +64,9 @@ namespace Snowstorm
 		IndexType m_IndexType = IndexType::UInt32;
 		uint32_t m_VertexCount = 0;
 		uint32_t m_IndexCount = 0;
+
+		std::vector<glm::vec3> m_CpuPositions;
+		std::vector<uint32_t> m_CpuIndices;
 
 		MeshBounds m_Bounds{}; //-- bounds won't be set by default
 
