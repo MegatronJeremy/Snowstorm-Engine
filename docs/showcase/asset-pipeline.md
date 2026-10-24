@@ -42,7 +42,7 @@ Not built yet: `.meta` sidecars with a GUID separate from the path, hot-reload, 
 | tangent normal | BC5, 8 bpp | two independent 8-bit planes, z rebuilt in the shader |
 | metallic-roughness, AO | BC1, 4 bpp | 44.7 dB on roughness, 44.0 dB on metallic |
 
-Mips are filtered in the role's colour space (albedo in linear light, normals and masks as byte averages). A texture sitting in a normal slot is checked by content (`IsTangentSpaceNormalMap`): two Sponza images there are not normal maps (vector length about 1.3, 25-40% of texels with z<0), so they fall back to colour encoding.
+Mips are filtered in the role's colour space (albedo in linear light, normals and masks as byte averages). A texture sitting in a normal slot is checked by content (`IsTangentSpaceNormalMap`): an image that is not unit-length and +Z-facing falls back to colour encoding with a warning (the (0,255,0) padding fill of decal maps is ignored).
 
 ### Why normals are not BC1
 
