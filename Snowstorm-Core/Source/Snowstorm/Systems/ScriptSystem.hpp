@@ -2,8 +2,12 @@
 
 #include <Snowstorm/ECS/System.hpp>
 
+#include <unordered_map>
+
 namespace Snowstorm
 {
+	class ScriptableEntity;
+
 	// Runs entity scripts. Simulation: only ticks in Play mode (RunsInEditMode == false).
 	class ScriptSystem final : public System
 	{
@@ -17,5 +21,9 @@ namespace Snowstorm
 		void DeclareAccess(SystemAccess& a) const override;
 
 		[[nodiscard]] bool RunsInEditMode() const override { return false; }
+
+	private:
+		// Instances this system created, by entity: a removed component is gone before the destroy loop runs.
+		std::unordered_map<entt::entity, ScriptableEntity*> m_Live;
 	};
 }
