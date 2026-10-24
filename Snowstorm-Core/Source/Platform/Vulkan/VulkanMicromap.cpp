@@ -332,13 +332,23 @@ namespace Snowstorm
 
 	VulkanMicromap::~VulkanMicromap()
 	{
-		if (m_Micromap != VK_NULL_HANDLE)
+		if (m_Micromap == VK_NULL_HANDLE && m_Buffer == VK_NULL_HANDLE)
 		{
-			vkDestroyMicromapEXT(GetVulkanDevice(), m_Micromap, nullptr);
+			return;
 		}
-		if (m_Buffer != VK_NULL_HANDLE)
-		{
-			vmaDestroyBuffer(GetAllocator(), m_Buffer, m_Allocation);
-		}
+		// A BLAS built in a still-in-flight frame may reference this micromap: retire, never destroy inline.
+		RetireVulkanObject(
+		    [device = GetVulkanDevice(), allocator = GetAllocator(), micromap = m_Micromap, buffer = m_Buffer,
+		     allocation = m_Allocation]
+		    {
+			    if (micromap != VK_NULL_HANDLE)
+			    {
+				    vkDestroyMicromapEXT(device, micromap, nullptr);
+			    }
+			    if (buffer != VK_NULL_HANDLE)
+			    {
+				    vmaDestroyBuffer(allocator, buffer, allocation);
+			    }
+		    });
 	}
 }

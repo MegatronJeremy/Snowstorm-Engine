@@ -513,12 +513,9 @@ namespace Snowstorm
 
 		SS_CORE_INFO("Loading scene '{}'", scenePath);
 
-		// Opening a scene mid-frame (e.g. from the Content Browser) destroys the old scene's GPU
-		// resources (meshes/textures) the moment their refcounts drop in Clear(). Command buffers
-		// from frames still in flight reference those resources, so tearing them down without first
-		// draining the GPU causes a device-lost (the next texture upload's submit then fails). Wait
-		// for the GPU to go idle before wiping, which is the standard "safe point" for a scene transition.
-		Renderer::WaitIdle();
+		// No GPU drain: the old scene's buffers, textures, views, samplers, pipelines and acceleration
+		// structures retire through the deferred-deletion queue, which holds them until the frames in
+		// flight that reference them have finished (#11).
 
 		// "Open Scene" semantics: wipe scene entities first, but KEEP the editor's persistent Scene-view
 		// camera + viewport (tagged DoNotSerialize) alive across the load, so the viewport keeps rendering
@@ -527,7 +524,7 @@ namespace Snowstorm
 		// world we're about to replace); see EditorLayer::RegisterEditorSystems.
 		m_ActiveWorld->ClearSceneEntities();
 
-		// The device is idle and the old scene's components are gone: drop the meshes and shaders only it
+		// The old scene's components are gone: drop the meshes and shaders only it
 		// used instead of leaking them for the life of the app (#77).
 		m_ActiveWorld->GetSingleton<AssetManagerSingleton>().EvictUnreferenced();
 
@@ -1389,13 +1386,12 @@ namespace Snowstorm
 		}
 
 		// Apply a deferred "New Scene" at the frame boundary: same GPU-safe recipe as a scene open
-		// (WaitIdle, then wipe scene entities; the persistent editor camera/viewport survive), just
+		// (retire-queue teardown, then wipe scene entities; the persistent editor camera/viewport survive), just
 		// with nothing loaded afterwards. The empty active-scene path routes the next save through
 		// Save Scene As.
 		if (m_HasPendingNewScene && m_FramesPresented > 1)
 		{
 			m_HasPendingNewScene = false;
-			Renderer::WaitIdle();
 			m_ActiveWorld->ClearSceneEntities(); // OnSceneCleared hook resets selection + drops undo history
 			MatchSceneViewRenderPath();
 			m_ActiveScenePath.clear();
@@ -1414,7 +1410,7 @@ namespace Snowstorm
 		// Play/Stop transition (detected at the frame boundary, like the scene-open above, so the world is
 		// mutated with no render pass in flight). Edit->Play snapshots the world to a JSON string;
 		// Play->Stop restores it, discarding any edits made while playing: play runs on a throwaway copy
-		// (the UE model). Restore reuses the scene-transition recipe: drain the GPU, Clear(), deserialize,
+		// (the UE model). Restore reuses the scene-transition recipe: Clear(), deserialize,
 		// prewarm.
 		{
 			const bool playing = m_ActiveWorld->GetSingleton<SimulationStateSingleton>().IsPlaying();
@@ -1424,7 +1420,6 @@ namespace Snowstorm
 			}
 			else if (!playing && m_WasPlaying)
 			{
-				Renderer::WaitIdle();
 				// Keep the persistent editor camera/viewport (the play snapshot excludes them, since they
 				// are DoNotSerialize); only scene content is restored from the snapshot. ClearSceneEntities
 				// fires OnSceneCleared, which resets selection + drops undo history.
