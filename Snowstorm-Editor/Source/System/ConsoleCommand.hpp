@@ -2,6 +2,7 @@
 
 #include "Snowstorm/Utility/CVar.hpp"
 
+#include <cstdint>
 #include <string>
 
 namespace Snowstorm
