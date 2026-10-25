@@ -36,5 +36,12 @@ namespace Snowstorm
 		// Write the cooked blob (creates dirs; atomic temp-then-rename). Returns false on failure — a
 		// failed cook just means the next load re-parses, never a crash.
 		static bool Save(AssetHandle handle, const std::filesystem::path& sourcePath, const CookedMesh& mesh);
+
+		// Same as Load/Save against an explicit cache directory (the tests' seam; Load/Save pass the engine's).
+		static std::filesystem::path GetCachePathIn(const std::filesystem::path& dir, AssetHandle handle);
+		static std::optional<CookedMesh> LoadFrom(const std::filesystem::path& dir, AssetHandle handle,
+		                                          const std::filesystem::path& sourcePath);
+		static bool SaveTo(const std::filesystem::path& dir, AssetHandle handle, const std::filesystem::path& sourcePath,
+		                   const CookedMesh& mesh);
 	};
 }
