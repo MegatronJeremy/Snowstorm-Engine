@@ -1,6 +1,7 @@
 ﻿#include "LightingSystem.hpp"
 
 #include "LightingComponents.hpp"
+#include "LightPacking.hpp"
 #include "LightingUniforms.hpp"
 #include "PrimaryDirectional.hpp"
 
@@ -64,7 +65,7 @@ namespace Snowstorm
 			++lightIndex;
 			// LightDataBlock::Lights is a fixed GPUDirectionalLight[MAX_DIRECTIONAL_LIGHTS] mirrored on the
 			// GPU; writing past it corrupts the adjacent LightCount/Padding and overruns the shader array.
-			if (lightData.LightCount >= MAX_DIRECTIONAL_LIGHTS)
+			if (DirectionalFull(lightData))
 			{
 				droppedLights = true;
 				break;
@@ -102,11 +103,8 @@ namespace Snowstorm
 					}
 				}
 			}
-			lightData.Lights[lightData.LightCount++] = {
-			    .Direction = glm::normalize(candidateDirs[lightIndex]),
-			    .Intensity = directionalLight.Intensity,
-			    .Color = directionalLight.Color,
-			    .ShadowSlot = shadowSlot};
+			lightData.Lights[lightData.LightCount++] =
+			    PackDirectionalLight(candidateDirs[lightIndex], directionalLight.Intensity, directionalLight.Color, shadowSlot);
 		}
 
 		if (droppedLights && !m_WarnedDroppedDirectional)
@@ -175,7 +173,7 @@ namespace Snowstorm
 		bool droppedPointShadow = false; // a casting point exceeded the shadow budget (renders unshadowed)
 		for (auto pointView = View<PointLightComponent, TransformComponent>(); auto entity : pointView)
 		{
-			if (lightData.PointCount >= MAX_POINT_LIGHTS)
+			if (PointFull(lightData))
 			{
 				droppedPoint = true;
 				break;
@@ -223,13 +221,8 @@ namespace Snowstorm
 				}
 			}
 
-			lightData.PointLights[lightData.PointCount++] = {
-			    .Position = transform.Position,
-			    .Range = light.Range,
-			    .Color = light.Color,
-			    .Intensity = light.Intensity,
-			    .ShadowSlot = shadowSlot,
-			    .ShadowPad = {0, 0, 0}};
+			lightData.PointLights[lightData.PointCount++] =
+			    PackPointLight(transform.Position, light.Range, light.Color, light.Intensity, shadowSlot);
 		}
 		lightData.PointShadowCount = nextPointShadowSlot;
 		if (droppedPoint && !m_WarnedDroppedPoint)
@@ -252,7 +245,7 @@ namespace Snowstorm
 		bool droppedSpot = false;
 		for (auto spotView = View<SpotLightComponent, TransformComponent>(); auto entity : spotView)
 		{
-			if (lightData.SpotCount >= MAX_SPOT_LIGHTS)
+			if (SpotFull(lightData))
 			{
 				droppedSpot = true;
 				break;
@@ -265,10 +258,8 @@ namespace Snowstorm
 			const auto& transform = spotView.get<TransformComponent>(entity);
 
 			const glm::mat3 rot = glm::mat3(transform.GetTransformMatrix());
-			const glm::vec3 forward = glm::normalize(rot * glm::vec3(0.0f, 0.0f, -1.0f));
-
-			const float inner = glm::radians(light.InnerAngleDeg);
-			const float outer = glm::radians(std::max(light.OuterAngleDeg, light.InnerAngleDeg));
+			const glm::vec3 forward = SpotForward(rot);
+			const float outer = SpotOuterRadians(light.InnerAngleDeg, light.OuterAngleDeg);
 
 			// Assign a shadow atlas tile to this spot if it casts and shadows are globally enabled and a tile
 			// is free (cap = ShadowPass::kMaxShadowSpots). ShadowIndex < 0 => unshadowed. The atlas is a
@@ -293,18 +284,9 @@ namespace Snowstorm
 				atlasRect = {static_cast<float>(col) * inv, static_cast<float>(row) * inv, inv, inv};
 			}
 
-			lightData.SpotLights[lightData.SpotCount++] = {
-			    .Position = transform.Position,
-			    .Range = light.Range,
-			    .Color = light.Color,
-			    .Intensity = light.Intensity,
-			    .Direction = forward,
-			    .CosInner = std::cos(inner),
-			    .CosOuter = std::cos(outer),
-			    .ShadowIndex = shadowIndex,
-			    .ShadowPad = {0, 0},
-			    .ShadowViewProj = shadowViewProj,
-			    .ShadowAtlasRect = atlasRect};
+			lightData.SpotLights[lightData.SpotCount++] =
+			    PackSpotLight(transform.Position, light.Range, light.Color, light.Intensity, forward, light.InnerAngleDeg,
+			                  light.OuterAngleDeg, shadowIndex, shadowViewProj, atlasRect);
 		}
 		if (droppedSpot && !m_WarnedDroppedSpot)
 		{
