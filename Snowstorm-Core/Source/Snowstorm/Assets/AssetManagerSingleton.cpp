@@ -4,6 +4,7 @@
 #include "Snowstorm/Assets/VirtualPath.hpp"
 
 #include "AssetFileTime.hpp"
+#include "AssetLoadRule.hpp"
 #include "MeshBoundsBuilder.hpp"
 #include "MeshMetaCache.hpp"
 #include "Snowstorm/Core/Application.hpp"
@@ -669,18 +670,17 @@ namespace Snowstorm
 		// Per-frame GPU-finalize budget (see the texture note below): each mesh Buffer::Create is a staging
 		// copy + vkQueueWaitIdle, so finalizing all 25 Sponza meshes in one frame is a ~second-long stall.
 		// Cap and re-queue the remainder.
-		constexpr size_t kMaxMeshFinalizePerFrame = 6;
 
 		size_t meshDone = 0;
 		if (!meshBatch.empty())
 		{
 			auto& meshLib = Application::Get().GetServiceManager().GetService<MeshLibrary>();
-			for (; meshDone < meshBatch.size() && meshDone < kMaxMeshFinalizePerFrame; ++meshDone)
+			for (; meshDone < AssetLoadRule::FinalizeCount(meshBatch.size(), AssetLoadRule::kMaxMeshFinalizePerFrame); ++meshDone)
 			{
 				CompletedMeshLoad& done = meshBatch[meshDone];
 				m_InFlightMeshes.erase(done.Handle.Value());
 
-				if (!done.Success)
+				if (!AssetLoadRule::ShouldFinalize(done.Success))
 				{
 					SS_CORE_ERROR("Async mesh load failed for handle {}", done.Handle.Value());
 					continue;
@@ -738,15 +738,14 @@ namespace Snowstorm
 		// loading bar to ever show. Cap the count per call and re-queue the rest for the next frame, so
 		// the work spreads over ~N/budget frames: the app keeps pumping (responsive) and the overlay is
 		// visible while pending drains. Meshes are cheaper but budgeted too for the same reason.
-		constexpr size_t kMaxTextureFinalizePerFrame = 4;
 
 		size_t texDone = 0;
-		for (; texDone < texBatch.size() && texDone < kMaxTextureFinalizePerFrame; ++texDone)
+		for (; texDone < AssetLoadRule::FinalizeCount(texBatch.size(), AssetLoadRule::kMaxTextureFinalizePerFrame); ++texDone)
 		{
 			CompletedTextureLoad& done = texBatch[texDone];
 			m_InFlightTextures.erase(done.Key);
 
-			if (!done.Success)
+			if (!AssetLoadRule::ShouldFinalize(done.Success))
 			{
 				SS_CORE_ERROR("Async texture load failed for handle {} (slot stays placeholder)", done.Handle.Value());
 				continue;
@@ -800,7 +799,7 @@ namespace Snowstorm
 
 		// Once nothing is in flight (meshes AND textures) AND nothing is waiting to be finalized, reset the
 		// progress high-water mark for the next load burst.
-		if (m_InFlightMeshes.empty() && m_InFlightTextures.empty())
+		if (AssetLoadRule::ShouldResetPendingTotal(m_InFlightMeshes.size(), m_InFlightTextures.size()))
 		{
 			m_PendingTotal = 0;
 		}
@@ -810,7 +809,7 @@ namespace Snowstorm
 	{
 		// Both meshes and textures still loading OR waiting for GPU finalize. (Textures re-queued past the
 		// per-frame finalize budget remain in m_InFlightTextures until actually finalized.)
-		return static_cast<uint32_t>(m_InFlightMeshes.size() + m_InFlightTextures.size());
+		return AssetLoadRule::PendingCount(m_InFlightMeshes.size(), m_InFlightTextures.size());
 	}
 
 	std::string AssetManagerSingleton::UnsettledReason() const
@@ -831,7 +830,7 @@ namespace Snowstorm
 			const auto list = [&](const char* kind, const std::unordered_map<uint64_t, std::string>& inFlight, const std::unordered_set<uint64_t>& queued)
 			{
 				for (const auto& [key, name] : inFlight)
-					detail += std::format("{}{} {} ({})", detail.empty() ? "" : "; ", kind, name, queued.contains(key) ? "decoded, awaiting GPU upload" : "on a worker");
+					detail += std::format("{}{} {} ({})", detail.empty() ? "" : "; ", kind, name, AssetLoadRule::StageName(queued.contains(key)));
 			};
 			list("mesh", m_InFlightMeshes, meshQueued);
 			list("texture", m_InFlightTextures, textureQueued);
@@ -847,7 +846,7 @@ namespace Snowstorm
 	{
 		// Slot 0 = untextured (no image dependency). Every other slot is real unless it is still in the
 		// placeholder set (async pixels not yet uploaded).
-		return slot == 0 || !m_PlaceholderSlots.contains(slot);
+		return AssetLoadRule::IsSlotResident(slot, m_PlaceholderSlots.contains(slot));
 	}
 
 	Ref<Shader> AssetManagerSingleton::GetShader(const AssetHandle handle)
