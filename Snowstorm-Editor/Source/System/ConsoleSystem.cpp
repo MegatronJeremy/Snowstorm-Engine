@@ -1,5 +1,7 @@
 #include "ConsoleSystem.hpp"
 
+#include "ConsoleCommand.hpp"
+
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Core/LogBuffer.hpp"
 #include "Snowstorm/Utility/CVar.hpp"
@@ -260,82 +262,55 @@ namespace Snowstorm
 
 	void ConsoleSystem::ExecuteCommand(const char* line)
 	{
-		std::string cmd = line;
-		// Trim leading/trailing whitespace.
-		const auto notSpace = [](const char c)
-		{ return c != ' ' && c != '\t'; };
-		while (!cmd.empty() && !notSpace(cmd.front()))
-			cmd.erase(cmd.begin());
-		while (!cmd.empty() && !notSpace(cmd.back()))
-			cmd.pop_back();
-		if (cmd.empty())
+		const ConsoleCommand cmd =
+		    ParseConsoleCommand(line, [](const std::string& name)
+		                        { return CVarRegistry::Get().Find(name); });
+		if (cmd.Kind == ConsoleCommandKind::Empty)
 		{
 			return;
 		}
 
 		// Echo the command into the log so it appears in the stream above the input (console feedback loop).
-		SS_INFO("] {0}", cmd);
+		SS_INFO("] {0}", cmd.Trimmed);
 
-		const size_t sep = cmd.find(' ');
-		const std::string verb = cmd.substr(0, sep);
-		const std::string rest = (sep == std::string::npos) ? "" : cmd.substr(sep + 1);
-
-		// --- Built-ins ---
-		if (verb == "help")
+		switch (cmd.Kind)
 		{
+		case ConsoleCommandKind::Help:
 			SS_INFO("Commands: help | clear | list [filter] | <cvar.name> <value>");
-			return;
-		}
-		if (verb == "clear")
-		{
+			break;
+		case ConsoleCommandKind::Clear:
 			LogBuffer::Get().Clear();
-			return;
-		}
-		if (verb == "list")
-		{
+			break;
+		case ConsoleCommandKind::List:
 			for (const ICVar* cvar : CVarRegistry::Get().All())
 			{
-				if (rest.empty() || cvar->GetName().find(rest) != std::string::npos)
+				if (cmd.Rest.empty() || cvar->GetName().find(cmd.Rest) != std::string::npos)
 				{
 					SS_INFO("  {0} = {1} [{2}]", cvar->GetName(), cvar->GetValueString(), cvar->GetTypeName());
 				}
 			}
-			return;
-		}
-
-		// --- Otherwise: "<cvar.name> <value>" sets a console variable. ---
-		if (rest.empty())
-		{
-			// Bare name -> print its current value (or unknown).
-			if (const ICVar* cvar = CVarRegistry::Get().Find(verb))
-			{
-				SS_INFO("{0} = {1} [{2}]", cvar->GetName(), cvar->GetValueString(), cvar->GetTypeName());
-			}
-			else
-			{
-				SS_WARN("Unknown command or CVar: '{0}' (try 'help')", verb);
-			}
-			return;
-		}
-
-		if (ICVar* cvar = CVarRegistry::Get().Find(verb))
-		{
+			break;
+		case ConsoleCommandKind::ShowCVar:
+			SS_INFO("{0} = {1} [{2}]", cmd.CVar->GetName(), cmd.CVar->GetValueString(), cmd.CVar->GetTypeName());
+			break;
+		case ConsoleCommandKind::UnknownName:
+			SS_WARN("Unknown command or CVar: '{0}' (try 'help')", cmd.Verb);
+			break;
+		case ConsoleCommandKind::SetReadOnly:
 			// Startup-only (ReadOnly) CVars are resolved once at launch; setting them at runtime has no effect,
 			// so reject rather than silently no-op (Unreal's ECVF_ReadOnly console behaviour).
-			if (cvar->IsReadOnly())
-			{
-				SS_WARN("{0} is startup-only — set it in SnowstormStartup.cfg / CLI and relaunch (current: {1})",
-				        cvar->GetName(), cvar->GetValueString());
-			}
-			else
-			{
-				cvar->SetFromString(rest);
-				SS_INFO("{0} = {1}", cvar->GetName(), cvar->GetValueString());
-			}
-		}
-		else
-		{
-			SS_WARN("Unknown CVar: '{0}' (try 'list')", verb);
+			SS_WARN("{0} is startup-only — set it in SnowstormStartup.cfg / CLI and relaunch (current: {1})",
+			        cmd.CVar->GetName(), cmd.CVar->GetValueString());
+			break;
+		case ConsoleCommandKind::SetCVar:
+			cmd.CVar->SetFromString(cmd.Rest);
+			SS_INFO("{0} = {1}", cmd.CVar->GetName(), cmd.CVar->GetValueString());
+			break;
+		case ConsoleCommandKind::UnknownCVar:
+			SS_WARN("Unknown CVar: '{0}' (try 'list')", cmd.Verb);
+			break;
+		case ConsoleCommandKind::Empty:
+			break;
 		}
 	}
 
