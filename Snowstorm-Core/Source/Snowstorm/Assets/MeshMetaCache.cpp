@@ -12,23 +12,19 @@ namespace Snowstorm
 	std::filesystem::path MeshMetaCacheIO::GetCachePath(const AssetHandle handle)
 	{
 		// Engine/cache/mesh/<handle>.json
-		std::filesystem::path p = EngineAssetPath("Engine/cache/mesh");
+		return GetCachePathIn(EngineAssetPath("Engine/cache/mesh"), handle);
+	}
+
+	std::filesystem::path MeshMetaCacheIO::GetCachePathIn(const std::filesystem::path& dir, const AssetHandle handle)
+	{
+		std::filesystem::path p = dir;
 		p /= handle.ToString();
 		p += ".json";
 		return p;
 	}
 
-	std::optional<MeshMetaCache> MeshMetaCacheIO::Load(const AssetHandle handle)
+	static std::optional<MeshMetaCache> Parse(const json& root, const AssetHandle handle)
 	{
-		const auto path = GetCachePath(handle);
-
-		std::ifstream in(path);
-		if (!in.is_open())
-			return std::nullopt;
-
-		json root;
-		in >> root;
-
 		if (!root.is_object())
 			return std::nullopt;
 
@@ -63,9 +59,41 @@ namespace Snowstorm
 		return meta;
 	}
 
+	std::optional<MeshMetaCache> MeshMetaCacheIO::Load(const AssetHandle handle)
+	{
+		return LoadFrom(EngineAssetPath("Engine/cache/mesh"), handle);
+	}
+
+	std::optional<MeshMetaCache> MeshMetaCacheIO::LoadFrom(const std::filesystem::path& dir, const AssetHandle handle)
+	{
+		const auto path = GetCachePathIn(dir, handle);
+
+		std::ifstream in(path);
+		if (!in.is_open())
+			return std::nullopt;
+
+		// A truncated or hand-edited file is a cache miss, never an exception.
+		const json root = json::parse(in, nullptr, false);
+		if (root.is_discarded())
+			return std::nullopt;
+		try
+		{
+			return Parse(root, handle);
+		}
+		catch (const json::exception&)
+		{
+			return std::nullopt;
+		}
+	}
+
 	bool MeshMetaCacheIO::Save(const MeshMetaCache& meta)
 	{
-		const auto path = GetCachePath(meta.Handle);
+		return SaveTo(EngineAssetPath("Engine/cache/mesh"), meta);
+	}
+
+	bool MeshMetaCacheIO::SaveTo(const std::filesystem::path& dir, const MeshMetaCache& meta)
+	{
+		const auto path = GetCachePathIn(dir, meta.Handle);
 		std::filesystem::create_directories(path.parent_path());
 
 		json root;
