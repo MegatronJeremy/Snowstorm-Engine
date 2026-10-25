@@ -31,17 +31,33 @@ namespace Snowstorm
 		};
 	}
 
-	std::filesystem::path MeshCacheIO::GetCachePath(const AssetHandle handle)
+	std::filesystem::path MeshCacheIO::GetCachePathIn(const std::filesystem::path& dir, const AssetHandle handle)
 	{
-		std::filesystem::path p = EngineAssetPath("Engine/cache/mesh");
+		std::filesystem::path p = dir;
 		p /= handle.ToString();
 		p += ".ssmesh";
 		return p;
 	}
 
+	std::filesystem::path MeshCacheIO::GetCachePath(const AssetHandle handle)
+	{
+		return GetCachePathIn(EngineAssetPath("Engine/cache/mesh"), handle);
+	}
+
 	std::optional<CookedMesh> MeshCacheIO::Load(const AssetHandle handle, const std::filesystem::path& sourcePath)
 	{
-		const auto path = GetCachePath(handle);
+		return LoadFrom(EngineAssetPath("Engine/cache/mesh"), handle, sourcePath);
+	}
+
+	bool MeshCacheIO::Save(const AssetHandle handle, const std::filesystem::path& sourcePath, const CookedMesh& mesh)
+	{
+		return SaveTo(EngineAssetPath("Engine/cache/mesh"), handle, sourcePath, mesh);
+	}
+
+	std::optional<CookedMesh> MeshCacheIO::LoadFrom(const std::filesystem::path& dir, const AssetHandle handle,
+	                                                const std::filesystem::path& sourcePath)
+	{
+		const auto path = GetCachePathIn(dir, handle);
 
 		std::ifstream in(path, std::ios::binary);
 		if (!in.is_open())
@@ -78,12 +94,13 @@ namespace Snowstorm
 		return mesh;
 	}
 
-	bool MeshCacheIO::Save(const AssetHandle handle, const std::filesystem::path& sourcePath, const CookedMesh& mesh)
+	bool MeshCacheIO::SaveTo(const std::filesystem::path& dir, const AssetHandle handle,
+	                         const std::filesystem::path& sourcePath, const CookedMesh& mesh)
 	{
 		if (mesh.Vertices.empty() || mesh.Indices.empty())
 			return false;
 
-		const auto path = GetCachePath(handle);
+		const auto path = GetCachePathIn(dir, handle);
 		std::error_code ec;
 		std::filesystem::create_directories(path.parent_path(), ec);
 
