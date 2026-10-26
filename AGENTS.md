@@ -498,6 +498,10 @@ expected the old `#type` split and silently compiled nothing).
 static and needs no GPU, so hosted CI cooks the shaders and runs the occupancy gate on every shader
 change. RGA is cached across runs (actions/cache) so only the first pays the download.
 
+### Compiler feedback on shader PRs (information, not a gate)
+
+`py Scripts/shader-feedback.py report --asic gfx1151,gfx1200 --spv-dir Engine/cache/shaders-cook --out head.json` writes RGA's per-shader numbers as JSON (VGPRs, SGPRs, LDS, scratch, spills, ISA bytes, ISA instruction count, theoretical waves/SIMD; worst case over permutations) per ASIC; `diff base.json head.json --markdown c.md` lists what changed. `.github/workflows/shader-feedback.yml` cooks base and head on every PR that touches `Engine/Shaders` and posts the diff as one updating comment. It is a static proxy for shortlisting ideas, never a merge gate; confirm a candidate with `perf-bench.py --compare-exe`. gfx1151 (the Z2's 8060S) reuses the gfx11 occupancy model; that RGA 2.14.2 compiles for gfx1151, and that RDNA3.5 shares the 1536-VGPR file, are unverified: an ASIC RGA rejects is listed under `errors` in the report. `Scripts/test_shader_feedback.py` covers the pure logic; the RGA runs and the ISA instruction parse have not run on real RGA output.
+
 ### Cross-vendor shader statistics (driver-reported; `--gate` is local and opt-in)
 
 RGA is the *Radeon* GPU Analyzer, so the occupancy gate is structurally AMD-only and cannot see half of a

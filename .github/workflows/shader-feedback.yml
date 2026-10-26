@@ -1,0 +1,80 @@
+name: shader-feedback
+
+on:
+  pull_request:
+    paths:
+      - 'Engine/Shaders/**'
+      - 'Scripts/shader-feedback.py'
+      - 'Scripts/shader-permutations.txt'
+      - 'Snowstorm-Core/Source/Snowstorm/Render/ShaderCompile.hpp'
+
+concurrency:
+  group: shader-feedback-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  feedback:
+    # Same-repository branches only: a fork's token cannot write the comment.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-2022
+    steps:
+      - name: Checkout head
+        uses: actions/checkout@v4
+        with:
+          path: head
+
+      - name: Checkout base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Unit tests
+        working-directory: head
+        run: py Scripts/test_shader_feedback.py
+
+      - name: Cache Radeon GPU Analyzer
+        uses: actions/cache@v4
+        with:
+          path: head/Tools/rga
+          key: rga-2.14.2
+
+      - name: Cook base shaders
+        working-directory: base
+        run: py Scripts/cook-shaders.py --variants rt,base
+
+      - name: Cook head shaders
+        working-directory: head
+        run: py Scripts/cook-shaders.py --variants rt,base
+
+      # Information only: a failure here never blocks the pull request.
+      - name: RGA report and diff
+        working-directory: head
+        continue-on-error: true
+        run: |
+          py Scripts/shader-feedback.py report --spv-dir "${{ github.workspace }}/base/Engine/cache/shaders-cook" --out "${{ github.workspace }}/base.json"
+          py Scripts/shader-feedback.py report --spv-dir "${{ github.workspace }}/head/Engine/cache/shaders-cook" --out "${{ github.workspace }}/head.json"
+          py Scripts/shader-feedback.py diff "${{ github.workspace }}/base.json" "${{ github.workspace }}/head.json" --markdown "${{ github.workspace }}/comment.md"
+
+      - name: Post or update the comment
+        if: hashFiles('comment.md') != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          id=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" --paginate \
+            --jq '[.[] | select(.body | contains("<!-- shader-feedback -->"))][0].id // empty')
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$id" -F body=@comment.md
+          else
+            gh api -X POST "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" -F body=@comment.md
+          fi
