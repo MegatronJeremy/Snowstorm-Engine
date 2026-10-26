@@ -26,6 +26,6 @@ namespace Snowstorm
 	private:
 		void Execute2D(Timestep ts, CameraComponent& cam, TransformComponent& tr, const CameraControllerComponent& ctrl,
 		               CameraControllerRuntimeComponent& rtState, const ViewportInteractionComponent& vpI,
-		               entt::entity viewport) const;
+		               entt::entity viewport);
 	};
 }

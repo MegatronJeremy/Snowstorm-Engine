@@ -373,7 +373,7 @@ namespace Snowstorm
 	void CameraControllerSystem::Execute2D(const Timestep ts, CameraComponent& cam, TransformComponent& tr,
 	                                       const CameraControllerComponent& ctrl,
 	                                       CameraControllerRuntimeComponent& rtState,
-	                                       const ViewportInteractionComponent& vpI, const entt::entity viewport) const
+	                                       const ViewportInteractionComponent& vpI, const entt::entity viewport)
 	{
 		auto& input = SingletonView<InputStateSingleton>();
 		const auto& reg = m_World->GetRegistry();
