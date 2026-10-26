@@ -5,6 +5,14 @@
 
 namespace Snowstorm
 {
+	ScriptSystem::~ScriptSystem()
+	{
+		for (const auto& [entity, instance] : m_Live)
+		{
+			delete instance;
+		}
+	}
+
 	void ScriptSystem::Execute(const Timestep ts)
 	{
 		const auto nativeScriptView = View<NativeScriptComponent>();

@@ -17,6 +17,9 @@ namespace Snowstorm
 		{
 		}
 
+		// Frees the remaining instances without OnDestroy: teardown is not a gameplay removal.
+		~ScriptSystem() override;
+
 		void Execute(Timestep ts) override;
 		void DeclareAccess(SystemAccess& a) const override;
 

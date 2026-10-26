@@ -78,3 +78,40 @@ TEST_CASE("ScriptSystem ignores a removal for a script it never instantiated", "
 	CHECK(g_Counts.Created == 0);
 	CHECK(g_Counts.Destroyed == 0);
 }
+
+TEST_CASE("ScriptSystem deletes live instances at teardown without OnDestroy", "[script]")
+{
+	g_Counts = {};
+	World world;
+	{
+		ScriptSystem system(&world);
+		AddScript(world);
+		RunFrame(world, system);
+		CHECK(g_Counts.Deleted == 0);
+	}
+	CHECK(g_Counts.Deleted == 1);
+	CHECK(g_Counts.Destroyed == 0);
+}
+
+TEST_CASE("ScriptSystem gives an entity re-bound after removal a fresh instance", "[script]")
+{
+	g_Counts = {};
+	World world;
+	ScriptSystem system(&world);
+	auto& reg = world.GetRegistry();
+	const entt::entity e = AddScript(world);
+	RunFrame(world, system);
+
+	reg.remove<NativeScriptComponent>(e);
+	RunFrame(world, system);
+	reg.emplace<NativeScriptComponent>(e).Bind<CountingScript>();
+	RunFrame(world, system);
+	CHECK(g_Counts.Created == 2);
+	CHECK(g_Counts.Destroyed == 1);
+	CHECK(g_Counts.Deleted == 1);
+
+	reg.remove<NativeScriptComponent>(e);
+	RunFrame(world, system);
+	CHECK(g_Counts.Destroyed == 2);
+	CHECK(g_Counts.Deleted == 2);
+}
