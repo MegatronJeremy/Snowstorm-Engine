@@ -15,7 +15,10 @@ namespace
 		return {kSpirvMagic, 0x00010500u, 0u, 42u, 0u, 0x0002000Eu, 1u};
 	}
 
-	size_t Bytes(const std::vector<uint32_t>& b) { return b.size() * sizeof(uint32_t); }
+	size_t Bytes(const std::vector<uint32_t>& b)
+	{
+		return b.size() * sizeof(uint32_t);
+	}
 
 	std::optional<std::string> StampFor(const std::vector<uint32_t>& b, const uint64_t key = kKey)
 	{
