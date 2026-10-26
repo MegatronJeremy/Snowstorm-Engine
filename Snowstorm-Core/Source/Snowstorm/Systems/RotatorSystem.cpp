@@ -67,6 +67,11 @@ namespace Snowstorm
 			gizmoHeld = hooks.ManipulatedEntity();
 		}
 
+		Apply(dt, gizmoHeld);
+	}
+
+	void RotatorSystem::Apply(const float dt, const entt::entity gizmoHeld)
+	{
 		// Data-parallel: each rotator's update is pure per-entity math (no shared state), so it splits
 		// cleanly across workers. Access is declared (Write<Transform> mutated in place, Read<Rotator>
 		// input only), so ParallelForEach hands in the right constness and, after the barrier, marks
