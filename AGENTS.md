@@ -1211,8 +1211,14 @@ and the view sits in its own cache, so a texture used by a sprite and a material
 With one level, a sprite drawn much smaller than its texture aliases; mips and compression per asset wait for `.meta`.
 `cook.assets` walks the registry, which cannot know scene usage, so sprite variants cook on first use.
 
-The editor's Scene view takes the scene's Primary camera's render path and background on open, still flying in perspective
-(#341). `quality.capture` is a Scene3D effect and does not capture a Canvas2D frame.
+The editor's Scene view takes the scene's Primary camera's render path and background on open (#341). A Canvas2D scene also
+opens the **2D Scene view** (Unity's Scene-view 2D toggle, Godot's 2D editor): `CameraControllerRuntimeComponent::View2D` on the
+editor camera, flipped by the viewport's "2D" button or the `2` key. `CameraControllerSystem` applies the transition (saving
+the 3D pose and restoring it on the way out), then runs `Execute2D`: orthographic, rotation locked at zero, middle or right drag
+pans, the wheel zooms about the cursor (`ViewportInteractionComponent::CursorUv`), right-held WASD pans, and F / Shift+F frame
+the selected sprite / every sprite (`FrameEditorCamera2D`, `SpriteLocalAABB`). The maths is `Math/Scene2DView.hpp`
+(`Scene2DViewTests`). Opening a non-2D scene leaves the mode and discards the saved pose. Sprites are not pickable by click yet
+and the translate gizmo's behaviour under the ortho camera has not run on a GPU. `quality.capture` is a Scene3D effect and does not capture a Canvas2D frame.
 
 **`Sprites.world` is the testbed**, booted by smoke as `Sprites`: a 64x64 checkerboard magnified with `Nearest` and with
 `Linear`, a layer -1 logo 2 units nearer the camera that still draws under them, two layer 1 logos over them (one `FlipX`,

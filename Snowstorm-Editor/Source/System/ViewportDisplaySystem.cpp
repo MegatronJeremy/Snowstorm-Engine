@@ -2,6 +2,7 @@
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Components/CameraComponent.hpp"
+#include "Snowstorm/Components/CameraControllerRuntimeComponent.hpp"
 #include "Snowstorm/Components/CameraRuntimeComponent.hpp"
 #include "Snowstorm/Components/CameraTargetComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
@@ -65,6 +66,16 @@ namespace Snowstorm
 		entt::entity FindViewportCamera(const TrackedRegistry& reg, const entt::entity viewportEntity)
 		{
 			return ResolveViewportCamera(reg, viewportEntity);
+		}
+
+		void Toggle2DView(TrackedRegistry& reg, const entt::entity camEntity)
+		{
+			if (!reg.any_of<CameraControllerRuntimeComponent>(camEntity))
+			{
+				reg.emplace<CameraControllerRuntimeComponent>(camEntity);
+			}
+			auto& rt = reg.Write<CameraControllerRuntimeComponent>(camEntity);
+			rt.View2D = !rt.View2D;
 		}
 
 		// Pick the light whose billboard ICON is under (px,py): a hit if the click lands within the icon's
@@ -476,7 +487,13 @@ namespace Snowstorm
 			reg.WriteIfChanged<ViewportInteractionComponent>(e, [&](auto& vi) // TODO this one is editor only, and can or can not exist
 			                                                 {
 				vi.Focused = ImGui::IsWindowFocused();
-				vi.Hovered = ImGui::IsWindowHovered(); });
+				vi.Hovered = ImGui::IsWindowHovered();
+				const ImVec2 origin = ImGui::GetCursorScreenPos();
+				const ImVec2 avail = ImGui::GetContentRegionAvail();
+				const ImVec2 mouse = ImGui::GetIO().MousePos;
+				vi.CursorUv = (avail.x > 0.0f && avail.y > 0.0f)
+				                  ? glm::vec2((mouse.x - origin.x) / avail.x, (mouse.y - origin.y) / avail.y)
+				                  : glm::vec2(0.5f); });
 
 			// ---- Viewport size
 			// The forced resolution is applied HERE rather than downstream because this write is what the
@@ -581,9 +598,11 @@ namespace Snowstorm
 					m_GizmoOp = ImGuizmo::ROTATE;
 				if (input.PressedThisFrame.test(Key::R))
 					m_GizmoOp = ImGuizmo::SCALE;
+				if (input.PressedThisFrame.test(Key::D2))
+					Toggle2DView(reg, camEntity);
 			}
 
-			ImGuizmo::SetOrthographic(false);
+			ImGuizmo::SetOrthographic(reg.Read<CameraComponent>(camEntity).Projection == CameraComponent::ProjectionType::Orthographic);
 			ImGuizmo::SetDrawlist();
 			ImGuizmo::SetRect(imageStart.x, imageStart.y, vp.Size.x, vp.Size.y);
 
@@ -718,6 +737,30 @@ namespace Snowstorm
 			// so camRt/imageStart/vp are in scope.
 			DrawLightGizmos(reg, camRt.ViewProjection, imageStart, ImVec2{vp.Size.x, vp.Size.y}, selection.Selected,
 			                IconAtlasId());
+		}
+
+		// ---- 2D Scene view toggle: top-left overlay button, lit while the 2D view is on.
+		for (const entt::entity e : viewportView)
+		{
+			const entt::entity camEntity = FindViewportCamera(reg, e);
+			if (camEntity == entt::null)
+			{
+				continue;
+			}
+			const bool on = reg.all_of<CameraControllerRuntimeComponent>(camEntity) &&
+			                reg.Read<CameraControllerRuntimeComponent>(camEntity).View2D;
+			ImGui::SetCursorScreenPos(ImVec2(contentMin.x + 8.0f, contentMin.y + 8.0f));
+			ImGui::PushStyleColor(ImGuiCol_Button, on ? ImVec4(0.20f, 0.45f, 0.75f, 0.90f) : ImVec4(0.12f, 0.12f, 0.12f, 0.70f));
+			if (ImGui::Button("2D##scene2d", ImVec2(32.0f, 28.0f)))
+			{
+				Toggle2DView(reg, camEntity);
+			}
+			ImGui::PopStyleColor();
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("2D Scene view: orthographic, no rotation (2)");
+			}
+			break;
 		}
 
 		// ---- Play/Stop toolbar: a top-CENTER floating overlay (UE5 places play controls at the top of the

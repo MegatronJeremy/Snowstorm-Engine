@@ -6,8 +6,11 @@
 #include "Snowstorm/Components/CameraTargetComponent.hpp"
 #include "Snowstorm/Components/DoNotSerializeComponent.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
+#include "Snowstorm/Components/SpriteComponent.hpp"
+#include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Math/CameraFraming.hpp"
+#include "Snowstorm/Math/Scene2DView.hpp"
 #include "Snowstorm/Render/Mesh.hpp"
 
 #include <limits>
@@ -87,6 +90,11 @@ namespace Snowstorm
 			// Primary — matching EditorLayer::FindEditorCamera. Framing must work even when the user has cleared
 			// the editor camera's Primary flag (Primary is the authored-gameplay-camera concept, user-toggleable);
 			// gating on it here would make F/Ctrl+F silently do nothing in that state.
+			// The 2D Scene view has no pitch, yaw or perspective to frame with; its own path handles sprites.
+			if (reg.all_of<CameraControllerRuntimeComponent>(e) && reg.Read<CameraControllerRuntimeComponent>(e).Active2D)
+			{
+				break;
+			}
 			auto& cam = reg.Write<CameraComponent>(e);
 
 			const FramingPose pose = ComputeFramingPose(bounds, cam.PerspectiveFOV);
@@ -114,6 +122,64 @@ namespace Snowstorm
 			}
 			break;
 		}
+	}
+
+	bool ComputeEntitySpriteAABB(World& world, const entt::entity entity, AABB& out)
+	{
+		auto& reg = world.GetRegistry();
+		if (!reg.all_of<SpriteComponent, TransformComponent>(entity))
+		{
+			return false;
+		}
+		const auto& s = reg.Read<SpriteComponent>(entity);
+		out = TransformAABB(Scene2DView::SpriteLocalAABB(s.Size, s.Pivot), reg.Read<TransformComponent>(entity).GetTransformMatrix());
+		return true;
+	}
+
+	bool ComputeWorldSpriteAABB(World& world, AABB& out)
+	{
+		AABB acc{glm::vec3(std::numeric_limits<float>::max()), glm::vec3(std::numeric_limits<float>::lowest())};
+		bool any = false;
+		for (const entt::entity e : world.GetRegistry().view<SpriteComponent, TransformComponent>())
+		{
+			AABB box;
+			if (ComputeEntitySpriteAABB(world, e, box))
+			{
+				acc.Min = glm::min(acc.Min, box.Min);
+				acc.Max = glm::max(acc.Max, box.Max);
+				any = true;
+			}
+		}
+		if (any)
+		{
+			out = acc;
+		}
+		return any;
+	}
+
+	bool FrameEditorCamera2D(World& world, const AABB& bounds)
+	{
+		auto& reg = world.GetRegistry();
+		for (const entt::entity e : reg.view<CameraComponent, TransformComponent, DoNotSerializeComponent>())
+		{
+			float aspect = 16.0f / 9.0f;
+			if (reg.all_of<CameraTargetComponent>(e))
+			{
+				const entt::entity vp = reg.Read<CameraTargetComponent>(e).TargetViewportEntity;
+				if (vp != entt::null && reg.all_of<ViewportComponent>(vp))
+				{
+					const glm::vec2 size = reg.Read<ViewportComponent>(vp).Size;
+					aspect = size.y > 0.0f ? size.x / size.y : aspect;
+				}
+			}
+			const Scene2DView::Framing f = Scene2DView::FrameBounds({bounds.Min.x, bounds.Min.y}, {bounds.Max.x, bounds.Max.y}, aspect);
+			reg.Write<CameraComponent>(e).OrthographicSize = f.Size;
+			auto& tr = reg.Write<TransformComponent>(e);
+			tr.Position.x = f.Center.x;
+			tr.Position.y = f.Center.y;
+			return true;
+		}
+		return false;
 	}
 
 	bool FrameCameraOnEntity(World& world, const entt::entity entity)

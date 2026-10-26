@@ -11,11 +11,13 @@
 #include "Snowstorm/Components/CameraControllerRuntimeComponent.hpp"
 #include "Snowstorm/Components/CameraTargetComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
+#include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Components/ViewportInteractionComponent.hpp"
 
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/Core/Application.hpp" // for cursor mode via window (see note)
 #include "Snowstorm/Core/Input.hpp"
+#include "Snowstorm/Math/Scene2DView.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp" // ResolveViewportCamera (shared prefer-Primary-else-first pick)
 
 namespace Snowstorm
@@ -82,6 +84,46 @@ namespace Snowstorm
 
 		const auto vpInteractView = View<ViewportInteractionComponent>();
 
+		// Apply 2D-view transitions for every controller camera, focused or not, so a toggle from the menu
+		// takes effect at once and the 3D pose is restored on the way out.
+		for (const entt::entity e : reg.view<CameraControllerRuntimeComponent, CameraComponent, TransformComponent>())
+		{
+			const auto& want = reg.Read<CameraControllerRuntimeComponent>(e);
+			if (want.View2D == want.Active2D)
+			{
+				continue;
+			}
+			auto& rt = reg.Write<CameraControllerRuntimeComponent>(e);
+			auto& c = reg.Write<CameraComponent>(e);
+			auto& t = reg.Write<TransformComponent>(e);
+			if (rt.View2D)
+			{
+				rt.Saved3DPosition = t.Position;
+				rt.Saved3DRotation = t.Rotation;
+				rt.SavedWasPerspective = c.Projection == CameraComponent::ProjectionType::Perspective;
+				c.Projection = CameraComponent::ProjectionType::Orthographic;
+				c.OrthographicNear = -1000.0f;
+				c.OrthographicFar = 1000.0f;
+				t.Rotation = glm::vec3(0.0f);
+				t.Position.z = 0.0f;
+				rt.TargetPitch = rt.TargetYaw = 0.0f;
+				rt.MoveVelocity = glm::vec3(0.0f);
+				rt.ZoomVelocity = 0.0f;
+			}
+			else
+			{
+				t.Position = rt.Saved3DPosition;
+				t.Rotation = rt.Saved3DRotation;
+				rt.TargetPitch = t.Rotation.x;
+				rt.TargetYaw = t.Rotation.y;
+				if (rt.SavedWasPerspective)
+				{
+					c.Projection = CameraComponent::ProjectionType::Perspective;
+				}
+			}
+			rt.Active2D = rt.View2D;
+		}
+
 		// Ensure runtime state for newly created controller cameras
 		for (const auto e : InitView<CameraControllerComponent>())
 		{
@@ -146,6 +188,12 @@ namespace Snowstorm
 		// Viewport) is the correct "user is driving the scene, not another panel" gate, and a focused text
 		// field elsewhere steals that focus, so this is already covered. (Guarding on WantCaptureMouse here
 		// was what killed viewport RMB-look/WASD once the capture flags were actually wired up.)
+
+		if (rtState.Active2D)
+		{
+			Execute2D(ts, cam, tr, ctrl, rtState, vpI, ct.TargetViewportEntity);
+			return;
+		}
 
 		const bool isPerspective = (cam.Projection == CameraComponent::ProjectionType::Perspective);
 
@@ -322,8 +370,61 @@ namespace Snowstorm
 		tr.Position += rtState.MoveVelocity * dt;
 	}
 
+	void CameraControllerSystem::Execute2D(const Timestep ts, CameraComponent& cam, TransformComponent& tr,
+	                                       const CameraControllerComponent& ctrl,
+	                                       CameraControllerRuntimeComponent& rtState,
+	                                       const ViewportInteractionComponent& vpI, const entt::entity viewport) const
+	{
+		auto& input = SingletonView<InputStateSingleton>();
+		const auto& reg = m_World->GetRegistry();
+		SetCursorLocked(false); // dragging pans; the cursor stays visible and under the hand
+
+		const auto buttonDown = [&](const int b)
+		{ return b < static_cast<int>(InputStateSingleton::MaxMouseButtons) && input.MouseDown.test(b); };
+
+		const glm::vec2 size = reg.all_of<ViewportComponent>(viewport) ? reg.Read<ViewportComponent>(viewport).Size
+		                                                               : glm::vec2(0.0f);
+		const float aspect = size.y > 0.0f ? size.x / size.y : 16.0f / 9.0f;
+
+		if (buttonDown(Mouse::ButtonMiddle) || buttonDown(Mouse::ButtonRight))
+		{
+			const glm::vec2 d = Scene2DView::PanDelta(input.MouseDelta, cam.OrthographicSize, size.y);
+			tr.Position.x += d.x;
+			tr.Position.y += d.y;
+		}
+
+		if (vpI.Hovered && input.ScrollDelta.y != 0.0f)
+		{
+			const float oldSize = cam.OrthographicSize;
+			cam.OrthographicSize = Scene2DView::ZoomedSize(oldSize, input.ScrollDelta.y, ctrl.ZoomSpeed * 0.04f);
+			const glm::vec2 c = Scene2DView::CenterAfterZoom({tr.Position.x, tr.Position.y}, oldSize,
+			                                                 cam.OrthographicSize, vpI.CursorUv, aspect);
+			tr.Position.x = c.x;
+			tr.Position.y = c.y;
+		}
+
+		// Keyboard pan, scaled by the view so it feels the same at any zoom.
+		glm::vec2 dir(0.0f);
+		const auto keyDown = [&](const int key)
+		{ return key >= 0 && std::cmp_less(key, InputStateSingleton::MaxKeys) && input.Down.test(static_cast<size_t>(key)); };
+		if (buttonDown(Mouse::ButtonRight))
+		{
+			dir.x = static_cast<float>(keyDown(Key::D)) - static_cast<float>(keyDown(Key::A));
+			dir.y = static_cast<float>(keyDown(Key::W)) - static_cast<float>(keyDown(Key::S));
+		}
+		float speed = cam.OrthographicSize * 0.5f;
+		if (keyDown(Key::LeftShift) || keyDown(Key::RightShift))
+			speed *= ctrl.SprintMultiplier;
+		if (keyDown(Key::LeftControl) || keyDown(Key::RightControl))
+			speed *= ctrl.SlowMultiplier;
+		tr.Position.x += dir.x * speed * ts.GetSeconds();
+		tr.Position.y += dir.y * speed * ts.GetSeconds();
+
+		rtState.WasRightClickHeld = buttonDown(Mouse::ButtonRight);
+	}
+
 	void CameraControllerSystem::DeclareAccess(SystemAccess& a) const
 	{
-		a.Structural().ReadComponents<CameraControllerComponent, ViewportInteractionComponent>().WriteComponents<CameraControllerRuntimeComponent>().ReadResources<InputStateSingleton>().ReadResources<TrackingMapResource>();
+		a.Structural().ReadComponents<CameraControllerComponent, ViewportInteractionComponent, ViewportComponent>().WriteComponents<CameraControllerRuntimeComponent>().ReadResources<InputStateSingleton>().ReadResources<TrackingMapResource>();
 	}
 }
