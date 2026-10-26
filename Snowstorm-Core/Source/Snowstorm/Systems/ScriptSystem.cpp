@@ -31,14 +31,19 @@ namespace Snowstorm
 			scriptComponent.Instance->OnUpdate(ts);
 		}
 
-		// Destroy scripts that are removed
+		// The component is already gone, so the instance comes from m_Live. Its DestroyScript callback is not
+		// usable: it captured the removed component's address.
 		for (const auto entity : nativeScriptFiniView)
 		{
-			auto [scriptComponent] = nativeScriptView.get(entity);
-			SS_CORE_ASSERT(scriptComponent.Instance);
+			const auto live = m_Live.find(entity);
+			if (live == m_Live.end())
+			{
+				continue;
+			}
 
-			scriptComponent.Instance->OnDestroy();
-			scriptComponent.DestroyScript();
+			live->second->OnDestroy();
+			delete live->second;
+			m_Live.erase(live);
 		}
 	}
 
