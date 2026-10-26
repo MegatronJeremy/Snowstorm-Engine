@@ -47,12 +47,22 @@ namespace Snowstorm
 		return ShaderKeyAppend(ShaderKeyAppend(acc, name), text);
 	}
 
+	// dxc optimization level. kShaderOptDefault passes no -O flag, which is dxc's own default (-O3); 0..3 emit
+	// -O0..-O3. Out of range reads as the default, so a bad CVar value cannot produce an unknown flag.
+	constexpr int kShaderOptDefault = -1;
+
+	[[nodiscard]] inline std::string ShaderOptFlag(const int optLevel)
+	{
+		return optLevel >= 0 && optLevel <= 3 ? "-O" + std::to_string(optLevel) : std::string{};
+	}
+
 	// Cache key (v5) for one stage. headersHash covers every Include/*.hlsli (ShaderHeaderAppend); flagsTag
 	// names the stage profile and flag set. Fields are length-prefixed and chained, so define order matters
 	// and a define repeated twice does not cancel (the v4 XOR-fold did both).
 	[[nodiscard]] inline uint64_t ComputeShaderKey(const std::string_view sourceText, const uint64_t headersHash,
 	                                               const std::string_view flagsTag,
-	                                               const std::vector<std::string>& defines, const bool debug)
+	                                               const std::vector<std::string>& defines, const bool debug,
+	                                               const int optLevel = kShaderOptDefault)
 	{
 		uint64_t h = 1469598103934665603ull;
 		h = ShaderKeyAppend(h, sourceText);
@@ -62,6 +72,9 @@ namespace Snowstorm
 		for (const std::string& def : defines)
 			h = ShaderKeyAppend(h, def);
 		h = ShaderKeyAppend(h, debug ? "Od" : "");
+		// Appended only for an explicit level, so the default keeps every existing cache entry valid.
+		if (const std::string opt = ShaderOptFlag(optLevel); !debug && !opt.empty())
+			h = ShaderKeyAppend(h, opt);
 		return h;
 	}
 
@@ -74,6 +87,7 @@ namespace Snowstorm
 		std::wstring includeDir;
 		std::vector<std::string> defines; // ASCII macro names, optionally NAME=VALUE
 		bool debug = false;
+		int optLevel = kShaderOptDefault; // ignored when debug (-Od)
 	};
 
 	// Full command line, executable included. Flag rationale:
@@ -93,6 +107,12 @@ namespace Snowstorm
 		cmd += L" -fspv-target-env=vulkan1.2 -fvk-use-dx-layout -Zpr";
 		cmd += L" -enable-16bit-types";
 		cmd += L" -fspv-preserve-bindings";
+		if (!r.debug)
+		{
+			const std::string opt = ShaderOptFlag(r.optLevel);
+			if (!opt.empty())
+				cmd += L" " + std::wstring(opt.begin(), opt.end());
+		}
 
 		bool rayTracing = false;
 		for (const std::string& def : r.defines)

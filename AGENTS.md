@@ -919,6 +919,17 @@ after destruction by `BeginFrame` (same call site as `VulkanBindlessManager::Adv
 set no longer stalls the device. Pools live until `Shutdown`. The policy arithmetic is backend-free in
 `DescriptorPoolPolicy.hpp` (Catch2-tested); bindless keeps its own pool.
 
+## Shader and acceleration-structure tuning CVars
+
+All four are `ReadOnly` (startup-only) and default to today's behaviour; `Scripts/speed-tune.py` searches them through `SS_*` env. None has run on a GPU.
+
+- `render.shaders.opt` (default -1): dxc `-O0..-O3`; -1 passes no flag (dxc's own -O3). Keyed into the `.spv` cache only when set, so default cache entries stay valid. `Scripts/cook-shaders.py --opt N` mirrors it so an RGA run can see the same SPIR-V. Ignored under `render.shaders.debug`.
+- `render.fp16` (default on): off forces the fp32 path (no `SS_FP16`, fp32 neural weights) on fp16-capable devices. Gated in `VulkanRendererAPI::IsFloat16Supported`, so the permutation and the weight packing cannot disagree. `cook-shaders.py --no-fp16` mirrors it.
+- `render.as.prefer_fast_build` (default off): BLAS and TLAS build with `PREFER_FAST_BUILD` instead of `PREFER_FAST_TRACE`.
+- `render.as.compaction` (default off): BLAS builds add `ALLOW_COMPACTION`, read the compacted size back and copy into a smaller allocation when it is strictly smaller (`ShouldCompactAs`). One extra synchronous submit per BLAS. The TLAS is not compacted. The flag and decision rules are `Render/AccelerationStructureBuild.hpp`, tested in `AccelerationStructureBuildTests`.
+
+Compute workgroup size is still hardcoded (`numthreads(8, 8, 1)` in 23 shaders, with matching dispatch math in C++) and is not yet a knob.
+
 ## Texture block compression
 
 `cook.textures.compress` block-compresses cooked textures, **on by default** after eyes-on confirmation on

@@ -1,7 +1,9 @@
 #include "VulkanTlas.hpp"
 
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Render/AccelerationStructureBuild.hpp"
 
 #include <cstring>
 
@@ -165,7 +167,9 @@ namespace Snowstorm
 		VkAccelerationStructureBuildGeometryInfoKHR buildInfo{
 		    VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
 		buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-		buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+		AsBuildOptions asOptions;
+		asOptions.preference = CVars::AsPreferFastBuild.Get() ? AsBuildPreference::FastBuild : AsBuildPreference::FastTrace;
+		buildInfo.flags = static_cast<VkBuildAccelerationStructureFlagsKHR>(AsBuildFlagBits(asOptions));
 		buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
 		buildInfo.geometryCount = 1;
 		buildInfo.pGeometries = &geometry;
