@@ -2,6 +2,7 @@
 """Tests for speed-tune.py's pure parts (no GPU): constraint, Deb's rules, DE, decoding. Run directly or under pytest."""
 import importlib.util
 import random
+import re
 from pathlib import Path
 
 _spec = importlib.util.spec_from_file_location("speed_tune", Path(__file__).resolve().parent / "speed-tune.py")
@@ -55,6 +56,18 @@ def test_de_finds_cheapest_feasible_and_never_worse_than_seed():
 def test_settings_diff_lists_only_moved_knobs():
     params = [("A", 1, 4, True, 2), ("B", 0.25, 1.0, False, 0.5)]
     assert st.settings_diff({"A": "2", "B": "0.7500"}, params) == [("B", "0.5000", "0.7500")]
+
+
+def test_defaults_match_engine_cvars():
+    src = (Path(__file__).resolve().parent.parent / "Snowstorm-Core/Source/Snowstorm/Core/EngineCVars.cpp").read_text(
+        encoding="utf-8")
+    engine = {}
+    for name, val in re.findall(r'CVar<(?:int|float)>\s+\w+\{"([\w.]+)",\s*(-?[\d.]+)f?\s*,', src):
+        engine["SS_" + name.replace(".", "_").upper()] = float(val)
+    for technique, params in st.COST_SPACE.items():
+        for env, _lo, _hi, _is_int, default in params:
+            assert env in engine, f"{env} ({technique}) not found in EngineCVars.cpp"
+            assert engine[env] == float(default), f"{env}: tuner default {default}, engine {engine[env]}"
 
 
 if __name__ == "__main__":

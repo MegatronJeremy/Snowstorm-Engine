@@ -14,9 +14,15 @@ needs no penalty weight. Seeded and dependency-free. The first population member
 defaults. Time per candidate is perf-bench's per-pass JSON (`totalGpuMs`, median of --repeat runs of
 the matching perf config), reached through perf-bench.py as a module; the judges are not modified.
 
+Time is measured on perf-bench's scene (Sponza) while the quality constraint is measured on
+Sponza-Motion, and the perf rung for rtao/rtrefl also enables the lower rungs, which the quality
+technique does not. Both are fine for ranking candidates and are not a like-for-like cost.
+
 Output is a PROPOSAL, never a change: a settings diff against the defaults with every measurement
 (printed and written to --out as JSON). A Perf PR built from it still has to show a resolved
-improvement in `perf-bench.py --compare-exe <base-exe> --gate` and pass the gates.
+improvement in `perf-bench.py --compare-exe <base-exe> --gate` and pass the gates. The reported gain is
+a screening estimate: the best of many noisy medians is biased upward, so the winner and the defaults
+are re-measured once more, interleaved, and that second reading is the one reported.
 
 Needs a real GPU and torch + ColorVideoVDP (the JOD constraint cannot be evaluated without it).
 
@@ -43,7 +49,8 @@ def _load(name: str, filename: str):
     return mod
 
 
-# Cost knobs: (env, lo, hi, is_int, default). Defaults are the engine's own (EngineCVars.cpp), so the
+# Cost knobs: (env, lo, hi, is_int, default). Defaults are the engine's own (EngineCVars.cpp; the
+# test_defaults_match_engine_cvars test parses them), so the
 # first member of the population is a no-op. Quality knobs that cost nothing are quality-tune.py's.
 COST_SPACE = {
     "rtgi": [
@@ -58,7 +65,7 @@ COST_SPACE = {
     ],
     "rtrefl": [
         ("SS_RENDER_REFLECTIONS_RAYS", 1, 4, True, 1),
-        ("SS_RENDER_REFLECTIONS_DENOISE_ITERATIONS", 0, 5, True, 3),
+        ("SS_RENDER_REFLECTIONS_DENOISE_ITERATIONS", 0, 5, True, 0),
     ],
     "megalights": [
         ("SS_RENDER_SHADOWS_DENOISE_ITERATIONS", 0, 5, True, 3),
@@ -239,7 +246,7 @@ def main() -> int:
         return m
 
     defaults_env = {env: fmt(d, is_int) for env, _lo, _hi, is_int, d in params}
-    base = measure({})
+    base = measure(defaults_env)
     if base["jod"] is None or base["ms"] == float("inf"):
         print("FAIL: the defaults could not be measured (ColorVideoVDP missing, or a run failed): "
               f"jod={base['jod']} ms={base['ms']}. {qm.CVVDP_INSTALL}")
@@ -259,12 +266,22 @@ def main() -> int:
                                                      args.generations, rng)
 
     diff = settings_diff(best["env"], params)
+    if best["violation"] == 0 and diff:
+        # Winner's curse: re-measure both fresh (uncached), interleaved, and report this reading.
+        re_best, re_base = dict(best), dict(base)
+        for label, env, tgt in (("candidate", best["env"], re_best), ("defaults", defaults_env, re_base)):
+            cache.pop(tuple(sorted(env.items())), None)
+            tgt.update(measure(env))
+        best["screen_ms"], base["screen_ms"] = best["ms"], base["ms"]
+        best.update({k: re_best[k] for k in ("ms", "jod", "tflip")})
+        base.update({k: re_base[k] for k in ("ms", "jod", "tflip")})
+        best["violation"] = violation(best, base, args.jod_margin, args.tflip_margin)
     gain = 100.0 * (base["ms"] - best["ms"]) / base["ms"]
     print("\n=== Proposal (not applied) ===")
     if best["violation"] != 0 or not diff:
         print("No feasible setting beats the defaults on time within the quality margins.")
     else:
-        print(f"{best['ms']:.3f} ms vs {base['ms']:.3f} ms ({gain:+.1f}% GPU time), JOD {best['jod']:.4f} "
+        print(f"{best['ms']:.3f} ms vs {base['ms']:.3f} ms ({gain:+.1f}% GPU time, screening estimate from a re-measure; search reading {best['screen_ms']:.3f} vs {base['screen_ms']:.3f} ms), JOD {best['jod']:.4f} "
               f"(defaults {base['jod']:.4f}), tFLIP {best['tflip']:.5f} (defaults {base['tflip']:.5f})")
         for env, d, v in diff:
             print(f"  {env}: {d} -> {v}")
