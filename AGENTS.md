@@ -906,6 +906,10 @@ Two selection traps, both of which produced a wrong verdict here before being ca
 
 Report both anyway. The point is which one decides.
 
+### Speed tuning (cost-aware)
+
+`Scripts/speed-tune.py --technique <rtgi|rtao|rtrefl|megalights|all-rt>` minimises perf-bench's `totalGpuMs` (median of `--repeat` runs of the matching rung) over the cost knobs `quality-tune.py` leaves out (rays, internal scale, denoise iterations), subject to quality under motion: JOD within `--jod-margin` (0.02) and tFLIP within `--tflip-margin` (0.001) of the engine defaults, measured in the same session against the same cached references. Search is differential evolution with Deb's feasibility rules, seeded, member 0 is the defaults. Output is a proposed settings diff with its measurements (and `--out` JSON), never a change to a default; a Perf PR built from it still needs a resolved `perf-bench.py --compare-exe <base-exe> --gate` result and green quality gates. Needs a GPU and ColorVideoVDP; the pure parts are covered by `Scripts/test_speed_tune.py`. It has not run on a GPU.
+
 ## Best-practices notes (#81)
 
 `--strict` logs two recurring notes. Small host-mapped buffers are already pooled (`SmallBufferPool.hpp`, #78); a note that remains comes from a device-local or readback buffer, or a driver that requires a dedicated allocation. The eager `UNDEFINED -> SHADER_READ_ONLY` transition in `VulkanTextureView::CreateImageView` is load-bearing for Sampled render targets: temporal history is read before any pass writes it, and the bindless descriptor declares `SHADER_READ_ONLY`, so skipping it trades the note for a layout error. `vulkan.diag.alloc` names the buffers and textures behind each note; run it with `--validation.extra` on a GPU before changing either path.
