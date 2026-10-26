@@ -102,6 +102,8 @@ namespace Snowstorm
 				rt.Saved3DRotation = t.Rotation;
 				rt.SavedWasPerspective = c.Projection == CameraComponent::ProjectionType::Perspective;
 				c.Projection = CameraComponent::ProjectionType::Orthographic;
+				rt.SavedOrthoNear = c.OrthographicNear;
+				rt.SavedOrthoFar = c.OrthographicFar;
 				c.OrthographicNear = -1000.0f;
 				c.OrthographicFar = 1000.0f;
 				t.Rotation = glm::vec3(0.0f);
@@ -116,6 +118,8 @@ namespace Snowstorm
 				t.Rotation = rt.Saved3DRotation;
 				rt.TargetPitch = t.Rotation.x;
 				rt.TargetYaw = t.Rotation.y;
+				c.OrthographicNear = rt.SavedOrthoNear;
+				c.OrthographicFar = rt.SavedOrthoFar;
 				if (rt.SavedWasPerspective)
 				{
 					c.Projection = CameraComponent::ProjectionType::Perspective;

@@ -30,5 +30,7 @@ namespace Snowstorm
 		glm::vec3 Saved3DPosition{0.0f};
 		glm::vec3 Saved3DRotation{0.0f};
 		bool SavedWasPerspective = true;
+		float SavedOrthoNear = 0.0f;
+		float SavedOrthoFar = 0.0f;
 	};
 }

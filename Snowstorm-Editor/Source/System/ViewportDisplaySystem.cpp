@@ -488,12 +488,15 @@ namespace Snowstorm
 			                                                 {
 				vi.Focused = ImGui::IsWindowFocused();
 				vi.Hovered = ImGui::IsWindowHovered();
-				const ImVec2 origin = ImGui::GetCursorScreenPos();
-				const ImVec2 avail = ImGui::GetContentRegionAvail();
-				const ImVec2 mouse = ImGui::GetIO().MousePos;
-				vi.CursorUv = (avail.x > 0.0f && avail.y > 0.0f)
-				                  ? glm::vec2((mouse.x - origin.x) / avail.x, (mouse.y - origin.y) / avail.y)
-				                  : glm::vec2(0.5f); });
+				// Relative to the displayed image, whose size is ViewportComponent::Size (the forced resolution
+				// included), not the panel. Only tracked while hovered so a parked cursor never dirties the component.
+				const glm::vec2 shown = reg.Read<ViewportComponent>(e).Size;
+				if (vi.Hovered && shown.x > 0.0f && shown.y > 0.0f)
+				{
+					const ImVec2 origin = ImGui::GetCursorScreenPos();
+					const ImVec2 mouse = ImGui::GetIO().MousePos;
+					vi.CursorUv = glm::vec2((mouse.x - origin.x) / shown.x, (mouse.y - origin.y) / shown.y);
+				} });
 
 			// ---- Viewport size
 			// The forced resolution is applied HERE rather than downstream because this write is what the
