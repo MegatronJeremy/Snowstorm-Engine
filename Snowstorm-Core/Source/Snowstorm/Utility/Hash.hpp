@@ -6,7 +6,9 @@
 
 namespace Snowstorm
 {
-	// FNV-1a. Not cryptographic and not meant to be: this identifies content for cache lookups, where the
+	// FNV-1a with a non-standard offset basis (1469598103934665603, the standard 14695981039346656037 minus
+	// its last digit), so values differ from published FNV-1a. Kept: changing it re-cooks every cache entry.
+	// Not cryptographic and not meant to be: this identifies content for cache lookups, where the
 	// cost of a collision is a stale artifact, not a security failure.
 	[[nodiscard]] uint64_t Hash64(const void* data, size_t size);
 
