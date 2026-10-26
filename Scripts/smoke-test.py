@@ -47,10 +47,14 @@ from pathlib import Path
 # debugger working-directory setting).
 # The scene is what this target needs in order to do anything, or None to boot whatever its startup
 # project names. Editor, Runtime and Pong are None: a game executable that needs its scene named on the
-# command line is not really shipping a game. --scene overrides all of them.
+# command line is not really shipping a game. --scene overrides every target except OWN_PROJECT_TARGETS.
 # The testbed targets run the Runtime on a scene no other target boots, so a scene that stops loading
 # (#282) or a feature flag that stops working fails a gate instead of waiting for someone to open it.
 # The extra env turns on the CVar the scene exists to exercise (CVar `a.b` is env `SS_A_B`).
+# Targets that boot their own project. A Sandbox scene or project forced on them resolves its asset handles
+# against the wrong registry, so --scene and --project skip them.
+OWN_PROJECT_TARGETS = {"Pong"}
+
 TARGETS = [
     ("Editor", "Snowstorm-Editor/{config}/Snowstorm-Editor.exe", None, {}),
     ("Runtime", "Snowstorm-Runtime/{config}/Snowstorm-Runtime.exe", None, {}),
@@ -59,6 +63,8 @@ TARGETS = [
      "Projects/Sandbox/assets/scenes/Reflections.world", {}),
     ("AlphaBlend", "Snowstorm-Runtime/{config}/Snowstorm-Runtime.exe",
      "Projects/Sandbox/assets/scenes/AlphaBlend.world", {"SS_RENDER_TRANSPARENT": "1"}),
+    ("Sprites", "Snowstorm-Runtime/{config}/Snowstorm-Runtime.exe",
+     "Projects/Sandbox/assets/scenes/Sprites.world", {}),
 ]
 
 # Default per-app budget in seconds when --timeout is not given. The Editor boots first, so it pays the
@@ -102,6 +108,17 @@ def scan_output(text: str, markers: list[str]) -> list[str]:
 def missing_scenes(repo_root: Path, targets) -> list[str]:
     """Scene paths named by targets that do not exist, so a rename fails fast instead of as a boot error."""
     return [t[2] for t in targets if t[2] and not (repo_root / t[2]).is_file()]
+
+
+def external_target(exe_arg: str, cwd_arg: str | None, base: Path) -> tuple[str, Path, Path]:
+    """(name, exe, cwd) for --exe: a game built outside this tree. A relative exe or cwd is taken against
+    `base` (the caller's working directory); with no --cwd the game runs from `base`, since a consuming
+    repository resolves its own Projects/... against its root, not against the exe's build directory."""
+    exe = Path(exe_arg)
+    exe = exe if exe.is_absolute() else base / exe
+    cwd = Path(cwd_arg) if cwd_arg else base
+    cwd = cwd if cwd.is_absolute() else base / cwd
+    return exe.stem, exe, cwd
 
 
 def clear_cook_caches(repo_root: Path) -> None:
@@ -205,6 +222,14 @@ def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
     return ok
 
 
+def headless_mode(flag: bool) -> bool:
+    """True when the engine runs headless (hidden window, no surface/swapchain/present). `--headless` sets
+    SS_HEADLESS=1 for every child process; an SS_HEADLESS already in the environment counts too."""
+    if flag:
+        os.environ["SS_HEADLESS"] = "1"
+    return os.environ.get("SS_HEADLESS", "").strip().lower() not in ("", "0", "false", "off", "no")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Smoke-test the Snowstorm executables.")
     ap.add_argument("--frames", type=int, default=120, help="Frames to run per app (default 120)")
@@ -213,7 +238,7 @@ def main() -> int:
     ap.add_argument("--config", default="Debug", help="Build config dir under build/ (default Debug)")
     ap.add_argument("--build-dir", default="build", help="Build directory (default build)")
     ap.add_argument("--triplet", default="x64-windows", help="vcpkg triplet for the validation-layer path (default x64-windows)")
-    ap.add_argument("--only", default=None, help="Run only this target by name (e.g. Editor | Runtime | Pong | Reflections | AlphaBlend)")
+    ap.add_argument("--only", default=None, help="Run only this target by name (e.g. Editor | Runtime | Pong | Reflections | AlphaBlend | Sprites)")
     ap.add_argument("--warnings-fail", action="store_true", help="Treat [warning] lines as failures")
     ap.add_argument("--strict", action="store_true", help="Enable extra Vulkan validation (synchronization + best-practices)")
     ap.add_argument("--staged", action="store_true",
@@ -225,18 +250,37 @@ def main() -> int:
                     help="Boot with --startup.project=<path> (the hand-off Editor > Play Standalone makes), e.g. "
                          "Projects/Pong/Pong.ssproj. Pair with --only Runtime; the settle check then fails on "
                          "assets of that project that never load.")
+    ap.add_argument("--exe", default=None,
+                    help="Smoke-test this one executable from another repository (a game consuming the engine as "
+                         "a submodule) instead of the built-in targets: same environment, settle rule, timeout and "
+                         "log scan. Validation layers still resolve to this repository's vcpkg tree. Not with "
+                         "--only or --staged.")
+    ap.add_argument("--cwd", default=None,
+                    help="Working directory for --exe (default: the directory the script is run from)")
     ap.add_argument("--cold", action="store_true", help="Delete cooked-asset caches first, to exercise the cold first-import path")
     ap.add_argument("--max-frame-ms", type=int, default=0, help="Fail if any single frame exceeds this many ms (0 = off). Catches per-frame stalls/freezes.")
     ap.add_argument("--vsync-stress", type=int, default=0, help="Toggle VSync every N frames (0 = off) to exercise swapchain recreation. Best with --strict; catches present-semaphore reuse bugs.")
+    ap.add_argument("--headless", action="store_true",
+                    help="Run with SS_HEADLESS=1: hidden window, no surface/swapchain/present, so a locked or absent desktop does not matter (also on when SS_HEADLESS is set)")
     args = ap.parse_args()
+    headless = headless_mode(args.headless)
 
     script_dir = Path(__file__).resolve().parent
     repo_root = find_repo_root(script_dir)
     build_dir = (repo_root / args.build_dir).resolve()
     layer_path = (repo_root / "vcpkg" / "installed" / args.triplet / "bin").resolve()
 
+    if args.exe and (args.only or args.staged):
+        print("FAIL: --exe runs one external executable; it cannot be combined with --only or --staged")
+        return 1
+    if args.cwd and not args.exe:
+        print("FAIL: --cwd only applies to --exe")
+        return 1
+
     targets = TARGETS
-    if args.only:
+    if args.exe:
+        targets = []
+    elif args.only:
         targets = [t for t in TARGETS if t[0].lower() == args.only.lower()]
         if not targets:
             print(f"No target named '{args.only}'. Known: {[t[0] for t in TARGETS]}")
@@ -251,6 +295,7 @@ def main() -> int:
     print(f"Repo root : {repo_root}")
     print(f"Build dir : {build_dir}  (config: {args.config})")
     budget = f"{args.timeout}s" if args.timeout else "180s (Editor 480s)"
+    print(f"Mode      : {'HEADLESS (no window, surface, swapchain or present)' if headless else 'windowed (needs an unlocked desktop)'}")
     print(f"Frames    : {args.frames}   Timeout: {budget}/app   Strict: {args.strict}")
 
     if args.cold:
@@ -269,6 +314,15 @@ def main() -> int:
         print(f"Stage dir : {stage_dir}")
 
     results = {}
+    if args.exe:
+        name, exe, cwd = external_target(args.exe, args.cwd, Path.cwd())
+        if not cwd.is_dir():
+            print(f"FAIL: --cwd {cwd} is not a directory")
+            return 1
+        timeout = args.timeout or DEFAULT_TIMEOUT.get(name, DEFAULT_TIMEOUT_OTHER)
+        results[name] = run_target(name, exe, cwd, args.frames, timeout,
+                                   args.warnings_fail, layer_path, args.strict, args.scene, args.max_frame_ms,
+                                   args.vsync_stress, {}, args.project)
     for name, rel, default_scene, extra_env in targets:
         if args.staged:
             # The stage is flat, and the working directory has to be the stage itself: a package resolves
@@ -279,11 +333,12 @@ def main() -> int:
         else:
             exe = build_dir / rel.format(config=args.config)
             cwd = repo_root
-        scene = args.scene or default_scene
+        own = name in OWN_PROJECT_TARGETS
+        scene = default_scene if own else args.scene or default_scene
         timeout = args.timeout or DEFAULT_TIMEOUT.get(name, DEFAULT_TIMEOUT_OTHER)
         results[name] = run_target(name, exe, cwd, args.frames, timeout,
                                    args.warnings_fail, layer_path, args.strict, scene, args.max_frame_ms,
-                                   args.vsync_stress, extra_env, args.project)
+                                   args.vsync_stress, extra_env, None if own else args.project)
 
     print("\n=== Summary ===")
     all_ok = True

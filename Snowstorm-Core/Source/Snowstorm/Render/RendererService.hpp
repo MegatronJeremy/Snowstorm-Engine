@@ -13,6 +13,7 @@
 #include "Snowstorm/Render/GenerationKeyedCache.hpp"
 #include "Snowstorm/Render/MaterialInstance.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
+#include "Snowstorm/Render/RenderGraph.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 #include "Snowstorm/Service/Service.hpp"
@@ -21,6 +22,7 @@
 #include <optional>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace Snowstorm
 {
@@ -217,6 +219,11 @@ namespace Snowstorm
 		};
 		void SetSunCascadeFit(const SunCascadeFit& fit) { m_SunCascadeFit = fit; }
 		[[nodiscard]] const SunCascadeFit& GetSunCascadeFit() const { return m_SunCascadeFit; }
+
+		// Bindless index of the sun cascade atlas rendered under render.shadow.cascades.render (0 = none). A plain
+		// handoff, not FrameData: no shader samples it until the cascade FrameCB block lands (#58).
+		void SetCascadeAtlasIndex(const uint32_t index) { m_CascadeAtlasIndex = index; }
+		[[nodiscard]] uint32_t GetCascadeAtlasIndex() const { return m_CascadeAtlasIndex; }
 
 		// Set the baked IBL data the lit pass needs: bindless indices of the irradiance + prefiltered cubes
 		// and the BRDF LUT, plus the prefiltered mip count (drives the roughness->lod map). All zero = IBL
@@ -455,6 +462,21 @@ namespace Snowstorm
 		// pass, not Renderer::GetGraphicsCommandContext(), for the reason RecordPick documents above.
 		void RecordTextureUploads(CommandContext& commandContext, uint32_t frameIndex);
 
+		// Append a pass to this frame's render graph, ahead of IBL, shadows and every viewport, so it runs once
+		// per frame whatever the viewport count: the seam a game uses to put its own GPU work in the frame
+		// (cf. Unreal's FSceneViewExtension). Enqueue from any phase before Render. The queue is drained every
+		// frame, so recurring work is enqueued every frame.
+		//
+		// A texture the pass writes and a later pass samples through a bindless index must be left Sampled by
+		// a pass that declares that read: the graph transitions only declared accesses, and a material reaching
+		// the texture through bindless declares none.
+		void EnqueueGraphPass(RenderGraph::Pass pass) { m_PendingGraphPasses.push_back(std::move(pass)); }
+
+		[[nodiscard]] std::vector<RenderGraph::Pass> DrainGraphPasses() { return std::exchange(m_PendingGraphPasses, {}); }
+
+		// The frame-skip counterpart of DiscardTextureUploads.
+		void DiscardGraphPasses() { m_PendingGraphPasses.clear(); }
+
 	private:
 		// Create the pick compute pipeline + per-frame-in-flight result/param buffers on first use. The result
 		// buffer is host-visible Storage (the shader writes it, the CPU maps it); the param buffer is a small
@@ -502,6 +524,7 @@ namespace Snowstorm
 		// two systems.
 		SunShadowFit m_SunShadowFit{};
 		SunCascadeFit m_SunCascadeFit{};
+		uint32_t m_CascadeAtlasIndex = 0;
 
 		// GPU device address of this frame's RT reflection geometry table (#118); pushed by
 		// SetReflectionGeometryAddress, read into FrameCB in AcquireFrameSet. 0 = no table.
@@ -623,5 +646,7 @@ namespace Snowstorm
 		};
 		std::vector<TextureUpload> m_PendingTextureUploads;
 		std::vector<Ref<Buffer>> m_UploadStaging; // per frame-in-flight, grown to the largest frame so far
+
+		std::vector<RenderGraph::Pass> m_PendingGraphPasses;
 	};
 }

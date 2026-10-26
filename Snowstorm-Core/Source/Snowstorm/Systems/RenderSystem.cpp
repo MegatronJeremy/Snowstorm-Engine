@@ -1,5 +1,7 @@
 #include "RenderSystem.hpp"
 
+#include <chrono>
+
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Math/Bounds.hpp"
 #include "Snowstorm/Components/CameraPathComponent.hpp"
@@ -11,6 +13,7 @@
 #include "Snowstorm/Components/MeshComponent.hpp"
 #include "Snowstorm/Components/PrevTransformComponent.hpp"
 #include "Snowstorm/Components/RenderTargetComponent.hpp"
+#include "Snowstorm/Components/SpriteComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Components/ViewportComponent.hpp"
 #include "Snowstorm/Components/VisibilityCacheComponent.hpp"
@@ -25,6 +28,7 @@
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/RenderTarget.hpp"
 #include "Snowstorm/Render/SceneBounds.hpp"
+#include "Snowstorm/Render/SpriteBatch.hpp"
 #include "Snowstorm/Render/VelocityPolicy.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
@@ -125,6 +129,7 @@ namespace Snowstorm
 			// No graph will run this frame, so nothing would consume what PreRender queued and the queue
 			// would grow by one entry per skipped frame while minimized.
 			renderer.DiscardTextureUploads();
+			renderer.DiscardGraphPasses();
 			return;
 		}
 
@@ -155,6 +160,14 @@ namespace Snowstorm
 			               {
 				               renderer.RecordTextureUploads(c, frameIndex);
 			               }});
+		}
+
+		// Ahead of every viewport pass, and BuildSchedule only moves compute passes earlier and keeps graphics
+		// passes in order, so these stay ahead of a Forward pass that samples their output through bindless
+		// without declaring the read.
+		for (RenderGraph::Pass& pass : renderer.DrainGraphPasses())
+		{
+			graph.AddPass(std::move(pass));
 		}
 
 		// RT reflections (#118): hand the per-instance geometry-table address (TlasBuildSystem filled it in
@@ -385,12 +398,26 @@ namespace Snowstorm
 
 		if (m_IBLBakePass.IsBaked() && (!m_BakedEnvironment || *m_BakedEnvironment != env || sunMoved))
 		{
+			m_IBLRebakePending = true;
+			m_IBLRebakeSunTriggered = sunMoved && m_BakedEnvironment && *m_BakedEnvironment == env;
+			m_IBLRebakeSunDeg = m_BakedSun ? SunAngleDeg(*m_BakedSun, sunNow) : 0.0f;
 			m_IBLBakePass.Invalidate();
 		}
 
 		if (CVars::IBL.Get() && haveRealEnvironment && !m_IBLBakePass.IsBaked())
 		{
+			const auto stallStart = std::chrono::steady_clock::now();
 			Renderer::WaitIdle();
+			const double stallMs =
+			    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - stallStart).count();
+			if (m_IBLRebakePending)
+			{
+				m_IBLRebakes.Record(stallMs, m_IBLRebakeSunTriggered);
+				SS_CORE_INFO("IBL re-bake #{} ({}, sun moved {:.2f} deg): WaitIdle stall {:.2f} ms (mean {:.2f}, max {:.2f}, {} sun-triggered)",
+				             m_IBLRebakes.Count, m_IBLRebakeSunTriggered ? "sun" : "environment", m_IBLRebakeSunDeg, stallMs,
+				             m_IBLRebakes.MeanStallMs(), m_IBLRebakes.MaxStallMs, m_IBLRebakes.SunTriggered);
+				m_IBLRebakePending = false;
+			}
 			m_IBLBakePass.AddBakePasses(fc.Graph, renderer.GetLights(), env);
 			m_BakedEnvironment = env;
 			m_BakedSun = sunNow;
@@ -428,6 +455,12 @@ namespace Snowstorm
 		const CameraPick cam = FindCameraForViewport(fc.Reg, vpEntity);
 		if (cam.Entity == entt::null || !cam.Rt || !cam.Transform || !cam.Visibility)
 		{
+			return;
+		}
+
+		if (cam.Cam->RenderPath == CameraComponent::RenderPathType::Canvas2D)
+		{
+			RenderCanvas2D(fc, cam, vpRT, passSuffix);
 			return;
 		}
 
@@ -666,6 +699,64 @@ namespace Snowstorm
 		}
 	}
 
+	void RenderSystem::RenderCanvas2D(FrameContext& fc, const CameraPick& cam, const RenderTargetComponent& vpRT,
+	                                  const std::string& passSuffix)
+	{
+		if (!vpRT.PresentTarget || vpRT.PresentTarget->GetDesc().ColorAttachments.empty())
+		{
+			return;
+		}
+
+		std::vector<SpriteDraw> draws;
+		for (const auto e : View<const TransformComponent, const SpriteComponent>())
+		{
+			const auto& sprite = fc.Reg.Read<SpriteComponent>(e);
+			if (!sprite.View)
+			{
+				continue; // unresolved asset, or a game that has not bound its texture yet
+			}
+			SpriteDraw d;
+			d.Transform = fc.Reg.Read<TransformComponent>(e).GetTransformMatrix();
+			d.Size = sprite.Size;
+			d.Pivot = sprite.Pivot;
+			d.Tint = sprite.Tint;
+			d.FlipX = sprite.FlipX;
+			d.FlipY = sprite.FlipY;
+			d.Linear = sprite.Filter == SpriteFilter::Linear;
+			d.Layer = sprite.Layer;
+			d.Order = sprite.Order;
+			d.Sequence = static_cast<uint32_t>(entt::to_integral(e));
+			d.TextureIndex = sprite.View->GetGlobalBindlessIndex();
+			draws.push_back(d);
+		}
+
+		const uint64_t frameCounter = fc.Renderer.GetFrameCounter();
+		const SpritePass::Batch batch = m_SpritePass.Stage(frameCounter, BuildSpriteInstances(draws));
+
+		// A second target object over the present image, so this viewport clears to its camera's colour
+		// without mutating the target the Scene3D chain and the editor share.
+		RenderTargetAttachment color = vpRT.PresentTarget->GetDesc().ColorAttachments[0];
+		color.ClearColor = cam.Cam->BackgroundColor;
+		color.LoadOp = RenderTargetLoadOp::Clear;
+		RenderTargetDesc desc{};
+		desc.Width = vpRT.PresentTarget->GetWidth();
+		desc.Height = vpRT.PresentTarget->GetHeight();
+		desc.ColorAttachments = {color};
+		const Ref<RenderTarget> target = RenderTarget::Create(desc);
+
+		const PixelFormat viewFormat = color.View->GetDesc().Format;
+		const PixelFormat format = viewFormat != PixelFormat::Unknown ? viewFormat : color.View->GetTexture()->GetDesc().Format;
+		const glm::mat4 viewProjection = cam.Rt->ViewProjection;
+		const uint32_t frameIndex = fc.FrameIndex;
+
+		fc.Graph.AddPass({.Name = "Sprites" + passSuffix,
+		                  .Target = target,
+		                  .Execute = [this, frameIndex, frameCounter, viewProjection, batch, format](CommandContext& c)
+		                  {
+			                  m_SpritePass.Draw(c, frameIndex, frameCounter, viewProjection, batch, format);
+		                  }});
+	}
+
 	void RenderSystem::DrawVisibleMeshes(FrameContext& fc, const CameraPick& cam,
 	                                     const std::function<void(entt::entity, const TransformComponent&,
 	                                                              const MeshComponent&, const MaterialComponent&)>& draw)
@@ -881,6 +972,6 @@ namespace Snowstorm
 
 	void RenderSystem::DeclareAccess(SystemAccess& a) const
 	{
-		a.ReadComponents<ViewportComponent, RenderTargetComponent, TransformComponent, CameraComponent, CameraTargetComponent, CameraRuntimeComponent, CameraVisibilityComponent, MeshComponent, MaterialComponent, VisibilityComponent, CameraPathComponent>().WriteResources<RendererService, AssetManagerSingleton, ReflectionGeometrySingleton>();
+		a.ReadComponents<ViewportComponent, RenderTargetComponent, TransformComponent, CameraComponent, CameraTargetComponent, CameraRuntimeComponent, CameraVisibilityComponent, MeshComponent, MaterialComponent, VisibilityComponent, CameraPathComponent, SpriteComponent>().WriteResources<RendererService, AssetManagerSingleton, ReflectionGeometrySingleton>();
 	}
 }

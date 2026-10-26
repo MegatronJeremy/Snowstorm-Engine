@@ -65,6 +65,27 @@ def test_clockpin_lock_refused():
     assert not p.pinned and "elevated" in p.note
 
 
+def test_ab_failure_names_pair_arm_and_reason():
+    """The PC check keeps only the log tail, so the failing pair/arm/reason must be in paired_ab's state."""
+    good = {"totalGpuMs": 10.0, "passes": {"Forward": {"avgMs": 10.0}}, "device": "d"}
+    calls = []
+
+    def fake(name, env, exe, **kw):
+        calls.append(exe.name)
+        if len(calls) == 4:  # pair 2 runs B then A, so A is the one that fails
+            pb.LAST_FAILURE = "timeout 120s"
+            return None
+        return good
+
+    orig = pb.run_config
+    pb.run_config = fake
+    try:
+        assert pb.paired_ab("ssgi", {}, Path("a.exe"), Path("b.exe"), 3) is None
+    finally:
+        pb.run_config = orig
+    assert pb.LAST_FAILURE == "pair 2 A (a.exe), timeout 120s"
+
+
 if __name__ == "__main__":
     fails = 0
     for k, f in list(globals().items()):

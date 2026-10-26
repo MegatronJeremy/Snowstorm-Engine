@@ -155,12 +155,16 @@ becomes a failure instead of blocking), checks the exit code, and scans the log 
 ```
 py Scripts/smoke-test.py                 # 120 frames, 180s timeout/app (Editor 480s: it pays the cold cook), Debug build
 py Scripts/smoke-test.py --frames 300    # longer soak
-py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime | Pong | Reflections | AlphaBlend)
+py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime | Pong | Reflections | AlphaBlend | Sprites)
 py Scripts/smoke-test.py --only Runtime --project Projects/Pong/Pong.ssproj   # boot a non-Sandbox project the way Play Standalone does
 py Scripts/smoke-test.py --warnings-fail # treat [warning] lines as failures too
 py Scripts/smoke-test.py --staged        # run the PACKAGE in build/stage/<config>, not the build tree
 py Scripts/smoke-test.py --strict        # enable deeper Vulkan validation (see below)
 ```
+
+`--exe <path> [--cwd <dir>]` smoke-tests one executable built outside this repository (a game consuming the engine as a submodule, such as Snowstorm-Doom): same environment, settle rule, timeout, `--frames`, `--strict`, `--headless`, `--scene`/`--project` and log scan as a built-in target, named after the exe's stem. A relative `--exe` and `--cwd` resolve against the directory the script is run from, which is also the default working directory, since a game resolves its own `Projects/...` against its root. Validation layers still come from this repository's vcpkg tree (`--triplet`). It excludes `--only` and `--staged`. `Scripts/test_smoke_test_exe.py` covers the resolution and flag rules GPU-free; a real run of an external game is unverified.
+
+`--scene` and `--project` skip `Pong`, which boots its own project: forcing a Sandbox scene on it resolves the scene's handles against Pong's registry and fails with "mesh handle not found".
 
 `--project <.ssproj>` passes `--startup.project=` to each target it runs, the hand-off *Play Standalone* makes. Use it with `--only Runtime` and a project other than Sandbox; the settle rule below then fails on that project's assets that never resolve. `StandalonePlayTests` pin the full argument list GPU-free. The settle check's behaviour on a project's unresolved assets is unverified on a GPU.
 
@@ -190,6 +194,8 @@ Set it yourself when debugging validation interactively. GPU resources are also 
 instead of a raw `VkImage 0x...` handle.
 
 `Reflections` and `AlphaBlend` are the Runtime booted on the testbed scenes of the same names (`AlphaBlend` with `SS_RENDER_TRANSPARENT=1`), so a scene or flag that stops loading fails the gate (#282). A target whose scene file is missing fails before anything launches; `--scene` overrides every target's scene. Neither has run on a GPU yet.
+
+**Headless mode (`SS_HEADLESS=1`, or `--headless` on `smoke-test.py` and `perf-bench.py`) needs no unlocked desktop.** The `headless` CVar creates the GLFW window hidden (ImGui's GLFW backend and input still get a window handle), creates no `VkSurfaceKHR` or swapchain, and makes `VulkanContext` own four offscreen BGRA8 images in the swapchain's place. `BeginFrame` signals the image-available semaphore with an empty submit instead of acquiring, and the end of the frame consumes the render-finished semaphore with an empty wait-only submit instead of presenting. Device and queues, the frame graph, asset streaming and the settle check run as before. Both scripts print `Mode:` as `HEADLESS` or `windowed`. Headless perf numbers skip present, so capture committed perf baselines windowed.
 
 **A run passes only once assets settle.** After the frame budget the app keeps running until
 `AssetManagerSingleton::PendingLoadCount() == 0` and no bindless slot is still the placeholder
@@ -324,7 +330,7 @@ median paired delta larger than the pair-to-pair spread) AND over `--threshold` 
 An inconclusive result passes, because the A/B could not show a regression. Exit 1 on a resolved
 regression or a failed run. Without `--gate` the A/B stays an instrument and exits non-zero only when a run
 fails, so a green exit then means "the runs completed", never "perf is fine". It prints one `VERDICT`
-line per config and a closing PASS/FAIL.
+line per config and a closing PASS/FAIL. A failed run ends the log with `FAIL: a run failed during the A/B in: <config> (pair N A|B (exe), exit <code>|timeout <s>s|no JSON written)`, so the cause survives a truncated log tail.
 
 **The two readouts use different verdict rules on purpose.** `compare` gates, so a finding must clear
 `--abs-threshold` as well as the statistical test: materiality. `print_ab` measures, so it asks only
@@ -357,9 +363,9 @@ without timestamp support the JSON sets `timestampsSupported:false` and the run 
 **Baselines are keyed by adapter**: `Scripts/perf-baseline/<device-slug>/<config>.json`, where the slug
 comes from the device name the run reports. GPU differences make ms non-comparable, so a run only ever
 diffs against the set captured on the adapter it is running on, and a box with two cards keeps two
-independent sets (the repo holds `amd-radeon-rx-9070-xt`, `nvidia-geforce-rtx-5070`, and an
-`amd-radeon-rx-7900-xtx` set from another machine, the last predating the resolution/pose stamping
-below and so of unknown viewpoint until that box re-captures). Cross-vendor comparison is then a deliberate read
+independent sets (the repo holds `amd-radeon-rx-9070-xt` and `nvidia-geforce-rtx-5070`, plus sets from other machines:
+`amd-radeon-rx-7900-xtx`, which predates the resolution/pose stamping below and so has an unknown viewpoint,
+and `amd-radeon-rx-9060-xt` and `amd-radeon-tm-8060s-graphics`, stamped at 1717 wide). Cross-vendor comparison is then a deliberate read
 across two directories rather than an accidental mixture inside one set, which would turn every
 cross-config delta into effect-cost plus hardware difference. Missing set = the gate prints the raw
 numbers and exits **2** (SKIP), which is not a pass: it compared nothing, so it cannot claim one.
@@ -385,8 +391,8 @@ that big and the editor panel just displays the result scaled.
 
 Changing `BENCH_CAMERA` or `BENCH_RESOLUTION` invalidates every baseline, so re-capture all adapters
 in the same commit. A baseline predating these fields carries none of them and is compared without the
-check; the `amd-radeon-rx-9060-xt` and `amd-radeon-rx-7900-xtx` sets are in that state, captured on
-other machines before the resolution was pinned.
+check; the `amd-radeon-rx-7900-xtx` set is in that state. The `amd-radeon-rx-9060-xt` and
+`amd-radeon-tm-8060s-graphics` sets carry a 1717-wide stamp from before the pin, so they SKIP until re-captured.
 
 **Nondeterministic GPU numbers across runs point at the shader cache first.** Clear
 `Engine/cache/shaders/*.spv` and re-run before trusting any before/after comparison; a stale cache
@@ -426,7 +432,7 @@ occupancy drops (fewer waves), a spill appears (0 to >0, hard fail), or LDS/ISA 
 `--threshold` (default 10%). Raw VGPR% is intentionally not gated -- a VGPR rise that doesn't cross a
 wave boundary costs nothing. The occupancy is *theoretical* and VGPR-only (LDS occupancy needs the
 workgroup size RGA offline reports as 0); measure achieved occupancy with RGP. Baselines are committed
-for `gfx1100` (RX 7900 XTX) and `gfx1200` (RX 9060 XT). On `gfx1200` exactly two of 47 shaders are
+for `gfx1100` (RX 7900 XTX), `gfx1200` (RX 9060 XT) and `gfx1201`. On `gfx1200` exactly two of 47 shaders are
 occupancy-limited, `DefaultLit.frag[inlineshadow]` (127 VGPRs, 10/16) and `GI.comp[restir]` (103, 12/16);
 every other shader hits 16/16, and only `NeuralConv.comp` carries any scratch (272 bytes), off the render
 path. `GIDenoise.comp` was the worst offender at 191 VGPRs / 8 waves until d74cb76 rolled its outer
@@ -485,7 +491,7 @@ trap: a `--update-baseline` from there deletes the entries for shaders no editor
 and dynamic permutations live in `Scripts/shader-permutations.txt`: add a line there when a call site
 starts passing a new define. The flags need no sync, since the runtime and the cook share
 `BuildDxcCommandLine`; `py Scripts/cook-shaders.py --dry-run` prints the planned command lines
-without dxc. `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
+without dxc. The runtime cache key (`ComputeShaderKey`, flags tag `v5_...`) length-prefixes and chains its fields, so define order matters and a repeated define cannot cancel; the dxc version is not in it yet, so clear `Engine/cache/shaders` after upgrading `Tools/dxc`. `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
 expected the old `#type` split and silently compiled nothing).
 
 **This gate runs in CI** (`.github/workflows/shaders.yml`): unlike smoke-test and perf-bench, RGA is
@@ -589,9 +595,12 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   the new build writes it. `Scripts/test_quality_bench_hdr.py` covers the metric plumbing on synthetic
   arrays. The engine writes `_hdr.npy` (next bullet) but it has not run on a GPU, so no
   HDR-FLIP number exists and the ordering against LDR-FLIP is unmeasured.
+- **HDR-FLIP under motion (#157).** `quality-motion.py` reports `flipHdr` per probe frame and as a mean (`HDR-FLIP ... (not gated)`), pairing each moving frame's `_f<N>_hdr.npy` with the HDR twin of its frozen-frame reference (`motion-f<N>__<key>_hdr.npy` in `Scripts/.quality-ref-cache`, written when the reference is captured). A reference cached before HDR capture has no twin and reads n/a until `--fresh-ref`. `flipHdr` is stored in the motion baseline JSON but never compared. `Scripts/test_quality_motion_hdr.py` covers the plumbing with stubbed metrics; no HDR number from a GPU run exists.
 - **HDR capture (#157).** With capture on, the engine also writes `<path>_hdr.npy` beside `_ldr.npy` (motion frames: `_f<N>_hdr.npy`): `v.SceneColor` as the tonemap chain receives it, linear pre-exposure radiance, HxWx4, top-down, `<f2` for the RGBA16F real-time path and `<f4` for the RGBA32F path tracer. `render.exposure` is logged with it, not applied. It is a 1:1 copy into a texture the capture effect owns (`TransferSrc` on no hot target, no cost when capture is off) read back in the same pass as the LDR present, so the pair is one frame. It excludes everything after `SceneColor`: FXAA and CAS (TAA and the upscaler are included), so it cannot replace the LDR numbers. Not run on a GPU as of its PR; the pure format rules are `QualityCaptureFormat.hpp`, tested in `QualityCaptureFormatTests`.
-- **Eight techniques**: `raster`, `ssao`, `rtao`, `ssr`, `rtrefl`, `ssgi`, `rtgi`, `all-rt`. Each is a
-  full real-time render with that one technique on, TAA enabled.
+- **`render.pathtrace.sampler` (#156) changes only the PT's low-sample error.** 0 (default) is PCG white noise seeded with the frame counter; 1 is Owen-scrambled 2D Sobol padded per decision (`Include/PtSampler.hlsli`, mirrored in `Render/QmcSampler.hpp` and tested by `QmcSamplerTests`), seeded per pixel only, so a Reset replays the same sequence. Fixed pair ids per decision keep an early-terminated path from shifting later dimensions. Every decision draws from it (pixel jitter, sun/point/spot/env NEE, lobe choice, BSDF, Russian roulette); `QmcSamplerTests` also fail when an integer constant in the shader copy is missing from the C++ mirror. The estimator and pdfs are unchanged, so the converged reference (and every committed quality baseline) is unaffected while the default stays 0; switching it restarts accumulation. Not yet run on a GPU, and the fixed-spp error ratio against PCG (the stop rule in the design) is unmeasured.
+- **Eleven techniques**: `raster`, `ssao`, `rtao`, `ssr`, `rtrefl`, `ssgi`, `rtgi`, `all-rt`, plus the
+  shadow A/B `rtshadow`, `megalights` and `megalights-nospec`. Each is a full real-time render with that
+  one technique on, TAA enabled; only `all-rt` and the shadow entries override the shadow mode.
 - **FLIP is pinned** to `flip-evaluator==1.7` (a perceptual metric that drifts between versions makes
   a committed baseline meaningless, same reasoning as the clang-format and RGA pins). It is optional:
   without the package the gate still runs on PSNR/SSIM, although it then reports the primary metric
@@ -625,9 +634,9 @@ existing assets and per-entity overrides are used, so it needs no registry rows.
 baselines and no emissive surfaces (a material override cannot set emissive).
 
 Every run sets `SS_CONFIG_IGNORE=1`, so a capture is code defaults plus the technique's overrides and
-never this machine's persisted `SnowstormConfig.cfg`. Note that only `all-rt` overrides
-`render.shadows.mode`: every other technique renders with the default shadow map, so shadowing is a
-constant in the matrix rather than something the gate measures.
+never this machine's persisted `SnowstormConfig.cfg`. Note that only `all-rt` and the
+three shadow entries override `render.shadows.mode`: every other technique renders with the default
+shadow map, so shadowing is a constant across them rather than something they measure.
 
 ## Image-quality gate UNDER MOTION (run after any change to TAA, a denoiser, or reprojection)
 
@@ -897,6 +906,10 @@ Two selection traps, both of which produced a wrong verdict here before being ca
 
 Report both anyway. The point is which one decides.
 
+## Best-practices notes (#81)
+
+`--strict` logs two recurring notes. Small host-mapped buffers are already pooled (`SmallBufferPool.hpp`, #78); a note that remains comes from a device-local or readback buffer, or a driver that requires a dedicated allocation. The eager `UNDEFINED -> SHADER_READ_ONLY` transition in `VulkanTextureView::CreateImageView` is load-bearing for Sampled render targets: temporal history is read before any pass writes it, and the bindless descriptor declares `SHADER_READ_ONLY`, so skipping it trades the note for a layout error. `vulkan.diag.alloc` names the buffers and textures behind each note; run it with `--validation.extra` on a GPU before changing either path.
+
 ## Descriptor sets
 
 Non-bindless `DescriptorSet`s allocate from `VulkanDescriptorAllocator`: pools shared by layout shape
@@ -925,11 +938,12 @@ texture leaves it Unknown and the conservative colour encoding wins.
 | albedo, alpha | BC3, 8 bpp (BC7 at `cook.textures.quality>=1`) | BC1's 1-bit alpha decodes transparent black and bleeds halos; BC3 encodes in seconds where exhaustive BC7 takes minutes per 2K texture |
 | tangent normal | **BC5**, 8 bpp | two independent 8-bit planes; z reconstructed in the shader |
 | metallic-roughness, AO | BC1, 4 bpp | measured adequate, see below |
+| sprite | RGBA8, one level, whatever `cook.textures.compress` and `.quality` say | exact texels; see the 2D render path |
 
 **Mips are filtered in the colour space of the role** (`MipSpaceFor`, `Render/TextureCook.cpp`): albedo in
 linear light (sRGB EOTF LUT, exact OETF on write), normals and masks as plain byte averages, alpha always
 linear. A role-Unknown texture follows the caller's `srgb` flag. The cache blob header carries role, mip
-space, compress flag and an encoder revision; a mismatch re-cooks.
+space, compress flag with quality tier, and an encoder revision; a mismatch re-cooks.
 
 **BC7 is an opt-in quality tier, not the default.** It is 8 bpp, the same as BC3 and double BC1, so
 `cook.textures.quality=1` promotes opaque albedo to BC7 (51 MB -> 102 MB on Sponza, half the saving
@@ -989,7 +1003,7 @@ render unshadowed with a one-shot warning. `GPUDirectionalLight::ShadowSlot` car
 directional traces. Secondary directionals still light the scene but are invisible to GI, reflections, the
 path tracer, the sky disc and IBL, which read `Lights[0]` only. Each secondary costs one full scene depth pass.
 
-`Render/CascadeMath.hpp` holds the pure cascade math for a future sun CSM (#58): practical split scheme, slice corners, sphere fit and texel-snapped ortho matrix. `CascadeMathTests` cover it. `LightingSystem` runs `CascadeMath::ComputeFit` per frame for the primary directional behind `render.shadow.cascades.fit` (default off; `.count`, `.lambda`), using the primary perspective camera's unjittered view-projection, and hands the result to `RendererService::GetSunCascadeFit`. Nothing consumes it yet.
+`Render/CascadeMath.hpp` holds the pure cascade math for a future sun CSM (#58): practical split scheme, slice corners, sphere fit and texel-snapped ortho matrix. `CascadeMathTests` cover it. `LightingSystem` runs `CascadeMath::ComputeFit` per frame for the primary directional behind `render.shadow.cascades.fit` (default off; `.count`, `.lambda`), using the primary perspective camera's unjittered view-projection, and hands the result to `RendererService::GetSunCascadeFit`. `render.shadow.cascades.render` (default off, needs `.fit`) adds a `CascadeShadows` pass that draws every caster into a 2x2 `CascadeAtlas` (`render.shadow.resolution` per tile, tile i = cascade i, `CascadeMath::AtlasTile`/`AtlasUvRect`), one depth pass per cascade without per-cascade culling, and publishes the atlas bindless index through `RendererService::GetCascadeAtlasIndex`. No shader samples the atlas and FrameCB is unchanged, so lighting is identical with it on; selection, per-cascade bias (`CascadeMath::BiasScale`) and the FrameCB block come next.
 
 ## Play modes
 
@@ -1013,6 +1027,8 @@ load-compute-exchange with no CAS, so only the thread that reads may move the re
 therefore just sets an atomic and the mixer callback does the discard on its next pull. Calling
 `ma_pcm_rb_reset` or `seek_read` from a game thread does not merely lose a flush: it can leave the write
 cursor an arbitrary distance ahead of the read cursor, and the reader treats what lies between as PCM.
+
+The ring, flush and underrun rules live in `Audio/StreamRing` (miniaudio hidden behind a pimpl), which needs no device; `StreamRingTests` pin them GPU-free and device-free. `AudioService` stream calls forward to it.
 
 **Pan law is per instance and defaults to miniaudio's balance.** `PanLaw::Balance` attenuates only the
 channel you pan away from, so a centred sound is 6 dB louder than a hard-panned one; `PanLaw::ConstantSum`
@@ -1059,6 +1075,12 @@ component vanishes from the inspector, `SceneSerializer` skips it with a bare `c
 save deletes the block from the `.world`. That is why the editor links both games, not just the one it
 is running. `GameRegistrationTests` asserts a game's components survived, and was verified to fail
 without the flag.
+
+**A game adds GPU work with `RendererService::EnqueueGraphPass`**, from any phase before Render. The pass
+joins that frame's render graph after the texture uploads and ahead of IBL, shadows and every viewport,
+once per frame. A texture it writes that a material samples through bindless must end Sampled, through a
+trailing pass that declares the read and has a no-op `Execute`: the graph transitions only declared
+accesses, and a bindless read is undeclared.
 
 ## Staging a runnable build
 
@@ -1161,13 +1183,54 @@ without the flag the panes are solid and occlude. Alpha mode is an asset propert
 material, `materials/AlphaBlend.ssmat` (`"AlphaMode": "Blend"`), and varies colour and alpha per entity through
 `BaseColor` overrides. It has no baselines. Not yet run on a GPU: the sorted pass is unverified by smoke, perf-bench or eyes.
 
+`Render/EmissiveLightMath.hpp` holds the pure math for emissive-surface next-event estimation in the path tracer (#154): uniform triangle sampling, area-to-solid-angle pdf, the balance weight and a power CDF. `EmissiveLightMathTests` cover it. Nothing consumes it yet; the path tracer still gathers emission only through BSDF-continuation hits.
+
+## 2D render path
+
+`CameraComponent::RenderPath` is `Scene3D` (default) or `Canvas2D` (#338), the Bevy `Camera2d` / Unity URP 2D Renderer
+model: one ECS and one `TransformComponent` for both, separate render paths. A `Canvas2D` viewport runs `RenderCanvas2D`
+and none of the Scene3D chain (no prepass, lighting, tonemap or TAA): one `Sprites` pass draws every
+`SpriteComponent` into the present target, cleared to the camera's `BackgroundColor` through a second `RenderTarget`
+object over the same image. It uses the unjittered `ViewProjection`. The frame-global IBL bake and shadow maps still run (#344).
+
+Draw order is `Layer`, then `Order`, then entity id, never z (`SortSpriteDraws`, `SpriteBatchTests`). `Size` is in world
+units times the transform's scale; a flip mirrors about `Pivot`. Sprites are unlit and straight-alpha blended with the
+destination alpha kept, since ImGui blends the viewport image by it. `Filter` picks a per-sprite point or linear sampler.
+`OrthographicSize` is the full view height, not the half height.
+
+`SpriteResolveSystem` resolves `Texture` to the runtime `View`. With `Texture` at 0 the system leaves `View` alone, which is
+how a game binds a texture it writes; `ResolvedFrom` records which views the system set, so clearing `Texture` drops only
+those. The sprite shaders include no `Engine.hlsli` and keep their resources in set 1, so they never touch the shared sets
+0 and 2. All viewports' instances for a frame share one buffer per frame in flight, uploaded by the first sprite pass to
+execute, with a push-constant base instance per viewport.
+
+**Sprite textures cook as `TextureRole::Sprite`** (#339, Unity's Sprite texture type, Unreal's Paper2D texture
+settings): `GetSpriteTextureViewAsync` requests the role rather than deriving it, and `PlanTextureCook` gives it one exact
+sRGB level, never block-compressed, so the compress setting never re-cooks a sprite. The blob is `<handle>.sprite.sstex`
+and the view sits in its own cache, so a texture used by a sprite and a material keeps both cooks and both GPU images.
+With one level, a sprite drawn much smaller than its texture aliases; mips and compression per asset wait for `.meta`.
+`cook.assets` walks the registry, which cannot know scene usage, so sprite variants cook on first use.
+
+The editor's Scene view takes the scene's Primary camera's render path and background on open, still flying in perspective
+(#341). `quality.capture` is a Scene3D effect and does not capture a Canvas2D frame.
+
+**`Sprites.world` is the testbed**, booted by smoke as `Sprites`: a 64x64 checkerboard magnified with `Nearest` and with
+`Linear`, a layer -1 logo 2 units nearer the camera that still draws under them, two layer 1 logos over them (one `FlipX`,
+tinted at 0.7 alpha), and a rotated layer 1, order 1 checker over the logo it overlaps.
+
+## Neural upscaler tail fusion
+
+`neural.fuse` (default off) replaces the last conv layer and the residual add with one `NeuralConvAdd.comp.hlsl` dispatch when the last layer has 3 output channels (else the unfused chain runs): one dispatch, one barrier and one descriptor set fewer, and the residual map is never written to memory. It is a naive per-pixel loop at both precisions. `Conv2DResidualReference` is the CPU reference for the fused math (`NeuralMathTests` pins it to hand-computed values); it does not exercise the shader. Not run on a GPU: no unfused-vs-fused ms or output comparison exists yet. `NeuralConvAdd.comp` is RGA-baselined at 13 VGPRs, no spills, on every ASIC (#101).
+
 ## IBL invalidation
 
 The IBL bake is keyed on the environment block and on the sun (`Lights[0]`, the source `IBLBakePass` bakes).
 `Render/IBLInvalidation.hpp` holds the pure rule: `SunNeedsRebake` compares against the last BAKED sun, re-baking
 when its direction moves past `render.ibl.sun_quantum_deg` (default 2) or its colour*intensity changes by more
 than 5%, or when the sun appears or disappears. A re-bake is still the full monolithic bake with a `WaitIdle`;
-`IBLInvalidationTests` cover the rule (#149).
+`IBLInvalidationTests` cover the rule (#149). Each re-bake after the first logs its `WaitIdle` stall, trigger and sun angle (`IBLRebakeStats`); unobserved on a GPU.
+
+`Lighting/LightPacking.hpp` is the pure encoding of light components into the GPU rows (`PackDirectionalLight`, `PackPointLight`, `PackSpotLight`: normalized direction, cone cosines with outer clamped to inner, the per-array caps); `LightPackingTests` pin it GPU-free.
 
 A directional light that also has a `RotatorComponent` and a `TransformComponent` is turned by that transform (`LightingSystem`: authored `Direction` rotated by the entity's rotation), so `RotatorSystem` can sweep a sun; every consumer (raster and RT shadows, sky disc, IBL bake via `Lights[0]`) sees the rotated direction. Without a Rotator, `Direction` is used as authored.
 
@@ -1192,7 +1255,7 @@ harnesses set so a run depends on code defaults plus its own overrides, never on
 A CVar named `validation.extra` is set by env `SS_VALIDATION_EXTRA` **or** CLI `--validation.extra`
 (dots→`_`, uppercased, `SS_` prefix for env). Bools accept presence (`--flag`, or env set to
 anything but `0`/`false`/`off`/`no`). Run any executable with `--list-cvars` (or `--help`) to print
-every CVar with its value, type, env name, and description. `EngineCVars.cpp` declares ~126 of them
+every CVar with its value, type, env name, and description. `EngineCVars.cpp` declares ~170 of them
 (rendering technique modes, denoiser knobs, path tracer, benchmark hooks, validation); treat
 `--list-cvars` as the authoritative list rather than any enumeration here. Startup resolution runs
 once, but CVars can also be **edited live at runtime** from the editor's *Debug > Console Variables*
@@ -1212,6 +1275,11 @@ still exists opens directly; else the start screen shows. The start screen is a 
 default project (recent list, New, Open, Continue); *File > Recent Projects* offers the same list.
 The Runtime keeps its implicit CWD project, and the Editor still falls back to one when the
 .ssproj is unreadable, so `Project::GetActive()` is non-null before the picker is dismissed.
+
+Opening a scene places the Scene-view camera from the first of: `camera.override`, the
+`<scene>.world.editor` sidecar (rewritten on scene close), the scene's Primary camera pose
+(`FindScenePrimaryCamera`), a fit to the renderable bounds. The bounds fit stays last because in a scene whose floor spans the bounds it can land
+at floor height, leaving the floor edge-on and invisible.
 
 ## Layout
 
@@ -1235,10 +1303,11 @@ link Core and add it to their include path. All targets are **C++20** (the root 
 sets C++17 globally, although every target overrides to 20, so treat the project as C++20).
 
 **Keep the in-editor shortcut reference current.** The editor has a *Help > Keyboard & Mouse
-Shortcuts* window (`Snowstorm-Editor/Source/System/EditorMenuSystem.cpp`, `DrawShortcutsWindow`)
-that documents every keyboard/mouse binding. Whenever you add, remove, or change a shortcut (camera
-controls, gizmo keys, framing, save, selection, hierarchy actions, …), update that window in the
-same change so the docs never drift from the real bindings. It is the single source of truth users
+Shortcuts* window (`EditorMenuSystem::DrawShortcutsWindow`) that documents every keyboard/mouse
+binding. It draws the data table in `Snowstorm-Editor/Source/Singletons/ShortcutTable.cpp`.
+Whenever you add, remove, or change a shortcut (camera controls, gizmo keys, framing, save,
+selection, hierarchy actions, …), edit that table in the same change; `ShortcutTableTests` pins
+unique chords per section and the presence of the bindings the editor handles. It is the single source of truth users
 see, so treat it as part of the feature, not an afterthought.
 
 ## Architecture (Core)

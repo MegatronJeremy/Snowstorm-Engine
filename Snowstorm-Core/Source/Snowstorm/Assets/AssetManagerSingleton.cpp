@@ -4,6 +4,7 @@
 #include "Snowstorm/Assets/VirtualPath.hpp"
 
 #include "AssetFileTime.hpp"
+#include "AssetLoadRule.hpp"
 #include "MeshBoundsBuilder.hpp"
 #include "MeshMetaCache.hpp"
 #include "Snowstorm/Core/Application.hpp"
@@ -668,18 +669,17 @@ namespace Snowstorm
 		// Per-frame GPU-finalize budget (see the texture note below): each mesh Buffer::Create is a staging
 		// copy + vkQueueWaitIdle, so finalizing all 25 Sponza meshes in one frame is a ~second-long stall.
 		// Cap and re-queue the remainder.
-		constexpr size_t kMaxMeshFinalizePerFrame = 6;
 
 		size_t meshDone = 0;
 		if (!meshBatch.empty())
 		{
 			auto& meshLib = Application::Get().GetServiceManager().GetService<MeshLibrary>();
-			for (; meshDone < meshBatch.size() && meshDone < kMaxMeshFinalizePerFrame; ++meshDone)
+			for (; meshDone < AssetLoadRule::FinalizeCount(meshBatch.size(), AssetLoadRule::kMaxMeshFinalizePerFrame); ++meshDone)
 			{
 				CompletedMeshLoad& done = meshBatch[meshDone];
 				m_InFlightMeshes.erase(done.Handle.Value());
 
-				if (!done.Success)
+				if (!AssetLoadRule::ShouldFinalize(done.Success))
 				{
 					SS_CORE_ERROR("Async mesh load failed for handle {}", done.Handle.Value());
 					continue;
@@ -737,15 +737,14 @@ namespace Snowstorm
 		// loading bar to ever show. Cap the count per call and re-queue the rest for the next frame, so
 		// the work spreads over ~N/budget frames: the app keeps pumping (responsive) and the overlay is
 		// visible while pending drains. Meshes are cheaper but budgeted too for the same reason.
-		constexpr size_t kMaxTextureFinalizePerFrame = 4;
 
 		size_t texDone = 0;
-		for (; texDone < texBatch.size() && texDone < kMaxTextureFinalizePerFrame; ++texDone)
+		for (; texDone < AssetLoadRule::FinalizeCount(texBatch.size(), AssetLoadRule::kMaxTextureFinalizePerFrame); ++texDone)
 		{
 			CompletedTextureLoad& done = texBatch[texDone];
 			m_InFlightTextures.erase(done.Key);
 
-			if (!done.Success)
+			if (!AssetLoadRule::ShouldFinalize(done.Success))
 			{
 				SS_CORE_ERROR("Async texture load failed for handle {} (slot stays placeholder)", done.Handle.Value());
 				continue;
@@ -754,7 +753,7 @@ namespace Snowstorm
 			// GPU upload (main thread), then repoint the placeholder's bindless slot at the real image. The
 			// slot index baked into material constants is unchanged — the pixels just swap in. Keep the real
 			// texture + view alive (m_ResidentTextures / the cache view) so the image outlives the slot write.
-			Ref<Texture> real = Texture::CreateFromPixels(done.Cooked, done.Srgb, done.DebugName);
+			Ref<Texture> real = Texture::CreateFromPixels(done.Cooked, done.Variant != TextureVariant::Linear, done.DebugName);
 			if (!real)
 			{
 				continue;
@@ -768,7 +767,7 @@ namespace Snowstorm
 			// the slot's ownership from the placeholder view to the real view, which also retires the real
 			// view's own incidental slot. If the placeholder is no longer cached, adopt nothing: the slot
 			// then stays with the placeholder and is retired when it dies.
-			auto& viewCache = done.Srgb ? m_TextureViewCache : m_TextureViewCacheLinear;
+			auto& viewCache = TextureViewCache(done.Variant);
 			if (const auto cached = viewCache.find(done.Handle.Value()); cached != viewCache.end())
 			{
 				const auto placeholderView = std::static_pointer_cast<VulkanTextureView>(cached->second);
@@ -783,7 +782,7 @@ namespace Snowstorm
 			m_PlaceholderSlots.erase(done.Slot); // real pixels are in the slot now -> resident (a failed load kept it)
 			// Swap the cache entry from the placeholder view to the real view so a later GetTextureView(Async)
 			// returns the real one. Both share slot `done.Slot` on the GPU now.
-			(done.Srgb ? m_TextureViewCache : m_TextureViewCacheLinear)[done.Handle.Value()] = realView;
+			viewCache[done.Handle.Value()] = realView;
 		}
 
 		// Re-queue the textures we didn't finalize this frame (they stay in-flight; PendingLoadCount still
@@ -799,7 +798,7 @@ namespace Snowstorm
 
 		// Once nothing is in flight (meshes AND textures) AND nothing is waiting to be finalized, reset the
 		// progress high-water mark for the next load burst.
-		if (m_InFlightMeshes.empty() && m_InFlightTextures.empty())
+		if (AssetLoadRule::ShouldResetPendingTotal(m_InFlightMeshes.size(), m_InFlightTextures.size()))
 		{
 			m_PendingTotal = 0;
 		}
@@ -809,7 +808,7 @@ namespace Snowstorm
 	{
 		// Both meshes and textures still loading OR waiting for GPU finalize. (Textures re-queued past the
 		// per-frame finalize budget remain in m_InFlightTextures until actually finalized.)
-		return static_cast<uint32_t>(m_InFlightMeshes.size() + m_InFlightTextures.size());
+		return AssetLoadRule::PendingCount(m_InFlightMeshes.size(), m_InFlightTextures.size());
 	}
 
 	std::string AssetManagerSingleton::UnsettledReason() const
@@ -830,7 +829,7 @@ namespace Snowstorm
 			const auto list = [&](const char* kind, const std::unordered_map<uint64_t, std::string>& inFlight, const std::unordered_set<uint64_t>& queued)
 			{
 				for (const auto& [key, name] : inFlight)
-					detail += std::format("{}{} {} ({})", detail.empty() ? "" : "; ", kind, name, queued.contains(key) ? "decoded, awaiting GPU upload" : "on a worker");
+					detail += std::format("{}{} {} ({})", detail.empty() ? "" : "; ", kind, name, AssetLoadRule::StageName(queued.contains(key)));
 			};
 			list("mesh", m_InFlightMeshes, meshQueued);
 			list("texture", m_InFlightTextures, textureQueued);
@@ -846,7 +845,7 @@ namespace Snowstorm
 	{
 		// Slot 0 = untextured (no image dependency). Every other slot is real unless it is still in the
 		// placeholder set (async pixels not yet uploaded).
-		return slot == 0 || !m_PlaceholderSlots.contains(slot);
+		return AssetLoadRule::IsSlotResident(slot, m_PlaceholderSlots.contains(slot));
 	}
 
 	Ref<Shader> AssetManagerSingleton::GetShader(const AssetHandle handle)
@@ -925,12 +924,50 @@ namespace Snowstorm
 		return TextureView::Create(m_PlaceholderTexture, vd);
 	}
 
+	uint64_t AssetManagerSingleton::TextureVariantKey(const AssetHandle handle, const TextureVariant variant)
+	{
+		switch (variant)
+		{
+		case TextureVariant::Srgb:
+			return handle.Value() ^ (1ULL << 63);
+		case TextureVariant::Sprite:
+			return handle.Value() ^ (1ULL << 62);
+		case TextureVariant::Linear:
+		default:
+			return handle.Value();
+		}
+	}
+
+	std::unordered_map<uint64_t, Ref<TextureView>>& AssetManagerSingleton::TextureViewCache(const TextureVariant variant)
+	{
+		switch (variant)
+		{
+		case TextureVariant::Linear:
+			return m_TextureViewCacheLinear;
+		case TextureVariant::Sprite:
+			return m_TextureViewCacheSprite;
+		case TextureVariant::Srgb:
+		default:
+			return m_TextureViewCache;
+		}
+	}
+
 	Ref<TextureView> AssetManagerSingleton::GetTextureViewAsync(const AssetHandle handle, const bool srgb)
+	{
+		return RequestTextureAsync(handle, srgb ? TextureVariant::Srgb : TextureVariant::Linear);
+	}
+
+	Ref<TextureView> AssetManagerSingleton::GetSpriteTextureViewAsync(const AssetHandle handle)
+	{
+		return RequestTextureAsync(handle, TextureVariant::Sprite);
+	}
+
+	Ref<TextureView> AssetManagerSingleton::RequestTextureAsync(const AssetHandle handle, const TextureVariant variant)
 	{
 		if (handle == 0)
 			return nullptr;
 
-		auto& cache = srgb ? m_TextureViewCache : m_TextureViewCacheLinear;
+		auto& cache = TextureViewCache(variant);
 		if (const auto it = cache.find(handle); it != cache.end())
 		{
 			return it->second; // resident real texture, or a placeholder already being loaded
@@ -947,8 +984,7 @@ namespace Snowstorm
 		Ref<TextureView> placeholder = EnsurePlaceholderView(meta->Path.filename().string());
 		cache[handle] = placeholder;
 
-		// Combine handle + color space into the in-flight/cache key (a texture can load as both).
-		const uint64_t key = handle.Value() ^ (srgb ? 0x1ULL : 0x0ULL) << 63;
+		const uint64_t key = TextureVariantKey(handle, variant);
 		if (m_InFlightTextures.contains(key))
 		{
 			return placeholder;
@@ -960,16 +996,18 @@ namespace Snowstorm
 		const std::string path = ResolveAssetPath(meta->Path).string();
 		const std::string debugName = meta->Path.filename().string();
 		const uint64_t sourceTime = GetFileWriteTimeU64(path);
-		const TextureRole role = GetTextureRole(handle); // resolved here: the worker has no registry access
+		// Resolved here: the worker has no registry access. A sprite is requested, never derived.
+		const TextureRole role = variant == TextureVariant::Sprite ? TextureRole::Sprite : GetTextureRole(handle);
+		const bool srgb = variant != TextureVariant::Linear;
 		const uint32_t slot = placeholder->GetGlobalBindlessIndex();
 		m_PlaceholderSlots.insert(slot); // slot now shows the placeholder; cleared when the real image is uploaded
 
-		(void)jobs.Submit([this, key, handle, srgb, slot, path, sourceTime, role, debugName]()
+		(void)jobs.Submit([this, key, handle, variant, srgb, slot, path, sourceTime, role, debugName]()
 		                  {
 			CompletedTextureLoad done;
 			done.Key = key;
 			done.Handle = handle;
-			done.Srgb = srgb;
+			done.Variant = variant;
 			done.Slot = slot;
 			done.DebugName = debugName;
 

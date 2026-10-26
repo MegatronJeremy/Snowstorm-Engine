@@ -58,6 +58,9 @@ namespace Snowstorm
 		[[nodiscard]] const Ref<RenderTarget>& GetOrCreateDirAtlas();
 		static constexpr uint32_t kDirAtlasCols = 2;
 
+		// Sun cascade atlas: CascadeMath::kCascadeAtlasCols^2 tiles of `render.shadow.resolution` px, tile i = cascade i.
+		[[nodiscard]] const Ref<RenderTarget>& GetOrCreateCascadeAtlas();
+
 		// Build one of a point light's 6 cube-face perspective view-projections (world -> that face's light
 		// clip). `face` is 0..5 in the order +X,-X,+Y,-Y,+Z,-Z. Each face is a 90-degree FOV, square-aspect
 		// frustum (near..range) looking down its axis — the cube unrolled into 6 planar depth renders. Pure +
@@ -91,6 +94,7 @@ namespace Snowstorm
 		Ref<RenderTarget> m_SpotAtlas;
 
 		Ref<RenderTarget> m_DirAtlas;
+		Ref<RenderTarget> m_CascadeAtlas;
 
 		// Point shadow atlas (depth-only, sampleable): kPointAtlasCols^2 tiles; 6 consecutive tiles per point.
 		Ref<RenderTarget> m_PointAtlas;

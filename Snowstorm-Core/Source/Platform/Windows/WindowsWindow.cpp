@@ -101,7 +101,12 @@ namespace Snowstorm
 		// Borderless fullscreen rather than exclusive (no glfwCreateWindow monitor argument): an undecorated
 		// window at the monitor's CURRENT mode changes no display mode, so alt-tab is instant and a crash
 		// cannot strand the desktop at the wrong resolution. This is what shipping games default to.
-		const bool fullscreen = CVars::Fullscreen.Get();
+		const bool headless = CVars::Headless.Get();
+		if (headless)
+		{
+			glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+		}
+		const bool fullscreen = CVars::Fullscreen.Get() && !headless;
 		if (fullscreen)
 		{
 			if (GLFWmonitor* monitor = glfwGetPrimaryMonitor())
@@ -127,7 +132,7 @@ namespace Snowstorm
 				SS_CORE_WARN("display.fullscreen: no primary monitor; using a windowed {0}x{1}", m_Data.Width, m_Data.Height);
 			}
 		}
-		else if (props.Maximized)
+		else if (props.Maximized && !headless)
 		{
 			glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
 		}
@@ -151,7 +156,7 @@ namespace Snowstorm
 			glfwSetWindowPos(m_Window, mx, my);
 		}
 
-		if (props.Maximized)
+		if (props.Maximized && !headless)
 		{
 			// Get actual window size after GLFW applies maximization
 			int width, height;

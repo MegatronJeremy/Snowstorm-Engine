@@ -140,3 +140,105 @@ TEST_CASE("Graphics passes keep their relative order", "[render][graph]")
 
 	CHECK(g.BuildSchedule(nullptr) == std::vector<uint32_t>{0, 1, 2});
 }
+
+TEST_CASE("An async batch owns the unique textures of its contiguous compute run", "[render][graph][async]")
+{
+	const auto a = Tex();
+	const auto b = Tex();
+	const auto c = Tex();
+	RenderGraph g;
+	g.AddPass(Compute("c0", {a}, {b}));
+	g.AddPass(Compute("c1", {b}, {c}));
+	g.AddPass(Compute("gfx", {c}, {}, GpuQueue::Graphics));
+	g.AddPass(Compute("c2", {}, {Tex()}));
+
+	const std::vector<uint32_t> schedule{0, 1, 2, 3};
+	const auto batch = g.AsyncBatchTextures(schedule, 0, true);
+	// b is read and written inside the run but transferred once; c is touched by c1 only within the run.
+	CHECK(batch == std::vector<Ref<Texture>>{a, b, c});
+
+	// The run ends at the graphics pass, so the texture c2 writes belongs to the next batch.
+	CHECK(g.AsyncBatchTextures(schedule, 3, true).size() == 1);
+}
+
+TEST_CASE("An async batch is empty when async compute is unavailable or the slot is graphics", "[render][graph][async]")
+{
+	RenderGraph g;
+	g.AddPass(Compute("c0", {}, {Tex()}));
+	g.AddPass(Compute("gfx", {}, {}, GpuQueue::Graphics));
+
+	const std::vector<uint32_t> schedule{0, 1};
+	CHECK(g.AsyncBatchTextures(schedule, 0, false).empty());
+	CHECK(g.AsyncBatchTextures(schedule, 1, true).empty());
+}
+
+TEST_CASE("A read with no earlier writer, a pass with no accesses and a self read-write have no edges", "[render][graph]")
+{
+	const auto a = Tex();
+	const auto b = Tex();
+	RenderGraph g;
+	g.AddPass(Compute("readFirst", {a}, {}));
+	g.AddPass(Compute("noAccess", {}, {}));
+	g.AddPass(Compute("readWriteSelf", {b}, {b}));
+
+	for (const auto& deps : g.BuildDependencies())
+	{
+		CHECK(deps.empty());
+	}
+}
+
+TEST_CASE("Dependencies keep only the latest producer per hazard", "[render][graph]")
+{
+	const auto a = Tex();
+	RenderGraph g;
+	g.AddPass(Compute("w0", {}, {a}));
+	g.AddPass(Compute("w1", {}, {a}));
+	g.AddPass(Compute("r", {a}, {}));
+
+	const auto deps = g.BuildDependencies();
+	REQUIRE(deps[1].size() == 1);
+	CHECK(deps[1][0].Producer == 0);
+	CHECK(deps[1][0].Kind == RenderGraph::Hazard::WriteAfterWrite);
+	// The read depends on w1 alone; w0 is implied through w1.
+	REQUIRE(deps[2].size() == 1);
+	CHECK(deps[2][0].Producer == 1);
+	CHECK(deps[2][0].Kind == RenderGraph::Hazard::ReadAfterWrite);
+}
+
+TEST_CASE("A writer waits for the reader of the previous contents even when compute is preferred", "[render][graph]")
+{
+	const ReorderOn on;
+	const auto a = Tex();
+	const auto y = Tex();
+	RenderGraph g;
+	g.AddPass(Compute("gfxWrite", {}, {a}, GpuQueue::Graphics));
+	g.AddPass(Compute("gfxRead", {a}, {}, GpuQueue::Graphics));
+	g.AddPass(Compute("cOverwrite", {}, {a}));
+	g.AddPass(Compute("cIndependent", {}, {y}));
+
+	// Without the WAR edge cOverwrite (compute) would jump ahead of gfxRead.
+	const auto deps = g.BuildDependencies();
+	REQUIRE(deps[2].size() == 2);
+	CHECK(deps[2][0].Producer == 1);
+	CHECK(deps[2][0].Kind == RenderGraph::Hazard::WriteAfterRead);
+	CHECK(deps[2][1].Producer == 0);
+	CHECK(deps[2][1].Kind == RenderGraph::Hazard::WriteAfterWrite);
+
+	// cIndependent is ready from the start and wins the compute preference over gfxWrite;
+	// cOverwrite stays behind gfxRead and is placed last.
+	CHECK(g.BuildSchedule(nullptr) == std::vector<uint32_t>{3, 0, 1, 2});
+}
+
+TEST_CASE("A pass targeting the swapchain is scheduled after every other ready pass", "[render][graph]")
+{
+	const ReorderOn on;
+	const Ref<RenderTarget> swapchain = CreateRef<FakeTarget>();
+	RenderGraph g;
+	auto present = Compute("present", {}, {}, GpuQueue::Graphics);
+	present.Target = swapchain;
+	g.AddPass(std::move(present));
+	g.AddPass(Compute("gfx", {}, {}, GpuQueue::Graphics));
+	g.AddPass(Compute("c", {}, {Tex()}));
+
+	CHECK(g.BuildSchedule(swapchain) == std::vector<uint32_t>{2, 1, 0});
+}

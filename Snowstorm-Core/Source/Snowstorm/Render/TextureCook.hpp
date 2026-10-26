@@ -24,6 +24,22 @@ namespace Snowstorm
 	// of the caller, never a guess.
 	[[nodiscard]] MipSpace MipSpaceFor(TextureRole role, bool srgbRequested);
 
+	// Every cook decision besides decoding the source, so the key a blob is stored under and the bytes in it
+	// cannot disagree.
+	struct TextureCookPlan
+	{
+		TextureCookKey Key;
+		MipSpace Space = MipSpace::Linear;
+		bool BuildMips = true;
+		bool Compress = false;
+		bool HighQuality = false;
+		int Quality = 0; // cook.textures.quality as read for this cook
+	};
+
+	// A sprite keeps one exact sRGB level whatever cook.textures.compress says, so flipping that setting
+	// never re-cooks sprites.
+	[[nodiscard]] TextureCookPlan PlanTextureCook(TextureRole role, bool srgbRequested, bool compressSetting, int textureQuality);
+
 	// Box-downsample one RGBA8 level to the next (half size, min 1). Odd extents reuse the last row/column.
 	[[nodiscard]] std::vector<uint8_t> DownsampleRGBA8(const std::vector<uint8_t>& src, uint32_t sw, uint32_t sh, uint32_t dw, uint32_t dh,
 	                                                   MipSpace space);
@@ -47,6 +63,9 @@ namespace Snowstorm
 	// Encoding the cook picks. `highQuality` promotes colour, opaque or with alpha, to BC7; at the default
 	// tier colour with alpha is BC3 and opaque colour BC1; tangent-space normals stay BC5.
 	[[nodiscard]] CookedTexture::Encoding ChooseEncoding(bool tangentNormal, bool hasAlpha, bool highQuality);
+
+	// Exhaustive BC7 only at cook.textures.quality >= 2: it takes minutes per 2K level and stalls a scene load.
+	[[nodiscard]] bool ExhaustiveBC7Search(int textureQuality);
 
 	// Vulkan format for a cooked encoding. BC5 has no sRGB variant.
 	[[nodiscard]] PixelFormat PixelFormatFor(CookedTexture::Encoding encoding, bool srgb);

@@ -1,11 +1,11 @@
 #include "AudioService.hpp"
 
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Audio/StreamRing.hpp"
 #include "Snowstorm/Core/Log.hpp"
 
 #include <miniaudio.h>
 
-#include <atomic>
 #include <cstring>
 #include <string>
 #include <unordered_map>
@@ -274,18 +274,12 @@ namespace Snowstorm
 	struct AudioService::StreamHandle
 	{
 		ma_data_source_base Base{};
-		ma_pcm_rb Ring{};
+		Scope<StreamRing> Ring;
 		ma_sound Sound{};
 		ma_format Format = ma_format_f32;
 		uint32_t Channels = 2;
 		uint32_t SampleRate = 48000;
-		uint32_t BytesPerFrame = 8;
-		bool RingReady = false;
 		bool SoundReady = false;
-
-		// Set by StreamFlush on any thread, consumed by the read callback. The only cross-thread state
-		// here, and deliberately the only thing StreamFlush touches.
-		std::atomic<bool> FlushRequested{false};
 	};
 
 	namespace
@@ -297,57 +291,10 @@ namespace Snowstorm
 
 		ma_result StreamRead(ma_data_source* ds, void* framesOut, const ma_uint64 frameCount, ma_uint64* framesRead)
 		{
-			auto* stream = AsStream(ds);
-			auto* out = static_cast<uint8_t*>(framesOut);
-			ma_uint64 done = 0;
+			AsStream(ds)->Ring->Read(framesOut, frameCount);
 
-			// The flush happens HERE, on the consumer, rather than in StreamFlush on the caller's thread.
-			// ma_pcm_rb's cursors are two words updated by load-compute-exchange with no CAS, so the only
-			// thread that may move the read cursor is the one that reads. Calling ma_pcm_rb_reset or
-			// seek_read from elsewhere does not merely lose a flush: it can leave the write cursor an
-			// arbitrary distance ahead of the read cursor, and the reader then treats whatever lies between
-			// as valid PCM.
-			//
-			// Before the drain, not after, or this callback emits one last block it has already decided to
-			// discard. Seeded from available_read because acquire_read converts frames to bytes in 32-bit
-			// arithmetic, so a large sentinel count overflows.
-			if (stream->FlushRequested.exchange(false, std::memory_order_acquire))
-			{
-				for (ma_uint32 avail = ma_pcm_rb_available_read(&stream->Ring); avail > 0;
-				     avail = ma_pcm_rb_available_read(&stream->Ring))
-				{
-					void* src = nullptr;
-					if (ma_pcm_rb_acquire_read(&stream->Ring, &avail, &src) != MA_SUCCESS || avail == 0)
-					{
-						break;
-					}
-					ma_pcm_rb_commit_read(&stream->Ring, avail);
-				}
-			}
-
-			// Drained in as many passes as the ring's wrap needs, then padded. Always reports frameCount so
-			// the engine keeps pulling: reporting short would let miniaudio treat this as a finished sound.
-			while (done < frameCount)
-			{
-				ma_uint32 want = static_cast<ma_uint32>(frameCount - done);
-				void* src = nullptr;
-				if (ma_pcm_rb_acquire_read(&stream->Ring, &want, &src) != MA_SUCCESS || want == 0)
-				{
-					break;
-				}
-				std::memcpy(out + done * stream->BytesPerFrame, src, static_cast<size_t>(want) * stream->BytesPerFrame);
-				ma_pcm_rb_commit_read(&stream->Ring, want);
-				done += want;
-			}
-
-			if (done < frameCount)
-			{
-				// Underrun. Silence is format-dependent: unsigned 8-bit is centred at 128, the rest at 0.
-				const int fill = stream->Format == ma_format_u8 ? 0x80 : 0;
-				std::memset(out + done * stream->BytesPerFrame, fill,
-				            static_cast<size_t>(frameCount - done) * stream->BytesPerFrame);
-			}
-
+			// Always reports frameCount so the engine keeps pulling: reporting short would let miniaudio
+			// treat this as a finished sound.
 			if (framesRead != nullptr)
 			{
 				*framesRead = frameCount;
@@ -389,20 +336,6 @@ namespace Snowstorm
 		    0,
 		};
 
-		uint32_t BytesPerSampleFor(const AudioService::PcmFormat format)
-		{
-			switch (format)
-			{
-			case AudioService::PcmFormat::U8:
-				return 1;
-			case AudioService::PcmFormat::S16:
-				return 2;
-			case AudioService::PcmFormat::F32:
-				return 4;
-			}
-			return 1;
-		}
-
 		ma_format ToMaFormat(const AudioService::PcmFormat format)
 		{
 			switch (format)
@@ -430,7 +363,13 @@ namespace Snowstorm
 		stream->Format = ToMaFormat(format);
 		stream->Channels = channels;
 		stream->SampleRate = sampleRate;
-		stream->BytesPerFrame = BytesPerSampleFor(format) * channels;
+
+		stream->Ring = CreateScope<StreamRing>(format, channels, capacityFrames);
+		if (!stream->Ring->Valid())
+		{
+			SS_CORE_ERROR("Audio: cannot create a stream ring buffer");
+			return nullptr;
+		}
 
 		ma_data_source_config dsConfig = ma_data_source_config_init();
 		dsConfig.vtable = &kStreamVTable;
@@ -441,20 +380,9 @@ namespace Snowstorm
 		}
 
 		if (const ma_result result =
-		        ma_pcm_rb_init(stream->Format, channels, capacityFrames, nullptr, nullptr, &stream->Ring);
-		    result != MA_SUCCESS)
-		{
-			ma_data_source_uninit(&stream->Base);
-			SS_CORE_ERROR("Audio: cannot create a stream ring buffer ({})", ma_result_description(result));
-			return nullptr;
-		}
-		stream->RingReady = true;
-
-		if (const ma_result result =
 		        ma_sound_init_from_data_source(&m_Impl->Engine, &stream->Base, 0, nullptr, &stream->Sound);
 		    result != MA_SUCCESS)
 		{
-			ma_pcm_rb_uninit(&stream->Ring);
 			ma_data_source_uninit(&stream->Base);
 			SS_CORE_ERROR("Audio: cannot create a stream sound ({})", ma_result_description(result));
 			return nullptr;
@@ -486,10 +414,6 @@ namespace Snowstorm
 		{
 			ma_sound_uninit(&stream->Sound);
 		}
-		if (stream->RingReady)
-		{
-			ma_pcm_rb_uninit(&stream->Ring);
-		}
 		ma_data_source_uninit(&stream->Base);
 		delete stream;
 	}
@@ -501,29 +425,14 @@ namespace Snowstorm
 			return 0;
 		}
 
-		const auto* in = static_cast<const uint8_t*>(frames);
-		uint32_t done = 0;
-		while (done < frameCount)
-		{
-			ma_uint32 want = frameCount - done;
-			void* dst = nullptr;
-			if (ma_pcm_rb_acquire_write(&stream->Ring, &want, &dst) != MA_SUCCESS || want == 0)
-			{
-				break; // full; the caller keeps the rest
-			}
-			std::memcpy(dst, in + static_cast<size_t>(done) * stream->BytesPerFrame,
-			            static_cast<size_t>(want) * stream->BytesPerFrame);
-			ma_pcm_rb_commit_write(&stream->Ring, want);
-			done += want;
-		}
-		return done;
+		return stream->Ring->Write(frames, frameCount);
 	}
 
 	void AudioService::StreamFlush(StreamHandle* stream)
 	{
 		if (stream != nullptr)
 		{
-			stream->FlushRequested.store(true, std::memory_order_release);
+			stream->Ring->RequestFlush();
 		}
 	}
 
@@ -533,7 +442,7 @@ namespace Snowstorm
 		{
 			return 0;
 		}
-		return ma_pcm_rb_available_write(const_cast<ma_pcm_rb*>(&stream->Ring));
+		return stream->Ring->WritableFrames();
 	}
 
 	uint32_t AudioService::GetSampleRate() const

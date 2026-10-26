@@ -157,4 +157,16 @@ namespace Snowstorm
 		}
 		return fallback;
 	}
+
+	entt::entity FindScenePrimaryCamera(const TrackedRegistry& reg)
+	{
+		for (const entt::entity e : reg.view<const CameraComponent>())
+		{
+			if (reg.Read<CameraComponent>(e).Primary && !reg.any_of<DoNotSerializeComponent>(e))
+			{
+				return e;
+			}
+		}
+		return entt::null;
+	}
 }

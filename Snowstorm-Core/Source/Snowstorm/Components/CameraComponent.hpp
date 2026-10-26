@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include <glm/vec4.hpp>
+
 #include <cstdint>
 
 namespace Snowstorm
@@ -12,7 +14,19 @@ namespace Snowstorm
 			Orthographic = 1
 		};
 
+		// Scene3D: the lit pipeline (meshes, lights, post chain). Canvas2D: sprites only, straight into the
+		// present target, with no lighting, tonemap or temporal jitter.
+		enum class RenderPathType : uint8_t
+		{
+			Scene3D = 0,
+			Canvas2D = 1
+		};
+
 		ProjectionType Projection = ProjectionType::Perspective;
+		RenderPathType RenderPath = RenderPathType::Scene3D;
+
+		// Linear colour a Canvas2D camera clears to. Scene3D backgrounds come from EnvironmentComponent.
+		glm::vec4 BackgroundColor{0.0f, 0.0f, 0.0f, 1.0f};
 
 		// Perspective
 		float PerspectiveFOV = 0.785398f; // radians

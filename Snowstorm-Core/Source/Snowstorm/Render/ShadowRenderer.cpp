@@ -15,6 +15,7 @@ namespace Snowstorm
 	void ShadowRenderer::RenderShadows(FrameContext& fc)
 	{
 		SetupDirectionalShadow(fc);
+		SetupCascadeShadows(fc);
 		SetupSecondaryDirectionalShadows(fc);
 		SetupSpotShadows(fc);
 		SetupPointShadows(fc);
@@ -81,6 +82,59 @@ namespace Snowstorm
 				                  // sampleable depth attachment) — can't barrier inside the rendering instance.
 			                  }});
 		}
+	}
+
+	void ShadowRenderer::SetupCascadeShadows(FrameContext& fc)
+	{
+		// Same shape and dangling-capture rule as SetupSecondaryDirectionalShadows. The fit is copied into the
+		// lambda: the singleton's copy is rewritten by LightingSystem next frame, and the pass runs later in the same frame.
+		RendererService& renderer = fc.Renderer;
+		renderer.SetCascadeAtlasIndex(0);
+
+		const RendererService::SunCascadeFit& fitState = renderer.GetSunCascadeFit();
+		if (!CVars::ShadowCascadeRender.Get() || !fitState.Valid || !CVars::ShadowsRasterActive())
+		{
+			return;
+		}
+
+		const Ref<RenderTarget>& atlasRT = m_ShadowPass.GetOrCreateCascadeAtlas();
+		const PixelFormat atlasFmt = atlasRT->GetDesc().DepthAttachment->View->GetTexture()->GetDesc().Format;
+		const uint32_t tilePx = atlasRT->GetWidth() / CascadeMath::kCascadeAtlasCols;
+		renderer.SetCascadeAtlasIndex(atlasRT->GetDesc().DepthAttachment->View->GetGlobalBindlessIndex());
+
+		fc.Graph.AddPass({.Name = "CascadeShadows",
+		                  .Target = atlasRT,
+		                  .Execute = [this, &fc, atlasFmt, tilePx, fit = fitState.Fit](CommandContext& c)
+		                  {
+			                  RendererService& r = fc.Renderer;
+			                  TrackedRegistry& reg = fc.Reg;
+
+			                  CameraRuntimeComponent lightCam{};
+			                  lightCam.ViewProjection = glm::mat4(1.0f);
+			                  r.BeginScene(lightCam, glm::vec3(0.0f), BorrowContext(c), fc.FrameIndex);
+
+			                  for (const auto casters = reg.view<const TransformComponent, const MeshComponent, const MaterialComponent, const VisibilityComponent>();
+			                       const auto e : casters)
+			                  {
+				                  const auto& mesh = reg.Read<MeshComponent>(e);
+				                  const auto& mat = reg.Read<MaterialComponent>(e);
+				                  if (!mesh.MeshInstance || !mat.MaterialInstance)
+				                  {
+					                  continue;
+				                  }
+				                  r.DrawMesh(reg.Read<TransformComponent>(e).GetTransformMatrix(),
+				                             mesh.MeshInstance, mat.MaterialInstance);
+			                  }
+
+			                  for (uint32_t i = 0; i < fit.Count; ++i)
+			                  {
+				                  const CascadeMath::TileRect t = CascadeMath::AtlasTile(i, tilePx);
+				                  c.SetViewport(static_cast<float>(t.X), static_cast<float>(t.Y), static_cast<float>(t.Size),
+				                                static_cast<float>(t.Size), 0.0f, 1.0f);
+				                  c.SetScissor(t.X, t.Y, t.Size, t.Size);
+				                  m_ShadowPass.RecordDepth(r, fc.FrameIndex, atlasFmt, fit.ViewProj[i]);
+			                  }
+		                  }});
 	}
 
 	void ShadowRenderer::SetupSecondaryDirectionalShadows(FrameContext& fc)

@@ -12,6 +12,11 @@ on:
       - 'Scripts/rga-occupancy.py'
       - 'Scripts/test_rga_occupancy.py'
       - 'Scripts/test_cook_shaders.py'
+      - 'Scripts/check-hlsl-layout.py'
+      - 'Scripts/test_check_hlsl_layout.py'
+      - 'Snowstorm-Core/Source/Snowstorm/Lighting/LightingUniforms.hpp'
+      - 'Snowstorm-Core/Source/Snowstorm/Render/SpriteBatch.hpp'
+      - 'Snowstorm-Core/Source/Snowstorm/Systems/ReflectionGeometrySingleton.hpp'
       - 'Scripts/rga-baseline/**'
   pull_request:
     paths:
@@ -23,6 +28,11 @@ on:
       - 'Scripts/rga-occupancy.py'
       - 'Scripts/test_rga_occupancy.py'
       - 'Scripts/test_cook_shaders.py'
+      - 'Scripts/check-hlsl-layout.py'
+      - 'Scripts/test_check_hlsl_layout.py'
+      - 'Snowstorm-Core/Source/Snowstorm/Lighting/LightingUniforms.hpp'
+      - 'Snowstorm-Core/Source/Snowstorm/Render/SpriteBatch.hpp'
+      - 'Snowstorm-Core/Source/Snowstorm/Systems/ReflectionGeometrySingleton.hpp'
       - 'Scripts/rga-baseline/**'
 
 concurrency:
@@ -47,6 +57,11 @@ jobs:
 
       - name: Unit tests (cook plan)
         run: py Scripts/test_cook_shaders.py
+
+      - name: HLSL/C++ struct sizes
+        run: |
+          py Scripts/test_check_hlsl_layout.py
+          py Scripts/check-hlsl-layout.py
 
       # RGA is ~238MB; cache the pinned version so only the first run downloads it.
       - name: Cache Radeon GPU Analyzer

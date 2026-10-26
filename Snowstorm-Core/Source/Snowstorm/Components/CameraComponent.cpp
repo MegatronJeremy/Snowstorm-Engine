@@ -14,8 +14,14 @@ namespace Snowstorm
 		    value("Perspective", CameraComponent::ProjectionType::Perspective),
 		    value("Orthographic", CameraComponent::ProjectionType::Orthographic));
 
+		registration::enumeration<CameraComponent::RenderPathType>("RenderPathType")(
+		    value("Scene3D", CameraComponent::RenderPathType::Scene3D),
+		    value("Canvas2D", CameraComponent::RenderPathType::Canvas2D));
+
 		registration::class_<CameraComponent>("Snowstorm::CameraComponent")
 		    .property("Projection", &CameraComponent::Projection)
+		    .property("RenderPath", &CameraComponent::RenderPath)
+		    .property("BackgroundColor", &CameraComponent::BackgroundColor)(metadata("Color", true))
 		    // FOV is stored in radians; clamp the slider to ~5deg..~175deg so it can't go degenerate.
 		    .property("PerspectiveFOV", &CameraComponent::PerspectiveFOV)(metadata("Min", 0.0873f), metadata("Max", 3.054f))
 		    // Perspective near/far must be strictly positive (a <=0 near plane makes the projection degenerate).

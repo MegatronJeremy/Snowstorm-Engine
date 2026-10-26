@@ -251,6 +251,16 @@
       "isa_size": 6624.0,
       "permutations": 2
     },
+    "NeuralConvAdd.comp": {
+      "vgprs": 13.0,
+      "sgprs": 46.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 1492.0,
+      "permutations": 2
+    },
     "NeuralResidualAdd.comp": {
       "vgprs": 9.0,
       "sgprs": 22.0,
@@ -292,13 +302,13 @@
       "permutations": 2
     },
     "PathTrace.comp": {
-      "vgprs": 102.0,
-      "sgprs": 85.0,
+      "vgprs": 107.0,
+      "sgprs": 87.0,
       "lds": 4096.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 21872.0,
+      "isa_size": 27836.0,
       "permutations": 2
     },
     "Pick.comp": {
@@ -439,6 +449,26 @@
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
       "isa_size": 828.0,
+      "permutations": 2
+    },
+    "Sprite.frag": {
+      "vgprs": 13.0,
+      "sgprs": 26.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 412.0,
+      "permutations": 2
+    },
+    "Sprite.vert": {
+      "vgprs": 22.0,
+      "sgprs": 42.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 536.0,
       "permutations": 2
     },
     "TemporalResolve.frag": {
