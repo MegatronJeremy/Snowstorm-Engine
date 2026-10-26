@@ -1236,6 +1236,10 @@ A directional light that also has a `RotatorComponent` and a `TransformComponent
 
 **`SunSweep.world` plus `camera-paths/sun-sweep.json` is the repro for #149's re-bake.** An open ground plane with six columns and three crates under the Sponza procedural sky, and one shadow-casting sun (`Direction` -x, slightly down) rotating about Z at 6 deg/s: dusk to noon in 15 s, setting after 30 s. At the default 2 degree quantum that is about three re-bakes a second, each a full monolithic bake with a `WaitIdle`, so frame-time spikes at that cadence are the symptom. The route is a 15 s lateral pass 4 m in front of the props at 1 m/s. Run with `--startup.scene=Projects/Sandbox/assets/scenes/SunSweep.world --camera.path --camera.path.file=Projects/Sandbox/assets/camera-paths/sun-sweep.json`, and compare `--render.ibl.sun_quantum_deg=10`. No baselines, and it has not been rendered or run on a GPU, and neither has the Rotator-driven sun path.
 
+## Device capability dump
+
+`vulkan.caps` (+ `vulkan.caps.path`) logs and writes what the driver advertises for `VK_KHR_cooperative_matrix` (every M/N/K, type and scope shape), shader float16/int8 and subgroup size control (`VulkanDeviceCaps`). It queries the physical device without enabling any extension, so it describes the adapter, not the engine's choices. `py Scripts/vulkan-caps.py --gpu <name>` runs it per adapter and prints the table; `Scripts/test_vulkan_caps.py` covers the formatting. Unrun on a GPU as of its PR, and no engine path uses cooperative matrix.
+
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc
