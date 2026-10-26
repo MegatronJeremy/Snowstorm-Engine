@@ -1218,6 +1218,10 @@ The editor's Scene view takes the scene's Primary camera's render path and backg
 `Linear`, a layer -1 logo 2 units nearer the camera that still draws under them, two layer 1 logos over them (one `FlipX`,
 tinted at 0.7 alpha), and a rotated layer 1, order 1 checker over the logo it overlaps.
 
+## Subgroup size
+
+`render.subgroup.size` (32 or 64, default 0 = driver's choice) and `render.subgroup.overrides` (`GIDenoise=32,Reflection=64`, substring of the shader path, first match wins, beats the global) set `requiredSubgroupSize` on every compute pipeline stage through Vulkan 1.3 `subgroupSizeControl`. Both are read at pipeline creation, so they apply at launch. A size outside the device's `[minSubgroupSize, maxSubgroupSize]`, or on a device without compute `requiredSubgroupSizeStages`, is dropped silently per pipeline (`ResolveRequiredSubgroupSize`, `SubgroupSizePolicyTests`). No shader uses wave intrinsics, so the size changes scheduling and occupancy only. A/B with `perf-bench.py --compare-exe`, passing the CVar through the environment of one arm; no result exists yet, and the build and run were not done on a GPU.
+
 ## Neural upscaler tail fusion
 
 `neural.fuse` (default off) replaces the last conv layer and the residual add with one `NeuralConvAdd.comp.hlsl` dispatch when the last layer has 3 output channels (else the unfused chain runs): one dispatch, one barrier and one descriptor set fewer, and the residual map is never written to memory. It is a naive per-pixel loop at both precisions. `Conv2DResidualReference` is the CPU reference for the fused math (`NeuralMathTests` pins it to hand-computed values); it does not exercise the shader. Not run on a GPU: no unfused-vs-fused ms or output comparison exists yet. `NeuralConvAdd.comp` is RGA-baselined at 13 VGPRs, no spills, on every ASIC (#101).

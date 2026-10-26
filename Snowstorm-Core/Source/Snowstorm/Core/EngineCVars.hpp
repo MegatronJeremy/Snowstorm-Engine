@@ -289,6 +289,8 @@ namespace Snowstorm::CVars
 	extern CVar<std::string> GpuSelect;
 	extern CVar<bool> ShaderStats;
 	extern CVar<std::string> ShaderStatsPath;
+	extern CVar<int> SubgroupSize;
+	extern CVar<std::string> SubgroupOverrides;
 
 	// Use opacity micromaps for RT cutout geometry when the device supports them (VK_EXT_opacity_micromap):
 	// the hardware resolves coverage per-microtriangle so the any-hit alpha test runs only on UNKNOWN edges.
