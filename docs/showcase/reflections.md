@@ -2,7 +2,7 @@
 
 *Adapted from [Vuk Đorđević's master's thesis (ETF Belgrade, 2026)](https://github.com/MegatronJeremy/RG2/tree/master/master-rad/teza).*
 
-`render.reflections.mode` selects the technique (default 1): 0 off, 1 screen-space ray march against the previous frame's colour (any GPU), 2 hardware ray query that re-shades the hit (needs ray-query support, falls back to off otherwise). Both write the same forward reflection slot, so the two can be compared on one scene. TAA is expected in either mode.
+`render.reflections.mode` selects the technique: 0 off, 1 screen-space ray march against the previous frame's colour (any GPU), 2 hardware ray query that re-shades the hit (needs ray-query support, falls back to off otherwise). Both write the same forward reflection slot, so the two can be compared on one scene. TAA is expected in either mode.
 
 ![Raw reflected radiance from the RT trace (debug view 3)](images/dbg_reflections.jpg)
 

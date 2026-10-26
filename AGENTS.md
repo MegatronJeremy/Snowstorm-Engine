@@ -642,8 +642,6 @@ roughness cutoff and roughness-driven kernels, and the girl mesh for a non-box s
 existing assets and per-entity overrides are used, so it needs no registry rows. It has no committed
 baselines and no emissive surfaces (a material override cannot set emissive).
 
-`render.reflections.mode` defaults to SSR (1), so Reflections.world shows mirror and glossy reflections without touching Settings (it was Off, which left a mirror reflecting only the dark ground of the env cube, solid black). `quality-bench.py` pins AO, reflections and GI off in every technique that does not measure them, so the default does not leak into its baselines.
-
 Every run sets `SS_CONFIG_IGNORE=1`, so a capture is code defaults plus the technique's overrides and
 never this machine's persisted `SnowstormConfig.cfg`. Note that only `all-rt` and the
 three shadow entries override `render.shadows.mode`: every other technique renders with the default
