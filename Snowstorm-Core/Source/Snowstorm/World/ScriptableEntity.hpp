@@ -7,6 +7,8 @@ namespace Snowstorm
 	class ScriptableEntity : NonCopyable
 	{
 	public:
+		virtual ~ScriptableEntity() = default;
+
 		template <typename T>
 		T& GetComponent()
 		{
