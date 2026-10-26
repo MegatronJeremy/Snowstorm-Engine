@@ -9,6 +9,7 @@
 #include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/Shader.hpp"
+#include "Snowstorm/Render/WorkgroupSize.hpp"
 #include "Snowstorm/Service/ServiceManager.hpp"
 
 namespace Snowstorm
@@ -72,6 +73,7 @@ namespace Snowstorm
 			defines.emplace_back("SS_DENOISE_PENUMBRA=1");
 		}
 
+		AppendWorkgroupDefines(defines, CVars::WgGi.Get());
 		Ref<Shader> cs = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load("Engine/Shaders/GIDenoise.comp.hlsl", std::move(defines));
 		SS_CORE_ASSERT(cs, "Failed to load GI denoise compute shader");
 		if (!cs->IsReady())
@@ -172,6 +174,6 @@ namespace Snowstorm
 		// .Reads (the caller ping-pongs input/output, so each becomes the other's Sampled source next pass).
 		ctx->BindPipeline(m_Pipeline);
 		ctx->BindDescriptorSet(m_Sets[idx], 0);
-		ctx->Dispatch((outW + 7) / 8, (outH + 7) / 8, 1);
+		ctx->Dispatch(WorkgroupCount(outW, CVars::WgGi.Get()), WorkgroupCount(outH, CVars::WgGi.Get()), 1);
 	}
 }

@@ -65,7 +65,9 @@ float B3Weight(int d)
 
 float Luma(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 
-[numthreads(8, 8, 1)]
+#include "Include/Workgroup.hlsli"
+
+[numthreads(SS_WG_X, SS_WG_Y, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= OutSize.x || id.y >= OutSize.y)

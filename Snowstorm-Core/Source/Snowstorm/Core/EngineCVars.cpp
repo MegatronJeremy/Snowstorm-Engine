@@ -111,6 +111,11 @@ namespace Snowstorm::CVars
 
 	CVar<bool> Fp16{"render.fp16", true, "Allow the fp16 shader permutation (SS_FP16) and fp16 neural weights on devices that support them; off forces the fp32 path everywhere. Startup-only: it re-keys the .spv cache.", CVarFlags::ReadOnly};
 
+	CVar<int> WgAo{"render.wg.ao", 8, "Compute workgroup tile of the RT ambient-occlusion pass (AO.comp). Square workgroup side: 4, 8 or 16 (anything else uses 8). Compile-time (SS_WG_X/SS_WG_Y) and dispatch math move together. Startup-only: a non-default side is a new shader permutation that compiles at runtime.", CVarFlags::ReadOnly};
+	CVar<int> WgGi{"render.wg.gi", 8, "Compute workgroup tile of the GI family: GI, GITemporal, GISpatialReuse and GIDenoise (the denoise is shared with the AO and shadow chains). Square workgroup side: 4, 8 or 16 (anything else uses 8). Compile-time (SS_WG_X/SS_WG_Y) and dispatch math move together. Startup-only: a non-default side is a new shader permutation that compiles at runtime.", CVarFlags::ReadOnly};
+	CVar<int> WgReflection{"render.wg.reflection", 8, "Compute workgroup tile of the RT reflection pass (Reflection.comp). Square workgroup side: 4, 8 or 16 (anything else uses 8). Compile-time (SS_WG_X/SS_WG_Y) and dispatch math move together. Startup-only: a non-default side is a new shader permutation that compiles at runtime.", CVarFlags::ReadOnly};
+	CVar<int> WgShadow{"render.wg.shadow", 8, "Compute workgroup tile of the RT shadow pass (Shadow.comp). Square workgroup side: 4, 8 or 16 (anything else uses 8). Compile-time (SS_WG_X/SS_WG_Y) and dispatch math move together. Startup-only: a non-default side is a new shader permutation that compiles at runtime.", CVarFlags::ReadOnly};
+
 	CVar<bool> AsPreferFastBuild{"render.as.prefer_fast_build", false, "Build BLAS and TLAS with PREFER_FAST_BUILD instead of PREFER_FAST_TRACE (default): cheaper builds, slower traces. Startup-only.", CVarFlags::ReadOnly};
 
 	CVar<bool> AsCompaction{"render.as.compaction", false, "Build each BLAS with ALLOW_COMPACTION, read back its compacted size and copy it into a smaller allocation when that saves memory. Costs one extra copy per BLAS at build time. Startup-only.", CVarFlags::ReadOnly};
