@@ -239,7 +239,7 @@ py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
 The config matrix (`rt-off → shadows → +ao → +refl → +gi`) enables one RT effect at a time, so the
 **Forward-pass ms delta between adjacent configs is that effect's cost**: the RT effects are inline in
 the Forward pass, so this A/B *is* the per-effect timing (there's no separate GPU scope per effect, by
-design). Two trailing configs sit outside that ladder, each repeating one rung with a different
+design: shadows, AO, GI and reflections are branches of one DefaultLit fragment shader, so a timestamp pair cannot separate them without splitting the draw). `Forward` carries nested rows (`depth` 1 in the JSON): `ForwardOpaque` (the batch flush, where the inline RT work lives), `Sky` and `Transparent`. A new row reads as a new pass to the gate until a baseline is re-captured. Two trailing configs sit outside that ladder, each repeating one rung with a different
 producer for the same effect: `ssgi` repeats `+gi` with the screen-space GI producer (so it diffs
 against `+refl`), and `shadows-stoch` repeats `shadows` with the stochastic aggregate pass
 (MegaLights-lite) instead of one inline ray per light (so it diffs against `rt-off`). Read the
