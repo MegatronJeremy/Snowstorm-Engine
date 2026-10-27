@@ -436,17 +436,16 @@ occupancy drops (fewer waves), a spill appears (0 to >0, hard fail), or LDS/ISA 
 `--threshold` (default 10%). Raw VGPR% is intentionally not gated -- a VGPR rise that doesn't cross a
 wave boundary costs nothing. The occupancy is *theoretical* and VGPR-only (LDS occupancy needs the
 workgroup size RGA offline reports as 0); measure achieved occupancy with RGP. Baselines are committed
-for `gfx1100` (RX 7900 XTX), `gfx1200` (RX 9060 XT) and `gfx1201`. On `gfx1200` exactly two of 47 shaders are
-occupancy-limited, `DefaultLit.frag[inlineshadow]` (127 VGPRs, 10/16) and `GI.comp[restir]` (103, 12/16);
-every other shader hits 16/16, and only `NeuralConv.comp` carries any scratch (272 bytes), off the render
-path. `GIDenoise.comp` was the worst offender at 191 VGPRs / 8 waves until d74cb76 rolled its outer
+for `gfx1100` (RX 7900 XTX), `gfx1200` (RX 9060 XT) and `gfx1201`. On `gfx1200` exactly two of 52 shaders are
+occupancy-limited, `DefaultLit.frag[inlineshadow]` (130 VGPRs, 10/16) and `GI.comp[restir]` (103, 12/16);
+every other shader hits 16/16 and none carries scratch. `GIDenoise.comp` was the worst offender at 191 VGPRs / 8 waves until d74cb76 rolled its outer
 a-trous loop.
 
 **Occupancy is defined once, in `vgpr_occupancy()` here, and imported by anything else that needs it.**
 `Scripts/shader-stats.py` briefly carried its own copy with an 8-VGPR granularity, which disagreed with
 this model (12 on gfx11, 24 on gfx12) and scored `DefaultLit.frag[inlineshadow]` 12/16 against the gate's
 10/16. Two tools disagreeing about the same hardware is worse than either being wrong on its own, and a
-count near an allocation boundary is exactly where it shows: 127 sits one above `6*24 = 144`.
+count near an allocation boundary is exactly where it shows: on gfx12 a shader past `5*24 = 120` VGPRs drops from 12 to 10 waves.
 
 **RGA is AMD-only**, so this gate cannot cover NVIDIA: its target list is `gfx11xx`/`gfx12xx` and
 nothing else. The Vulkan-native equivalent is `VK_KHR_pipeline_executable_properties`
@@ -1267,7 +1266,7 @@ harnesses set so a run depends on code defaults plus its own overrides, never on
 A CVar named `validation.extra` is set by env `SS_VALIDATION_EXTRA` **or** CLI `--validation.extra`
 (dots→`_`, uppercased, `SS_` prefix for env). Bools accept presence (`--flag`, or env set to
 anything but `0`/`false`/`off`/`no`). Run any executable with `--list-cvars` (or `--help`) to print
-every CVar with its value, type, env name, and description. `EngineCVars.cpp` declares ~170 of them
+every CVar with its value, type, env name, and description. `EngineCVars.cpp` declares them
 (rendering technique modes, denoiser knobs, path tracer, benchmark hooks, validation); treat
 `--list-cvars` as the authoritative list rather than any enumeration here. Startup resolution runs
 once, but CVars can also be **edited live at runtime** from the editor's *Debug > Console Variables*
