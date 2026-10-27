@@ -129,7 +129,8 @@ TEST_CASE("Every Sandbox scene parses, keeps its components and resolves its ass
 			REQUIRE(SceneSerializer::Deserialize(world, scenePath.string()));
 
 			// A component name the registry lacks is skipped by the serializer without a word, and the next save
-			// deletes it from the file.
+			// deletes it from the file. The Editor registers its own components, which this binary does not link.
+			static const std::set<std::string> kEditorOnly = {"MandelbrotControllerComponent"};
 			std::set<std::string> entityIds;
 			size_t entities = 0;
 			for (const auto& ent : scene["Entities"])
@@ -142,8 +143,8 @@ TEST_CASE("Every Sandbox scene parses, keeps its components and resolves its ass
 				for (const auto& [name, body] : comps->items())
 				{
 					const auto& reg = GetComponentRegistry();
-					const bool known = std::ranges::any_of(reg, [&](const ComponentInfo& ci)
-					                                       { return ci.Type.is_valid() && ci.Type.get_name().to_string() == name; });
+					const bool known = kEditorOnly.count(name) != 0 || std::ranges::any_of(reg, [&](const ComponentInfo& ci)
+					                                                                       { return ci.Type.is_valid() && ci.Type.get_name().to_string() == name; });
 					INFO("entity '" << ent.value("Name", "?") << "' component " << name);
 					CHECK(known);
 				}
