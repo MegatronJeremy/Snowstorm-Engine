@@ -9,6 +9,8 @@
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/ECS/TrackedRegistry.hpp"
 #include "Snowstorm/Render/FrameData.hpp"
+#include "Snowstorm/Render/PathTraceAccumRule.hpp"
+#include "Snowstorm/Render/QualityCaptureSchedule.hpp"
 #include "Snowstorm/Render/RenderGraph.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/RendererUtils.hpp"
@@ -100,9 +102,11 @@ namespace Snowstorm
 				// blending them mid-accumulation would corrupt the A/B (they converge to the same image but must
 				// not be averaged together).
 				const uint32_t sampler = CVars::PathTraceSampler.Get() > 0 ? 1u : 0u; // a sampler switch restarts the mean, like env-NEE
-				const bool moved = (st.LastVP != vp) || v.PathTraceSceneSettling || (st.EnvNee != envNee) || (st.Sampler != sampler);
 				const uint32_t spp = static_cast<uint32_t>(CVars::ClampedPathTraceSpp());
-				const uint32_t base = moved ? 0u : st.Samples;
+				const PathTraceAccumRule::Decision accum = PathTraceAccumRule::Decide(
+				    {st.LastVP, st.Samples, st.EnvNee, st.Sampler}, {vp, v.PathTraceSceneSettling, envNee, sampler, spp});
+				const bool moved = accum.Reset;
+				const uint32_t base = accum.BaseSamples;
 
 				const FrameData& fd = fc.Renderer.GetFrameData();
 				PathTracePass::Params p{};
@@ -144,7 +148,7 @@ namespace Snowstorm
 				st.LastVP = vp;
 				st.EnvNee = envNee;
 				st.Sampler = sampler;
-				st.Samples = base + spp;
+				st.Samples = accum.NextSamples;
 
 				// Publish the accumulated HDR buffer as THE scene color; the LDR chain tonemaps it (the tonemap
 				// declares it as a Sampled read, so the graph inserts the Storage -> Sampled barrier). Target is
@@ -2324,26 +2328,12 @@ namespace Snowstorm
 		// silently ignored: a dropped frame would leave the harness comparing a pair that is not consecutive.
 		std::vector<uint64_t> ParseRouteFrameList(const std::string& csv)
 		{
-			std::vector<uint64_t> out;
-			std::stringstream ss(csv);
-			std::string tok;
-			while (std::getline(ss, tok, ','))
+			QualityCaptureSchedule::RouteFrames parsed = QualityCaptureSchedule::ParseRouteFrames(csv);
+			for (const std::string& tok : parsed.Rejected)
 			{
-				if (tok.find_first_not_of(" \t") == std::string::npos)
-				{
-					continue;
-				}
-				try
-				{
-					out.push_back(static_cast<uint64_t>(std::stoull(tok)));
-				}
-				catch (const std::exception&)
-				{
-					SS_CORE_WARN("quality.capture.at_path_frames: '{}' is not a frame index; ignored.", tok);
-				}
+				SS_CORE_WARN("quality.capture.at_path_frames: '{}' is not a frame index; ignored.", tok);
 			}
-			std::ranges::sort(out);
-			return out;
+			return std::move(parsed.Frames);
 		}
 
 		class QualityCaptureEffect final : public IViewportEffect
