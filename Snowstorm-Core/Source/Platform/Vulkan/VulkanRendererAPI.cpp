@@ -1,5 +1,7 @@
 #include "VulkanRendererAPI.hpp"
 
+#include "Snowstorm/Render/FrameRingRule.hpp"
+
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
 #include "imgui_internal.h"
@@ -506,7 +508,7 @@ namespace Snowstorm
 			consume.waitSemaphoreInfoCount = 1;
 			consume.pWaitSemaphoreInfos = &wait;
 			vkQueueSubmit2(context.GetGraphicsQueue(), 1, &consume, VK_NULL_HANDLE);
-			m_CurrentFrameIndex = (m_CurrentFrameIndex + 1) % s_MaxFramesInFlight;
+			m_CurrentFrameIndex = FrameRing::NextFrameIndex(m_CurrentFrameIndex, s_MaxFramesInFlight);
 			return;
 		}
 
@@ -531,7 +533,7 @@ namespace Snowstorm
 		}
 
 		// 5. Advance frame counter
-		m_CurrentFrameIndex = (m_CurrentFrameIndex + 1) % s_MaxFramesInFlight;
+		m_CurrentFrameIndex = FrameRing::NextFrameIndex(m_CurrentFrameIndex, s_MaxFramesInFlight);
 	}
 
 	uint32_t VulkanRendererAPI::GetCurrentFrameIndex() const
