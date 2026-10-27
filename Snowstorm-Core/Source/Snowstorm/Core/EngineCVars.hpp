@@ -469,6 +469,7 @@ namespace Snowstorm::CVars
 	extern CVar<bool> ShadowCascadeFit;
 	extern CVar<bool> TransparentPass;
 	extern CVar<bool> ShadowCascadeRender;
+	extern CVar<bool> ShadowCascadeShade;
 	extern CVar<int> ShadowCascadeCount;
 	extern CVar<float> ShadowCascadeLambda;
 
