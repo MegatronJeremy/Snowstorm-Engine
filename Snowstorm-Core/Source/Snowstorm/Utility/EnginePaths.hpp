@@ -43,6 +43,13 @@ namespace Snowstorm
 	// path passes through unchanged, so a caller may always route through this.
 	std::filesystem::path EngineAssetPath(std::string_view relative);
 
+	// Resolves a user-supplied startup path (startup.project, startup.scene), which is documented as
+	// repo-root-relative. Absolute, or existing relative to the working directory: unchanged. Otherwise the
+	// same path under the engine root when that exists there, so a double-clicked exe (working directory =
+	// its own folder) finds the same project a launch from the repo root does. Unresolvable: unchanged, so
+	// the caller's missing-file error names what the user typed.
+	std::filesystem::path ResolveStartupPath(const std::filesystem::path& userPath);
+
 	// Resolves a shader source path, which may belong to the ENGINE or to a GAME.
 	//
 	// A mounted path ("/Engine/Shaders/Foo.hlsl") resolves through the mount table and is unambiguous.

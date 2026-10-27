@@ -98,3 +98,4 @@ __pycache__/
 /*.patch
 /*.diff
 /_*.txt
+Scripts/.scene-captures/
