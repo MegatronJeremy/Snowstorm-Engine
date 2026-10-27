@@ -119,7 +119,9 @@ namespace Snowstorm
 	// reconstructs it as sqrt(1 - x^2 - y^2), which is only valid for unit-length vectors in the +Z
 	// hemisphere. Sponza has two colour images sitting in NormalTexture slots (vector length ~1.3,
 	// 25-40% of texels with z<0); encoding those as BC5 raises their error instead of lowering it, so
-	// the slot alone cannot be trusted and the content gets the deciding vote.
+	// the slot alone cannot be trusted and the content gets the deciding vote. Texels at the (-1,+1,-1)
+	// corner are skipped: no unit vector decodes there, and decal-style maps (Sponza's lion head and
+	// shield) fill their padding with exactly that green, which alone would fail the length test.
 	bool IsTangentSpaceNormalMap(const std::vector<uint8_t>& rgba)
 	{
 		if (rgba.size() < 4)
@@ -132,6 +134,8 @@ namespace Snowstorm
 		double lengthSum = 0.0;
 		for (size_t i = 0; i < texels; i += stride)
 		{
+			if (rgba[i * 4 + 0] <= 8 && rgba[i * 4 + 1] >= 247 && rgba[i * 4 + 2] <= 8)
+				continue;
 			const double x = rgba[i * 4 + 0] / 127.5 - 1.0;
 			const double y = rgba[i * 4 + 1] / 127.5 - 1.0;
 			const double z = rgba[i * 4 + 2] / 127.5 - 1.0;

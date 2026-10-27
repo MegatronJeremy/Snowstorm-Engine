@@ -74,6 +74,22 @@ TEST_CASE("Alpha and normal-map content checks", "[texturecook]")
 	for (int i = 0; i < 16; ++i)
 		up.insert(up.end(), {128, 128, 255, 255});
 	CHECK(IsTangentSpaceNormalMap(up));
+
+	// Decal-style map: half the texels are the (0,255,0) padding fill, the rest are up-facing.
+	std::vector<uint8_t> padded;
+	for (int i = 0; i < 16; ++i)
+	{
+		if (i % 2)
+			padded.insert(padded.end(), {0, 255, 0, 255});
+		else
+			padded.insert(padded.end(), {128, 128, 255, 255});
+	}
+	CHECK(IsTangentSpaceNormalMap(padded));
+
+	std::vector<uint8_t> allFill;
+	for (int i = 0; i < 16; ++i)
+		allFill.insert(allFill.end(), {0, 255, 0, 255});
+	CHECK_FALSE(IsTangentSpaceNormalMap(allFill));
 }
 
 TEST_CASE("Strip-wise compression equals a single-strip result and aborts", "[texturecook]")
