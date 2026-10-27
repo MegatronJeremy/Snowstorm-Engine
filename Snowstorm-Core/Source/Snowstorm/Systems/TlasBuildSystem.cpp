@@ -11,6 +11,7 @@
 #include "Snowstorm/Render/Mesh.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Systems/ReflectionGeometrySingleton.hpp"
+#include "Snowstorm/Systems/ReflectionTablePlan.hpp"
 #include "Snowstorm/Systems/TlasInstanceMapSingleton.hpp"
 #include "Snowstorm/World/World.hpp"
 
@@ -217,12 +218,13 @@ namespace Snowstorm
 		// GPU buffer when the instance count outgrows it (device-address Storage so the shader can RawBufferLoad
 		// records); address 0 when RT is off or the scene is empty so the shader falls back to the sky cube.
 		auto& reflGeo = SingletonView<ReflectionGeometrySingleton>();
-		if (!geoRecords.empty())
+		const uint32_t needed = static_cast<uint32_t>(geoRecords.size());
+		const ReflectionTablePlan tablePlan = PlanReflectionTable(needed, static_cast<bool>(reflGeo.Table), reflGeo.Capacity);
+		if (tablePlan.Publish)
 		{
-			const uint32_t needed = static_cast<uint32_t>(geoRecords.size());
-			if (!reflGeo.Table || reflGeo.Capacity < needed)
+			if (tablePlan.Recreate)
 			{
-				reflGeo.Capacity = needed;
+				reflGeo.Capacity = tablePlan.NewCapacity;
 				// DEVICE-LOCAL (hostVisible=false): the table is read on the GPU hot path — every reflection/GI
 				// ray that hits geometry does several RawBufferLoads here plus vertex/index fetches — but written
 				// only on a rare rebuild (scene edit). A host-visible allocation lands in system RAM on a discrete
