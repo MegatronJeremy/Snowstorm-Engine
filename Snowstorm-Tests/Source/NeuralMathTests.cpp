@@ -192,3 +192,56 @@ TEST_CASE("Fused conv+add equals conv then add", "[neural][conv][fuse]")
 		}
 	}
 }
+
+TEST_CASE("Fused conv pair equals two chained convs", "[neural][conv][fuse]")
+{
+	const auto makeLayer = [](const uint32_t inC, const uint32_t outC, const uint32_t k, const Activation act, const size_t seed)
+	{
+		ConvLayer l;
+		l.InChannels = inC;
+		l.OutChannels = outC;
+		l.KernelSize = k;
+		l.Act = act;
+		l.Weights.resize(static_cast<size_t>(outC) * inC * k * k);
+		for (size_t i = 0; i < l.Weights.size(); ++i)
+		{
+			l.Weights[i] = static_cast<float>(((i + seed) * 13) % 7) * 0.1f - 0.3f;
+		}
+		l.Bias.resize(outC);
+		for (uint32_t i = 0; i < outC; ++i)
+		{
+			l.Bias[i] = 0.4f + 0.1f * static_cast<float>(i); // positive: a bias leaking into the padding would show
+		}
+		return l;
+	};
+
+	FeatureMap in;
+	in.Channels = 3;
+	in.Height = 5;
+	in.Width = 6;
+	in.Data.resize(static_cast<size_t>(3) * 5 * 6);
+	for (size_t i = 0; i < in.Data.size(); ++i)
+	{
+		in.Data[i] = static_cast<float>((i * 37) % 11) - 5.0f;
+	}
+
+	const ConvLayer first = makeLayer(3, 4, 3, Activation::ReLU, 1);
+	const ConvLayer second = makeLayer(4, 3, 3, Activation::None, 5);
+	const FeatureMap chained = Conv2DReference(Conv2DReference(in, first), second);
+	const FeatureMap fused = Conv2DPairReference(in, first, second);
+	REQUIRE(fused.Channels == 3);
+	REQUIRE(fused.Data.size() == chained.Data.size());
+	for (size_t i = 0; i < chained.Data.size(); ++i)
+	{
+		CHECK(fused.Data[i] == Approx(chained.Data[i]));
+	}
+
+	// 1x1 second layer: the footprint collapses to the pixel itself.
+	const ConvLayer point = makeLayer(4, 3, 1, Activation::ReLU, 9);
+	const FeatureMap chained1 = Conv2DReference(Conv2DReference(in, first), point);
+	const FeatureMap fused1 = Conv2DPairReference(in, first, point);
+	for (size_t i = 0; i < chained1.Data.size(); ++i)
+	{
+		CHECK(fused1.Data[i] == Approx(chained1.Data[i]));
+	}
+}
