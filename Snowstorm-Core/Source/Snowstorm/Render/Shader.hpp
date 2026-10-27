@@ -114,11 +114,18 @@ namespace Snowstorm
 		// Two-path graphics: separate vertex + fragment files (each a plain single-`main` HLSL file).
 		static Ref<Shader> Create(const std::string& vertPath, const std::string& fragPath, ShaderDefines features = {});
 
+		// True from the moment a library job is queued for this shader until its Recompile() returns, so a
+		// queued job that has not yet reached the gate still reads as in flight.
+		[[nodiscard]] bool IsCompiling() const { return m_Queued.load(std::memory_order_acquire) > 0; }
+		void NoteCompileQueued() { m_Queued.fetch_add(1, std::memory_order_acq_rel); }
+		void NoteCompileDone() { m_Queued.fetch_sub(1, std::memory_order_acq_rel); }
+
 	protected:
 		virtual void Compile() = 0;
 
 	private:
 		CompileGate m_Gate;
+		std::atomic<uint32_t> m_Queued{0};
 	};
 
 	// Application-scoped shader cache: owns compiled shaders keyed by source path and drives hot-reload
@@ -150,6 +157,10 @@ namespace Snowstorm
 		[[nodiscard]] bool Exists(const std::string& filepath) const;
 
 		void ReloadAll();
+
+		// Queues a recompile on a JobSystem worker; the shader keeps its previous SPIR-V until the new one is
+		// published, and keeps it if the compile fails. Poll Shader::IsCompiling()/GetVersion() for the outcome.
+		void RequestRecompile(const Ref<Shader>& shader) { SubmitAsyncCompile(shader); }
 
 		// Scene-transition sweep (#77): drops every shader no pipeline, cache or in-flight compile still
 		// references, releasing it after `retireDelay` Advance() calls. Main thread only.
