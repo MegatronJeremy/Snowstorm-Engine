@@ -19,6 +19,7 @@ namespace Snowstorm
 		    .property("Size", &SpriteComponent::Size)(metadata("Speed", 0.05f))
 		    .property("Pivot", &SpriteComponent::Pivot)(metadata("Speed", 0.01f))
 		    .property("Tint", &SpriteComponent::Tint)(metadata("Color", true))
+		    .property("Rect", &SpriteComponent::Rect)(metadata("Speed", 1.0f))
 		    .property("FlipX", &SpriteComponent::FlipX)
 		    .property("FlipY", &SpriteComponent::FlipY)
 		    .property("Layer", &SpriteComponent::Layer)

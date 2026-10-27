@@ -306,6 +306,57 @@
      ]
     }
    }
+  },
+  {
+   "Name": "Checker Rect",
+   "UUID": "4417209986371052815",
+   "Components": {
+    "Snowstorm::SpriteComponent": {
+     "Texture": "12465655103903380530",
+     "Size": [
+      2.0,
+      2.0
+     ],
+     "Pivot": [
+      0.5,
+      0.5
+     ],
+     "Tint": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+     ],
+     "FlipX": false,
+     "FlipY": false,
+     "Layer": 0,
+     "Order": 0,
+     "Filter": "Nearest",
+     "Rect": [
+      0.0,
+      0.0,
+      32.0,
+      32.0
+     ]
+    },
+    "Snowstorm::TransformComponent": {
+     "Position": [
+      3.5,
+      -3.5,
+      0.0
+     ],
+     "Rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "Scale": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    }
+   }
   }
  ],
  "Scene": "Sprites"
