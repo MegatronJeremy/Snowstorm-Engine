@@ -109,6 +109,61 @@ namespace
 	}
 }
 
+TEST_CASE("Every Sandbox scene parses, keeps its components and resolves its asset handles", "[sandbox][content]")
+{
+	AssetRegistry registry;
+	REQUIRE(registry.LoadFromFile(AssetsRoot() / "AssetRegistry.json"));
+
+	const MaterialLoader loadMaterial = [](const AssetMetadata& meta, MaterialAsset& out)
+	{ return MaterialAssetIO::Load(ResolveGame(meta.Path), out); };
+
+	const auto scenes = FilesWithExtension(AssetsRoot() / "scenes", ".world");
+	REQUIRE(scenes.size() >= 10);
+
+	for (const auto& scenePath : scenes)
+	{
+		DYNAMIC_SECTION(scenePath.filename().string())
+		{
+			const nlohmann::json scene = ReadJson(scenePath);
+			REQUIRE(scene.contains("Entities"));
+			REQUIRE(scene["Entities"].is_array());
+
+			World world;
+			REQUIRE(SceneSerializer::Deserialize(world, scenePath.string()));
+
+			std::set<std::string> entityIds;
+			for (const auto& ent : scene["Entities"])
+				entityIds.insert(ent.value("UUID", ""));
+
+			// Every long decimal that is not an entity id must be a registered handle whose file exists.
+			std::set<std::string> decimals;
+			CollectLongDecimals(scene, decimals);
+			for (const auto& d : decimals)
+			{
+				if (entityIds.count(d))
+					continue;
+				const AssetMetadata* meta = registry.GetMetadata(UUID::FromString(d));
+				INFO("handle " << d << " is not in AssetRegistry.json");
+				REQUIRE(meta != nullptr);
+				INFO("handle " << d << " names " << meta->Path.generic_string() << ", which is missing on disk");
+				CHECK(fs::exists(ResolveGame(meta->Path)));
+			}
+
+			ReferenceClosure closure;
+			AddSceneToClosure(scene, registry, loadMaterial, closure);
+			for (const auto& u : closure.Unresolved)
+				FAIL_CHECK(u);
+			for (const uint64_t tex : closure.Textures)
+			{
+				const AssetMetadata* meta = registry.GetMetadata(AssetHandle{tex});
+				INFO("material texture handle " << tex << " is not in AssetRegistry.json");
+				REQUIRE(meta != nullptr);
+				CHECK(fs::exists(ResolveGame(meta->Path)));
+			}
+		}
+	}
+}
+
 TEST_CASE("Every Sandbox camera path loads as a route", "[sandbox][content][route]")
 {
 	const auto paths = FilesWithExtension(AssetsRoot() / "camera-paths", ".json");
