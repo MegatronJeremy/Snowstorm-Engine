@@ -502,6 +502,10 @@ expected the old `#type` split and silently compiled nothing).
 static and needs no GPU, so hosted CI cooks the shaders and runs the occupancy gate on every shader
 change. RGA is cached across runs (actions/cache) so only the first pays the download.
 
+### Reading an RGP capture without the GUI
+
+`rgp-capture.py` writes a `.rgp` only RGP's GUI can open. `py Scripts/rgp-read.py capture.rgp -o out.json` reads the legacy SQTT container (layout: AMD's MIT-licensed `sqtt_file_format.h`, GPUOpen-Drivers/pal, spec 1.6) into JSON: chunk inventory, ASIC info (offsets verified by compiling the header's struct), API info, clock calibration, PSO names, and per-frame GPU time summed from the queue-event submits (`gpuMs`, converted with the ASIC chunk's timestamp frequency). `--diff base.json cur.json` compares median frame GPU ms (percent and `--abs-threshold` floor, exit 1 on a rise). The SQTT_DATA token stream (achieved occupancy, instruction timing) has no public decoder and is listed but not decoded. An RDF-container file (RGP 2.x) exits 2 as unsupported. `Scripts/test_rgp_read.py` uses synthetic captures built from the documented layout: no real `.rgp` has been read, and whether the pinned RDTS build writes the legacy or the RDF container is unverified.
+
 ### Cross-vendor shader statistics (driver-reported; `--gate` is local and opt-in)
 
 RGA is the *Radeon* GPU Analyzer, so the occupancy gate is structurally AMD-only and cannot see half of a
