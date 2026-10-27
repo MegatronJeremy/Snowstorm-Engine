@@ -1054,6 +1054,8 @@ mechanism keeping them transient: that one property list is simultaneously the s
 inspector set, so registering them to get a checkbox would write `"PlayRequested": true` into the
 `.world` file and re-trigger the sound on every load.
 
+The per-source decision (play, stop, latch, drop-and-clear with no instance) and the sweep predicate are the pure `DecideAudioSource`/`KeepAudioVoice` in `Systems/AudioSourceRule.hpp`, tested by `AudioSourceRuleTests`. Stop runs before Play and latches `Started`, so `PlayOnStart` never undoes a stop.
+
 Voices are owned by `AudioSystem`, never by the entity: entity deletion, scene load and the editor's
 Play/Stop snapshot restore all destroy components without notice, so a per-entity id would strand a
 playing sound nothing can reach. `Execute` sweeps voices whose entity is gone.
