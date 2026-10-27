@@ -13,14 +13,18 @@
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/RendererUtils.hpp"
+#include "Snowstorm/Systems/ViewportResizeRule.hpp"
 
 namespace Snowstorm
 {
 	namespace
 	{
-		bool ValidViewportSize(uint32_t w, uint32_t h)
+		using ViewportResizeRule::Extent;
+
+		template <typename T>
+		Extent ExtentOf(const Ref<T>& t)
 		{
-			return w >= 64 && h >= 64;
+			return {t->GetDesc().Width, t->GetDesc().Height};
 		}
 	}
 
@@ -57,7 +61,7 @@ namespace Snowstorm
 
 		// If you want: when no viewport changed, you can still init new cameras and early-out.
 		const bool anyViewportChanged = !changedViewports.empty();
-		if (!anyViewportChanged && cameraInit.empty() && !scaleChangedGlobal)
+		if (!ViewportResizeRule::ShouldRun(anyViewportChanged, !cameraInit.empty(), scaleChangedGlobal))
 		{
 			return;
 		}
@@ -66,53 +70,41 @@ namespace Snowstorm
 		{
 			// If ImGui is enabled, we resize only when the viewport size changed (or an internal scale changed,
 			// or a camera is initializing). If ImGui is disabled, the viewport matches the window each frame.
-			if (isImGuiEnabled && !changedViewports.contains(vpEntity) && cameraInit.empty() && !scaleChangedGlobal)
+			if (!ViewportResizeRule::ShouldVisit(isImGuiEnabled, changedViewports.contains(vpEntity), !cameraInit.empty(), scaleChangedGlobal))
 			{
 				continue;
 			}
 
 			const auto& vp = reg.Read<ViewportComponent>(vpEntity);
 
-			uint32_t w = static_cast<uint32_t>(vp.Size.x);
-			uint32_t h = static_cast<uint32_t>(vp.Size.y);
-
-			if (isImGuiEnabled)
+			const Extent panel{static_cast<uint32_t>(vp.Size.x), static_cast<uint32_t>(vp.Size.y)};
+			const Extent window = isImGuiEnabled ? Extent{} : Extent{app.GetWindow().GetWidth(), app.GetWindow().GetHeight()};
+			const auto resolved = ViewportResizeRule::ResolveSize(isImGuiEnabled, panel, window, CVars::ResolutionWidth.Get(), CVars::ResolutionHeight.Get());
+			if (!resolved.Valid)
 			{
-				if (!ValidViewportSize(w, h))
-				{
-					continue;
-				}
+				continue;
 			}
-			else
-			{
-				// Non-imgui path: viewport = window size
-				uint32_t windowW = app.GetWindow().GetWidth();
-				uint32_t windowH = app.GetWindow().GetHeight();
-				CVars::ApplyForcedResolution(windowW, windowH);
+			const uint32_t w = resolved.Size.W;
+			const uint32_t h = resolved.Size.H;
 
-				// mark viewport as changed
+			if (!isImGuiEnabled)
+			{
+				// Non-imgui path: viewport = window size (or the forced resolution); mark viewport as changed
 				auto& vpW = reg.Write<ViewportComponent>(vpEntity);
-				vpW.Size = {static_cast<float>(windowW), static_cast<float>(windowH)};
-				w = windowW;
-				h = windowH;
+				vpW.Size = {static_cast<float>(w), static_cast<float>(h)};
 			}
 
 			// Rebuild the scene + present + AA + upscale targets together, when missing, viewport-resized,
 			// OR the internal render scale changed (which resizes only the low-res scene Target).
 			{
-				// Scene Target renders at render.scale (#43); everything downstream stays full viewport res.
-				const float scale = CVars::ClampedRenderScale();
-				const uint32_t sw = ScaledExtent(w, scale);
-				const uint32_t sh = ScaledExtent(h, scale);
-				// GI target renders at render.gi.scale (#124), independent of render.scale.
-				const uint32_t giW = ScaledExtent(w, CVars::ClampedGIScale());
-				const uint32_t giH = ScaledExtent(h, CVars::ClampedGIScale());
-				// AO target renders at render.ao.scale (#126), independent of both.
-				const uint32_t aoW = ScaledExtent(w, CVars::ClampedAOScale());
-				const uint32_t aoH = ScaledExtent(h, CVars::ClampedAOScale());
-				// Sun-shadow target renders at render.shadows.scale, independent of AO/GI.
-				const uint32_t shadowW = ScaledExtent(w, CVars::ClampedShadowScale());
-				const uint32_t shadowH = ScaledExtent(h, CVars::ClampedShadowScale());
+				// Scene Target renders at render.scale (#43); GI (#124), AO (#126) and sun shadow have their own
+				// independent scales; everything else stays full viewport res.
+				const auto want = ViewportResizeRule::ScaledExtents(
+				    resolved.Size, {CVars::ClampedRenderScale(), CVars::ClampedGIScale(), CVars::ClampedAOScale(), CVars::ClampedShadowScale()});
+				const uint32_t sw = want.Scene.W, sh = want.Scene.H;
+				const uint32_t giW = want.GI.W, giH = want.GI.H;
+				const uint32_t aoW = want.AO.W, aoH = want.AO.H;
+				const uint32_t shadowW = want.Shadow.W, shadowH = want.Shadow.H;
 
 				const auto& rt = reg.Read<RenderTargetComponent>(vpEntity);
 				const bool missing = !rt.Target || !rt.PresentTarget || !rt.AAIntermediateTarget || !rt.SceneUpscaleTarget ||
@@ -124,20 +116,43 @@ namespace Snowstorm
 				                     !rt.ReflectionTarget || !rt.ReflectionDenoiser.Allocated() || !rt.PrevSceneColorTarget ||
 				                     !rt.PathTraceAccumTarget ||
 				                     !rt.HistoryTarget[0] || !rt.HistoryTarget[1];
-				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Compare each
-				// against its own expected extent so a scale change (Target only) still triggers a rebuild.
-				const bool viewportResized = rt.PresentTarget && (rt.PresentTarget->GetDesc().Width != w || rt.PresentTarget->GetDesc().Height != h);
-				const bool scaleChanged = rt.Target && (rt.Target->GetDesc().Width != sw || rt.Target->GetDesc().Height != sh);
-				// GI/AO scales can change independently — rebuild each when its own scaled extent changes.
-				const bool giScaleChanged = rt.GITarget && (rt.GITarget->GetDesc().Width != giW || rt.GITarget->GetDesc().Height != giH);
-				const bool aoScaleChanged = rt.AOTarget && (rt.AOTarget->GetDesc().Width != aoW || rt.AOTarget->GetDesc().Height != aoH);
-				// Live MSAA: the scene target's own color-attachment sample count records the active level, so a
-				// render.msaa change shows up as a mismatch here (mirrors scaleChanged). Forces the scene + GT
-				// targets to be reallocated at the new count; the pipeline rebuild below keeps them consistent.
-				const bool msaaChanged = rt.Target && !rt.Target->GetDesc().ColorAttachments.empty() &&
-				                         rt.Target->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().SampleCount != curMsaa;
-				const bool shadowScaleChanged = rt.ShadowTarget && (rt.ShadowTarget->GetDesc().Width != shadowW || rt.ShadowTarget->GetDesc().Height != shadowH);
-				if (missing || viewportResized || scaleChanged || giScaleChanged || aoScaleChanged || shadowScaleChanged || msaaChanged)
+				// Present target tracks the FULL viewport size; Target tracks the SCALED size. Each is compared
+				// against its own expected extent so a scale change (Target only) still triggers a rebuild. Live
+				// MSAA: the scene target's color-attachment sample count records the active level.
+				ViewportResizeRule::Current cur;
+				cur.Missing = missing;
+				if (rt.PresentTarget)
+				{
+					cur.HasPresent = true;
+					cur.Present = ExtentOf(rt.PresentTarget);
+				}
+				if (rt.Target)
+				{
+					cur.HasScene = true;
+					cur.Scene = ExtentOf(rt.Target);
+				}
+				if (rt.GITarget)
+				{
+					cur.HasGI = true;
+					cur.GI = ExtentOf(rt.GITarget);
+				}
+				if (rt.AOTarget)
+				{
+					cur.HasAO = true;
+					cur.AO = ExtentOf(rt.AOTarget);
+				}
+				if (rt.ShadowTarget)
+				{
+					cur.HasShadow = true;
+					cur.Shadow = ExtentOf(rt.ShadowTarget);
+				}
+				if (rt.Target && !rt.Target->GetDesc().ColorAttachments.empty())
+				{
+					cur.HasMsaaSource = true;
+					cur.Msaa = rt.Target->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().SampleCount;
+				}
+				const bool msaaChanged = cur.HasMsaaSource && cur.Msaa != curMsaa;
+				if (ViewportResizeRule::NeedsRebuild(cur, resolved.Size, want, curMsaa))
 				{
 					// Dropping the old targets is safe mid-flight: texture images and views retire through the
 					// deferred-deletion queue, and bindless slots through their own quarantine.
