@@ -4,6 +4,7 @@
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
+#include "Snowstorm/Core/GameCameraRule.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Project/Project.hpp"
 #include "Snowstorm/Project/ProjectSerializer.hpp"
@@ -159,7 +160,10 @@ namespace Snowstorm
 		// choice, never entt iteration order. (The editor's Scene-view camera is DoNotSerialize + editor-only,
 		// so it never appears in the runtime.)
 		const entt::entity authored = FindScenePrimaryCamera(reg);
-		if (authored == entt::null)
+		const GameCameraPlan plan = DecideGameCamera(authored != entt::null,
+		                                             authored != entt::null && reg.any_of<TransformComponent>(authored),
+		                                             CVars::CameraOverride.Get());
+		if (!plan.HasCamera)
 		{
 			// No Primary camera → a defined, safe no-camera state: nothing renders to the swapchain, so the
 			// window shows the clear color (RenderSystem adds no Present pass when no viewport resolves a
@@ -175,7 +179,7 @@ namespace Snowstorm
 		// Ensure the pieces needed to DRIVE and CULL it exist even if the author only placed a bare
 		// Transform + CameraComponent (fail-soft, since the author need not know the full component set).
 		Entity cam{authored, m_World.get()};
-		if (!reg.any_of<TransformComponent>(authored))
+		if (plan.AddTransform)
 		{
 			cam.AddComponent<TransformComponent>();
 		}
@@ -190,8 +194,10 @@ namespace Snowstorm
 		// (world position + Euler rotation, radians). Set before the first update so CameraControllerSystem
 		// seeds its look target from this pose (and, with no headless input, holds it). Lets the quality-bench
 		// harness capture arbitrary viewpoints in the runtime without editing the scene.
-		if (glm::vec3 pos{}, rot{}; CVars::ParseCameraOverride(CVars::CameraOverride.Get(), pos, rot))
+		if (plan.ApplyOverride)
 		{
+			const glm::vec3 pos = plan.OverridePosition;
+			const glm::vec3 rot = plan.OverrideRotation;
 			auto& tr = reg.Write<TransformComponent>(authored);
 			tr.Position = pos;
 			tr.Rotation = rot;
