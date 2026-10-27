@@ -40,8 +40,8 @@ namespace
 
 		const auto lower = [](std::string v)
 		{
-			std::ranges::transform(v, v.begin(), [](const unsigned char c)
-			                       { return static_cast<char>(std::tolower(c)); });
+			std::transform(v.begin(), v.end(), v.begin(), [](const unsigned char c)
+			               { return static_cast<char>(std::tolower(c)); });
 			return v;
 		};
 
@@ -49,7 +49,9 @@ namespace
 		size_t pos = 6;
 		while (pos < s.size())
 		{
-			const size_t end = std::min(s.find('/', pos), s.size());
+			size_t end = s.find('/', pos);
+			if (end == std::string::npos)
+				end = s.size();
 			const std::string part = s.substr(pos, end - pos);
 			pos = end + 1;
 
@@ -95,8 +97,8 @@ namespace
 		if (node.is_string())
 		{
 			const auto& s = node.get_ref<const std::string&>();
-			if (s.size() >= 10 && s.size() <= 20 && std::ranges::all_of(s, [](const char c)
-			                                                            { return c >= '0' && c <= '9'; }))
+			if (s.size() >= 10 && s.size() <= 20 && std::all_of(s.begin(), s.end(), [](const char c)
+			                                                    { return c >= '0' && c <= '9'; }))
 				out.insert(s);
 		}
 		else if (node.is_array() || node.is_object())
@@ -145,8 +147,8 @@ TEST_CASE("Every Sandbox scene parses, keeps its components and resolves its ass
 				{
 					const std::string name = it.key();
 					const auto& reg = GetComponentRegistry();
-					const bool known = kEditorOnly.count(name) != 0 || std::ranges::any_of(reg, [&](const ComponentInfo& ci)
-					                                                                       { return ci.Type.is_valid() && ci.Type.get_name().to_string() == name; });
+					const bool known = kEditorOnly.count(name) != 0 || std::any_of(reg.begin(), reg.end(), [&](const ComponentInfo& ci)
+					                                                               { return ci.Type.is_valid() && ci.Type.get_name().to_string() == name; });
 					INFO("entity '" << ent.value("Name", "?") << "' component " << name);
 					CHECK(known);
 				}
