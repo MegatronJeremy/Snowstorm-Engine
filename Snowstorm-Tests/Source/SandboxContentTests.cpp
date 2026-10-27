@@ -78,7 +78,7 @@ namespace
 			if (e.is_regular_file() && e.path().extension() == ext)
 				out.push_back(e.path());
 		}
-		std::ranges::sort(out);
+		std::sort(out.begin(), out.end());
 		return out;
 	}
 
@@ -141,8 +141,9 @@ TEST_CASE("Every Sandbox scene parses, keeps its components and resolves its ass
 				const auto comps = ent.find("Components");
 				if (comps == ent.end())
 					continue;
-				for (const auto& [name, body] : comps->items())
+				for (auto it = comps->begin(); it != comps->end(); ++it)
 				{
+					const std::string name = it.key();
 					const auto& reg = GetComponentRegistry();
 					const bool known = kEditorOnly.count(name) != 0 || std::ranges::any_of(reg, [&](const ComponentInfo& ci)
 					                                                                       { return ci.Type.is_valid() && ci.Type.get_name().to_string() == name; });
