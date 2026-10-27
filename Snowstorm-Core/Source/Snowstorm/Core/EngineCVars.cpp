@@ -149,6 +149,15 @@ namespace Snowstorm::CVars
 	CVar<std::string> ShaderStatsPath{"shader.stats.path", "Engine/cache/shader-stats.json",
 	                                  "Output path for shader.stats.", CVarFlags::ReadOnly};
 
+	CVar<bool> VulkanCaps{"vulkan.caps", false,
+	                      "At device creation, log and write (vulkan.caps.path) what the driver reports for VK_KHR_cooperative_matrix (every M/N/K, "
+	                      "type and scope), shader float16/int8 and subgroup size control (the wave32/wave64 range). Queries the physical device "
+	                      "without enabling anything, so it describes the adapter, not the engine's choices. Scripts/vulkan-caps.py drives it.",
+	                      CVarFlags::ReadOnly};
+
+	CVar<std::string> VulkanCapsPath{"vulkan.caps.path", "Engine/cache/vulkan-caps.json",
+	                                 "Output path for vulkan.caps.", CVarFlags::ReadOnly};
+
 	CVar<bool> OmmEnabled{"render.omm", true, "Use opacity micromaps (VK_EXT_opacity_micromap) for RT cutout geometry when supported; off = the inline any-hit alpha test alone. Read at TLAS build (change forces a rebuild).", CVarFlags::Persist};
 
 	CVar<float> Exposure{"render.exposure", 1.0f, "Linear exposure multiplier applied before tonemapping (1.0 = neutral)", CVarFlags::Persist};
