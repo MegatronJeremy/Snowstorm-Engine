@@ -427,6 +427,7 @@ namespace Snowstorm
 		// frame later (its submit fence retired) this maps them and writes the .ssibl so the next run hits the
 		// cache. No-op on a cache hit or when no save is pending.
 		m_IBLBakePass.PumpCacheSave();
+		m_IBLBakePass.AdvanceFrame();
 
 		// Push the baked IBL indices into the renderer's FrameCB assembly, but only while IBL is enabled.
 		// Toggling off writes zeros, so DefaultLit falls back to the analytic ambient (the maps stay baked,

@@ -102,3 +102,14 @@ TEST_CASE("IBLRebakeStats accumulates count, mean and max stall", "[ibl]")
 	REQUIRE(s.MeanStallMs() == Catch::Approx(4.0));
 	REQUIRE(s.MaxStallMs == Catch::Approx(6.0));
 }
+
+TEST_CASE("IBL bake plan: only the first bake computes the LUT and persists", "[ibl]")
+{
+	const IBLBakePlan first = PlanIBLBake(false);
+	CHECK(first.BakeBRDFLut);
+	CHECK(first.Persist);
+
+	const IBLBakePlan later = PlanIBLBake(true);
+	CHECK_FALSE(later.BakeBRDFLut);
+	CHECK_FALSE(later.Persist);
+}
