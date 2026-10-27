@@ -4,6 +4,7 @@
 
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Render/AlphaModeRules.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/CommandContext.hpp"
 #include "Snowstorm/Render/DescriptorSetLayout.hpp"
@@ -52,7 +53,7 @@ namespace Snowstorm
 
 	bool MaterialInstance::IsSortedTransparent() const
 	{
-		return CVars::TransparentPass.Get() && m_Base->GetAlphaMode() == AlphaMode::Blend && m_Base->GetBlendPipeline();
+		return IsSortedTransparentRule(CVars::TransparentPass.Get(), m_Base->GetAlphaMode(), m_Base->GetBlendPipeline() != nullptr);
 	}
 
 	const Ref<Pipeline>& MaterialInstance::GetPipeline() const
