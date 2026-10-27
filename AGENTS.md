@@ -927,6 +927,17 @@ after destruction by `BeginFrame` (same call site as `VulkanBindlessManager::Adv
 set no longer stalls the device. Pools live until `Shutdown`. The policy arithmetic is backend-free in
 `DescriptorPoolPolicy.hpp` (Catch2-tested); bindless keeps its own pool.
 
+## Shader and acceleration-structure tuning CVars
+
+All of these are `ReadOnly` (startup-only) and default to today's behaviour; `Scripts/speed-tune.py` searches them through `SS_*` env. None has run on a GPU.
+
+- `render.shaders.opt` (default -1): dxc `-O0..-O3`; -1 passes no flag (dxc's own -O3). Keyed into the `.spv` cache only when set, so default cache entries stay valid. `Scripts/cook-shaders.py --opt N` mirrors it so an RGA run can see the same SPIR-V. Ignored under `render.shaders.debug`.
+- `render.fp16` (default on): off forces the fp32 path (no `SS_FP16`, fp32 neural weights) on fp16-capable devices. Gated in `VulkanRendererAPI::IsFloat16Supported`, so the permutation and the weight packing cannot disagree. `cook-shaders.py --no-fp16` mirrors it.
+- `render.as.prefer_fast_build` (default off): BLAS and TLAS build with `PREFER_FAST_BUILD` instead of `PREFER_FAST_TRACE`.
+- `render.as.compaction` (default off): BLAS builds add `ALLOW_COMPACTION`, read the compacted size back and copy into a smaller allocation when it is strictly smaller (`ShouldCompactAs`). One extra synchronous submit per BLAS. The TLAS is not compacted. The flag and decision rules are `Render/AccelerationStructureBuild.hpp`, tested in `AccelerationStructureBuildTests`.
+
+- `render.wg.ao`, `render.wg.gi`, `render.wg.reflection`, `render.wg.shadow` (default 8): square compute tile side, 4, 8 or 16 (anything else is 8). The GI family is GI, GITemporal, GISpatialReuse and GIDenoise. The shaders say `[numthreads(SS_WG_X, SS_WG_Y, 1)]` with the default in `Include/Workgroup.hlsli`; `Render/WorkgroupSize.hpp` (`ClampWorkgroupSide`, `WorkgroupCount`, `AppendWorkgroupDefines`) feeds both the define and the C++ dispatch math, so they cannot drift. The default emits no define, so its `.spv` key, its cooked variant and the RGA baselines are unchanged (adding `Workgroup.hlsli` re-keys the include-header hash once). A non-default side is a new permutation that compiles at runtime; it is not in `shader-permutations.txt`. None of the shaders has `groupshared` memory or reads `SV_GroupThreadID`, which is what makes the size free to change; check that before extending the knob to another shader. The other `numthreads` shaders (SSAO, SSR, SSGI, Neural*, IBL*, PathTrace, Metrics, Pick, OmmBake) are not a knob yet. Unverified on a GPU: nothing here has run, and a larger tile can cost occupancy on the RT passes.
+
 ## Texture block compression
 
 `cook.textures.compress` block-compresses cooked textures, **on by default** after eyes-on confirmation on

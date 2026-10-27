@@ -310,7 +310,9 @@ float TraceShadow(uint2 px, uint frame, uint dimBase, float3 positionWS, float3 
 	return 1.0;     // lit
 }
 
-[numthreads(8, 8, 1)]
+#include "Include/Workgroup.hlsli"
+
+[numthreads(SS_WG_X, SS_WG_Y, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= OutSize.x || id.y >= OutSize.y)

@@ -231,6 +231,15 @@ namespace Snowstorm::CVars
 	// froze the editor). Not Persist: it's a dev flag, not a saved user setting. RT permutations still drop
 	// -fspv-debug even here (dxc 1.9 crash on -fspv-debug + inline ray query).
 	extern CVar<bool> ShadersDebug;
+	extern CVar<int> ShadersOpt;
+	extern CVar<bool> Fp16;
+	// Compute workgroup side (square tile) per pass family; see Render/WorkgroupSize.hpp. Startup-only.
+	extern CVar<int> WgAo;
+	extern CVar<int> WgGi;
+	extern CVar<int> WgReflection;
+	extern CVar<int> WgShadow;
+	extern CVar<bool> AsPreferFastBuild;
+	extern CVar<bool> AsCompaction;
 
 	// One-shot bake tool: populate a fresh scene, serialize it to a .world under Assets/Scenes/, then
 	// exit. Afterwards the scene is opened from the Content Browser like any other .world. Empty
