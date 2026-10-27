@@ -146,6 +146,10 @@ namespace Snowstorm::CVars
 	                       "pipeline creation and so is off for normal runs.",
 	                       CVarFlags::ReadOnly};
 
+	CVar<int> SubgroupSize{"render.subgroup.size", 0, "Required subgroup (wave) size for every compute pipeline via VK_EXT_subgroup_size_control: 32 or 64 on RDNA, 0 = driver's choice (default). Dropped per pipeline when the device does not allow it. Read at pipeline creation, so it applies at launch.", CVarFlags::ReadOnly};
+
+	CVar<std::string> SubgroupOverrides{"render.subgroup.overrides", "", "Per-shader required subgroup size, \"Name=Size,Name=Size\" (Name is a substring of the shader path, first match wins), beating render.subgroup.size. Example: GIDenoise=32,Reflection=64.", CVarFlags::ReadOnly};
+
 	CVar<std::string> ShaderStatsPath{"shader.stats.path", "Engine/cache/shader-stats.json",
 	                                  "Output path for shader.stats.", CVarFlags::ReadOnly};
 
