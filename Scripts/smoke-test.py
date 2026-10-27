@@ -40,6 +40,8 @@ import os
 import re
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 # Targets: (display name, path under build/ to the exe, scene, extra env).
@@ -88,6 +90,11 @@ ERROR_MARKERS = [
     "assert failed",
     "terminate called",
     "unhandled exception",
+    # A lost device is a failure even when the process exits 0 afterwards. On AMD a hung GPU can end in a
+    # Windows bugcheck (0x133) instead of a device reset, so the earliest sign must stop the run.
+    "vk_error_device_lost",
+    "device lost",
+    "device_lost",
 ]
 WARNING_MARKERS = ["[warning]"]
 
@@ -131,10 +138,55 @@ def clear_cook_caches(repo_root: Path) -> None:
             print(f"  cold: cleared {rel}")
 
 
+# Seconds without a single byte of output before the app is treated as hung and killed. The engine logs
+# steadily while frames run, and a GPU hang freezes the log first; killing early limits how long a stuck
+# submission can sit on the driver. 0 disables it.
+DEFAULT_STALL_SECONDS = 60
+
+
+def run_with_watchdog(cmd: list[str], cwd: str, env: dict[str, str], timeout: int, stall: int):
+    """Run cmd capturing merged output; kill the process tree on wall-clock timeout or an output stall.
+    Returns (returncode or None, output, reason or None)."""
+    proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, errors="replace")
+    lines: list[str] = []
+    last = [time.monotonic()]
+
+    def pump():
+        for line in proc.stdout:
+            lines.append(line)
+            last[0] = time.monotonic()
+
+    t = threading.Thread(target=pump, daemon=True)
+    t.start()
+    start = time.monotonic()
+    reason = None
+    while proc.poll() is None:
+        now = time.monotonic()
+        if now - start > timeout:
+            reason = f"timed out after {timeout}s (likely a hang/deadlock)"
+        elif stall > 0 and now - last[0] > stall:
+            reason = f"no output for {stall}s (likely a GPU or driver hang)"
+        if reason:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+            else:
+                proc.kill()
+            break
+        time.sleep(0.25)
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
+    t.join(timeout=5)
+    return proc.returncode, "".join(lines), reason
+
+
 def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
                warnings_fail: bool, layer_path: Path | None, strict: bool,
                scene: str | None, max_frame_ms: int, vsync_stress: int,
-               extra_env: dict[str, str], project: str | None = None) -> bool:
+               extra_env: dict[str, str], project: str | None = None,
+               stall: int = DEFAULT_STALL_SECONDS) -> bool:
     print(f"\n=== {name} :: {exe.name} ===")
     if not exe.exists():
         print(f"  FAIL: executable not found at {exe}")
@@ -176,29 +228,19 @@ def run_target(name: str, exe: Path, cwd: Path, frames: int, timeout: int,
     else:
         print(f"  note: validation layer path not found ({layer_path}); running without layers.")
 
-    try:
-        proc = subprocess.run(
-            [str(exe)] + ([f"--startup.project={project}"] if project else []),
-            cwd=str(cwd),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired as e:
-        print(f"  FAIL: timed out after {timeout}s (likely a hang/deadlock).")
-        captured = (e.stdout or "") + (e.stderr or "")
-        tail = "\n".join(captured.splitlines()[-15:])
+    returncode, output, reason = run_with_watchdog(
+        [str(exe)] + ([f"--startup.project={project}"] if project else []), str(cwd), env, timeout, stall)
+    if reason:
+        print(f"  FAIL: {reason}.")
+        tail = "\n".join(output.splitlines()[-15:])
         if tail:
             print("  --- last output ---")
             print(tail)
         return False
 
-    output = (proc.stdout or "") + (proc.stderr or "")
-
     ok = True
-    if proc.returncode != 0:
-        print(f"  FAIL: exit code {proc.returncode}")
+    if returncode != 0:
+        print(f"  FAIL: exit code {returncode}")
         ok = False
 
     error_hits = scan_output(output, ERROR_MARKERS)
@@ -258,6 +300,8 @@ def main() -> int:
     ap.add_argument("--cwd", default=None,
                     help="Working directory for --exe (default: the directory the script is run from)")
     ap.add_argument("--cold", action="store_true", help="Delete cooked-asset caches first, to exercise the cold first-import path")
+    ap.add_argument("--stall-timeout", type=int, default=DEFAULT_STALL_SECONDS,
+                    help="Kill the app when it prints nothing for this many seconds (0 = off); a frozen log is the first sign of a GPU hang")
     ap.add_argument("--max-frame-ms", type=int, default=0, help="Fail if any single frame exceeds this many ms (0 = off). Catches per-frame stalls/freezes.")
     ap.add_argument("--vsync-stress", type=int, default=0, help="Toggle VSync every N frames (0 = off) to exercise swapchain recreation. Best with --strict; catches present-semaphore reuse bugs.")
     ap.add_argument("--headless", action="store_true",
@@ -322,7 +366,7 @@ def main() -> int:
         timeout = args.timeout or DEFAULT_TIMEOUT.get(name, DEFAULT_TIMEOUT_OTHER)
         results[name] = run_target(name, exe, cwd, args.frames, timeout,
                                    args.warnings_fail, layer_path, args.strict, args.scene, args.max_frame_ms,
-                                   args.vsync_stress, {}, args.project)
+                                   args.vsync_stress, {}, args.project, args.stall_timeout)
     for name, rel, default_scene, extra_env in targets:
         if args.staged:
             # The stage is flat, and the working directory has to be the stage itself: a package resolves
@@ -338,7 +382,7 @@ def main() -> int:
         timeout = args.timeout or DEFAULT_TIMEOUT.get(name, DEFAULT_TIMEOUT_OTHER)
         results[name] = run_target(name, exe, cwd, args.frames, timeout,
                                    args.warnings_fail, layer_path, args.strict, scene, args.max_frame_ms,
-                                   args.vsync_stress, extra_env, None if own else args.project)
+                                   args.vsync_stress, extra_env, None if own else args.project, args.stall_timeout)
 
     print("\n=== Summary ===")
     all_ok = True
