@@ -23,6 +23,14 @@ namespace Snowstorm
 	// focusing a small object shrinks the far plane and the scene clips as soon as you fly away.
 	void FramePrimaryCameraOnAABB(World& world, const AABB& bounds, bool adjustClipPlanes = false);
 
+	// World-space AABB of a sprite quad (Size and Pivot through the transform), and of every sprite.
+	bool ComputeEntitySpriteAABB(World& world, entt::entity entity, AABB& out);
+	bool ComputeWorldSpriteAABB(World& world, AABB& out);
+
+	// 2D Scene view framing: centre the editor camera on the bounds' xy and size the ortho view to fit them
+	// at the viewport's aspect. Leaves rotation and z alone. False when there is no editor camera.
+	bool FrameEditorCamera2D(World& world, const AABB& bounds);
+
 	// Frame the primary camera on a single entity's renderable bounds (interactive focus — never touches
 	// clip planes). Returns false if the entity has no mesh to frame.
 	bool FrameCameraOnEntity(World& world, entt::entity entity);
