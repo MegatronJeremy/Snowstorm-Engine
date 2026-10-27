@@ -4,6 +4,7 @@
 #include "Snowstorm/Assets/MaterialAssetIO.hpp"
 #include "Snowstorm/Assets/ReferenceClosure.hpp"
 #include "Snowstorm/Components/ComponentRegistry.hpp"
+#include "Snowstorm/Components/IDComponent.hpp"
 #include "Snowstorm/Math/CameraRoute.hpp"
 #include "Snowstorm/World/SceneSerializer.hpp"
 #include "Snowstorm/World/World.hpp"
@@ -149,7 +150,10 @@ TEST_CASE("Every Sandbox scene parses, keeps its components and resolves its ass
 					CHECK(known);
 				}
 			}
-			CHECK(world.GetRegistry().view<entt::entity>().size() >= entities);
+			size_t loaded = 0;
+			for (auto view = world.GetRegistry().view<IDComponent>(); [[maybe_unused]] const auto e : view)
+				++loaded;
+			CHECK(loaded >= entities);
 
 			// Every long decimal that is not an entity id must be a registered handle whose file exists.
 			std::set<std::string> decimals;
