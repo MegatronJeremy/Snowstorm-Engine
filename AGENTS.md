@@ -1222,7 +1222,9 @@ With one level, a sprite drawn much smaller than its texture aliases; mips and c
 The editor's Scene view takes the scene's Primary camera's render path and background on open, still flying in perspective
 (#341). `quality.capture` is a Scene3D effect and does not capture a Canvas2D frame.
 
-**`Sprites.world` is the testbed**, booted by smoke as `Sprites`: a 64x64 checkerboard magnified with `Nearest` and with
+**Pixel-perfect camera (#340, PR 1).** `CameraComponent::PixelsPerUnit` > 0 on an orthographic `Canvas2D` camera (0, the default, is off) derives the view height from the viewport: `PixelPerfectScale` takes the largest integer at which `ReferenceResolution` fits (an axis of 0 does not constrain; no reference means 1; never below 1), and `PixelPerfectOrthographicSize` makes `OrthographicSize = viewportH / (PixelsPerUnit * scale)`, so one texel spans exactly `scale` screen pixels. The camera translation is snapped to the texel grid (`SnapToTexel`) in `CameraRuntimeUpdateSystem`; rotation is not handled. Unity's Pixel Perfect Camera and Godot's `viewport` stretch mode also render into a reference-size target and letterbox; here the sprites still draw straight at present resolution, so the remainder is stretched, not letterboxed, and sprites keep `Nearest` filtering for the exact mapping. `PixelPerfectTests` cover the math; the system wiring and the shimmer-free pan are unverified on a GPU.
+
+**`Sprites.world` is the testbed**, booted by smoke as `Sprites` (its camera is pixel-perfect at 16 PPU, 320x180 reference): a 64x64 checkerboard magnified with `Nearest` and with
 `Linear`, a layer -1 logo 2 units nearer the camera that still draws under them, two layer 1 logos over them (one `FlipX`,
 tinted at 0.7 alpha), and a rotated layer 1, order 1 checker over the logo it overlaps.
 
