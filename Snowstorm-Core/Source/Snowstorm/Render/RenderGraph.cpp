@@ -60,6 +60,13 @@ namespace Snowstorm
 					out.push_back(w.Texture.get());
 				}
 			}
+			for (const Ref<Texture>& t : pass.PublishSampled)
+			{
+				if (t)
+				{
+					out.push_back(t.get());
+				}
+			}
 			if (!pass.Target)
 			{
 				return;
@@ -524,6 +531,17 @@ namespace Snowstorm
 				current->BeginRenderPass(*pass.Target);
 				pass.Execute(*current);
 				current->EndRenderPass();
+			}
+
+			// After the pass so the final layout is the published one; idempotent when already Sampled.
+			SS_CORE_ASSERT(pass.PublishSampled.empty() || pass.Queue == GpuQueue::Graphics,
+			               "PublishSampled is graphics-queue only");
+			for (const Ref<Texture>& t : pass.PublishSampled)
+			{
+				if (t)
+				{
+					current->TransitionToSampled(t);
+				}
 			}
 
 			current->EndGpuScope();
