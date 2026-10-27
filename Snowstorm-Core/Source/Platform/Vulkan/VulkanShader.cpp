@@ -211,7 +211,7 @@ namespace Snowstorm
 		                         const fs::path& outputSpv,
 		                         const wchar_t* profile,
 		                         const ShaderDefines& defines,
-		                         bool debug)
+		                         bool debug, int optLevel)
 		{
 			const std::wstring exe = dxcExe.wstring();
 			const std::wstring out = outputSpv.wstring();
@@ -226,6 +226,7 @@ namespace Snowstorm
 			request.includeDir = (GetEngineRoot() / "Engine" / "Shaders").wstring();
 			request.defines = defines;
 			request.debug = debug;
+			request.optLevel = optLevel;
 			const std::wstring cmd = BuildDxcCommandLine(request);
 
 			DWORD exitCode = 1;
@@ -286,7 +287,9 @@ namespace Snowstorm
 			}
 
 			// Defines and the opt level key the cache so variants never collide on one .spv.
-			const uint64_t h = ComputeShaderKey(fullText, HashIncludeHeaders(), flagsTag, defines, debug);
+			// render.shaders.opt is ReadOnly, so every call in a run sees one level.
+			const int optLevel = CVars::ShadersOpt.Get();
+			const uint64_t h = ComputeShaderKey(fullText, HashIncludeHeaders(), flagsTag, defines, debug, optLevel);
 
 			const std::string key = ToHex64(h);
 			const std::string stem = srcPath.stem().string(); // e.g. "Mesh.vert" -> "Mesh.vert"
@@ -350,7 +353,7 @@ namespace Snowstorm
 			const fs::path tmpSpvPath = outSpvPath.string() + tmpSuffix;
 			std::error_code ec;
 			fs::remove(tmpSpvPath, ec);
-			if (!CompileStageWithDxc(dxcExe, srcPath, tmpSpvPath, profile, defines, debug))
+			if (!CompileStageWithDxc(dxcExe, srcPath, tmpSpvPath, profile, defines, debug, optLevel))
 			{
 				fs::remove(tmpSpvPath, ec);
 				return false;
@@ -435,7 +438,7 @@ namespace Snowstorm
 		// 16-bit storage. Only NeuralConv.comp wraps its Weights buffer in #ifdef SS_FP16; every other shader
 		// ignores the define (no #ifdef), so this is a no-op for them but keeps the .spv cache key correct
 		// (an fp16-capable machine caches distinct SPIR-V). A non-fp16 device never emits it -> the fp32 path.
-		if (Renderer::IsFloat16Supported())
+		if (Renderer::IsFloat16Supported()) // already folds in the render.fp16 CVar
 		{
 			defines.emplace_back("SS_FP16=1");
 		}

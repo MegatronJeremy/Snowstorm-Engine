@@ -614,7 +614,7 @@ namespace Snowstorm
 
 	bool VulkanRendererAPI::IsFloat16Supported() const
 	{
-		return VulkanContext::Get().SupportsFloat16();
+		return CVars::Fp16.Get() && VulkanContext::Get().SupportsFloat16();
 	}
 
 	uint32_t VulkanRendererAPI::GetMaxSampleCount() const

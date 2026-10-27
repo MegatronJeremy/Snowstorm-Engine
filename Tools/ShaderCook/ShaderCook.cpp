@@ -1,13 +1,14 @@
 // Offline shader cook: compiles Engine/Shaders/*.hlsl to SPIR-V with the same dxc command line the
 // runtime uses (Snowstorm/Render/ShaderCompile.hpp), for the RGA occupancy gate on a machine with no GPU.
 //
-//   ShaderCook --dxc <dxc.exe> --shaders <dir> --out <dir> --permutations <file> [--variants rt,base] [--dry-run]
+//   ShaderCook --dxc <dxc.exe> --shaders <dir> --out <dir> --permutations <file> [--variants rt,base] [--opt -1..3] [--no-fp16] [--dry-run]
 //
 // Output names: <stem>[__<feature>]_<variant>.spv, the form rga-occupancy.py parses.
 
 #include "Snowstorm/Render/ShaderCompile.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -140,6 +141,8 @@ int main(int argc, char** argv)
 	         perms = "Scripts/shader-permutations.txt";
 	std::string variantArg = "rt";
 	bool dryRun = false;
+	int optLevel = kShaderOptDefault;
+	bool fp16 = true;
 
 	for (int i = 1; i < argc; ++i)
 	{
@@ -155,6 +158,10 @@ int main(int argc, char** argv)
 			out = argv[++i];
 		else if (a == "--permutations" && hasValue)
 			perms = argv[++i];
+		else if (a == "--opt" && hasValue)
+			optLevel = std::atoi(argv[++i]);
+		else if (a == "--no-fp16")
+			fp16 = false;
 		else if (a == "--variants" && hasValue)
 			variantArg = argv[++i];
 		else
@@ -234,8 +241,10 @@ int main(int argc, char** argv)
 				r.input = src.wstring();
 				r.includeDir = shaders.wstring();
 				r.defines = f.defines;
+				r.optLevel = optLevel;
 				for (const std::string& d : capability.at(v))
-					r.defines.push_back(d);
+					if (fp16 || d != "SS_FP16=1")
+						r.defines.push_back(d);
 				const std::string name = stem + (f.tag.empty() ? "" : "__" + f.tag) + "_" + v + ".spv";
 				const fs::path spv = out / name;
 				r.output = spv.wstring();

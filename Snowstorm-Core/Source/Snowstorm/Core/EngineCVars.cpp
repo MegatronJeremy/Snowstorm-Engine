@@ -107,6 +107,14 @@ namespace Snowstorm::CVars
 	// CLI) like Unreal's r.Shaders.Optimize, not live-toggled from a settings checkbox mid-session.
 	CVar<bool> ShadersDebug{"render.shaders.debug", false, "Compile shaders unoptimized (-Od) with debug info for RenderDoc/PIX source-stepping (off = optimized, the ship default). Startup-only: set it in SnowstormStartup.cfg / CLI and relaunch.", CVarFlags::ReadOnly};
 
+	CVar<int> ShadersOpt{"render.shaders.opt", -1, "dxc optimization level for non-debug shaders: -1 passes no flag (dxc's default, -O3), 0..3 pass -O0..-O3. Part of the .spv cache key. Startup-only; ignored with render.shaders.debug.", CVarFlags::ReadOnly};
+
+	CVar<bool> Fp16{"render.fp16", true, "Allow the fp16 shader permutation (SS_FP16) and fp16 neural weights on devices that support them; off forces the fp32 path everywhere. Startup-only: it re-keys the .spv cache.", CVarFlags::ReadOnly};
+
+	CVar<bool> AsPreferFastBuild{"render.as.prefer_fast_build", false, "Build BLAS and TLAS with PREFER_FAST_BUILD instead of PREFER_FAST_TRACE (default): cheaper builds, slower traces. Startup-only.", CVarFlags::ReadOnly};
+
+	CVar<bool> AsCompaction{"render.as.compaction", false, "Build each BLAS with ALLOW_COMPACTION, read back its compacted size and copy it into a smaller allocation when that saves memory. Costs one extra copy per BLAS at build time. Startup-only.", CVarFlags::ReadOnly};
+
 	CVar<std::string> BakeScene{"scene.bake", "", "Bake a scene to Assets/Scenes/<name>.world then exit. Value: 'stress' (procedural) or a model path (.gltf/.glb/.obj/.fbx)", CVarFlags::ReadOnly};
 
 	CVar<std::string> DumpMeshTangents{"debug.dump_mesh_tangents", "", "Analyze a model's UV/tangent structure across seams (#74) then exit. Value: model path", CVarFlags::ReadOnly};
