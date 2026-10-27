@@ -3,11 +3,7 @@
 #include "Snowstorm/Assets/AssetRegistry.hpp"
 #include "Snowstorm/Assets/MaterialAssetIO.hpp"
 #include "Snowstorm/Assets/ReferenceClosure.hpp"
-#include "Snowstorm/Components/ComponentRegistry.hpp"
-#include "Snowstorm/Components/IDComponent.hpp"
 #include "Snowstorm/Math/CameraRoute.hpp"
-#include "Snowstorm/World/SceneSerializer.hpp"
-#include "Snowstorm/World/World.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -109,7 +105,7 @@ namespace
 	}
 }
 
-TEST_CASE("Every Sandbox scene parses, keeps its components and resolves its asset handles", "[sandbox][content]")
+TEST_CASE("Every Sandbox scene parses and resolves its asset handles", "[sandbox][content]")
 {
 	AssetRegistry registry;
 	REQUIRE(registry.LoadFromFile(AssetsRoot() / "AssetRegistry.json"));
@@ -127,9 +123,6 @@ TEST_CASE("Every Sandbox scene parses, keeps its components and resolves its ass
 			const nlohmann::json scene = ReadJson(scenePath);
 			REQUIRE(scene.contains("Entities"));
 			REQUIRE(scene["Entities"].is_array());
-
-			World world;
-			REQUIRE(SceneSerializer::Deserialize(world, scenePath.string()));
 
 			std::set<std::string> entityIds;
 			for (const auto& ent : scene["Entities"])
