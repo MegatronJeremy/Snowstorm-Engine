@@ -59,6 +59,11 @@ cbuffer PTCB : register(b1, space0)
 	uint _ptPad1;
 	uint _ptPad2;
 
+	uint EmissiveNee;      // 1 = emissive-triangle NEE + MIS (render.pathtrace.emissivenee)
+	uint EmissiveCount;    // entries in the emissive triangle list
+	uint EmissiveAddrLo;   // emissive triangle list device address (lo/hi)
+	uint EmissiveAddrHi;
+
 	// Positional lights for NEE, world space, raw-packed into float4 rows (avoids struct cbuffer packing
 	// surprises). Point: [2i] = xyz position, w range; [2i+1] = xyz color, w intensity. Max 16.
 	float4 PointLights[32];
@@ -112,7 +117,9 @@ static const uint PT_SLOT_BSDF = 3u;
 static const uint PT_SLOT_RR = 4u;
 static const uint PT_SLOT_POINT = 5u;
 static const uint PT_SLOT_SPOT = PT_SLOT_POINT + MAX_PT_POINT_LIGHTS;
-static const uint PT_SLOTS_PER_BOUNCE = PT_SLOT_SPOT + MAX_PT_SPOT_LIGHTS;
+static const uint PT_SLOT_EMISSIVE_PICK = PT_SLOT_SPOT + MAX_PT_SPOT_LIGHTS;
+static const uint PT_SLOT_EMISSIVE_TRI = PT_SLOT_EMISSIVE_PICK + 1u;
+static const uint PT_SLOTS_PER_BOUNCE = PT_SLOT_EMISSIVE_TRI + 1u;
 
 struct Rng
 {
@@ -539,6 +546,138 @@ bool SampleBsdf(Hit h, float3 V, inout Rng rng, out float3 L, out float3 weight,
 	return true;
 }
 
+// -------- Emissive-triangle NEE (#154). The list is built on the CPU (EmissiveLightList.hpp, 64-byte records,
+// world-space triangles with a normalised CDF over area * emissive luminance); offsets below are its contract.
+struct EmissiveTri
+{
+	float3 p0;
+	float3 p1;
+	float3 p2;
+	uint instance;
+	uint prim;
+	float cdf;
+	float pmf;
+	float area;
+};
+
+EmissiveTri LoadEmissiveTri(uint i)
+{
+	const uint64_t base = ((uint64_t(EmissiveAddrHi) << 32) | uint64_t(EmissiveAddrLo)) + uint64_t(i) * 64ull;
+	EmissiveTri t;
+	t.p0 = float3(vk::RawBufferLoad<float>(base + 0, 4), vk::RawBufferLoad<float>(base + 4, 4), vk::RawBufferLoad<float>(base + 8, 4));
+	t.instance = vk::RawBufferLoad<uint>(base + 12, 4);
+	t.p1 = float3(vk::RawBufferLoad<float>(base + 16, 4), vk::RawBufferLoad<float>(base + 20, 4), vk::RawBufferLoad<float>(base + 24, 4));
+	t.prim = vk::RawBufferLoad<uint>(base + 28, 4);
+	t.p2 = float3(vk::RawBufferLoad<float>(base + 32, 4), vk::RawBufferLoad<float>(base + 36, 4), vk::RawBufferLoad<float>(base + 40, 4));
+	t.cdf = vk::RawBufferLoad<float>(base + 44, 4);
+	t.pmf = vk::RawBufferLoad<float>(base + 48, 4);
+	t.area = vk::RawBufferLoad<float>(base + 52, 4);
+	return t;
+}
+
+// First entry whose inclusive CDF exceeds u (EmissiveLightMath::PickFromCdf).
+uint PickEmissiveTri(float u)
+{
+	uint lo = 0u;
+	uint hi = EmissiveCount - 1u;
+	while (lo < hi)
+	{
+		const uint mid = (lo + hi) >> 1u;
+		if (vk::RawBufferLoad<float>(((uint64_t(EmissiveAddrHi) << 32) | uint64_t(EmissiveAddrLo)) + uint64_t(mid) * 64ull + 44ull, 4) > u)
+		{
+			hi = mid;
+		}
+		else
+		{
+			lo = mid + 1u;
+		}
+	}
+	return lo;
+}
+
+// Emitted radiance at barycentric weights b (for index order i0, i1, i2) of triangle `prim`.
+float3 EmissiveAt(GeoRecord rec, uint prim, float3 b)
+{
+	float3 e = rec.Emissive;
+	if (rec.EmissiveTextureIndex != 0)
+	{
+		const uint64_t idxBase = rec.IndexAddress + uint64_t(prim) * 12ull;
+		const float2 uv = b.x * LoadVertexUV(rec.VertexAddress, vk::RawBufferLoad<uint>(idxBase + 0, 4)) +
+		                  b.y * LoadVertexUV(rec.VertexAddress, vk::RawBufferLoad<uint>(idxBase + 4, 4)) +
+		                  b.z * LoadVertexUV(rec.VertexAddress, vk::RawBufferLoad<uint>(idxBase + 8, 4));
+		e *= Textures[NonUniformResourceIndex(rec.EmissiveTextureIndex)].SampleLevel(LinearSampler, uv, 0).rgb;
+	}
+	return e;
+}
+
+// Solid-angle pdf of picking and sampling a point of list entry `tri` as seen from distance d at cosine cosL.
+float EmissivePdfSolidAngle(EmissiveTri t, float distSq, float cosL)
+{
+	if (t.area <= 0.0 || cosL < 1e-6)
+	{
+		return 0.0;
+	}
+	return (t.pmf / t.area) * distSq / cosL;
+}
+
+// One emissive sample with the balance-heuristic weight against BSDF sampling. Emission is two-sided, like the
+// BSDF-continuation gather. Visibility is a hard occlusion test, matching the BSDF strategy (no ShadowStrength).
+float3 EmissiveNeeSample(Hit h, float3 V, inout Rng rng, uint64_t tableAddr)
+{
+	const uint idx = PickEmissiveTri(Next1(rng, PT_SLOT_EMISSIVE_PICK));
+	const float2 u = Next2(rng, PT_SLOT_EMISSIVE_TRI);
+	const EmissiveTri t = LoadEmissiveTri(idx);
+	if (t.pmf <= 0.0 || t.area <= 0.0)
+	{
+		return float3(0.0, 0.0, 0.0);
+	}
+	// PBRT-v4 SampleUniformTriangle (EmissiveLightMath::SampleTriangleUniform).
+	float b0;
+	float b1;
+	if (u.x < u.y)
+	{
+		b0 = u.x * 0.5;
+		b1 = u.y - b0;
+	}
+	else
+	{
+		b1 = u.y * 0.5;
+		b0 = u.x - b1;
+	}
+	const float3 b = float3(b0, b1, 1.0 - b0 - b1);
+	const float3 p = b.x * t.p0 + b.y * t.p1 + b.z * t.p2;
+	const float3 d = p - h.pos;
+	const float distSq = dot(d, d);
+	if (distSq < 1e-8)
+	{
+		return float3(0.0, 0.0, 0.0);
+	}
+	const float dist = sqrt(distSq);
+	const float3 L = d / dist;
+	if (dot(h.N, L) <= 0.0)
+	{
+		return float3(0.0, 0.0, 0.0);
+	}
+	const float3 Nl = normalize(cross(t.p1 - t.p0, t.p2 - t.p0));
+	const float pdfL = EmissivePdfSolidAngle(t, distSq, abs(dot(Nl, L)));
+	if (pdfL <= 0.0)
+	{
+		return float3(0.0, 0.0, 0.0);
+	}
+	uint i;
+	uint pr;
+	float2 bb;
+	float tt;
+	if (TraceClosest(OffsetRay(h.pos, h.Ng), L, max(dist - max(1e-3, dist * 1e-5), 0.0), tableAddr, i, pr, bb, tt))
+	{
+		return float3(0.0, 0.0, 0.0);
+	}
+	const float3 Le = EmissiveAt(LoadGeoRecord(tableAddr, t.instance), t.prim, b);
+	const float pdfB = BsdfPdf(h, V, L);
+	const float w = pdfL / max(pdfL + pdfB, 1e-8);
+	return EvalBsdf(h, V, L) * Le * (w / pdfL) * TerminatorG(h.Ng, h.N, L);
+}
+
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
@@ -601,8 +740,25 @@ void main(uint3 id : SV_DispatchThreadID)
 			const Hit h = ResolvePbrHit(tableAddr, instId, prim, bary, dir, hitPos);
 			const float3 V = -dir;
 
-			// Emissive surface.
-			radiance += throughput * h.emissive;
+			// Emissive surface. With emissive NEE on, a BSDF-sampled hit on a listed emitter is weighted against the
+			// light-sampling strategy (EmissiveNeeSample adds the complementary weight); camera rays keep full weight.
+			float emissiveW = 1.0;
+			if (EmissiveNee != 0u && EmissiveCount > 0u && lastBsdfPdf >= 0.0 && any(h.emissive > 0.0))
+			{
+				const GeoRecord hitRec = LoadGeoRecord(tableAddr, instId);
+				if (hitRec.EmissiveFirstTriangle != 0u)
+				{
+					const EmissiveTri et = LoadEmissiveTri(hitRec.EmissiveFirstTriangle - 1u + prim);
+					const float pdfL = EmissivePdfSolidAngle(et, tHit * tHit, abs(dot(h.Ng, dir)));
+					emissiveW = lastBsdfPdf / max(lastBsdfPdf + pdfL, 1e-8);
+				}
+			}
+			radiance += throughput * h.emissive * emissiveW;
+
+			if (EmissiveNee != 0u && EmissiveCount > 0u)
+			{
+				radiance += throughput * EmissiveNeeSample(h, V, rng, tableAddr);
+			}
 
 			// NEE to the sun as a FINITE disk light: sample a direction within its angular cone (uniform), so the
 			// reflected sun on smooth surfaces is a converging soft highlight instead of a single infinite hot

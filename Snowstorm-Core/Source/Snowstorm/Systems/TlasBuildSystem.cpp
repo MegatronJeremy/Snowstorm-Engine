@@ -7,6 +7,7 @@
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
+#include "Snowstorm/Render/EmissiveLightList.hpp"
 #include "Snowstorm/Render/MaterialInstance.hpp"
 #include "Snowstorm/Render/Mesh.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
@@ -90,6 +91,11 @@ namespace Snowstorm
 		const bool ommToggled = m_BuiltOnce && ommEnabled != m_LastOmmEnabled;
 		m_LastOmmEnabled = ommEnabled;
 
+		// The emissive light list is only built for the path tracer, and its toggle must rebuild a static scene.
+		const bool emissiveNee = CVars::PathTraceActive() && CVars::PathTraceEmissiveNee.Get();
+		const bool emissiveToggled = m_BuiltOnce && emissiveNee != m_LastEmissiveNee;
+		m_LastEmissiveNee = emissiveNee;
+
 		// While textures are still streaming, keep rebuilding: a cutout instance whose albedo isn't resident yet
 		// uses the any-hit fallback BLAS this frame (correct but unoptimized) and its OMM must bake once the real
 		// pixels arrive. Nothing else marks the scene dirty on a texture-only completion, so gate on the async
@@ -103,7 +109,7 @@ namespace Snowstorm
 		// Rebuild when the scene changed OR RT just turned on OR render.omm toggled OR assets are still streaming
 		// (the scene's per-frame dirty flags were consumed on prior frames, so a plain dirty-check would miss
 		// those edges).
-		if (m_BuiltOnce && !justEnabled && !ommToggled && !streaming && !IsSceneDirtyThisFrame())
+		if (m_BuiltOnce && !justEnabled && !ommToggled && !emissiveToggled && !streaming && !IsSceneDirtyThisFrame())
 		{
 			return;
 		}
@@ -122,6 +128,8 @@ namespace Snowstorm
 		// geometry through it (Inc 2). Filled in lockstep with `instances`, so record[i] describes the
 		// instance the GPU stamps instanceCustomIndex = i.
 		std::vector<GeometryRecord> geoRecords;
+		// Emissive list inputs, one per geoRecords entry (same order), only filled when emissive NEE is on.
+		std::vector<EmissiveLightList::InstanceInput> emissiveInputs;
 
 		// A cutout (glTF MASK) instance uses an OMM-carrying BLAS on an OMM-capable device (the micromap resolves
 		// coverage during traversal, any-hit only on UNKNOWN edges); elsewhere it falls back to the
@@ -207,6 +215,52 @@ namespace Snowstorm
 				rec.EmissiveB = c->EmissiveColor.b;
 			}
 			geoRecords.push_back(rec);
+			if (emissiveNee)
+			{
+				EmissiveLightList::InstanceInput in;
+				in.Instance = static_cast<uint32_t>(geoRecords.size() - 1);
+				in.Model = model;
+				in.Emissive = glm::vec3(rec.EmissiveR, rec.EmissiveG, rec.EmissiveB);
+				in.Positions = mc.MeshInstance->GetCpuPositions().data();
+				in.PositionCount = mc.MeshInstance->GetCpuPositions().size();
+				in.Indices = mc.MeshInstance->GetCpuIndices().data();
+				in.IndexCount = mc.MeshInstance->GetCpuIndices().size();
+				emissiveInputs.push_back(in);
+			}
+		}
+
+		// Emissive triangle list for path-tracer NEE (#154). Built before the table upload so each record carries its
+		// first list entry. Empty (count 0) when off, when nothing emits, or when the list is over its cap.
+		auto& emissiveGeo = SingletonView<ReflectionGeometrySingleton>();
+		emissiveGeo.EmissiveCount = 0;
+		emissiveGeo.EmissiveAddress = 0;
+		if (emissiveNee && !emissiveInputs.empty())
+		{
+			const EmissiveLightList::Result list = EmissiveLightList::Build(emissiveInputs);
+			if (list.Truncated)
+			{
+				SS_CORE_WARN("Emissive NEE disabled: more than {} emissive triangles (emission is gathered by BSDF sampling only).",
+				             EmissiveLightList::kMaxTriangles);
+			}
+			else if (!list.Triangles.empty())
+			{
+				const uint32_t n = static_cast<uint32_t>(list.Triangles.size());
+				if (!emissiveGeo.EmissiveTable || emissiveGeo.EmissiveCapacity < n)
+				{
+					emissiveGeo.EmissiveCapacity = n;
+					emissiveGeo.EmissiveTable = Buffer::Create(static_cast<size_t>(n) * sizeof(EmissiveLightList::GpuTriangle),
+					                                           BufferUsage::Storage, nullptr, false, "EmissiveLightList");
+				}
+				// Same drain as the geometry table below: prior frames may still read the previous list by address.
+				Renderer::WaitIdle();
+				emissiveGeo.EmissiveTable->SetData(list.Triangles.data(), n * sizeof(EmissiveLightList::GpuTriangle), 0);
+				emissiveGeo.EmissiveAddress = emissiveGeo.EmissiveTable->GetGPUAddress();
+				emissiveGeo.EmissiveCount = n;
+				for (size_t i = 0; i < geoRecords.size(); ++i)
+				{
+					geoRecords[i].EmissiveFirstTriangle = list.FirstTriangle[i];
+				}
+			}
 		}
 
 		// Publish the index->entity table for RT picking (consumed by the editor). Rebuilt every TLAS build
