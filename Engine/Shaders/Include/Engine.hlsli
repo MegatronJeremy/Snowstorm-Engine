@@ -235,11 +235,8 @@ cbuffer FrameCB : register(b0, space0)
 	// (0 = no half-res shadow this frame -> DefaultLit falls back to the inline SampleSunShadow). Takes the
 	// former _ReflTexPad0 slot (zero layout change). Sampled by the same screen UV as GI/AO/reflection.
 	uint SunShadowTextureIndex;
-	// TAA sub-pixel jitter in UV units (#: = JitterNdc * 0.5), or (0,0) on unjittered passes. The GI/AO/
-	// reflection screen-UV samples subtract this so the effect is fetched at the SAME sub-pixel location the
-	// jittered geometry is — without it those buffers are sampled at fixed integer pixel centers (jitter-
-	// independent) and their silhouettes stay frozen to the pixel grid, so TAA has no sub-pixel variation to
-	// average and half-res GI/AO edges never anti-alias (jaggies persist with TAA on).
+	// JitterNdc * 0.5 on jittered passes. Unread by any shader: the G-buffer is jittered like the forward
+	// pass, so screen-space effects are sampled at plain screen UV. Kept to preserve the FrameCB layout.
 	float2 JitterUv;
 
 	// Demodulated specular twin of the shadow signal (MegaLights/NRD): bindless index of the full-res upsampled

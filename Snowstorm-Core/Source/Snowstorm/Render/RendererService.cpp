@@ -210,11 +210,11 @@ namespace Snowstorm
 		// at native) — less motion noise than -1.0. Non-jittered passes (shadow/velocity/GT) sample normally.
 		m_MipBias = useJitteredProjection ? -0.5f : 0.0f;
 
-		// TAA jitter for the GI/AO/reflection screen-UV samples (#): the jittered forward raster shifts geometry
-		// by JitterNdc, so those unjittered full-res buffers must be sampled at uv - JitterUv to hit the SAME
-		// sub-pixel spot — giving TAA sub-pixel variation to average (else their half-res edges stay pixel-grid-
-		// frozen and never anti-alias). NDC spans 2 units across the screen, UV spans 1, so UV = NDC * 0.5.
-		// Only the jittered color pass gets a non-zero offset; shadow/velocity/GT stay unjittered (0).
+		// Vestigial: no shader reads FrameCB.JitterUv. The DepthNormal G-buffer is rasterized with the same
+		// JitteredViewProjection as the forward pass, so GI/AO/reflection/shadow buffers are sampled at plain
+		// screen UV. Sign, if it is ever needed: with glm RH (clip.w = -z_view) adding J to P[2][0] shifts
+		// projected points by -J in NDC at every depth, so the old uv - JitterUv had the wrong sign; the y
+		// mapping depends on the projection's Y flip, which was not checked against a GPU frame.
 		m_JitterUv = useJitteredProjection ? cameraRt.JitterNdc * 0.5f : glm::vec2(0.0f);
 
 		m_Batches.clear();
