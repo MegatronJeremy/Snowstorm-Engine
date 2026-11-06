@@ -12,6 +12,7 @@
 #include "Snowstorm/Components/CameraTargetComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 #include "Snowstorm/Components/ViewportInteractionComponent.hpp"
+#include "Snowstorm/Systems/CameraControllerMath.hpp"
 
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/Core/Application.hpp" // for cursor mode via window (see note)
@@ -22,47 +23,12 @@ namespace Snowstorm
 {
 	namespace
 	{
-		// Build orientation explicitly:
-		// - yaw about WORLD up (0,1,0)
-		// - pitch about camera-local right axis (after yaw)
-		glm::vec3 ForwardFromPitchYaw(const float pitchRadians, const float yawRadians)
-		{
-			constexpr glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
-
-			const glm::quat qYaw = glm::angleAxis(yawRadians, worldUp);
-			// After yaw, camera-local right is qYaw * (1,0,0)
-			const glm::vec3 rightAfterYaw = qYaw * glm::vec3(1.0f, 0.0f, 0.0f);
-			const glm::quat qPitch = glm::angleAxis(pitchRadians, rightAfterYaw);
-
-			const glm::quat q = qPitch * qYaw;
-			return glm::normalize(q * glm::vec3(0.0f, 0.0f, -1.0f));
-		}
-
-		glm::vec3 RightFromForward(const glm::vec3& forward)
-		{
-			constexpr glm::vec3 up(0.0f, 1.0f, 0.0f);
-			// With forward defaulting to -Z and up +Y, this yields +X for right.
-			return glm::normalize(glm::cross(forward, up));
-		}
+		using namespace CameraControllerMath;
 
 		void SetCursorLocked(const bool locked)
 		{
 			auto& window = Application::Get().GetWindow();
 			window.SetCursorMode(locked ? CursorMode::Locked : CursorMode::Normal);
-		}
-	}
-
-	namespace
-	{
-		// Frame-rate-independent exponential smoothing factor: fraction to move toward the
-		// target this frame given a rate (1/sec) and dt. rate<=0 -> snap (no smoothing).
-		float SmoothAlpha(const float rate, const float dt)
-		{
-			if (rate <= 0.0f)
-			{
-				return 1.0f;
-			}
-			return 1.0f - std::exp(-rate * dt);
 		}
 	}
 
@@ -196,9 +162,7 @@ namespace Snowstorm
 			rtState.TargetYaw += glm::radians(-dx * ctrl.LookSensitivity);
 			rtState.TargetPitch += glm::radians(dy * ctrl.LookSensitivity);
 
-			// Avoid exact ±90 deg to prevent singularity / weird yaw near straight up/down.
-			constexpr float limit = glm::half_pi<float>() - 0.001f;
-			rtState.TargetPitch = glm::clamp(rtState.TargetPitch, -limit, limit);
+			rtState.TargetPitch = ClampLookPitch(rtState.TargetPitch);
 		}
 
 		// Ease the transform's rotation toward the target (exponential smoothing).
@@ -211,7 +175,6 @@ namespace Snowstorm
 		// Axes computed AFTER look so movement uses the (eased) current orientation.
 		const glm::vec3 forward = ForwardFromPitchYaw(tr.Rotation.x, tr.Rotation.y);
 		const glm::vec3 right = RightFromForward(forward);
-		constexpr glm::vec3 up(0.0f, 1.0f, 0.0f);
 
 		// ---- Speed: scroll adjusts fly speed geometrically while RMB held (editor convention);
 		// otherwise scroll dollies/zooms as before.
@@ -269,33 +232,15 @@ namespace Snowstorm
 
 		if (rightClickHeld)
 		{
-			if (isKeyDown(Key::D))
-				moveDir += right;
-			if (isKeyDown(Key::A))
-				moveDir -= right;
-
-			if (isPerspective)
-			{
-				if (isKeyDown(Key::W))
-					moveDir += forward;
-				if (isKeyDown(Key::S))
-					moveDir -= forward;
-				if (isKeyDown(Key::E))
-					moveDir += up;
-				if (isKeyDown(Key::Q))
-					moveDir -= up;
-			}
-			else
-			{
-				if (isKeyDown(Key::W))
-					moveDir += up;
-				if (isKeyDown(Key::S))
-					moveDir -= up;
-				if (isKeyDown(Key::E))
-					moveDir += forward;
-				if (isKeyDown(Key::Q))
-					moveDir -= forward;
-			}
+			const MoveKeys keys{
+			    .W = isKeyDown(Key::W),
+			    .A = isKeyDown(Key::A),
+			    .S = isKeyDown(Key::S),
+			    .D = isKeyDown(Key::D),
+			    .Q = isKeyDown(Key::Q),
+			    .E = isKeyDown(Key::E),
+			};
+			moveDir = ComposeMoveDir(keys, forward, right, isPerspective);
 		}
 
 		// Sprint / slow modifiers.
@@ -306,9 +251,7 @@ namespace Snowstorm
 			speed *= ctrl.SlowMultiplier;
 
 		// Target velocity from input; ease the actual velocity toward it for accel/decel.
-		const glm::vec3 targetVel = (glm::dot(moveDir, moveDir) > 0.0f)
-		                                ? glm::normalize(moveDir) * speed
-		                                : glm::vec3(0.0f);
+		const glm::vec3 targetVel = TargetVelocity(moveDir, speed);
 
 		const float moveA = SmoothAlpha(ctrl.MoveSmoothing, dt);
 		rtState.MoveVelocity += (targetVel - rtState.MoveVelocity) * moveA;
