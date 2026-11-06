@@ -3,62 +3,10 @@
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Components/MaterialComponent.hpp"
 #include "Snowstorm/Components/MaterialOverridesComponent.hpp"
+#include "Snowstorm/Systems/MaterialOverrideRule.hpp"
 
 namespace Snowstorm
 {
-	namespace
-	{
-		// True if an override is handled per-instance (in the instance buffer) rather than by baking a
-		// unique MaterialInstance. AlbedoTexture rides the per-instance buffer (RenderSystem resolves it
-		// to a bindless index), so it does NOT force a unique instance — that's what lets objects with
-		// different albedo textures still share a material and batch.
-		bool IsPerInstanceOverride(const MaterialOverride& o)
-		{
-			return o.Type == MaterialOverrideType::Texture && o.Name == "AlbedoTexture";
-		}
-
-		// Does this entity have any override that genuinely needs a unique MaterialInstance (i.e. one
-		// not handled per-instance, e.g. BaseColor)?
-		bool NeedsUniqueInstance(const MaterialOverridesComponent& ov)
-		{
-			for (const MaterialOverride& o : ov.Overrides)
-			{
-				if (!IsPerInstanceOverride(o))
-				{
-					return true;
-				}
-			}
-			return false;
-		}
-
-		void ApplyOverrides(AssetManagerSingleton& assets,
-		                    const MaterialOverridesComponent& ov,
-		                    MaterialInstance& mi)
-		{
-			// Apply only the overrides that bake into the instance; per-instance ones (albedo) are
-			// handled at draw time via the instance buffer, so skip them here.
-			for (const MaterialOverride& o : ov.Overrides)
-			{
-				if (IsPerInstanceOverride(o))
-				{
-					continue;
-				}
-				if (o.Name == "BaseColor" && o.Type == MaterialOverrideType::Color)
-				{
-					mi.SetBaseColor(o.Color);
-				}
-				else if (o.Name == "Roughness" && o.Type == MaterialOverrideType::Float)
-				{
-					mi.SetRoughness(o.Scalar);
-				}
-				else if (o.Name == "Metallic" && o.Type == MaterialOverrideType::Float)
-				{
-					mi.SetMetallic(o.Scalar);
-				}
-			}
-		}
-	}
-
 	void MaterialResolveSystem::Execute(Timestep)
 	{
 		auto& reg = m_World->GetRegistry();
@@ -148,7 +96,7 @@ namespace Snowstorm
 				continue;
 			}
 
-			ApplyOverrides(assets, *ov, *unique);
+			ApplyBakedOverrides(*ov, *unique);
 
 			auto& mc = reg.Write<MaterialComponent>(e);
 			mc.MaterialInstance = unique;
