@@ -197,6 +197,10 @@ instead of a raw `VkImage 0x...` handle.
 
 **Headless mode (`SS_HEADLESS=1`, or `--headless` on `smoke-test.py` and `perf-bench.py`) needs no unlocked desktop.** The `headless` CVar creates the GLFW window hidden (ImGui's GLFW backend and input still get a window handle), creates no `VkSurfaceKHR` or swapchain, and makes `VulkanContext` own four offscreen BGRA8 images in the swapchain's place. `BeginFrame` signals the image-available semaphore with an empty submit instead of acquiring, and the end of the frame consumes the render-finished semaphore with an empty wait-only submit instead of presenting. Device and queues, the frame graph, asset streaming and the settle check run as before. Both scripts print `Mode:` as `HEADLESS` or `windowed`. Headless perf numbers skip present, so capture committed perf baselines windowed.
 
+**A hung GPU must not take the machine with it.** The harness kills the process tree when the app prints nothing for `--stall-timeout` seconds (default 60; 0 = off) as well as at the wall-clock `--timeout`, and `VK_ERROR_DEVICE_LOST` / "device lost" anywhere in the log fails the run. On AMD a hung submission can end in a Windows bugcheck (0x133) instead of a device reset, so the earliest sign has to stop the run. `Scripts/test_smoke_test_watchdog.py` covers the watchdog and the marker GPU-free.
+
+**Cached SPIR-V is validated before use.** `Engine/cache/shaders/<stem>_<key>.spv` has a sidecar `.spv.key` (key, size, content hash). `ValidateCachedSpirv` (`Render/SpirvBlobValidation.hpp`, `SpirvBlobValidationTests`) rejects a blob with a bad magic, a version outside 1.0-1.5, a size or hash that differs from its stamp, a stamp for another key, or no stamp; `VulkanShader` then deletes it and recompiles with dxc. A cache from before the sidecar existed is recompiled once, so a build shipping a warm cache without dxc must ship the sidecars too. A rejected blob is deleted even when dxc is missing, so that call then fails. Deletion happens only under the per-path compile lock; the unlocked pre-check never removes. The compiler publishes the stamp before renaming the blob into place, so a blob is never visible without its stamp. Unverified on a GPU.
+
 **A run passes only once assets settle.** After the frame budget the app keeps running until
 `AssetManagerSingleton::PendingLoadCount() == 0` and no bindless slot is still the placeholder
 (`UnsettledReason`, reached through `Layer::SmokeUnsettled`), until `smoke.settle.seconds` have passed since process start
@@ -239,7 +243,7 @@ py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
 The config matrix (`rt-off → shadows → +ao → +refl → +gi`) enables one RT effect at a time, so the
 **Forward-pass ms delta between adjacent configs is that effect's cost**: the RT effects are inline in
 the Forward pass, so this A/B *is* the per-effect timing (there's no separate GPU scope per effect, by
-design). Two trailing configs sit outside that ladder, each repeating one rung with a different
+design: shadows, AO, GI and reflections are branches of one DefaultLit fragment shader, so a timestamp pair cannot separate them without splitting the draw). `Forward` carries nested rows (`depth` 1 in the JSON): `ForwardOpaque` (the batch flush, where the inline RT work lives), `Sky` and `Transparent`. A new row reads as a new pass to the gate until a baseline is re-captured. Two trailing configs sit outside that ladder, each repeating one rung with a different
 producer for the same effect: `ssgi` repeats `+gi` with the screen-space GI producer (so it diffs
 against `+refl`), and `shadows-stoch` repeats `shadows` with the stochastic aggregate pass
 (MegaLights-lite) instead of one inline ray per light (so it diffs against `rt-off`). Read the
