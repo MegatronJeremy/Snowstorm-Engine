@@ -4,6 +4,7 @@
 
 #include "Snowstorm/Core/Log.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 
@@ -85,6 +86,20 @@ namespace Snowstorm
 		return h;
 	}
 
+	bool IsAllZero(const CookedIBL& ibl)
+	{
+		const auto zero = [](const std::vector<uint8_t>& blob)
+		{ return std::all_of(blob.begin(), blob.end(), [](const uint8_t b)
+			                 { return b == 0; }); };
+		const auto levelsZero = [&](const std::vector<std::vector<std::vector<uint8_t>>>& faces)
+		{
+			return std::all_of(faces.begin(), faces.end(),
+			                   [&](const std::vector<std::vector<uint8_t>>& mips)
+			                   { return std::all_of(mips.begin(), mips.end(), zero); });
+		};
+		return zero(ibl.BRDFLut) && levelsZero(ibl.Irradiance) && levelsZero(ibl.Prefiltered);
+	}
+
 	std::filesystem::path IBLCacheIO::GetCachePath(const uint64_t envHash)
 	{
 		char name[17];
@@ -162,6 +177,12 @@ namespace Snowstorm
 			return std::nullopt;
 		}
 
+		if (IsAllZero(ibl))
+		{
+			SS_CORE_WARN("IBLCache: blob {} holds no texel data; will re-bake.", path.string());
+			return std::nullopt;
+		}
+
 		return ibl;
 	}
 
@@ -173,6 +194,12 @@ namespace Snowstorm
 		}
 
 		const auto path = GetCachePath(envHash);
+		if (IsAllZero(ibl))
+		{
+			SS_CORE_ERROR("IBLCache: refusing to save {}: the readback is all zero, so it was mapped before the GPU wrote it.",
+			              path.string());
+			return false;
+		}
 		std::error_code ec;
 		std::filesystem::create_directories(path.parent_path(), ec);
 
