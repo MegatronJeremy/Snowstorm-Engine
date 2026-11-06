@@ -46,7 +46,7 @@ namespace Snowstorm
 			const float halfH = cam.OrthographicSize * 0.5f;
 			const float halfW = halfH * aspect;
 
-			return glm::ortho(-halfW, halfW, -halfH, halfH, cam.OrthographicNear, cam.OrthographicFar);
+			return glm::orthoRH_ZO(-halfW, halfW, -halfH, halfH, cam.OrthographicNear, cam.OrthographicFar);
 		}
 	}
 
