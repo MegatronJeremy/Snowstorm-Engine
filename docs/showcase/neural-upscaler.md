@@ -58,7 +58,7 @@ The history is in the issues; none of the figures below carries a GPU name in th
 | LPIPS (AlexNet, lower is better) | 0.1319 | 0.1005 | gain 0.0314, about 24% lower |
 | PSNR | not recorded | 0.15 dB below bilinear | essentially tied |
 
-An in-engine fixed-dt A/B with `render.upscaler = 2` ran clean, with PSNR tracking bilinear at about 44 dB. The GPU is not recorded. This is the selection trap in [`AGENTS.md`](../../AGENTS.md#selecting-a-learned-technique-denoiser-upscaler): PSNR structurally favours the blurry baseline, so a model that injects real sub-pixel detail is punished by PSNR whenever the detail lands fractionally off the ground-truth grid. Selection and loss are LPIPS (`L1 + lpips_weight * LPIPS` in `train_temporal.py`), and both numbers are reported with the perceptual one deciding. Select on held-out full frames, never training crops.
+An in-engine fixed-dt A/B with `render.upscaler = 2` ran clean, with PSNR tracking bilinear at about 44 dB. The GPU is not recorded. This is the selection trap in [`Scripts/README.md`](../../Scripts/README.md#selecting-a-learned-technique-denoiser-upscaler): PSNR structurally favours the blurry baseline, so a model that injects real sub-pixel detail is punished by PSNR whenever the detail lands fractionally off the ground-truth grid. Selection and loss are LPIPS (`L1 + lpips_weight * LPIPS` in `train_temporal.py`), and both numbers are reported with the perceptual one deciding. Select on held-out full frames, never training crops.
 
 ## Limits
 

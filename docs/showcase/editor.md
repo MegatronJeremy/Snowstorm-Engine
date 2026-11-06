@@ -45,7 +45,7 @@ Files under the project's `assets/` folder are imported when they appear or chan
 
 - texture slots through an asset picker per slot;
 - fragment shader from a combo of discovered shaders (with its own *Rescan*) or a typed path;
-- **Alpha Mode** `Opaque`, `Mask` or `Blend` (`Blend` draws in the sorted transparent pass behind `render.transparent`; see [`AGENTS.md`](../../AGENTS.md));
+- **Alpha Mode** `Opaque`, `Mask` or `Blend` (`Blend` draws in the sorted transparent pass behind `render.transparent`; see [`Render/README.md`](../../Snowstorm-Core/Source/Snowstorm/Render/README.md#alpha-mode));
 - one row per `// @param` declared in a custom shader, with right-click to reset, and the parse error shown in place when a declaration is malformed;
 - `Save` writes the `.ssmat`; shader parameters are stored as a sparse map.
 

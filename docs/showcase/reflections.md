@@ -47,13 +47,13 @@ Source: committed baselines `Scripts/quality-baseline/<adapter>/<viewpoint>__<te
 | floor, 5070 | 0.4077 | 0.4053 | 0.4025 | 16.53 | 0.412 |
 | gallery, 5070 | 0.5344 | 0.5344 | 0.5261 | 12.51 | 0.294 |
 
-RT ranks ahead of SSR and raster at every viewpoint on both cards, but by small margins: the largest gap to raster is 0.023 FLIP (atrium). Sponza has one low-contrast specular floor, so a reflection change moves few pixels (`AGENTS.md` measures 0.3% of pixels beyond 2/255). `Projects/Sandbox/assets/scenes/Reflections.world` (polished floor, mirror wall, roughness ladder) is the scene built to make the effect visible to a metric; it has no committed baselines yet.
+RT ranks ahead of SSR and raster at every viewpoint on both cards, but by small margins: the largest gap to raster is 0.023 FLIP (atrium). Sponza has one low-contrast specular floor, so a reflection change moves few pixels (`Scripts/README.md` measures 0.3% of pixels beyond 2/255). `Projects/Sandbox/assets/scenes/Reflections.world` (polished floor, mirror wall, roughness ladder) is the scene built to make the effect visible to a metric; it has no committed baselines yet.
 
 ## The denoiser is off: measured
 
 The shared a-trous filter is guided by the receiver's normal and depth. Across a flat reflective surface both are constant, so the kernel is wide open exactly where reflected detail lives. `render.reflections.denoise.iterations` therefore defaults to 0.
 
-Measured on `Sponza-Motion.world`, `all-rt`, iterations 0 against the old default 3 (numbers from `AGENTS.md` and the CVar description at `b767668`; neither the GPU nor the capture date is recorded there, so treat both as unstated):
+Measured on `Sponza-Motion.world`, `all-rt`, iterations 0 against the old default 3 (numbers from `Scripts/README.md` and the CVar description at `b767668`; neither the GPU nor the capture date is recorded there, so treat both as unstated):
 
 | Metric | 0 iterations | 3 iterations |
 | --- | --- | --- |

@@ -1,6 +1,6 @@
 # Texture block compression
 
-*Numbers are recorded in [`AGENTS.md`](../../AGENTS.md) (the authority where they differ) and in commit `32135a8` (2026-09-08). The cook-cache and virtual-path side is on the [Asset pipeline](asset-pipeline.md) page.*
+*Numbers are recorded in [`Render/README.md`](../../Snowstorm-Core/Source/Snowstorm/Render/README.md) (the authority where they differ) and in commit `32135a8` (2026-09-08). The cook-cache and virtual-path side is on the [Asset pipeline](asset-pipeline.md) page.*
 
 `cook.textures.compress` (default on) block-compresses cooked textures. The encoding is chosen by **role**, not by one global format: the reference model is Unreal, Unity and Godot, which all default to BC1 for opaque albedo and BC5 for normals. Turn it off to cook exact RGBA8 when a texture must not be quantized.
 

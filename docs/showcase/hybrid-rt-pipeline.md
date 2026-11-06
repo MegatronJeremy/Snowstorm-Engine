@@ -43,7 +43,7 @@ Source: committed baselines in `Scripts/perf-baseline/<adapter>/`, commit `b253f
 | `+refl` | 7.274 ms | +1.749 | 4.742 ms | +1.121 |
 | `+gi` | 8.991 ms | +1.717 | 6.155 ms | +1.413 |
 
-Read these with the run spread in mind: between runs of the same configuration the 9070 XT `rt-off` rung spreads 14.5% (the GPU downclocks when the frame is this light), and the 5070 `shadows` and `+ao` rungs spread about 3.4%. Per-effect steps smaller than a few tenths of a millisecond are not resolved by a golden baseline; use the paired `--compare-exe` A/B described in `AGENTS.md`.
+Read these with the run spread in mind: between runs of the same configuration the 9070 XT `rt-off` rung spreads 14.5% (the GPU downclocks when the frame is this light), and the 5070 `shadows` and `+ao` rungs spread about 3.4%. Per-effect steps smaller than a few tenths of a millisecond are not resolved by a golden baseline; use the paired `--compare-exe` A/B described in `Scripts/README.md`.
 
 The thesis tables report 8.62 ms and 6.01 ms at `+gi` for the same two cards at 1915x1064 (September 2026). The committed baselines above were re-captured at the pinned 1920x1080 and are the numbers of record.
 
@@ -55,4 +55,4 @@ py Scripts/perf-bench.py --only +gi         # one rung
 py Scripts/quality-bench.py                 # FLIP/PSNR/SSIM of each technique against the path tracer
 ```
 
-Quality is measured against a converged path trace of the same view; see the image-quality section of `AGENTS.md`.
+Quality is measured against a converged path trace of the same view; see the image-quality section of `Scripts/README.md`.
