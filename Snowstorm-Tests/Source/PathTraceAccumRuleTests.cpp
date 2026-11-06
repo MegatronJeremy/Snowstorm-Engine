@@ -78,3 +78,13 @@ TEST_CASE("Accumulation: a settling scene never accumulates across frames", "[pa
 	n.SceneSettling = false;
 	REQUIRE(Decide(last, n).NextSamples == 4);
 }
+
+TEST_CASE("Accumulation: an emissive-NEE flip resets", "[pathtrace]")
+{
+	Last last{glm::mat4(1.0f), 32, 1, 0, 0};
+	Now n = Pose(glm::mat4(1.0f));
+	n.EmissiveNee = 1;
+	const Decision d = Decide(last, n);
+	CHECK(d.Reset);
+	CHECK(d.BaseSamples == 0);
+}

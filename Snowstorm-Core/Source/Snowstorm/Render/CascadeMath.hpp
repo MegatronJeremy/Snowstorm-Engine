@@ -165,4 +165,43 @@ namespace Snowstorm::CascadeMath
 		}
 		return fit;
 	}
+
+	// What the shader reads per frame: matrices, atlas rects, splits and bias scales for the cascades.
+	struct ShadingBlock
+	{
+		uint32_t Count = 0;
+		std::array<glm::mat4, kMaxCascades> ViewProj{};
+		std::array<glm::vec4, kMaxCascades> AtlasRect{};
+		glm::vec4 Splits{0.0f};
+		glm::vec4 BiasScale{1.0f};
+	};
+
+	inline ShadingBlock MakeShading(const CascadeFit& fit)
+	{
+		ShadingBlock b;
+		b.Count = fit.Count;
+		for (uint32_t i = 0; i < kMaxCascades; ++i)
+		{
+			const bool used = i < fit.Count;
+			b.ViewProj[i] = used ? fit.ViewProj[i] : glm::mat4(1.0f);
+			b.AtlasRect[i] = AtlasUvRect(i);
+			b.Splits[static_cast<int>(i)] = fit.Splits[i];
+			b.BiasScale[static_cast<int>(i)] = used ? BiasScale(fit.Radius[i], fit.Radius[0]) : 1.0f;
+		}
+		return b;
+	}
+
+	// First cascade whose far split covers `viewDepth`; `count` when it is past the last (unshadowed).
+	// Mirrors the selection loop in DefaultLit.frag.hlsl SampleSunShadow.
+	inline uint32_t SelectCascade(const glm::vec4& splits, uint32_t count, float viewDepth)
+	{
+		for (uint32_t i = 0; i < count; ++i)
+		{
+			if (viewDepth < splits[static_cast<int>(i)])
+			{
+				return i;
+			}
+		}
+		return count;
+	}
 }

@@ -1,6 +1,7 @@
 ﻿#include "Mesh.hpp"
 
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Render/Renderer.hpp"
 
 namespace Snowstorm
 {
@@ -28,6 +29,16 @@ namespace Snowstorm
 		    packed.data(),
 		    false,
 		    "Mesh Index Buffer");
+
+		if (indexType == IndexType::UInt32 && Renderer::IsRayTracingSupported())
+		{
+			m_CpuPositions.reserve(vertices.size());
+			for (const Vertex& v : vertices)
+			{
+				m_CpuPositions.push_back(v.Position);
+			}
+			m_CpuIndices = indices;
+		}
 
 		SS_CORE_ASSERT(m_VertexBuffer, "Failed to create mesh vertex buffer");
 		SS_CORE_ASSERT(m_IndexBuffer, "Failed to create mesh index buffer");
