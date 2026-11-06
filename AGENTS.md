@@ -158,6 +158,7 @@ py Scripts/smoke-test.py --frames 300    # longer soak
 py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime | Pong | Reflections | AlphaBlend | Sprites)
 py Scripts/smoke-test.py --only Runtime --project Projects/Pong/Pong.ssproj   # boot a non-Sandbox project the way Play Standalone does
 py Scripts/smoke-test.py --warnings-fail # treat [warning] lines as failures too
+py Scripts/smoke-test.py --from-exe-dir  # working directory = the exe's folder, as a double-click launches it
 py Scripts/smoke-test.py --staged        # run the PACKAGE in build/stage/<config>, not the build tree
 py Scripts/smoke-test.py --strict        # enable deeper Vulkan validation (see below)
 ```
@@ -213,6 +214,14 @@ neither notices a broken exact-string expectation: `PerfBenchTests` asserts the 
 writes, character for character. Run `ctest --test-dir build -C Debug --output-on-failure` (or the
 `Snowstorm-Tests` target) before pushing any change to a serialization or report format, since CI
 runs it and a green smoke run says nothing about it.
+
+## Scene capture gate (does it LOOK right)
+
+Smoke proves a scene boots and settles; it cannot see a frame that is all magenta (the Runtime shown only a magenta sky on 2026-10-19 passed it). `Scripts/scene-capture-check.py` captures Sponza, Reflections, AlphaBlend and Pong headlessly and fails on two things: an error frame (one colour, magenta or black over most of the frame; no golden needed) and a FLIP above `--threshold` (0.10) against the committed golden `Scripts/scene-golden/<adapter-slug>/<scene>.npz`. A missing golden is exit 2 (SKIP), never a pass, though the error-frame check still runs. Each run writes PNGs to `Scripts/.scene-captures/`; `--update-golden` records new goldens, only after looking at those PNGs. `Scripts/test_scene_capture_check.py` covers the detector GPU-free. The gate has not run on a GPU yet and no golden is committed.
+
+**A PR that changes rendering attaches before and after captures from the Z2** (the PNGs above, same scene, same adapter), and a showcase page shows a real capture of its scene, not a debug buffer.
+
+**The Runtime resolves `startup.project` and `startup.scene` against the working directory first, then the engine root** (`ResolveStartupPath`), so a double-click works. A project, registry or scene it cannot load logs `[error]`, shows a message box (headless runs only log) and exits; it never renders an engine default sky over an empty world.
 
 ## GPU perf benchmark (run before/after any render-path change)
 
@@ -968,10 +977,12 @@ The quality tier is global; a per-texture override waits for `.meta` sidecars. T
 `TextureCookKey`, so flipping it re-cooks; the FLIP delta of `quality=1` is not measured yet.
 
 **Normals are what the role split is for.** BC1 pushes a unit vector through one shared RGB565 line:
-3.47 degrees of mean angular error against BC5's 1.13, over the 22 conforming maps. **Two Sponza images
-sitting in `NormalTexture` slots are not normal maps** (vector length ~1.3, 25-40% of texels with z<0),
-and BC5 raises their error rather than lowering it, so `IsTangentSpaceNormalMap` checks content and falls
-back to colour encoding with a warning. The slot alone cannot be trusted.
+3.47 degrees of mean angular error against BC5's 1.13, over the 22 maps measured. The slot alone
+cannot be trusted, so `IsTangentSpaceNormalMap` checks content (mean vector length <= 1.1, <= 5% of texels
+with z<0) and falls back to colour encoding with a warning when it fails. Sponza's lion-head and shield
+decals (mat23, mat3) are genuine normal maps whose padding is the (0,255,0) fill, which decodes to
+(-1,+1,-1); the check skips that corner, so they encode as BC5. Before that skip they measured length 1.2-1.3
+with 26-40% z<0 and warned.
 
 **Masks stay BC1, measured rather than assumed.** On the channels the shader actually reads
 (`mr.g` roughness, `mr.b` metallic) BC1 gives 44.7 dB and 44.0 dB, against normals' 31 dB that needed
@@ -1207,7 +1218,9 @@ material, `materials/AlphaBlend.ssmat` (`"AlphaMode": "Blend"`), and varies colo
 model: one ECS and one `TransformComponent` for both, separate render paths. A `Canvas2D` viewport runs `RenderCanvas2D`
 and none of the Scene3D chain (no prepass, lighting, tonemap or TAA): one `Sprites` pass draws every
 `SpriteComponent` into the present target, cleared to the camera's `BackgroundColor` through a second `RenderTarget`
-object over the same image. It uses the unjittered `ViewProjection`. The frame-global IBL bake and shadow maps still run (#344).
+object over the same image. It uses the unjittered `ViewProjection`. The frame-global IBL bake and shadow maps are skipped when no rendering viewport uses `Scene3D` (`NeedsSceneGlobalPasses`, `FrameGlobalPassGateTests`, #344); one Scene3D viewport next to a Canvas2D one keeps them. Frame-time effect on a 2D-only scene is unmeasured, and the gate has not run on a GPU.
+
+Sprites outside the camera's x/y clip planes are dropped before the sort (`SpriteIntersectsView`, conservative: all four corners outside one plane; a corner behind the eye keeps the sprite; depth is not tested). The gather stays a serial loop, not `ParallelGather`: it reads components through the registry and the per-sprite test is a few mat4 ops, unmeasured on a GPU or stress scene.
 
 Draw order is `Layer`, then `Order`, then entity id, never z (`SortSpriteDraws`, `SpriteBatchTests`). `Size` is in world
 units times the transform's scale; a flip mirrors about `Pivot`. Sprites are unlit and straight-alpha blended with the
@@ -1228,7 +1241,7 @@ With one level, a sprite drawn much smaller than its texture aliases; mips and c
 `cook.assets` walks the registry, which cannot know scene usage, so sprite variants cook on first use.
 
 The editor's Scene view takes the scene's Primary camera's render path and background on open, still flying in perspective
-(#341). `quality.capture` is a Scene3D effect and does not capture a Canvas2D frame.
+(#341). `quality.capture` also captures a Canvas2D viewport: `RenderCanvas2D` runs the same capture effect after the `Sprites` pass, with the same settle rule, writing `<path>_ldr.npy` from the present target. `_hdr.npy` is skipped (no linear scene colour; the log says so). Not run on a GPU: that `Sprites.world` captures headlessly and matches a window capture is unconfirmed.
 
 **`Sprites.world` is the testbed**, booted by smoke as `Sprites`: a 64x64 checkerboard magnified with `Nearest` and with
 `Linear`, a layer -1 logo 2 units nearer the camera that still draws under them, two layer 1 logos over them (one `FlipX`,
@@ -1244,7 +1257,7 @@ The IBL bake is keyed on the environment block and on the sun (`Lights[0]`, the 
 `Render/IBLInvalidation.hpp` holds the pure rule: `SunNeedsRebake` compares against the last BAKED sun, re-baking
 when its direction moves past `render.ibl.sun_quantum_deg` (default 2) or its colour*intensity changes by more
 than 5%, or when the sun appears or disappears. A re-bake is still the full monolithic bake with a `WaitIdle`;
-`IBLInvalidationTests` cover the rule (#149). Each re-bake after the first logs its `WaitIdle` stall, trigger and sun angle (`IBLRebakeStats`); unobserved on a GPU.
+`IBLInvalidationTests` cover the rule (#149). Only the first bake computes the environment-independent BRDF LUT and reads back for the `.ssibl` cache (`PlanIBLBake`); re-bakes skip both, so a sun sweep writes one cache file. Per-dispatch UBOs, sets and face views go into a `RetireQueue` freed `GetFramesInFlight()+1` frames later (`IBLBakePass::AdvanceFrame`), where they used to accumulate for the session; they are still allocated per bake. Not run on a GPU. Each re-bake after the first logs its `WaitIdle` stall, trigger and sun angle (`IBLRebakeStats`); unobserved on a GPU.
 
 `Lighting/LightPacking.hpp` is the pure encoding of light components into the GPU rows (`PackDirectionalLight`, `PackPointLight`, `PackSpotLight`: normalized direction, cone cosines with outer clamped to inner, the per-array caps); `LightPackingTests` pin it GPU-free.
 
