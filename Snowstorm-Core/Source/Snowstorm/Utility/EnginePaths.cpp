@@ -83,6 +83,20 @@ namespace Snowstorm
 		return root;
 	}
 
+	fs::path ResolveStartupPath(const fs::path& userPath)
+	{
+		std::error_code ec;
+		if (userPath.empty() || userPath.is_absolute() || fs::exists(userPath, ec))
+		{
+			return userPath;
+		}
+		if (fs::path underRoot = GetEngineRoot() / userPath; fs::exists(underRoot, ec))
+		{
+			return underRoot;
+		}
+		return userPath;
+	}
+
 	fs::path ResolveShaderSource(const std::string_view path)
 	{
 		fs::path p(path);
