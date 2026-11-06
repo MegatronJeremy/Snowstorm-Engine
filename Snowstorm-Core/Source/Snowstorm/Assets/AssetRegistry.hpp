@@ -13,6 +13,7 @@ namespace Snowstorm
 	public:
 		bool LoadFromFile(const std::filesystem::path& file);
 		bool SaveToFile(const std::filesystem::path& file) const;
+		std::string Serialize() const;
 
 		AssetHandle Import(const std::filesystem::path& assetPath, AssetType type);
 		AssetHandle FindHandleByPath(const std::filesystem::path& assetPath, AssetType type) const;
