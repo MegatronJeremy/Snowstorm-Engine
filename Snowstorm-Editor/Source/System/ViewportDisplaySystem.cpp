@@ -234,7 +234,6 @@ namespace Snowstorm
 
 		// Editor icon atlas (Scripts/gen-editor-icons.py): four 64x64 cells in a row, white glyph with a dark
 		// outline so it can be tinted by the light color. Cell index follows LightIconKind.
-		constexpr const char* kIconAtlasPath = "Projects/Sandbox/assets/editor-icons/icons.png";
 		constexpr float kIconAtlasCells = 4.0f;
 		// The 64px cell's glyph is inset, so the quad is larger than the pick radius to fill the old disc.
 		constexpr float kIconQuadScale = 1.4f;
