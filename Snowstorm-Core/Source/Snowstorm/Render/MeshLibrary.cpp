@@ -286,7 +286,7 @@ namespace Snowstorm
 	Ref<Mesh> MeshLibrary::FinalizeCooked(const std::string& filepath, const int submeshIndex, const CookedMesh& cooked)
 	{
 		// Main thread only: creates GPU buffers. Idempotent via the cache key.
-		const std::string cacheKey = filepath + "?submesh=" + std::to_string(submeshIndex);
+		const std::string cacheKey = VirtualPath::JoinSubResource(filepath, submeshIndex);
 		if (const auto it = m_Meshes.find(cacheKey); it != m_Meshes.end())
 		{
 			return it->second;
@@ -303,7 +303,7 @@ namespace Snowstorm
 
 	Ref<Mesh> MeshLibrary::LoadCached(const std::string& filepath, const int submeshIndex, const AssetHandle handle)
 	{
-		const std::string cacheKey = filepath + "?submesh=" + std::to_string(submeshIndex);
+		const std::string cacheKey = VirtualPath::JoinSubResource(filepath, submeshIndex);
 		if (const auto it = m_Meshes.find(cacheKey); it != m_Meshes.end())
 		{
 			return it->second;
@@ -330,11 +330,6 @@ namespace Snowstorm
 	size_t MeshLibrary::EvictUnreferenced(const uint32_t retireDelay, const std::unordered_set<const Mesh*>& cacheHeld,
 	                                      std::vector<const Mesh*>& evicted)
 	{
-		return Snowstorm::EvictUnreferenced(
-		    m_Meshes, m_Retired, retireDelay,
-		    [&evicted](const std::string&, const Ref<Mesh>& mesh)
-		    { evicted.push_back(mesh.get()); },
-		    [&cacheHeld](const Ref<Mesh>& mesh) -> size_t
-		    { return cacheHeld.contains(mesh.get()) ? 1 : 0; });
+		return EvictUnreferencedHeldBy(m_Meshes, m_Retired, retireDelay, cacheHeld, evicted);
 	}
 }

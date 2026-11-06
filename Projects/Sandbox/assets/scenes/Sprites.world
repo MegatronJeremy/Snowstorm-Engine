@@ -16,6 +16,11 @@
      "OrthographicSize": 10.0,
      "OrthographicNear": -10.0,
      "OrthographicFar": 10.0,
+     "PixelsPerUnit": 16.0,
+     "ReferenceResolution": [
+      320.0,
+      180.0
+     ],
      "Primary": true
     },
     "Snowstorm::TransformComponent": {

@@ -6,12 +6,15 @@
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/ShaderCompile.hpp"
+#include "Snowstorm/Render/SpirvBlobValidation.hpp"
 
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <iterator>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
@@ -118,12 +121,31 @@ namespace Snowstorm
 				return false;
 			}
 
-			STARTUPINFOW si{};
-			si.cb = sizeof(si);
-			si.dwFlags = STARTF_USESTDHANDLES;
-			si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-			si.hStdOutput = writePipe;
-			si.hStdError = writePipe; // combined output
+			// Without an explicit list the child inherits every inheritable handle in the process, and shader
+			// workers compile concurrently: one worker's dxc then holds another worker's open .spv files (the
+			// CRT opens them inheritable) for its lifetime, and that worker's publishing rename fails.
+			SIZE_T attrSize = 0;
+			InitializeProcThreadAttributeList(nullptr, 1, 0, &attrSize);
+			std::vector<char> attrStorage(attrSize);
+			auto* attrs = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attrStorage.data());
+			HANDLE inherited[] = {writePipe};
+			if (!InitializeProcThreadAttributeList(attrs, 1, 0, &attrSize) ||
+			    !UpdateProcThreadAttribute(attrs, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof(inherited), nullptr, nullptr))
+			{
+				const DWORD err = GetLastError();
+				SS_CORE_ERROR("Restricting inherited handles failed. Win32 error={}", static_cast<uint32_t>(err));
+				CloseHandle(readPipe);
+				CloseHandle(writePipe);
+				return false;
+			}
+
+			STARTUPINFOEXW si{};
+			si.StartupInfo.cb = sizeof(si);
+			si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+			si.StartupInfo.hStdInput = nullptr;
+			si.StartupInfo.hStdOutput = writePipe;
+			si.StartupInfo.hStdError = writePipe; // combined output
+			si.lpAttributeList = attrs;
 
 			PROCESS_INFORMATION pi{};
 
@@ -134,11 +156,12 @@ namespace Snowstorm
 			    exePath.c_str(),
 			    mutableCmd.data(),
 			    nullptr, nullptr,
-			    TRUE, // inherit handles (needed for redirected std handles)
-			    CREATE_NO_WINDOW,
+			    TRUE, // inherit handles: only the ones in the attribute list
+			    CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT,
 			    nullptr,
 			    nullptr,
-			    &si, &pi);
+			    &si.StartupInfo, &pi);
+			DeleteProcThreadAttributeList(attrs);
 
 			// Parent no longer needs the write end
 			CloseHandle(writePipe);
@@ -211,7 +234,7 @@ namespace Snowstorm
 		                         const fs::path& outputSpv,
 		                         const wchar_t* profile,
 		                         const ShaderDefines& defines,
-		                         bool debug)
+		                         bool debug, int optLevel)
 		{
 			const std::wstring exe = dxcExe.wstring();
 			const std::wstring out = outputSpv.wstring();
@@ -226,6 +249,7 @@ namespace Snowstorm
 			request.includeDir = (GetEngineRoot() / "Engine" / "Shaders").wstring();
 			request.defines = defines;
 			request.debug = debug;
+			request.optLevel = optLevel;
 			const std::wstring cmd = BuildDxcCommandLine(request);
 
 			DWORD exitCode = 1;
@@ -261,6 +285,55 @@ namespace Snowstorm
 			return true;
 		}
 
+		fs::path StampPathFor(const fs::path& spv)
+		{
+			return fs::path(spv.string() + ".key");
+		}
+
+		// True when the cached blob passes ValidateCachedSpirv against `key`. With `removeRejected` a failing blob
+		// and its stamp are deleted so the caller recompiles; a stale or damaged module must never reach
+		// vkCreateShaderModule. Only call with `removeRejected` under the per-path compile lock: an unlocked
+		// caller can see another worker's blob mid-publish and would delete a good file.
+		bool CachedSpirvIsValid(const fs::path& spv, const uint64_t key, const bool removeRejected)
+		{
+			std::error_code ec;
+			if (!fs::exists(spv, ec))
+				return false;
+			std::ifstream in(spv, std::ios::binary);
+			const std::string blob((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+			std::optional<std::string> stamp;
+			if (std::ifstream sin(StampPathFor(spv), std::ios::binary); sin)
+				stamp = std::string((std::istreambuf_iterator<char>(sin)), std::istreambuf_iterator<char>());
+			const BlobCheck check = ValidateCachedSpirv(blob.data(), blob.size(), key, stamp);
+			if (check == BlobCheck::Ok)
+				return true;
+			if (removeRejected)
+			{
+				SS_CORE_WARN("Cached SPIR-V {} rejected (check {}); recompiling", spv.string(), static_cast<int>(check));
+				fs::remove(spv, ec);
+				fs::remove(StampPathFor(spv), ec);
+			}
+			return false;
+		}
+
+		// Stamps the bytes of `blobFile` (the private tmp, before it is renamed into place) at the stamp path of
+		// `spv`. Published BEFORE the blob rename so a blob is never visible without its stamp.
+		void WriteSpirvStamp(const fs::path& blobFile, const fs::path& spv, const uint64_t key)
+		{
+			std::ifstream in(blobFile, std::ios::binary);
+			const std::string blob((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+			const fs::path stampPath = StampPathFor(spv);
+			const fs::path tmp = fs::path(stampPath.string() + ".tmp");
+			{
+				std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+				out << SerializeBlobStamp(MakeBlobStamp(key, blob.data(), blob.size()));
+			}
+			std::error_code ec;
+			fs::rename(tmp, stampPath, ec);
+			if (ec)
+				fs::remove(tmp, ec);
+		}
+
 		// Compile a single-stage HLSL file DIRECTLY (no #type split, no temp file — the file itself is a
 		// plain single-`main` shader) to a cached .spv for the given DXC profile. `flagsTag` distinguishes
 		// stage profiles in the cache key so a vert and frag of the same content don't collide. Returns
@@ -286,13 +359,15 @@ namespace Snowstorm
 			}
 
 			// Defines and the opt level key the cache so variants never collide on one .spv.
-			const uint64_t h = ComputeShaderKey(fullText, HashIncludeHeaders(), flagsTag, defines, debug);
+			// render.shaders.opt is ReadOnly, so every call in a run sees one level.
+			const int optLevel = CVars::ShadersOpt.Get();
+			const uint64_t h = ComputeShaderKey(fullText, HashIncludeHeaders(), flagsTag, defines, debug, optLevel);
 
 			const std::string key = ToHex64(h);
 			const std::string stem = srcPath.stem().string(); // e.g. "Mesh.vert" -> "Mesh.vert"
 			const fs::path outSpvPath = cacheDir / (stem + "_" + key + ".spv");
 
-			if (fs::exists(outSpvPath))
+			if (CachedSpirvIsValid(outSpvPath, h, false))
 			{
 				outSpv = outSpvPath.string();
 				return true;
@@ -335,7 +410,7 @@ namespace Snowstorm
 			std::lock_guard compileLock(*pathLock);
 
 			// Re-check under the lock: another worker may have finished this exact output while we waited.
-			if (fs::exists(outSpvPath))
+			if (CachedSpirvIsValid(outSpvPath, h, true))
 			{
 				outSpv = outSpvPath.string();
 				return true;
@@ -350,11 +425,14 @@ namespace Snowstorm
 			const fs::path tmpSpvPath = outSpvPath.string() + tmpSuffix;
 			std::error_code ec;
 			fs::remove(tmpSpvPath, ec);
-			if (!CompileStageWithDxc(dxcExe, srcPath, tmpSpvPath, profile, defines, debug))
+			if (!CompileStageWithDxc(dxcExe, srcPath, tmpSpvPath, profile, defines, debug, optLevel))
 			{
 				fs::remove(tmpSpvPath, ec);
 				return false;
 			}
+			// Stamp first, blob second: the stamp is derived from the tmp bytes, and the unlocked validator treats
+			// a stamp without a blob as a miss but a blob without a stamp as corrupt.
+			WriteSpirvStamp(tmpSpvPath, outSpvPath, h);
 			fs::rename(tmpSpvPath, outSpvPath, ec);
 			if (ec)
 			{
@@ -435,7 +513,7 @@ namespace Snowstorm
 		// 16-bit storage. Only NeuralConv.comp wraps its Weights buffer in #ifdef SS_FP16; every other shader
 		// ignores the define (no #ifdef), so this is a no-op for them but keeps the .spv cache key correct
 		// (an fp16-capable machine caches distinct SPIR-V). A non-fp16 device never emits it -> the fp32 path.
-		if (Renderer::IsFloat16Supported())
+		if (Renderer::IsFloat16Supported()) // already folds in the render.fp16 CVar
 		{
 			defines.emplace_back("SS_FP16=1");
 		}

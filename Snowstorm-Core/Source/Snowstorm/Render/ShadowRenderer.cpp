@@ -7,6 +7,7 @@
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/ECS/TrackedRegistry.hpp"
 #include "Snowstorm/Render/RenderGraph.hpp"
+#include "Snowstorm/Render/ShadowAtlasMath.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/RenderTarget.hpp"
 
@@ -194,12 +195,10 @@ namespace Snowstorm
 				                  {
 					                  continue;
 				                  }
-				                  const auto tile = static_cast<uint32_t>(slot - 1);
-				                  const uint32_t col = tile % ShadowPass::kDirAtlasCols;
-				                  const uint32_t row = tile / ShadowPass::kDirAtlasCols;
-				                  c.SetViewport(static_cast<float>(col * tilePx), static_cast<float>(row * tilePx),
-				                                static_cast<float>(tilePx), static_cast<float>(tilePx), 0.0f, 1.0f);
-				                  c.SetScissor(col * tilePx, row * tilePx, tilePx, tilePx);
+				                  const ShadowAtlasTile t = ShadowAtlasTileRect(DirectionalAtlasTile(slot), ShadowPass::kDirAtlasCols, tilePx);
+				                  c.SetViewport(static_cast<float>(t.X), static_cast<float>(t.Y), static_cast<float>(t.Size),
+				                                static_cast<float>(t.Size), 0.0f, 1.0f);
+				                  c.SetScissor(t.X, t.Y, t.Size, t.Size);
 				                  m_ShadowPass.RecordDepth(r, fc.FrameIndex, atlasFmt, ld.DirShadows[slot - 1].ViewProj);
 			                  }
 		                  }});
@@ -273,11 +272,11 @@ namespace Snowstorm
 					                  {
 						                  continue;
 					                  }
-					                  const auto col = static_cast<uint32_t>(spot.ShadowIndex) % ShadowPass::kSpotAtlasCols;
-					                  const auto row = static_cast<uint32_t>(spot.ShadowIndex) / ShadowPass::kSpotAtlasCols;
-					                  c.SetViewport(static_cast<float>(col * tilePx), static_cast<float>(row * tilePx),
-					                                static_cast<float>(tilePx), static_cast<float>(tilePx), 0.0f, 1.0f);
-					                  c.SetScissor(col * tilePx, row * tilePx, tilePx, tilePx);
+					                  const ShadowAtlasTile t = ShadowAtlasTileRect(static_cast<uint32_t>(spot.ShadowIndex),
+					                                                                ShadowPass::kSpotAtlasCols, tilePx);
+					                  c.SetViewport(static_cast<float>(t.X), static_cast<float>(t.Y), static_cast<float>(t.Size),
+					                                static_cast<float>(t.Size), 0.0f, 1.0f);
+					                  c.SetScissor(t.X, t.Y, t.Size, t.Size);
 					                  m_ShadowPass.RecordDepth(r, fc.FrameIndex, atlasFmt, spot.ShadowViewProj);
 				                  }
 			                  }});
@@ -341,12 +340,11 @@ namespace Snowstorm
 				                  const GPUPointShadow& payload = ld.PointShadows[slot];
 				                  for (int face = 0; face < 6; ++face)
 				                  {
-					                  const auto tile = static_cast<uint32_t>(slot * 6 + face);
-					                  const uint32_t col = tile % ShadowPass::kPointAtlasCols;
-					                  const uint32_t row = tile / ShadowPass::kPointAtlasCols;
-					                  c.SetViewport(static_cast<float>(col * tilePx), static_cast<float>(row * tilePx),
-					                                static_cast<float>(tilePx), static_cast<float>(tilePx), 0.0f, 1.0f);
-					                  c.SetScissor(col * tilePx, row * tilePx, tilePx, tilePx);
+					                  const ShadowAtlasTile t = ShadowAtlasTileRect(PointAtlasTile(slot, face),
+					                                                                ShadowPass::kPointAtlasCols, tilePx);
+					                  c.SetViewport(static_cast<float>(t.X), static_cast<float>(t.Y), static_cast<float>(t.Size),
+					                                static_cast<float>(t.Size), 0.0f, 1.0f);
+					                  c.SetScissor(t.X, t.Y, t.Size, t.Size);
 					                  m_ShadowPass.RecordDepth(r, fc.FrameIndex, atlasFmt, payload.Face[face]);
 				                  }
 			                  }

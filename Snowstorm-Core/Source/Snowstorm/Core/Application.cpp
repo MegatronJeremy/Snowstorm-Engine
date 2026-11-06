@@ -87,6 +87,8 @@ namespace Snowstorm
 		uint64_t smokeFramesLeft = 0;
 		bool smokeMode = false;
 		const auto smokeRunStart = std::chrono::steady_clock::now();
+		auto lastSettleLog = smokeRunStart;
+		constexpr auto kSettleLogInterval = std::chrono::seconds(10);
 		if (const int smokeFrames = CVars::SmokeFrames.Get(); smokeFrames > 0)
 		{
 			smokeMode = true;
@@ -348,6 +350,13 @@ namespace Snowstorm
 				{
 					SS_CORE_ERROR("Smoke mode: not settled after {}s: {}", settleSeconds, unsettled);
 					m_Running = false;
+				}
+				else if (const auto now = std::chrono::steady_clock::now(); now - lastSettleLog >= kSettleLogInterval)
+				{
+					// The harness kills a run that prints nothing for its stall timeout, and a cold texture cook can
+					// keep this wait silent for minutes.
+					lastSettleLog = now;
+					SS_CORE_INFO("Smoke mode: waiting for assets to settle: {}", unsettled);
 				}
 			}
 
