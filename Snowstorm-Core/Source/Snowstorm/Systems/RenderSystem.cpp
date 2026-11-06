@@ -919,7 +919,11 @@ namespace Snowstorm
 				                                    fc.Renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, albedoIndex, customData);
 			                                    });
 
+			                  // Nested under the pass scope: Forward = ForwardOpaque + Sky + Transparent + gaps. The RT
+			                  // effects are inline DefaultLit.frag code in these draws, so no finer scope exists.
+			                  c.BeginGpuScope("ForwardOpaque");
 			                  fc.Renderer.Flush();
+			                  c.EndGpuScope();
 
 			                  // Procedural sky after opaque meshes (far-plane, only fills uncovered pixels).
 			                  // Formats come from the target so the sky pipeline stays render-pass-compatible.

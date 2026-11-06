@@ -5,6 +5,7 @@
 #include "Snowstorm/Components/RenderTargetComponent.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Math/HaltonJitter.hpp"
+#include "Snowstorm/Math/JitterInjection.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/RenderTarget.hpp"
 #include "Snowstorm/World/World.hpp"
@@ -40,9 +41,7 @@ namespace Snowstorm
 		// DLAA (render.aa == 3) is a temporal resolve too — it accumulates sub-pixel jitter exactly like TAA,
 		// so treat it the same for the jitter gate (and the negative MipBias that rides the jittered pass).
 		const bool taaActive = CVars::AAMode.Get() == 2 || CVars::DlaaActive();
-		const bool jitterOn = (CVars::DatasetExport.Get() && CVars::DatasetJitter.Get()) ||
-		                      taaActive ||
-		                      (CVars::Jitter.Get() && !CVars::Compare.Get());
+		const bool jitterOn = JitterEnabled(CVars::DatasetExport.Get(), CVars::DatasetJitter.Get(), taaActive, CVars::Jitter.Get(), CVars::Compare.Get());
 
 		// Same monotonic counter the whole frame uses (incremented in RendererService::NewFrame before any
 		// system runs). Deterministic per frame, so all cameras this frame share one Halton index.
@@ -78,26 +77,9 @@ namespace Snowstorm
 				}
 			}
 
-			if (renderW < 1.0f || renderH < 1.0f)
-			{
-				// No resolved target yet (first frames / mid-resize): skip jitter this frame, stay unjittered.
-				rt.JitteredViewProjection = rt.ViewProjection;
-				rt.JitterNdc = glm::vec2(0.0f);
-				continue;
-			}
-
-			// Pixels -> clip/NDC offset (2 NDC units across the full width/height).
-			const glm::vec2 jitterNdc{jitterPx.x * 2.0f / renderW, jitterPx.y * 2.0f / renderH};
-
-			// Offset a COPY of the projection: for a column-major glm projection, adding to P[2][0]/P[2][1]
-			// (the z-column x/y rows) shifts clip.xy proportionally to w, i.e. a constant sub-pixel shift in
-			// NDC after the perspective divide — the standard TAA jitter injection. The canonical
-			// ViewProjection + frustum are left untouched (motion vectors + culling read those).
-			glm::mat4 jitteredProj = rt.Projection;
-			jitteredProj[2][0] += jitterNdc.x;
-			jitteredProj[2][1] += jitterNdc.y;
-
-			rt.JitteredViewProjection = jitteredProj * rt.View;
+			// Under 1 px (no resolved target yet, first frames / mid-resize) InjectJitter stays unjittered.
+			const auto [jitteredVP, jitterNdc] = InjectJitter(rt.Projection, rt.View, rt.ViewProjection, jitterPx, renderW, renderH);
+			rt.JitteredViewProjection = jitteredVP;
 			rt.JitterNdc = jitterNdc;
 		}
 	}
