@@ -31,7 +31,7 @@ float4 SampleBindless(uint index, float2 uv)
 // map (the sun), or a tile rect for a spot in the shared atlas. PCF taps are CLAMPED to the rect so a
 // tap near a tile edge can't bleed into a neighbour tile. Manual PCF keeps the bindless SAMPLED_IMAGE
 // model (no comparison-sampler descriptor). NdotL drives a slope-scaled bias; ShadowStrength lightens.
-float SampleShadowFactor(uint texIndex, float4x4 lightViewProj, float4 atlasRect, float3 positionWS, float3 Ng, float NdotL)
+float SampleShadowFactor(uint texIndex, float4x4 lightViewProj, float4 atlasRect, float3 positionWS, float3 Ng, float NdotL, float biasScale = 1.0)
 {
 	// Normal-offset bias (#59): shift the sample point along the geometric normal before projecting into
 	// light space, in WORLD units, scaled by the grazing angle (most acne is on surfaces near-parallel to
@@ -39,7 +39,7 @@ float SampleShadowFactor(uint texIndex, float4x4 lightViewProj, float4 atlasRect
 	// self-occluding plane ALONG the surface removes acne without the depth-push peter-panning a larger
 	// ShadowBias causes. ShadowNormalOffset is a world-space distance; (1 - NdotL) makes it vanish on
 	// light-facing surfaces (which don't self-shadow) and peak at grazing.
-	positionWS += Ng * (ShadowNormalOffset * saturate(1.0 - NdotL));
+	positionWS += Ng * (ShadowNormalOffset * biasScale * saturate(1.0 - NdotL));
 
 	float4 lightClip = mul(float4(positionWS, 1.0), lightViewProj);
 	float3 ndc = lightClip.xyz / lightClip.w;
@@ -61,7 +61,7 @@ float SampleShadowFactor(uint texIndex, float4x4 lightViewProj, float4 atlasRect
 
 	// Depth bias: constant floor + slope-scaled term (more bias on surfaces grazing the light). The floor
 	// matters even for light-facing surfaces (texel quantization causes acne there too).
-	const float bias = ShadowBias + ShadowBias * 4.0 * (1.0 - NdotL);
+	const float bias = (ShadowBias + ShadowBias * 4.0 * (1.0 - NdotL)) * biasScale;
 	const float currentDepth = ndc.z - bias;
 
 	// Atlas remap + tile clamp bounds (in atlas UV space). ShadowTexelSize is per full-texture texel;
@@ -251,20 +251,49 @@ float SampleSunShadow(DirectionalLight light, float3 positionWS, float3 Ng, floa
 	{
 		return 1.0;
 	}
+	// One SampleShadowFactor call site for every raster slot: each inlined copy is a full PCF loop, so a
+	// call per slot multiplies ISA size.
+	uint texIndex = DirShadowAtlasIndex;
+	float4x4 viewProj = LightViewProj;
+	float4 atlasRect = float4(0, 0, 1, 1);
+	float biasScale = 1.0;
 	if (light.ShadowSlot == 0)
 	{
-		if (ShadowMapIndex == 0)
+		texIndex = ShadowMapIndex;
+		if (CascadeCount != 0u && CascadeAtlasIndex != 0u)
+		{
+			// Hard cascade selection by the fit camera's view depth; past the last split the sun is unshadowed.
+			const float viewDepth = dot(CascadeViewDepthRow, float4(positionWS, 1.0));
+			uint cascade = 0;
+			[unroll] for (uint c = 0; c < 3; ++c)
+			{
+				cascade += (c + 1 < CascadeCount && viewDepth >= CascadeSplits[c]) ? 1u : 0u;
+			}
+			if (viewDepth >= CascadeSplits[cascade])
+			{
+				return 1.0;
+			}
+			texIndex = CascadeAtlasIndex;
+			viewProj = CascadeViewProj[cascade];
+			atlasRect = CascadeAtlasRect[cascade];
+			biasScale = CascadeBiasScale[cascade];
+		}
+	}
+	else
+	{
+		if (DirShadowAtlasIndex == 0)
 		{
 			return 1.0;
 		}
-		return SampleShadowFactor(ShadowMapIndex, LightViewProj, float4(0, 0, 1, 1), positionWS, Ng, NdotL);
+		const DirShadow payload = DirShadows[light.ShadowSlot - 1];
+		viewProj = payload.ViewProj;
+		atlasRect = payload.AtlasRect;
 	}
-	if (DirShadowAtlasIndex == 0)
+	if (texIndex == 0)
 	{
 		return 1.0;
 	}
-	const DirShadow payload = DirShadows[light.ShadowSlot - 1];
-	return SampleShadowFactor(DirShadowAtlasIndex, payload.ViewProj, payload.AtlasRect, positionWS, Ng, NdotL);
+	return SampleShadowFactor(texIndex, viewProj, atlasRect, positionWS, Ng, NdotL, biasScale);
 }
 
 // Spot shadow: RT ray query (when RTShadowEnabled and this spot casts) or the shared raster atlas at the

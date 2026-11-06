@@ -210,18 +210,19 @@ namespace Snowstorm
 		void SetSunShadowFit(const SunShadowFit& fit) { m_SunShadowFit = fit; }
 		[[nodiscard]] const SunShadowFit& GetSunShadowFit() const { return m_SunShadowFit; }
 
-		// Per-frame sun cascade fit from LightingSystem behind render.shadow.cascades.fit (#58). Unconsumed
-		// until the cascade atlas pass lands.
+		// Per-frame sun cascade fit from LightingSystem behind render.shadow.cascades.fit (#58). ViewDepthRow
+		// gives the fit camera's positive view depth as dot(row, vec4(worldPos, 1)); the splits are in that depth.
 		struct SunCascadeFit
 		{
 			bool Valid = false;
+			glm::vec4 ViewDepthRow{0.0f};
 			CascadeMath::CascadeFit Fit{};
 		};
 		void SetSunCascadeFit(const SunCascadeFit& fit) { m_SunCascadeFit = fit; }
 		[[nodiscard]] const SunCascadeFit& GetSunCascadeFit() const { return m_SunCascadeFit; }
 
-		// Bindless index of the sun cascade atlas rendered under render.shadow.cascades.render (0 = none). A plain
-		// handoff, not FrameData: no shader samples it until the cascade FrameCB block lands (#58).
+		// Bindless index of the sun cascade atlas rendered under render.shadow.cascades.render (0 = none). FrameCB
+		// carries the cascade block only under render.shadow.cascades.shade (#58).
 		void SetCascadeAtlasIndex(const uint32_t index) { m_CascadeAtlasIndex = index; }
 		[[nodiscard]] uint32_t GetCascadeAtlasIndex() const { return m_CascadeAtlasIndex; }
 
