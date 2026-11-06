@@ -1,6 +1,7 @@
 ﻿#include "Renderer.hpp"
 
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Render/FrameRingRule.hpp"
 #include "Snowstorm/Render/Sampler.hpp"
 #include "Platform/Vulkan/VulkanRendererAPI.hpp"
 
@@ -150,7 +151,7 @@ namespace Snowstorm
 		// Reset the current frame ring before any draws
 		{
 			const uint32_t frameIndex = s_API->GetCurrentFrameIndex();
-			SS_CORE_ASSERT(frameIndex < s_FrameUniformRings.size(), "Frame index out of range");
+			SS_CORE_ASSERT(FrameRing::IsValidSlot(frameIndex, s_FrameUniformRings.size()), "Frame index out of range");
 			s_FrameUniformRings[frameIndex].BeginFrame();
 		}
 
@@ -221,7 +222,7 @@ namespace Snowstorm
 	{
 		SS_CORE_ASSERT(s_API, "Renderer not initialized");
 		const uint32_t frameIndex = s_API->GetCurrentFrameIndex();
-		SS_CORE_ASSERT(frameIndex < s_FrameUniformRings.size(), "Frame index out of range");
+		SS_CORE_ASSERT(FrameRing::IsValidSlot(frameIndex, s_FrameUniformRings.size()), "Frame index out of range");
 		return s_FrameUniformRings[frameIndex];
 	}
 
