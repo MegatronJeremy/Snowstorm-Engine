@@ -103,6 +103,17 @@ TEST_CASE("IBLRebakeStats accumulates count, mean and max stall", "[ibl]")
 	REQUIRE(s.MaxStallMs == Catch::Approx(6.0));
 }
 
+TEST_CASE("IBL bake plan: only the first bake computes the LUT and persists", "[ibl]")
+{
+	const IBLBakePlan first = PlanIBLBake(false);
+	CHECK(first.BakeBRDFLut);
+	CHECK(first.Persist);
+
+	const IBLBakePlan later = PlanIBLBake(true);
+	CHECK_FALSE(later.BakeBRDFLut);
+	CHECK_FALSE(later.Persist);
+}
+
 // PumpCacheSave runs once per frame from the arming frame on and maps when the countdown reaches 0. Frame j's
 // BeginFrame waits on the fence of frame j - framesInFlight, the slot it reuses, so the map frame must be
 // exactly the one that waits on the arming frame's fence: earlier reads zeros, later only delays the save.

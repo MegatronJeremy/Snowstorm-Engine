@@ -9,6 +9,8 @@
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/ECS/TrackedRegistry.hpp"
 #include "Snowstorm/Render/FrameData.hpp"
+#include "Snowstorm/Render/PathTraceAccumRule.hpp"
+#include "Snowstorm/Render/QualityCaptureSchedule.hpp"
 #include "Snowstorm/Render/RenderGraph.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/RendererUtils.hpp"
@@ -101,9 +103,12 @@ namespace Snowstorm
 				// not be averaged together).
 				const uint32_t sampler = CVars::PathTraceSampler.Get() > 0 ? 1u : 0u; // a sampler switch restarts the mean, like env-NEE
 				const uint32_t validReflection = CVars::PathTraceValidReflection.Get() ? 1u : 0u;
-				const bool moved = (st.LastVP != vp) || v.PathTraceSceneSettling || (st.EnvNee != envNee) || (st.Sampler != sampler) || (st.ValidReflection != validReflection);
 				const uint32_t spp = static_cast<uint32_t>(CVars::ClampedPathTraceSpp());
-				const uint32_t base = moved ? 0u : st.Samples;
+				const PathTraceAccumRule::Decision accum = PathTraceAccumRule::Decide(
+				    {st.LastVP, st.Samples, st.EnvNee, st.Sampler, st.ValidReflection},
+				    {vp, v.PathTraceSceneSettling, envNee, sampler, validReflection, spp});
+				const bool moved = accum.Reset;
+				const uint32_t base = accum.BaseSamples;
 
 				const FrameData& fd = fc.Renderer.GetFrameData();
 				PathTracePass::Params p{};
@@ -147,7 +152,7 @@ namespace Snowstorm
 				st.EnvNee = envNee;
 				st.Sampler = sampler;
 				st.ValidReflection = validReflection;
-				st.Samples = base + spp;
+				st.Samples = accum.NextSamples;
 
 				// Publish the accumulated HDR buffer as THE scene color; the LDR chain tonemaps it (the tonemap
 				// declares it as a Sampled read, so the graph inserts the Storage -> Sampled barrier). Target is
@@ -2328,26 +2333,12 @@ namespace Snowstorm
 		// silently ignored: a dropped frame would leave the harness comparing a pair that is not consecutive.
 		std::vector<uint64_t> ParseRouteFrameList(const std::string& csv)
 		{
-			std::vector<uint64_t> out;
-			std::stringstream ss(csv);
-			std::string tok;
-			while (std::getline(ss, tok, ','))
+			QualityCaptureSchedule::RouteFrames parsed = QualityCaptureSchedule::ParseRouteFrames(csv);
+			for (const std::string& tok : parsed.Rejected)
 			{
-				if (tok.find_first_not_of(" \t") == std::string::npos)
-				{
-					continue;
-				}
-				try
-				{
-					out.push_back(static_cast<uint64_t>(std::stoull(tok)));
-				}
-				catch (const std::exception&)
-				{
-					SS_CORE_WARN("quality.capture.at_path_frames: '{}' is not a frame index; ignored.", tok);
-				}
+				SS_CORE_WARN("quality.capture.at_path_frames: '{}' is not a frame index; ignored.", tok);
 			}
-			std::ranges::sort(out);
-			return out;
+			return std::move(parsed.Frames);
 		}
 
 		class QualityCaptureEffect final : public IViewportEffect
@@ -2389,8 +2380,17 @@ namespace Snowstorm
 				// unless capture is on), then read that back in the same pass as the LDR present, in both the
 				// converged and the motion-sequence mode.
 				Ref<Texture> hdrImg;
-				if (v.SceneColor.View && v.SceneColor.Texture &&
-				    QualityCaptureFormat::HdrDType(v.SceneColor.Texture->GetDesc().Format))
+				if (v.Cam.Cam && v.Cam.Cam->RenderPath == CameraComponent::RenderPathType::Canvas2D)
+				{
+					// A Canvas2D frame is unlit sprites with no linear scene colour, so there is nothing to pair.
+					if (!m_WarnedNoHdr2D)
+					{
+						m_WarnedNoHdr2D = true;
+						SS_CORE_INFO("Quality capture: Canvas2D viewport has no linear scene colour; _hdr.npy is skipped.");
+					}
+				}
+				else if (v.SceneColor.View && v.SceneColor.Texture &&
+				         QualityCaptureFormat::HdrDType(v.SceneColor.Texture->GetDesc().Format))
 				{
 					const Ref<Texture>& srcTex = v.SceneColor.Texture;
 					const TextureDesc& sd = srcTex->GetDesc();
@@ -2459,6 +2459,7 @@ namespace Snowstorm
 			QualityCapturePass m_Pass;     // convergence detect + readback + .npy serialize; exclusive to this effect
 			UpscalePass m_HdrCopy;         // reused as a 1:1 fullscreen copy, as PrevColorSnapshot does
 			Ref<RenderTarget> m_HdrTarget; // capture-only TransferSrc copy of SceneColor
+			bool m_WarnedNoHdr2D = false;
 		};
 	}
 

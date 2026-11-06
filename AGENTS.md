@@ -158,6 +158,7 @@ py Scripts/smoke-test.py --frames 300    # longer soak
 py Scripts/smoke-test.py --only Editor   # single target (Editor | Runtime | Pong | Reflections | AlphaBlend | Sprites)
 py Scripts/smoke-test.py --only Runtime --project Projects/Pong/Pong.ssproj   # boot a non-Sandbox project the way Play Standalone does
 py Scripts/smoke-test.py --warnings-fail # treat [warning] lines as failures too
+py Scripts/smoke-test.py --from-exe-dir  # working directory = the exe's folder, as a double-click launches it
 py Scripts/smoke-test.py --staged        # run the PACKAGE in build/stage/<config>, not the build tree
 py Scripts/smoke-test.py --strict        # enable deeper Vulkan validation (see below)
 ```
@@ -197,6 +198,10 @@ instead of a raw `VkImage 0x...` handle.
 
 **Headless mode (`SS_HEADLESS=1`, or `--headless` on `smoke-test.py` and `perf-bench.py`) needs no unlocked desktop.** The `headless` CVar creates the GLFW window hidden (ImGui's GLFW backend and input still get a window handle), creates no `VkSurfaceKHR` or swapchain, and makes `VulkanContext` own four offscreen BGRA8 images in the swapchain's place. `BeginFrame` signals the image-available semaphore with an empty submit instead of acquiring, and the end of the frame consumes the render-finished semaphore with an empty wait-only submit instead of presenting. Device and queues, the frame graph, asset streaming and the settle check run as before. Both scripts print `Mode:` as `HEADLESS` or `windowed`. Headless perf numbers skip present, so capture committed perf baselines windowed.
 
+**A hung GPU must not take the machine with it.** The harness kills the process tree when the app prints nothing for `--stall-timeout` seconds (default 60; 0 = off) as well as at the wall-clock `--timeout`, and `VK_ERROR_DEVICE_LOST` / "device lost" anywhere in the log fails the run. On AMD a hung submission can end in a Windows bugcheck (0x133) instead of a device reset, so the earliest sign has to stop the run. `Scripts/test_smoke_test_watchdog.py` covers the watchdog and the marker GPU-free.
+
+**Cached SPIR-V is validated before use.** `Engine/cache/shaders/<stem>_<key>.spv` has a sidecar `.spv.key` (key, size, content hash). `ValidateCachedSpirv` (`Render/SpirvBlobValidation.hpp`, `SpirvBlobValidationTests`) rejects a blob with a bad magic, a version outside 1.0-1.5, a size or hash that differs from its stamp, a stamp for another key, or no stamp; `VulkanShader` then deletes it and recompiles with dxc. A cache from before the sidecar existed is recompiled once, so a build shipping a warm cache without dxc must ship the sidecars too. A rejected blob is deleted even when dxc is missing, so that call then fails. Deletion happens only under the per-path compile lock; the unlocked pre-check never removes. The compiler publishes the stamp before renaming the blob into place, so a blob is never visible without its stamp. Unverified on a GPU.
+
 **A run passes only once assets settle.** After the frame budget the app keeps running until
 `AssetManagerSingleton::PendingLoadCount() == 0` and no bindless slot is still the placeholder
 (`UnsettledReason`, reached through `Layer::SmokeUnsettled`), until `smoke.settle.seconds` have passed since process start
@@ -209,6 +214,14 @@ neither notices a broken exact-string expectation: `PerfBenchTests` asserts the 
 writes, character for character. Run `ctest --test-dir build -C Debug --output-on-failure` (or the
 `Snowstorm-Tests` target) before pushing any change to a serialization or report format, since CI
 runs it and a green smoke run says nothing about it.
+
+## Scene capture gate (does it LOOK right)
+
+Smoke proves a scene boots and settles; it cannot see a frame that is all magenta (the Runtime shown only a magenta sky on 2026-10-19 passed it). `Scripts/scene-capture-check.py` captures Sponza, Reflections, AlphaBlend and Pong headlessly and fails on two things: an error frame (one colour, magenta or black over most of the frame; no golden needed) and a FLIP above `--threshold` (0.10) against the committed golden `Scripts/scene-golden/<adapter-slug>/<scene>.npz`. A missing golden is exit 2 (SKIP), never a pass, though the error-frame check still runs. Each run writes PNGs to `Scripts/.scene-captures/`; `--update-golden` records new goldens, only after looking at those PNGs. `Scripts/test_scene_capture_check.py` covers the detector GPU-free. The gate has not run on a GPU yet and no golden is committed.
+
+**A PR that changes rendering attaches before and after captures from the Z2** (the PNGs above, same scene, same adapter), and a showcase page shows a real capture of its scene, not a debug buffer.
+
+**The Runtime resolves `startup.project` and `startup.scene` against the working directory first, then the engine root** (`ResolveStartupPath`), so a double-click works. A project, registry or scene it cannot load logs `[error]`, shows a message box (headless runs only log) and exits; it never renders an engine default sky over an empty world.
 
 ## GPU perf benchmark (run before/after any render-path change)
 
@@ -239,7 +252,7 @@ py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
 The config matrix (`rt-off → shadows → +ao → +refl → +gi`) enables one RT effect at a time, so the
 **Forward-pass ms delta between adjacent configs is that effect's cost**: the RT effects are inline in
 the Forward pass, so this A/B *is* the per-effect timing (there's no separate GPU scope per effect, by
-design). Two trailing configs sit outside that ladder, each repeating one rung with a different
+design: shadows, AO, GI and reflections are branches of one DefaultLit fragment shader, so a timestamp pair cannot separate them without splitting the draw). `Forward` carries nested rows (`depth` 1 in the JSON): `ForwardOpaque` (the batch flush, where the inline RT work lives), `Sky` and `Transparent`. A new row reads as a new pass to the gate until a baseline is re-captured. Two trailing configs sit outside that ladder, each repeating one rung with a different
 producer for the same effect: `ssgi` repeats `+gi` with the screen-space GI producer (so it diffs
 against `+refl`), and `shadows-stoch` repeats `shadows` with the stochastic aggregate pass
 (MegaLights-lite) instead of one inline ray per light (so it diffs against `rt-off`). Read the
@@ -965,10 +978,12 @@ The quality tier is global; a per-texture override waits for `.meta` sidecars. T
 `TextureCookKey`, so flipping it re-cooks; the FLIP delta of `quality=1` is not measured yet.
 
 **Normals are what the role split is for.** BC1 pushes a unit vector through one shared RGB565 line:
-3.47 degrees of mean angular error against BC5's 1.13, over the 22 conforming maps. **Two Sponza images
-sitting in `NormalTexture` slots are not normal maps** (vector length ~1.3, 25-40% of texels with z<0),
-and BC5 raises their error rather than lowering it, so `IsTangentSpaceNormalMap` checks content and falls
-back to colour encoding with a warning. The slot alone cannot be trusted.
+3.47 degrees of mean angular error against BC5's 1.13, over the 22 maps measured. The slot alone
+cannot be trusted, so `IsTangentSpaceNormalMap` checks content (mean vector length <= 1.1, <= 5% of texels
+with z<0) and falls back to colour encoding with a warning when it fails. Sponza's lion-head and shield
+decals (mat23, mat3) are genuine normal maps whose padding is the (0,255,0) fill, which decodes to
+(-1,+1,-1); the check skips that corner, so they encode as BC5. Before that skip they measured length 1.2-1.3
+with 26-40% z<0 and warned.
 
 **Masks stay BC1, measured rather than assumed.** On the channels the shader actually reads
 (`mr.g` roughness, `mr.b` metallic) BC1 gives 44.7 dB and 44.0 dB, against normals' 31 dB that needed
@@ -1012,6 +1027,8 @@ render unshadowed with a one-shot warning. `GPUDirectionalLight::ShadowSlot` car
 directional traces. Secondary directionals still light the scene but are invisible to GI, reflections, the
 path tracer, the sky disc and IBL, which read `Lights[0]` only. Each secondary costs one full scene depth pass.
 
+`Render/ShadowAtlasMath.hpp` holds the pure tile math `ShadowRenderer` renders through for the directional, spot and point atlases (row-major `ShadowAtlasTileRect`; a directional with `ShadowSlot` s uses tile s-1; point face f of slot s uses tile s*6+f). `ShadowAtlasMathTests` pin it GPU-free, beside the slot rules in `PrimaryDirectionalTests`.
+
 `Render/CascadeMath.hpp` holds the pure cascade math for a future sun CSM (#58): practical split scheme, slice corners, sphere fit and texel-snapped ortho matrix. `CascadeMathTests` cover it. `LightingSystem` runs `CascadeMath::ComputeFit` per frame for the primary directional behind `render.shadow.cascades.fit` (default off; `.count`, `.lambda`), using the primary perspective camera's unjittered view-projection, and hands the result to `RendererService::GetSunCascadeFit`. `render.shadow.cascades.render` (default off, needs `.fit`) adds a `CascadeShadows` pass that draws every caster into a 2x2 `CascadeAtlas` (`render.shadow.resolution` per tile, tile i = cascade i, `CascadeMath::AtlasTile`/`AtlasUvRect`), one depth pass per cascade without per-cascade culling, and publishes the atlas bindless index through `RendererService::GetCascadeAtlasIndex`. No shader samples the atlas and FrameCB is unchanged, so lighting is identical with it on; selection, per-cascade bias (`CascadeMath::BiasScale`) and the FrameCB block come next.
 
 ## Play modes
@@ -1054,6 +1071,8 @@ deliberately absent from `AudioSourceComponent.cpp`'s RTTR registration, and tha
 mechanism keeping them transient: that one property list is simultaneously the serialization set and the
 inspector set, so registering them to get a checkbox would write `"PlayRequested": true` into the
 `.world` file and re-trigger the sound on every load.
+
+The per-source decision (play, stop, latch, drop-and-clear with no instance) and the sweep predicate are the pure `DecideAudioSource`/`KeepAudioVoice` in `Systems/AudioSourceRule.hpp`, tested by `AudioSourceRuleTests`. Stop runs before Play and latches `Started`, so `PlayOnStart` never undoes a stop.
 
 Voices are owned by `AudioSystem`, never by the entity: entity deletion, scene load and the editor's
 Play/Stop snapshot restore all destroy components without notice, so a per-entity id would strand a
@@ -1200,7 +1219,9 @@ material, `materials/AlphaBlend.ssmat` (`"AlphaMode": "Blend"`), and varies colo
 model: one ECS and one `TransformComponent` for both, separate render paths. A `Canvas2D` viewport runs `RenderCanvas2D`
 and none of the Scene3D chain (no prepass, lighting, tonemap or TAA): one `Sprites` pass draws every
 `SpriteComponent` into the present target, cleared to the camera's `BackgroundColor` through a second `RenderTarget`
-object over the same image. It uses the unjittered `ViewProjection`. The frame-global IBL bake and shadow maps still run (#344).
+object over the same image. It uses the unjittered `ViewProjection`. The frame-global IBL bake and shadow maps are skipped when no rendering viewport uses `Scene3D` (`NeedsSceneGlobalPasses`, `FrameGlobalPassGateTests`, #344); one Scene3D viewport next to a Canvas2D one keeps them. Frame-time effect on a 2D-only scene is unmeasured, and the gate has not run on a GPU.
+
+Sprites outside the camera's x/y clip planes are dropped before the sort (`SpriteIntersectsView`, conservative: all four corners outside one plane; a corner behind the eye keeps the sprite; depth is not tested). The gather stays a serial loop, not `ParallelGather`: it reads components through the registry and the per-sprite test is a few mat4 ops, unmeasured on a GPU or stress scene.
 
 Draw order is `Layer`, then `Order`, then entity id, never z (`SortSpriteDraws`, `SpriteBatchTests`). `Size` is in world
 units times the transform's scale; a flip mirrors about `Pivot`. Sprites are unlit and straight-alpha blended with the
@@ -1221,7 +1242,7 @@ With one level, a sprite drawn much smaller than its texture aliases; mips and c
 `cook.assets` walks the registry, which cannot know scene usage, so sprite variants cook on first use.
 
 The editor's Scene view takes the scene's Primary camera's render path and background on open, still flying in perspective
-(#341). `quality.capture` is a Scene3D effect and does not capture a Canvas2D frame.
+(#341). `quality.capture` also captures a Canvas2D viewport: `RenderCanvas2D` runs the same capture effect after the `Sprites` pass, with the same settle rule, writing `<path>_ldr.npy` from the present target. `_hdr.npy` is skipped (no linear scene colour; the log says so). Not run on a GPU: that `Sprites.world` captures headlessly and matches a window capture is unconfirmed.
 
 **`Sprites.world` is the testbed**, booted by smoke as `Sprites`: a 64x64 checkerboard magnified with `Nearest` and with
 `Linear`, a layer -1 logo 2 units nearer the camera that still draws under them, two layer 1 logos over them (one `FlipX`,
@@ -1229,7 +1250,13 @@ tinted at 0.7 alpha), and a rotated layer 1, order 1 checker over the logo it ov
 
 ## Neural upscaler tail fusion
 
-`neural.fuse` (default off) replaces the last conv layer and the residual add with one `NeuralConvAdd.comp.hlsl` dispatch when the last layer has 3 output channels (else the unfused chain runs): one dispatch, one barrier and one descriptor set fewer, and the residual map is never written to memory. It is a naive per-pixel loop at both precisions. `Conv2DResidualReference` is the CPU reference for the fused math (`NeuralMathTests` pins it to hand-computed values); it does not exercise the shader. Not run on a GPU: no unfused-vs-fused ms or output comparison exists yet. `NeuralConvAdd.comp` is RGA-baselined at 13 VGPRs, no spills, on every ASIC (#101).
+`neural.fuse` (default off) replaces the last conv layer and the residual add with one `NeuralConvAdd.comp.hlsl` dispatch when the last layer has 3 output channels (else the unfused chain runs): one dispatch, one barrier and one descriptor set fewer, and the residual map is never written to memory. It is a naive per-pixel loop at both precisions. `Conv2DResidualReference` is the CPU reference for the fused math (`NeuralMathTests` pins it to hand-computed values); it does not exercise the shader. Not run on a GPU: no unfused-vs-fused ms or output comparison exists yet. `NeuralConvAdd.comp` is RGA-baselined at 13 VGPRs, no spills, on every ASIC (#101). `Conv2DPairReference` is the oracle for the next fusion, two consecutive convs with the intermediate recomputed over the second layer's footprint and zero (not first(padding)) outside the image; no shader uses it yet. For the shipped 3/8 -> 16 -> 16 -> 3 model the candidate is the 16 -> 16 hidden layer into the 16 -> 3 tail: 9x recompute of the first layer's MACs per pixel against a 16-channel map no longer written or read, so it only pays if the pass is bandwidth-bound, which needs a GPU measurement.
+
+## Shader hot-reload
+
+`ShaderReloadSystem` (AssetSync phase) never compiles on the main thread. A source edit found by `ShaderLibrary::ReloadAll` and a DefaultLit permutation flip (`RequestRecompile`) both queue `Shader::Recompile()` on a JobSystem worker. The shader keeps its previous SPIR-V until the new result is published as one `CompiledShader` snapshot, and a failed compile publishes nothing, so the old pipeline keeps rendering. `CompileGate` coalesces overlapping requests into at most one live chain whose last run reads the latest inputs. `Shader::IsCompiling()` is true from queueing until `Recompile()` returns.
+
+A permutation swap is tracked by `LitSwapState` (`Systems/ShaderReloadRule.hpp`, `ShaderReloadRuleTests`): `BeginLitSwap` records the version at the first request (a superseding request keeps it), `PollLitSwap` reports `Pending` while compiling, then `Succeeded` (version advanced: the pipeline sweep runs) or `Failed` (no version change: logged at `[error]`, old pipeline kept), once. `Pipeline::Reload` still drains the device (#11), which is now the remaining hitch. Not run on a GPU: the worker swap and the failure path are unverified outside the unit tests.
 
 ## IBL invalidation
 
@@ -1237,7 +1264,7 @@ The IBL bake is keyed on the environment block and on the sun (`Lights[0]`, the 
 `Render/IBLInvalidation.hpp` holds the pure rule: `SunNeedsRebake` compares against the last BAKED sun, re-baking
 when its direction moves past `render.ibl.sun_quantum_deg` (default 2) or its colour*intensity changes by more
 than 5%, or when the sun appears or disappears. A re-bake is still the full monolithic bake with a `WaitIdle`;
-`IBLInvalidationTests` cover the rule (#149). Each re-bake after the first logs its `WaitIdle` stall, trigger and sun angle (`IBLRebakeStats`); unobserved on a GPU.
+`IBLInvalidationTests` cover the rule (#149). Only the first bake computes the environment-independent BRDF LUT and reads back for the `.ssibl` cache (`PlanIBLBake`); re-bakes skip both, so a sun sweep writes one cache file. Per-dispatch UBOs, sets and face views go into a `RetireQueue` freed `GetFramesInFlight()+1` frames later (`IBLBakePass::AdvanceFrame`), where they used to accumulate for the session; they are still allocated per bake. Not run on a GPU. Each re-bake after the first logs its `WaitIdle` stall, trigger and sun angle (`IBLRebakeStats`); unobserved on a GPU.
 
 `Lighting/LightPacking.hpp` is the pure encoding of light components into the GPU rows (`PackDirectionalLight`, `PackPointLight`, `PackSpotLight`: normalized direction, cone cosines with outer clamped to inner, the per-array caps); `LightPackingTests` pin it GPU-free.
 
