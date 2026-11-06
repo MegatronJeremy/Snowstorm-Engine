@@ -142,3 +142,9 @@ TEST_CASE("A mounted path is recognised with native separators too", "[vpath]")
 	CHECK(VirtualPath::IsVirtual(stored.string()));
 	CHECK(VirtualPath::Resolve(stored.string()) == VirtualPath::Resolve("/Engine/Shaders/DefaultLit.frag.hlsl"));
 }
+
+TEST_CASE("JoinSubResource spells the key MeshLibrary caches submeshes under", "[virtualpath]")
+{
+	REQUIRE(VirtualPath::JoinSubResource("a/Sponza.gltf", 4) == "a/Sponza.gltf?submesh=4");
+	REQUIRE(VirtualPath::SplitSubResource(VirtualPath::JoinSubResource("/Game/m.gltf", 7)).SubResource == 7);
+}
