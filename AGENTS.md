@@ -1245,6 +1245,13 @@ units times the transform's scale; a flip mirrors about `Pivot`. Sprites are unl
 destination alpha kept, since ImGui blends the viewport image by it. `Filter` picks a per-sprite point or linear sampler.
 `OrthographicSize` is the full view height, not the half height.
 
+`Rect` is a texel sub-rectangle (x, y, width, height; origin top-left, the order rows are stored): sprite sheets and tilesets
+(Unity Sprite Editor slices, Bevy `TextureAtlas`). A zero width or height draws the whole texture. `SpriteUvRect`
+(`SpriteBatch.hpp`, `SpriteBatchTests`) clamps it to the texture and maps it to the offset and scale carried in
+`SpriteInstance::UvRect`, which `Sprite.vert` applies to the quad's UV; a rect outside the texture falls back to the whole texture.
+`Size` is not derived from `Rect`, and packing and slicing UI are out of scope. A flip mirrors the quad, so it flips the cell.
+The `Linear` filter samples across the cell edge with no padding, so bleed from neighbouring cells is possible; `Nearest` is exact.
+
 `SpriteResolveSystem` resolves `Texture` to the runtime `View`. With `Texture` at 0 the system leaves `View` alone, which is
 how a game binds a texture it writes; `ResolvedFrom` records which views the system set, so clearing `Texture` drops only
 those. The sprite shaders include no `Engine.hlsli` and keep their resources in set 1, so they never touch the shared sets
@@ -1258,14 +1265,21 @@ and the view sits in its own cache, so a texture used by a sprite and a material
 With one level, a sprite drawn much smaller than its texture aliases; mips and compression per asset wait for `.meta`.
 `cook.assets` walks the registry, which cannot know scene usage, so sprite variants cook on first use.
 
-The editor's Scene view takes the scene's Primary camera's render path and background on open, still flying in perspective
-(#341). `quality.capture` also captures a Canvas2D viewport: `RenderCanvas2D` runs the same capture effect after the `Sprites` pass, with the same settle rule, writing `<path>_ldr.npy` from the present target. `_hdr.npy` is skipped (no linear scene colour; the log says so). Not run on a GPU: that `Sprites.world` captures headlessly and matches a window capture is unconfirmed.
+The editor's Scene view takes the scene's Primary camera's render path and background on open (#341). A Canvas2D scene also
+opens the **2D Scene view** (Unity's Scene-view 2D toggle, Godot's 2D editor): `CameraControllerRuntimeComponent::View2D` on the
+editor camera, flipped by the viewport's "2D" button or the `2` key. `CameraControllerSystem` applies the transition (saving
+the 3D pose and restoring it on the way out), then runs `Execute2D`: orthographic, rotation locked at zero, middle or right drag
+pans, the wheel zooms about the cursor (`ViewportInteractionComponent::CursorUv`), right-held WASD pans, and F / Shift+F frame
+the selected sprite / every sprite (`FrameEditorCamera2D`, `SpriteLocalAABB`). The maths is `Math/Scene2DView.hpp`
+(`Scene2DViewTests`). Opening a non-2D scene leaves the mode and discards the saved pose. Sprites are not pickable by click yet
+and the translate gizmo's behaviour under the ortho camera has not run on a GPU.
+`quality.capture` also captures a Canvas2D viewport: `RenderCanvas2D` runs the same capture effect after the `Sprites` pass, with the same settle rule, writing `<path>_ldr.npy` from the present target. `_hdr.npy` is skipped (no linear scene colour; the log says so). Not run on a GPU: that `Sprites.world` captures headlessly and matches a window capture is unconfirmed.
 
 **Pixel-perfect camera (#340, PR 1).** `CameraComponent::PixelsPerUnit` > 0 on an orthographic `Canvas2D` camera (0, the default, is off) derives the view height from the viewport: `PixelPerfectScale` takes the largest integer at which `ReferenceResolution` fits (an axis of 0 does not constrain; no reference means 1; never below 1), and `PixelPerfectOrthographicSize` makes `OrthographicSize = viewportH / (PixelsPerUnit * scale)`, so one texel spans exactly `scale` screen pixels. The camera translation is snapped to the texel grid (`SnapToTexel`) in `CameraRuntimeUpdateSystem`; rotation is not handled. Unity's Pixel Perfect Camera and Godot's `viewport` stretch mode also render into a reference-size target and letterbox; here the sprites still draw straight at present resolution, so the remainder is stretched, not letterboxed, and sprites keep `Nearest` filtering for the exact mapping. `PixelPerfectTests` cover the math; the system wiring and the shimmer-free pan are unverified on a GPU.
 
 **`Sprites.world` is the testbed**, booted by smoke as `Sprites` (its camera is pixel-perfect at 16 PPU, 320x180 reference): a 64x64 checkerboard magnified with `Nearest` and with
 `Linear`, a layer -1 logo 2 units nearer the camera that still draws under them, two layer 1 logos over them (one `FlipX`,
-tinted at 0.7 alpha), and a rotated layer 1, order 1 checker over the logo it overlaps.
+tinted at 0.7 alpha), and a rotated layer 1, order 1 checker over the logo it overlaps, and `Checker Rect`, the top-left 32x32 texels of the checker at 2x2 units. The `Rect` path (shader UV offset and scale, instance layout) has not run on a GPU.
 
 ## Subgroup size
 

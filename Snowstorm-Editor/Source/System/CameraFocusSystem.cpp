@@ -1,5 +1,7 @@
 #include "CameraFocusSystem.hpp"
 
+#include "Snowstorm/Components/CameraControllerRuntimeComponent.hpp"
+#include "Snowstorm/Components/DoNotSerializeComponent.hpp"
 #include "Snowstorm/Core/KeyCodes.hpp"
 #include "Snowstorm/Input/InputStateSingleton.hpp"
 #include "Snowstorm/Math/Bounds.hpp"
@@ -8,6 +10,16 @@
 
 namespace Snowstorm
 {
+	bool CameraFocusSystem::EditorCamera2DActive() const
+	{
+		auto& reg = m_World->GetRegistry();
+		for (const entt::entity e : reg.view<CameraControllerRuntimeComponent, DoNotSerializeComponent>())
+		{
+			return reg.Read<CameraControllerRuntimeComponent>(e).Active2D;
+		}
+		return false;
+	}
+
 	void CameraFocusSystem::Execute(Timestep)
 	{
 		const auto& input = SingletonView<InputStateSingleton>();
@@ -29,6 +41,23 @@ namespace Snowstorm
 		// scene if nothing is selected, which is the least surprising behaviour).
 		AABB target;
 		bool haveTarget = false;
+		if (EditorCamera2DActive())
+		{
+			const Entity selected = shift ? Entity{} : SingletonView<EditorSelectionSingleton>().Selected;
+			if (selected.IsValid())
+			{
+				haveTarget = ComputeEntitySpriteAABB(*m_World, selected.Handle(), target);
+			}
+			if (!haveTarget)
+			{
+				haveTarget = ComputeWorldSpriteAABB(*m_World, target);
+			}
+			if (haveTarget)
+			{
+				FrameEditorCamera2D(*m_World, target);
+			}
+			return;
+		}
 		if (!shift)
 		{
 			const Entity selected = SingletonView<EditorSelectionSingleton>().Selected;

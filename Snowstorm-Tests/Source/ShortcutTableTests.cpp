@@ -83,6 +83,8 @@ TEST_CASE("Shortcut table lists the bindings the editor handles", "[editor][shor
 	CHECK(Has({Key::R}));
 	CHECK(Has({Key::Escape}));
 	CHECK(Has({Key::Delete}));
+	// 2D Scene view toggle (ViewportDisplaySystem).
+	CHECK(Has({Key::D2}));
 	// Camera fly keys (CameraControllerSystem) and framing (CameraFocusSystem).
 	CHECK(Has({Key::LeftShift}));
 	CHECK(Has({Key::LeftControl}));
