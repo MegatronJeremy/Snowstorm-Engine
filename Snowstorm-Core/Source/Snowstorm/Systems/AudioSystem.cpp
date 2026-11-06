@@ -1,5 +1,7 @@
 #include "AudioSystem.hpp"
 
+#include "AudioSourceRule.hpp"
+
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Components/AudioListenerComponent.hpp"
 #include "Snowstorm/Components/AudioSourceComponent.hpp"
@@ -140,12 +142,16 @@ namespace Snowstorm
 				                                });
 			};
 
+			const AudioSourceDecision decision =
+			    DecideAudioSource({.HasInstance = voice.Instance != AudioService::NullInstance,
+			                       .PlayRequested = source.PlayRequested,
+			                       .StopRequested = source.StopRequested,
+			                       .PlayOnStart = source.PlayOnStart,
+			                       .Started = voice.Started});
+
 			if (voice.Instance == AudioService::NullInstance)
 			{
-				// No voice to act on, so a request is DROPPED rather than left set. Latching it would fire
-				// the sound later, at whatever unrelated moment the clip finally resolved. Unity's Play()
-				// on a clipless AudioSource does nothing for the same reason.
-				if (source.PlayRequested || source.StopRequested)
+				if (decision.ClearRequests)
 				{
 					clearRequests();
 				}
@@ -179,27 +185,18 @@ namespace Snowstorm
 				}
 			}
 
-			// An explicit request outranks the PlayOnStart latch. Stop also sets Started, so stopping a
-			// source that had not started yet is not immediately undone by the latch below.
-			if (source.StopRequested)
+			voice.Started = decision.Started;
+			if (decision.Stop)
 			{
-				voice.Started = true;
 				audio.Stop(voice.Instance);
 			}
-			if (source.PlayRequested)
+			if (decision.Play)
 			{
-				voice.Started = true;
-				audio.Play(voice.Instance);
-			}
-			else if (source.PlayOnStart && !voice.Started)
-			{
-				voice.Started = true;
 				audio.Play(voice.Instance);
 			}
 
-			// Cleared only when one was actually set: an unconditional write would mark every audio entity
-			// Changed every frame. `source` is a reference into storage and must not be used after this.
-			if (source.PlayRequested || source.StopRequested)
+			// `source` is a reference into storage and must not be used after this.
+			if (decision.ClearRequests)
 			{
 				clearRequests();
 			}
@@ -210,7 +207,7 @@ namespace Snowstorm
 		// playing sound that no id remains to reach, and repeating it would stack copies without bound.
 		for (auto it = m_Voices.begin(); it != m_Voices.end();)
 		{
-			if (reg.valid(it->first) && reg.any_of<AudioSourceComponent>(it->first))
+			if (KeepAudioVoice(reg.valid(it->first), reg.valid(it->first) && reg.any_of<AudioSourceComponent>(it->first)))
 			{
 				++it;
 				continue;
