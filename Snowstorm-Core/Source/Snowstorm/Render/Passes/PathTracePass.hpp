@@ -49,6 +49,9 @@ namespace Snowstorm
 			uint32_t EnvNee = 1;            // 1 = environment (sky) NEE + MIS (render.pathtrace.envnee)
 			uint32_t Sampler = 0;           // 0 = PCG, 1 = Owen-scrambled Sobol (render.pathtrace.sampler)
 			uint64_t TableAddress = 0;      // per-instance geometry table (device address)
+			uint32_t EmissiveNee = 0;       // 1 = emissive-triangle NEE + MIS (render.pathtrace.emissivenee, list non-empty)
+			uint32_t EmissiveCount = 0;     // entries in the emissive triangle list
+			uint64_t EmissiveAddress = 0;   // emissive triangle list (device address)
 		};
 
 		// Dispatch the path-trace accumulation into `accum` (a full-res RGBA32F Sampled|Storage view). `lights`

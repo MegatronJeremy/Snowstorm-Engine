@@ -112,3 +112,13 @@ TEST_CASE("TlasRebuildRule: rebuild gate", "[tlas]")
 		REQUIRE_FALSE(ShouldRebuild(s, false));
 	}
 }
+
+TEST_CASE("TlasRebuildRule: an emissive-NEE toggle rebuilds a built scene", "[tlas]")
+{
+	RebuildState s = Steady();
+	s.EmissiveNee = true;
+	CHECK(EmissiveToggled(s));
+	CHECK(ShouldRebuild(s, false));
+	s.BuiltOnce = false;
+	CHECK_FALSE(EmissiveToggled(s));
+}

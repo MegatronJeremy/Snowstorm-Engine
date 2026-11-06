@@ -79,3 +79,37 @@ TEST_CASE("ShaderCompile: headers hash covers names, contents and order", "[shad
 	REQUIRE(base != ShaderHeaderAppend(ShaderHeaderAppend(0, "B.hlsli", "y"), "A.hlsli", "x"));
 	REQUIRE(ShaderKeyToHex(0xabcull) == "0000000000000abc");
 }
+
+TEST_CASE("ShaderCompile: opt level emits -O only for 0..3 and never with debug", "[shader]")
+{
+	DxcRequest r = Request();
+	const std::wstring none = BuildDxcCommandLine(r);
+	REQUIRE(none.find(L" -O") == std::wstring::npos);
+
+	r.optLevel = 1;
+	REQUIRE(BuildDxcCommandLine(r).find(L" -O1 ") != std::wstring::npos);
+	r.optLevel = 0;
+	REQUIRE(BuildDxcCommandLine(r).find(L" -O0 ") != std::wstring::npos);
+
+	r.optLevel = 7;
+	REQUIRE(BuildDxcCommandLine(r) == none);
+	r.optLevel = -2;
+	REQUIRE(BuildDxcCommandLine(r) == none);
+
+	r.optLevel = 2;
+	r.debug = true;
+	REQUIRE(BuildDxcCommandLine(r).find(L" -O2") == std::wstring::npos);
+}
+
+TEST_CASE("ShaderCompile: opt level keys the cache only when explicit", "[shader]")
+{
+	const std::vector<std::string> none;
+	const uint64_t base = ComputeShaderKey("src", 1, "t", none, false);
+	REQUIRE(base == ComputeShaderKey("src", 1, "t", none, false, kShaderOptDefault));
+	REQUIRE(base != ComputeShaderKey("src", 1, "t", none, false, 0));
+	REQUIRE(ComputeShaderKey("src", 1, "t", none, false, 0) != ComputeShaderKey("src", 1, "t", none, false, 2));
+	// Out-of-range levels compile as the default but must not alias it silently into a stale entry.
+	REQUIRE(ComputeShaderKey("src", 1, "t", none, false, 9) == base);
+	// Debug ignores the level, as the command line does.
+	REQUIRE(ComputeShaderKey("src", 1, "t", none, true, 0) == ComputeShaderKey("src", 1, "t", none, true));
+}

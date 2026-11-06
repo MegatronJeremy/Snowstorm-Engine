@@ -23,6 +23,7 @@ struct GeoRecord
 	uint AlbedoTextureIndex;  // [16] bindless index into Textures[] (0 = none)
 	uint AlphaMaskEnabled;    // [20] 1 = alpha-cutout (glTF MASK)
 	float AlphaCutoff;        // [24] albedo.a threshold when masked
+	uint EmissiveFirstTriangle; // [28] path tracer emissive list: index + 1 of this instance's first entry (0 = none)
 	float4 BaseColor;         // [32] base-color factor (its .a scales the mask alpha)
 	float4x4 Model;           // [48] object->world
 	// PBR block (#153), appended after Model. The path tracer reads all of it; the compute RT hit shading reads
@@ -44,6 +45,7 @@ GeoRecord LoadGeoRecord(uint64_t tableAddr, uint instanceIndex)
 	r.AlbedoTextureIndex = vk::RawBufferLoad<uint>(base + 16, 4);
 	r.AlphaMaskEnabled = vk::RawBufferLoad<uint>(base + 20, 4);
 	r.AlphaCutoff = vk::RawBufferLoad<float>(base + 24, 4);
+	r.EmissiveFirstTriangle = vk::RawBufferLoad<uint>(base + 28, 4);
 	r.BaseColor = float4(vk::RawBufferLoad<float>(base + 32, 4), vk::RawBufferLoad<float>(base + 36, 4),
 	                     vk::RawBufferLoad<float>(base + 40, 4), vk::RawBufferLoad<float>(base + 44, 4));
 	// mat4 is 16 contiguous floats at offset 48 (column-major, matching glm).

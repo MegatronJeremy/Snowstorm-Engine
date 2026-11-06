@@ -175,7 +175,9 @@ namespace Snowstorm
 		// RT reflections (#118): hand the per-instance geometry-table address (TlasBuildSystem filled it in
 		// PreRender) to the renderer so AcquireFrameSet folds it into FrameCB. 0 when reflections are off ->
 		// the shader's reflection trace falls back to the sky cube.
-		renderer.SetReflectionGeometryAddress(SingletonView<ReflectionGeometrySingleton>().TableAddress);
+		const auto& reflGeo = SingletonView<ReflectionGeometrySingleton>();
+		renderer.SetReflectionGeometryAddress(reflGeo.TableAddress);
+		renderer.SetEmissiveLightList(reflGeo.EmissiveAddress, reflGeo.EmissiveCount);
 
 		const EnvironmentDataBlock& env = renderer.GetEnvironment();
 		// Only a Scene3D viewport samples the IBL maps and shadow maps (#344). Mirrors RenderViewport's bail
@@ -747,6 +749,8 @@ namespace Snowstorm
 			d.Size = sprite.Size;
 			d.Pivot = sprite.Pivot;
 			d.Tint = sprite.Tint;
+			if (const auto& tex = sprite.View->GetTexture())
+				d.UvRect = SpriteUvRect(sprite.Rect, tex->GetWidth(), tex->GetHeight());
 			d.FlipX = sprite.FlipX;
 			d.FlipY = sprite.FlipY;
 			d.Linear = sprite.Filter == SpriteFilter::Linear;

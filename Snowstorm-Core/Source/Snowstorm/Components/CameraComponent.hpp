@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
 
 #include <cstdint>
@@ -41,6 +42,13 @@ namespace Snowstorm
 		float OrthographicSize = 10.0f;
 		float OrthographicNear = -10.0f;
 		float OrthographicFar = 10.0f;
+
+		// Pixel-perfect Canvas2D (#340). PixelsPerUnit 0 is off. On, the view height is derived from the
+		// viewport so each texel spans a whole number of screen pixels (the largest integer scale at which
+		// ReferenceResolution fits; an axis of 0 does not constrain), OrthographicSize is ignored, and the
+		// camera position is snapped to the texel grid.
+		float PixelsPerUnit = 0.0f;
+		glm::vec2 ReferenceResolution{0.0f, 0.0f};
 
 		bool Primary = true;
 		bool FixedAspectRatio = false;

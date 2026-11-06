@@ -1124,6 +1124,28 @@ namespace Snowstorm
 		auto& cc = reg.Write<CameraComponent>(editorCam.Handle());
 		cc.RenderPath = primary.RenderPath;
 		cc.BackgroundColor = primary.BackgroundColor;
+
+		// A Canvas2D scene opens in the 2D Scene view at the camera's zoom; any other scene leaves it. Leaving
+		// discards the saved 3D pose: the scene's own camera alignment or sidecar sets the new one next.
+		if (!reg.any_of<CameraControllerRuntimeComponent>(editorCam.Handle()))
+		{
+			reg.emplace<CameraControllerRuntimeComponent>(editorCam.Handle());
+		}
+		auto& rt = reg.Write<CameraControllerRuntimeComponent>(editorCam.Handle());
+		if (primary.RenderPath == CameraComponent::RenderPathType::Canvas2D)
+		{
+			cc.OrthographicSize = primary.OrthographicSize;
+			rt.View2D = true;
+		}
+		else
+		{
+			if (rt.Active2D && rt.SavedWasPerspective)
+			{
+				cc.Projection = CameraComponent::ProjectionType::Perspective;
+			}
+			rt.View2D = false;
+			rt.Active2D = false;
+		}
 	}
 
 	bool EditorLayer::AlignEditorCameraToPrimary() const

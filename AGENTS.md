@@ -510,6 +510,10 @@ expected the old `#type` split and silently compiled nothing).
 static and needs no GPU, so hosted CI cooks the shaders and runs the occupancy gate on every shader
 change. RGA is cached across runs (actions/cache) so only the first pays the download.
 
+### Compiler feedback on shader PRs (information, not a gate)
+
+`py Scripts/shader-feedback.py report --asic gfx1151,gfx1200 --spv-dir Engine/cache/shaders-cook --out head.json` writes RGA's per-shader numbers as JSON (VGPRs, SGPRs, LDS, scratch, spills, ISA bytes, ISA instruction count, theoretical waves/SIMD; worst case over permutations) per ASIC; `diff base.json head.json --markdown c.md` lists what changed. `.github/workflows/shader-feedback.yml` cooks base and head on every PR that touches `Engine/Shaders` and posts the diff as one updating comment. It is a static proxy for shortlisting ideas, never a merge gate; confirm a candidate with `perf-bench.py --compare-exe`. gfx1151 (the Z2's 8060S) reuses the gfx11 occupancy model; that RGA 2.14.2 compiles for gfx1151, and that RDNA3.5 shares the 1536-VGPR file, are unverified: an ASIC RGA rejects is listed under `errors` in the report. `Scripts/test_shader_feedback.py` covers the pure logic; the RGA runs and the ISA instruction parse have not run on real RGA output.
+
 ### Reading an RGP capture without the GUI
 
 `rgp-capture.py` writes a `.rgp` only RGP's GUI can open. `py Scripts/rgp-read.py capture.rgp -o out.json` reads the legacy SQTT container (layout: AMD's MIT-licensed `sqtt_file_format.h`, GPUOpen-Drivers/pal, spec 1.6) into JSON: chunk inventory, ASIC info (offsets verified by compiling the header's struct), API info, clock calibration, PSO names, and per-frame GPU time summed from the queue-event submits (`gpuMs`, converted with the ASIC chunk's timestamp frequency). `--diff base.json cur.json` compares median frame GPU ms (percent and `--abs-threshold` floor, exit 1 on a rise). The SQTT_DATA token stream (achieved occupancy, instruction timing) has no public decoder and is listed but not decoded. An RDF-container file (RGP 2.x) exits 2 as unsupported. `Scripts/test_rgp_read.py` uses synthetic captures built from the documented layout: no real `.rgp` has been read, and whether the pinned RDTS build writes the legacy or the RDF container is unverified.
@@ -940,6 +944,17 @@ after destruction by `BeginFrame` (same call site as `VulkanBindlessManager::Adv
 set no longer stalls the device. Pools live until `Shutdown`. The policy arithmetic is backend-free in
 `DescriptorPoolPolicy.hpp` (Catch2-tested); bindless keeps its own pool.
 
+## Shader and acceleration-structure tuning CVars
+
+All of these are `ReadOnly` (startup-only) and default to today's behaviour; `Scripts/speed-tune.py` searches them through `SS_*` env. None has run on a GPU.
+
+- `render.shaders.opt` (default -1): dxc `-O0..-O3`; -1 passes no flag (dxc's own -O3). Keyed into the `.spv` cache only when set, so default cache entries stay valid. `Scripts/cook-shaders.py --opt N` mirrors it so an RGA run can see the same SPIR-V. Ignored under `render.shaders.debug`.
+- `render.fp16` (default on): off forces the fp32 path (no `SS_FP16`, fp32 neural weights) on fp16-capable devices. Gated in `VulkanRendererAPI::IsFloat16Supported`, so the permutation and the weight packing cannot disagree. `cook-shaders.py --no-fp16` mirrors it.
+- `render.as.prefer_fast_build` (default off): BLAS and TLAS build with `PREFER_FAST_BUILD` instead of `PREFER_FAST_TRACE`.
+- `render.as.compaction` (default off): BLAS builds add `ALLOW_COMPACTION`, read the compacted size back and copy into a smaller allocation when it is strictly smaller (`ShouldCompactAs`). One extra synchronous submit per BLAS. The TLAS is not compacted. The flag and decision rules are `Render/AccelerationStructureBuild.hpp`, tested in `AccelerationStructureBuildTests`.
+
+- `render.wg.ao`, `render.wg.gi`, `render.wg.reflection`, `render.wg.shadow` (default 8): square compute tile side, 4, 8 or 16 (anything else is 8). The GI family is GI, GITemporal, GISpatialReuse and GIDenoise. The shaders say `[numthreads(SS_WG_X, SS_WG_Y, 1)]` with the default in `Include/Workgroup.hlsli`; `Render/WorkgroupSize.hpp` (`ClampWorkgroupSide`, `WorkgroupCount`, `AppendWorkgroupDefines`) feeds both the define and the C++ dispatch math, so they cannot drift. The default emits no define, so its `.spv` key, its cooked variant and the RGA baselines are unchanged (adding `Workgroup.hlsli` re-keys the include-header hash once). A non-default side is a new permutation that compiles at runtime; it is not in `shader-permutations.txt`. None of the shaders has `groupshared` memory or reads `SV_GroupThreadID`, which is what makes the size free to change; check that before extending the knob to another shader. The other `numthreads` shaders (SSAO, SSR, SSGI, Neural*, IBL*, PathTrace, Metrics, Pick, OmmBake) are not a knob yet. Unverified on a GPU: nothing here has run, and a larger tile can cost occupancy on the RT passes.
+
 ## Texture block compression
 
 `cook.textures.compress` block-compresses cooked textures, **on by default** after eyes-on confirmation on
@@ -1028,7 +1043,7 @@ path tracer, the sky disc and IBL, which read `Lights[0]` only. Each secondary c
 
 `Render/ShadowAtlasMath.hpp` holds the pure tile math `ShadowRenderer` renders through for the directional, spot and point atlases (row-major `ShadowAtlasTileRect`; a directional with `ShadowSlot` s uses tile s-1; point face f of slot s uses tile s*6+f). `ShadowAtlasMathTests` pin it GPU-free, beside the slot rules in `PrimaryDirectionalTests`.
 
-`Render/CascadeMath.hpp` holds the pure cascade math for a future sun CSM (#58): practical split scheme, slice corners, sphere fit and texel-snapped ortho matrix. `CascadeMathTests` cover it. `LightingSystem` runs `CascadeMath::ComputeFit` per frame for the primary directional behind `render.shadow.cascades.fit` (default off; `.count`, `.lambda`), using the primary perspective camera's unjittered view-projection, and hands the result to `RendererService::GetSunCascadeFit`. `render.shadow.cascades.render` (default off, needs `.fit`) adds a `CascadeShadows` pass that draws every caster into a 2x2 `CascadeAtlas` (`render.shadow.resolution` per tile, tile i = cascade i, `CascadeMath::AtlasTile`/`AtlasUvRect`), one depth pass per cascade without per-cascade culling, and publishes the atlas bindless index through `RendererService::GetCascadeAtlasIndex`. No shader samples the atlas and FrameCB is unchanged, so lighting is identical with it on; selection, per-cascade bias (`CascadeMath::BiasScale`) and the FrameCB block come next.
+`Render/CascadeMath.hpp` holds the pure cascade math for a future sun CSM (#58): practical split scheme, slice corners, sphere fit and texel-snapped ortho matrix. `CascadeMathTests` cover it. `LightingSystem` runs `CascadeMath::ComputeFit` per frame for the primary directional behind `render.shadow.cascades.fit` (default off; `.count`, `.lambda`), using the primary perspective camera's unjittered view-projection, and hands the result to `RendererService::GetSunCascadeFit`. `render.shadow.cascades.render` (default off, needs `.fit`) adds a `CascadeShadows` pass that draws every caster into a 2x2 `CascadeAtlas` (`render.shadow.resolution` per tile, tile i = cascade i, `CascadeMath::AtlasTile`/`AtlasUvRect`), one depth pass per cascade without per-cascade culling, and publishes the atlas bindless index through `RendererService::GetCascadeAtlasIndex`. `render.shadow.cascades.shade` (default off, needs `.render`) appends a cascade block to FrameCB (`CascadeViewProj[4]`, `CascadeAtlasRect[4]`, `CascadeSplits`, `CascadeBiasScale`, `CascadeViewDepthRow`, `CascadeCount`, `CascadeAtlasIndex`; `MakeShading` packs it, offsets static_asserted) and `SampleSunShadow` then picks the first cascade whose split exceeds the fit camera's view depth (`SelectCascade` is the tested mirror), scales depth bias and normal offset by `CascadeBiasScale`, and shades from the atlas through `SampleShadowFactor`. Selection is hard: no blend band, no distance fade, and fragments past the last split are unshadowed. With it off the single sun map is used and the block is zero. Only the primary directional's `ShadowSlot == 0` path changes; RT shadows ignore it. Not run on a GPU: seam placement, bias and cost are unmeasured.
 
 ## Play modes
 
@@ -1105,9 +1120,12 @@ without the flag.
 
 **A game adds GPU work with `RendererService::EnqueueGraphPass`**, from any phase before Render. The pass
 joins that frame's render graph after the texture uploads and ahead of IBL, shadows and every viewport,
-once per frame. A texture it writes that a material samples through bindless must end Sampled, through a
-trailing pass that declares the read and has a no-op `Execute`: the graph transitions only declared
-accesses, and a bindless read is undeclared.
+once per frame. A texture it writes that a material samples through bindless goes in the pass's `PublishSampled`: the graph
+transitions it to Sampled right after the pass (graphics queue only), since it transitions only declared
+accesses and a bindless read is undeclared. `PublishSampled` counts as a write in `BuildDependencies`, so a
+declared reader still orders after the writer; the ordering of an undeclared bindless reader (the material
+draw in `Forward`) still rests on graphics passes keeping their order. `RenderGraphScheduleTests` pin the
+edge; the transition itself has not run on a GPU.
 
 ## Staging a runnable build
 
@@ -1210,7 +1228,7 @@ without the flag the panes are solid and occlude. Alpha mode is an asset propert
 material, `materials/AlphaBlend.ssmat` (`"AlphaMode": "Blend"`), and varies colour and alpha per entity through
 `BaseColor` overrides. It has no baselines. Not yet run on a GPU: the sorted pass is unverified by smoke, perf-bench or eyes.
 
-`Render/EmissiveLightMath.hpp` holds the pure math for emissive-surface next-event estimation in the path tracer (#154): uniform triangle sampling, area-to-solid-angle pdf, the balance weight and a power CDF. `EmissiveLightMathTests` cover it. Nothing consumes it yet; the path tracer still gathers emission only through BSDF-continuation hits.
+`Render/EmissiveLightMath.hpp` holds the pure math for emissive-surface next-event estimation in the path tracer (#154): uniform triangle sampling, area-to-solid-angle pdf, the balance weight and a power CDF. `EmissiveLightMathTests` cover it. `render.pathtrace.emissivenee` (default off, #154) wires it into `PathTrace.comp`: `TlasBuildSystem` builds an `EmissiveLightList` (world-space triangles of every instance with a non-black emissive factor, CDF over area times factor luminance, 64-byte `GpuTriangle` records read by device address; `Mesh` keeps a CPU copy of positions and indices on RT devices for it) and stamps each `GeometryRecord.EmissiveFirstTriangle`. Each hit samples one triangle uniformly and balance-weights it against the BSDF-continuation emissive hit (whose light pdf is found from `EmissiveFirstTriangle - 1 + prim`), so camera rays keep full weight and the converged image is unchanged. Emission is two-sided, visibility is a hard occlusion test, textured emitters are picked by their factor only, and over `kMaxTriangles` (2^20) the list is dropped (warning, BSDF-only emission). Toggling it restarts accumulation and rebuilds the TLAS. Adds `PT_SLOT_EMISSIVE_*` Sobol slots, so sampler-1 streams for bounces after the first differ from earlier builds. `EmissiveLightListTests` pin the record layout and CDF packing; the shader compiles and was RGA-analysed offline but has not run on a GPU. `PathTrace.comp` worst case moved 107 to 108 VGPRs (gfx1100, same occupancy) and 95 to 100 (gfx1200/1201, 16 to 12 waves/SIMD), ISA +21%; the baselines carry the new figures.
 
 ## 2D render path
 
@@ -1227,6 +1245,13 @@ units times the transform's scale; a flip mirrors about `Pivot`. Sprites are unl
 destination alpha kept, since ImGui blends the viewport image by it. `Filter` picks a per-sprite point or linear sampler.
 `OrthographicSize` is the full view height, not the half height.
 
+`Rect` is a texel sub-rectangle (x, y, width, height; origin top-left, the order rows are stored): sprite sheets and tilesets
+(Unity Sprite Editor slices, Bevy `TextureAtlas`). A zero width or height draws the whole texture. `SpriteUvRect`
+(`SpriteBatch.hpp`, `SpriteBatchTests`) clamps it to the texture and maps it to the offset and scale carried in
+`SpriteInstance::UvRect`, which `Sprite.vert` applies to the quad's UV; a rect outside the texture falls back to the whole texture.
+`Size` is not derived from `Rect`, and packing and slicing UI are out of scope. A flip mirrors the quad, so it flips the cell.
+The `Linear` filter samples across the cell edge with no padding, so bleed from neighbouring cells is possible; `Nearest` is exact.
+
 `SpriteResolveSystem` resolves `Texture` to the runtime `View`. With `Texture` at 0 the system leaves `View` alone, which is
 how a game binds a texture it writes; `ResolvedFrom` records which views the system set, so clearing `Texture` drops only
 those. The sprite shaders include no `Engine.hlsli` and keep their resources in set 1, so they never touch the shared sets
@@ -1240,16 +1265,35 @@ and the view sits in its own cache, so a texture used by a sprite and a material
 With one level, a sprite drawn much smaller than its texture aliases; mips and compression per asset wait for `.meta`.
 `cook.assets` walks the registry, which cannot know scene usage, so sprite variants cook on first use.
 
-The editor's Scene view takes the scene's Primary camera's render path and background on open, still flying in perspective
-(#341). `quality.capture` also captures a Canvas2D viewport: `RenderCanvas2D` runs the same capture effect after the `Sprites` pass, with the same settle rule, writing `<path>_ldr.npy` from the present target. `_hdr.npy` is skipped (no linear scene colour; the log says so). Not run on a GPU: that `Sprites.world` captures headlessly and matches a window capture is unconfirmed.
+The editor's Scene view takes the scene's Primary camera's render path and background on open (#341). A Canvas2D scene also
+opens the **2D Scene view** (Unity's Scene-view 2D toggle, Godot's 2D editor): `CameraControllerRuntimeComponent::View2D` on the
+editor camera, flipped by the viewport's "2D" button or the `2` key. `CameraControllerSystem` applies the transition (saving
+the 3D pose and restoring it on the way out), then runs `Execute2D`: orthographic, rotation locked at zero, middle or right drag
+pans, the wheel zooms about the cursor (`ViewportInteractionComponent::CursorUv`), right-held WASD pans, and F / Shift+F frame
+the selected sprite / every sprite (`FrameEditorCamera2D`, `SpriteLocalAABB`). The maths is `Math/Scene2DView.hpp`
+(`Scene2DViewTests`). Opening a non-2D scene leaves the mode and discards the saved pose. Sprites are not pickable by click yet
+and the translate gizmo's behaviour under the ortho camera has not run on a GPU.
+`quality.capture` also captures a Canvas2D viewport: `RenderCanvas2D` runs the same capture effect after the `Sprites` pass, with the same settle rule, writing `<path>_ldr.npy` from the present target. `_hdr.npy` is skipped (no linear scene colour; the log says so). Not run on a GPU: that `Sprites.world` captures headlessly and matches a window capture is unconfirmed.
 
-**`Sprites.world` is the testbed**, booted by smoke as `Sprites`: a 64x64 checkerboard magnified with `Nearest` and with
+**Pixel-perfect camera (#340, PR 1).** `CameraComponent::PixelsPerUnit` > 0 on an orthographic `Canvas2D` camera (0, the default, is off) derives the view height from the viewport: `PixelPerfectScale` takes the largest integer at which `ReferenceResolution` fits (an axis of 0 does not constrain; no reference means 1; never below 1), and `PixelPerfectOrthographicSize` makes `OrthographicSize = viewportH / (PixelsPerUnit * scale)`, so one texel spans exactly `scale` screen pixels. The camera translation is snapped to the texel grid (`SnapToTexel`) in `CameraRuntimeUpdateSystem`; rotation is not handled. Unity's Pixel Perfect Camera and Godot's `viewport` stretch mode also render into a reference-size target and letterbox; here the sprites still draw straight at present resolution, so the remainder is stretched, not letterboxed, and sprites keep `Nearest` filtering for the exact mapping. `PixelPerfectTests` cover the math; the system wiring and the shimmer-free pan are unverified on a GPU.
+
+**`Sprites.world` is the testbed**, booted by smoke as `Sprites` (its camera is pixel-perfect at 16 PPU, 320x180 reference): a 64x64 checkerboard magnified with `Nearest` and with
 `Linear`, a layer -1 logo 2 units nearer the camera that still draws under them, two layer 1 logos over them (one `FlipX`,
-tinted at 0.7 alpha), and a rotated layer 1, order 1 checker over the logo it overlaps.
+tinted at 0.7 alpha), and a rotated layer 1, order 1 checker over the logo it overlaps, and `Checker Rect`, the top-left 32x32 texels of the checker at 2x2 units. The `Rect` path (shader UV offset and scale, instance layout) has not run on a GPU.
+
+## Subgroup size
+
+`render.subgroup.size` (32 or 64, default 0 = driver's choice) and `render.subgroup.overrides` (`GIDenoise=32,Reflection=64`, substring of the shader path, first match wins, beats the global) set `requiredSubgroupSize` on every compute pipeline stage through Vulkan 1.3 `subgroupSizeControl`. Both are read at pipeline creation, so they apply at launch. A size outside the device's `[minSubgroupSize, maxSubgroupSize]`, or on a device without compute `requiredSubgroupSizeStages`, is dropped silently per pipeline (`ResolveRequiredSubgroupSize`, `SubgroupSizePolicyTests`). No shader uses wave intrinsics, so the size changes scheduling and occupancy only. A/B with `perf-bench.py --compare-exe`, passing the CVar through the environment of one arm; no result exists yet, and the build and run were not done on a GPU.
 
 ## Neural upscaler tail fusion
 
 `neural.fuse` (default off) replaces the last conv layer and the residual add with one `NeuralConvAdd.comp.hlsl` dispatch when the last layer has 3 output channels (else the unfused chain runs): one dispatch, one barrier and one descriptor set fewer, and the residual map is never written to memory. It is a naive per-pixel loop at both precisions. `Conv2DResidualReference` is the CPU reference for the fused math (`NeuralMathTests` pins it to hand-computed values); it does not exercise the shader. Not run on a GPU: no unfused-vs-fused ms or output comparison exists yet. `NeuralConvAdd.comp` is RGA-baselined at 13 VGPRs, no spills, on every ASIC (#101). `Conv2DPairReference` is the oracle for the next fusion, two consecutive convs with the intermediate recomputed over the second layer's footprint and zero (not first(padding)) outside the image; no shader uses it yet. For the shipped 3/8 -> 16 -> 16 -> 3 model the candidate is the 16 -> 16 hidden layer into the 16 -> 3 tail: 9x recompute of the first layer's MACs per pixel against a 16-channel map no longer written or read, so it only pays if the pass is bandwidth-bound, which needs a GPU measurement.
+
+## Shader hot-reload
+
+`ShaderReloadSystem` (AssetSync phase) never compiles on the main thread. A source edit found by `ShaderLibrary::ReloadAll` and a DefaultLit permutation flip (`RequestRecompile`) both queue `Shader::Recompile()` on a JobSystem worker. The shader keeps its previous SPIR-V until the new result is published as one `CompiledShader` snapshot, and a failed compile publishes nothing, so the old pipeline keeps rendering. `CompileGate` coalesces overlapping requests into at most one live chain whose last run reads the latest inputs. `Shader::IsCompiling()` is true from queueing until `Recompile()` returns.
+
+A permutation swap is tracked by `LitSwapState` (`Systems/ShaderReloadRule.hpp`, `ShaderReloadRuleTests`): `BeginLitSwap` records the version at the first request (a superseding request keeps it), `PollLitSwap` reports `Pending` while compiling, then `Succeeded` (version advanced: the pipeline sweep runs) or `Failed` (no version change: logged at `[error]`, old pipeline kept), once. `Pipeline::Reload` still drains the device (#11), which is now the remaining hitch. Not run on a GPU: the worker swap and the failure path are unverified outside the unit tests.
 
 ## IBL invalidation
 

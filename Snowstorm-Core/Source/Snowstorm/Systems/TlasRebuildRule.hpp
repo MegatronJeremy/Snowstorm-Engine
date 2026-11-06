@@ -29,6 +29,8 @@ namespace Snowstorm::TlasRebuildRule
 		bool BuiltOnce = false;
 		bool OmmEnabled = true;
 		bool LastOmmEnabled = true;
+		bool EmissiveNee = false;
+		bool LastEmissiveNee = false;
 		uint32_t PendingLoads = 0;
 		uint32_t PrevPendingLoads = 0;
 	};
@@ -44,6 +46,12 @@ namespace Snowstorm::TlasRebuildRule
 		return s.BuiltOnce && s.OmmEnabled != s.LastOmmEnabled;
 	}
 
+	// The emissive light list is built only for the path tracer, so its toggle must rebuild a static scene.
+	[[nodiscard]] constexpr bool EmissiveToggled(const RebuildState& s)
+	{
+		return s.BuiltOnce && s.EmissiveNee != s.LastEmissiveNee;
+	}
+
 	// Streaming runs one frame past the drain so the just-resident albedo gets its final rebuild (OMM bake).
 	[[nodiscard]] constexpr bool Streaming(const RebuildState& s)
 	{
@@ -53,6 +61,6 @@ namespace Snowstorm::TlasRebuildRule
 	// Evaluated only while RT is active; an inactive frame never reaches this.
 	[[nodiscard]] constexpr bool ShouldRebuild(const RebuildState& s, const bool sceneDirty)
 	{
-		return !s.BuiltOnce || JustEnabled(s) || OmmToggled(s) || Streaming(s) || sceneDirty;
+		return !s.BuiltOnce || JustEnabled(s) || OmmToggled(s) || EmissiveToggled(s) || Streaming(s) || sceneDirty;
 	}
 }

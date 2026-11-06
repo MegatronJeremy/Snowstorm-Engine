@@ -10,6 +10,7 @@ struct SpriteInstance
 	uint TextureIndex;
 	uint Flags;
 	uint2 _Pad;
+	float4 UvRect; // xy offset, zw scale
 };
 
 StructuredBuffer<SpriteInstance> Instances : register(t0, space1);
@@ -42,8 +43,8 @@ SpriteVSOut main(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID)
 
 	SpriteVSOut o;
 	o.PositionCS = mul(mul(float4(corner, 0.0, 1.0), inst.Model), gSprite.ViewProjection);
-	// Texture rows are stored top-down, so the quad's top edge samples v = 0.
-	o.UV = float2(corner.x, 1.0 - corner.y);
+	// Texture rows are stored top-down, so the quad's top edge samples v = 0 of the cell.
+	o.UV = inst.UvRect.xy + float2(corner.x, 1.0 - corner.y) * inst.UvRect.zw;
 	o.Tint = inst.Tint;
 	o.TextureIndex = inst.TextureIndex;
 	o.Flags = inst.Flags;

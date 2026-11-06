@@ -32,10 +32,10 @@ namespace Snowstorm
 		uint64_t VertexAddress = 0; // GPU address of the mesh vertex buffer (stride sizeof(Vertex) = 48)
 		uint64_t IndexAddress = 0;  // GPU address of the mesh index buffer (uint32 indices)
 
-		uint32_t AlbedoTextureIndex = 0; // bindless index into Textures[] (0 = none -> use BaseColor only)
-		uint32_t AlphaMaskEnabled = 0;   // 1 = alpha-cutout (glTF MASK): alpha-test the RT hit vs AlphaCutoff
-		float AlphaCutoff = 0.5f;        // albedo.a threshold for the mask (unused unless AlphaMaskEnabled)
-		uint32_t _Pad2 = 0;
+		uint32_t AlbedoTextureIndex = 0;    // bindless index into Textures[] (0 = none -> use BaseColor only)
+		uint32_t AlphaMaskEnabled = 0;      // 1 = alpha-cutout (glTF MASK): alpha-test the RT hit vs AlphaCutoff
+		float AlphaCutoff = 0.5f;           // albedo.a threshold for the mask (unused unless AlphaMaskEnabled)
+		uint32_t EmissiveFirstTriangle = 0; // index + 1 of this instance's first entry in the emissive light list (0 = not listed)
 
 		glm::vec4 BaseColor{1.0f}; // material base-color factor (multiplies the sampled albedo)
 
@@ -66,5 +66,12 @@ namespace Snowstorm
 		Ref<Buffer> Table;         // device-address storage buffer of GeometryRecord[]; grown as needed
 		uint32_t Capacity = 0;     // records the current Table can hold
 		uint64_t TableAddress = 0; // Table's GPU device address (0 = no table this frame)
+
+		// Emissive triangle list for path-tracer next-event estimation (render.pathtrace.emissivenee): GpuTriangle[]
+		// by device address. Count 0 = no list (off, no emitters, or too many triangles).
+		Ref<Buffer> EmissiveTable;
+		uint32_t EmissiveCapacity = 0;
+		uint64_t EmissiveAddress = 0;
+		uint32_t EmissiveCount = 0;
 	};
 }

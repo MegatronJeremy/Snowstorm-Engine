@@ -190,3 +190,32 @@ TEST_CASE("Cascade bias scale is the radius ratio against cascade 0", "[cascade]
 	}
 	REQUIRE(CascadeMath::BiasScale(5.0f, 0.0f) == Approx(1.0f));
 }
+
+TEST_CASE("cascade shading block: matrices, rects and bias scales follow the fit", "[cascade]")
+{
+	const CascadeMath::CascadeFit fit = CascadeMath::ComputeFit(glm::inverse(CameraViewProj({0, 5, 0})), kNear, 100.0f,
+	                                                            kSun, 3, 0.7f, 1024, 25.0f);
+	const CascadeMath::ShadingBlock b = CascadeMath::MakeShading(fit);
+	REQUIRE(b.Count == 3);
+	for (uint32_t i = 0; i < 3; ++i)
+	{
+		REQUIRE(b.ViewProj[i] == fit.ViewProj[i]);
+		REQUIRE(b.Splits[static_cast<int>(i)] == Approx(fit.Splits[i]));
+		REQUIRE(b.AtlasRect[i] == CascadeMath::AtlasUvRect(i));
+	}
+	REQUIRE(b.BiasScale.x == Approx(1.0f));
+	REQUIRE(b.BiasScale.y > 1.0f);
+	REQUIRE(b.BiasScale.z > b.BiasScale.y);
+	REQUIRE(b.BiasScale.w == Approx(1.0f));
+	REQUIRE(b.ViewProj[3] == glm::mat4(1.0f));
+}
+
+TEST_CASE("cascade selection: first split covering the depth, count past the last", "[cascade]")
+{
+	const glm::vec4 splits(10.0f, 30.0f, 80.0f, 80.0f);
+	REQUIRE(CascadeMath::SelectCascade(splits, 3, 1.0f) == 0);
+	REQUIRE(CascadeMath::SelectCascade(splits, 3, 10.0f) == 1);
+	REQUIRE(CascadeMath::SelectCascade(splits, 3, 79.9f) == 2);
+	REQUIRE(CascadeMath::SelectCascade(splits, 3, 80.0f) == 3);
+	REQUIRE(CascadeMath::SelectCascade(splits, 0, 1.0f) == 0);
+}

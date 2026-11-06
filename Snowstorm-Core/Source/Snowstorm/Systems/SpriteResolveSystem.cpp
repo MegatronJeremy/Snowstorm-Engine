@@ -47,6 +47,21 @@ namespace Snowstorm
 			}
 			}
 		}
+
+		// A finished async load moves the cache entry from the placeholder view to the real one (same bindless
+		// slot). Follow it: the placeholder's texture is 1x1, and the atlas Rect needs the real size.
+		for (const entt::entity e : View<const SpriteComponent>())
+		{
+			const SpriteComponent& sprite = reg.Read<SpriteComponent>(e);
+			if (sprite.Texture == 0 || sprite.ResolvedFrom != sprite.Texture || !sprite.View)
+			{
+				continue;
+			}
+			if (Ref<TextureView> current = assets.GetSpriteTextureViewAsync(sprite.Texture); current && current != sprite.View)
+			{
+				reg.Write<SpriteComponent>(e).View = std::move(current);
+			}
+		}
 	}
 
 	void SpriteResolveSystem::DeclareAccess(SystemAccess& a) const
