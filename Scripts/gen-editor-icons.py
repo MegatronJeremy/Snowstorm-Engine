@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates Projects/Sandbox/assets/editor-icons/icons.png: a 4x1 atlas of 64px editor icons
+"""Generates Engine/Icons/icons.png: a 4x1 atlas of 64px editor icons
 (point light, spot light, directional light, camera). White glyph with a dark outline on
 transparent, so ImDrawList::AddImage can tint it with the light color. Stdlib only."""
 import math, struct, zlib, pathlib
@@ -85,6 +85,6 @@ def chunk(t, d):
 
 png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", W, H, 8, 6, 0, 0, 0)) \
     + chunk(b"IDAT", zlib.compress(b"".join(rows), 9)) + chunk(b"IEND", b"")
-out = pathlib.Path(__file__).resolve().parent.parent / "Projects/Sandbox/assets/editor-icons/icons.png"
+out = pathlib.Path(__file__).resolve().parent.parent / "Engine/Icons/icons.png"
 out.write_bytes(png)
 print(out, len(png), "bytes")
