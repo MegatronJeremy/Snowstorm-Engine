@@ -80,7 +80,7 @@ namespace Snowstorm
 		// 0.026). Clearing that history on the transition makes the window start from a known state, so the
 		// capture depends on the window length alone. Gated on the capture being active: normal rendering
 		// wants the accumulation it has.
-		const bool streaming = SingletonView<AssetManagerSingleton>().PendingLoadCount() > 0;
+		const bool streaming = SceneSettling();
 		const bool steadyStateEntered = m_WasStreaming && !streaming;
 		m_WasStreaming = streaming;
 
@@ -578,7 +578,7 @@ namespace Snowstorm
 
 		// While assets stream in, meshes/textures show the magenta placeholder; keep the path tracer resetting so
 		// those frames never bake into the converged accumulation (#153).
-		v.PathTraceSceneSettling = SingletonView<AssetManagerSingleton>().PendingLoadCount() > 0;
+		v.PathTraceSceneSettling = SceneSettling();
 
 		// Tonemap debug params (#44/#124): visualize an aux buffer ONLY when its debug view is explicitly
 		// selected, NOT merely when the buffer is being rendered (TAA/GI render their buffers but must show
@@ -800,7 +800,7 @@ namespace Snowstorm
 				BuildViewportEffects();
 			}
 			ViewportRenderContext v{.Frame = fc, .RT = vpRT, .Cam = cam, .Suffix = passSuffix};
-			v.PathTraceSceneSettling = SingletonView<AssetManagerSingleton>().PendingLoadCount() > 0;
+			v.PathTraceSceneSettling = SceneSettling();
 			for (const Scope<IViewportEffect>& effect : m_ViewportEffects)
 			{
 				if (std::string_view(effect->Name()) == "QualityCapture" && effect->ShouldRun(v))
@@ -1028,8 +1028,17 @@ namespace Snowstorm
 		                  }});
 	}
 
+	bool RenderSystem::SceneSettling()
+	{
+		// A pipeline whose shader is still compiling draws nothing (or the previous permutation), so a frame is not
+		// steady-state until compiles drain as well as loads: the path tracer would otherwise accumulate, and a
+		// quality capture count, frames rendered without the pass under test (#537).
+		return SingletonView<AssetManagerSingleton>().PendingLoadCount() > 0 ||
+		       Application::Get().GetServiceManager().GetService<ShaderLibrary>().PendingCompileCount() > 0;
+	}
+
 	void RenderSystem::DeclareAccess(SystemAccess& a) const
 	{
-		a.ReadComponents<ViewportComponent, RenderTargetComponent, TransformComponent, CameraComponent, CameraTargetComponent, CameraRuntimeComponent, CameraVisibilityComponent, MeshComponent, MaterialComponent, VisibilityComponent, CameraPathComponent, SpriteComponent>().WriteResources<RendererService, AssetManagerSingleton, ReflectionGeometrySingleton>();
+		a.ReadComponents<ViewportComponent, RenderTargetComponent, TransformComponent, CameraComponent, CameraTargetComponent, CameraRuntimeComponent, CameraVisibilityComponent, MeshComponent, MaterialComponent, VisibilityComponent, CameraPathComponent, SpriteComponent>().WriteResources<RendererService, AssetManagerSingleton, ReflectionGeometrySingleton>().ReadResources<ShaderLibrary>();
 	}
 }

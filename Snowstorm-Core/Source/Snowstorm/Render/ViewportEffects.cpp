@@ -2366,7 +2366,7 @@ namespace Snowstorm
 				// Convergence auto-stop (#160): the pass waits for streaming to finish, then checkpoints the present
 				// and captures once its frame-to-frame change drops below epsilon (PT accumulated / TAA+denoisers
 				// settled) past a minimum settle, with a max-frame safety cap. All the state lives in the pass.
-				const bool streamingDone = !v.PathTraceSceneSettling; // PathTraceSceneSettling = PendingLoadCount>0
+				const bool streamingDone = !v.PathTraceSceneSettling; // PathTraceSceneSettling: loads or shader compiles pending
 				const uint64_t frame = fc.Renderer.GetFrameCounter();
 				const uint64_t minSettle = static_cast<uint64_t>(CVars::QualityCaptureFrames.Get());
 				const int maxCVar = CVars::QualityCaptureMaxFrames.Get();
