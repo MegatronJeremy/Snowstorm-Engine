@@ -121,12 +121,31 @@ namespace Snowstorm
 				return false;
 			}
 
-			STARTUPINFOW si{};
-			si.cb = sizeof(si);
-			si.dwFlags = STARTF_USESTDHANDLES;
-			si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-			si.hStdOutput = writePipe;
-			si.hStdError = writePipe; // combined output
+			// Without an explicit list the child inherits every inheritable handle in the process, and shader
+			// workers compile concurrently: one worker's dxc then holds another worker's open .spv files (the
+			// CRT opens them inheritable) for its lifetime, and that worker's publishing rename fails.
+			SIZE_T attrSize = 0;
+			InitializeProcThreadAttributeList(nullptr, 1, 0, &attrSize);
+			std::vector<char> attrStorage(attrSize);
+			auto* attrs = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attrStorage.data());
+			HANDLE inherited[] = {writePipe};
+			if (!InitializeProcThreadAttributeList(attrs, 1, 0, &attrSize) ||
+			    !UpdateProcThreadAttribute(attrs, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof(inherited), nullptr, nullptr))
+			{
+				const DWORD err = GetLastError();
+				SS_CORE_ERROR("Restricting inherited handles failed. Win32 error={}", static_cast<uint32_t>(err));
+				CloseHandle(readPipe);
+				CloseHandle(writePipe);
+				return false;
+			}
+
+			STARTUPINFOEXW si{};
+			si.StartupInfo.cb = sizeof(si);
+			si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+			si.StartupInfo.hStdInput = nullptr;
+			si.StartupInfo.hStdOutput = writePipe;
+			si.StartupInfo.hStdError = writePipe; // combined output
+			si.lpAttributeList = attrs;
 
 			PROCESS_INFORMATION pi{};
 
@@ -137,11 +156,12 @@ namespace Snowstorm
 			    exePath.c_str(),
 			    mutableCmd.data(),
 			    nullptr, nullptr,
-			    TRUE, // inherit handles (needed for redirected std handles)
-			    CREATE_NO_WINDOW,
+			    TRUE, // inherit handles: only the ones in the attribute list
+			    CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT,
 			    nullptr,
 			    nullptr,
-			    &si, &pi);
+			    &si.StartupInfo, &pi);
+			DeleteProcThreadAttributeList(attrs);
 
 			// Parent no longer needs the write end
 			CloseHandle(writePipe);
