@@ -1218,7 +1218,7 @@ material, `materials/AlphaBlend.ssmat` (`"AlphaMode": "Blend"`), and varies colo
 model: one ECS and one `TransformComponent` for both, separate render paths. A `Canvas2D` viewport runs `RenderCanvas2D`
 and none of the Scene3D chain (no prepass, lighting, tonemap or TAA): one `Sprites` pass draws every
 `SpriteComponent` into the present target, cleared to the camera's `BackgroundColor` through a second `RenderTarget`
-object over the same image. It uses the unjittered `ViewProjection`. The frame-global IBL bake and shadow maps still run (#344).
+object over the same image. It uses the unjittered `ViewProjection`. The frame-global IBL bake and shadow maps are skipped when no rendering viewport uses `Scene3D` (`NeedsSceneGlobalPasses`, `FrameGlobalPassGateTests`, #344); one Scene3D viewport next to a Canvas2D one keeps them. Frame-time effect on a 2D-only scene is unmeasured, and the gate has not run on a GPU.
 
 Sprites outside the camera's x/y clip planes are dropped before the sort (`SpriteIntersectsView`, conservative: all four corners outside one plane; a corner behind the eye keeps the sprite; depth is not tested). The gather stays a serial loop, not `ParallelGather`: it reads components through the registry and the per-sprite test is a few mat4 ops, unmeasured on a GPU or stress scene.
 

@@ -22,6 +22,7 @@
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Systems/ReflectionGeometrySingleton.hpp"
+#include "Snowstorm/Render/FrameGlobalPassGate.hpp"
 #include "Snowstorm/Render/LightClusterMath.hpp"
 #include "Snowstorm/Render/RenderGraph.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
@@ -176,8 +177,32 @@ namespace Snowstorm
 		renderer.SetReflectionGeometryAddress(SingletonView<ReflectionGeometrySingleton>().TableAddress);
 
 		const EnvironmentDataBlock& env = renderer.GetEnvironment();
-		SetupIBL(fc, env);
-		m_ShadowRenderer.RenderShadows(fc);
+		// Only a Scene3D viewport samples the IBL maps and shadow maps (#344). Mirrors RenderViewport's bail
+		// conditions so the gate matches the viewports that actually draw. When skipped, the hand-offs are
+		// zeroed so nothing keeps a stale index; the baked maps stay and a later Scene3D frame re-enables them.
+		std::vector<CameraComponent::RenderPathType> renderingPaths;
+		for (const auto vpEntity : viewportView)
+		{
+			if (!reg.Read<RenderTargetComponent>(vpEntity).Target)
+			{
+				continue;
+			}
+			const CameraPick pick = FindCameraForViewport(reg, vpEntity);
+			if (pick.Entity != entt::null && pick.Rt && pick.Transform && pick.Visibility)
+			{
+				renderingPaths.push_back(pick.Cam->RenderPath);
+			}
+		}
+		if (NeedsSceneGlobalPasses(renderingPaths))
+		{
+			SetupIBL(fc, env);
+			m_ShadowRenderer.RenderShadows(fc);
+		}
+		else
+		{
+			renderer.SetIBLData(0, 0, 0, 0);
+			renderer.SetShadowData(glm::mat4(1.0f), 0, 0);
+		}
 
 		// RT editor picking (#118 follow-up): trace the queued click ray against the scene TLAS in a tiny
 		// compute pass, so the result reads back on a later frame (RecordPick latches the retired dispatch,
