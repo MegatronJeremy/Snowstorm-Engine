@@ -50,7 +50,8 @@ namespace Snowstorm
 		{
 			SS_CORE_ERROR("Runtime: {}", what);
 #ifdef SS_PLATFORM_WINDOWS
-			const bool headless = CVars::SmokeFrames.Get() > 0 || CVars::PerfBenchFrames.Get() > 0;
+			const bool headless = CVars::Headless.Get() || CVars::SmokeFrames.Get() > 0 || CVars::PerfBenchFrames.Get() > 0 ||
+			                      CVars::QualityCaptureFrames.Get() > 0;
 			if (!headless)
 			{
 				MessageBoxA(nullptr, what.c_str(), "Snowstorm-Runtime cannot start", MB_OK | MB_ICONERROR);
