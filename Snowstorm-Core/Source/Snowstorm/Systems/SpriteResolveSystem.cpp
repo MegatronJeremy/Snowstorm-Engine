@@ -2,6 +2,7 @@
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Components/SpriteComponent.hpp"
+#include "Snowstorm/Systems/SpriteResolveRule.hpp"
 
 #include <unordered_set>
 
@@ -25,24 +26,26 @@ namespace Snowstorm
 				continue;
 			}
 			const SpriteComponent& sprite = reg.Read<SpriteComponent>(e);
-			if (sprite.Texture == 0)
+			switch (DecideSpriteResolve(sprite))
 			{
-				if (sprite.ResolvedFrom != 0)
-				{
-					SpriteComponent& w = reg.Write<SpriteComponent>(e);
-					w.View.reset();
-					w.ResolvedFrom = AssetHandle{0};
-				}
-				continue;
-			}
-			if (sprite.ResolvedFrom == sprite.Texture && sprite.View)
+			case SpriteResolveAction::None:
+				break;
+			case SpriteResolveAction::Drop:
 			{
-				continue;
+				SpriteComponent& w = reg.Write<SpriteComponent>(e);
+				w.View.reset();
+				w.ResolvedFrom = AssetHandle{0};
+				break;
 			}
-			// Async: a stable placeholder slot now, rewritten in place when the decode lands.
-			SpriteComponent& w = reg.Write<SpriteComponent>(e);
-			w.View = assets.GetSpriteTextureViewAsync(w.Texture);
-			w.ResolvedFrom = w.Texture;
+			case SpriteResolveAction::Resolve:
+			{
+				// Async: a stable placeholder slot now, rewritten in place when the decode lands.
+				SpriteComponent& w = reg.Write<SpriteComponent>(e);
+				w.View = assets.GetSpriteTextureViewAsync(w.Texture);
+				w.ResolvedFrom = w.Texture;
+				break;
+			}
+			}
 		}
 	}
 
