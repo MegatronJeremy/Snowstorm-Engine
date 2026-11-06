@@ -791,6 +791,7 @@ namespace Snowstorm::CVars
 	extern CVar<bool> PathTraceEnvNee;
 	extern CVar<bool> PathTraceEmissiveNee; // #154: emissive-surface NEE + MIS in the path tracer
 	extern CVar<int> PathTraceSampler;
+	extern CVar<bool> PathTraceValidReflection;
 	// True when the reference path tracer should run (render.pathtrace on AND an RT-capable device). Gates the
 	// PT pass AND the skip of the normal scene path (forward/G-buffer/upscale/temporal) so PT owns the frame.
 	[[nodiscard]] bool PathTraceActive();

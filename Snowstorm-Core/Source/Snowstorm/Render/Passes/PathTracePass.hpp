@@ -48,6 +48,7 @@ namespace Snowstorm
 			float MaxBounceWeight = 8.0f;   // path regularization: max per-bounce BSDF weight (0 = off)
 			uint32_t EnvNee = 1;            // 1 = environment (sky) NEE + MIS (render.pathtrace.envnee)
 			uint32_t Sampler = 0;           // 0 = PCG, 1 = Owen-scrambled Sobol (render.pathtrace.sampler)
+			uint32_t ValidReflection = 0;   // 1 = specular lobe normal kept valid (render.pathtrace.validreflection)
 			uint64_t TableAddress = 0;      // per-instance geometry table (device address)
 			uint32_t EmissiveNee = 0;       // 1 = emissive-triangle NEE + MIS (render.pathtrace.emissivenee, list non-empty)
 			uint32_t EmissiveCount = 0;     // entries in the emissive triangle list

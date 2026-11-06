@@ -51,9 +51,9 @@ namespace Snowstorm
 			uint32_t PointCount = 0;
 			uint32_t SpotCount = 0;
 
-			uint32_t EnvNee = 1;  // 1 = environment (sky) NEE + MIS
-			uint32_t Sampler = 0; // 0 = PCG, 1 = Owen-scrambled Sobol
-			uint32_t _pad1 = 0;
+			uint32_t EnvNee = 1;          // 1 = environment (sky) NEE + MIS
+			uint32_t Sampler = 0;         // 0 = PCG, 1 = Owen-scrambled Sobol
+			uint32_t ValidReflection = 0; // 1 = Cycles ensure_valid_reflection on the specular lobe
 			uint32_t _pad2 = 0;
 
 			uint32_t EmissiveNee = 0; // 1 = emissive-triangle NEE + MIS
@@ -154,6 +154,7 @@ namespace Snowstorm
 		cb.FireflyClamp = pr.FireflyClamp;
 		cb.EnvNee = pr.EnvNee;
 		cb.Sampler = pr.Sampler;
+		cb.ValidReflection = pr.ValidReflection;
 		cb.EmissiveNee = pr.EmissiveNee;
 		cb.EmissiveCount = pr.EmissiveCount;
 		cb.EmissiveAddrLo = static_cast<uint32_t>(pr.EmissiveAddress & 0xFFFFFFFFull);

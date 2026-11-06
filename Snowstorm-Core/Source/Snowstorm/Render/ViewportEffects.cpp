@@ -102,12 +102,13 @@ namespace Snowstorm
 				// blending them mid-accumulation would corrupt the A/B (they converge to the same image but must
 				// not be averaged together).
 				const uint32_t sampler = CVars::PathTraceSampler.Get() > 0 ? 1u : 0u; // a sampler switch restarts the mean, like env-NEE
+				const uint32_t validReflection = CVars::PathTraceValidReflection.Get() ? 1u : 0u;
 				// Same for emissive NEE; it is off whenever the list is empty (no emitters, or over the cap).
 				const uint32_t emissiveNee = (CVars::PathTraceEmissiveNee.Get() && fc.Renderer.GetEmissiveListCount() > 0) ? 1u : 0u;
 				const uint32_t spp = static_cast<uint32_t>(CVars::ClampedPathTraceSpp());
 				const PathTraceAccumRule::Decision accum = PathTraceAccumRule::Decide(
-				    {st.LastVP, st.Samples, st.EnvNee, st.Sampler, st.EmissiveNee},
-				    {vp, v.PathTraceSceneSettling, envNee, sampler, emissiveNee, spp});
+				    {st.LastVP, st.Samples, st.EnvNee, st.Sampler, st.ValidReflection, st.EmissiveNee},
+				    {vp, v.PathTraceSceneSettling, envNee, sampler, validReflection, emissiveNee, spp});
 				const bool moved = accum.Reset;
 				const uint32_t base = accum.BaseSamples;
 
@@ -135,6 +136,7 @@ namespace Snowstorm
 				p.FireflyClamp = CVars::PathTraceClamp.Get();
 				p.MaxBounceWeight = CVars::PathTraceWeightClamp.Get(); // path regularization (kills indirect throughput spikes)
 				p.Sampler = sampler;
+				p.ValidReflection = validReflection;
 				p.EnvNee = envNee; // environment (sky) NEE + MIS (render.pathtrace.envnee)
 				p.SkyZenithColor = fd.Environment.SkyZenithColor;
 				p.SkyHorizonColor = fd.Environment.SkyHorizonColor;
@@ -154,6 +156,7 @@ namespace Snowstorm
 				st.LastVP = vp;
 				st.EnvNee = envNee;
 				st.Sampler = sampler;
+				st.ValidReflection = validReflection;
 				st.EmissiveNee = emissiveNee;
 				st.Samples = accum.NextSamples;
 
@@ -172,9 +175,10 @@ namespace Snowstorm
 			{
 				glm::mat4 LastVP{0.0f};
 				uint32_t Samples = 0;
-				uint32_t EnvNee = 1;      // last-used env-NEE toggle; a change restarts accumulation
-				uint32_t Sampler = 0;     // last-used sampler; a change restarts accumulation
-				uint32_t EmissiveNee = 0; // last-used emissive-NEE state; a change restarts accumulation
+				uint32_t EnvNee = 1;          // last-used env-NEE toggle; a change restarts accumulation
+				uint32_t Sampler = 0;         // last-used sampler; a change restarts accumulation
+				uint32_t ValidReflection = 0; // last-used render.pathtrace.validreflection
+				uint32_t EmissiveNee = 0;     // last-used emissive-NEE state; a change restarts accumulation
 			};
 			std::unordered_map<entt::entity, State> m_State; // per-viewport accumulated sample count + last VP
 		};
