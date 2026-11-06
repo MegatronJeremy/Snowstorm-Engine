@@ -12,6 +12,7 @@ namespace Snowstorm::PathTraceAccumRule
 		uint32_t Samples = 0;
 		uint32_t EnvNee = 1;
 		uint32_t Sampler = 0;
+		uint32_t EmissiveNee = 0;
 	};
 
 	struct Now
@@ -20,6 +21,7 @@ namespace Snowstorm::PathTraceAccumRule
 		bool SceneSettling = false;
 		uint32_t EnvNee = 1;
 		uint32_t Sampler = 0;
+		uint32_t EmissiveNee = 0;
 		uint32_t SamplesPerFrame = 1;
 	};
 
@@ -31,14 +33,14 @@ namespace Snowstorm::PathTraceAccumRule
 	};
 
 	// The running mean restarts on any view-projection change (exact matrix compare, so a repeated identical
-	// pose keeps accumulating), while assets stream, and when env-NEE or the sampler flips, since the two modes
-	// have different intermediate means that must not be blended. The default-constructed Last has a zero matrix,
+	// pose keeps accumulating), while assets stream, and when env-NEE, emissive NEE or the sampler flips, since each mode has
+	// its own intermediate mean that must not be blended. The default-constructed Last has a zero matrix,
 	// so the first frame always resets.
 	inline Decision Decide(const Last& last, const Now& now)
 	{
 		Decision d;
 		d.Reset = last.ViewProjection != now.ViewProjection || now.SceneSettling || last.EnvNee != now.EnvNee ||
-		          last.Sampler != now.Sampler;
+		          last.Sampler != now.Sampler || last.EmissiveNee != now.EmissiveNee;
 		d.BaseSamples = d.Reset ? 0u : last.Samples;
 		d.NextSamples = d.BaseSamples + now.SamplesPerFrame;
 		return d;
