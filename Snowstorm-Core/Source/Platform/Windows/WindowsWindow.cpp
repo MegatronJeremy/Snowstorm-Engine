@@ -41,24 +41,10 @@ namespace Snowstorm
 		glfwPollEvents();
 	}
 
-	void WindowsWindow::SetVSync(const bool enabled)
-	{
-		SS_PROFILE_FUNCTION();
-
-		// TODO make this actually enable/disable vsync in the backend
-
-		m_Data.VSync = enabled;
-	}
-
 	void WindowsWindow::Resize(const uint32_t width, const uint32_t height)
 	{
 		m_Data.Width = width;
 		m_Data.Height = height;
-	}
-
-	bool WindowsWindow::IsVSync() const
-	{
-		return m_Data.VSync;
 	}
 
 	void WindowsWindow::SetCursorMode(const CursorMode mode)
@@ -166,7 +152,6 @@ namespace Snowstorm
 		}
 
 		glfwSetWindowUserPointer(m_Window, &m_Data);
-		SetVSync(false);
 
 		// Set GLFW callbacks
 		glfwSetWindowSizeCallback(m_Window, [](GLFWwindow* window, const int width, const int height)

@@ -25,6 +25,10 @@ namespace Snowstorm
 
 		[[nodiscard]] bool RunsInEditMode() const override { return false; }
 
+		// The per-entity advance, split from Execute so it runs without an Application (Execute reads the
+		// renderer's frame counter through the service manager). `gizmoHeld` is skipped.
+		void Apply(float dt, entt::entity gizmoHeld);
+
 	private:
 		// Clock value the rotation was last advanced on: the camera route's frame index while a route is
 		// running, otherwise the renderer's frame counter. Rotation must advance once per RENDERED frame,
