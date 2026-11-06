@@ -6,6 +6,7 @@
 
 #include "Snowstorm/Assets/MaterialAsset.hpp"
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Render/AlphaModeRules.hpp"
 #include "Snowstorm/Render/Pipeline.hpp"
 #include "Snowstorm/Render/Sampler.hpp"
 #include "Snowstorm/Render/Texture.hpp"
@@ -67,7 +68,7 @@ namespace Snowstorm
 		void SetAlphaMode(const AlphaMode mode)
 		{
 			m_AlphaMode = mode;
-			m_DefaultConstants.AlphaMaskEnabled = mode == AlphaMode::Mask ? 1u : 0u;
+			m_DefaultConstants.AlphaMaskEnabled = AlphaModeSetsMaskFlag(mode) ? 1u : 0u;
 		}
 		[[nodiscard]] AlphaMode GetAlphaMode() const { return m_AlphaMode; }
 
