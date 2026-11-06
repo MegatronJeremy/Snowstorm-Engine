@@ -6,6 +6,7 @@
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
+#include "Snowstorm/Render/TextureUploadPlan.hpp"
 
 namespace Snowstorm
 {
@@ -342,6 +343,9 @@ namespace Snowstorm
 
 		const VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
 		const VkImageLayout finalLayout = GetReadyLayout();
+		const MipUploadPlan plan = PlanMipUpload(ownershipTransfer, finalLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+		const VkImageLayout releaseLayout =
+		    plan.ReleaseNewLayout == UploadLayout::TransferDst ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : finalLayout;
 
 		// Pack all mip levels into one staging buffer; record per-level copy offsets.
 		VkDeviceSize total = 0;
@@ -391,12 +395,13 @@ namespace Snowstorm
 				mh = std::max(1u, mh / 2u);
 			}
 
-			// Transition TRANSFER_DST -> finalLayout. With a dedicated transfer family this barrier ALSO
-			// releases queue-family ownership (src=transfer, dst=graphics); the matching acquire runs on the
-			// graphics queue below. Without dedicated transfer (families equal) it's a plain layout transition.
+			// With a dedicated transfer family this barrier releases queue-family ownership (src=transfer,
+			// dst=graphics) and keeps TRANSFER_DST: a transfer-only queue cannot take the image to
+			// SHADER_READ_ONLY, and a dropped transition leaves it sampled in TRANSFER_DST (#532). The acquire on
+			// the graphics queue below makes the change. Families equal: a plain DST -> finalLayout transition.
 			VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
 			b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-			b.newLayout = finalLayout;
+			b.newLayout = releaseLayout;
 			b.srcQueueFamilyIndex = ownershipTransfer ? xferFamily : VK_QUEUE_FAMILY_IGNORED;
 			b.dstQueueFamilyIndex = ownershipTransfer ? gfxFamily : VK_QUEUE_FAMILY_IGNORED;
 			b.image = m_Image;
@@ -409,10 +414,9 @@ namespace Snowstorm
 		// --- Graphics queue: ACQUIRE the image so it's usable for sampling. Only needed for a real
 		// cross-family transfer; when the transfer queue IS the graphics queue the release above already
 		// left the image in finalLayout for this queue. TransferSubmit waited on its fence, so the copies
-		// are complete before this acquire records. The acquire must repeat the release's layout pair
-		// exactly: the transition executes once, between the two halves. With synchronization2 enabled a
-		// finalLayout -> finalLayout acquire is "no transition", so validation still tracks TRANSFER_DST. ---
-		if (ownershipTransfer)
+		// are complete before this acquire records. The acquire repeats the release's old layout and carries
+		// the change to finalLayout, which the graphics queue is allowed to make. ---
+		if (plan.AcquireOnGraphics)
 		{
 			ImmediateSubmit([&](const VkCommandBuffer cmd)
 			                {
