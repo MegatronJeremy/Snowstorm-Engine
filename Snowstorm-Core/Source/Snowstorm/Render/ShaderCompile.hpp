@@ -12,7 +12,7 @@ namespace Snowstorm
 	// The recipe that turns one HLSL stage into SPIR-V: the dxc command line and the cache key. Pure, with
 	// no engine services, so the runtime and a future cook tool share one definition and cannot drift.
 
-	// 64-bit FNV-1a, continuing from `seed`.
+	// 64-bit FNV-1a with the same non-standard default seed as Hash64 (see Utility/Hash.hpp), continuing from `seed`.
 	[[nodiscard]] inline uint64_t ShaderHash64(const void* data, const size_t size, uint64_t seed = 1469598103934665603ull)
 	{
 		const auto* p = static_cast<const uint8_t*>(data);
