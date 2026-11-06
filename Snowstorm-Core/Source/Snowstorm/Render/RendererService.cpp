@@ -12,6 +12,7 @@
 #include "Snowstorm/Service/ServiceManager.hpp"
 
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 
 namespace Snowstorm
@@ -167,7 +168,20 @@ namespace Snowstorm
 			float ClusterSliceScale = 0.0f; // Slices / log(Far / Near)
 			float _ClusterPad0 = 0.0f;
 			float _ClusterPad1 = 0.0f;
+
+			// Sun cascades (#58). CascadeCount == 0 keeps the single sun map. Mirrors Engine.hlsli.
+			glm::mat4 CascadeViewProj[CascadeMath::kMaxCascades]{};
+			glm::vec4 CascadeAtlasRect[CascadeMath::kMaxCascades]{};
+			glm::vec4 CascadeSplits{0.0f};    // view-space far distance of cascade i
+			glm::vec4 CascadeBiasScale{1.0f}; // world texel size of cascade i over cascade 0
+			glm::vec4 CascadeViewDepthRow{0.0f};
+			uint32_t CascadeCount = 0;
+			uint32_t CascadeAtlasIndex = 0;
+			uint32_t _CascadePad0 = 0;
+			uint32_t _CascadePad1 = 0;
 		};
+		static_assert(offsetof(FrameCB, CascadeViewProj) % 16 == 0 && offsetof(FrameCB, CascadeCount) % 16 == 0 &&
+		              sizeof(FrameCB) % 16 == 0);
 	}
 
 	void RendererService::NewFrame()
@@ -508,6 +522,22 @@ namespace Snowstorm
 			frame.ClusterSlices = c.Slices;
 			frame.ClusterNear = c.Near;
 			frame.ClusterSliceScale = static_cast<float>(c.Slices) / std::log(c.Far / c.Near);
+		}
+
+		// Sun cascades (#58): only when the atlas was rendered this frame and shading from it is asked for.
+		if (CVars::ShadowCascadeShade.Get() && m_CascadeAtlasIndex != 0 && m_SunCascadeFit.Valid)
+		{
+			const CascadeMath::ShadingBlock b = CascadeMath::MakeShading(m_SunCascadeFit.Fit);
+			for (uint32_t i = 0; i < CascadeMath::kMaxCascades; ++i)
+			{
+				frame.CascadeViewProj[i] = b.ViewProj[i];
+				frame.CascadeAtlasRect[i] = b.AtlasRect[i];
+			}
+			frame.CascadeSplits = b.Splits;
+			frame.CascadeBiasScale = b.BiasScale;
+			frame.CascadeViewDepthRow = m_SunCascadeFit.ViewDepthRow;
+			frame.CascadeCount = b.Count;
+			frame.CascadeAtlasIndex = m_CascadeAtlasIndex;
 		}
 
 		const Ref<Buffer>& frameUBO = m_FrameUniformBuffers[perFrameFrameSets[frameIndex].get()];

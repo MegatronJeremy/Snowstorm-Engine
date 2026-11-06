@@ -107,6 +107,19 @@ namespace Snowstorm::CVars
 	// CLI) like Unreal's r.Shaders.Optimize, not live-toggled from a settings checkbox mid-session.
 	CVar<bool> ShadersDebug{"render.shaders.debug", false, "Compile shaders unoptimized (-Od) with debug info for RenderDoc/PIX source-stepping (off = optimized, the ship default). Startup-only: set it in SnowstormStartup.cfg / CLI and relaunch.", CVarFlags::ReadOnly};
 
+	CVar<int> ShadersOpt{"render.shaders.opt", -1, "dxc optimization level for non-debug shaders: -1 passes no flag (dxc's default, -O3), 0..3 pass -O0..-O3. Part of the .spv cache key. Startup-only; ignored with render.shaders.debug.", CVarFlags::ReadOnly};
+
+	CVar<bool> Fp16{"render.fp16", true, "Allow the fp16 shader permutation (SS_FP16) and fp16 neural weights on devices that support them; off forces the fp32 path everywhere. Startup-only: it re-keys the .spv cache.", CVarFlags::ReadOnly};
+
+	CVar<int> WgAo{"render.wg.ao", 8, "Compute workgroup tile of the RT ambient-occlusion pass (AO.comp). Square workgroup side: 4, 8 or 16 (anything else uses 8). Compile-time (SS_WG_X/SS_WG_Y) and dispatch math move together. Startup-only: a non-default side is a new shader permutation that compiles at runtime.", CVarFlags::ReadOnly};
+	CVar<int> WgGi{"render.wg.gi", 8, "Compute workgroup tile of the GI family: GI, GITemporal, GISpatialReuse and GIDenoise (the denoise is shared with the AO and shadow chains). Square workgroup side: 4, 8 or 16 (anything else uses 8). Compile-time (SS_WG_X/SS_WG_Y) and dispatch math move together. Startup-only: a non-default side is a new shader permutation that compiles at runtime.", CVarFlags::ReadOnly};
+	CVar<int> WgReflection{"render.wg.reflection", 8, "Compute workgroup tile of the RT reflection pass (Reflection.comp). Square workgroup side: 4, 8 or 16 (anything else uses 8). Compile-time (SS_WG_X/SS_WG_Y) and dispatch math move together. Startup-only: a non-default side is a new shader permutation that compiles at runtime.", CVarFlags::ReadOnly};
+	CVar<int> WgShadow{"render.wg.shadow", 8, "Compute workgroup tile of the RT shadow pass (Shadow.comp). Square workgroup side: 4, 8 or 16 (anything else uses 8). Compile-time (SS_WG_X/SS_WG_Y) and dispatch math move together. Startup-only: a non-default side is a new shader permutation that compiles at runtime.", CVarFlags::ReadOnly};
+
+	CVar<bool> AsPreferFastBuild{"render.as.prefer_fast_build", false, "Build BLAS and TLAS with PREFER_FAST_BUILD instead of PREFER_FAST_TRACE (default): cheaper builds, slower traces. Startup-only.", CVarFlags::ReadOnly};
+
+	CVar<bool> AsCompaction{"render.as.compaction", false, "Build each BLAS with ALLOW_COMPACTION, read back its compacted size and copy it into a smaller allocation when that saves memory. Costs one extra copy per BLAS at build time. Startup-only.", CVarFlags::ReadOnly};
+
 	CVar<std::string> BakeScene{"scene.bake", "", "Bake a scene to Assets/Scenes/<name>.world then exit. Value: 'stress' (procedural) or a model path (.gltf/.glb/.obj/.fbx)", CVarFlags::ReadOnly};
 
 	CVar<std::string> DumpMeshTangents{"debug.dump_mesh_tangents", "", "Analyze a model's UV/tangent structure across seams (#74) then exit. Value: model path", CVarFlags::ReadOnly};
@@ -145,6 +158,10 @@ namespace Snowstorm::CVars
 	                       "once at device creation: it gates both the extension and the per-pipeline capture flag, which slows "
 	                       "pipeline creation and so is off for normal runs.",
 	                       CVarFlags::ReadOnly};
+
+	CVar<int> SubgroupSize{"render.subgroup.size", 0, "Required subgroup (wave) size for every compute pipeline via VK_EXT_subgroup_size_control: 32 or 64 on RDNA, 0 = driver's choice (default). Dropped per pipeline when the device does not allow it. Read at pipeline creation, so it applies at launch.", CVarFlags::ReadOnly};
+
+	CVar<std::string> SubgroupOverrides{"render.subgroup.overrides", "", "Per-shader required subgroup size, \"Name=Size,Name=Size\" (Name is a substring of the shader path, first match wins), beating render.subgroup.size. Example: GIDenoise=32,Reflection=64.", CVarFlags::ReadOnly};
 
 	CVar<std::string> ShaderStatsPath{"shader.stats.path", "Engine/cache/shader-stats.json",
 	                                  "Output path for shader.stats.", CVarFlags::ReadOnly};
@@ -216,8 +233,9 @@ namespace Snowstorm::CVars
 	CVar<bool> LightClusterShade{"render.lights.cluster.shade", false, "EXPERIMENTAL (#66). DefaultLit shades point and spot lights from the per-cluster lists instead of looping over every light (implies the CPU assignment of render.lights.cluster). Same lights in the same order, so pixels match unless a cluster overflows render.lights.cluster.max. Only the presented camera at the scene-target size uses the lists; render.scale != 1 and every other pass loop over all lights.", CVarFlags::Persist};
 	CVar<int> ShadowDirectionals{"render.shadow.directionals", 1, "Directional lights that get a raster shadow map: the primary uses the sun map, up to 3 more share one atlas (each costs a full scene depth pass). 1 = primary only. Ray-traced shadows ignore this (every casting directional traces).", CVarFlags::Persist};
 	CVar<bool> ShadowCascadeFit{"render.shadow.cascades.fit", false, "Compute the per-frame sun cascade fit (CascadeMath) for the primary directional. Consumed by render.shadow.cascades.render (#58)."};
-	CVar<bool> ShadowCascadeRender{"render.shadow.cascades.render", false, "Render the sun cascade fit into a 2x2 cascade atlas (needs render.shadow.cascades.fit). Nothing samples the atlas yet, so lighting is unchanged and the cost is one depth pass per cascade (#58)."};
+	CVar<bool> ShadowCascadeRender{"render.shadow.cascades.render", false, "Render the sun cascade fit into a 2x2 cascade atlas (needs render.shadow.cascades.fit). Lighting is unchanged unless render.shadow.cascades.shade samples it; the cost is one depth pass per cascade (#58)."};
 	CVar<bool> TransparentPass{"render.transparent", false, "EXPERIMENTAL (#82). Draw Blend-mode materials in a sorted back-to-front pass after the sky (depth test on, depth write off, no screen-space GI/AO/reflection/sun-shadow inputs), and leave them out of the camera depth prepass, DepthNormal and velocity passes. Off: Blend materials render as opaque.", CVarFlags::Persist};
+	CVar<bool> ShadowCascadeShade{"render.shadow.cascades.shade", false, "DefaultLit shades the sun from the cascade atlas instead of the single sun map (needs render.shadow.cascades.render). Hard cascade selection, no blend band or distance fade; fragments past the last split are unshadowed (#58)."};
 	CVar<int> ShadowCascadeCount{"render.shadow.cascades.count", 4, "Cascade count for the sun cascade fit, clamped to 1..4."};
 	CVar<float> ShadowCascadeLambda{"render.shadow.cascades.lambda", 0.7f, "Split blend for the sun cascade fit: 0 uniform, 1 logarithmic."};
 

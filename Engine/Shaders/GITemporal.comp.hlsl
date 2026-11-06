@@ -74,7 +74,9 @@ float3 ClipToAABB(float3 history, float3 center, float3 cmin, float3 cmax)
 	return history; // already inside
 }
 
-[numthreads(8, 8, 1)]
+#include "Include/Workgroup.hlsli"
+
+[numthreads(SS_WG_X, SS_WG_Y, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= OutSize.x || id.y >= OutSize.y)

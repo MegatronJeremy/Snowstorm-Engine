@@ -121,12 +121,31 @@ namespace Snowstorm
 				return false;
 			}
 
-			STARTUPINFOW si{};
-			si.cb = sizeof(si);
-			si.dwFlags = STARTF_USESTDHANDLES;
-			si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-			si.hStdOutput = writePipe;
-			si.hStdError = writePipe; // combined output
+			// Without an explicit list the child inherits every inheritable handle in the process, and shader
+			// workers compile concurrently: one worker's dxc then holds another worker's open .spv files (the
+			// CRT opens them inheritable) for its lifetime, and that worker's publishing rename fails.
+			SIZE_T attrSize = 0;
+			InitializeProcThreadAttributeList(nullptr, 1, 0, &attrSize);
+			std::vector<char> attrStorage(attrSize);
+			auto* attrs = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attrStorage.data());
+			HANDLE inherited[] = {writePipe};
+			if (!InitializeProcThreadAttributeList(attrs, 1, 0, &attrSize) ||
+			    !UpdateProcThreadAttribute(attrs, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof(inherited), nullptr, nullptr))
+			{
+				const DWORD err = GetLastError();
+				SS_CORE_ERROR("Restricting inherited handles failed. Win32 error={}", static_cast<uint32_t>(err));
+				CloseHandle(readPipe);
+				CloseHandle(writePipe);
+				return false;
+			}
+
+			STARTUPINFOEXW si{};
+			si.StartupInfo.cb = sizeof(si);
+			si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+			si.StartupInfo.hStdInput = nullptr;
+			si.StartupInfo.hStdOutput = writePipe;
+			si.StartupInfo.hStdError = writePipe; // combined output
+			si.lpAttributeList = attrs;
 
 			PROCESS_INFORMATION pi{};
 
@@ -137,11 +156,12 @@ namespace Snowstorm
 			    exePath.c_str(),
 			    mutableCmd.data(),
 			    nullptr, nullptr,
-			    TRUE, // inherit handles (needed for redirected std handles)
-			    CREATE_NO_WINDOW,
+			    TRUE, // inherit handles: only the ones in the attribute list
+			    CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT,
 			    nullptr,
 			    nullptr,
-			    &si, &pi);
+			    &si.StartupInfo, &pi);
+			DeleteProcThreadAttributeList(attrs);
 
 			// Parent no longer needs the write end
 			CloseHandle(writePipe);
@@ -214,7 +234,7 @@ namespace Snowstorm
 		                         const fs::path& outputSpv,
 		                         const wchar_t* profile,
 		                         const ShaderDefines& defines,
-		                         bool debug)
+		                         bool debug, int optLevel)
 		{
 			const std::wstring exe = dxcExe.wstring();
 			const std::wstring out = outputSpv.wstring();
@@ -229,6 +249,7 @@ namespace Snowstorm
 			request.includeDir = (GetEngineRoot() / "Engine" / "Shaders").wstring();
 			request.defines = defines;
 			request.debug = debug;
+			request.optLevel = optLevel;
 			const std::wstring cmd = BuildDxcCommandLine(request);
 
 			DWORD exitCode = 1;
@@ -338,7 +359,9 @@ namespace Snowstorm
 			}
 
 			// Defines and the opt level key the cache so variants never collide on one .spv.
-			const uint64_t h = ComputeShaderKey(fullText, HashIncludeHeaders(), flagsTag, defines, debug);
+			// render.shaders.opt is ReadOnly, so every call in a run sees one level.
+			const int optLevel = CVars::ShadersOpt.Get();
+			const uint64_t h = ComputeShaderKey(fullText, HashIncludeHeaders(), flagsTag, defines, debug, optLevel);
 
 			const std::string key = ToHex64(h);
 			const std::string stem = srcPath.stem().string(); // e.g. "Mesh.vert" -> "Mesh.vert"
@@ -402,7 +425,7 @@ namespace Snowstorm
 			const fs::path tmpSpvPath = outSpvPath.string() + tmpSuffix;
 			std::error_code ec;
 			fs::remove(tmpSpvPath, ec);
-			if (!CompileStageWithDxc(dxcExe, srcPath, tmpSpvPath, profile, defines, debug))
+			if (!CompileStageWithDxc(dxcExe, srcPath, tmpSpvPath, profile, defines, debug, optLevel))
 			{
 				fs::remove(tmpSpvPath, ec);
 				return false;
@@ -490,7 +513,7 @@ namespace Snowstorm
 		// 16-bit storage. Only NeuralConv.comp wraps its Weights buffer in #ifdef SS_FP16; every other shader
 		// ignores the define (no #ifdef), so this is a no-op for them but keeps the .spv cache key correct
 		// (an fp16-capable machine caches distinct SPIR-V). A non-fp16 device never emits it -> the fp32 path.
-		if (Renderer::IsFloat16Supported())
+		if (Renderer::IsFloat16Supported()) // already folds in the render.fp16 CVar
 		{
 			defines.emplace_back("SS_FP16=1");
 		}

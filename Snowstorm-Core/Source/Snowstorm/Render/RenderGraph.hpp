@@ -54,6 +54,15 @@ namespace Snowstorm
 			std::vector<ResourceAccess> Reads;
 			std::vector<ResourceAccess> Writes;
 
+			// Textures this pass leaves Sampled once it has run, for readers the graph cannot see: a material
+			// reaching the texture through a bindless index declares no Reads. The graph transitions them after
+			// Execute (and EndRenderPass), so the writer itself hands the texture over in the layout the bindless
+			// descriptor declares and no trailing pass is needed (cf. Unreal RDG QueueTextureExtraction, with the
+			// final state attached to the producer). Counted as writes by BuildDependencies, so a declared reader
+			// still orders after it. Graphics queue only: a layout transition to a graphics-read layout does not
+			// belong on the compute queue.
+			std::vector<Ref<Texture>> PublishSampled;
+
 			// Records commands for this pass
 			std::function<void(CommandContext&)> Execute;
 		};
