@@ -54,6 +54,23 @@ namespace Snowstorm
 			delete live->second;
 			m_Live.erase(live);
 		}
+
+		// registry.destroy, a registry clear and a scene reload leave no removal record, so the instance would
+		// otherwise live until teardown. Its entity is gone, so OnDestroy (which may reach for its components)
+		// is not called, as at teardown.
+		auto& reg = m_World->GetRegistry();
+		std::erase_if(m_Live,
+		              [&](const auto& entry)
+		              {
+			              const auto [entity, instance] = entry;
+			              const auto* script = reg.valid(entity) ? reg.try_get<NativeScriptComponent>(entity) : nullptr;
+			              if (script && script->Instance == instance)
+			              {
+				              return false;
+			              }
+			              delete instance;
+			              return true;
+		              });
 	}
 
 	void ScriptSystem::DeclareAccess(SystemAccess& a) const

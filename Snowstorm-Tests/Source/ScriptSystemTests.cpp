@@ -115,3 +115,23 @@ TEST_CASE("ScriptSystem gives an entity re-bound after removal a fresh instance"
 	CHECK(g_Counts.Destroyed == 2);
 	CHECK(g_Counts.Deleted == 2);
 }
+
+TEST_CASE("ScriptSystem frees the instance of a destroyed entity without OnDestroy", "[script]")
+{
+	g_Counts = {};
+	World world;
+	ScriptSystem system(&world);
+	const entt::entity kept = AddScript(world);
+	const entt::entity gone = AddScript(world);
+	RunFrame(world, system);
+	REQUIRE(g_Counts.Created == 2);
+
+	world.GetRegistry().destroy(gone);
+	RunFrame(world, system);
+	CHECK(g_Counts.Deleted == 1);
+	CHECK(g_Counts.Destroyed == 0);
+	CHECK(world.GetRegistry().valid(kept));
+
+	RunFrame(world, system);
+	CHECK(g_Counts.Deleted == 1);
+}
