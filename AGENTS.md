@@ -31,7 +31,12 @@ any machine, driven by any agent, behaves the same.
   commit before that review is fine; the gate is on `git push`. The same gate applies to anything
   else outward-facing or hard to reverse (issue comments, remote branches, force pushes).
 - **One increment per step.** Each step leaves the repo building and runnable. Small reviewable
-  changes beat big batches.
+  changes beat big batches. Repo hygiene (formatting sweeps, renames, doc reflows) goes in its own
+  PR, never bundled into a substantive change under review.
+- **Squash on merge, and write the squash message.** The default is the PR title over a list of the
+  branch's commit subjects, which drops the reasoning that split the commits. State the change, keep
+  the issue reference, and carry the load-bearing why into the body. A branch that cannot be described
+  in one commit message is two branches.
 - **A change to a showcased feature updates its page.** `docs/showcase/` pages carry measured numbers and images for a feature; the PR that changes the feature updates the page, its numbers (GPU, commit, date) and its images in the same PR.
 - **Prefer a short plan before touching a risky surface**: descriptor/binding layouts, serialization
   formats, shared or global state, public APIs. Two minutes of planning catches the class of bug that
@@ -63,7 +68,9 @@ any machine, driven by any agent, behaves the same.
   adjacency instead of by a stated relationship, so deleting the character alone relocates the habit
   into comma splices and stacked parentheticals. Name the relationship instead. Use a colon if the
   second half explains the first, "although" or "since" if it qualifies, parentheses for a genuine
-  aside, a semicolon between two independent clauses. A plain hyphen dash is fine.
+  aside, two sentences for two independent clauses. A plain hyphen dash is fine.
+- **No semicolon joining two clauses**, in comments, log text or prose. Like the em-dash it leaves
+  the link unsaid: write two sentences, or say how they connect ("so", "because").
 - **Revise, do not just constrain.** Run a second pass over your own draft: with the whole clause in
   context the connective can match how the sentence actually ended, which an upfront ban cannot do.
   Strip the other AI-writing tells on that pass (the "not just X, but Y" antithesis, rule-of-three
@@ -1451,6 +1458,8 @@ see, so treat it as part of the feature, not an afterthought.
   use `SS_VERIFY` / `SS_CORE_VERIFY` for checks that must survive release builds.
 - Platform code goes behind `SS_PLATFORM_WINDOWS` (see `Core/PlatformDetection.hpp`); the engine
   currently `#error`s on non-Windows.
+- Source is stored as LF. With `core.autocrlf=true` the working copy shows CRLF, but git commits LF and
+  every tracked text file is LF. Do not CRLF-normalize a file, or the diff rewrites every line.
 - Headers are `.hpp`, translation units `.cpp`. Core globs all sources recursively, so a new file
   under `Snowstorm-Core/Source/` is picked up after re-running CMake (re-generate the solution).
 - **Formatting (format-on-touch):** the repo has a `.clang-format`. The `lint` CI checks the C++
