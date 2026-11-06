@@ -19,6 +19,10 @@ namespace Snowstorm
 
 		void Execute(Timestep ts) override;
 
+		// Engine content, never under a project's asset directory: the Content Browser auto-imports
+		// everything it finds there, which would give the editor's own atlas a /Game/ registry row.
+		static constexpr const char* kIconAtlasPath = "Engine/Icons/icons.png";
+
 	private:
 		// Lazily loaded; owned here so it is released with the system, before the renderer shuts down.
 		uint64_t IconAtlasId();
