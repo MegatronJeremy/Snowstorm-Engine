@@ -12,6 +12,7 @@
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Systems/ReflectionGeometrySingleton.hpp"
 #include "Snowstorm/Systems/TlasInstanceMapSingleton.hpp"
+#include "Snowstorm/Systems/TlasRebuildRule.hpp"
 #include "Snowstorm/World/World.hpp"
 
 #include "Platform/Vulkan/VulkanBindlessManager.hpp"
@@ -26,21 +27,10 @@ namespace Snowstorm
 		// PLACEMENT changes (the transform of a MESH entity moved).
 		//
 		// Add/remove are one-shot events (spawn/despawn) — cheap to over-trigger, so left unfiltered.
-		if (!ChangedView<MeshComponent>().empty()) // mesh resolved / swapped
-			return true;
-		if (!InitView<MeshComponent>().empty() || !InitView<TransformComponent>().empty())
-			return true;
-		if (!FiniView<MeshComponent>().empty() || !FiniView<TransformComponent>().empty())
-			return true;
-
-		// A whole-entity DESTROY (editor delete, despawn) is tracked separately from component removal —
-		// FiniView/RemovedView only sees explicit Remove<T>(), not registry.destroy(), so a deleted mesh
-		// would otherwise stay in the TLAS and keep casting an RT shadow/reflection/GI ghost after it's gone.
-		// Destroys are rare one-shot events, so rebuilding on any destroy is cheap (matches the add/remove
-		// "over-trigger is fine" stance above).
-		if (m_World->GetRegistry().AnyDestroyedThisFrame())
-			return true;
-
+		// A whole-entity DESTROY is tracked separately from component removal — FiniView/RemovedView only
+		// sees explicit Remove<T>(), not registry.destroy(), so a deleted mesh would otherwise stay in the
+		// TLAS and keep casting an RT shadow/reflection/GI ghost after it's gone.
+		//
 		// A MaterialComponent change must also rebuild: the geometry table caches each instance's material
 		// constants (albedo texture index, base color) for the RT reflection/GI shade. Materials resolve
 		// ASYNC and INDEPENDENTLY of meshes (MaterialResolveSystem sets MaterialInstance only once the
@@ -49,8 +39,12 @@ namespace Snowstorm
 		// below) and, without this check, never refreshes when the material lands, leaving GI/reflections lit
 		// with wrong albedo until something else re-dirties the scene (the "toggle GI/refl off+on fixes it"
 		// bug). Optimized shaders (slower cold compile) made this window reliably straddle the first build.
-		if (!ChangedView<MaterialComponent>().empty())
-			return true;
+		TlasRebuildRule::SceneChanges changes;
+		changes.MeshChanged = !ChangedView<MeshComponent>().empty();
+		changes.MeshOrTransformInit = !InitView<MeshComponent>().empty() || !InitView<TransformComponent>().empty();
+		changes.MeshOrTransformFini = !FiniView<MeshComponent>().empty() || !FiniView<TransformComponent>().empty();
+		changes.AnyDestroyed = m_World->GetRegistry().AnyDestroyedThisFrame();
+		changes.MaterialChanged = !ChangedView<MaterialComponent>().empty();
 
 		// Placement change is the PER-FRAME hot path: only a changed transform that belongs to a mesh entity
 		// moves an instance. This filters out the camera — whose transform CameraControllerSystem rewrites
@@ -61,10 +55,11 @@ namespace Snowstorm
 		{
 			if (reg.all_of<MeshComponent>(e))
 			{
-				return true;
+				changes.MeshTransformChanged = true;
+				break;
 			}
 		}
-		return false;
+		return TlasRebuildRule::IsSceneDirty(changes);
 	}
 
 	void TlasBuildSystem::Execute(Timestep)
@@ -77,7 +72,9 @@ namespace Snowstorm
 		// the traversal samples the albedo alpha at the hit UV). So table-need is exactly rt-active.
 		const bool rtActive = CVars::ShadowsRTActive() || CVars::AoRTActive() || CVars::ReflectionsRTActive() ||
 		                      CVars::GIRTActive() || CVars::PathTraceActive();
-		const bool justEnabled = rtActive && !m_WasRTActive;
+		TlasRebuildRule::RebuildState state;
+		state.RtActive = rtActive;
+		state.WasRtActive = m_WasRTActive;
 		m_WasRTActive = rtActive;
 		if (!rtActive)
 		{
@@ -87,7 +84,9 @@ namespace Snowstorm
 		// Toggling render.omm swaps which BLAS each cutout instance uses (OMM vs any-hit); force a rebuild on
 		// the edge so the A/B / safety switch takes effect on a static scene.
 		const bool ommEnabled = CVars::OmmEnabled.Get();
-		const bool ommToggled = m_BuiltOnce && ommEnabled != m_LastOmmEnabled;
+		state.BuiltOnce = m_BuiltOnce;
+		state.OmmEnabled = ommEnabled;
+		state.LastOmmEnabled = m_LastOmmEnabled;
 		m_LastOmmEnabled = ommEnabled;
 
 		// While textures are still streaming, keep rebuilding: a cutout instance whose albedo isn't resident yet
@@ -97,13 +96,14 @@ namespace Snowstorm
 		// triggers the final rebuild that bakes its OMM.
 		auto& assets = SingletonView<AssetManagerSingleton>();
 		const uint32_t pendingLoads = assets.PendingLoadCount();
-		const bool streaming = pendingLoads > 0 || m_PrevPendingLoads > 0;
+		state.PendingLoads = pendingLoads;
+		state.PrevPendingLoads = m_PrevPendingLoads;
 		m_PrevPendingLoads = pendingLoads;
 
 		// Rebuild when the scene changed OR RT just turned on OR render.omm toggled OR assets are still streaming
 		// (the scene's per-frame dirty flags were consumed on prior frames, so a plain dirty-check would miss
 		// those edges).
-		if (m_BuiltOnce && !justEnabled && !ommToggled && !streaming && !IsSceneDirtyThisFrame())
+		if (!TlasRebuildRule::ShouldRebuild(state, IsSceneDirtyThisFrame()))
 		{
 			return;
 		}
