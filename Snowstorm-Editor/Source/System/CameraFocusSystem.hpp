@@ -16,5 +16,8 @@ namespace Snowstorm
 		}
 
 		void Execute(Timestep ts) override;
+
+	private:
+		bool EditorCamera2DActive() const;
 	};
 }

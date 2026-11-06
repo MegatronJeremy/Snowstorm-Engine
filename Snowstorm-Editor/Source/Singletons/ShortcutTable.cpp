@@ -33,6 +33,14 @@ namespace Snowstorm::Shortcuts
 		    {"Mouse Wheel (no RMB)", "Zoom / dolly (perspective) or zoom (ortho)", {}},
 		}};
 
+		constexpr std::array<Row, 5> kView2D = {{
+		    {"2 (viewport) / 2D button", "Toggle the 2D Scene view (opens on its own for a Canvas2D scene)", Plain(Key::D2)},
+		    {"Middle or Right Mouse (drag)", "Pan (2D view)", {}},
+		    {"Mouse Wheel", "Zoom about the cursor (2D view)", {}},
+		    {"Right Mouse + W / A / S / D", "Pan with the keyboard (2D view)", {}},
+		    {"F / Shift + F", "Frame the selected sprite / every sprite (2D view)", {}},
+		}};
+
 		constexpr std::array<Row, 5> kSelection = {{
 		    {"Left Mouse (viewport)", "Select entity under cursor", {}},
 		    {"Escape", "Clear selection (hides the gizmo)", Plain(Key::Escape)},
@@ -89,8 +97,9 @@ namespace Snowstorm::Shortcuts
 		    {"Up / Down (in console)", "Cycle command history", Plain(Key::Up)},
 		}};
 
-		constexpr std::array<Section, 10> kSections = {{
+		constexpr std::array<Section, 11> kSections = {{
 		    {"cam", "Camera (hold Right Mouse Button in viewport)", kCamera},
+		    {"view2d", "2D Scene view", kView2D},
 		    {"sel", "Selection & Gizmos", kSelection},
 		    {"possess", "Play (Possess)", kPossess},
 		    {"frame", "Camera Framing", kFraming},
