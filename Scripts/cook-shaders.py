@@ -46,6 +46,8 @@ def main() -> int:
     ap.add_argument("--shaders", default="Engine/Shaders", help="Shader source dir")
     ap.add_argument("--out", default="Engine/cache/shaders-cook", help="Output SPIR-V dir")
     ap.add_argument("--variants", default="rt", help="Comma list of permutations: base,rt")
+    ap.add_argument("--opt", type=int, default=-1, help="dxc -O level 0..3 (-1 = dxc default, matches render.shaders.opt)")
+    ap.add_argument("--no-fp16", action="store_true", help="drop SS_FP16 (matches render.fp16=0)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -57,6 +59,10 @@ def main() -> int:
     cmd = [str(tool), "--dxc", args.dxc, "--shaders", str(ROOT / args.shaders),
            "--out", str(ROOT / args.out), "--variants", args.variants,
            "--permutations", str(ROOT / "Scripts" / "shader-permutations.txt")]
+    if args.opt != -1:
+        cmd += ["--opt", str(args.opt)]
+    if args.no_fp16:
+        cmd.append("--no-fp16")
     if args.dry_run:
         cmd.append("--dry-run")
     return subprocess.run(cmd).returncode

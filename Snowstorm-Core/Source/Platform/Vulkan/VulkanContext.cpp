@@ -612,6 +612,25 @@ namespace Snowstorm
 		features13.dynamicRendering = VK_TRUE;
 		features13.synchronization2 = VK_TRUE;
 
+		// subgroupSizeControl (core 1.3): lets a compute stage require wave32 or wave64 (render.subgroup.*). Only
+		// enabled when the device reports it AND allows it for compute; nothing requests a size by default.
+		{
+			VkPhysicalDeviceVulkan13Features q13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+			VkPhysicalDeviceFeatures2 q{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+			q.pNext = &q13;
+			vkGetPhysicalDeviceFeatures2(m_PhysicalDevice, &q);
+			VkPhysicalDeviceVulkan13Properties p13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES};
+			VkPhysicalDeviceProperties2 p{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+			p.pNext = &p13;
+			vkGetPhysicalDeviceProperties2(m_PhysicalDevice, &p);
+			if (q13.subgroupSizeControl == VK_TRUE && (p13.requiredSubgroupSizeStages & VK_SHADER_STAGE_COMPUTE_BIT) != 0)
+			{
+				features13.subgroupSizeControl = VK_TRUE;
+				m_SubgroupMin = p13.minSubgroupSize;
+				m_SubgroupMax = p13.maxSubgroupSize;
+			}
+		}
+
 		VkPhysicalDeviceVulkan12Features features12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
 		features12.bufferDeviceAddress = VK_TRUE;
 
@@ -733,6 +752,11 @@ namespace Snowstorm
 		             m_RayTracingSupported ? "supported (enabled)" : "not supported (raster fallback)");
 		SS_CORE_INFO("Opacity micromaps (VK_EXT_opacity_micromap): {}.",
 		             m_OpacityMicromapSupported ? "supported (enabled)" : "not supported (any-hit fallback)");
+		if (SupportsSubgroupSizeControl())
+		{
+			SS_CORE_INFO("Subgroup size control: compute sizes {}..{} (render.subgroup.size {}).", m_SubgroupMin,
+			             m_SubgroupMax, CVars::SubgroupSize.Get());
+		}
 		SS_CORE_INFO("fp16 shader math (shaderFloat16 + 16-bit storage): {}.",
 		             m_Float16Supported ? "supported (neural fp16 path enabled)" : "not supported (fp32 fallback)");
 		if (enableValidationLayers && CVars::ValidationGpu.Get())

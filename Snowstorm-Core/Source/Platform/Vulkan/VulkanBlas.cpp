@@ -3,7 +3,9 @@
 #include "VulkanBuffer.hpp"
 #include "VulkanMicromap.hpp"
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Core/Log.hpp"
+#include "Snowstorm/Render/AccelerationStructureBuild.hpp"
 
 #include <cstdint>
 #include <vector>
@@ -141,7 +143,10 @@ namespace Snowstorm
 		VkAccelerationStructureBuildGeometryInfoKHR buildInfo{
 		    VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
 		buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-		buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+		AsBuildOptions asOptions;
+		asOptions.preference = CVars::AsPreferFastBuild.Get() ? AsBuildPreference::FastBuild : AsBuildPreference::FastTrace;
+		asOptions.allowCompaction = CVars::AsCompaction.Get();
+		buildInfo.flags = static_cast<VkBuildAccelerationStructureFlagsKHR>(AsBuildFlagBits(asOptions));
 		buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
 		buildInfo.geometryCount = 1;
 		buildInfo.pGeometries = &geometry;
@@ -184,8 +189,75 @@ namespace Snowstorm
 
 		// 5. Build on the graphics queue (ImmediateSubmit waits on a fence, so the build is complete on return
 		//    and the transient scratch can be freed right after).
-		ImmediateSubmit([&](const VkCommandBuffer cmd)
-		                { vkCmdBuildAccelerationStructuresKHR(cmd, 1, &buildInfo, &pRange); });
+		VkQueryPool compactQuery = VK_NULL_HANDLE;
+		if (asOptions.allowCompaction)
+		{
+			VkQueryPoolCreateInfo queryInfo{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+			queryInfo.queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR;
+			queryInfo.queryCount = 1;
+			SS_CORE_VERIFY(vkCreateQueryPool(device, &queryInfo, nullptr, &compactQuery) == VK_SUCCESS,
+			               "Failed to create BLAS compaction query pool");
+		}
+
+		ImmediateSubmit(
+		    [&](const VkCommandBuffer cmd)
+		    {
+			    if (compactQuery != VK_NULL_HANDLE)
+				    vkCmdResetQueryPool(cmd, compactQuery, 0, 1);
+			    vkCmdBuildAccelerationStructuresKHR(cmd, 1, &buildInfo, &pRange);
+			    if (compactQuery != VK_NULL_HANDLE)
+			    {
+				    // The compacted size is only valid once the build's writes are visible to the query.
+				    VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+				    barrier.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+				    barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR;
+				    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+				                         VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0, 1, &barrier, 0,
+				                         nullptr, 0, nullptr);
+				    vkCmdWriteAccelerationStructuresPropertiesKHR(
+				        cmd, 1, &m_AccelStruct, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, compactQuery, 0);
+			    }
+		    });
+
+		if (compactQuery != VK_NULL_HANDLE)
+		{
+			VkDeviceSize compactedSize = 0;
+			const VkResult queryResult =
+			    vkGetQueryPoolResults(device, compactQuery, 0, 1, sizeof(compactedSize), &compactedSize,
+			                          sizeof(compactedSize), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+			vkDestroyQueryPool(device, compactQuery, nullptr);
+			if (queryResult == VK_SUCCESS && ShouldCompactAs(sizeInfo.accelerationStructureSize, compactedSize))
+			{
+				VkBuffer newBuffer = VK_NULL_HANDLE;
+				VmaAllocation newAllocation = nullptr;
+				CreateAsBuffer(compactedSize, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR, 0, newBuffer,
+				               newAllocation, debugName.empty() ? "BLAS" : debugName.c_str());
+				VkAccelerationStructureCreateInfoKHR compactInfo{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR};
+				compactInfo.buffer = newBuffer;
+				compactInfo.size = compactedSize;
+				compactInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+				VkAccelerationStructureKHR compacted = VK_NULL_HANDLE;
+				SS_CORE_VERIFY(vkCreateAccelerationStructureKHR(device, &compactInfo, nullptr, &compacted) == VK_SUCCESS,
+				               "Failed to create compacted BLAS");
+
+				VkCopyAccelerationStructureInfoKHR copy{VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR};
+				copy.src = m_AccelStruct;
+				copy.dst = compacted;
+				copy.mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
+				ImmediateSubmit([&](const VkCommandBuffer cmd)
+				                { vkCmdCopyAccelerationStructureKHR(cmd, &copy); });
+
+				// Nothing has seen the original's address yet (m_DeviceAddress is read below), and the submit
+				// above waited on its fence, so the original can be destroyed in place.
+				vkDestroyAccelerationStructureKHR(device, m_AccelStruct, nullptr);
+				vmaDestroyBuffer(GetAllocator(), m_Buffer, m_Allocation);
+				m_AccelStruct = compacted;
+				m_Buffer = newBuffer;
+				m_Allocation = newAllocation;
+				SS_CORE_INFO("BLAS '{}' compacted {} -> {} bytes", debugName, sizeInfo.accelerationStructureSize,
+				             compactedSize);
+			}
+		}
 
 		vmaDestroyBuffer(GetAllocator(), scratchBuffer, scratchAllocation);
 		if (ommIndexBuffer != VK_NULL_HANDLE)

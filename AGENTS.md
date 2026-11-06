@@ -940,6 +940,17 @@ after destruction by `BeginFrame` (same call site as `VulkanBindlessManager::Adv
 set no longer stalls the device. Pools live until `Shutdown`. The policy arithmetic is backend-free in
 `DescriptorPoolPolicy.hpp` (Catch2-tested); bindless keeps its own pool.
 
+## Shader and acceleration-structure tuning CVars
+
+All of these are `ReadOnly` (startup-only) and default to today's behaviour; `Scripts/speed-tune.py` searches them through `SS_*` env. None has run on a GPU.
+
+- `render.shaders.opt` (default -1): dxc `-O0..-O3`; -1 passes no flag (dxc's own -O3). Keyed into the `.spv` cache only when set, so default cache entries stay valid. `Scripts/cook-shaders.py --opt N` mirrors it so an RGA run can see the same SPIR-V. Ignored under `render.shaders.debug`.
+- `render.fp16` (default on): off forces the fp32 path (no `SS_FP16`, fp32 neural weights) on fp16-capable devices. Gated in `VulkanRendererAPI::IsFloat16Supported`, so the permutation and the weight packing cannot disagree. `cook-shaders.py --no-fp16` mirrors it.
+- `render.as.prefer_fast_build` (default off): BLAS and TLAS build with `PREFER_FAST_BUILD` instead of `PREFER_FAST_TRACE`.
+- `render.as.compaction` (default off): BLAS builds add `ALLOW_COMPACTION`, read the compacted size back and copy into a smaller allocation when it is strictly smaller (`ShouldCompactAs`). One extra synchronous submit per BLAS. The TLAS is not compacted. The flag and decision rules are `Render/AccelerationStructureBuild.hpp`, tested in `AccelerationStructureBuildTests`.
+
+- `render.wg.ao`, `render.wg.gi`, `render.wg.reflection`, `render.wg.shadow` (default 8): square compute tile side, 4, 8 or 16 (anything else is 8). The GI family is GI, GITemporal, GISpatialReuse and GIDenoise. The shaders say `[numthreads(SS_WG_X, SS_WG_Y, 1)]` with the default in `Include/Workgroup.hlsli`; `Render/WorkgroupSize.hpp` (`ClampWorkgroupSide`, `WorkgroupCount`, `AppendWorkgroupDefines`) feeds both the define and the C++ dispatch math, so they cannot drift. The default emits no define, so its `.spv` key, its cooked variant and the RGA baselines are unchanged (adding `Workgroup.hlsli` re-keys the include-header hash once). A non-default side is a new permutation that compiles at runtime; it is not in `shader-permutations.txt`. None of the shaders has `groupshared` memory or reads `SV_GroupThreadID`, which is what makes the size free to change; check that before extending the knob to another shader. The other `numthreads` shaders (SSAO, SSR, SSGI, Neural*, IBL*, PathTrace, Metrics, Pick, OmmBake) are not a knob yet. Unverified on a GPU: nothing here has run, and a larger tile can cost occupancy on the RT passes.
+
 ## Texture block compression
 
 `cook.textures.compress` block-compresses cooked textures, **on by default** after eyes-on confirmation on
@@ -1105,9 +1116,12 @@ without the flag.
 
 **A game adds GPU work with `RendererService::EnqueueGraphPass`**, from any phase before Render. The pass
 joins that frame's render graph after the texture uploads and ahead of IBL, shadows and every viewport,
-once per frame. A texture it writes that a material samples through bindless must end Sampled, through a
-trailing pass that declares the read and has a no-op `Execute`: the graph transitions only declared
-accesses, and a bindless read is undeclared.
+once per frame. A texture it writes that a material samples through bindless goes in the pass's `PublishSampled`: the graph
+transitions it to Sampled right after the pass (graphics queue only), since it transitions only declared
+accesses and a bindless read is undeclared. `PublishSampled` counts as a write in `BuildDependencies`, so a
+declared reader still orders after the writer; the ordering of an undeclared bindless reader (the material
+draw in `Forward`) still rests on graphics passes keeping their order. `RenderGraphScheduleTests` pin the
+edge; the transition itself has not run on a GPU.
 
 ## Staging a runnable build
 
@@ -1243,9 +1257,15 @@ With one level, a sprite drawn much smaller than its texture aliases; mips and c
 The editor's Scene view takes the scene's Primary camera's render path and background on open, still flying in perspective
 (#341). `quality.capture` also captures a Canvas2D viewport: `RenderCanvas2D` runs the same capture effect after the `Sprites` pass, with the same settle rule, writing `<path>_ldr.npy` from the present target. `_hdr.npy` is skipped (no linear scene colour; the log says so). Not run on a GPU: that `Sprites.world` captures headlessly and matches a window capture is unconfirmed.
 
-**`Sprites.world` is the testbed**, booted by smoke as `Sprites`: a 64x64 checkerboard magnified with `Nearest` and with
+**Pixel-perfect camera (#340, PR 1).** `CameraComponent::PixelsPerUnit` > 0 on an orthographic `Canvas2D` camera (0, the default, is off) derives the view height from the viewport: `PixelPerfectScale` takes the largest integer at which `ReferenceResolution` fits (an axis of 0 does not constrain; no reference means 1; never below 1), and `PixelPerfectOrthographicSize` makes `OrthographicSize = viewportH / (PixelsPerUnit * scale)`, so one texel spans exactly `scale` screen pixels. The camera translation is snapped to the texel grid (`SnapToTexel`) in `CameraRuntimeUpdateSystem`; rotation is not handled. Unity's Pixel Perfect Camera and Godot's `viewport` stretch mode also render into a reference-size target and letterbox; here the sprites still draw straight at present resolution, so the remainder is stretched, not letterboxed, and sprites keep `Nearest` filtering for the exact mapping. `PixelPerfectTests` cover the math; the system wiring and the shimmer-free pan are unverified on a GPU.
+
+**`Sprites.world` is the testbed**, booted by smoke as `Sprites` (its camera is pixel-perfect at 16 PPU, 320x180 reference): a 64x64 checkerboard magnified with `Nearest` and with
 `Linear`, a layer -1 logo 2 units nearer the camera that still draws under them, two layer 1 logos over them (one `FlipX`,
 tinted at 0.7 alpha), and a rotated layer 1, order 1 checker over the logo it overlaps.
+
+## Subgroup size
+
+`render.subgroup.size` (32 or 64, default 0 = driver's choice) and `render.subgroup.overrides` (`GIDenoise=32,Reflection=64`, substring of the shader path, first match wins, beats the global) set `requiredSubgroupSize` on every compute pipeline stage through Vulkan 1.3 `subgroupSizeControl`. Both are read at pipeline creation, so they apply at launch. A size outside the device's `[minSubgroupSize, maxSubgroupSize]`, or on a device without compute `requiredSubgroupSizeStages`, is dropped silently per pipeline (`ResolveRequiredSubgroupSize`, `SubgroupSizePolicyTests`). No shader uses wave intrinsics, so the size changes scheduling and occupancy only. A/B with `perf-bench.py --compare-exe`, passing the CVar through the environment of one arm; no result exists yet, and the build and run were not done on a GPU.
 
 ## Neural upscaler tail fusion
 

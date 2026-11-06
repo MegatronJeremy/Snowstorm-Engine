@@ -96,7 +96,9 @@ bool LoadSurface(const float2 uv, out float3 positionWS, out float3 normalWS, ou
 	return true;
 }
 
-[numthreads(8, 8, 1)]
+#include "Include/Workgroup.hlsli"
+
+[numthreads(SS_WG_X, SS_WG_Y, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= OutSize.x || id.y >= OutSize.y)

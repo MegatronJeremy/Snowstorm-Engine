@@ -2,11 +2,13 @@
 
 #include "Snowstorm/Core/Application.hpp"
 #include "Snowstorm/Core/Base.hpp"
+#include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Render/Buffer.hpp"
 #include "Snowstorm/Render/CommandContext.hpp"
 #include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/Shader.hpp"
+#include "Snowstorm/Render/WorkgroupSize.hpp"
 #include "Snowstorm/Service/ServiceManager.hpp"
 
 namespace Snowstorm
@@ -46,7 +48,9 @@ namespace Snowstorm
 			return;
 		}
 
-		Ref<Shader> cs = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load("Engine/Shaders/GISpatialReuse.comp.hlsl");
+		ShaderDefines defines;
+		AppendWorkgroupDefines(defines, CVars::WgGi.Get());
+		Ref<Shader> cs = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load("Engine/Shaders/GISpatialReuse.comp.hlsl", std::move(defines));
 		SS_CORE_ASSERT(cs, "Failed to load GI spatial reuse compute shader");
 		if (!cs->IsReady())
 		{
@@ -121,6 +125,6 @@ namespace Snowstorm
 		ctx->BindPipeline(m_Pipeline);
 		ctx->BindDescriptorSet(m_Sets[frameIndex], 0);
 		ctx->BindGlobalResources(); // set 3 = bindless textures/cubemaps + SceneTLAS
-		ctx->Dispatch((outW + 7) / 8, (outH + 7) / 8, 1);
+		ctx->Dispatch(WorkgroupCount(outW, CVars::WgGi.Get()), WorkgroupCount(outH, CVars::WgGi.Get()), 1);
 	}
 }
