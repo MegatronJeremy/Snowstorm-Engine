@@ -1505,6 +1505,12 @@ Worked example, the **asset pipeline** (the engine's biggest deliberate simplifi
   the registry grew by its own size per run, with no error and no crash: it reads as an ordinary content
   change and gets committed by a routine `git add`. `AssetIdentityTests` pins it.
 
+  **A save of an unchanged registry is byte-identical.** `AssetRegistry::Serialize` writes rows sorted by
+  path, since the handle map is unordered and every scene save rewrites the file. The Content Browser
+  auto-imports every file under a project's `assets/`, so editor-owned content lives under `Engine/`
+  (the light-icon atlas is `Engine/Icons/icons.png`), never in a project. `AssetRegistrySerializeTests`
+  pins both, and fails on a committed registry that is not in sorted form.
+
 **Cache eviction.** `MeshLibrary`, `ShaderLibrary` and `AssetManagerSingleton`'s handle caches are swept
 by `AssetManagerSingleton::EvictUnreferenced()` on Open Scene, after the old entities are cleared: an entry
 goes when its `shared_ptr` has no owner besides the caches (components, pipelines and in-flight compiles
