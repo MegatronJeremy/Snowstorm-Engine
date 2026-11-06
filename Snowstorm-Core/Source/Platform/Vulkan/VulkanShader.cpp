@@ -6,12 +6,15 @@
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/ShaderCompile.hpp"
+#include "Snowstorm/Render/SpirvBlobValidation.hpp"
 
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <iterator>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
@@ -261,6 +264,55 @@ namespace Snowstorm
 			return true;
 		}
 
+		fs::path StampPathFor(const fs::path& spv)
+		{
+			return fs::path(spv.string() + ".key");
+		}
+
+		// True when the cached blob passes ValidateCachedSpirv against `key`. With `removeRejected` a failing blob
+		// and its stamp are deleted so the caller recompiles; a stale or damaged module must never reach
+		// vkCreateShaderModule. Only call with `removeRejected` under the per-path compile lock: an unlocked
+		// caller can see another worker's blob mid-publish and would delete a good file.
+		bool CachedSpirvIsValid(const fs::path& spv, const uint64_t key, const bool removeRejected)
+		{
+			std::error_code ec;
+			if (!fs::exists(spv, ec))
+				return false;
+			std::ifstream in(spv, std::ios::binary);
+			const std::string blob((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+			std::optional<std::string> stamp;
+			if (std::ifstream sin(StampPathFor(spv), std::ios::binary); sin)
+				stamp = std::string((std::istreambuf_iterator<char>(sin)), std::istreambuf_iterator<char>());
+			const BlobCheck check = ValidateCachedSpirv(blob.data(), blob.size(), key, stamp);
+			if (check == BlobCheck::Ok)
+				return true;
+			if (removeRejected)
+			{
+				SS_CORE_WARN("Cached SPIR-V {} rejected (check {}); recompiling", spv.string(), static_cast<int>(check));
+				fs::remove(spv, ec);
+				fs::remove(StampPathFor(spv), ec);
+			}
+			return false;
+		}
+
+		// Stamps the bytes of `blobFile` (the private tmp, before it is renamed into place) at the stamp path of
+		// `spv`. Published BEFORE the blob rename so a blob is never visible without its stamp.
+		void WriteSpirvStamp(const fs::path& blobFile, const fs::path& spv, const uint64_t key)
+		{
+			std::ifstream in(blobFile, std::ios::binary);
+			const std::string blob((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+			const fs::path stampPath = StampPathFor(spv);
+			const fs::path tmp = fs::path(stampPath.string() + ".tmp");
+			{
+				std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+				out << SerializeBlobStamp(MakeBlobStamp(key, blob.data(), blob.size()));
+			}
+			std::error_code ec;
+			fs::rename(tmp, stampPath, ec);
+			if (ec)
+				fs::remove(tmp, ec);
+		}
+
 		// Compile a single-stage HLSL file DIRECTLY (no #type split, no temp file — the file itself is a
 		// plain single-`main` shader) to a cached .spv for the given DXC profile. `flagsTag` distinguishes
 		// stage profiles in the cache key so a vert and frag of the same content don't collide. Returns
@@ -292,7 +344,7 @@ namespace Snowstorm
 			const std::string stem = srcPath.stem().string(); // e.g. "Mesh.vert" -> "Mesh.vert"
 			const fs::path outSpvPath = cacheDir / (stem + "_" + key + ".spv");
 
-			if (fs::exists(outSpvPath))
+			if (CachedSpirvIsValid(outSpvPath, h, false))
 			{
 				outSpv = outSpvPath.string();
 				return true;
@@ -335,7 +387,7 @@ namespace Snowstorm
 			std::lock_guard compileLock(*pathLock);
 
 			// Re-check under the lock: another worker may have finished this exact output while we waited.
-			if (fs::exists(outSpvPath))
+			if (CachedSpirvIsValid(outSpvPath, h, true))
 			{
 				outSpv = outSpvPath.string();
 				return true;
@@ -355,6 +407,9 @@ namespace Snowstorm
 				fs::remove(tmpSpvPath, ec);
 				return false;
 			}
+			// Stamp first, blob second: the stamp is derived from the tmp bytes, and the unlocked validator treats
+			// a stamp without a blob as a miss but a blob without a stamp as corrupt.
+			WriteSpirvStamp(tmpSpvPath, outSpvPath, h);
 			fs::rename(tmpSpvPath, outSpvPath, ec);
 			if (ec)
 			{
