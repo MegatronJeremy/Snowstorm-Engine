@@ -31,6 +31,10 @@ namespace Snowstorm
 	// hash names the on-disk artifact. Pure: no globals, deterministic, unit-testable.
 	uint64_t HashIBLEnvironment(const EnvironmentDataBlock& env, const LightDataBlock& lights);
 
+	// A real bake is never all zero, since the BRDF LUT does not depend on the environment. All zero means
+	// the readback was mapped before the GPU wrote it.
+	bool IsAllZero(const CookedIBL& ibl);
+
 	// Disk cache for baked IBL maps (#34), keyed by the environment hash. Mirrors TextureCacheIO: a versioned
 	// header + length-prefixed payload, atomic temp-then-rename save, validated load. A hit lets IBLBakePass
 	// skip the ~300 ms cold bake (GPU compute + 4 shader compiles) and just upload the cached bytes.
