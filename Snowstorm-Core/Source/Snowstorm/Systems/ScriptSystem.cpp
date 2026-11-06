@@ -5,6 +5,14 @@
 
 namespace Snowstorm
 {
+	ScriptSystem::~ScriptSystem()
+	{
+		for (const auto& [entity, instance] : m_Live)
+		{
+			delete instance;
+		}
+	}
+
 	void ScriptSystem::Execute(const Timestep ts)
 	{
 		const auto nativeScriptView = View<NativeScriptComponent>();
@@ -18,6 +26,7 @@ namespace Snowstorm
 			SS_CORE_ASSERT(scriptComponent.Instance == nullptr);
 
 			scriptComponent.InstantiateScript();
+			m_Live[entity] = scriptComponent.Instance;
 			scriptComponent.Instance->m_Entity = Entity{entity, m_World};
 			scriptComponent.Instance->OnCreate();
 		}
@@ -31,14 +40,19 @@ namespace Snowstorm
 			scriptComponent.Instance->OnUpdate(ts);
 		}
 
-		// Destroy scripts that are removed
+		// The component is already gone, so the instance comes from m_Live. Its DestroyScript callback is not
+		// usable: it captured the removed component's address.
 		for (const auto entity : nativeScriptFiniView)
 		{
-			auto [scriptComponent] = nativeScriptView.get(entity);
-			SS_CORE_ASSERT(scriptComponent.Instance);
+			const auto live = m_Live.find(entity);
+			if (live == m_Live.end())
+			{
+				continue;
+			}
 
-			scriptComponent.Instance->OnDestroy();
-			scriptComponent.DestroyScript();
+			live->second->OnDestroy();
+			delete live->second;
+			m_Live.erase(live);
 		}
 	}
 
