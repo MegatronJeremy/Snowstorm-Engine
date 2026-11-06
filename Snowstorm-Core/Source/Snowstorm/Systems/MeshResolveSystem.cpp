@@ -2,6 +2,7 @@
 
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Components/MeshComponent.hpp"
+#include "Snowstorm/Systems/MeshResolveRule.hpp"
 
 namespace Snowstorm
 {
@@ -30,12 +31,7 @@ namespace Snowstorm
 		{
 			const auto& mc = reg.Read<MeshComponent>(e);
 
-			if (mc.MeshHandle.Value() != 0 && !mc.MeshInstance)
-			{
-				Resolve(e);
-			}
-
-			if (mc.MeshHandle.Value() == 0 && mc.MeshInstance)
+			if (MeshNeedsSafetyNetResolve(mc.MeshHandle.Value(), static_cast<bool>(mc.MeshInstance)))
 			{
 				Resolve(e);
 			}
@@ -49,10 +45,9 @@ namespace Snowstorm
 
 		const auto& mc = reg.Read<MeshComponent>(e);
 
-		// If handle is invalid -> ensure instance is cleared
 		if (mc.MeshHandle.Value() == 0)
 		{
-			if (mc.MeshInstance)
+			if (DecideMeshResolve(0, static_cast<bool>(mc.MeshInstance), false, false) == MeshResolveAction::Clear)
 			{
 				reg.patch<MeshComponent>(e, [](MeshComponent& m)
 				                         { m.MeshInstance.reset(); });
@@ -66,13 +61,8 @@ namespace Snowstorm
 		// still null), so the entity resolves as soon as its mesh arrives. Keeps the main thread from
 		// blocking on ~100 blob reads + GPU uploads in one frame (the load freeze, #84).
 		Ref<Mesh> resolved = assets.GetMeshAsync(mc.MeshHandle);
-		if (!resolved)
-		{
-			return; // still loading; try again next frame
-		}
-
-		// Only write if something actually changed
-		if (mc.MeshInstance != resolved)
+		if (DecideMeshResolve(mc.MeshHandle.Value(), static_cast<bool>(mc.MeshInstance), static_cast<bool>(resolved),
+		                      mc.MeshInstance == resolved) == MeshResolveAction::Assign)
 		{
 			reg.patch<MeshComponent>(e, [&](MeshComponent& m)
 			                         { m.MeshInstance = resolved; });
