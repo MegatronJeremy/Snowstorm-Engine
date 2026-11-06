@@ -11,6 +11,7 @@
 #include "VulkanBindlessManager.hpp"
 #include "VulkanPipelineStats.hpp"
 #include "VulkanContext.hpp"
+#include "Snowstorm/Render/SubgroupSizePolicy.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "VulkanDescriptorSetLayout.hpp"
 
@@ -201,7 +202,15 @@ namespace Snowstorm
 		               "Failed to create compute VkPipelineLayout");
 
 		// --- Compute pipeline ---
+		VkPipelineShaderStageRequiredSubgroupSizeCreateInfo subgroupCI{
+		    VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO};
+		const VulkanContext& ctx = VulkanContext::Get();
+		subgroupCI.requiredSubgroupSize = ResolveRequiredSubgroupSize(
+		    CVars::SubgroupSize.Get(), CVars::SubgroupOverrides.Get(), m_Desc.Shader->GetPath(),
+		    ctx.GetMinSubgroupSize(), ctx.GetMaxSubgroupSize(), ctx.SupportsSubgroupSizeControl());
+
 		VkPipelineShaderStageCreateInfo stage{};
+		stage.pNext = subgroupCI.requiredSubgroupSize != 0 ? &subgroupCI : nullptr;
 		stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
 		stage.module = module;

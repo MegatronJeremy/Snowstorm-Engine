@@ -10,6 +10,7 @@
 #include "Snowstorm/Render/Renderer.hpp"
 #include "Snowstorm/Render/Passes/RTHitLights.hpp"
 #include "Snowstorm/Render/Shader.hpp"
+#include "Snowstorm/Render/WorkgroupSize.hpp"
 #include "Snowstorm/Service/ServiceManager.hpp"
 
 #include <glm/glm.hpp>
@@ -93,6 +94,7 @@ namespace Snowstorm
 		{
 			defines.emplace_back("SS_GI_RESTIR=1");
 		}
+		AppendWorkgroupDefines(defines, CVars::WgGi.Get());
 		Ref<Shader> cs = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load("Engine/Shaders/GI.comp.hlsl", defines);
 		SS_CORE_ASSERT(cs, "Failed to load GI compute shader");
 		if (!cs->IsReady())
@@ -238,6 +240,6 @@ namespace Snowstorm
 		ctx->BindPipeline(m_Pipeline);
 		ctx->BindDescriptorSet(m_Sets[frameIndex], 0);
 		ctx->BindGlobalResources(); // set 3 = bindless textures/cubemaps + SceneTLAS (written by TlasBuildSystem)
-		ctx->Dispatch((outW + 7) / 8, (outH + 7) / 8, 1);
+		ctx->Dispatch(WorkgroupCount(outW, CVars::WgGi.Get()), WorkgroupCount(outH, CVars::WgGi.Get()), 1);
 	}
 }
