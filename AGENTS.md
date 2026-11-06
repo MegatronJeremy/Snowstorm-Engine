@@ -1011,6 +1011,8 @@ render unshadowed with a one-shot warning. `GPUDirectionalLight::ShadowSlot` car
 directional traces. Secondary directionals still light the scene but are invisible to GI, reflections, the
 path tracer, the sky disc and IBL, which read `Lights[0]` only. Each secondary costs one full scene depth pass.
 
+`Render/ShadowAtlasMath.hpp` holds the pure tile math `ShadowRenderer` renders through for the directional, spot and point atlases (row-major `ShadowAtlasTileRect`; a directional with `ShadowSlot` s uses tile s-1; point face f of slot s uses tile s*6+f). `ShadowAtlasMathTests` pin it GPU-free, beside the slot rules in `PrimaryDirectionalTests`.
+
 `Render/CascadeMath.hpp` holds the pure cascade math for a future sun CSM (#58): practical split scheme, slice corners, sphere fit and texel-snapped ortho matrix. `CascadeMathTests` cover it. `LightingSystem` runs `CascadeMath::ComputeFit` per frame for the primary directional behind `render.shadow.cascades.fit` (default off; `.count`, `.lambda`), using the primary perspective camera's unjittered view-projection, and hands the result to `RendererService::GetSunCascadeFit`. `render.shadow.cascades.render` (default off, needs `.fit`) adds a `CascadeShadows` pass that draws every caster into a 2x2 `CascadeAtlas` (`render.shadow.resolution` per tile, tile i = cascade i, `CascadeMath::AtlasTile`/`AtlasUvRect`), one depth pass per cascade without per-cascade culling, and publishes the atlas bindless index through `RendererService::GetCascadeAtlasIndex`. No shader samples the atlas and FrameCB is unchanged, so lighting is identical with it on; selection, per-cascade bias (`CascadeMath::BiasScale`) and the FrameCB block come next.
 
 ## Play modes
@@ -1053,6 +1055,8 @@ deliberately absent from `AudioSourceComponent.cpp`'s RTTR registration, and tha
 mechanism keeping them transient: that one property list is simultaneously the serialization set and the
 inspector set, so registering them to get a checkbox would write `"PlayRequested": true` into the
 `.world` file and re-trigger the sound on every load.
+
+The per-source decision (play, stop, latch, drop-and-clear with no instance) and the sweep predicate are the pure `DecideAudioSource`/`KeepAudioVoice` in `Systems/AudioSourceRule.hpp`, tested by `AudioSourceRuleTests`. Stop runs before Play and latches `Started`, so `PlayOnStart` never undoes a stop.
 
 Voices are owned by `AudioSystem`, never by the entity: entity deletion, scene load and the editor's
 Play/Stop snapshot restore all destroy components without notice, so a per-entity id would strand a
@@ -1230,7 +1234,7 @@ tinted at 0.7 alpha), and a rotated layer 1, order 1 checker over the logo it ov
 
 ## Neural upscaler tail fusion
 
-`neural.fuse` (default off) replaces the last conv layer and the residual add with one `NeuralConvAdd.comp.hlsl` dispatch when the last layer has 3 output channels (else the unfused chain runs): one dispatch, one barrier and one descriptor set fewer, and the residual map is never written to memory. It is a naive per-pixel loop at both precisions. `Conv2DResidualReference` is the CPU reference for the fused math (`NeuralMathTests` pins it to hand-computed values); it does not exercise the shader. Not run on a GPU: no unfused-vs-fused ms or output comparison exists yet. `NeuralConvAdd.comp` is RGA-baselined at 13 VGPRs, no spills, on every ASIC (#101).
+`neural.fuse` (default off) replaces the last conv layer and the residual add with one `NeuralConvAdd.comp.hlsl` dispatch when the last layer has 3 output channels (else the unfused chain runs): one dispatch, one barrier and one descriptor set fewer, and the residual map is never written to memory. It is a naive per-pixel loop at both precisions. `Conv2DResidualReference` is the CPU reference for the fused math (`NeuralMathTests` pins it to hand-computed values); it does not exercise the shader. Not run on a GPU: no unfused-vs-fused ms or output comparison exists yet. `NeuralConvAdd.comp` is RGA-baselined at 13 VGPRs, no spills, on every ASIC (#101). `Conv2DPairReference` is the oracle for the next fusion, two consecutive convs with the intermediate recomputed over the second layer's footprint and zero (not first(padding)) outside the image; no shader uses it yet. For the shipped 3/8 -> 16 -> 16 -> 3 model the candidate is the 16 -> 16 hidden layer into the 16 -> 3 tail: 9x recompute of the first layer's MACs per pixel against a 16-channel map no longer written or read, so it only pays if the pass is bandwidth-bound, which needs a GPU measurement.
 
 ## IBL invalidation
 

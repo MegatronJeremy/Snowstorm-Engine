@@ -3,6 +3,7 @@
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Render/CommandContext.hpp"
+#include "Snowstorm/Render/DenoiserTemporalRule.hpp"
 #include "Snowstorm/Render/RenderGraph.hpp"
 #include "Snowstorm/Render/RenderPhaseContext.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
@@ -19,22 +20,22 @@ namespace Snowstorm
 	{
 		// Temporal off (or no velocity buffer this frame): drop the valid flag so re-enabling starts clean, and
 		// pass the raw trace straight through (the à-trous filters it directly — spatial-only).
-		if (!cfg.TemporalActive || !velocity)
+		const DenoiserTemporalDecision decision =
+		    DecideDenoiserTemporal(cfg.TemporalActive, velocity != nullptr, inst.HistoryValid, fc.Renderer.GetFrameCounter());
+		inst.HistoryValid = decision.NextHistoryValid;
+		if (decision.PassThrough)
 		{
-			inst.HistoryValid = false;
 			return raw;
 		}
 
-		const uint32_t curIdx = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
-		const Ref<TextureView> curHistView = inst.HistoryView[curIdx];
-		const Ref<TextureView> prevHistView = inst.HistoryView[curIdx ^ 1u];
-		const Ref<TextureView> curMomView = inst.MomentsView[curIdx];       // moments share the history parity
-		const Ref<TextureView> prevMomView = inst.MomentsView[curIdx ^ 1u]; // so they can't desync from the color
+		const Ref<TextureView> curHistView = inst.HistoryView[decision.CurIdx];
+		const Ref<TextureView> prevHistView = inst.HistoryView[decision.PrevIdx];
+		const Ref<TextureView> curMomView = inst.MomentsView[decision.CurIdx];   // moments share the history parity
+		const Ref<TextureView> prevMomView = inst.MomentsView[decision.PrevIdx]; // so they can't desync from the color
 
 		// History invalid on the first temporal frame (fresh buffers) / after a resize / after a scene cut
 		// (RenderSystem resets the flag centrally). The flag lives on the instance (#132) — no side-set.
-		const bool historyValid = inst.HistoryValid;
-		inst.HistoryValid = true;
+		const bool historyValid = decision.HistoryValid;
 
 		const float nearPlane = cam.Cam ? cam.Cam->PerspectiveNear : 0.1f;
 		const float farPlane = cam.Cam ? cam.Cam->PerspectiveFar : 500.0f;
