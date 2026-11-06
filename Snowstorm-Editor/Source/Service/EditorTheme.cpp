@@ -139,6 +139,11 @@ namespace Snowstorm::EditorTheme
 		}
 	}
 
+	namespace
+	{
+		ImFont* s_HeaderFont = nullptr;
+	}
+
 	void LoadMonospaceFont()
 	{
 		// Try a few common names so dropping any one of them into Engine/Fonts just works.
@@ -157,6 +162,7 @@ namespace Snowstorm::EditorTheme
 				ImGuiIO& io = ImGui::GetIO();
 				if (io.Fonts->AddFontFromFileTTF(path.c_str(), 16.0f) != nullptr)
 				{
+					s_HeaderFont = io.Fonts->AddFontFromFileTTF(path.c_str(), 20.0f);
 					SS_CORE_INFO("Editor theme: loaded monospace font '{}'.", path);
 					return;
 				}
@@ -185,9 +191,17 @@ namespace Snowstorm::EditorTheme
 			ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
 		}
 
+		if (s_HeaderFont != nullptr)
+		{
+			ImGui::PushFont(s_HeaderFont);
+		}
 		ImGui::PushStyleColor(ImGuiCol_Text, Green);
 		ImGui::TextUnformatted(("// " + upper).c_str());
 		ImGui::PopStyleColor();
+		if (s_HeaderFont != nullptr)
+		{
+			ImGui::PopFont();
+		}
 		ImGui::Separator();
 	}
 

@@ -197,6 +197,10 @@ instead of a raw `VkImage 0x...` handle.
 
 **Headless mode (`SS_HEADLESS=1`, or `--headless` on `smoke-test.py` and `perf-bench.py`) needs no unlocked desktop.** The `headless` CVar creates the GLFW window hidden (ImGui's GLFW backend and input still get a window handle), creates no `VkSurfaceKHR` or swapchain, and makes `VulkanContext` own four offscreen BGRA8 images in the swapchain's place. `BeginFrame` signals the image-available semaphore with an empty submit instead of acquiring, and the end of the frame consumes the render-finished semaphore with an empty wait-only submit instead of presenting. Device and queues, the frame graph, asset streaming and the settle check run as before. Both scripts print `Mode:` as `HEADLESS` or `windowed`. Headless perf numbers skip present, so capture committed perf baselines windowed.
 
+**A hung GPU must not take the machine with it.** The harness kills the process tree when the app prints nothing for `--stall-timeout` seconds (default 60; 0 = off) as well as at the wall-clock `--timeout`, and `VK_ERROR_DEVICE_LOST` / "device lost" anywhere in the log fails the run. On AMD a hung submission can end in a Windows bugcheck (0x133) instead of a device reset, so the earliest sign has to stop the run. `Scripts/test_smoke_test_watchdog.py` covers the watchdog and the marker GPU-free.
+
+**Cached SPIR-V is validated before use.** `Engine/cache/shaders/<stem>_<key>.spv` has a sidecar `.spv.key` (key, size, content hash). `ValidateCachedSpirv` (`Render/SpirvBlobValidation.hpp`, `SpirvBlobValidationTests`) rejects a blob with a bad magic, a version outside 1.0-1.5, a size or hash that differs from its stamp, a stamp for another key, or no stamp; `VulkanShader` then deletes it and recompiles with dxc. A cache from before the sidecar existed is recompiled once, so a build shipping a warm cache without dxc must ship the sidecars too. A rejected blob is deleted even when dxc is missing, so that call then fails. Deletion happens only under the per-path compile lock; the unlocked pre-check never removes. The compiler publishes the stamp before renaming the blob into place, so a blob is never visible without its stamp. Unverified on a GPU.
+
 **A run passes only once assets settle.** After the frame budget the app keeps running until
 `AssetManagerSingleton::PendingLoadCount() == 0` and no bindless slot is still the placeholder
 (`UnsettledReason`, reached through `Layer::SmokeUnsettled`), until `smoke.settle.seconds` have passed since process start
@@ -239,7 +243,7 @@ py Scripts/perf-bench.py --gpu 5070         # pin the adapter on a multi-GPU box
 The config matrix (`rt-off → shadows → +ao → +refl → +gi`) enables one RT effect at a time, so the
 **Forward-pass ms delta between adjacent configs is that effect's cost**: the RT effects are inline in
 the Forward pass, so this A/B *is* the per-effect timing (there's no separate GPU scope per effect, by
-design). Two trailing configs sit outside that ladder, each repeating one rung with a different
+design: shadows, AO, GI and reflections are branches of one DefaultLit fragment shader, so a timestamp pair cannot separate them without splitting the draw). `Forward` carries nested rows (`depth` 1 in the JSON): `ForwardOpaque` (the batch flush, where the inline RT work lives), `Sky` and `Transparent`. A new row reads as a new pass to the gate until a baseline is re-captured. Two trailing configs sit outside that ladder, each repeating one rung with a different
 producer for the same effect: `ssgi` repeats `+gi` with the screen-space GI producer (so it diffs
 against `+refl`), and `shadows-stoch` repeats `shadows` with the stochastic aggregate pass
 (MegaLights-lite) instead of one inline ray per light (so it diffs against `rt-off`). Read the
@@ -432,17 +436,16 @@ occupancy drops (fewer waves), a spill appears (0 to >0, hard fail), or LDS/ISA 
 `--threshold` (default 10%). Raw VGPR% is intentionally not gated -- a VGPR rise that doesn't cross a
 wave boundary costs nothing. The occupancy is *theoretical* and VGPR-only (LDS occupancy needs the
 workgroup size RGA offline reports as 0); measure achieved occupancy with RGP. Baselines are committed
-for `gfx1100` (RX 7900 XTX), `gfx1200` (RX 9060 XT) and `gfx1201`. On `gfx1200` exactly two of 47 shaders are
-occupancy-limited, `DefaultLit.frag[inlineshadow]` (127 VGPRs, 10/16) and `GI.comp[restir]` (103, 12/16);
-every other shader hits 16/16, and only `NeuralConv.comp` carries any scratch (272 bytes), off the render
-path. `GIDenoise.comp` was the worst offender at 191 VGPRs / 8 waves until d74cb76 rolled its outer
+for `gfx1100` (RX 7900 XTX), `gfx1200` (RX 9060 XT) and `gfx1201`. On `gfx1200` exactly two of 52 shaders are
+occupancy-limited, `DefaultLit.frag[inlineshadow]` (130 VGPRs, 10/16) and `GI.comp[restir]` (103, 12/16);
+every other shader hits 16/16 and none carries scratch. `GIDenoise.comp` was the worst offender at 191 VGPRs / 8 waves until d74cb76 rolled its outer
 a-trous loop.
 
 **Occupancy is defined once, in `vgpr_occupancy()` here, and imported by anything else that needs it.**
 `Scripts/shader-stats.py` briefly carried its own copy with an 8-VGPR granularity, which disagreed with
 this model (12 on gfx11, 24 on gfx12) and scored `DefaultLit.frag[inlineshadow]` 12/16 against the gate's
 10/16. Two tools disagreeing about the same hardware is worse than either being wrong on its own, and a
-count near an allocation boundary is exactly where it shows: 127 sits one above `6*24 = 144`.
+count near an allocation boundary is exactly where it shows: on gfx12 a shader past `5*24 = 120` VGPRs drops from 12 to 10 waves.
 
 **RGA is AMD-only**, so this gate cannot cover NVIDIA: its target list is `gfx11xx`/`gfx12xx` and
 nothing else. The Vulkan-native equivalent is `VK_KHR_pipeline_executable_properties`
@@ -599,6 +602,7 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   the new build writes it. `Scripts/test_quality_bench_hdr.py` covers the metric plumbing on synthetic
   arrays. The engine writes `_hdr.npy` (next bullet) but it has not run on a GPU, so no
   HDR-FLIP number exists and the ordering against LDR-FLIP is unmeasured.
+- **HDR-FLIP run-to-run spread (#157).** `py Scripts/hdr-flip-noise.py --ref <ref base> --runs <repeat bases...>` scores N repeat captures of one technique against one reference and prints the mean, stdev and range of `flipHdr`. That spread is the floor for any HDR-FLIP gate threshold; the script picks none and writes no baseline. `Scripts/test_hdr_flip_noise.py` covers it on synthetic arrays; no GPU capture has been measured with it.
 - **HDR-FLIP under motion (#157).** `quality-motion.py` reports `flipHdr` per probe frame and as a mean (`HDR-FLIP ... (not gated)`), pairing each moving frame's `_f<N>_hdr.npy` with the HDR twin of its frozen-frame reference (`motion-f<N>__<key>_hdr.npy` in `Scripts/.quality-ref-cache`, written when the reference is captured). A reference cached before HDR capture has no twin and reads n/a until `--fresh-ref`. `flipHdr` is stored in the motion baseline JSON but never compared. `Scripts/test_quality_motion_hdr.py` covers the plumbing with stubbed metrics; no HDR number from a GPU run exists.
 - **HDR capture (#157).** With capture on, the engine also writes `<path>_hdr.npy` beside `_ldr.npy` (motion frames: `_f<N>_hdr.npy`): `v.SceneColor` as the tonemap chain receives it, linear pre-exposure radiance, HxWx4, top-down, `<f2` for the RGBA16F real-time path and `<f4` for the RGBA32F path tracer. `render.exposure` is logged with it, not applied. It is a 1:1 copy into a texture the capture effect owns (`TransferSrc` on no hot target, no cost when capture is off) read back in the same pass as the LDR present, so the pair is one frame. It excludes everything after `SceneColor`: FXAA and CAS (TAA and the upscaler are included), so it cannot replace the LDR numbers. Not run on a GPU as of its PR; the pure format rules are `QualityCaptureFormat.hpp`, tested in `QualityCaptureFormatTests`.
 - **`render.pathtrace.sampler` (#156) changes only the PT's low-sample error.** 0 (default) is PCG white noise seeded with the frame counter; 1 is Owen-scrambled 2D Sobol padded per decision (`Include/PtSampler.hlsli`, mirrored in `Render/QmcSampler.hpp` and tested by `QmcSamplerTests`), seeded per pixel only, so a Reset replays the same sequence. Fixed pair ids per decision keep an early-terminated path from shifting later dimensions. Every decision draws from it (pixel jitter, sun/point/spot/env NEE, lobe choice, BSDF, Russian roulette); `QmcSamplerTests` also fail when an integer constant in the shader copy is missing from the C++ mirror. The estimator and pdfs are unchanged, so the converged reference (and every committed quality baseline) is unaffected while the default stays 0; switching it restarts accumulation. Not yet run on a GPU, and the fixed-spp error ratio against PCG (the stop rule in the design) is unmeasured. `py Scripts/pt-convergence.py` produces it: per viewpoint, PT captures at N accumulated spp (1/4/16/64, `render.pathtrace.spp=1`, exact window of N frames) for each sampler, scored (FLIP, MSE) against the cached converged sampler-0 reference of `quality-bench.py`, with the PCG/Sobol ratio, the MSE log-log slope, a converged-equality read (mean-luma difference at the reference length, heuristic 0.5% tolerance) and the stop rule (FLIP ratio >= 1.5 at 4 and 16 spp). It gates nothing and writes no baseline. `Scripts/test_pt_convergence.py` covers the pure parts; the script has not run on a GPU.
@@ -1011,6 +1015,8 @@ render unshadowed with a one-shot warning. `GPUDirectionalLight::ShadowSlot` car
 directional traces. Secondary directionals still light the scene but are invisible to GI, reflections, the
 path tracer, the sky disc and IBL, which read `Lights[0]` only. Each secondary costs one full scene depth pass.
 
+`Render/ShadowAtlasMath.hpp` holds the pure tile math `ShadowRenderer` renders through for the directional, spot and point atlases (row-major `ShadowAtlasTileRect`; a directional with `ShadowSlot` s uses tile s-1; point face f of slot s uses tile s*6+f). `ShadowAtlasMathTests` pin it GPU-free, beside the slot rules in `PrimaryDirectionalTests`.
+
 `Render/CascadeMath.hpp` holds the pure cascade math for a future sun CSM (#58): practical split scheme, slice corners, sphere fit and texel-snapped ortho matrix. `CascadeMathTests` cover it. `LightingSystem` runs `CascadeMath::ComputeFit` per frame for the primary directional behind `render.shadow.cascades.fit` (default off; `.count`, `.lambda`), using the primary perspective camera's unjittered view-projection, and hands the result to `RendererService::GetSunCascadeFit`. `render.shadow.cascades.render` (default off, needs `.fit`) adds a `CascadeShadows` pass that draws every caster into a 2x2 `CascadeAtlas` (`render.shadow.resolution` per tile, tile i = cascade i, `CascadeMath::AtlasTile`/`AtlasUvRect`), one depth pass per cascade without per-cascade culling, and publishes the atlas bindless index through `RendererService::GetCascadeAtlasIndex`. No shader samples the atlas and FrameCB is unchanged, so lighting is identical with it on; selection, per-cascade bias (`CascadeMath::BiasScale`) and the FrameCB block come next.
 
 ## Play modes
@@ -1053,6 +1059,8 @@ deliberately absent from `AudioSourceComponent.cpp`'s RTTR registration, and tha
 mechanism keeping them transient: that one property list is simultaneously the serialization set and the
 inspector set, so registering them to get a checkbox would write `"PlayRequested": true` into the
 `.world` file and re-trigger the sound on every load.
+
+The per-source decision (play, stop, latch, drop-and-clear with no instance) and the sweep predicate are the pure `DecideAudioSource`/`KeepAudioVoice` in `Systems/AudioSourceRule.hpp`, tested by `AudioSourceRuleTests`. Stop runs before Play and latches `Started`, so `PlayOnStart` never undoes a stop.
 
 Voices are owned by `AudioSystem`, never by the entity: entity deletion, scene load and the editor's
 Play/Stop snapshot restore all destroy components without notice, so a per-entity id would strand a
@@ -1228,7 +1236,7 @@ tinted at 0.7 alpha), and a rotated layer 1, order 1 checker over the logo it ov
 
 ## Neural upscaler tail fusion
 
-`neural.fuse` (default off) replaces the last conv layer and the residual add with one `NeuralConvAdd.comp.hlsl` dispatch when the last layer has 3 output channels (else the unfused chain runs): one dispatch, one barrier and one descriptor set fewer, and the residual map is never written to memory. It is a naive per-pixel loop at both precisions. `Conv2DResidualReference` is the CPU reference for the fused math (`NeuralMathTests` pins it to hand-computed values); it does not exercise the shader. Not run on a GPU: no unfused-vs-fused ms or output comparison exists yet. `NeuralConvAdd.comp` is RGA-baselined at 13 VGPRs, no spills, on every ASIC (#101).
+`neural.fuse` (default off) replaces the last conv layer and the residual add with one `NeuralConvAdd.comp.hlsl` dispatch when the last layer has 3 output channels (else the unfused chain runs): one dispatch, one barrier and one descriptor set fewer, and the residual map is never written to memory. It is a naive per-pixel loop at both precisions. `Conv2DResidualReference` is the CPU reference for the fused math (`NeuralMathTests` pins it to hand-computed values); it does not exercise the shader. Not run on a GPU: no unfused-vs-fused ms or output comparison exists yet. `NeuralConvAdd.comp` is RGA-baselined at 13 VGPRs, no spills, on every ASIC (#101). `Conv2DPairReference` is the oracle for the next fusion, two consecutive convs with the intermediate recomputed over the second layer's footprint and zero (not first(padding)) outside the image; no shader uses it yet. For the shipped 3/8 -> 16 -> 16 -> 3 model the candidate is the 16 -> 16 hidden layer into the 16 -> 3 tail: 9x recompute of the first layer's MACs per pixel against a 16-channel map no longer written or read, so it only pays if the pass is bandwidth-bound, which needs a GPU measurement.
 
 ## Shader hot-reload
 
@@ -1269,7 +1277,7 @@ harnesses set so a run depends on code defaults plus its own overrides, never on
 A CVar named `validation.extra` is set by env `SS_VALIDATION_EXTRA` **or** CLI `--validation.extra`
 (dots→`_`, uppercased, `SS_` prefix for env). Bools accept presence (`--flag`, or env set to
 anything but `0`/`false`/`off`/`no`). Run any executable with `--list-cvars` (or `--help`) to print
-every CVar with its value, type, env name, and description. `EngineCVars.cpp` declares ~170 of them
+every CVar with its value, type, env name, and description. `EngineCVars.cpp` declares them
 (rendering technique modes, denoiser knobs, path tracer, benchmark hooks, validation); treat
 `--list-cvars` as the authoritative list rather than any enumeration here. Startup resolution runs
 once, but CVars can also be **edited live at runtime** from the editor's *Debug > Console Variables*
@@ -1509,6 +1517,12 @@ Worked example, the **asset pipeline** (the engine's biggest deliberate simplifi
   handle. When they did not, every content-browser scan re-imported every asset under a fresh handle and
   the registry grew by its own size per run, with no error and no crash: it reads as an ordinary content
   change and gets committed by a routine `git add`. `AssetIdentityTests` pins it.
+
+  **A save of an unchanged registry is byte-identical.** `AssetRegistry::Serialize` writes rows sorted by
+  path, since the handle map is unordered and every scene save rewrites the file. The Content Browser
+  auto-imports every file under a project's `assets/`, so editor-owned content lives under `Engine/`
+  (the light-icon atlas is `Engine/Icons/icons.png`), never in a project. `AssetRegistrySerializeTests`
+  pins both, and fails on a committed registry that is not in sorted form.
 
 **Cache eviction.** `MeshLibrary`, `ShaderLibrary` and `AssetManagerSingleton`'s handle caches are swept
 by `AssetManagerSingleton::EvictUnreferenced()` on Open Scene, after the old entities are cleared: an entry

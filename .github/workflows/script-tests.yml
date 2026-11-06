@@ -1,0 +1,40 @@
+name: script-tests
+
+# Every Scripts/test_*.py runs here, GPU-free: they test the pure parts of the bench, tune and
+# tooling scripts. Excluded: none. The gates themselves (smoke, perf-bench, quality-bench,
+# quality-motion, shader-stats capture) need a GPU and run on the owner's PC, not here.
+# numpy and flip-evaluator (pinned as in AGENTS.md) serve the quality-bench/-motion test imports;
+# torch/lpips/ColorVideoVDP are not installed, and the tests that touch them assert the absent path.
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'Scripts/**'
+      - '.github/workflows/script-tests.yml'
+  pull_request:
+    paths:
+      - 'Scripts/**'
+      - '.github/workflows/script-tests.yml'
+
+concurrency:
+  group: script-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: pip install pytest numpy flip-evaluator==1.7
+
+      - name: Unit tests (Scripts/test_*.py)
+        run: python -m pytest Scripts -q
