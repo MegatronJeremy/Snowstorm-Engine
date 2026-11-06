@@ -298,6 +298,8 @@ namespace Snowstorm::CVars
 	extern CVar<std::string> GpuSelect;
 	extern CVar<bool> ShaderStats;
 	extern CVar<std::string> ShaderStatsPath;
+	extern CVar<bool> VulkanCaps;
+	extern CVar<std::string> VulkanCapsPath;
 	extern CVar<int> SubgroupSize;
 	extern CVar<std::string> SubgroupOverrides;
 

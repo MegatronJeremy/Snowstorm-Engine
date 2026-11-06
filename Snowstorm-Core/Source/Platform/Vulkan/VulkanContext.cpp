@@ -18,6 +18,7 @@
 
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Utility/EnginePaths.hpp"
+#include "VulkanDeviceCaps.hpp"
 #include "VulkanPipelineStats.hpp"
 
 //-- compile the actual implementation in this file
@@ -759,6 +760,7 @@ namespace Snowstorm
 		}
 		SS_CORE_INFO("fp16 shader math (shaderFloat16 + 16-bit storage): {}.",
 		             m_Float16Supported ? "supported (neural fp16 path enabled)" : "not supported (fp32 fallback)");
+		VulkanDeviceCaps::Dump(m_PhysicalDevice);
 		if (enableValidationLayers && CVars::ValidationGpu.Get())
 		{
 			SS_CORE_INFO("GPU-assisted validation: {}.",
