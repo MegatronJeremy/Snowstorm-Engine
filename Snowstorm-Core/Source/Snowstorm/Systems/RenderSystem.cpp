@@ -1,6 +1,7 @@
 #include "RenderSystem.hpp"
 
 #include <chrono>
+#include <string_view>
 
 #include "Snowstorm/Components/CameraComponent.hpp"
 #include "Snowstorm/Math/Bounds.hpp"
@@ -22,6 +23,7 @@
 #include "Snowstorm/Assets/AssetManagerSingleton.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "Snowstorm/Systems/ReflectionGeometrySingleton.hpp"
+#include "Snowstorm/Render/FrameGlobalPassGate.hpp"
 #include "Snowstorm/Render/LightClusterMath.hpp"
 #include "Snowstorm/Render/RenderGraph.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
@@ -178,8 +180,32 @@ namespace Snowstorm
 		renderer.SetEmissiveLightList(reflGeo.EmissiveAddress, reflGeo.EmissiveCount);
 
 		const EnvironmentDataBlock& env = renderer.GetEnvironment();
-		SetupIBL(fc, env);
-		m_ShadowRenderer.RenderShadows(fc);
+		// Only a Scene3D viewport samples the IBL maps and shadow maps (#344). Mirrors RenderViewport's bail
+		// conditions so the gate matches the viewports that actually draw. When skipped, the hand-offs are
+		// zeroed so nothing keeps a stale index; the baked maps stay and a later Scene3D frame re-enables them.
+		std::vector<CameraComponent::RenderPathType> renderingPaths;
+		for (const auto vpEntity : viewportView)
+		{
+			if (!reg.Read<RenderTargetComponent>(vpEntity).Target)
+			{
+				continue;
+			}
+			const CameraPick pick = FindCameraForViewport(reg, vpEntity);
+			if (pick.Entity != entt::null && pick.Rt && pick.Transform && pick.Visibility)
+			{
+				renderingPaths.push_back(pick.Cam->RenderPath);
+			}
+		}
+		if (NeedsSceneGlobalPasses(renderingPaths))
+		{
+			SetupIBL(fc, env);
+			m_ShadowRenderer.RenderShadows(fc);
+		}
+		else
+		{
+			renderer.SetIBLData(0, 0, 0, 0);
+			renderer.SetShadowData(glm::mat4(1.0f), 0, 0);
+		}
 
 		// RT editor picking (#118 follow-up): trace the queued click ray against the scene TLAS in a tiny
 		// compute pass, so the result reads back on a later frame (RecordPick latches the retired dispatch,
@@ -429,6 +455,7 @@ namespace Snowstorm
 		// frame later (its submit fence retired) this maps them and writes the .ssibl so the next run hits the
 		// cache. No-op on a cache hit or when no save is pending.
 		m_IBLBakePass.PumpCacheSave();
+		m_IBLBakePass.AdvanceFrame();
 
 		// Push the baked IBL indices into the renderer's FrameCB assembly, but only while IBL is enabled.
 		// Toggling off writes zeros, so DefaultLit falls back to the analytic ambient (the maps stay baked,
@@ -728,6 +755,10 @@ namespace Snowstorm
 			d.Layer = sprite.Layer;
 			d.Order = sprite.Order;
 			d.Sequence = static_cast<uint32_t>(entt::to_integral(e));
+			if (!SpriteIntersectsView(d, cam.Rt->ViewProjection))
+			{
+				continue;
+			}
 			d.TextureIndex = sprite.View->GetGlobalBindlessIndex();
 			draws.push_back(d);
 		}
@@ -757,6 +788,25 @@ namespace Snowstorm
 		                  {
 			                  m_SpritePass.Draw(c, frameIndex, frameCounter, viewProjection, batch, format);
 		                  }});
+
+		// Headless capture (#348): the same effect as the Scene3D chain, so the settle rule and the .npy layout
+		// cannot diverge. Its Sampled read of the present image orders it after Sprites.
+		if (CVars::QualityCaptureFrames.Get() > 0)
+		{
+			if (m_ViewportEffects.empty())
+			{
+				BuildViewportEffects();
+			}
+			ViewportRenderContext v{.Frame = fc, .RT = vpRT, .Cam = cam, .Suffix = passSuffix};
+			v.PathTraceSceneSettling = SingletonView<AssetManagerSingleton>().PendingLoadCount() > 0;
+			for (const Scope<IViewportEffect>& effect : m_ViewportEffects)
+			{
+				if (std::string_view(effect->Name()) == "QualityCapture" && effect->ShouldRun(v))
+				{
+					effect->Contribute(v);
+				}
+			}
+		}
 	}
 
 	void RenderSystem::DrawVisibleMeshes(FrameContext& fc, const CameraPick& cam,
@@ -921,7 +971,11 @@ namespace Snowstorm
 				                                    fc.Renderer.DrawMesh(tr.GetTransformMatrix(), mesh.MeshInstance, mat.MaterialInstance, albedoIndex, customData);
 			                                    });
 
+			                  // Nested under the pass scope: Forward = ForwardOpaque + Sky + Transparent + gaps. The RT
+			                  // effects are inline DefaultLit.frag code in these draws, so no finer scope exists.
+			                  c.BeginGpuScope("ForwardOpaque");
 			                  fc.Renderer.Flush();
+			                  c.EndGpuScope();
 
 			                  // Procedural sky after opaque meshes (far-plane, only fills uncovered pixels).
 			                  // Formats come from the target so the sky pipeline stays render-pass-compatible.

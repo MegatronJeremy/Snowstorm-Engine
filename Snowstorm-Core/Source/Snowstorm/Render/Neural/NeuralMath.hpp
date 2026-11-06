@@ -133,4 +133,69 @@ namespace Snowstorm::Neural
 		}
 		return out;
 	}
+	// Oracle for a fused conv pair (#101): `second(first(in))` computed per output pixel with the intermediate
+	// recomputed over the second layer's footprint and never stored. Outside the image the intermediate is ZERO
+	// (the second layer's padding), not first(zero-padded input): applying the first layer at a padded position
+	// would feed its bias and activation into the second layer.
+	inline FeatureMap Conv2DPairReference(const FeatureMap& in, const ConvLayer& first, const ConvLayer& second)
+	{
+		const int H = static_cast<int>(in.Height), W = static_cast<int>(in.Width);
+		const int r1 = static_cast<int>(first.KernelSize / 2), r2 = static_cast<int>(second.KernelSize / 2);
+
+		const auto firstAt = [&](const uint32_t mc, const int y, const int x)
+		{
+			float acc = mc < first.Bias.size() ? first.Bias[mc] : 0.0f;
+			for (uint32_t ic = 0; ic < first.InChannels; ++ic)
+			{
+				for (int ky = 0; ky < static_cast<int>(first.KernelSize); ++ky)
+				{
+					for (int kx = 0; kx < static_cast<int>(first.KernelSize); ++kx)
+					{
+						const int sy = y + ky - r1, sx = x + kx - r1;
+						if (sy < 0 || sy >= H || sx < 0 || sx >= W)
+						{
+							continue;
+						}
+						const size_t w = ((static_cast<size_t>(mc) * first.InChannels + ic) * first.KernelSize + ky) * first.KernelSize + kx;
+						acc += in.At(ic, sy, sx) * first.Weights[w];
+					}
+				}
+			}
+			return ApplyActivation(acc, first.Act);
+		};
+
+		FeatureMap out;
+		out.Channels = second.OutChannels;
+		out.Height = in.Height;
+		out.Width = in.Width;
+		out.Data.assign(static_cast<size_t>(out.Channels) * H * W, 0.0f);
+		for (int y = 0; y < H; ++y)
+		{
+			for (int x = 0; x < W; ++x)
+			{
+				for (uint32_t oc = 0; oc < second.OutChannels; ++oc)
+				{
+					float acc = oc < second.Bias.size() ? second.Bias[oc] : 0.0f;
+					for (uint32_t mc = 0; mc < second.InChannels; ++mc)
+					{
+						for (int ky = 0; ky < static_cast<int>(second.KernelSize); ++ky)
+						{
+							for (int kx = 0; kx < static_cast<int>(second.KernelSize); ++kx)
+							{
+								const int sy = y + ky - r2, sx = x + kx - r2;
+								if (sy < 0 || sy >= H || sx < 0 || sx >= W)
+								{
+									continue;
+								}
+								const size_t w = ((static_cast<size_t>(oc) * second.InChannels + mc) * second.KernelSize + ky) * second.KernelSize + kx;
+								acc += firstAt(mc, sy, sx) * second.Weights[w];
+							}
+						}
+					}
+					out.At(oc, y, x) = ApplyActivation(acc, second.Act);
+				}
+			}
+		}
+		return out;
+	}
 }
