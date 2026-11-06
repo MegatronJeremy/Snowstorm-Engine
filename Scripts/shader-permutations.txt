@@ -3,6 +3,9 @@
 # Only combinations a call site actually requests belong here: the full cross product is how variant
 # counts explode. A shader without a line cooks once with no feature defines.
 #
+# Workgroup size (render.wg.* CVars) is not listed: the default 8x8 is the cooked variant, and a non-default
+# SS_WG_X/SS_WG_Y permutation compiles at runtime.
+#
 # Capability variants are alternatives on one device and fold to the worst case in the occupancy gate;
 # feature variants run simultaneously in one frame, so each is gated on its own.
 

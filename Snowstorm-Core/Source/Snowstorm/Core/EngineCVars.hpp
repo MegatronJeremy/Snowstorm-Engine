@@ -231,6 +231,15 @@ namespace Snowstorm::CVars
 	// froze the editor). Not Persist: it's a dev flag, not a saved user setting. RT permutations still drop
 	// -fspv-debug even here (dxc 1.9 crash on -fspv-debug + inline ray query).
 	extern CVar<bool> ShadersDebug;
+	extern CVar<int> ShadersOpt;
+	extern CVar<bool> Fp16;
+	// Compute workgroup side (square tile) per pass family; see Render/WorkgroupSize.hpp. Startup-only.
+	extern CVar<int> WgAo;
+	extern CVar<int> WgGi;
+	extern CVar<int> WgReflection;
+	extern CVar<int> WgShadow;
+	extern CVar<bool> AsPreferFastBuild;
+	extern CVar<bool> AsCompaction;
 
 	// One-shot bake tool: populate a fresh scene, serialize it to a .world under Assets/Scenes/, then
 	// exit. Afterwards the scene is opened from the Content Browser like any other .world. Empty
@@ -289,6 +298,8 @@ namespace Snowstorm::CVars
 	extern CVar<std::string> GpuSelect;
 	extern CVar<bool> ShaderStats;
 	extern CVar<std::string> ShaderStatsPath;
+	extern CVar<int> SubgroupSize;
+	extern CVar<std::string> SubgroupOverrides;
 
 	// Use opacity micromaps for RT cutout geometry when the device supports them (VK_EXT_opacity_micromap):
 	// the hardware resolves coverage per-microtriangle so the any-hit alpha test runs only on UNKNOWN edges.
@@ -469,6 +480,7 @@ namespace Snowstorm::CVars
 	extern CVar<bool> ShadowCascadeFit;
 	extern CVar<bool> TransparentPass;
 	extern CVar<bool> ShadowCascadeRender;
+	extern CVar<bool> ShadowCascadeShade;
 	extern CVar<int> ShadowCascadeCount;
 	extern CVar<float> ShadowCascadeLambda;
 
@@ -775,6 +787,7 @@ namespace Snowstorm::CVars
 	// Off: sky arrives only via continuation rays (the pre-NEE integrator, bit-identical). Unbiased either way;
 	// the converged image is the same, only convergence speed differs. Mostly a dev/A-B knob.
 	extern CVar<bool> PathTraceEnvNee;
+	extern CVar<bool> PathTraceEmissiveNee; // #154: emissive-surface NEE + MIS in the path tracer
 	extern CVar<int> PathTraceSampler;
 	extern CVar<bool> PathTraceValidReflection;
 	// True when the reference path tracer should run (render.pathtrace on AND an RT-capable device). Gates the

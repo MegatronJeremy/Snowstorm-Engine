@@ -210,18 +210,19 @@ namespace Snowstorm
 		void SetSunShadowFit(const SunShadowFit& fit) { m_SunShadowFit = fit; }
 		[[nodiscard]] const SunShadowFit& GetSunShadowFit() const { return m_SunShadowFit; }
 
-		// Per-frame sun cascade fit from LightingSystem behind render.shadow.cascades.fit (#58). Unconsumed
-		// until the cascade atlas pass lands.
+		// Per-frame sun cascade fit from LightingSystem behind render.shadow.cascades.fit (#58). ViewDepthRow
+		// gives the fit camera's positive view depth as dot(row, vec4(worldPos, 1)); the splits are in that depth.
 		struct SunCascadeFit
 		{
 			bool Valid = false;
+			glm::vec4 ViewDepthRow{0.0f};
 			CascadeMath::CascadeFit Fit{};
 		};
 		void SetSunCascadeFit(const SunCascadeFit& fit) { m_SunCascadeFit = fit; }
 		[[nodiscard]] const SunCascadeFit& GetSunCascadeFit() const { return m_SunCascadeFit; }
 
-		// Bindless index of the sun cascade atlas rendered under render.shadow.cascades.render (0 = none). A plain
-		// handoff, not FrameData: no shader samples it until the cascade FrameCB block lands (#58).
+		// Bindless index of the sun cascade atlas rendered under render.shadow.cascades.render (0 = none). FrameCB
+		// carries the cascade block only under render.shadow.cascades.shade (#58).
 		void SetCascadeAtlasIndex(const uint32_t index) { m_CascadeAtlasIndex = index; }
 		[[nodiscard]] uint32_t GetCascadeAtlasIndex() const { return m_CascadeAtlasIndex; }
 
@@ -237,6 +238,13 @@ namespace Snowstorm
 		// vk::RawBufferLoad. 0 = no table this frame (reflection falls back to the sky cube). Mirrors
 		// SetIBLData/SetShadowData (a plain per-frame handoff, not GPU FrameData).
 		void SetReflectionGeometryAddress(const uint64_t address) { m_ReflectionTableAddress = address; }
+		void SetEmissiveLightList(const uint64_t address, const uint32_t count)
+		{
+			m_EmissiveListAddress = address;
+			m_EmissiveListCount = count;
+		}
+		[[nodiscard]] uint64_t GetEmissiveListAddress() const { return m_EmissiveListAddress; }
+		[[nodiscard]] uint32_t GetEmissiveListCount() const { return m_EmissiveListCount; }
 		// The per-instance geometry-table device address published this frame (0 = no table). The half-res GI
 		// compute pass (#124) reads it to resolve ray hits, same as the inline reflection/GI path via FrameCB.
 		[[nodiscard]] uint64_t GetReflectionGeometryAddress() const { return m_ReflectionTableAddress; }
@@ -467,9 +475,9 @@ namespace Snowstorm
 		// (cf. Unreal's FSceneViewExtension). Enqueue from any phase before Render. The queue is drained every
 		// frame, so recurring work is enqueued every frame.
 		//
-		// A texture the pass writes and a later pass samples through a bindless index must be left Sampled by
-		// a pass that declares that read: the graph transitions only declared accesses, and a material reaching
-		// the texture through bindless declares none.
+		// A texture the pass writes and a later pass samples through a bindless index is listed in the pass's
+		// PublishSampled: the graph transitions only declared accesses, and a material reaching the texture
+		// through bindless declares none.
 		void EnqueueGraphPass(RenderGraph::Pass pass) { m_PendingGraphPasses.push_back(std::move(pass)); }
 
 		[[nodiscard]] std::vector<RenderGraph::Pass> DrainGraphPasses() { return std::exchange(m_PendingGraphPasses, {}); }
@@ -529,6 +537,8 @@ namespace Snowstorm
 		// GPU device address of this frame's RT reflection geometry table (#118); pushed by
 		// SetReflectionGeometryAddress, read into FrameCB in AcquireFrameSet. 0 = no table.
 		uint64_t m_ReflectionTableAddress = 0;
+		uint64_t m_EmissiveListAddress = 0; // path tracer emissive triangle list (0 = none)
+		uint32_t m_EmissiveListCount = 0;
 
 		// Half-res GI consumption (#124): the full-res upsampled GI target's bindless index (0 = no GI) + the
 		// scene target's pixel size, pushed per-viewport by SetGITexture, read into FrameCB in AcquireFrameSet.

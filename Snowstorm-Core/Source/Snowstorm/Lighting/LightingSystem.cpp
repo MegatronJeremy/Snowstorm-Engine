@@ -134,7 +134,7 @@ namespace Snowstorm
 		}
 		renderer3DSingleton.SetSunShadowFit(sunFit);
 
-		// Cascade fit (#58 PR 2): diagnostic handoff only, nothing renders from it yet. Uses the first Primary
+		// Cascade fit (#58 PR 2): rendered into the cascade atlas and optionally shaded from it. Uses the first Primary
 		// perspective camera and its UNJITTERED view-projection so the fit does not shimmer with TAA jitter.
 		RendererService::SunCascadeFit cascadeFit{};
 		if (CVars::ShadowCascadeFit.Get() && haveSun && sunCasts && CVars::ShadowsRasterActive())
@@ -154,6 +154,8 @@ namespace Snowstorm
 				    invViewProj, cam.PerspectiveNear, cam.PerspectiveFar, sunDir,
 				    static_cast<uint32_t>(std::clamp(CVars::ShadowCascadeCount.Get(), 1, 4)), lambda, tile,
 				    cam.PerspectiveFar * 0.25f);
+				const glm::mat4& view = camView.get<CameraRuntimeComponent>(camEntity).View;
+				cascadeFit.ViewDepthRow = -glm::vec4(view[0][2], view[1][2], view[2][2], view[3][2]);
 				cascadeFit.Valid = true;
 				break;
 			}

@@ -111,6 +111,12 @@ namespace Snowstorm
 		[[nodiscard]] bool SupportsDeviceFault() const { return m_DeviceFaultSupported; }
 		[[nodiscard]] bool SupportsPipelineStats() const { return m_PipelineStatsSupported; }
 
+		// Vulkan 1.3 subgroupSizeControl: a compute stage may pin its subgroup size inside [min, max]. Compute
+		// support is the requiredSubgroupSizeStages bit; all zero when the device lacks the feature.
+		[[nodiscard]] bool SupportsSubgroupSizeControl() const { return m_SubgroupMax != 0; }
+		[[nodiscard]] uint32_t GetMinSubgroupSize() const { return m_SubgroupMin; }
+		[[nodiscard]] uint32_t GetMaxSubgroupSize() const { return m_SubgroupMax; }
+
 		// On a VK_ERROR_DEVICE_LOST, dump whatever VK_EXT_device_fault can tell us about the GPU fault (address
 		// records + a vendor-specific binary/description) at [error] level. No-op if the extension isn't
 		// enabled. Call this right where a submit/present returns DEVICE_LOST, before the process dies — it's
@@ -184,6 +190,8 @@ namespace Snowstorm
 		// Debug-only (a diagnostic, not a runtime feature). Gates LogDeviceFaultInfo.
 		bool m_DeviceFaultSupported = false;
 		bool m_PipelineStatsSupported = false;
+		uint32_t m_SubgroupMin = 0;
+		uint32_t m_SubgroupMax = 0; // 0 = subgroupSizeControl or compute requiredSubgroupSizeStages unavailable
 
 		// Query the picked physical device for inline ray-tracing support: the rayQuery + accelerationStructure
 		// feature bits AND the three device extensions (acceleration_structure, ray_query, deferred_host_operations).

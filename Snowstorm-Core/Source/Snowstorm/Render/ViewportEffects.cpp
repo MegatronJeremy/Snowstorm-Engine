@@ -103,10 +103,12 @@ namespace Snowstorm
 				// not be averaged together).
 				const uint32_t sampler = CVars::PathTraceSampler.Get() > 0 ? 1u : 0u; // a sampler switch restarts the mean, like env-NEE
 				const uint32_t validReflection = CVars::PathTraceValidReflection.Get() ? 1u : 0u;
+				// Same for emissive NEE; it is off whenever the list is empty (no emitters, or over the cap).
+				const uint32_t emissiveNee = (CVars::PathTraceEmissiveNee.Get() && fc.Renderer.GetEmissiveListCount() > 0) ? 1u : 0u;
 				const uint32_t spp = static_cast<uint32_t>(CVars::ClampedPathTraceSpp());
 				const PathTraceAccumRule::Decision accum = PathTraceAccumRule::Decide(
-				    {st.LastVP, st.Samples, st.EnvNee, st.Sampler, st.ValidReflection},
-				    {vp, v.PathTraceSceneSettling, envNee, sampler, validReflection, spp});
+				    {st.LastVP, st.Samples, st.EnvNee, st.Sampler, st.ValidReflection, st.EmissiveNee},
+				    {vp, v.PathTraceSceneSettling, envNee, sampler, validReflection, emissiveNee, spp});
 				const bool moved = accum.Reset;
 				const uint32_t base = accum.BaseSamples;
 
@@ -140,6 +142,9 @@ namespace Snowstorm
 				p.SkyHorizonColor = fd.Environment.SkyHorizonColor;
 				p.GroundColor = fd.Environment.GroundColor;
 				p.TableAddress = fc.Renderer.GetReflectionGeometryAddress();
+				p.EmissiveNee = emissiveNee;
+				p.EmissiveCount = fc.Renderer.GetEmissiveListCount();
+				p.EmissiveAddress = fc.Renderer.GetEmissiveListAddress();
 				p.FrameCounter = static_cast<uint32_t>(fc.Renderer.GetFrameCounter());
 
 				fc.Graph.AddPass({.Name = "PathTrace" + v.Suffix,
@@ -152,6 +157,7 @@ namespace Snowstorm
 				st.EnvNee = envNee;
 				st.Sampler = sampler;
 				st.ValidReflection = validReflection;
+				st.EmissiveNee = emissiveNee;
 				st.Samples = accum.NextSamples;
 
 				// Publish the accumulated HDR buffer as THE scene color; the LDR chain tonemaps it (the tonemap
@@ -172,6 +178,7 @@ namespace Snowstorm
 				uint32_t EnvNee = 1;          // last-used env-NEE toggle; a change restarts accumulation
 				uint32_t Sampler = 0;         // last-used sampler; a change restarts accumulation
 				uint32_t ValidReflection = 0; // last-used render.pathtrace.validreflection
+				uint32_t EmissiveNee = 0;     // last-used emissive-NEE state; a change restarts accumulation
 			};
 			std::unordered_map<entt::entity, State> m_State; // per-viewport accumulated sample count + last VP
 		};

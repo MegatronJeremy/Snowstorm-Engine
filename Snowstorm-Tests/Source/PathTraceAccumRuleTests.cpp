@@ -88,3 +88,13 @@ TEST_CASE("Accumulation: a valid-reflection flip resets", "[pathtrace]")
 	CHECK(d.Reset);
 	CHECK(d.BaseSamples == 0);
 }
+
+TEST_CASE("Accumulation: an emissive-NEE flip resets", "[pathtrace]")
+{
+	Last last{glm::mat4(1.0f), 32, 1, 0, 0};
+	Now n = Pose(glm::mat4(1.0f));
+	n.EmissiveNee = 1;
+	const Decision d = Decide(last, n);
+	CHECK(d.Reset);
+	CHECK(d.BaseSamples == 0);
+}
