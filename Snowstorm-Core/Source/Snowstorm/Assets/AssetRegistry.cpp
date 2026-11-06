@@ -3,8 +3,11 @@
 #include "Snowstorm/Assets/VirtualPath.hpp"
 
 #include <nlohmann/json.hpp>
+
+#include <algorithm>
 #include <fstream>
 #include <optional>
+#include <vector>
 
 namespace Snowstorm
 {
@@ -128,25 +131,45 @@ namespace Snowstorm
 		return true;
 	}
 
-	bool AssetRegistry::SaveToFile(const std::filesystem::path& filePath) const
+	std::string AssetRegistry::Serialize() const
 	{
+		// m_Metadata is unordered, so its iteration order depends on insertion history: sort, or an
+		// unchanged registry rewrites in a new order on every save and diffs as a content change.
+		std::vector<const AssetMetadata*> rows;
+		rows.reserve(m_Metadata.size());
+		for (const auto& m : m_Metadata | std::views::values)
+			rows.push_back(&m);
+		std::ranges::sort(rows, [](const AssetMetadata* a, const AssetMetadata* b)
+		                  {
+			const std::string pa = a->Path.generic_string();
+			const std::string pb = b->Path.generic_string();
+			if (pa != pb) return pa < pb;
+			if (a->Type != b->Type) return a->Type < b->Type;
+			return a->Handle.Value() < b->Handle.Value(); });
+
 		json root;
 		root["Assets"] = json::array();
-
-		for (const auto& m : m_Metadata | std::views::values)
+		for (const AssetMetadata* m : rows)
 		{
 			json a;
-			a["Handle"] = m.Handle.ToString();
-			a["Type"] = AssetTypeToString(m.Type);
-			a["Path"] = m.Path.generic_string();
+			a["Handle"] = m->Handle.ToString();
+			a["Type"] = AssetTypeToString(m->Type);
+			a["Path"] = m->Path.generic_string();
 			root["Assets"].push_back(std::move(a));
 		}
 
-		std::ofstream out(filePath);
+		return root.dump(2) + "\n";
+	}
+
+	bool AssetRegistry::SaveToFile(const std::filesystem::path& filePath) const
+	{
+		// Binary, so the file is LF like the committed blob: a text-mode CRLF write diffs in a clone without
+		// core.autocrlf.
+		std::ofstream out(filePath, std::ios::binary);
 		if (!out.is_open())
 			return false;
 
-		out << root.dump(2);
+		out << Serialize();
 		return true;
 	}
 
