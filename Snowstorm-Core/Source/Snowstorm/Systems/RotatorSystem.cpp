@@ -48,7 +48,7 @@ namespace Snowstorm
 			}
 		}
 
-		if ((fixedStep || routeDriven) && clock == m_LastFrame)
+		if (!RotatorTickDue(fixedStep, routeDriven, clock, m_LastFrame))
 		{
 			return; // nothing advanced this frame (skipped render, or the route is frozen)
 		}
@@ -75,7 +75,7 @@ namespace Snowstorm
 		ParallelForEach<Write<TransformComponent>, Read<RotatorComponent>>(
 		    [dt, gizmoHeld](const entt::entity e, TransformComponent& tr, const RotatorComponent& rot)
 		    {
-			    if (gizmoHeld != entt::null && e == gizmoHeld)
+			    if (RotatorSkipsEntity(e, gizmoHeld))
 			    {
 				    return; // being manipulated by the gizmo this frame -> don't fight it
 			    }
