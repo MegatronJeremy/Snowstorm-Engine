@@ -137,3 +137,32 @@ TEST_CASE("IBL cache round-trips the cooked maps", "[ibl][cache]")
 	std::error_code ec;
 	std::filesystem::remove(IBLCacheIO::GetCachePath(kHash), ec);
 }
+
+// An all-zero readback cached under an unchanged key is loaded by every later run, so Save refuses it.
+TEST_CASE("IBL cache refuses an all-zero payload", "[ibl][cache]")
+{
+	constexpr uint32_t kSize = 2;
+	constexpr uint32_t kMips = 2;
+	constexpr uint64_t kHash = 0x0123456789ABCDEFull;
+	std::error_code ec;
+	std::filesystem::remove(IBLCacheIO::GetCachePath(kHash), ec);
+
+	CookedIBL ibl;
+	ibl.IrradianceSize = kSize;
+	ibl.PrefilteredSize = kSize;
+	ibl.PrefilteredMips = kMips;
+	ibl.BRDFLutSize = kSize;
+	ibl.Irradiance.assign(6, std::vector<std::vector<uint8_t>>(1, std::vector<uint8_t>(4, 0)));
+	ibl.Prefiltered.assign(6, std::vector<std::vector<uint8_t>>(kMips, std::vector<uint8_t>(4, 0)));
+	ibl.BRDFLut.assign(4, 0);
+
+	CHECK(IsAllZero(ibl));
+	CHECK_FALSE(IBLCacheIO::Save(kHash, ibl));
+	CHECK_FALSE(std::filesystem::exists(IBLCacheIO::GetCachePath(kHash)));
+
+	ibl.Prefiltered[5][kMips - 1][3] = 1;
+	CHECK_FALSE(IsAllZero(ibl));
+	REQUIRE(IBLCacheIO::Save(kHash, ibl));
+	CHECK(IBLCacheIO::Load(kHash, kSize, kSize, kMips, kSize).has_value());
+	std::filesystem::remove(IBLCacheIO::GetCachePath(kHash), ec);
+}
