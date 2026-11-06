@@ -113,3 +113,21 @@ TEST_CASE("IBL bake plan: only the first bake computes the LUT and persists", "[
 	CHECK_FALSE(later.BakeBRDFLut);
 	CHECK_FALSE(later.Persist);
 }
+
+// PumpCacheSave runs once per frame from the arming frame on and maps when the countdown reaches 0. Frame j's
+// BeginFrame waits on the fence of frame j - framesInFlight, the slot it reuses, so the map frame must be
+// exactly the one that waits on the arming frame's fence: earlier reads zeros, later only delays the save.
+TEST_CASE("IBL cache save maps on the frame that waits the readback's fence", "[ibl]")
+{
+	constexpr uint32_t kArmFrame = 10;
+	for (uint32_t framesInFlight = 1; framesInFlight <= 4; ++framesInFlight)
+	{
+		int countdown = IBLCacheSaveTicks(framesInFlight);
+		uint32_t mapFrame = kArmFrame;
+		while (--countdown > 0)
+		{
+			++mapFrame;
+		}
+		CHECK(mapFrame - framesInFlight == kArmFrame);
+	}
+}

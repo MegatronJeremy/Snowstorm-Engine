@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 #include <glm/glm.hpp>
 
@@ -70,6 +71,14 @@ namespace Snowstorm
 	inline IBLBakePlan PlanIBLBake(bool outputsAlreadyBaked)
 	{
 		return {.BakeBRDFLut = !outputsAlreadyBaked, .Persist = !outputsAlreadyBaked};
+	}
+
+	// PumpCacheSave ticks between arming the IBL readback and mapping its buffers. The readback is submitted
+	// at the end of arming frame N, which also pumps once, and frame N + framesInFlight is the first whose
+	// BeginFrame waits on frame N's fence.
+	constexpr int IBLCacheSaveTicks(const uint32_t framesInFlight)
+	{
+		return static_cast<int>(framesInFlight) + 1;
 	}
 
 	// Running cost of re-bakes after the first bake: the WaitIdle stall each one pays, and what triggered it.

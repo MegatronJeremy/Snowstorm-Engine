@@ -433,10 +433,9 @@ namespace Snowstorm
 			               ctx.CopyTextureToBuffer(m_BRDFLut, m_ReadbackBuffers[b++], 0, 0);
 		               }});
 
-		// Arm the deferred save. This readback pass executes at the END of the current frame; wait 2
-		// PumpCacheSave ticks so the copy's fence has retired before we Map() the buffers (mapping the same
-		// frame would read before the GPU wrote — the crash this replaced).
-		m_CacheSaveCountdown = 2;
+		// Mapping before the readback frame's fence retires reads zeros, and an all-zero cache would be loaded
+		// by every later run.
+		m_CacheSaveCountdown = IBLCacheSaveTicks(Renderer::GetFramesInFlight());
 	}
 
 	void IBLBakePass::PumpCacheSave()
