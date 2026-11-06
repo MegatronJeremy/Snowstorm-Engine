@@ -25,6 +25,9 @@ namespace Snowstorm
 		glm::vec2 Size{1.0f, 1.0f};  // world units, multiplied by the transform's scale
 		glm::vec2 Pivot{0.5f, 0.5f}; // 0,0 = bottom left; flips mirror about it
 		glm::vec4 Tint{1.0f};
+		// Sub-rectangle of the texture as x, y, width, height in texels, origin top-left. A zero width or
+		// height draws the whole texture; Size is not derived from it.
+		glm::vec4 Rect{0.0f};
 		bool FlipX = false;
 		bool FlipY = false;
 		int32_t Layer = 0;
