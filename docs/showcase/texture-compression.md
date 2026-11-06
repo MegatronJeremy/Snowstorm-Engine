@@ -19,7 +19,7 @@ Mips are filtered in the role's colour space (`MipSpaceFor`): albedo in linear l
 
 ## Why normals are not BC1
 
-BC1 pushes a unit vector through one shared RGB565 line. Over the 22 conforming Sponza normal maps the mean angular error is **3.47 degrees with BC1 and 1.13 with BC5**. A texture in a normal slot is also checked by content (`IsTangentSpaceNormalMap`): two Sponza images there are not normal maps (vector length about 1.3, 25-40% of texels with z<0), and BC5 would raise their error, so they fall back to colour encoding with a warning.
+BC1 pushes a unit vector through one shared RGB565 line. Over the 22 conforming Sponza normal maps the mean angular error is **3.47 degrees with BC1 and 1.13 with BC5**. A texture in a normal slot is also checked by content (`IsTangentSpaceNormalMap`): an image that is not unit-length and +Z-facing falls back to colour encoding with a warning (the (0,255,0) padding fill of decal maps is ignored).
 
 BC5 stores no third channel, so every shader that samples a normal map decodes through `DecodeTangentNormal` (`Engine/Shaders/Include/NormalEncode.hlsli`), discriminating on a raw blue below 0.5. The path tracer uses the same helper, since it is the reference the quality gates compare against.
 
