@@ -2,6 +2,8 @@
 
 #include <unordered_map>
 
+#include "Snowstorm/Systems/RuntimeInitRule.hpp"
+
 #include "Snowstorm/Components/IDComponent.hpp"
 #include "Snowstorm/Components/TransformComponent.hpp"
 
@@ -23,15 +25,6 @@
 
 namespace Snowstorm
 {
-	namespace
-	{
-		bool IsValidViewportSize(uint32_t w, uint32_t h)
-		{
-			// Match your earlier guardrails (avoid tiny/zero RTs)
-			return (w >= 64u && h >= 64u);
-		}
-	}
-
 	void RuntimeInitSystem::Execute(Timestep)
 	{
 		auto& reg = m_World->GetRegistry();
@@ -39,15 +32,11 @@ namespace Snowstorm
 		// ---------------------------------------------------------------------
 		// Build UUID -> entt::entity map (used for resolving entity references)
 		// ---------------------------------------------------------------------
-		std::unordered_map<UUID::UnderlyingType, entt::entity> uuidToEntity;
+		UuidEntityMap uuidToEntity;
 
 		for (const entt::entity e : reg.view<IDComponent>())
 		{
-			const auto& id = reg.Read<IDComponent>(e).Id;
-			if (id.Value() != 0)
-			{
-				uuidToEntity[id.Value()] = e;
-			}
+			RegisterUuid(uuidToEntity, reg.Read<IDComponent>(e).Id.Value(), e);
 		}
 
 		// ---------------------------------------------------------------------
@@ -76,12 +65,7 @@ namespace Snowstorm
 		{
 			const auto& ct = reg.Read<CameraTargetComponent>(e);
 
-			entt::entity resolved = entt::null;
-			if (ct.TargetViewportUUID.Value() != 0)
-			{
-				if (auto it = uuidToEntity.find(ct.TargetViewportUUID.Value()); it != uuidToEntity.end())
-					resolved = it->second;
-			}
+			const entt::entity resolved = ResolveUuid(uuidToEntity, ct.TargetViewportUUID.Value());
 
 			if (resolved != ct.TargetViewportEntity)
 			{
