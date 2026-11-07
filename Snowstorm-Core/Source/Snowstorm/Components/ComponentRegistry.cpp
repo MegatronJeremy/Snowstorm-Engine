@@ -16,6 +16,8 @@
 #include <climits>
 #include <cmath>
 #include <cstdint>
+#include <limits>
+#include <type_traits>
 
 namespace Snowstorm
 {
@@ -336,6 +338,37 @@ namespace Snowstorm
 			ImGui::PopID();
 			return changed;
 		}
+
+		// ImGui's min/max only bound the drag gesture, so AlwaysClamp makes a bound hold for Ctrl+Click typed
+		// input too. A one-sided bound needs the missing side at the type's extreme, since equal bounds (the
+		// unbounded case, 0 and 0) leave the value free and would ignore a lone Min or Max.
+		template <typename T>
+		bool NumericField(const char* id, T& v, const NumericMeta& meta, const float defaultSpeed, const char* format)
+		{
+			constexpr ImGuiDataType kType = std::is_same_v<T, float> ? ImGuiDataType_Float : ImGuiDataType_S32;
+			const bool bounded = meta.HasMin || meta.HasMax;
+			T lo{};
+			T hi{};
+			if (bounded)
+			{
+				lo = meta.HasMin ? static_cast<T>(meta.Min) : std::numeric_limits<T>::lowest();
+				hi = meta.HasMax ? static_cast<T>(meta.Max) : std::numeric_limits<T>::max();
+			}
+			const ImGuiSliderFlags flags = bounded ? ImGuiSliderFlags_AlwaysClamp : ImGuiSliderFlags_None;
+			if (meta.HasRange())
+			{
+				return ImGui::SliderScalar(id, kType, &v, &lo, &hi, format, flags);
+			}
+			return ImGui::DragScalar(id, kType, &v, meta.HasSpeed ? meta.Speed : defaultSpeed, &lo, &hi, format, flags);
+		}
+
+		// Draws `widget` over a copy of the property's value and writes the copy back when it was edited.
+		template <typename T, typename Widget>
+		bool EditAs(const rttr::property& prop, const rttr::instance& instance, const rttr::variant& value, Widget widget)
+		{
+			T v = value.get_value<T>();
+			return widget(v) && prop.set_value(instance, v);
+		}
 	}
 
 	bool BeginPropertyTable(const char* id)
@@ -391,11 +424,9 @@ namespace Snowstorm
 
 	bool RenderProperty(const rttr::property& prop, const rttr::instance& instance)
 	{
-		// Properties tagged metadata("Hidden", true) are still serialized/reflected but NOT drawn by the
-		// generic inspector — for fields edited through a dedicated widget instead of a raw checkbox/drag
-		// (e.g. CameraComponent::Primary, which must be exclusive, so it's set via a "Set as Primary" action
-		// rather than a bare bool the user could tick on several cameras at once). Reusable inspector metadata
-		// alongside Min/Max/Color/AssetType.
+		// Properties tagged metadata("Hidden", true) are still serialized and reflected but not drawn here,
+		// since a dedicated widget edits them. CameraComponent::Primary must be exclusive, so it is set through
+		// a "Set as Primary" action rather than a bool the user could tick on several cameras.
 		if (const rttr::variant hidden = prop.get_metadata("Hidden"); hidden.is_valid() && hidden.can_convert<bool>() && hidden.to_bool())
 		{
 			return false;
@@ -412,278 +443,176 @@ namespace Snowstorm
 			return false;
 		}
 
-		bool propChanged = false;
+		// Every row is LABEL | value. A struct or wrapper uses its row as a header and its fields follow as rows.
+		LabelLeft(name.c_str());
 
-		// Asset handles (UUID). When the property is tagged with an "AssetType" and an asset-list
-		// provider is installed (editor), show a picker combo so the user can reassign the asset;
-		// otherwise fall back to a read-only name display.
+		// Asset handles (UUID). With an "AssetType" tag and an asset-list provider (the editor), a picker combo
+		// reassigns the asset. Otherwise the asset's name is shown read-only.
 		if (type == rttr::type::get<UUID>())
 		{
-			const uint64_t current = value.get_value<UUID>().Value();
-			LabelLeft(name.c_str());
-
+			uint64_t handle = value.get_value<UUID>().Value();
 			const rttr::variant assetTypeMeta = prop.get_metadata("AssetType");
-			if (assetTypeMeta.is_valid() && HasAssetListProvider())
+			if (!assetTypeMeta.is_valid() || !HasAssetListProvider())
 			{
-				uint64_t handle = current;
-				if (AssetPickerCombo(hidden.c_str(), handle, assetTypeMeta.to_int()))
-				{
-					propChanged = prop.set_value(instance, UUID{handle});
-				}
-				return propChanged;
+				ImGui::TextDisabled("%s", ResolveAssetName(handle).c_str());
+				return false;
 			}
-
-			// No metadata / no provider: read-only display.
-			ImGui::TextDisabled("%s", ResolveAssetName(current).c_str());
-			return false;
+			return AssetPickerCombo(hidden.c_str(), handle, assetTypeMeta.to_int()) && prop.set_value(instance, UUID{handle});
 		}
 
-		// uint32_t flag masks tagged with a "Flags" FlagBitList: edit as a checkbox dropdown over the
-		// named bits (Unity-style layer/culling mask), rather than a raw integer.
-		if (type == rttr::type::get<uint32_t>())
+		// uint32_t flag masks tagged with a "Flags" FlagBitList: a checkbox dropdown over the named bits
+		// (Unity-style layer/culling mask), rather than a raw integer.
+		if (const rttr::variant flagsMeta = prop.get_metadata("Flags");
+		    type == rttr::type::get<uint32_t>() && flagsMeta.is_valid() && flagsMeta.is_type<FlagBitList>())
 		{
-			if (const rttr::variant flagsMeta = prop.get_metadata("Flags");
-			    flagsMeta.is_valid() && flagsMeta.is_type<FlagBitList>())
+			const auto& bits = flagsMeta.get_value<FlagBitList>();
+			uint32_t mask = value.get_value<uint32_t>();
+
+			// Summary label: the set bits, or "(none)" / "All".
+			std::string summary;
+			uint32_t allBits = 0;
+			for (const FlagBit& b : bits)
 			{
-				const auto& bits = flagsMeta.get_value<FlagBitList>();
-				uint32_t mask = value.get_value<uint32_t>();
-
-				LabelLeft(name.c_str());
-
-				// Summary label: list the set bits, or "(none)" / "All".
-				std::string summary;
-				uint32_t allBits = 0;
-				for (const FlagBit& b : bits)
+				allBits |= b.Bit;
+				if ((mask & b.Bit) != 0)
 				{
-					allBits |= b.Bit;
-					if ((mask & b.Bit) != 0)
-					{
-						if (!summary.empty())
-							summary += ", ";
-						summary += b.Name;
-					}
+					summary += (summary.empty() ? "" : ", ") + b.Name;
 				}
-				if (summary.empty())
-					summary = "(none)";
-				else if ((mask & allBits) == allBits)
-					summary = "All";
-
-				if (ImGui::BeginCombo(hidden.c_str(), summary.c_str()))
-				{
-					for (const FlagBit& b : bits)
-					{
-						bool on = (mask & b.Bit) != 0;
-						if (ImGui::Checkbox(b.Name.c_str(), &on))
-						{
-							if (on)
-								mask |= b.Bit;
-							else
-								mask &= ~b.Bit;
-							propChanged = prop.set_value(instance, mask);
-						}
-					}
-					ImGui::EndCombo();
-				}
-				return propChanged;
 			}
+			if (summary.empty())
+				summary = "(none)";
+			else if ((mask & allBits) == allBits)
+				summary = "All";
 
-			// No flag metadata: read-only display.
-			LabelLeft(name.c_str());
-			ImGui::TextDisabled("%llu", static_cast<unsigned long long>(value.to_uint64()));
-			return false;
+			if (!ImGui::BeginCombo(hidden.c_str(), summary.c_str()))
+			{
+				return false;
+			}
+			bool changed = false;
+			for (const FlagBit& b : bits)
+			{
+				if (bool on = (mask & b.Bit) != 0; ImGui::Checkbox(b.Name.c_str(), &on))
+				{
+					mask = on ? (mask | b.Bit) : (mask & ~b.Bit);
+					changed = prop.set_value(instance, mask);
+				}
+			}
+			ImGui::EndCombo();
+			return changed;
 		}
 
-		// Other unsigned integers: read-only display, no editing.
-		if (type == rttr::type::get<uint64_t>())
+		// Other unsigned integers (and an untagged uint32_t): read-only.
+		if (type == rttr::type::get<uint32_t>() || type == rttr::type::get<uint64_t>())
 		{
-			LabelLeft(name.c_str());
 			ImGui::TextDisabled("%llu", static_cast<unsigned long long>(value.to_uint64()));
 			return false;
 		}
 
 		if (type == rttr::type::get<std::string>())
 		{
-			std::string val = value.get_value<std::string>();
-			LabelLeft(name.c_str());
 			// std::string overload (imgui_stdlib): the buffer grows to fit, so long tags/paths are never
 			// silently truncated the way a fixed char[256] + strncpy_s would.
-			if (ImGui::InputText(hidden.c_str(), &val))
-			{
-				propChanged = prop.set_value(instance, val);
-			}
+			return EditAs<std::string>(prop, instance, value, [&](std::string& v)
+			                           { return ImGui::InputText(hidden.c_str(), &v); });
 		}
-		else if (type == rttr::type::get<float>())
+		if (type == rttr::type::get<float>())
 		{
-			float val = value.get_value<float>();
 			const NumericMeta meta = ReadNumericMeta(prop);
-			LabelLeft(name.c_str());
-			bool edited;
-			// AlwaysClamp: ImGui's min/max only bound the DRAG/slide gesture by default; Ctrl+click text entry
-			// still lets a user TYPE an out-of-range value (e.g. -5 into a Min=0 field). This flag clamps typed
-			// input too, so a bound is a real invariant, not just a drag limit. Applied wherever a bound exists.
-			if (meta.HasRange())
-			{
-				// Both bounds known -> slider that can't leave the range.
-				edited = ImGui::SliderFloat(hidden.c_str(), &val, meta.Min, meta.Max, meta.FormatOr("%.3f"), ImGuiSliderFlags_AlwaysClamp);
-			}
-			else
-			{
-				const float speed = meta.HasSpeed ? meta.Speed : AutoSpeed(val);
-				// ImGui::DragFloat only clamps when lo < hi. For a ONE-SIDED bound (just Min, or just Max)
-				// the missing side must be +/-FLT_MAX, not 0 -- otherwise lo==hi==0 and the drag is fully
-				// unbounded, silently ignoring the Min/Max (this is why lone-Min fields never clamped).
-				const float lo = meta.HasMin ? meta.Min : (meta.HasMax ? -FLT_MAX : 0.0f);
-				const float hi = meta.HasMax ? meta.Max : (meta.HasMin ? FLT_MAX : 0.0f); // no bounds -> lo==hi==0 -> unbounded
-				// AlwaysClamp only when there's actually a bound; an unbounded field must stay free to type any value.
-				const ImGuiSliderFlags flags = (meta.HasMin || meta.HasMax) ? ImGuiSliderFlags_AlwaysClamp : 0;
-				edited = ImGui::DragFloat(hidden.c_str(), &val, speed, lo, hi, meta.FormatOr("%.3f"), flags);
-			}
-			if (edited)
-			{
-				propChanged = prop.set_value(instance, val);
-			}
+			return EditAs<float>(prop, instance, value, [&](float& v)
+			                     { return NumericField(hidden.c_str(), v, meta, AutoSpeed(v), meta.FormatOr("%.3f")); });
 		}
-		else if (type == rttr::type::get<int>())
+		if (type == rttr::type::get<int>())
 		{
-			int val = value.get_value<int>();
 			const NumericMeta meta = ReadNumericMeta(prop);
-			LabelLeft(name.c_str());
-			bool edited;
-			// AlwaysClamp: clamp typed (Ctrl+click) input to the bounds too, not just the drag -- see the float path.
-			if (meta.HasRange())
-			{
-				edited = ImGui::SliderInt(hidden.c_str(), &val, static_cast<int>(meta.Min), static_cast<int>(meta.Max), "%d", ImGuiSliderFlags_AlwaysClamp);
-			}
-			else
-			{
-				const float speed = meta.HasSpeed ? meta.Speed : 1.0f;
-				// One-sided bounds need the missing side at the int extreme, not 0 (see the float path above),
-				// or DragInt would treat lo==hi==0 as unbounded and ignore a lone Min/Max.
-				const int lo = meta.HasMin ? static_cast<int>(meta.Min) : (meta.HasMax ? INT_MIN : 0);
-				const int hi = meta.HasMax ? static_cast<int>(meta.Max) : (meta.HasMin ? INT_MAX : 0); // no bounds -> lo==hi==0 -> unbounded
-				const ImGuiSliderFlags flags = (meta.HasMin || meta.HasMax) ? ImGuiSliderFlags_AlwaysClamp : 0;
-				edited = ImGui::DragInt(hidden.c_str(), &val, speed, lo, hi, "%d", flags);
-			}
-			if (edited)
-			{
-				propChanged = prop.set_value(instance, val);
-			}
+			return EditAs<int>(prop, instance, value, [&](int& v)
+			                   { return NumericField(hidden.c_str(), v, meta, 1.0f, "%d"); });
 		}
-		else if (type == rttr::type::get<bool>())
+		if (type == rttr::type::get<bool>())
 		{
-			bool val = value.get_value<bool>();
-			LabelLeft(name.c_str());
-			if (ImGui::Checkbox(hidden.c_str(), &val))
-			{
-				propChanged = prop.set_value(instance, val);
-			}
+			return EditAs<bool>(prop, instance, value, [&](bool& v)
+			                    { return ImGui::Checkbox(hidden.c_str(), &v); });
 		}
-		else if (type == rttr::type::get<glm::vec2>())
-		{
-			glm::vec2 val = value.get_value<glm::vec2>();
-			LabelLeft(name.c_str());
-			if (ColoredVector(hidden.c_str(), glm::value_ptr(val), 2, 0.05f))
-			{
-				propChanged = prop.set_value(instance, val);
-			}
-		}
-		else if (type == rttr::type::get<glm::vec3>())
-		{
-			glm::vec3 val = value.get_value<glm::vec3>();
-			LabelLeft(name.c_str());
-			// Only a property explicitly tagged metadata("Color", true) is a color; a plain vec3 is a
-			// direction/scale/etc. and gets the XYZ numeric editor (issue #39).
-			const bool edited = IsColorProperty(prop)
-			                        ? ImGui::ColorEdit3(hidden.c_str(), glm::value_ptr(val))
-			                        : ColoredVector(hidden.c_str(), glm::value_ptr(val), 3, 0.05f);
-			if (edited)
-			{
-				propChanged = prop.set_value(instance, val);
-			}
-		}
-		else if (type == rttr::type::get<glm::vec4>())
-		{
-			glm::vec4 val = value.get_value<glm::vec4>();
-			LabelLeft(name.c_str());
-			// Same gate as vec3: color picker only when tagged, otherwise a plain XYZW numeric editor.
-			const bool edited = IsColorProperty(prop)
-			                        ? ImGui::ColorEdit4(hidden.c_str(), glm::value_ptr(val))
-			                        : ColoredVector(hidden.c_str(), glm::value_ptr(val), 4, 0.05f);
-			if (edited)
-			{
-				propChanged = prop.set_value(instance, val);
-			}
-		}
-		else if (type.is_wrapper())
-		{
-			rttr::type wrapped_type = type.get_wrapped_type();
 
-			LabelLeft(name.c_str()); // header row: name on the left, nested fields follow as rows
-			ImGui::PushID(name.c_str());
+		// Only a vector tagged metadata("Color", true) is a colour. A plain one is a direction, scale or the
+		// like and gets the per-axis numeric editor.
+		const bool isColor = IsColorProperty(prop);
+		if (type == rttr::type::get<glm::vec2>())
+		{
+			return EditAs<glm::vec2>(prop, instance, value, [&](glm::vec2& v)
+			                         { return ColoredVector(hidden.c_str(), glm::value_ptr(v), 2, 0.05f); });
+		}
+		if (type == rttr::type::get<glm::vec3>())
+		{
+			return EditAs<glm::vec3>(prop, instance, value, [&](glm::vec3& v)
+			                         { return isColor ? ImGui::ColorEdit3(hidden.c_str(), glm::value_ptr(v)) : ColoredVector(hidden.c_str(), glm::value_ptr(v), 3, 0.05f); });
+		}
+		if (type == rttr::type::get<glm::vec4>())
+		{
+			return EditAs<glm::vec4>(prop, instance, value, [&](glm::vec4& v)
+			                         { return isColor ? ImGui::ColorEdit4(hidden.c_str(), glm::value_ptr(v)) : ColoredVector(hidden.c_str(), glm::value_ptr(v), 4, 0.05f); });
+		}
 
-			rttr::variant wrapped_value = value.extract_wrapped_value();
-
-			if (wrapped_value.is_valid())
-			{
-				rttr::instance nested_instance = wrapped_value;
-				for (const auto& nested_prop : wrapped_type.get_properties())
-				{
-					propChanged |= RenderProperty(nested_prop, nested_instance);
-				}
-			}
-			else
+		if (type.is_wrapper())
+		{
+			const rttr::variant wrapped = value.extract_wrapped_value();
+			if (!wrapped.is_valid())
 			{
 				ImGui::TextDisabled("(null)");
+				return false;
 			}
-
-			ImGui::PopID();
-		}
-		else if (type.is_class())
-		{
-			LabelLeft(name.c_str()); // header row; nested fields render as their own rows below
 			ImGui::PushID(name.c_str());
-			rttr::instance nested_instance = value;
-			for (const auto& nested_prop : type.get_properties())
+			bool changed = false;
+			const rttr::instance nested = wrapped;
+			for (const auto& nestedProp : type.get_wrapped_type().get_properties())
 			{
-				if (RenderProperty(nested_prop, nested_instance))
+				changed |= RenderProperty(nestedProp, nested);
+			}
+			ImGui::PopID();
+			return changed;
+		}
+
+		if (type.is_class())
+		{
+			// The nested fields edit a copy, so the whole value is written back when any of them changed.
+			ImGui::PushID(name.c_str());
+			bool changed = false;
+			const rttr::instance nested = value;
+			for (const auto& nestedProp : type.get_properties())
+			{
+				if (RenderProperty(nestedProp, nested))
 				{
-					propChanged = prop.set_value(instance, value);
+					changed = prop.set_value(instance, value);
 				}
 			}
 			ImGui::PopID();
+			return changed;
 		}
-		else if (type.is_enumeration())
-		{
-			auto enum_type = type.get_enumeration();
-			int current_val = value.to_int();
-			std::string current_label = value.to_string();
 
-			LabelLeft(name.c_str());
-			if (ImGui::BeginCombo(hidden.c_str(), current_label.c_str()))
+		if (type.is_enumeration())
+		{
+			const int current = value.to_int();
+			if (!ImGui::BeginCombo(hidden.c_str(), value.to_string().c_str()))
 			{
-				for (auto enum_variant : enum_type.get_values())
-				{
-					int enum_val = enum_variant.to_int();
-					std::string label = enum_variant.to_string();
-
-					bool is_selected = (enum_val == current_val);
-					if (ImGui::Selectable(label.c_str(), is_selected))
-					{
-						propChanged = prop.set_value(instance, enum_variant);
-					}
-					if (is_selected)
-					{
-						ImGui::SetItemDefaultFocus();
-					}
-				}
-				ImGui::EndCombo();
+				return false;
 			}
-		}
-		else
-		{
-			ImGui::Text("Unsupported type: %s", type.get_name().to_string().c_str());
+			bool changed = false;
+			for (const rttr::variant& option : type.get_enumeration().get_values())
+			{
+				const bool selected = option.to_int() == current;
+				if (ImGui::Selectable(option.to_string().c_str(), selected))
+				{
+					changed = prop.set_value(instance, option);
+				}
+				if (selected)
+				{
+					ImGui::SetItemDefaultFocus();
+				}
+			}
+			ImGui::EndCombo();
+			return changed;
 		}
 
-		return propChanged;
+		ImGui::Text("Unsupported type: %s", type.get_name().to_string().c_str());
+		return false;
 	}
 }

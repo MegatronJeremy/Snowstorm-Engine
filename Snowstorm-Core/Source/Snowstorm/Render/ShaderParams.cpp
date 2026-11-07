@@ -109,21 +109,11 @@ namespace Snowstorm
 		{
 			++lineNo;
 			const std::vector<std::string_view> tok = Tokens(rawLine);
-			if (tok.size() < 1)
+			// "// @param ..." or "//@param ..." with no space after the slashes.
+			const bool spaced = tok.size() > 1 && tok[0] == "//" && tok[1] == "@param";
+			if (!spaced && (tok.empty() || tok[0] != "//@param"))
 				continue;
-			size_t t = 0;
-			if (tok[0] == "//")
-				t = 1;
-			else if (tok[0].starts_with("//@param"))
-			{
-				// "//@param" with no space after the slashes.
-				t = 0;
-			}
-			else
-				continue;
-			if (!(t < tok.size() && (tok[t] == "@param" || tok[t] == "//@param")))
-				continue;
-			++t;
+			const size_t t = spaced ? 2 : 1; // the parameter name
 			if (tok.size() < t + 2)
 			{
 				fail(lineNo, "@param needs a name and a type");
@@ -150,69 +140,60 @@ namespace Snowstorm
 				continue;
 			}
 
+			// The first bad key=value stops the line and is the one reported.
 			bool explicitSlot = false;
-			bool ok = true;
-			for (size_t k = t + 2; k < tok.size() && ok; ++k)
+			std::string error;
+			for (size_t k = t + 2; k < tok.size() && error.empty(); ++k)
 			{
 				const size_t eq = tok[k].find('=');
+				const std::string_view key = tok[k].substr(0, eq);
+				const std::string_view val = eq == std::string_view::npos ? std::string_view{} : tok[k].substr(eq + 1);
+				float slot = 0.0f;
 				if (eq == std::string_view::npos)
 				{
-					fail(lineNo, "expected key=value, got '" + std::string(tok[k]) + "'");
-					ok = false;
-					break;
+					error = "expected key=value, got '" + std::string(tok[k]) + "'";
 				}
-				const std::string_view key = tok[k].substr(0, eq);
-				const std::string_view val = tok[k].substr(eq + 1);
-				if (key == "slot")
+				else if (key == "slot" && ParseFloat(val, slot) && slot >= 0.0f && slot <= 3.0f && slot == std::floor(slot))
 				{
-					float s = 0.0f;
-					if (!ParseFloat(val, s) || s < 0.0f || s > 3.0f || s != std::floor(s))
-					{
-						fail(lineNo, "slot must be 0..3");
-						ok = false;
-					}
-					else
-					{
-						p.Slot = static_cast<uint8_t>(s);
-						explicitSlot = true;
-					}
+					p.Slot = static_cast<uint8_t>(slot);
+					explicitSlot = true;
+				}
+				else if (key == "slot")
+				{
+					error = "slot must be 0..3";
 				}
 				else if (key == "default")
 				{
 					const auto parts = Split(val, ',');
 					if (parts.size() != p.Count)
 					{
-						fail(lineNo, "default needs " + std::to_string(p.Count) + " value(s)");
-						ok = false;
-						break;
+						error = "default needs " + std::to_string(p.Count) + " value(s)";
 					}
-					for (size_t c = 0; c < parts.size(); ++c)
+					for (size_t c = 0; c < parts.size() && error.empty(); ++c)
 					{
 						if (!ParseFloat(parts[c], p.Default[static_cast<int>(c)]))
 						{
-							fail(lineNo, "bad default '" + std::string(parts[c]) + "'");
-							ok = false;
-							break;
+							error = "bad default '" + std::string(parts[c]) + "'";
 						}
 					}
 				}
 				else if (key == "min" || key == "max")
 				{
-					float& dst = key == "min" ? p.Min : p.Max;
-					if (!ParseFloat(val, dst))
+					if (!ParseFloat(val, key == "min" ? p.Min : p.Max))
 					{
-						fail(lineNo, "bad " + std::string(key));
-						ok = false;
+						error = "bad " + std::string(key);
 					}
 				}
 				else
 				{
-					fail(lineNo, "unknown key '" + std::string(key) + "'");
-					ok = false;
+					error = "unknown key '" + std::string(key) + "'";
 				}
 			}
-			if (!ok)
+			if (!error.empty())
+			{
+				fail(lineNo, error);
 				continue;
+			}
 
 			const auto maskFor = [&](uint8_t slot)
 			{ return static_cast<uint8_t>(((1u << p.Count) - 1u) << slot); };

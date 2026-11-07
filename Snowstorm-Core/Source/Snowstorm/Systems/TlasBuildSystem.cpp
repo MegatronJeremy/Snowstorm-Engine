@@ -149,11 +149,8 @@ namespace Snowstorm
 			// Read the material up front: it decides both the geometry record and whether this is a cutout
 			// instance (which picks the OMM BLAS and drops FORCE_NO_OPAQUE). May be null (async) — then the
 			// record stays a BaseColor-white fallback and the instance is treated as opaque.
-			const Material::Constants* c = nullptr;
-			if (const auto* matc = reg.try_get_const<MaterialComponent>(e); matc && matc->MaterialInstance)
-			{
-				c = &matc->MaterialInstance->GetConstants();
-			}
+			const auto* matc = reg.try_get_const<MaterialComponent>(e);
+			const Material::Constants* c = matc && matc->MaterialInstance ? &matc->MaterialInstance->GetConstants() : nullptr;
 			const bool masked = c && c->AlphaMaskEnabled != 0;
 			// The OMM bakes the albedo alpha ONCE at BLAS build and caches the result. If the albedo texture isn't
 			// resident yet (its slot still holds the async magenta placeholder, alpha = 1), that bake classifies
@@ -168,14 +165,10 @@ namespace Snowstorm
 
 			// OMM path builds a GPU-baked micromap BLAS; it returns null while the bake compute pipeline is still
 			// compiling, so fall back to the plain BLAS + FORCE_NO_OPAQUE any-hit that frame (retried next build).
-			Ref<BLAS> blas;
-			bool ommBuilt = false;
-			if (useOmm)
-			{
-				blas = mc.MeshInstance->GetOrBuildOmmBlas(kOmmSubdivisionLevel, c->AlbedoTextureIndex, c->AlphaCutoff,
-				                                          c->BaseColor.a);
-				ommBuilt = blas != nullptr;
-			}
+			Ref<BLAS> blas = useOmm ? mc.MeshInstance->GetOrBuildOmmBlas(kOmmSubdivisionLevel, c->AlbedoTextureIndex,
+			                                                             c->AlphaCutoff, c->BaseColor.a)
+			                        : nullptr;
+			const bool ommBuilt = blas != nullptr;
 			if (!ommBuilt)
 			{
 				blas = mc.MeshInstance->GetOrBuildBLAS();
@@ -235,32 +228,30 @@ namespace Snowstorm
 		auto& emissiveGeo = SingletonView<ReflectionGeometrySingleton>();
 		emissiveGeo.EmissiveCount = 0;
 		emissiveGeo.EmissiveAddress = 0;
-		if (emissiveNee && !emissiveInputs.empty())
+		const EmissiveLightList::Result list =
+		    emissiveNee && !emissiveInputs.empty() ? EmissiveLightList::Build(emissiveInputs) : EmissiveLightList::Result{};
+		if (list.Truncated)
 		{
-			const EmissiveLightList::Result list = EmissiveLightList::Build(emissiveInputs);
-			if (list.Truncated)
+			SS_CORE_WARN("Emissive NEE disabled: more than {} emissive triangles (emission is gathered by BSDF sampling only).",
+			             EmissiveLightList::kMaxTriangles);
+		}
+		else if (!list.Triangles.empty())
+		{
+			const uint32_t n = static_cast<uint32_t>(list.Triangles.size());
+			if (!emissiveGeo.EmissiveTable || emissiveGeo.EmissiveCapacity < n)
 			{
-				SS_CORE_WARN("Emissive NEE disabled: more than {} emissive triangles (emission is gathered by BSDF sampling only).",
-				             EmissiveLightList::kMaxTriangles);
+				emissiveGeo.EmissiveCapacity = n;
+				emissiveGeo.EmissiveTable = Buffer::Create(static_cast<size_t>(n) * sizeof(EmissiveLightList::GpuTriangle),
+				                                           BufferUsage::Storage, nullptr, false, "EmissiveLightList");
 			}
-			else if (!list.Triangles.empty())
+			// Same drain as the geometry table below: prior frames may still read the previous list by address.
+			Renderer::WaitIdle();
+			emissiveGeo.EmissiveTable->SetData(list.Triangles.data(), n * sizeof(EmissiveLightList::GpuTriangle), 0);
+			emissiveGeo.EmissiveAddress = emissiveGeo.EmissiveTable->GetGPUAddress();
+			emissiveGeo.EmissiveCount = n;
+			for (size_t i = 0; i < geoRecords.size(); ++i)
 			{
-				const uint32_t n = static_cast<uint32_t>(list.Triangles.size());
-				if (!emissiveGeo.EmissiveTable || emissiveGeo.EmissiveCapacity < n)
-				{
-					emissiveGeo.EmissiveCapacity = n;
-					emissiveGeo.EmissiveTable = Buffer::Create(static_cast<size_t>(n) * sizeof(EmissiveLightList::GpuTriangle),
-					                                           BufferUsage::Storage, nullptr, false, "EmissiveLightList");
-				}
-				// Same drain as the geometry table below: prior frames may still read the previous list by address.
-				Renderer::WaitIdle();
-				emissiveGeo.EmissiveTable->SetData(list.Triangles.data(), n * sizeof(EmissiveLightList::GpuTriangle), 0);
-				emissiveGeo.EmissiveAddress = emissiveGeo.EmissiveTable->GetGPUAddress();
-				emissiveGeo.EmissiveCount = n;
-				for (size_t i = 0; i < geoRecords.size(); ++i)
-				{
-					geoRecords[i].EmissiveFirstTriangle = list.FirstTriangle[i];
-				}
+				geoRecords[i].EmissiveFirstTriangle = list.FirstTriangle[i];
 			}
 		}
 
@@ -334,14 +325,11 @@ namespace Snowstorm
 		// Cutouts whose albedo hasn't streamed in bake no OMM this frame and run on the any-hit fallback (correct,
 		// just unoptimized); they re-bake once resident. Log the count only when it changes (settles to 0 as
 		// textures land) so a slow load doesn't spam.
-		if (ommDeferred != m_LastOmmDeferredLogged)
+		if (ommDeferred != m_LastOmmDeferredLogged && ommDeferred > 0)
 		{
-			if (ommDeferred > 0)
-			{
-				SS_CORE_INFO("OMM bake deferred for {} cutout instance(s) awaiting albedo residency.", ommDeferred);
-			}
-			m_LastOmmDeferredLogged = ommDeferred;
+			SS_CORE_INFO("OMM bake deferred for {} cutout instance(s) awaiting albedo residency.", ommDeferred);
 		}
+		m_LastOmmDeferredLogged = ommDeferred;
 	}
 
 	void TlasBuildSystem::DeclareAccess(SystemAccess& a) const

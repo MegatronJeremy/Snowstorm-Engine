@@ -139,18 +139,13 @@ namespace Snowstorm
 		auto& rtState = reg.Write<CameraControllerRuntimeComponent>(activeCam);
 
 		// Viewport must be valid + focused
-		if (ct.TargetViewportEntity == entt::null || !vpInteractView.contains(ct.TargetViewportEntity))
+		if (ct.TargetViewportEntity == entt::null || !vpInteractView.contains(ct.TargetViewportEntity) ||
+		    !reg.Read<ViewportInteractionComponent>(ct.TargetViewportEntity).Focused)
 		{
 			SetCursorLocked(false);
 			return;
 		}
-
 		const auto& vpI = reg.Read<ViewportInteractionComponent>(ct.TargetViewportEntity);
-		if (!vpI.Focused)
-		{
-			SetCursorLocked(false);
-			return;
-		}
 
 		// NOTE: do NOT bail on WantCaptureMouse here. The viewport is itself an ImGui window (the scene is
 		// drawn into an ImGui::Image), so ImGui reports WantCaptureMouse=true whenever the cursor is over
@@ -169,9 +164,7 @@ namespace Snowstorm
 
 		// GLFW mouse buttons are 0..7 typically; you should map Mouse::ButtonRight to 1 (GLFW_MOUSE_BUTTON_RIGHT)
 		constexpr int rightButton = Mouse::ButtonRight;
-		const bool rightClickHeld = rightButton < static_cast<int>(InputStateSingleton::MaxMouseButtons)
-		                                ? input.MouseDown.test(rightButton)
-		                                : false;
+		const bool rightClickHeld = rightButton < static_cast<int>(InputStateSingleton::MaxMouseButtons) && input.MouseDown.test(rightButton);
 
 		// Cursor lock toggle based on RMB edge
 		const bool lockEngagedThisFrame = rightClickHeld && !rtState.WasRightClickHeld;
@@ -197,9 +190,7 @@ namespace Snowstorm
 
 		auto isKeyDown = [&](const int key) -> bool
 		{
-			return (key >= 0 && std::cmp_less(key, InputStateSingleton::MaxKeys))
-			           ? input.Down.test(static_cast<size_t>(key))
-			           : false;
+			return key >= 0 && std::cmp_less(key, InputStateSingleton::MaxKeys) && input.Down.test(static_cast<size_t>(key));
 		};
 
 		// ---- Mouse look: 1:1 with mouse movement (delta is already frame-rate independent;
@@ -230,41 +221,36 @@ namespace Snowstorm
 
 		// ---- Speed: scroll adjusts fly speed geometrically while RMB held (editor convention);
 		// otherwise scroll dollies/zooms as before.
-		if (vpI.Hovered)
+		const float scrollY = vpI.Hovered ? input.ScrollDelta.y : 0.0f;
+		if (scrollY != 0.0f && rightClickHeld)
 		{
-			if (const float scrollY = input.ScrollDelta.y; scrollY != 0.0f)
+			auto& mutableCtrl = reg.Write<CameraControllerComponent>(activeCam);
+			mutableCtrl.MoveSpeed = glm::clamp(
+			    mutableCtrl.MoveSpeed * std::pow(ctrl.SpeedAdjustStep, scrollY),
+			    ctrl.MinMoveSpeed, ctrl.MaxMoveSpeed);
+		}
+		else if (scrollY != 0.0f && isPerspective)
+		{
+			// Perspective dolly: add an impulse to a zoom-glide velocity instead of teleporting the
+			// whole notch this frame (the old code did the full move instantly -> choppy, steppy zoom,
+			// the one camera channel with no smoothing). With exponential decay at rate ZoomSmoothing,
+			// a velocity impulse of (distance * rate) integrates to exactly `distance` of total travel,
+			// so each notch still dollies scrollY * ZoomSpeed units — just eased over ~1/rate seconds.
+			// ZoomSmoothing <= 0 -> snap (the original per-notch behavior, kept as an escape hatch).
+			const float notchDistance = scrollY * ctrl.ZoomSpeed;
+			if (ctrl.ZoomSmoothing > 0.0f)
 			{
-				if (rightClickHeld)
-				{
-					auto& mutableCtrl = reg.Write<CameraControllerComponent>(activeCam);
-					mutableCtrl.MoveSpeed = glm::clamp(
-					    mutableCtrl.MoveSpeed * std::pow(ctrl.SpeedAdjustStep, scrollY),
-					    ctrl.MinMoveSpeed, ctrl.MaxMoveSpeed);
-				}
-				else if (isPerspective)
-				{
-					// Perspective dolly: add an impulse to a zoom-glide velocity instead of teleporting the
-					// whole notch this frame (the old code did the full move instantly -> choppy, steppy zoom,
-					// the one camera channel with no smoothing). With exponential decay at rate ZoomSmoothing,
-					// a velocity impulse of (distance * rate) integrates to exactly `distance` of total travel,
-					// so each notch still dollies scrollY * ZoomSpeed units — just eased over ~1/rate seconds.
-					// ZoomSmoothing <= 0 -> snap (the original per-notch behavior, kept as an escape hatch).
-					const float notchDistance = scrollY * ctrl.ZoomSpeed;
-					if (ctrl.ZoomSmoothing > 0.0f)
-					{
-						rtState.ZoomVelocity += notchDistance * ctrl.ZoomSmoothing;
-					}
-					else
-					{
-						tr.Position += forward * notchDistance;
-					}
-				}
-				else
-				{
-					const float zoomFactor = 1.0f - (scrollY * ctrl.ZoomSpeed * 0.1f);
-					cam.OrthographicSize = glm::clamp(cam.OrthographicSize * zoomFactor, 0.25f, 100.0f);
-				}
+				rtState.ZoomVelocity += notchDistance * ctrl.ZoomSmoothing;
 			}
+			else
+			{
+				tr.Position += forward * notchDistance;
+			}
+		}
+		else if (scrollY != 0.0f)
+		{
+			const float zoomFactor = 1.0f - (scrollY * ctrl.ZoomSpeed * 0.1f);
+			cam.OrthographicSize = glm::clamp(cam.OrthographicSize * zoomFactor, 0.25f, 100.0f);
 		}
 
 		// Integrate + decay the zoom glide every frame (independent of hover, so an in-flight dolly finishes

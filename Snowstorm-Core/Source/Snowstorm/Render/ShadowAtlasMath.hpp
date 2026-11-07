@@ -1,5 +1,7 @@
 #pragma once
 
+#include <glm/vec4.hpp>
+
 #include <cstdint>
 
 namespace Snowstorm
@@ -13,6 +15,13 @@ namespace Snowstorm
 	[[nodiscard]] constexpr ShadowAtlasTile ShadowAtlasTileRect(const uint32_t tile, const uint32_t cols, const uint32_t tilePx)
 	{
 		return {(tile % cols) * tilePx, (tile / cols) * tilePx, tilePx};
+	}
+
+	// The same tile as a UV rect (u, v, width, height), which is what the shaders sample.
+	[[nodiscard]] inline glm::vec4 ShadowAtlasTileUv(const uint32_t tile, const uint32_t cols)
+	{
+		const float size = 1.0f / static_cast<float>(cols);
+		return {static_cast<float>(tile % cols) * size, static_cast<float>(tile / cols) * size, size, size};
 	}
 
 	// Secondary directional with ShadowSlot s >= 1 renders into tile s - 1 of the directional atlas.

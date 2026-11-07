@@ -33,9 +33,15 @@ namespace Snowstorm
 		// TRANSLATE=7, ROTATE=120, SCALE=896). Stored as int to keep ImGuizmo out of the header.
 		int m_GizmoOp = 7; // TRANSLATE
 
-		// Play button target: false = Simulate in the editor, true = launch Snowstorm-Runtime with a copy of the scene.
-		bool m_PlayStandalone = false;
-		bool m_PlayPossess = false;
+		// What the Play button starts. Simulate and Possess run in the editor, Standalone launches
+		// Snowstorm-Runtime with a copy of the scene. Indexes the menu and tooltip table in the .cpp.
+		enum class PlayTarget : uint8_t
+		{
+			Simulate,
+			Possess,
+			Standalone
+		};
+		PlayTarget m_PlayTarget = PlayTarget::Simulate;
 
 		// Gizmo-drag tracking for a single undo step per drag (not per frame). On the frame the drag
 		// begins we capture the transform before any edit; on release we push one TransformCommand.

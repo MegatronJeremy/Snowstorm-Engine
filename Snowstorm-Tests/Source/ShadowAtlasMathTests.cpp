@@ -21,6 +21,20 @@ TEST_CASE("Atlas tiles are row-major squares", "[shadows][atlas]")
 	REQUIRE((t3.X == 1024 && t3.Y == 1024 && t3.Size == 1024));
 }
 
+TEST_CASE("A tile's UV rect is its pixel rect over the atlas size", "[shadows][atlas]")
+{
+	constexpr uint32_t cols = 4;
+	constexpr uint32_t tilePx = 256;
+	constexpr float atlasPx = static_cast<float>(cols * tilePx);
+	for (uint32_t i = 0; i < cols * cols; ++i)
+	{
+		const ShadowAtlasTile px = ShadowAtlasTileRect(i, cols, tilePx);
+		const glm::vec4 uv = ShadowAtlasTileUv(i, cols);
+		REQUIRE((uv.x == static_cast<float>(px.X) / atlasPx && uv.y == static_cast<float>(px.Y) / atlasPx));
+		REQUIRE((uv.z == static_cast<float>(px.Size) / atlasPx && uv.w == uv.z));
+	}
+}
+
 TEST_CASE("Cascade atlas tiles agree with the generic tile rect", "[shadows][atlas]")
 {
 	for (uint32_t i = 0; i < CascadeMath::kCascadeAtlasCols * CascadeMath::kCascadeAtlasCols; ++i)

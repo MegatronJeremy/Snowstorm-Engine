@@ -42,6 +42,108 @@
 
 namespace Snowstorm
 {
+	namespace
+	{
+		bool HasExtension(const std::vector<VkExtensionProperties>& available, const char* name)
+		{
+			return std::any_of(available.begin(), available.end(),
+			                   [name](const VkExtensionProperties& e)
+			                   { return std::strcmp(e.extensionName, name) == 0; });
+		}
+
+		std::vector<VkExtensionProperties> InstanceExtensions()
+		{
+			uint32_t count = 0;
+			vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
+			std::vector<VkExtensionProperties> available(count);
+			vkEnumerateInstanceExtensionProperties(nullptr, &count, available.data());
+			return available;
+		}
+
+		std::vector<VkExtensionProperties> DeviceExtensions(const VkPhysicalDevice device)
+		{
+			uint32_t count = 0;
+			vkEnumerateDeviceExtensionProperties(device, nullptr, &count, nullptr);
+			std::vector<VkExtensionProperties> available(count);
+			vkEnumerateDeviceExtensionProperties(device, nullptr, &count, available.data());
+			return available;
+		}
+
+		bool HasInstanceLayer(const char* name)
+		{
+			uint32_t count = 0;
+			vkEnumerateInstanceLayerProperties(&count, nullptr);
+			std::vector<VkLayerProperties> available(count);
+			vkEnumerateInstanceLayerProperties(&count, available.data());
+			return std::any_of(available.begin(), available.end(),
+			                   [name](const VkLayerProperties& l)
+			                   { return std::strcmp(l.layerName, name) == 0; });
+		}
+
+		// Prepends `feature` to the chain after `head`, keeping whatever the chain already held.
+		template <typename T>
+		void ChainAfter(VkPhysicalDeviceVulkan13Features& head, T& feature)
+		{
+			feature.pNext = head.pNext;
+			head.pNext = &feature;
+		}
+
+		VkCommandPool CreateCommandPool(const VkDevice device, const uint32_t family)
+		{
+			VkCommandPoolCreateInfo info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+			info.queueFamilyIndex = family;
+			info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+			VkCommandPool pool = VK_NULL_HANDLE;
+			VK_CHECK(vkCreateCommandPool(device, &info, nullptr, &pool));
+			return pool;
+		}
+
+		VKAPI_ATTR VkBool32 VKAPI_CALL OnValidationMessage(const VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+		                                                   VkDebugUtilsMessageTypeFlagsEXT /*type*/,
+		                                                   const VkDebugUtilsMessengerCallbackDataEXT* data,
+		                                                   void* /*user*/)
+		{
+			// Active command-buffer label stack when the message fired: turns a bare validation string
+			// into "[Forward > Sky] <message>" so an error names the pass it happened in. Populated by
+			// our BeginDebugLabel scopes (RenderGraph per-pass), empty outside any labeled region.
+			std::string scope;
+			for (uint32_t i = 0; i < data->cmdBufLabelCount; ++i)
+			{
+				scope += (i == 0) ? "[" : " > ";
+				scope += data->pCmdBufLabels[i].pLabelName;
+			}
+			if (!scope.empty())
+			{
+				scope += "] ";
+			}
+
+			// Only ERROR severity should halt; warnings/info/verbose just log.
+			if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+			{
+				SS_CORE_ERROR("Vulkan Validation: {0}{1}", scope, data->pMessage);
+
+				// When validation.nonfatal is set, log every error and keep running instead of asserting on the
+				// first one, so a single run (e.g. the smoke test) surfaces ALL validation errors at once. Cached
+				// once: CVars are resolved at startup before this callback can fire.
+				static const bool s_NonFatal = CVars::ValidationNonFatal.Get();
+				if (!s_NonFatal)
+				{
+					SS_CORE_ASSERT(false, "Vulkan validation error");
+				}
+			}
+			else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+			{
+				SS_CORE_WARN("Vulkan Validation: {0}{1}", scope, data->pMessage);
+			}
+			else
+			{
+				SS_CORE_TRACE("Vulkan Validation: {0}{1}", scope, data->pMessage);
+			}
+			// Per spec, apps must return VK_FALSE (VK_TRUE aborts the triggering call).
+			return VK_FALSE;
+		}
+	}
+
 	VulkanContext& VulkanContext::Get()
 	{
 		static VulkanContext instance;
@@ -61,36 +163,10 @@ namespace Snowstorm
 			SS_CORE_ASSERT(volkRes == VK_SUCCESS, "Failed to initialize Volk loader");
 		}
 
-		bool enableValidationLayers = true; // Usually wrapped in #ifndef NDEBUG
 		const char* validationLayers[] = {
 		    "VK_LAYER_KHRONOS_validation"};
-
-		//-- Check if layers are actually available
-		uint32_t layerCount;
-		vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-		std::vector<VkLayerProperties> availableLayers(layerCount);
-		vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
-
-		bool layersFound = true;
-		for (const char* layerName : validationLayers)
-		{
-			bool layerFound = false;
-			for (const auto& layerProperties : availableLayers)
-			{
-				if (strcmp(layerName, layerProperties.layerName) == 0)
-				{
-					layerFound = true;
-					break;
-				}
-			}
-			if (!layerFound)
-			{
-				layersFound = false;
-				break;
-			}
-		}
-
-		if (enableValidationLayers && !layersFound)
+		const bool enableValidationLayers = std::all_of(std::begin(validationLayers), std::end(validationLayers), HasInstanceLayer);
+		if (!enableValidationLayers)
 		{
 			// In Debug the layer path is baked in (SS_VULKAN_LAYER_PATH) and set in-process by EntryPoint, so a
 			// missing layer here is a real misconfig worth a warning. In Release validation is deliberately not
@@ -100,7 +176,6 @@ namespace Snowstorm
 #else
 			SS_CORE_INFO("Validation not compiled into this build (Release); skipping.");
 #endif
-			enableValidationLayers = false;
 		}
 
 		// 1. Instance
@@ -121,20 +196,7 @@ namespace Snowstorm
 		// both object naming (SetVulkanObjectName) and command-buffer labels (BeginGpuScope -> RenderDoc
 		// event regions); gating it on validation hid pass names in plain Debug/RenderDoc captures. The
 		// validation *messenger* below stays validation-gated — this only enables the extension itself.
-		{
-			uint32_t extCount = 0;
-			vkEnumerateInstanceExtensionProperties(nullptr, &extCount, nullptr);
-			std::vector<VkExtensionProperties> available(extCount);
-			vkEnumerateInstanceExtensionProperties(nullptr, &extCount, available.data());
-			for (const auto& ext : available)
-			{
-				if (strcmp(ext.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0)
-				{
-					m_DebugUtilsAvailable = true;
-					break;
-				}
-			}
-		}
+		m_DebugUtilsAvailable = HasExtension(InstanceExtensions(), VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 		if (m_DebugUtilsAvailable)
 		{
 			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -146,15 +208,8 @@ namespace Snowstorm
 		createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
 		createInfo.ppEnabledExtensionNames = extensions.data();
 
-		if (enableValidationLayers)
-		{
-			createInfo.enabledLayerCount = static_cast<uint32_t>(std::size(validationLayers));
-			createInfo.ppEnabledLayerNames = validationLayers;
-		}
-		else
-		{
-			createInfo.enabledLayerCount = 0;
-		}
+		createInfo.enabledLayerCount = enableValidationLayers ? static_cast<uint32_t>(std::size(validationLayers)) : 0;
+		createInfo.ppEnabledLayerNames = validationLayers;
 
 		// Opt-in deeper validation, built up from two independent tiers (both off by default — they add
 		// overhead and best-practices is noisy):
@@ -199,52 +254,7 @@ namespace Snowstorm
 			debugInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
 			                        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
 			                        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-			debugInfo.pfnUserCallback = [](const VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-			                               VkDebugUtilsMessageTypeFlagsEXT /*type*/,
-			                               const VkDebugUtilsMessengerCallbackDataEXT* data,
-			                               void* /*user*/) -> VkBool32
-			{
-				// Active command-buffer label stack when the message fired: turns a bare validation string
-				// into "[Forward > Sky] <message>" so an error names the pass it happened in. Populated by
-				// our BeginDebugLabel scopes (RenderGraph per-pass) — empty outside any labeled region.
-				std::string scope;
-				for (uint32_t i = 0; i < data->cmdBufLabelCount; ++i)
-				{
-					scope += (i == 0) ? "[" : " > ";
-					scope += data->pCmdBufLabels[i].pLabelName;
-				}
-				if (!scope.empty())
-				{
-					scope += "] ";
-				}
-
-				// Only ERROR severity should halt; warnings/info/verbose just log.
-				if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
-				{
-					SS_CORE_ERROR("Vulkan Validation: {0}{1}", scope, data->pMessage);
-
-					// When validation.nonfatal is set, log every error and keep running instead of
-					// asserting on the first one. Lets a single run (e.g. the smoke test) surface
-					// ALL validation errors at once rather than one-per-run. Cached once; the lambda
-					// is captureless (required for the C function-pointer conversion), and CVars are
-					// resolved at startup before this callback can fire.
-					static const bool s_NonFatal = CVars::ValidationNonFatal.Get();
-					if (!s_NonFatal)
-					{
-						SS_CORE_ASSERT(false, "Vulkan validation error");
-					}
-				}
-				else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
-				{
-					SS_CORE_WARN("Vulkan Validation: {0}{1}", scope, data->pMessage);
-				}
-				else
-				{
-					SS_CORE_TRACE("Vulkan Validation: {0}{1}", scope, data->pMessage);
-				}
-				// Per spec, apps must return VK_FALSE (VK_TRUE aborts the triggering call).
-				return VK_FALSE;
-			};
+			debugInfo.pfnUserCallback = OnValidationMessage;
 
 			VK_CHECK(vkCreateDebugUtilsMessengerEXT(m_Instance, &debugInfo, nullptr, &m_DebugMessenger));
 		}
@@ -306,39 +316,27 @@ namespace Snowstorm
 		// ("9070", "5070") are the natural way to name an adapter and are indistinguishable from an index,
 		// so digits must not be a dead end. Empty (default) auto-selects the best-ranked candidate by device
 		// type, ties going to the lower enumeration index.
-		auto toLowerAscii = [](std::string s)
+		const auto toLowerAscii = [](std::string s)
 		{
-			for (char& c : s)
-			{
-				if (c >= 'A' && c <= 'Z')
-				{
-					c = static_cast<char>(c - 'A' + 'a');
-				}
-			}
+			std::transform(s.begin(), s.end(), s.begin(), [](const char c)
+			               { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; });
 			return s;
 		};
 		size_t chosen = candidates.size(); // sentinel: unresolved
 		if (const std::string& sel = CVars::GpuSelect.Get(); !sel.empty())
 		{
-			if (sel.size() <= 3 && std::all_of(sel.begin(), sel.end(), [](unsigned char c)
-			                                   { return c >= '0' && c <= '9'; }))
+			const bool digits = sel.size() <= 3 && std::all_of(sel.begin(), sel.end(), [](const unsigned char c)
+			                                                   { return c >= '0' && c <= '9'; });
+			if (digits && std::stoul(sel) < candidates.size())
 			{
-				if (const size_t idx = static_cast<size_t>(std::stoul(sel)); idx < candidates.size())
-				{
-					chosen = idx;
-				}
+				chosen = std::stoul(sel);
 			}
-			if (chosen == candidates.size())
+			else
 			{
 				const std::string needle = toLowerAscii(sel);
-				for (size_t i = 0; i < candidates.size(); ++i)
-				{
-					if (toLowerAscii(candidates[i].Props.deviceName).find(needle) != std::string::npos)
-					{
-						chosen = i;
-						break;
-					}
-				}
+				const auto match = std::find_if(candidates.begin(), candidates.end(), [&](const GpuCandidate& c)
+				                                { return toLowerAscii(c.Props.deviceName).find(needle) != std::string::npos; });
+				chosen = static_cast<size_t>(match - candidates.begin());
 			}
 			if (chosen == candidates.size())
 			{
@@ -348,10 +346,11 @@ namespace Snowstorm
 		if (chosen == candidates.size())
 		{
 			// VkPhysicalDeviceType values are not ordered by desirability (OTHER=0, INTEGRATED=1,
-			// DISCRETE=2, VIRTUAL=3, CPU=4), so preference is an explicit rank: lower wins.
-			auto deviceTypeRank = [](const VkPhysicalDeviceType type)
+			// DISCRETE=2, VIRTUAL=3, CPU=4), so preference is an explicit rank: lower wins, and min_element
+			// gives a tie to the lower enumeration index.
+			const auto deviceTypeRank = [](const GpuCandidate& c)
 			{
-				switch (type)
+				switch (c.Props.deviceType)
 				{
 				case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
 					return 0;
@@ -365,14 +364,9 @@ namespace Snowstorm
 					return 4;
 				}
 			};
-			chosen = 0;
-			for (size_t i = 1; i < candidates.size(); ++i)
-			{
-				if (deviceTypeRank(candidates[i].Props.deviceType) < deviceTypeRank(candidates[chosen].Props.deviceType))
-				{
-					chosen = i;
-				}
-			}
+			const auto best = std::min_element(candidates.begin(), candidates.end(), [&](const GpuCandidate& a, const GpuCandidate& b)
+			                                   { return deviceTypeRank(a) < deviceTypeRank(b); });
+			chosen = static_cast<size_t>(best - candidates.begin());
 		}
 
 		m_PhysicalDevice = candidates[chosen].Device;
@@ -411,38 +405,16 @@ namespace Snowstorm
 		m_SelectedGpuIndex = static_cast<int>(chosen);
 
 		// 4. Logical Device
-		float queuePriority = 1.0f;
+		// One queue per DISTINCT family: a second VkDeviceQueueCreateInfo for the same family index is invalid,
+		// and transfer and compute share the graphics family when the device has no dedicated one.
+		const float queuePriority = 1.0f;
 		std::vector<VkDeviceQueueCreateInfo> queueCreates;
+		for (const uint32_t family : {m_GraphicsQueueFamily, m_TransferQueueFamily, m_ComputeQueueFamily})
 		{
-			VkDeviceQueueCreateInfo gfx{};
-			gfx.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-			gfx.queueFamilyIndex = m_GraphicsQueueFamily;
-			gfx.queueCount = 1;
-			gfx.pQueuePriorities = &queuePriority;
-			queueCreates.push_back(gfx);
-
-			// Request the transfer family too, but only when it's a distinct family (a second
-			// VkDeviceQueueCreateInfo for the SAME family index is invalid).
-			if (m_TransferQueueFamily != m_GraphicsQueueFamily)
+			if (std::none_of(queueCreates.begin(), queueCreates.end(), [family](const VkDeviceQueueCreateInfo& q)
+			                 { return q.queueFamilyIndex == family; }))
 			{
-				VkDeviceQueueCreateInfo xfer{};
-				xfer.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-				xfer.queueFamilyIndex = m_TransferQueueFamily;
-				xfer.queueCount = 1;
-				xfer.pQueuePriorities = &queuePriority;
-				queueCreates.push_back(xfer);
-			}
-
-			// Async-compute family, same rule. It can never collide with the transfer family (that one is
-			// selected as COMPUTE-less, this one as COMPUTE-ful), so testing against graphics alone is enough.
-			if (m_ComputeQueueFamily != m_GraphicsQueueFamily)
-			{
-				VkDeviceQueueCreateInfo comp{};
-				comp.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-				comp.queueFamilyIndex = m_ComputeQueueFamily;
-				comp.queueCount = 1;
-				comp.pQueuePriorities = &queuePriority;
-				queueCreates.push_back(comp);
+				queueCreates.push_back({VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, nullptr, 0, family, 1, &queuePriority});
 			}
 		}
 
@@ -505,6 +477,8 @@ namespace Snowstorm
 			}
 		}
 
+		const std::vector<VkExtensionProperties> availableDeviceExtensions = DeviceExtensions(m_PhysicalDevice);
+
 		// Common device extensions
 		std::vector<const char*> deviceExtensions = {
 		    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -527,22 +501,14 @@ namespace Snowstorm
 			// only on UNKNOWN (edge) microtriangles. Requires acceleration_structure (above) + the micromap
 			// feature bit. Availability-gated so a non-OMM GPU (RDNA3) still creates the device and masked
 			// geometry falls back to the FORCE_NO_OPAQUE any-hit path.
-			uint32_t extCount = 0;
-			vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extCount, nullptr);
-			std::vector<VkExtensionProperties> avail(extCount);
-			vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extCount, avail.data());
-			for (const auto& e : avail)
+			if (HasExtension(availableDeviceExtensions, VK_EXT_OPACITY_MICROMAP_EXTENSION_NAME))
 			{
-				if (std::strcmp(e.extensionName, VK_EXT_OPACITY_MICROMAP_EXTENSION_NAME) == 0)
-				{
-					VkPhysicalDeviceOpacityMicromapFeaturesEXT ommQuery{
-					    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_EXT};
-					VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
-					f2.pNext = &ommQuery;
-					vkGetPhysicalDeviceFeatures2(m_PhysicalDevice, &f2);
-					m_OpacityMicromapSupported = (ommQuery.micromap == VK_TRUE);
-					break;
-				}
+				VkPhysicalDeviceOpacityMicromapFeaturesEXT ommQuery{
+				    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_EXT};
+				VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+				f2.pNext = &ommQuery;
+				vkGetPhysicalDeviceFeatures2(m_PhysicalDevice, &f2);
+				m_OpacityMicromapSupported = (ommQuery.micromap == VK_TRUE);
 			}
 			if (m_OpacityMicromapSupported)
 			{
@@ -555,20 +521,10 @@ namespace Snowstorm
 		// fault addresses + a description — instead of a bare "-4". A pure diagnostic, so it's Debug-gated and
 		// only enabled when the device advertises it (many drivers don't). Checked against the device's
 		// extension list so vkCreateDevice can't fail on an unsupported extension.
+		m_DeviceFaultSupported = HasExtension(availableDeviceExtensions, VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
+		if (m_DeviceFaultSupported)
 		{
-			uint32_t extCount = 0;
-			vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extCount, nullptr);
-			std::vector<VkExtensionProperties> avail(extCount);
-			vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extCount, avail.data());
-			for (const auto& e : avail)
-			{
-				if (std::strcmp(e.extensionName, VK_EXT_DEVICE_FAULT_EXTENSION_NAME) == 0)
-				{
-					m_DeviceFaultSupported = true;
-					deviceExtensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
-					break;
-				}
-			}
+			deviceExtensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
 		}
 #endif
 
@@ -578,26 +534,15 @@ namespace Snowstorm
 		// see the NVIDIA half of a cross-vendor comparison. Gated on the CVar rather than always-on because the
 		// matching VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR makes the driver keep compiler metadata and slows
 		// pipeline creation; a normal run should be bit-identical to one built without this.
-		if (CVars::ShaderStats.Get())
+		m_PipelineStatsSupported = CVars::ShaderStats.Get() && HasExtension(availableDeviceExtensions, VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
+		if (m_PipelineStatsSupported)
 		{
-			uint32_t extCount = 0;
-			vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extCount, nullptr);
-			std::vector<VkExtensionProperties> avail(extCount);
-			vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extCount, avail.data());
-			for (const auto& e : avail)
-			{
-				if (std::strcmp(e.extensionName, VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME) == 0)
-				{
-					m_PipelineStatsSupported = true;
-					deviceExtensions.push_back(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
-					break;
-				}
-			}
-			if (!m_PipelineStatsSupported)
-			{
-				SS_CORE_WARN("shader.stats: {} not supported by this driver; no statistics will be written.",
-				             VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
-			}
+			deviceExtensions.push_back(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
+		}
+		else if (CVars::ShaderStats.Get())
+		{
+			SS_CORE_WARN("shader.stats: {} not supported by this driver; no statistics will be written.",
+			             VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
 		}
 
 		VkDeviceCreateInfo devInfo{};
@@ -699,9 +644,8 @@ namespace Snowstorm
 		{
 			asFeatures.accelerationStructure = VK_TRUE;
 			rayQueryFeatures.rayQuery = VK_TRUE;
-			asFeatures.pNext = &rayQueryFeatures;
-			rayQueryFeatures.pNext = features13.pNext; // preserve any existing tail (currently none)
-			features13.pNext = &asFeatures;
+			ChainAfter(features13, rayQueryFeatures);
+			ChainAfter(features13, asFeatures);
 		}
 
 		// VK_EXT_device_fault feature (Debug diagnostic). Its deviceFault bit must be enabled for the fault-info
@@ -711,8 +655,7 @@ namespace Snowstorm
 		if (m_DeviceFaultSupported)
 		{
 			faultFeatures.deviceFault = VK_TRUE;
-			faultFeatures.pNext = features13.pNext;
-			features13.pNext = &faultFeatures;
+			ChainAfter(features13, faultFeatures);
 		}
 
 		// Opacity-micromap feature (OMM). Splice on when the extension was added above; storage outside the if so
@@ -722,8 +665,7 @@ namespace Snowstorm
 		if (m_OpacityMicromapSupported)
 		{
 			ommFeatures.micromap = VK_TRUE;
-			ommFeatures.pNext = features13.pNext;
-			features13.pNext = &ommFeatures;
+			ChainAfter(features13, ommFeatures);
 		}
 
 		// Pipeline-statistics feature. pipelineExecutableInfo must be enabled for the query to work; storage
@@ -733,8 +675,7 @@ namespace Snowstorm
 		if (m_PipelineStatsSupported)
 		{
 			pipelineStatsFeatures.pipelineExecutableInfo = VK_TRUE;
-			pipelineStatsFeatures.pNext = features13.pNext;
-			features13.pNext = &pipelineStatsFeatures;
+			ChainAfter(features13, pipelineStatsFeatures);
 		}
 
 		VK_CHECK(vkCreateDevice(m_PhysicalDevice, &devInfo, nullptr, &m_Device));
@@ -774,41 +715,11 @@ namespace Snowstorm
 #endif
 
 		// 5. Graphics command pool (for transient command buffers)
-		VkCommandPoolCreateInfo poolInfo{};
-		poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-		poolInfo.queueFamilyIndex = m_GraphicsQueueFamily;
-		poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-		VK_CHECK(vkCreateCommandPool(m_Device, &poolInfo, nullptr, &m_GraphicsCommandPool));
-
-		// Transfer command pool. A separate pool on the transfer family when dedicated; otherwise reuse the
-		// graphics pool (same family — a distinct pool would be redundant).
-		if (HasDedicatedTransferQueue())
-		{
-			VkCommandPoolCreateInfo xferPool{};
-			xferPool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-			xferPool.queueFamilyIndex = m_TransferQueueFamily;
-			xferPool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-			VK_CHECK(vkCreateCommandPool(m_Device, &xferPool, nullptr, &m_TransferCommandPool));
-		}
-		else
-		{
-			m_TransferCommandPool = m_GraphicsCommandPool;
-		}
-
-		// Async-compute command pool, same rule as the transfer pool: its own pool on the dedicated family,
-		// otherwise an alias of the graphics pool (Shutdown checks for the alias before destroying).
-		if (HasDedicatedComputeQueue())
-		{
-			VkCommandPoolCreateInfo compPool{};
-			compPool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-			compPool.queueFamilyIndex = m_ComputeQueueFamily;
-			compPool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-			VK_CHECK(vkCreateCommandPool(m_Device, &compPool, nullptr, &m_ComputeCommandPool));
-		}
-		else
-		{
-			m_ComputeCommandPool = m_GraphicsCommandPool;
-		}
+		m_GraphicsCommandPool = CreateCommandPool(m_Device, m_GraphicsQueueFamily);
+		// Transfer and async compute get their own pool on a dedicated family, otherwise an alias of the
+		// graphics pool (Shutdown checks for the alias before destroying).
+		m_TransferCommandPool = HasDedicatedTransferQueue() ? CreateCommandPool(m_Device, m_TransferQueueFamily) : m_GraphicsCommandPool;
+		m_ComputeCommandPool = HasDedicatedComputeQueue() ? CreateCommandPool(m_Device, m_ComputeQueueFamily) : m_GraphicsCommandPool;
 
 		// 6. VMA Allocator
 		VmaVulkanFunctions vmaFunctions{};
@@ -883,24 +794,15 @@ namespace Snowstorm
 	{
 		// 1) The three device extensions must all be advertised. accelerationStructure pulls in
 		//    deferred_host_operations as a hard dependency; ray_query is the inline-trace path we use.
-		uint32_t extCount = 0;
-		vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extCount, nullptr);
-		std::vector<VkExtensionProperties> available(extCount);
-		vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extCount, available.data());
-
+		const std::vector<VkExtensionProperties> available = DeviceExtensions(m_PhysicalDevice);
 		const char* required[] = {
 		    VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
 		    VK_KHR_RAY_QUERY_EXTENSION_NAME,
 		    VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME};
-		for (const char* need : required)
+		if (!std::all_of(std::begin(required), std::end(required), [&](const char* need)
+		                 { return HasExtension(available, need); }))
 		{
-			const bool found = std::any_of(available.begin(), available.end(),
-			                               [need](const VkExtensionProperties& e)
-			                               { return std::strcmp(e.extensionName, need) == 0; });
-			if (!found)
-			{
-				return false;
-			}
+			return false;
 		}
 
 		// 2) The feature bits must be set. Extension advertised but feature off => can't enable it.

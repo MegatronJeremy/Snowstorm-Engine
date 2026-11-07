@@ -39,6 +39,7 @@
 #include "Service/EditorTheme.hpp"
 
 #include <cstring>
+#include <functional>
 
 namespace Snowstorm
 {
@@ -228,12 +229,9 @@ namespace Snowstorm
 		// Delete key removes the selected entity (same deferred path as the right-click Delete). Gated
 		// on the keyboard not being captured (e.g. a rename field) so typing never deletes.
 		if (const auto& input = m_World->GetSingleton<InputStateSingleton>();
-		    input.PressedThisFrame.test(Key::Delete) && !input.EditorKeysBlocked())
+		    input.PressedThisFrame.test(Key::Delete) && !input.EditorKeysBlocked() && GetSelected() && IsDeletable(GetSelected()))
 		{
-			if (const Entity sel = GetSelected(); sel && IsDeletable(sel))
-			{
-				m_PendingDelete = sel;
-			}
+			m_PendingDelete = GetSelected();
 		}
 
 		// "+ Create" menu: preset entities (Unity GameObject menu / Unreal Place Actors). Each preset
@@ -317,32 +315,37 @@ namespace Snowstorm
 			e.AddComponent<CameraVisibilityComponent>().Mask = Visibility::Game;
 		};
 
-		// One flat, icon-prefixed row. Returns true if clicked (so the caller closes its popup).
-		const ImU32 accent = EditorTheme::AccentColor();
-		const auto row = [&](CreateIcon icon, const char* label) -> bool
+		struct Preset
 		{
-			DrawCreateIcon(icon, accent);
-			return ImGui::Selectable(label);
+			CreateIcon Icon;
+			const char* Label;
+			const char* EntityName;
+			std::function<void(Entity, const glm::vec3&)> Configure;
+		};
+		const Preset presets[] = {
+		    {CreateIcon::Empty, "Empty Entity", "Empty", [](Entity, const glm::vec3&) {}},
+		    {CreateIcon::Directional, "Directional Light", "Directional Light", addDirectional},
+		    {CreateIcon::Point, "Point Light", "Point Light", addPoint},
+		    {CreateIcon::Spot, "Spot Light", "Spot Light", addSpot},
+		    {CreateIcon::Cube, "Cube", "Cube", addMesh(kCubeMeshHandle)},
+		    {CreateIcon::Cube, "Plane", "Plane", addMesh(kQuadMeshHandle)},
+		    {CreateIcon::Camera, "Camera", "Game Camera", addCamera},
 		};
 
-		// The menu body, shared verbatim by the primary-button popup and the right-click context menu.
+		// The menu body, shared verbatim by the primary-button popup and the right-click context menu: one flat,
+		// icon-prefixed row per preset.
+		const ImU32 accent = EditorTheme::AccentColor();
 		const auto drawCreateItems = [&]()
 		{
 			EditorTheme::SectionHeader("Create");
-			if (row(CreateIcon::Empty, "Empty Entity"))
-				createPreset("Empty", [](Entity, const glm::vec3&) {});
-			if (row(CreateIcon::Directional, "Directional Light"))
-				createPreset("Directional Light", addDirectional);
-			if (row(CreateIcon::Point, "Point Light"))
-				createPreset("Point Light", addPoint);
-			if (row(CreateIcon::Spot, "Spot Light"))
-				createPreset("Spot Light", addSpot);
-			if (row(CreateIcon::Cube, "Cube"))
-				createPreset("Cube", addMesh(kCubeMeshHandle));
-			if (row(CreateIcon::Cube, "Plane"))
-				createPreset("Plane", addMesh(kQuadMeshHandle));
-			if (row(CreateIcon::Camera, "Camera"))
-				createPreset("Game Camera", addCamera);
+			for (const Preset& preset : presets)
+			{
+				DrawCreateIcon(preset.Icon, accent);
+				if (ImGui::Selectable(preset.Label))
+				{
+					createPreset(preset.EntityName, preset.Configure);
+				}
+			}
 		};
 
 		// Primary amber command-console action + its dropdown.
@@ -603,14 +606,11 @@ namespace Snowstorm
 			bool anyAvailable = false;
 			for (const auto& info : GetComponentRegistry())
 			{
-				// Offer only components the entity lacks and that are inspector-facing.
-				if (!info.DrawInEditor || !info.HasFn || !info.EmplaceDefaultFn || !info.Type.is_valid())
+				// Offer only inspector-facing components the entity lacks, never a structural one (ID/Tag).
+				if (!info.DrawInEditor || !info.HasFn || !info.EmplaceDefaultFn || !info.Type.is_valid() ||
+				    info.HasFn(entity) || !IsComponentRemovable(info.Type))
 				{
 					continue;
-				}
-				if (info.HasFn(entity) || !IsComponentRemovable(info.Type))
-				{
-					continue; // already present, or structural (ID/Tag)
 				}
 
 				anyAvailable = true;

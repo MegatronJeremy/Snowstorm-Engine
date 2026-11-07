@@ -279,18 +279,14 @@ namespace Snowstorm
 		ImGui::SameLine();
 		if (ImGui::SmallButton("Rescan##material-shaders"))
 		{
-			auto& notify = world.GetSingleton<EditorNotificationsSingleton>();
 			std::string error;
-			if (RefreshMaterialShaders(error))
-			{
-				notify.Push("Found " + std::to_string(g_MaterialShaderCache.Items.size()) + " material shaders",
-				            EditorToastType::Success);
-			}
-			else
+			const bool found = RefreshMaterialShaders(error);
+			if (!found)
 			{
 				SS_CORE_WARN("Material shader rescan failed: {}", error);
-				notify.Push("Shader rescan failed (see log)", EditorToastType::Error);
 			}
+			world.GetSingleton<EditorNotificationsSingleton>().PushResult(
+			    found, "Found " + std::to_string(g_MaterialShaderCache.Items.size()) + " material shaders", "Shader rescan failed (see log)");
 		}
 		if (ImGui::IsItemHovered())
 		{
@@ -334,14 +330,10 @@ namespace Snowstorm
 		ImGui::Separator();
 
 		// --- Surface params ---
-		if (ImGui::ColorEdit4("Base Color", &m.BaseColor.x))
-			changed = true;
-		if (ImGui::ColorEdit3("Emissive Color", &m.EmissiveColor.x))
-			changed = true;
-		if (ImGui::SliderFloat("Metallic", &m.Metallic, 0.0f, 1.0f))
-			changed = true;
-		if (ImGui::SliderFloat("Roughness", &m.Roughness, 0.0f, 1.0f))
-			changed = true;
+		changed |= ImGui::ColorEdit4("Base Color", &m.BaseColor.x);
+		changed |= ImGui::ColorEdit3("Emissive Color", &m.EmissiveColor.x);
+		changed |= ImGui::SliderFloat("Metallic", &m.Metallic, 0.0f, 1.0f);
+		changed |= ImGui::SliderFloat("Roughness", &m.Roughness, 0.0f, 1.0f);
 		{
 			static constexpr const char* kAlphaModes[] = {"Opaque", "Mask", "Blend"};
 			int mode = static_cast<int>(m.Alpha);
@@ -351,8 +343,7 @@ namespace Snowstorm
 				changed = true;
 			}
 		}
-		if (m.Alpha == AlphaMode::Mask && ImGui::SliderFloat("Alpha Cutoff", &m.AlphaCutoff, 0.0f, 1.0f))
-			changed = true;
+		changed |= m.Alpha == AlphaMode::Mask && ImGui::SliderFloat("Alpha Cutoff", &m.AlphaCutoff, 0.0f, 1.0f);
 
 		const ShaderParamCache& shaderParams = ParamsFor(m.FragmentShader);
 		if (!shaderParams.Params.empty())
@@ -407,12 +398,12 @@ namespace Snowstorm
 		ImGui::BeginDisabled(!g_State.Dirty);
 		if (ImGui::Button("Save", ImVec2(120.0f, 0.0f)))
 		{
-			auto& notify = world.GetSingleton<EditorNotificationsSingleton>();
 			const bool ok = MaterialAssetIO::Save(ResolveMaterialPath(meta->Path), m);
+			world.GetSingleton<EditorNotificationsSingleton>().PushResult(ok, "Saved " + meta->Path.filename().string(),
+			                                                              "Failed to save " + meta->Path.filename().string());
 			if (!ok)
 			{
 				SS_CORE_ERROR("Failed to save material '{}'", meta->Path.string());
-				notify.Push("Failed to save " + meta->Path.filename().string(), EditorToastType::Error);
 			}
 			else
 			{
@@ -428,7 +419,6 @@ namespace Snowstorm
 					}
 				}
 				g_State.Dirty = false;
-				notify.Push("Saved " + meta->Path.filename().string(), EditorToastType::Success);
 			}
 		}
 		ImGui::EndDisabled();

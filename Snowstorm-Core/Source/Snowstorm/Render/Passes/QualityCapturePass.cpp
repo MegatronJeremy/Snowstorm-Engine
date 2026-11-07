@@ -48,6 +48,21 @@ namespace Snowstorm
 			}
 			return static_cast<double>(sum) / (static_cast<double>(pixels) * 3.0 * 255.0);
 		}
+
+		// The readback comes back bottom-row-first relative to the displayed image: the engine renders in
+		// un-flipped Vulkan clip space (VulkanCommandContext::SetViewport), so the display path applies the
+		// Y-flip and a raw copy does not. Reversing rows makes the .npy top-down for NumPy/PIL. Metric-neutral,
+		// since quality-bench flips reference and technique identically.
+		std::vector<uint8_t> TopDownRows(const uint8_t* src, const size_t rowBytes, const uint32_t rows)
+		{
+			std::vector<uint8_t> flipped(rowBytes * rows);
+			for (uint32_t r = 0; r < rows; ++r)
+			{
+				std::memcpy(flipped.data() + static_cast<size_t>(r) * rowBytes, src + (static_cast<size_t>(rows) - 1 - r) * rowBytes,
+				            rowBytes);
+			}
+			return flipped;
+		}
 	}
 
 	void QualityCapturePass::WriteHdr(const std::string& path, Buffer& buf, const uint32_t w, const uint32_t h,
@@ -55,14 +70,7 @@ namespace Snowstorm
 	{
 		const auto dtype = QualityCaptureFormat::HdrDType(fmt);
 		const size_t rowBytes = static_cast<size_t>(w) * QualityCaptureFormat::HdrBytesPerPixel(fmt);
-		const auto* src = static_cast<const uint8_t*>(buf.Map());
-		// Same bottom-row-first readback as the LDR copy, reversed to top-down so the pair lines up.
-		std::vector<uint8_t> flipped(rowBytes * h);
-		for (uint32_t r = 0; r < h; ++r)
-		{
-			std::memcpy(flipped.data() + static_cast<size_t>(r) * rowBytes,
-			            src + (static_cast<size_t>(h) - 1 - r) * rowBytes, rowBytes);
-		}
+		const std::vector<uint8_t> flipped = TopDownRows(static_cast<const uint8_t*>(buf.Map()), rowBytes, h);
 		buf.Unmap();
 		WriteNpy(path, flipped.data(), flipped.size(), {h, w, kChannels}, *dtype);
 		SS_CORE_INFO("Quality capture: wrote {} ({}x{}), linear pre-exposure radiance, render.exposure {}.", path, w, h, exposure);
@@ -72,17 +80,8 @@ namespace Snowstorm
 	{
 		const size_t pixels = static_cast<size_t>(slot.W) * slot.H;
 		const size_t bytes = pixels * BppFor(slot.Fmt);
-		const auto* src = static_cast<const uint8_t*>(slot.Buf->Map());
-
-		// Same row reversal as the convergence path: the readback is bottom-row-first relative to the
-		// displayed image, so flip to top-down for NumPy. Metric-neutral as long as both sides flip.
-		const size_t rowBytes = static_cast<size_t>(slot.W) * kChannels;
-		std::vector<uint8_t> flipped(bytes);
-		for (uint32_t r = 0; r < slot.H; ++r)
-		{
-			std::memcpy(flipped.data() + static_cast<size_t>(r) * rowBytes,
-			            src + (static_cast<size_t>(slot.H) - 1 - r) * rowBytes, rowBytes);
-		}
+		const std::vector<uint8_t> flipped =
+		    TopDownRows(static_cast<const uint8_t*>(slot.Buf->Map()), static_cast<size_t>(slot.W) * kChannels, slot.H);
 
 		const std::string path = basePath + "_f" + QualityCaptureSchedule::FrameSuffix(slot.PathFrame) + "_ldr.npy";
 		WriteNpy(path, flipped.data(), bytes, {slot.H, slot.W, kChannels}, NpyDType::UInt8);
@@ -104,6 +103,43 @@ namespace Snowstorm
 		slot.CopyFrame = -1;
 		++m_Written;
 		SS_CORE_INFO("Quality capture: wrote {} ({}x{}) at route frame {}.", path, slot.W, slot.H, slot.PathFrame);
+	}
+
+	void QualityCapturePass::RecordCopy(CommandContext& ctx, const Ref<Texture>& present, const Ref<Texture>& hdr,
+	                                    const std::string& basePath, const uint64_t frame, PendingCopy& slot,
+	                                    const char* bufferName, const char* hdrBufferName)
+	{
+		const uint32_t pw = present->GetWidth();
+		const uint32_t ph = present->GetHeight();
+		const PixelFormat pf = present->GetDesc().Format;
+		const size_t need = static_cast<size_t>(pw) * ph * BppFor(pf);
+		if (!slot.Buf || slot.Buf->GetSize() < need)
+		{
+			slot.Buf = Buffer::Create(need, BufferUsage::Readback, nullptr, true, bufferName);
+		}
+		if (const std::filesystem::path parent = std::filesystem::path(basePath).parent_path(); !parent.empty())
+		{
+			std::error_code ec;
+			std::filesystem::create_directories(parent, ec);
+		}
+		ctx.CopyTextureToBuffer(present, slot.Buf);
+		slot.HdrFmt = PixelFormat::Unknown;
+		if (hdr && QualityCaptureFormat::HdrDType(hdr->GetDesc().Format) && hdr->GetWidth() == pw && hdr->GetHeight() == ph)
+		{
+			const PixelFormat hf = hdr->GetDesc().Format;
+			const size_t hneed = static_cast<size_t>(pw) * ph * QualityCaptureFormat::HdrBytesPerPixel(hf);
+			if (!slot.HdrBuf || slot.HdrBuf->GetSize() < hneed)
+			{
+				slot.HdrBuf = Buffer::Create(hneed, BufferUsage::Readback, nullptr, true, hdrBufferName);
+			}
+			ctx.CopyTextureToBuffer(hdr, slot.HdrBuf);
+			slot.HdrFmt = hf;
+			slot.Exposure = CVars::Exposure.Get();
+		}
+		slot.W = pw;
+		slot.H = ph;
+		slot.Fmt = pf;
+		slot.CopyFrame = static_cast<int64_t>(frame);
 	}
 
 	uint64_t QualityCapturePass::TickSequence(const Ref<CommandContext>& ctx, const Ref<Texture>& presentImg,
@@ -158,39 +194,8 @@ namespace Snowstorm
 				}
 				else
 				{
-					const uint32_t pw = presentImg->GetWidth();
-					const uint32_t ph = presentImg->GetHeight();
-					const PixelFormat pf = presentImg->GetDesc().Format;
-					const size_t need = static_cast<size_t>(pw) * ph * BppFor(pf);
-					if (!free->Buf || free->Buf->GetSize() < need)
-					{
-						free->Buf = Buffer::Create(need, BufferUsage::Readback, nullptr, true, "QualityCaptureSeq");
-					}
-					if (const std::filesystem::path parent = std::filesystem::path(basePath).parent_path(); !parent.empty())
-					{
-						std::error_code ec;
-						std::filesystem::create_directories(parent, ec);
-					}
-					ctx->CopyTextureToBuffer(presentImg, free->Buf);
-					free->HdrFmt = PixelFormat::Unknown;
-					if (hdrImg && QualityCaptureFormat::HdrDType(hdrImg->GetDesc().Format) && hdrImg->GetWidth() == pw &&
-					    hdrImg->GetHeight() == ph)
-					{
-						const PixelFormat hf = hdrImg->GetDesc().Format;
-						const size_t hneed = static_cast<size_t>(pw) * ph * QualityCaptureFormat::HdrBytesPerPixel(hf);
-						if (!free->HdrBuf || free->HdrBuf->GetSize() < hneed)
-						{
-							free->HdrBuf = Buffer::Create(hneed, BufferUsage::Readback, nullptr, true, "QualityCaptureSeqHdr");
-						}
-						ctx->CopyTextureToBuffer(hdrImg, free->HdrBuf);
-						free->HdrFmt = hf;
-						free->Exposure = CVars::Exposure.Get();
-					}
-					free->CopyFrame = static_cast<int64_t>(frame);
+					RecordCopy(*ctx, presentImg, hdrImg, basePath, frame, *free, "QualityCaptureSeq", "QualityCaptureSeqHdr");
 					free->PathFrame = pathFrame;
-					free->W = pw;
-					free->H = ph;
-					free->Fmt = pf;
 					free->Pos = camPos;
 					free->Rot = camRot;
 					++m_NextWanted;
@@ -246,12 +251,11 @@ namespace Snowstorm
 		const uint32_t frames = Renderer::GetFramesInFlight();
 
 		// A recorded checkpoint copy has retired (frames-in-flight later) -> safe to map + compare.
-		if (m_CopyFrame >= 0 && frame >= static_cast<uint64_t>(m_CopyFrame) + frames)
+		if (m_Copy.CopyFrame >= 0 && frame >= static_cast<uint64_t>(m_Copy.CopyFrame) + frames)
 		{
-			const uint32_t bpp = BppFor(m_Fmt);
-			const size_t pixels = static_cast<size_t>(m_W) * m_H;
-			const size_t bytes = pixels * bpp;
-			const auto* cur = static_cast<const uint8_t*>(m_Buffer->Map());
+			const size_t pixels = static_cast<size_t>(m_Copy.W) * m_Copy.H;
+			const size_t bytes = pixels * BppFor(m_Copy.Fmt);
+			const auto* cur = static_cast<const uint8_t*>(m_Copy.Buf->Map());
 
 			// Exact mode captures the copy it recorded, which is the only one it takes.
 			const bool forced = exactWindow || frame >= maxFrame;
@@ -265,18 +269,8 @@ namespace Snowstorm
 			if (settled || forced)
 			{
 				const std::string path = basePath + "_ldr.npy";
-				// The readback comes back bottom-row-first relative to the displayed image: the engine renders
-				// in un-flipped Vulkan clip space (VulkanCommandContext::SetViewport), so the display path
-				// applies the Y-flip and a raw copy does not. Reverse rows so the .npy is top-down for NumPy/PIL.
-				// Metric-neutral: quality-bench flips reference and technique identically.
-				const size_t rowBytes = static_cast<size_t>(m_W) * kChannels;
-				std::vector<uint8_t> flipped(bytes);
-				for (uint32_t r = 0; r < m_H; ++r)
-				{
-					std::memcpy(flipped.data() + static_cast<size_t>(r) * rowBytes,
-					            cur + (static_cast<size_t>(m_H) - 1 - r) * rowBytes, rowBytes);
-				}
-				WriteNpy(path, flipped.data(), bytes, {m_H, m_W, kChannels}, NpyDType::UInt8);
+				const std::vector<uint8_t> flipped = TopDownRows(cur, static_cast<size_t>(m_Copy.W) * kChannels, m_Copy.H);
+				WriteNpy(path, flipped.data(), bytes, {m_Copy.H, m_Copy.W, kChannels}, NpyDType::UInt8);
 				const char* reason = "converged";
 				if (exactWindow)
 				{
@@ -286,16 +280,16 @@ namespace Snowstorm
 				{
 					reason = "safety cap";
 				}
-				SS_CORE_INFO("Quality capture: wrote {} ({}x{}) at frame {} ({}).", path, m_W, m_H, frame, reason);
+				SS_CORE_INFO("Quality capture: wrote {} ({}x{}) at frame {} ({}).", path, m_Copy.W, m_Copy.H, frame, reason);
 				if (forced && !settled && !exactWindow && !m_WarnedCap)
 				{
 					m_WarnedCap = true;
 					SS_CORE_WARN("Quality capture: hit the {}-frame cap before convergence; captured anyway.", maxFrame);
 				}
-				m_Buffer->Unmap();
-				if (m_HdrFmt != PixelFormat::Unknown)
+				m_Copy.Buf->Unmap();
+				if (m_Copy.HdrFmt != PixelFormat::Unknown)
 				{
-					WriteHdr(QualityCaptureFormat::HdrPath(basePath), *m_HdrBuffer, m_W, m_H, m_HdrFmt, m_HdrExposure);
+					WriteHdr(QualityCaptureFormat::HdrPath(basePath), *m_Copy.HdrBuf, m_Copy.W, m_Copy.H, m_Copy.HdrFmt, m_Copy.Exposure);
 				}
 				m_Written = 1;
 				return m_Written;
@@ -304,8 +298,8 @@ namespace Snowstorm
 			// Not yet converged: keep this checkpoint as the new baseline and schedule the next.
 			m_Prev.assign(cur, cur + bytes);
 			m_PrevValid = true;
-			m_Buffer->Unmap();
-			m_CopyFrame = -1;
+			m_Copy.Buf->Unmap();
+			m_Copy.CopyFrame = -1;
 			m_LastCheckFrame = frame;
 		}
 
@@ -315,41 +309,10 @@ namespace Snowstorm
 		const bool recordNow = exactWindow
 		                           ? (!m_ExactRecorded && frame >= m_StreamDoneFrame + minSettleFrames)
 		                           : (frame >= m_LastCheckFrame + kCheckEvery);
-		if (m_CopyFrame < 0 && recordNow)
+		if (m_Copy.CopyFrame < 0 && recordNow)
 		{
 			m_ExactRecorded = true;
-			const uint32_t pw = presentImg->GetWidth();
-			const uint32_t ph = presentImg->GetHeight();
-			const PixelFormat pf = presentImg->GetDesc().Format;
-			const size_t need = static_cast<size_t>(pw) * ph * BppFor(pf);
-			if (!m_Buffer || m_Buffer->GetSize() < need)
-			{
-				m_Buffer = Buffer::Create(need, BufferUsage::Readback, nullptr, true, "QualityCapturePresent");
-			}
-			if (const std::filesystem::path parent = std::filesystem::path(basePath).parent_path(); !parent.empty())
-			{
-				std::error_code ec;
-				std::filesystem::create_directories(parent, ec);
-			}
-			ctx->CopyTextureToBuffer(presentImg, m_Buffer);
-			m_HdrFmt = PixelFormat::Unknown;
-			if (hdrImg && QualityCaptureFormat::HdrDType(hdrImg->GetDesc().Format) && hdrImg->GetWidth() == pw &&
-			    hdrImg->GetHeight() == ph)
-			{
-				const PixelFormat hf = hdrImg->GetDesc().Format;
-				const size_t hneed = static_cast<size_t>(pw) * ph * QualityCaptureFormat::HdrBytesPerPixel(hf);
-				if (!m_HdrBuffer || m_HdrBuffer->GetSize() < hneed)
-				{
-					m_HdrBuffer = Buffer::Create(hneed, BufferUsage::Readback, nullptr, true, "QualityCaptureHdr");
-				}
-				ctx->CopyTextureToBuffer(hdrImg, m_HdrBuffer);
-				m_HdrFmt = hf;
-				m_HdrExposure = CVars::Exposure.Get();
-			}
-			m_W = pw;
-			m_H = ph;
-			m_Fmt = pf;
-			m_CopyFrame = static_cast<int64_t>(frame);
+			RecordCopy(*ctx, presentImg, hdrImg, basePath, frame, m_Copy, "QualityCapturePresent", "QualityCaptureHdr");
 		}
 
 		return m_Written;

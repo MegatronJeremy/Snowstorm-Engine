@@ -34,6 +34,13 @@ namespace Snowstorm
 			m_Toasts.push_back(std::move(t));
 		}
 
+		// A Success toast saying `success`, or an Error toast saying `failure`. Returns ok.
+		bool PushResult(const bool ok, std::string success, std::string failure)
+		{
+			Push(ok ? std::move(success) : std::move(failure), ok ? EditorToastType::Success : EditorToastType::Error);
+			return ok;
+		}
+
 		std::vector<EditorToast>& Get() { return m_Toasts; }
 
 	private:

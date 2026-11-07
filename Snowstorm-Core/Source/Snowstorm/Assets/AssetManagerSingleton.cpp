@@ -76,6 +76,66 @@ namespace Snowstorm
 
 			return project->GetProjectDirectory() / p;
 		}
+
+		// Where an imported model's files live: Abs for writing, Rel as the registry prefix. Copy when the
+		// source sat outside the project, so its textures must be copied in beside it.
+		struct ModelImportDestination
+		{
+			std::filesystem::path Abs;
+			std::filesystem::path Rel;
+			bool Copy = false;
+		};
+
+		// Resolves and imports one texture slot of `material`. Tries `type`, then `fallback` (for formats that
+		// store a map under a legacy slot, e.g. OBJ normal-as-HEIGHT). Embedded textures ("*0") are not yet
+		// supported, so they warn loudly rather than silently dropping the map. Returns 0 when there is none.
+		AssetHandle ImportMaterialTexture(AssetManagerSingleton& assets, const aiMaterial& material, const aiTextureType type,
+		                                  const aiTextureType fallback, const std::filesystem::path& modelPath,
+		                                  const ModelImportDestination& dest)
+		{
+			aiString texPath;
+			const bool found = (material.GetTexture(type, 0, &texPath) == AI_SUCCESS && texPath.length > 0) ||
+			                   (fallback != aiTextureType_NONE && material.GetTexture(fallback, 0, &texPath) == AI_SUCCESS && texPath.length > 0);
+			if (!found)
+			{
+				return AssetHandle{0};
+			}
+			if (texPath.C_Str()[0] == '*')
+			{
+				SS_CORE_WARN("ImportModel: embedded texture '{}' in {} not yet supported (skipped).", texPath.C_Str(), modelPath.string());
+				return AssetHandle{0};
+			}
+			const std::filesystem::path resolved = modelPath.parent_path() / texPath.C_Str();
+			if (!std::filesystem::exists(resolved))
+			{
+				return AssetHandle{0};
+			}
+
+			// Texture references are model-dir-relative in the source file, and keep that shape under the
+			// destination. A reference that escapes the model's folder ("../shared/x.png") is flattened to its
+			// filename: the .ssmat references textures by HANDLE, so only the registry path (below) must point at
+			// the copied file, not the model's internal reference.
+			std::filesystem::path relTex = std::filesystem::path(texPath.C_Str()).lexically_normal();
+			if (relTex.is_absolute() || (!relTex.empty() && relTex.begin()->string() == ".."))
+			{
+				relTex = relTex.filename();
+			}
+
+			if (dest.Copy)
+			{
+				std::error_code ec;
+				const std::filesystem::path target = dest.Abs / relTex;
+				std::filesystem::create_directories(target.parent_path(), ec);
+				std::filesystem::copy_file(resolved, target, std::filesystem::copy_options::overwrite_existing, ec);
+				if (ec)
+				{
+					SS_CORE_WARN("ImportModel: failed to copy texture '{}' into project ({}).", resolved.string(), ec.message());
+					return AssetHandle{0};
+				}
+			}
+
+			return assets.Import((dest.Rel / relTex).generic_string(), AssetType::Texture);
+		}
 	}
 
 	std::filesystem::path AssetManagerSingleton::GetAbsolutePath(const AssetHandle handle) const
@@ -227,9 +287,7 @@ namespace Snowstorm
 		//  - source already under the project dir:   reference in place, paths made project-relative
 		//  - source outside the project:             copy model (+ same-stem sidecars like .mtl/.bin,
 		//                                            + referenced textures) into <assets>/meshes/<stem>/
-		std::filesystem::path destDirAbs = srcModelDir; // where .ssmat + copied files are written
-		std::filesystem::path destDirRel = srcModelDir; // registry prefix for all imported entries
-		bool copyIntoProject = false;
+		ModelImportDestination dest{srcModelDir, srcModelDir, false};
 
 		if (project)
 		{
@@ -242,15 +300,14 @@ namespace Snowstorm
 
 			if (insideProject)
 			{
-				destDirAbs = srcDirCanon;
-				destDirRel = rel;
+				dest = {srcDirCanon, rel, false};
 			}
 			else
 			{
-				copyIntoProject = true;
-				destDirRel = project->GetConfig().AssetDirectory / "meshes" / modelStem;
-				destDirAbs = project->GetProjectDirectory() / destDirRel;
-				std::filesystem::create_directories(destDirAbs, ec);
+				dest.Copy = true;
+				dest.Rel = project->GetConfig().AssetDirectory / "meshes" / modelStem;
+				dest.Abs = project->GetProjectDirectory() / dest.Rel;
+				std::filesystem::create_directories(dest.Abs, ec);
 
 				// The model file plus its same-stem siblings: .mtl (OBJ materials) and .bin (glTF
 				// geometry buffers) must travel with it or the copy can't be re-parsed later.
@@ -258,15 +315,15 @@ namespace Snowstorm
 				{
 					if (entry.is_regular_file(ec) && entry.path().stem() == path.stem())
 					{
-						std::filesystem::copy_file(entry.path(), destDirAbs / entry.path().filename(),
+						std::filesystem::copy_file(entry.path(), dest.Abs / entry.path().filename(),
 						                           std::filesystem::copy_options::overwrite_existing, ec);
 					}
 				}
-				SS_CORE_INFO("ImportModel: copied '{}' into project at '{}'.", path.string(), destDirRel.generic_string());
+				SS_CORE_INFO("ImportModel: copied '{}' into project at '{}'.", path.string(), dest.Rel.generic_string());
 			}
 		}
 
-		const std::string modelPathStr = (destDirRel / path.filename()).generic_string();
+		const std::string modelPathStr = (dest.Rel / path.filename()).generic_string();
 
 		// One .ssmat per aiMaterial, generated once and reused across submeshes that share it.
 		std::vector<AssetHandle> materialHandles(scene->mNumMaterials, AssetHandle{0});
@@ -301,72 +358,21 @@ namespace Snowstorm
 			// glTF alpha mode: MASK -> alpha-cutout (opaque-pass discard below cutoff). BLEND is recorded
 			// but renders as opaque until the sorted transparent pass lands (#82). OPAQUE / absent -> Opaque.
 			aiString alphaMode;
-			if (aiMat->Get(AI_MATKEY_GLTF_ALPHAMODE, alphaMode) == AI_SUCCESS)
+			const std::string_view mode = aiMat->Get(AI_MATKEY_GLTF_ALPHAMODE, alphaMode) == AI_SUCCESS ? alphaMode.C_Str() : "";
+			if (mode == "MASK")
 			{
-				if (strcmp(alphaMode.C_Str(), "MASK") == 0)
-				{
-					matAsset.Alpha = AlphaMode::Mask;
-					ai_real cutoff = matAsset.AlphaCutoff;
-					if (aiMat->Get(AI_MATKEY_GLTF_ALPHACUTOFF, cutoff) == AI_SUCCESS)
-						matAsset.AlphaCutoff = cutoff;
-				}
-				else if (strcmp(alphaMode.C_Str(), "BLEND") == 0)
-					matAsset.Alpha = AlphaMode::Blend;
+				matAsset.Alpha = AlphaMode::Mask;
+				ai_real cutoff = matAsset.AlphaCutoff;
+				if (aiMat->Get(AI_MATKEY_GLTF_ALPHACUTOFF, cutoff) == AI_SUCCESS)
+					matAsset.AlphaCutoff = cutoff;
+			}
+			else if (mode == "BLEND")
+			{
+				matAsset.Alpha = AlphaMode::Blend;
 			}
 
-			// Resolve+import one texture slot. Tries `type`, then `fallback` (for formats that store a
-			// map under a legacy slot, e.g. OBJ normal-as-HEIGHT). Embedded textures ("*0") are not yet
-			// supported — warn loudly rather than silently dropping the map. The srgb flag is recorded
-			// only by intent here; the resolve path samples linear/sRGB per slot (see GetTextureView).
-			const auto importTex = [&](const aiTextureType type, const aiTextureType fallback) -> AssetHandle
-			{
-				aiString texPath;
-				if (aiMat->GetTexture(type, 0, &texPath) != AI_SUCCESS || texPath.length == 0)
-				{
-					if (fallback == aiTextureType_NONE ||
-					    aiMat->GetTexture(fallback, 0, &texPath) != AI_SUCCESS || texPath.length == 0)
-					{
-						return AssetHandle{0};
-					}
-				}
-				if (texPath.C_Str()[0] == '*')
-				{
-					SS_CORE_WARN("ImportModel: embedded texture '{}' in {} not yet supported (skipped).",
-					             texPath.C_Str(), path.string());
-					return AssetHandle{0};
-				}
-				const std::filesystem::path resolved = srcModelDir / texPath.C_Str();
-				if (!std::filesystem::exists(resolved))
-				{
-					return AssetHandle{0};
-				}
-
-				// Texture references are model-dir-relative in the source file; keep that shape under
-				// destDir. A reference that escapes the model's folder ("../shared/x.png") is flattened
-				// to its filename — the .ssmat references textures by HANDLE, so only the registry path
-				// (below) must point at the copied file, not the model's internal reference.
-				std::filesystem::path relTex = std::filesystem::path(texPath.C_Str()).lexically_normal();
-				if (relTex.is_absolute() || (!relTex.empty() && relTex.begin()->string() == ".."))
-				{
-					relTex = relTex.filename();
-				}
-
-				if (copyIntoProject)
-				{
-					std::error_code ec;
-					const std::filesystem::path target = destDirAbs / relTex;
-					std::filesystem::create_directories(target.parent_path(), ec);
-					std::filesystem::copy_file(resolved, target, std::filesystem::copy_options::overwrite_existing, ec);
-					if (ec)
-					{
-						SS_CORE_WARN("ImportModel: failed to copy texture '{}' into project ({}).",
-						             resolved.string(), ec.message());
-						return AssetHandle{0};
-					}
-				}
-
-				return Import((destDirRel / relTex).generic_string(), AssetType::Texture);
-			};
+			const auto importTex = [&](const aiTextureType type, const aiTextureType fallback)
+			{ return ImportMaterialTexture(*this, *aiMat, type, fallback, path, dest); };
 
 			matAsset.AlbedoTexture = importTex(aiTextureType_DIFFUSE, aiTextureType_BASE_COLOR);
 			matAsset.NormalTexture = importTex(aiTextureType_NORMALS, aiTextureType_HEIGHT);
@@ -382,11 +388,11 @@ namespace Snowstorm
 			std::ranges::replace(matName, '/', '_');
 			std::ranges::replace(matName, '\\', '_');
 
-			// Write the generated .ssmat into the project (destDirAbs), register it project-relative.
+			// Write the generated .ssmat into the project (dest.Abs), register it project-relative.
 			const std::string matFileName = modelStem + "_" + matName + ".ssmat";
-			if (MaterialAssetIO::Save(destDirAbs / matFileName, matAsset))
+			if (MaterialAssetIO::Save(dest.Abs / matFileName, matAsset))
 			{
-				materialHandles[m] = Import((destDirRel / matFileName).generic_string(), AssetType::Material);
+				materialHandles[m] = Import((dest.Rel / matFileName).generic_string(), AssetType::Material);
 			}
 		}
 
@@ -398,11 +404,7 @@ namespace Snowstorm
 			const std::string meshAssetPath = VirtualPath::JoinSubResource(modelPathStr, static_cast<int>(i));
 			const AssetHandle meshHandle = Import(meshAssetPath, AssetType::Mesh);
 
-			AssetHandle matHandle{0};
-			if (aiSub->mMaterialIndex < materialHandles.size())
-			{
-				matHandle = materialHandles[aiSub->mMaterialIndex];
-			}
+			const AssetHandle matHandle = aiSub->mMaterialIndex < materialHandles.size() ? materialHandles[aiSub->mMaterialIndex] : AssetHandle{0};
 
 			const std::string partName = aiSub->mName.length > 0
 			                                 ? (modelStem + "/" + aiSub->mName.C_Str())
