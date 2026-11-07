@@ -13,6 +13,7 @@
 #include "Snowstorm/Core/Log.hpp"
 #include "Snowstorm/Render/Passes/ShadowPass.hpp"
 #include "Snowstorm/Render/RendererService.hpp"
+#include "Snowstorm/Render/ShadowAtlasMath.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -22,6 +23,20 @@
 
 namespace Snowstorm
 {
+	namespace
+	{
+		// Warns when `dropped` becomes true, then stays quiet until it has been false for a frame.
+		template <typename... Args>
+		void WarnOnRise(bool& warned, const bool dropped, spdlog::format_string_t<Args...> format, Args&&... args)
+		{
+			if (dropped && !warned)
+			{
+				SS_CORE_WARN(format, std::forward<Args>(args)...);
+			}
+			warned = dropped;
+		}
+	}
+
 	void LightingSystem::Execute(Timestep ts)
 	{
 		auto lightView = View<DirectionalLightComponent>();
@@ -86,41 +101,30 @@ namespace Snowstorm
 			else if (rasterDirShadows)
 			{
 				shadowSlot = dirSlots.Slots[lightIndex];
-				if (shadowSlot > 0)
+			}
+			// Only a raster secondary has a slot above 0. Without scene bounds it has no fit and renders unshadowed.
+			if (shadowSlot > 0)
+			{
+				GPUDirShadow& payload = lightData.DirShadows[shadowSlot - 1];
+				if (ShadowPass::ComputeSunViewProj(*m_World, candidateDirs[lightIndex], payload.ViewProj))
 				{
-					GPUDirShadow& payload = lightData.DirShadows[shadowSlot - 1];
-					if (ShadowPass::ComputeSunViewProj(*m_World, candidateDirs[lightIndex], payload.ViewProj))
-					{
-						constexpr float inv = 1.0f / static_cast<float>(ShadowPass::kDirAtlasCols);
-						const int tile = shadowSlot - 1;
-						const int col = tile % static_cast<int>(ShadowPass::kDirAtlasCols);
-						const int row = tile / static_cast<int>(ShadowPass::kDirAtlasCols);
-						payload.AtlasRect = {static_cast<float>(col) * inv, static_cast<float>(row) * inv, inv, inv};
-					}
-					else
-					{
-						shadowSlot = -1; // no scene bounds
-					}
+					payload.AtlasRect = ShadowAtlasTileUv(DirectionalAtlasTile(shadowSlot), ShadowPass::kDirAtlasCols);
+				}
+				else
+				{
+					shadowSlot = -1;
 				}
 			}
 			lightData.Lights[lightData.LightCount++] =
 			    PackDirectionalLight(candidateDirs[lightIndex], directionalLight.Intensity, directionalLight.Color, shadowSlot);
 		}
 
-		if (droppedLights && !m_WarnedDroppedDirectional)
-		{
-			SS_CORE_WARN("More than {} directional lights in scene; extra lights ignored.", MAX_DIRECTIONAL_LIGHTS);
-		}
-		m_WarnedDroppedDirectional = droppedLights;
-
-		const bool droppedDirShadow = rasterDirShadows && dirSlots.Dropped > 0;
-		if (droppedDirShadow && !m_WarnedDroppedDirShadow)
-		{
-			SS_CORE_WARN("{} shadow-casting directional light(s) over render.shadow.directionals = {}; they render "
-			             "unshadowed in raster mode.",
-			             dirSlots.Dropped, directionalBudget);
-		}
-		m_WarnedDroppedDirShadow = droppedDirShadow;
+		WarnOnRise(m_WarnedDroppedDirectional, droppedLights, "More than {} directional lights in scene; extra lights ignored.",
+		           MAX_DIRECTIONAL_LIGHTS);
+		WarnOnRise(m_WarnedDroppedDirShadow, rasterDirShadows && dirSlots.Dropped > 0,
+		           "{} shadow-casting directional light(s) over render.shadow.directionals = {}; they render "
+		           "unshadowed in raster mode.",
+		           dirSlots.Dropped, directionalBudget);
 
 		// Directional-sun shadow FIT (world -> light clip), the sun analogue of the per-spot fit computed
 		// below. Kept here so ALL shadow setup lives in the light system; RenderSystem only binds the depth
@@ -199,46 +203,32 @@ namespace Snowstorm
 				// sacrificial >= 0 sentinel. No atlas budget => every caster gets a shadow.
 				shadowSlot = 0;
 			}
+			else if (shadowsEnabled && light.CastShadows && nextPointShadowSlot < MAX_SHADOW_POINTS)
+			{
+				shadowSlot = nextPointShadowSlot++;
+				GPUPointShadow& payload = lightData.PointShadows[shadowSlot];
+				for (int face = 0; face < 6; ++face)
+				{
+					payload.Face[face] = ShadowPass::ComputePointFaceViewProj(transform.Position, face, light.Range);
+					payload.Rect[face] = ShadowAtlasTileUv(PointAtlasTile(shadowSlot, face), ShadowPass::kPointAtlasCols);
+				}
+			}
 			else if (shadowsEnabled && light.CastShadows)
 			{
-				if (nextPointShadowSlot < MAX_SHADOW_POINTS)
-				{
-					shadowSlot = nextPointShadowSlot++;
-					GPUPointShadow& payload = lightData.PointShadows[shadowSlot];
-					constexpr float inv = 1.0f / static_cast<float>(ShadowPass::kPointAtlasCols);
-					for (int face = 0; face < 6; ++face)
-					{
-						const int tile = shadowSlot * 6 + face;
-						const int col = tile % static_cast<int>(ShadowPass::kPointAtlasCols);
-						const int row = tile / static_cast<int>(ShadowPass::kPointAtlasCols);
-						payload.Face[face] = ShadowPass::ComputePointFaceViewProj(transform.Position, face, light.Range);
-						payload.Rect[face] = {static_cast<float>(col) * inv, static_cast<float>(row) * inv, inv, inv};
-					}
-				}
-				else
-				{
-					// More shadow-casting points than the atlas budget (each needs 6 tiles). The extra ones
-					// render unshadowed rather than fighting over tiles -- fail loud so it's not a silent gap.
-					droppedPointShadow = true;
-				}
+				// More shadow-casting points than the atlas budget (each needs 6 tiles). The extra ones
+				// render unshadowed rather than fighting over tiles -- fail loud so it's not a silent gap.
+				droppedPointShadow = true;
 			}
 
 			lightData.PointLights[lightData.PointCount++] =
 			    PackPointLight(transform.Position, light.Range, light.Color, light.Intensity, shadowSlot);
 		}
 		lightData.PointShadowCount = nextPointShadowSlot;
-		if (droppedPoint && !m_WarnedDroppedPoint)
-		{
-			SS_CORE_WARN("More than {} point lights in scene; extra lights ignored.", MAX_POINT_LIGHTS);
-		}
-		m_WarnedDroppedPoint = droppedPoint;
-		if (droppedPointShadow && !m_WarnedDroppedPointShadow)
-		{
-			SS_CORE_WARN("More than {} shadow-casting point lights; extra ones render unshadowed (each omni "
-			             "shadow costs 6 depth passes).",
-			             MAX_SHADOW_POINTS);
-		}
-		m_WarnedDroppedPointShadow = droppedPointShadow;
+		WarnOnRise(m_WarnedDroppedPoint, droppedPoint, "More than {} point lights in scene; extra lights ignored.", MAX_POINT_LIGHTS);
+		WarnOnRise(m_WarnedDroppedPointShadow, droppedPointShadow,
+		           "More than {} shadow-casting point lights; extra ones render unshadowed (each omni "
+		           "shadow costs 6 depth passes).",
+		           MAX_SHADOW_POINTS);
 
 		// Spot lights: position + forward (-Z) from the transform; cone half-angles stored as cosines so
 		// the shader compares against dot() with no per-fragment trig. OuterAngle is clamped >= InnerAngle
@@ -280,21 +270,14 @@ namespace Snowstorm
 			{
 				shadowIndex = nextShadowTile++;
 				shadowViewProj = ShadowPass::ComputeSpotViewProj(transform.Position, forward, outer, light.Range);
-				constexpr float inv = 1.0f / static_cast<float>(ShadowPass::kSpotAtlasCols);
-				const int col = shadowIndex % static_cast<int>(ShadowPass::kSpotAtlasCols);
-				const int row = shadowIndex / static_cast<int>(ShadowPass::kSpotAtlasCols);
-				atlasRect = {static_cast<float>(col) * inv, static_cast<float>(row) * inv, inv, inv};
+				atlasRect = ShadowAtlasTileUv(static_cast<uint32_t>(shadowIndex), ShadowPass::kSpotAtlasCols);
 			}
 
 			lightData.SpotLights[lightData.SpotCount++] =
 			    PackSpotLight(transform.Position, light.Range, light.Color, light.Intensity, forward, light.InnerAngleDeg,
 			                  light.OuterAngleDeg, shadowIndex, shadowViewProj, atlasRect);
 		}
-		if (droppedSpot && !m_WarnedDroppedSpot)
-		{
-			SS_CORE_WARN("More than {} spot lights in scene; extra lights ignored.", MAX_SPOT_LIGHTS);
-		}
-		m_WarnedDroppedSpot = droppedSpot;
+		WarnOnRise(m_WarnedDroppedSpot, droppedSpot, "More than {} spot lights in scene; extra lights ignored.", MAX_SPOT_LIGHTS);
 
 		renderer3DSingleton.UploadLights(lightData);
 	}

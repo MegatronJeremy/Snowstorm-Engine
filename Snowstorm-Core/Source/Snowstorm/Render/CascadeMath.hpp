@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Snowstorm/Render/ShadowAtlasMath.hpp"
+
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -128,9 +130,7 @@ namespace Snowstorm::CascadeMath
 	// UV rect of tile `cascade`: xy offset, zw scale, the layout SampleShadowFactor takes for the spot atlas.
 	inline glm::vec4 AtlasUvRect(uint32_t cascade)
 	{
-		constexpr float s = 1.0f / static_cast<float>(kCascadeAtlasCols);
-		return {static_cast<float>(cascade % kCascadeAtlasCols) * s, static_cast<float>(cascade / kCascadeAtlasCols) * s,
-		        s, s};
+		return ShadowAtlasTileUv(cascade, kCascadeAtlasCols);
 	}
 
 	// Bias multiplier of cascade i against cascade 0: a constant NDC bias is a different world bias per cascade,
