@@ -61,6 +61,35 @@ namespace Snowstorm
 			pick.Visibility = &reg.Read<CameraVisibilityComponent>(e);
 			return pick;
 		}
+
+		// The texture the forward pass samples from a cross-frame pair of upscale targets: under
+		// render.rt.crossframe, the slot the chain wrote LAST frame. Declaring the read against the written slot
+		// instead would reinstate the dependency the double buffer removes. Null while the slot has no colour.
+		Ref<Texture> UpscaleReadTexture(const Ref<RenderTarget> (&targets)[2], const uint64_t frameCounter)
+		{
+			const Ref<RenderTarget>& target = targets[RtReadSlot(frameCounter)];
+			if (!target || target->GetDesc().ColorAttachments.empty())
+			{
+				return nullptr;
+			}
+			return target->GetDesc().ColorAttachments[0].View->GetTexture();
+		}
+
+		// The buffer a denoised effect's chain wrote last this frame: the a-trous scratch when denoising, else the
+		// current temporal history, else the raw trace.
+		Ref<TextureView> LiveDenoisedView(const Ref<TextureView>& raw, const DenoiserInstance& denoiser, const bool denoise,
+		                                  const bool temporal, const uint64_t frameCounter)
+		{
+			if (denoise && denoiser.ScratchView[0])
+			{
+				return denoiser.ScratchView[0];
+			}
+			if (temporal && denoiser.Allocated())
+			{
+				return denoiser.HistoryView[frameCounter & 1ull];
+			}
+			return raw;
+		}
 	}
 
 	void RenderSystem::Execute(const Timestep /*ts*/)
@@ -278,73 +307,70 @@ namespace Snowstorm
 			const glm::vec2 size = reg.Read<ViewportComponent>(presentViewport).Size;
 			view.Width = static_cast<uint32_t>(size.x);
 			view.Height = static_cast<uint32_t>(size.y);
-			if (const CameraPick pick = FindCameraForViewport(reg, presentViewport); pick.Transform)
+			const CameraPick pick = FindCameraForViewport(reg, presentViewport);
+			if (pick.Transform)
 			{
 				view.CameraPosition = pick.Transform->Position;
 				view.CameraRotation = pick.Transform->Rotation;
-				if (reg.any_of<CameraPathComponent>(pick.Entity))
-				{
-					const auto& path = reg.Read<CameraPathComponent>(pick.Entity);
-					view.PathFrame = path.Frame;
-					view.PathActive = path.Started;
-				}
+			}
+			if (pick.Transform && reg.any_of<CameraPathComponent>(pick.Entity))
+			{
+				const auto& path = reg.Read<CameraPathComponent>(pick.Entity);
+				view.PathFrame = path.Frame;
+				view.PathActive = path.Started;
 			}
 			renderer.SetFrameViewInfo(view);
 
 			RendererService::ClusterStats clusterStats{};
-			bool clusterShaded = false;
 			const bool clusterShade = CVars::LightClusterShade.Get();
-			if ((CVars::LightClusterAssign.Get() || clusterShade) && view.Width > 0 && view.Height > 0)
+			const bool clusterRuns = (CVars::LightClusterAssign.Get() || clusterShade) && view.Width > 0 && view.Height > 0 &&
+			                         pick.Cam && pick.Rt && pick.Cam->Projection == CameraComponent::ProjectionType::Perspective;
+			if (clusterRuns)
 			{
-				const CameraPick pick = FindCameraForViewport(reg, presentViewport);
-				if (pick.Cam && pick.Rt && pick.Cam->Projection == CameraComponent::ProjectionType::Perspective)
+				const glm::mat4& viewMatrix = pick.Rt->View;
+				const LightDataBlock& lights = renderer.GetLights();
+				// View space looks down -z; the cluster grid wants positive depth along the view.
+				std::vector<ClusterSphere> spheres;
+				auto add = [&](const glm::vec3& p, float range)
 				{
-					const glm::mat4& viewMatrix = pick.Rt->View;
-					const LightDataBlock& lights = renderer.GetLights();
-					// View space looks down -z; the cluster grid wants positive depth along the view.
-					std::vector<ClusterSphere> spheres;
-					auto add = [&](const glm::vec3& p, float range)
-					{
-						const glm::vec3 v = glm::vec3(viewMatrix * glm::vec4(p, 1.0f));
-						spheres.push_back({{v.x, v.y, -v.z}, range});
-					};
-					for (int i = 0; i < lights.PointCount; ++i)
-						add(lights.PointLights[i].Position, lights.PointLights[i].Range);
-					for (int i = 0; i < lights.SpotCount; ++i)
-						add(lights.SpotLights[i].Position, lights.SpotLights[i].Range); // cone ignored: sphere is conservative
+					const glm::vec3 v = glm::vec3(viewMatrix * glm::vec4(p, 1.0f));
+					spheres.push_back({{v.x, v.y, -v.z}, range});
+				};
+				for (int i = 0; i < lights.PointCount; ++i)
+					add(lights.PointLights[i].Position, lights.PointLights[i].Range);
+				for (int i = 0; i < lights.SpotCount; ++i)
+					add(lights.SpotLights[i].Position, lights.SpotLights[i].Range); // cone ignored: sphere is conservative
 
-					ClusterGrid grid;
-					grid.Width = view.Width;
-					grid.Height = view.Height;
-					grid.Near = pick.Cam->PerspectiveNear;
-					grid.Far = pick.Cam->PerspectiveFar;
-					const float tanHalfFovY = std::tan(pick.Cam->PerspectiveFOV * 0.5f);
-					const float aspect = static_cast<float>(view.Width) / static_cast<float>(view.Height);
-					const uint32_t stride = static_cast<uint32_t>(std::max(CVars::LightClusterMaxPerCluster.Get(), 1));
-					const ClusterLightLists lists = AssignClusterLights(grid, tanHalfFovY, aspect, spheres, stride);
-					clusterStats = {grid.ClusterCount(), lists.Occupied, lists.MaxCount, lists.Overflowed, static_cast<uint32_t>(spheres.size())};
+				ClusterGrid grid;
+				grid.Width = view.Width;
+				grid.Height = view.Height;
+				grid.Near = pick.Cam->PerspectiveNear;
+				grid.Far = pick.Cam->PerspectiveFar;
+				const float tanHalfFovY = std::tan(pick.Cam->PerspectiveFOV * 0.5f);
+				const float aspect = static_cast<float>(view.Width) / static_cast<float>(view.Height);
+				const uint32_t stride = static_cast<uint32_t>(std::max(CVars::LightClusterMaxPerCluster.Get(), 1));
+				const ClusterLightLists lists = AssignClusterLights(grid, tanHalfFovY, aspect, spheres, stride);
+				clusterStats = {grid.ClusterCount(), lists.Occupied, lists.MaxCount, lists.Overflowed, static_cast<uint32_t>(spheres.size())};
 
-					if (clusterShade)
-					{
-						RendererService::ClusterShading shading;
-						shading.Width = grid.Width;
-						shading.Height = grid.Height;
-						shading.TilePx = grid.TilePx;
-						shading.TilesX = grid.TilesX();
-						shading.TilesY = grid.TilesY();
-						shading.Slices = grid.Slices;
-						shading.ClusterCount = grid.ClusterCount();
-						shading.Stride = stride;
-						shading.Near = grid.Near;
-						shading.Far = grid.Far;
-						shading.ViewDepthRow = -glm::vec4(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2], viewMatrix[3][2]);
-						shading.CameraPosition = view.CameraPosition;
-						renderer.SetClusterShading(frameIndex, shading, PackClusterLightLists(lists));
-						clusterShaded = true;
-					}
+				if (clusterShade)
+				{
+					RendererService::ClusterShading shading;
+					shading.Width = grid.Width;
+					shading.Height = grid.Height;
+					shading.TilePx = grid.TilePx;
+					shading.TilesX = grid.TilesX();
+					shading.TilesY = grid.TilesY();
+					shading.Slices = grid.Slices;
+					shading.ClusterCount = grid.ClusterCount();
+					shading.Stride = stride;
+					shading.Near = grid.Near;
+					shading.Far = grid.Far;
+					shading.ViewDepthRow = -glm::vec4(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2], viewMatrix[3][2]);
+					shading.CameraPosition = view.CameraPosition;
+					renderer.SetClusterShading(frameIndex, shading, PackClusterLightLists(lists));
 				}
 			}
-			if (!clusterShaded)
+			if (!(clusterRuns && clusterShade))
 				renderer.ClearClusterShading();
 			renderer.SetClusterStats(clusterStats);
 		}
@@ -355,33 +381,28 @@ namespace Snowstorm
 		//  - Runtime (#4): no ImGui, so blit the primary viewport's final LDR image (PresentSampleView)
 		//    straight to the swapchain with a fullscreen triangle (PresentPass). Without this the runtime
 		//    presents a blank window.
-		if (const Ref<RenderTarget> swapchain = Renderer::GetSwapchainTarget())
+		const Ref<RenderTarget> swapchain = Renderer::GetSwapchainTarget();
+		const Ref<TextureView> presentSource =
+		    presentViewport != entt::null ? reg.Read<RenderTargetComponent>(presentViewport).PresentSampleView : nullptr;
+		if (swapchain && Renderer::IsImGuiBackendInitialized())
 		{
-			if (Renderer::IsImGuiBackendInitialized())
-			{
-				graph.AddPass({.Name = "Editor",
-				               .Target = swapchain,
-				               .Execute = [&](CommandContext& c)
-				               {
-					               Renderer::RenderImGuiDrawData(c);
-				               }});
-			}
-			else if (presentViewport != entt::null)
-			{
-				const auto& presentRtc = reg.Read<RenderTargetComponent>(presentViewport);
-				if (presentRtc.PresentSampleView)
-				{
-					const Ref<TextureView> src = presentRtc.PresentSampleView;
-					const PixelFormat swapFormat = swapchain->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
-					graph.AddPass({.Name = "Present",
-					               .Target = swapchain,
-					               .Reads = {{src->GetTexture(), RenderGraph::AccessState::Sampled}},
-					               .Execute = [this, src, swapFormat, frameIndex](CommandContext& c)
-					               {
-						               m_PresentPass.Draw(c, frameIndex, src, swapFormat);
-					               }});
-				}
-			}
+			graph.AddPass({.Name = "Editor",
+			               .Target = swapchain,
+			               .Execute = [&](CommandContext& c)
+			               {
+				               Renderer::RenderImGuiDrawData(c);
+			               }});
+		}
+		else if (swapchain && presentSource)
+		{
+			const PixelFormat swapFormat = swapchain->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
+			graph.AddPass({.Name = "Present",
+			               .Target = swapchain,
+			               .Reads = {{presentSource->GetTexture(), RenderGraph::AccessState::Sampled}},
+			               .Execute = [this, presentSource, swapFormat, frameIndex](CommandContext& c)
+			               {
+				               m_PresentPass.Draw(c, frameIndex, presentSource, swapFormat);
+			               }});
 		}
 
 		graph.Execute(*ctx);
@@ -584,97 +605,66 @@ namespace Snowstorm
 		// selected, NOT merely when the buffer is being rendered (TAA/GI render their buffers but must show
 		// the real tonemapped scene). Keyed off debugView. Applied to the primary path only (compare mode
 		// keeps its GT side normal). DebugMode 1 = motion vectors (velocity), 2 = world normal (G-buffer).
+		// Half-res buffers (6, 2, 7, 8, 9) are point-fetched: DebugScale is their width over the present width.
+		const auto halfResScale = [&vpRT](const Ref<Texture>& target)
+		{ return static_cast<float>(target->GetDesc().Width) / static_cast<float>(vpRT.GBufferNormalTarget->GetDesc().Width); };
+		const uint64_t frameCounter = fc.Renderer.GetFrameCounter();
 		RendererService::TonemapParams primaryTonemap{};
-		Ref<Texture> debugRead;
+		Ref<TextureView> debugSource;
 		if (debugView == 1 && velocityNeeded)
 		{
 			primaryTonemap.DebugMode = 1;
-			primaryTonemap.DebugTexIndex = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 			primaryTonemap.DebugScale = 40.0f; // per-frame UV velocity is small; scale to a visible range
-			debugRead = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+			debugSource = vpRT.VelocityTarget->GetDesc().ColorAttachments[0].View;
 		}
 		else if (debugView == 5 && gbufferNeeded)
 		{
 			primaryTonemap.DebugMode = 2;
-			primaryTonemap.DebugTexIndex = vpRT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View->GetGlobalBindlessIndex();
 			primaryTonemap.DebugScale = 1.0f; // normals map [-1,1] -> [0,1] in the shader
-			debugRead = vpRT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View->GetTexture();
+			debugSource = vpRT.GBufferNormalTarget->GetDesc().ColorAttachments[0].View;
 		}
 		else if (debugView == 6 && gbufferNeeded && vpRT.GITarget && vpRT.GITargetView)
 		{
-			// Raw half-res GI irradiance. The GI target is smaller than the present target, so pass the size
-			// ratio (gi_res / present_res, < 1) as DebugScale; the shader scales the present texel by it to
-			// find the matching GI texel (point fetch, a debug readout). Only meaningful when the GI pass ran.
+			// Raw half-res GI irradiance. Only meaningful when the GI pass ran.
 			primaryTonemap.DebugMode = 3;
-			primaryTonemap.DebugTexIndex = vpRT.GITargetView->GetGlobalBindlessIndex();
-			primaryTonemap.DebugScale = static_cast<float>(vpRT.GITarget->GetDesc().Width) /
-			                            static_cast<float>(vpRT.GBufferNormalTarget->GetDesc().Width);
-			debugRead = vpRT.GITarget;
+			primaryTonemap.DebugScale = halfResScale(vpRT.GITarget);
+			debugSource = vpRT.GITargetView;
 		}
 		else if (debugView == 2 && aoActive && gbufferNeeded && vpRT.AOTarget && vpRT.AOTargetView)
 		{
-			// Raw half-res AO factor (#126), same half-res point-fetch readout as GI (DebugMode 3). The AO
-			// factor lives in .r; DebugMode 4 outputs it as grayscale. Only meaningful when the AO pass ran.
+			// Raw half-res AO factor (#126). It lives in .r and DebugMode 4 outputs it as grayscale.
 			primaryTonemap.DebugMode = 4;
-			primaryTonemap.DebugTexIndex = vpRT.AOTargetView->GetGlobalBindlessIndex();
-			primaryTonemap.DebugScale = static_cast<float>(vpRT.AOTarget->GetDesc().Width) /
-			                            static_cast<float>(vpRT.GBufferNormalTarget->GetDesc().Width);
-			debugRead = vpRT.AOTarget;
+			primaryTonemap.DebugScale = halfResScale(vpRT.AOTarget);
+			debugSource = vpRT.AOTargetView;
 		}
 		else if (debugView == 7 && giActive && gbufferNeeded && vpRT.GITarget && vpRT.GITargetView)
 		{
-			// Denoised/accumulated half-res GI (#125): the LIVE GI buffer after the temporal + à-trous stages,
-			// vs view 6's RAW trace, the A/B that shows what the denoiser did. Point at whichever buffer the GI
-			// sub-chain last wrote this frame, mirroring the v.GIView moving pointer: denoiser on => the à-trous
-			// landed in Scratch[0]; else temporal on => History[cur]; else the raw GITarget. Same half-res
-			// point-fetch readout as view 6 (DebugMode 3, gi/present size ratio as DebugScale). #132: buffers via GIDenoiser.
-			Ref<TextureView> liveGI = vpRT.GITargetView;
-			if (CVars::GIDenoiseActive() && vpRT.GIDenoiser.ScratchView[0])
-			{
-				liveGI = vpRT.GIDenoiser.ScratchView[0];
-			}
-			else if (CVars::GITemporalActive() && vpRT.GIDenoiser.Allocated())
-			{
-				const uint32_t curIdx = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
-				liveGI = vpRT.GIDenoiser.HistoryView[curIdx];
-			}
+			// Denoised/accumulated half-res GI (#125), against view 6's raw trace: the A/B that shows what the
+			// denoiser did, mirroring the v.GIView moving pointer. #132: buffers via GIDenoiser.
 			primaryTonemap.DebugMode = 3;
-			primaryTonemap.DebugTexIndex = liveGI->GetGlobalBindlessIndex();
-			primaryTonemap.DebugScale = static_cast<float>(vpRT.GITarget->GetDesc().Width) /
-			                            static_cast<float>(vpRT.GBufferNormalTarget->GetDesc().Width);
-			debugRead = liveGI->GetTexture();
+			primaryTonemap.DebugScale = halfResScale(vpRT.GITarget);
+			debugSource = LiveDenoisedView(vpRT.GITargetView, vpRT.GIDenoiser, CVars::GIDenoiseActive(), CVars::GITemporalActive(), frameCounter);
 		}
 		else if (debugView == 8 && shadowActive && gbufferNeeded && vpRT.ShadowTarget && vpRT.ShadowTargetView)
 		{
 			// Raw half-res stochastic shadow ratio (before temporal+denoise): the noisy 1-ray/pixel estimate, the
-			// A/B against view 9 that shows what the denoiser did. Grayscale .r (DebugMode 4, like AO). Half-res
-			// point-fetch readout via the shadow/present size ratio as DebugScale.
+			// A/B against view 9. Grayscale .r (DebugMode 4, like AO).
 			primaryTonemap.DebugMode = 4;
-			primaryTonemap.DebugTexIndex = vpRT.ShadowTargetView->GetGlobalBindlessIndex();
-			primaryTonemap.DebugScale = static_cast<float>(vpRT.ShadowTarget->GetDesc().Width) /
-			                            static_cast<float>(vpRT.GBufferNormalTarget->GetDesc().Width);
-			debugRead = vpRT.ShadowTarget;
+			primaryTonemap.DebugScale = halfResScale(vpRT.ShadowTarget);
+			debugSource = vpRT.ShadowTargetView;
 		}
 		else if (debugView == 9 && shadowActive && gbufferNeeded && vpRT.ShadowTarget && vpRT.ShadowTargetView)
 		{
-			// Denoised/accumulated half-res shadow ratio: the LIVE buffer after the temporal + à-trous stages,
-			// vs view 8's RAW estimate. Point at whichever buffer the shadow sub-chain last wrote (à-trous ->
-			// Scratch[0]; else temporal -> History[cur]; else the raw ShadowTarget), mirroring the GI view 7.
-			Ref<TextureView> liveShadow = vpRT.ShadowTargetView;
-			if (CVars::ShadowDenoiseActive() && vpRT.ShadowDenoiser.ScratchView[0])
-			{
-				liveShadow = vpRT.ShadowDenoiser.ScratchView[0];
-			}
-			else if (CVars::ShadowTemporalActive() && vpRT.ShadowDenoiser.Allocated())
-			{
-				const uint32_t curIdx = static_cast<uint32_t>(fc.Renderer.GetFrameCounter() & 1ull);
-				liveShadow = vpRT.ShadowDenoiser.HistoryView[curIdx];
-			}
+			// Denoised/accumulated half-res shadow ratio, against view 8's raw estimate, mirroring GI view 7.
 			primaryTonemap.DebugMode = 4;
-			primaryTonemap.DebugTexIndex = liveShadow->GetGlobalBindlessIndex();
-			primaryTonemap.DebugScale = static_cast<float>(vpRT.ShadowTarget->GetDesc().Width) /
-			                            static_cast<float>(vpRT.GBufferNormalTarget->GetDesc().Width);
-			debugRead = liveShadow->GetTexture();
+			primaryTonemap.DebugScale = halfResScale(vpRT.ShadowTarget);
+			debugSource = LiveDenoisedView(vpRT.ShadowTargetView, vpRT.ShadowDenoiser, CVars::ShadowDenoiseActive(), CVars::ShadowTemporalActive(), frameCounter);
+		}
+		Ref<Texture> debugRead;
+		if (debugSource)
+		{
+			primaryTonemap.DebugTexIndex = debugSource->GetGlobalBindlessIndex();
+			debugRead = debugSource->GetTexture();
 		}
 
 		// Post-tonemap LDR filter sizing (#44), derived up front so the effect chain (UpscaleEffect /
@@ -852,65 +842,30 @@ namespace Snowstorm
 			             {m_IBLBakePass.PrefilteredCube(), RenderGraph::AccessState::Sampled},
 			             {m_IBLBakePass.BRDFLut(), RenderGraph::AccessState::Sampled}};
 		}
-		// Full-res GI target: the forward shader samples it by screen UV (bindless), so declare it a Sampled
-		// read: the graph then transitions it from the GIUpsample pass's color-attachment layout to
-		// shader-read before this pass (same as the IBL cubemaps above). Only when GI is fed this pass.
-		if (giTextureIndex != 0)
+		// The full-res GI, AO, reflection, sun-visibility and demodulated-specular targets are sampled by screen
+		// UV through bindless, so each is declared a Sampled read only when this pass is fed it: the graph then
+		// orders this pass after the writer and transitions the buffer out of its upsample pass's attachment
+		// layout. Reflections pass the ACTUAL live texture (the raw target, or ReflHistory[cur] when the temporal
+		// stage ran), since a per-texture barrier on a stand-in would miss it.
+		const auto* targets = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
+		const uint64_t frameCounter = fc.Renderer.GetFrameCounter();
+		const auto read = [&meshReads](const bool fed, const Ref<Texture>& texture)
 		{
-			// The slot the forward pass samples, which under render.rt.crossframe is the one the GI chain
-			// wrote LAST frame. Declaring the read against the written slot instead would reinstate the
-			// dependency this exists to remove.
-			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity); rt)
+			if (fed && texture)
 			{
-				if (const Ref<RenderTarget>& giRead = rt->GIUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())];
-				    giRead && !giRead->GetDesc().ColorAttachments.empty())
-				{
-					meshReads.push_back({giRead->GetDesc().ColorAttachments[0].View->GetTexture(),
-					                     RenderGraph::AccessState::Sampled});
-				}
+				meshReads.push_back({texture, RenderGraph::AccessState::Sampled});
 			}
-		}
-		// Full-res AO target: same screen-UV bindless sample as GI (#126). Declare the Sampled read so the
-		// graph transitions it out of the AOUpsample pass's color-attachment layout before this pass.
-		if (aoTextureIndex != 0)
+		};
+		if (targets)
 		{
-			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
-			    rt && rt->AOUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())] && !rt->AOUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty())
-			{
-				meshReads.push_back({rt->AOUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments[0].View->GetTexture(),
-				                     RenderGraph::AccessState::Sampled});
-			}
+			read(giTextureIndex != 0, UpscaleReadTexture(targets->GIUpscaleTarget, frameCounter));
+			read(aoTextureIndex != 0, UpscaleReadTexture(targets->AOUpscaleTarget, frameCounter));
 		}
-		// Full-res RT reflection target (#129): the forward shader samples it by screen UV (bindless). Declare
-		// the read so the graph orders this pass after the writer AND transitions the buffer to Sampled. Barrier
-		// the ACTUAL live texture the forward samples, passed in as reflTexture: the raw ReflectionTarget, or
-		// ReflHistory[cur] when the temporal stage ran. A per-texture barrier on a stand-in would miss it.
-		if (reflTextureIndex != 0 && reflTexture)
+		read(reflTextureIndex != 0, reflTexture);
+		if (targets)
 		{
-			meshReads.push_back({reflTexture, RenderGraph::AccessState::Sampled});
-		}
-		// Full-res sun-visibility target: the forward shader samples it by screen UV (bindless), so declare the
-		// Sampled read; the graph transitions it out of the ShadowUpsample pass's color-attachment layout
-		// before this pass. Only when the half-res shadow is fed this pass.
-		if (shadowTextureIndex != 0)
-		{
-			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
-			    rt && rt->ShadowUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())] && !rt->ShadowUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty())
-			{
-				meshReads.push_back({rt->ShadowUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments[0].View->GetTexture(),
-				                     RenderGraph::AccessState::Sampled});
-			}
-		}
-		// Full-res demodulated specular target: same screen-UV bindless sample; declare the read so the graph
-		// transitions it out of the ShadowSpecUpsample color-attachment layout before this pass.
-		if (shadowSpecTextureIndex != 0)
-		{
-			if (const auto* rt = fc.Reg.try_get_const<RenderTargetComponent>(cam.Entity);
-			    rt && rt->ShadowSpecUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())] && !rt->ShadowSpecUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments.empty())
-			{
-				meshReads.push_back({rt->ShadowSpecUpscaleTarget[RtReadSlot(fc.Renderer.GetFrameCounter())]->GetDesc().ColorAttachments[0].View->GetTexture(),
-				                     RenderGraph::AccessState::Sampled});
-			}
+			read(shadowTextureIndex != 0, UpscaleReadTexture(targets->ShadowUpscaleTarget, frameCounter));
+			read(shadowSpecTextureIndex != 0, UpscaleReadTexture(targets->ShadowSpecUpscaleTarget, frameCounter));
 		}
 
 		// GI screen size = this pass's scene target size (viewport * render.scale), for the UV divide.
