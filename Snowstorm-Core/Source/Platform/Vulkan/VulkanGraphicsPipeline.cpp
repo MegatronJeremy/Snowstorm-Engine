@@ -17,25 +17,12 @@
 
 #include "VulkanBindlessManager.hpp"
 #include "VulkanDescriptorSetLayout.hpp"
+#include "VulkanPipelineCommon.hpp"
 
 namespace Snowstorm
 {
 	namespace
 	{
-		std::vector<char> ReadFile(const std::string& filename)
-		{
-			std::ifstream file(filename, std::ios::ate | std::ios::binary);
-			SS_CORE_ASSERT(file.is_open(), "Failed to open file!");
-			const size_t fileSize = file.tellg();
-			std::vector<char> buffer(fileSize);
-
-			file.seekg(0);
-			file.read(buffer.data(), static_cast<std::streamsize>(fileSize));
-			file.close();
-
-			return buffer;
-		}
-
 		std::string StripAllExtensions(const std::string& path)
 		{
 			std::filesystem::path p(path);
@@ -45,42 +32,6 @@ namespace Snowstorm
 			}
 
 			return p.string();
-		}
-
-		VkShaderModule CreateShaderModule(const VkDevice device, const std::vector<char>& code)
-		{
-			VkShaderModuleCreateInfo createInfo{};
-			createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-			createInfo.codeSize = code.size();
-			createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
-
-			VkShaderModule shaderModule = VK_NULL_HANDLE;
-			const VkResult result = vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule);
-			SS_CORE_ASSERT(result == VK_SUCCESS, "Failed to create shader module!");
-
-			return shaderModule;
-		}
-
-		DescriptorType FromSpvDescriptorType(const SpvReflectDescriptorType t)
-		{
-			switch (t)
-			{
-			case SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-				return DescriptorType::UniformBuffer;
-			case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-				return DescriptorType::StorageBuffer;
-			case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-				return DescriptorType::SampledImage;
-			case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-				return DescriptorType::StorageImage;
-			case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLER:
-				return DescriptorType::Sampler;
-			case SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-				return DescriptorType::CombinedImageSampler;
-			default:
-				SS_CORE_ASSERT(false, "Unsupported SPIR-V descriptor type in graphics shader");
-				return DescriptorType::UniformBuffer;
-			}
 		}
 
 		struct Range
@@ -361,8 +312,8 @@ namespace Snowstorm
 		SS_CORE_ASSERT(!vertPath.empty(), "Shader returned empty compiled vertex SPIR-V path");
 		SS_CORE_ASSERT(!fragPath.empty(), "Shader returned empty compiled fragment SPIR-V path");
 
-		const auto vertCode = ReadFile(vertPath);
-		const auto fragCode = ReadFile(fragPath);
+		const auto vertCode = ReadSpirv(vertPath);
+		const auto fragCode = ReadSpirv(fragPath);
 
 		const VkShaderModule vertModule = CreateShaderModule(m_Device, vertCode);
 		const VkShaderModule fragModule = CreateShaderModule(m_Device, fragCode);
@@ -500,8 +451,7 @@ namespace Snowstorm
 			a.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
 			                   VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
-			const bool enableBlend =
-			    (i < m_Desc.Blend.Attachments.size()) ? m_Desc.Blend.Attachments[i].EnableBlend : false;
+			const bool enableBlend = i < m_Desc.Blend.Attachments.size() && m_Desc.Blend.Attachments[i].EnableBlend;
 
 			a.blendEnable = enableBlend ? VK_TRUE : VK_FALSE;
 
@@ -533,16 +483,7 @@ namespace Snowstorm
 			// Explicit override: a pipeline may still hand-declare ranges (validated early for a clearer error
 			// than Vulkan's). Kept as an escape hatch, but shaders normally rely on reflection below.
 			ValidatePushConstantRangesOrAssert(m_Desc.PushConstants);
-			m_VkPushConstantRanges.reserve(m_Desc.PushConstants.size());
-			for (const PushConstantRangeDesc& r : m_Desc.PushConstants)
-			{
-				VkPushConstantRange vkRange{};
-				vkRange.offset = r.Offset;
-				vkRange.size = r.Size;
-				vkRange.stageFlags = ToVkShaderStages(r.Stages);
-				SS_CORE_ASSERT(vkRange.stageFlags != 0, "PushConstantRangeDesc.Stages must not be None");
-				m_VkPushConstantRanges.push_back(vkRange);
-			}
+			m_VkPushConstantRanges = ToVkPushConstantRanges(m_Desc.PushConstants);
 		}
 		else
 		{
@@ -560,25 +501,7 @@ namespace Snowstorm
 			}
 		}
 
-		// Pipeline layout: use all set layouts
-		std::vector<VkDescriptorSetLayout> vkSetLayouts;
-		vkSetLayouts.reserve(m_SetLayouts.size());
-		for (const auto& s : m_SetLayouts)
-		{
-			SS_CORE_ASSERT(s, "Null DescriptorSetLayout in pipeline");
-			const auto vkLayout = std::static_pointer_cast<VulkanDescriptorSetLayout>(s);
-			vkSetLayouts.push_back(vkLayout->GetHandle());
-		}
-
-		VkPipelineLayoutCreateInfo layoutCI{};
-		layoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		layoutCI.setLayoutCount = static_cast<uint32_t>(vkSetLayouts.size());
-		layoutCI.pSetLayouts = vkSetLayouts.data();
-		layoutCI.pushConstantRangeCount = static_cast<uint32_t>(m_VkPushConstantRanges.size());
-		layoutCI.pPushConstantRanges = m_VkPushConstantRanges.empty() ? nullptr : m_VkPushConstantRanges.data();
-
-		VkResult res = vkCreatePipelineLayout(m_Device, &layoutCI, nullptr, &m_PipelineLayout);
-		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to create VkPipelineLayout");
+		m_PipelineLayout = CreatePipelineLayout(m_Device, m_SetLayouts, m_VkPushConstantRanges);
 
 		// --- Dynamic rendering formats ---
 		std::vector<VkFormat> colorVkFormats;
@@ -591,10 +514,8 @@ namespace Snowstorm
 		}
 
 		const VkFormat depthVkFormat = (m_Desc.DepthFormat != PixelFormat::Unknown) ? ToVkFormat(m_Desc.DepthFormat) : VK_FORMAT_UNDEFINED;
-		if (m_Desc.DepthFormat != PixelFormat::Unknown)
-		{
-			SS_CORE_ASSERT(depthVkFormat != VK_FORMAT_UNDEFINED, "Unknown/unsupported depth format in pipeline");
-		}
+		SS_CORE_ASSERT(m_Desc.DepthFormat == PixelFormat::Unknown || depthVkFormat != VK_FORMAT_UNDEFINED,
+		               "Unknown/unsupported depth format in pipeline");
 
 		const VkFormat stencilVkFormat = (m_Desc.HasStencil) ? depthVkFormat : VK_FORMAT_UNDEFINED;
 
@@ -633,7 +554,7 @@ namespace Snowstorm
 			pipeCI.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
 		}
 
-		res = vkCreateGraphicsPipelines(m_Device, VulkanContext::Get().GetPipelineCache(), 1, &pipeCI, nullptr, &m_Pipeline);
+		const VkResult res = vkCreateGraphicsPipelines(m_Device, VulkanContext::Get().GetPipelineCache(), 1, &pipeCI, nullptr, &m_Pipeline);
 		SS_CORE_ASSERT(res == VK_SUCCESS, "Failed to create Vulkan graphics pipeline");
 
 		vkDestroyShaderModule(m_Device, fragModule, nullptr);

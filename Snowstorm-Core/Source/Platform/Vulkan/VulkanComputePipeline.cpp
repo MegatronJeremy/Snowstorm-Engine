@@ -14,57 +14,10 @@
 #include "Snowstorm/Render/SubgroupSizePolicy.hpp"
 #include "Snowstorm/Core/EngineCVars.hpp"
 #include "VulkanDescriptorSetLayout.hpp"
+#include "VulkanPipelineCommon.hpp"
 
 namespace Snowstorm
 {
-	namespace
-	{
-		std::vector<char> ReadFile(const std::string& filename)
-		{
-			std::ifstream file(filename, std::ios::ate | std::ios::binary);
-			SS_CORE_ASSERT(file.is_open(), "Failed to open compute SPIR-V file!");
-			const size_t fileSize = file.tellg();
-			std::vector<char> buffer(fileSize);
-			file.seekg(0);
-			file.read(buffer.data(), static_cast<std::streamsize>(fileSize));
-			return buffer;
-		}
-
-		VkShaderModule CreateShaderModule(const VkDevice device, const std::vector<char>& code)
-		{
-			VkShaderModuleCreateInfo ci{};
-			ci.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-			ci.codeSize = code.size();
-			ci.pCode = reinterpret_cast<const uint32_t*>(code.data());
-
-			VkShaderModule mod = VK_NULL_HANDLE;
-			SS_CORE_VERIFY(vkCreateShaderModule(device, &ci, nullptr, &mod) == VK_SUCCESS, "Failed to create compute shader module");
-			return mod;
-		}
-
-		DescriptorType FromSpvDescriptorType(const SpvReflectDescriptorType t)
-		{
-			switch (t)
-			{
-			case SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-				return DescriptorType::UniformBuffer;
-			case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-				return DescriptorType::StorageBuffer;
-			case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-				return DescriptorType::SampledImage;
-			case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-				return DescriptorType::StorageImage;
-			case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLER:
-				return DescriptorType::Sampler;
-			case SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-				return DescriptorType::CombinedImageSampler;
-			default:
-				SS_CORE_ASSERT(false, "Unsupported SPIR-V descriptor type in compute shader");
-				return DescriptorType::UniformBuffer;
-			}
-		}
-	}
-
 	VulkanComputePipeline::VulkanComputePipeline(PipelineDesc desc)
 	    : m_Desc(std::move(desc))
 	{
@@ -81,7 +34,7 @@ namespace Snowstorm
 		const std::string& compPath = compiled.Comp;
 		SS_CORE_ASSERT(!compPath.empty(), "Compute pipeline shader has no compiled compute SPIR-V (missing #type compute?)");
 
-		const std::vector<char> code = ReadFile(compPath);
+		const std::vector<char> code = ReadSpirv(compPath);
 		const VkShaderModule module = CreateShaderModule(m_Device, code);
 
 		// --- Reflect descriptor set layouts from the SPIR-V ---
@@ -111,6 +64,18 @@ namespace Snowstorm
 		constexpr uint32_t kBindlessSet = 3;
 		const bool usesBindless = !orderedSets.empty() && orderedSets.rbegin()->first >= kBindlessSet;
 
+		// Empty layouts for every set below `setIndex` the shader skipped, so the array stays dense.
+		const auto padToSet = [this](const uint32_t setIndex)
+		{
+			while (m_SetLayouts.size() < setIndex)
+			{
+				DescriptorSetLayoutDesc gap{};
+				gap.SetIndex = static_cast<uint32_t>(m_SetLayouts.size());
+				gap.DebugName = m_Desc.DebugName + "_Set" + std::to_string(m_SetLayouts.size()) + "_Empty";
+				m_SetLayouts.push_back(DescriptorSetLayout::Create(gap));
+			}
+		};
+
 		m_LayoutSignature.clear();
 		for (const auto& [setIndex, set] : orderedSets)
 		{
@@ -123,13 +88,7 @@ namespace Snowstorm
 			// gap-fill any sets the shader skipped (below setIndex) with empty layouts so 0..2 stay dense.
 			if (usesBindless)
 			{
-				while (m_SetLayouts.size() < setIndex)
-				{
-					DescriptorSetLayoutDesc gap{};
-					gap.SetIndex = static_cast<uint32_t>(m_SetLayouts.size());
-					gap.DebugName = m_Desc.DebugName + "_Set" + std::to_string(m_SetLayouts.size()) + "_Empty";
-					m_SetLayouts.push_back(DescriptorSetLayout::Create(gap));
-				}
+				padToSet(setIndex);
 			}
 
 			DescriptorSetLayoutDesc layoutDesc{};
@@ -160,46 +119,14 @@ namespace Snowstorm
 		// --- Set 3: Global Bindless table (sourced from the manager, matching the graphics pipeline) ---
 		if (usesBindless)
 		{
-			while (m_SetLayouts.size() < kBindlessSet) // gap-fill sets between the last reflected one and set 3
-			{
-				DescriptorSetLayoutDesc gap{};
-				gap.SetIndex = static_cast<uint32_t>(m_SetLayouts.size());
-				gap.DebugName = m_Desc.DebugName + "_Set" + std::to_string(m_SetLayouts.size()) + "_Empty";
-				m_SetLayouts.push_back(DescriptorSetLayout::Create(gap));
-			}
+			padToSet(kBindlessSet); // gap-fill sets between the last reflected one and set 3
 			void* bindlessHandle = VulkanBindlessManager::Get().GetLayout();
 			m_SetLayouts.push_back(DescriptorSetLayout::CreateFromExternal(bindlessHandle));
 		}
 
-		// --- Push constants (from PipelineDesc, same as graphics) ---
-		m_VkPushConstantRanges.reserve(m_Desc.PushConstants.size());
-		for (const PushConstantRangeDesc& r : m_Desc.PushConstants)
-		{
-			VkPushConstantRange vkRange{};
-			vkRange.offset = r.Offset;
-			vkRange.size = r.Size;
-			vkRange.stageFlags = ToVkShaderStages(r.Stages);
-			SS_CORE_ASSERT(vkRange.stageFlags != 0, "PushConstantRangeDesc.Stages must not be None");
-			m_VkPushConstantRanges.push_back(vkRange);
-		}
-
-		// --- Pipeline layout ---
-		std::vector<VkDescriptorSetLayout> vkSetLayouts;
-		vkSetLayouts.reserve(m_SetLayouts.size());
-		for (const auto& s : m_SetLayouts)
-		{
-			vkSetLayouts.push_back(std::static_pointer_cast<VulkanDescriptorSetLayout>(s)->GetHandle());
-		}
-
-		VkPipelineLayoutCreateInfo layoutCI{};
-		layoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		layoutCI.setLayoutCount = static_cast<uint32_t>(vkSetLayouts.size());
-		layoutCI.pSetLayouts = vkSetLayouts.empty() ? nullptr : vkSetLayouts.data();
-		layoutCI.pushConstantRangeCount = static_cast<uint32_t>(m_VkPushConstantRanges.size());
-		layoutCI.pPushConstantRanges = m_VkPushConstantRanges.empty() ? nullptr : m_VkPushConstantRanges.data();
-
-		SS_CORE_VERIFY(vkCreatePipelineLayout(m_Device, &layoutCI, nullptr, &m_PipelineLayout) == VK_SUCCESS,
-		               "Failed to create compute VkPipelineLayout");
+		// --- Push constants (from PipelineDesc, same as graphics) + pipeline layout ---
+		m_VkPushConstantRanges = ToVkPushConstantRanges(m_Desc.PushConstants);
+		m_PipelineLayout = CreatePipelineLayout(m_Device, m_SetLayouts, m_VkPushConstantRanges);
 
 		// --- Compute pipeline ---
 		VkPipelineShaderStageRequiredSubgroupSizeCreateInfo subgroupCI{
