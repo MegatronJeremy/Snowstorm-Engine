@@ -33,7 +33,6 @@
     "Snowstorm-Editor/Source/System/ConsoleSystem.cpp::Execute": 36,
     "Snowstorm-Editor/Source/System/ContentBrowserSystem.cpp::Execute": 61,
     "Snowstorm-Editor/Source/System/EditorMenuSystem.cpp::Execute": 102,
-    "Snowstorm-Editor/Source/System/SceneHierarchySystem.cpp::Execute": 98,
     "Snowstorm-Editor/Source/System/ViewportDisplaySystem.cpp::Execute": 111,
     "Snowstorm-Editor/Source/System/ViewportResizeSystem.cpp::Execute": 33
   }
