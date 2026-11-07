@@ -361,6 +361,21 @@ see, so treat it as part of the feature, not an afterthought.
   `.frag`, NOT the shared header, and gate any C++ that binds it on the reflected layout actually
   having that binding (custom-shader materials like Mandelbrot won't).
 
+## Function complexity
+
+- A change does not raise a function above cognitive complexity 25, or raise one that is already
+  above it, as clang-tidy's `readability-function-cognitive-complexity` measures it.
+  `py Scripts/complexity-check.py` checks it (exit 0 pass, 1 fail, 2 skip). Tests and vendored code
+  are exempt.
+- Lower it by removing what makes code hard to follow: nesting (return early) and repeated
+  skeletons (one shared helper where the same loop or parse appears more than once). Do not split a
+  function into helpers that are each called once just to meet the number. The logic then reads
+  across several functions instead of one, which is harder to follow, not easier.
+- Functions already over the limit are listed in `Scripts/complexity-baseline.json` at their
+  recorded score. They are left alone unless a change has another reason to touch them, since
+  refactoring for the number alone churns code without making it simpler. A change that lowers one
+  records the lower score, or removes the entry once it is back under the limit, in the same PR.
+
 ## Dependencies (vcpkg, x64-windows)
 
 assimp, EnTT, fmt, glew, glfw3, glm, imgui (vulkan+glfw bindings, docking), imguizmo, rttr, spdlog,

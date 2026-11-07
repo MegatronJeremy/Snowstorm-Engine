@@ -423,6 +423,25 @@ value is `0x10_00000000 + {0,16,32,48}`. The low half is very likely the real sp
 is still **withheld** rather than masked, because the mask is inference and a plausible fabricated number
 is worse than a missing one.
 
+## Function complexity gate (clang-tidy, static)
+
+`Scripts/complexity-check.py` enforces AGENTS.md's Function complexity rule: cognitive complexity per function, limit 25, scored by clang-tidy's `readability-function-cognitive-complexity` with macros ignored.
+
+```
+py Scripts/complexity-check.py                     # check, exit 0 pass / 1 fail / 2 skip
+py Scripts/complexity-check.py --list              # also print every scored function, highest first
+py Scripts/complexity-check.py --update-baseline   # record the functions over the limit now
+py Scripts/complexity-check.py --vcpkg-root <dir>  # a worktree without its own vcpkg/ (or SS_VCPKG_ROOT)
+```
+
+Scored: `Snowstorm-Core/Source`, `Snowstorm-Editor/Source`, `Snowstorm-Runtime`, `Games`, including their headers. Not scored: `Snowstorm-Tests`, vendored `imgui_impl_*`, anything under vcpkg or a build directory. A function is keyed `path::name`, so a rename reads as a new function.
+
+clang-tidy is the one Visual Studio ships with its C++ Clang tools (`VC/Tools/Llvm`), else PATH, else `--clang-tidy`. The compile database comes from a Ninja configure into `build-tidy/` inside a `vcvars64` environment, since the Visual Studio generator writes none. Precompiled headers stay on so each command keeps the build's `/FI` force-include, and the `/Yu`, `/Yc` and `/Fp` flags are stripped so clang does not look for an MSVC `.pch`. Nothing is compiled, although the configure needs the vcpkg-installed tree for its package lookups.
+
+`Scripts/complexity-baseline.json` holds the functions already over the limit, at their recorded score. One of those may stay over but not rise. The check prints a note when a baseline entry drops to the limit or below, or disappears, which is the cue to remove it. `--update-baseline` rewrites the whole set, so use it only to admit an intended change deliberately, never to silence a failure.
+
+Exit 2 means it did not measure everything: no Visual Studio or clang-tidy, a failed configure, or a parse error inside the repository's own code. Errors inside third-party or MSVC STL headers (clang trips on parts of rttr and glm there) are counted and printed as a note, not a skip, since clang still scores the function bodies around them. Local only: no workflow runs it. `Scripts/test_complexity_check.py` covers the pass/fail rule, the scored paths and the PCH flag stripping.
+
 ## Image-quality gate vs the path tracer (run after any change to a lighting technique)
 
 `Scripts/quality-bench.py` is the correctness counterpart to perf-bench: perf-bench answers "how
