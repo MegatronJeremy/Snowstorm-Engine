@@ -96,11 +96,11 @@ namespace Snowstorm
 		// before its writes are visible. Use before a compute pass samples a color target the same frame.
 		virtual void BarrierColorWriteToComputeRead(const Ref<Texture>& texture) = 0;
 
-		// Global compute-write -> compute-read memory barrier (a VkMemoryBarrier2 over the compute stage).
-		// Chained compute dispatches that ping-pong storage buffers (e.g. the neural upscaler's conv stack:
-		// layer N writes a feature buffer layer N+1 reads) have a read-after-write hazard the graph's per-pass
-		// transitions don't cover, since it's all one pass. Emit this between the writing and reading Dispatch
-		// so the read sees the completed write. Covers all storage buffers/images touched by compute.
+		// Global compute-write -> compute-read/write memory barrier (a VkMemoryBarrier2 over the compute stage).
+		// Chained compute dispatches that share storage buffers (e.g. the neural upscaler's conv stack: layer N
+		// writes a feature buffer layer N+1 reads) have a hazard the graph's per-pass transitions don't cover,
+		// since it's all one pass. Emit this between the writing and the next accessing Dispatch so it sees the
+		// completed write; the next one may write too (atomics). Covers all storage buffers/images touched by compute.
 		virtual void BarrierComputeStorage() = 0;
 
 		// Queue-family ownership transfer for a texture crossing between the graphics and async-compute

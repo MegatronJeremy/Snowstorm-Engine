@@ -177,7 +177,15 @@ namespace Snowstorm::CVars
 
 	CVar<bool> OmmEnabled{"render.omm", true, "Use opacity micromaps (VK_EXT_opacity_micromap) for RT cutout geometry when supported; off = the inline any-hit alpha test alone. Read at TLAS build (change forces a rebuild).", CVarFlags::Persist};
 
-	CVar<float> Exposure{"render.exposure", 1.0f, "Linear exposure multiplier applied before tonemapping (1.0 = neutral)", CVarFlags::Persist};
+	CVar<float> Exposure{"render.exposure", 1.0f, "Linear exposure multiplier applied before tonemapping (1.0 = neutral). With render.exposure.auto it compensates the adapted exposure.", CVarFlags::Persist};
+
+	CVar<bool> ExposureAuto{"render.exposure.auto", true, "Histogram eye adaptation: expose each viewport from its own luminance. Off under quality capture and perf bench unless set explicitly.", CVarFlags::Persist};
+	CVar<float> ExposureAutoLowPercent{"render.exposure.auto.low", 50.0f, "Auto exposure: percentile of the luminance histogram where the metered range starts (darker pixels are ignored).", CVarFlags::Persist};
+	CVar<float> ExposureAutoHighPercent{"render.exposure.auto.high", 98.0f, "Auto exposure: percentile where the metered range ends (brighter pixels are ignored).", CVarFlags::Persist};
+	CVar<float> ExposureAutoMinEv{"render.exposure.auto.min_ev", -8.0f, "Auto exposure: lowest exposure, in stops (log2 of the multiplier).", CVarFlags::Persist};
+	CVar<float> ExposureAutoMaxEv{"render.exposure.auto.max_ev", 8.0f, "Auto exposure: highest exposure, in stops (log2 of the multiplier).", CVarFlags::Persist};
+	CVar<float> ExposureAutoSpeedBrighten{"render.exposure.auto.speed_brighten", 1.0f, "Auto exposure: rate of raising exposure when the scene gets darker; each second closes all but 2^-speed of the gap in stops.", CVarFlags::Persist};
+	CVar<float> ExposureAutoSpeedDarken{"render.exposure.auto.speed_darken", 3.0f, "Auto exposure: rate of lowering exposure when the scene gets brighter.", CVarFlags::Persist};
 
 	CVar<float> RenderScale{"render.scale", 1.0f, "Internal render scale: scene renders at this fraction of viewport res then upscales (1.0 = native, 0.5 = half). Clamped to [0.25, 1.0]", CVarFlags::Persist};
 
@@ -547,6 +555,29 @@ namespace Snowstorm::CVars
 	bool GITemporalActive()
 	{
 		return GITemporal.Get();
+	}
+
+	bool AutoExposureActive()
+	{
+		if (!ExposureAuto.Get())
+		{
+			return false;
+		}
+		if (QualityCaptureFrames.Get() <= 0 && PerfBenchFrames.Get() <= 0)
+		{
+			return true;
+		}
+		if (CVarRegistry::Get().WasOverridden(ExposureAuto.GetName()))
+		{
+			return true;
+		}
+		static bool logged = false;
+		if (!logged)
+		{
+			logged = true;
+			SS_CORE_INFO("Auto exposure off for this measured run (render.exposure {}); pass --render.exposure.auto to keep it", Exposure.Get());
+		}
+		return false;
 	}
 
 	float ClampedAOScale()

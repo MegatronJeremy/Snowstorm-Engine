@@ -23,6 +23,7 @@
 	uint DebugMode;
 	uint DebugTexIndex;
 	float DebugScale;
+	uint ExposureIndex; // auto exposure (AutoExposureAdapt.comp), .r = multiplier; 0 = Exposure alone
 } gTonemap;
 
 // ACES filmic tonemap (Narkowicz fit): compress unbounded linear HDR into [0,1] with a filmic
@@ -42,6 +43,15 @@ struct FullscreenVSOut
 	float4 PositionCS : SV_Position;
 	float2 NDC : TEXCOORD0; // clip-space xy in [-1,1]
 };
+
+float SceneExposure()
+{
+	if (gTonemap.ExposureIndex == 0)
+	{
+		return Exposure;
+	}
+	return Exposure * Textures[gTonemap.ExposureIndex].Load(int3(0, 0, 0)).r;
+}
 
 float4 main(FullscreenVSOut input) : SV_Target
 {
@@ -83,7 +93,7 @@ float4 main(FullscreenVSOut input) : SV_Target
 	{
 		const int2 giTexel = int2(float2(texel) * gTonemap.DebugScale);
 		const float3 gi = Textures[NonUniformResourceIndex(gTonemap.DebugTexIndex)].Load(int3(giTexel, 0)).rgb;
-		return float4(TonemapACES(gi * Exposure), 1.0);
+		return float4(TonemapACES(gi * SceneExposure()), 1.0);
 	}
 
 	// Half-res AO debug view (#126): same half-res point-fetch as GI (DebugMode 3). The AO factor is a scalar
@@ -98,6 +108,6 @@ float4 main(FullscreenVSOut input) : SV_Target
 	const float3 hdr = Textures[NonUniformResourceIndex(gTonemap.SceneColorIndex)].Load(int3(texel, 0)).rgb;
 
 	// Output LINEAR; the sRGB-format present target hardware-encodes on write (#79).
-	const float3 color = TonemapACES(hdr * Exposure);
+	const float3 color = TonemapACES(hdr * SceneExposure());
 	return float4(color, 1.0);
 }

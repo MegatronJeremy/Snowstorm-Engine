@@ -1313,6 +1313,14 @@ A directional light that also has a `RotatorComponent` and a `TransformComponent
 
 `vulkan.caps` (+ `vulkan.caps.path`) logs and writes what the driver advertises for `VK_KHR_cooperative_matrix` (every M/N/K, type and scope shape), shader float16/int8 and subgroup size control (`VulkanDeviceCaps`). It queries the physical device without enabling any extension, so it describes the adapter, not the engine's choices. `py Scripts/vulkan-caps.py --gpu <name>` runs it per adapter and prints the table; `Scripts/test_vulkan_caps.py` covers the formatting. Unrun on a GPU as of its PR, and no engine path uses cooperative matrix.
 
+## Auto exposure
+
+`render.exposure.auto` (default on) is Unreal's Auto Exposure Histogram: `AutoExposureHistogram.comp` bins the HDR scene colour the tonemap receives (after TAA and the upscaler) into 64 log2-luminance bins over [-12, 8], and `AutoExposureAdapt.comp` maps the mean log luminance between the `.low` and `.high` percentiles to middle grey 0.18, clamps it to [`.min_ev`, `.max_ev`] stops, and approaches it at `.speed_brighten` / `.speed_darken` (per second, each closing all but 2^-speed of the gap). The result lives in a per-viewport 1x1 RGBA32F texture the tonemap reads by bindless index (`TonemapPush::ExposureIndex`), so there is no CPU readback in the loop. `render.exposure` multiplies it as compensation. A scene cut and every frame while assets stream or shaders compile snap to the target. `Render/AutoExposureMath.hpp` mirrors the shader maths and `AutoExposureMathTests` pin it and the shared constants. The pass costs 0.030 ms (9070 XT, 1920x1080, `rt-off` rung, median of 3 runs).
+
+**The default window is 50 to 98 percent, chosen by measurement.** Applied to HDR captures of Sponza, the 80/98.3 highlight window left raster at 0.25 mean sRGB luma and all-RT and PT 59-63% below 0.1 (fixed exposure: 81% and 79%). A centred 10/90 window clipped 7% of the RT and PT frame. 50/98 gave 0.37 raster, 0.34 all-RT, 0.32 PT and 0.48 on `Reflections.world` (0.77 fixed), clipping at most 0.4%; the engine's own captures matched the offline model to 0.004.
+
+**Quality captures and perf benchmarks run at fixed exposure.** `CVars::AutoExposureActive()` is false whenever `quality.capture.frames` or `perf.bench.frames` is set, unless the run set `render.exposure.auto` through the startup file, environment or CLI (`CVarRegistry::WasOverridden`); it logs once when it locks. Each image adapting to itself would put an exposure difference into every FLIP against the path tracer and every baseline. With the lock, captures are bit-identical to the engine before auto exposure across raster, all-RT, PT, Reflections, AlphaBlend, clustered shading, a debug view and Sprites. A showcase capture that should look like the interactive engine passes `--render.exposure.auto`.
+
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc
