@@ -9,6 +9,8 @@
 
 #include <imgui.h>
 
+#include <algorithm>
+
 #include <array>
 #include <cstring>
 #include <string>
@@ -347,11 +349,10 @@ namespace Snowstorm
 			const std::vector<LogBuffer::Entry> entries = LogBuffer::Get().Snapshot();
 			for (const LogBuffer::Entry& e : entries)
 			{
-				if (static_cast<int>(e.LevelValue) < m_LevelFilter)
+				if (static_cast<int>(e.LevelValue) >= m_LevelFilter)
 				{
-					continue; // below the minimum level filter
+					DrawRichLine(e);
 				}
-				DrawRichLine(e);
 			}
 
 			// Autoscroll to the bottom when new lines arrived.
@@ -395,13 +396,9 @@ namespace Snowstorm
 		{
 			// Record in command history (skip blanks and immediate duplicates), then reset the browse
 			// position to "past the newest" so the next Up recalls this command.
-			if (m_Input[0] != '\0')
+			if (m_Input[0] != '\0' && (m_History.empty() || m_History.back() != m_Input))
 			{
-				const std::string entry = m_Input;
-				if (m_History.empty() || m_History.back() != entry)
-				{
-					m_History.push_back(entry);
-				}
+				m_History.emplace_back(m_Input);
 			}
 			m_HistoryPos = static_cast<int>(m_History.size());
 
@@ -416,8 +413,9 @@ namespace Snowstorm
 		// Click a row to accept it. Only shown while the input is focused and there are matches.
 		if (inputActive && !m_Candidates.empty())
 		{
-			const int shown = static_cast<int>(m_Candidates.size() < 12 ? m_Candidates.size() : 12);
-			const bool hasOverflow = m_Candidates.size() > 12;
+			constexpr size_t kMaxShown = 12;
+			const int shown = static_cast<int>(std::min(m_Candidates.size(), kMaxShown));
+			const bool hasOverflow = m_Candidates.size() > kMaxShown;
 			// Estimate the popup height so we can decide whether it fits below the input or must flip above.
 			// The input is docked at the very bottom of the screen, so "below" usually overflows off-screen.
 			const float lineH = ImGui::GetTextLineHeightWithSpacing();
@@ -436,7 +434,7 @@ namespace Snowstorm
 			    ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_Tooltip;
 
 			ImGui::Begin("##console_suggestions", nullptr, popupFlags);
-			for (int i = 0; i < static_cast<int>(m_Candidates.size()) && i < 12; ++i)
+			for (int i = 0; i < shown; ++i)
 			{
 				const bool selected = (i == m_SelectedCandidate);
 				// Show the CVar's current value/type inline where we can, so the suggestion is informative.
@@ -454,9 +452,9 @@ namespace Snowstorm
 					ImGui::SetKeyboardFocusHere(-2); // refocus the input next frame
 				}
 			}
-			if (m_Candidates.size() > 12)
+			if (hasOverflow)
 			{
-				ImGui::TextDisabled("... %zu more", m_Candidates.size() - 12);
+				ImGui::TextDisabled("... %zu more", m_Candidates.size() - kMaxShown);
 			}
 			ImGui::End();
 		}
