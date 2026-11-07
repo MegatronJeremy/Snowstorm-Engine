@@ -5,13 +5,13 @@ Offline PyTorch pipeline that trains the neural super-resolution refiner on data
 
 ## Layout
 
-- `ssnn.py` — read/write the `.ssnn` weights format. **Byte-matches** the C++ reader/writer in
+- `ssnn.py`: read/write the `.ssnn` weights format. **Byte-matches** the C++ reader/writer in
   `Snowstorm-Core/Source/Snowstorm/Render/Neural/NeuralWeights.cpp`.
-- `model.py` — `ResidualRefiner`, the same architecture as the engine's `NeuralUpscalePass`
+- `model.py`: `ResidualRefiner`, the same architecture as the engine's `NeuralUpscalePass`
   (`output = bilinear + convStack(bilinear)`, 3→16→16→3 3×3, ReLU hidden, linear out).
-- `test_ssnn.py` — round-trip + **byte-parity** tests (the Python identity `.ssnn` must equal the
+- `test_ssnn.py`: round-trip + **byte-parity** tests (the Python identity `.ssnn` must equal the
   engine's `--neural.dump_identity` output).
-- `train.py`, `dataset.py` — dataset loader + trainer (added in a later increment).
+- `train.py`, `dataset.py`: dataset loader + trainer (added in a later increment).
 
 ## Setup
 
