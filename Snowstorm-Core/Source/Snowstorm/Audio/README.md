@@ -2,7 +2,7 @@
 
 ## Audio
 
-`AudioService` (miniaudio) owns the device and the mixer; `AudioSystem` turns `AudioSourceComponent`
+`AudioService` (miniaudio) owns the device and the mixer. `AudioSystem` turns `AudioSourceComponent`
 into playing voices and pushes the `AudioListenerComponent` pose. miniaudio was chosen over OpenAL Soft
 on licence: it is `Unlicense OR MIT-0`, OpenAL Soft is LGPL, and this repo is public domain.
 
@@ -19,15 +19,15 @@ therefore just sets an atomic and the mixer callback does the discard on its nex
 `ma_pcm_rb_reset` or `seek_read` from a game thread does not merely lose a flush: it can leave the write
 cursor an arbitrary distance ahead of the read cursor, and the reader treats what lies between as PCM.
 
-The ring, flush and underrun rules live in `Audio/StreamRing` (miniaudio hidden behind a pimpl), which needs no device; `StreamRingTests` pin them GPU-free and device-free. `AudioService` stream calls forward to it.
+The ring, flush and underrun rules live in `Audio/StreamRing` (miniaudio hidden behind a pimpl), which needs no device. `StreamRingTests` pin them GPU-free and device-free. `AudioService` stream calls forward to it.
 
 **Pan law is per instance and defaults to miniaudio's balance.** `PanLaw::Balance` attenuates only the
-channel you pan away from, so a centred sound is 6 dB louder than a hard-panned one; `PanLaw::ConstantSum`
+channel you pan away from, so a centred sound is 6 dB louder than a hard-panned one. `PanLaw::ConstantSum`
 moves energy across and keeps L+R fixed, which is what a mono point source needs and what Doom's own
 backend does. ConstantSum reaches a gain of 2 at hard pan, the only place a single sound exceeds its own
 volume setting, so a caller opting in leaves the headroom (Doom does, by scaling its 0..127 volume by
 1/255 rather than 1/127, which reproduces the SDL_mixer gains exactly). Unreal makes this a project
-setting and miniaudio makes it per sound; per instance follows the backend and lets Doom's voices differ
+setting and miniaudio makes it per sound. Per instance follows the backend and lets Doom's voices differ
 from a future UI or music source.
 
 **Starting a voice at runtime is a request on the component.** `PlayRequested`/`StopRequested` are set

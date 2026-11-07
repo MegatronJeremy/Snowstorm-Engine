@@ -2,7 +2,7 @@
 
 *Adapted from [Vuk Đorđević's master's thesis (ETF Belgrade, 2026)](https://github.com/MegatronJeremy/RG2/tree/master/master-rad/teza).*
 
-`render.ao.mode` selects the technique: 0 off (default), 1 SSAO (hemisphere kernel plus bilateral blur, any GPU), 2 ray traced (hardware ray query; falls back to off on a device without ray-query support). Both modes write the same forward AO slot, so the two A/B on one scene.
+`render.ao.mode` selects the technique: 0 off (default), 1 SSAO (hemisphere kernel plus bilateral blur, any GPU), 2 ray traced (hardware ray query, falling back to off on a device without ray-query support). Both modes write the same forward AO slot, so the two A/B on one scene.
 
 | AO off | AO on (mode 2) |
 | --- | --- |
@@ -12,12 +12,12 @@ Thesis capture, a deliberate crop: occlusion happens where geometry encloses geo
 
 ## Technique
 
-Per pixel, `render.ao.rays` (default 2) cosine-weighted hemisphere rays, rotated per pixel and frame by interleaved gradient noise, are traced inline against the scene TLAS with `RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH`, limited to `render.ao.radius` (default 0.5). A hit contributes `1 - saturate(t / radius)`, so nearer occluders darken more; `render.ao.intensity` scales the result. Cutout geometry is alpha-tested in the shader as for shadows.
+Per pixel, `render.ao.rays` (default 2) cosine-weighted hemisphere rays, rotated per pixel and frame by interleaved gradient noise, are traced inline against the scene TLAS with `RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH`, limited to `render.ao.radius` (default 0.5). A hit contributes `1 - saturate(t / radius)`, so nearer occluders darken more. `render.ao.intensity` scales the result. Cutout geometry is alpha-tested in the shader as for shadows.
 
 The trace runs at `render.ao.scale` (default 0.5, a quarter of the pixels), then:
 
-1. temporal accumulation (`render.ao.temporal`, history weight 0.9 moving to 0.97 when static);
-2. a-trous denoise (`render.ao.denoise.iterations`, default 3, variance-guided);
+1. temporal accumulation (`render.ao.temporal`, history weight 0.9 moving to 0.97 when static).
+2. a-trous denoise (`render.ao.denoise.iterations`, default 3, variance-guided).
 3. depth-aware bilateral upsample to full resolution.
 
 Hit-distance guidance in the a-trous (`render.ao.denoise.hitdist`) is off by default: the hit distance rides the raw 2-ray trace, which is too noisy between neighbours for the edge stop to separate anything.
@@ -32,7 +32,7 @@ The isolated occlusion term, `1 - AO` at a gain of 4 on both sides, so bright is
 
 ## Quality against the path tracer
 
-Source: committed baselines `Scripts/quality-baseline/<adapter>/{atrium,floor,gallery}__{raster,ssao,rtao}.json`, commit `1fab18e`, 2026-08-30. Mean over the three Sponza viewpoints; FLIP lower is better, PSNR and SSIM higher.
+Source: committed baselines `Scripts/quality-baseline/<adapter>/{atrium,floor,gallery}__{raster,ssao,rtao}.json`, commit `1fab18e`, 2026-08-30. Mean over the three Sponza viewpoints. FLIP lower is better, PSNR and SSIM higher.
 
 | Technique | GPU | FLIP | PSNR (dB) | SSIM |
 | --- | --- | --- | --- | --- |
@@ -43,7 +43,7 @@ Source: committed baselines `Scripts/quality-baseline/<adapter>/{atrium,floor,ga
 | SSAO | RTX 5070 | 0.4177 | 15.61 | 0.3988 |
 | RT AO | RTX 5070 | 0.4124 | 15.76 | 0.4019 |
 
-Both techniques close most of the gap to the reference and sit within 0.003 FLIP (9070 XT) and 0.005 (5070) of each other. The static metric cannot separate them well on Sponza; the visible difference is in the term above. The remaining 0.41 FLIP is mostly the rest of the lighting (shadows, reflections, GI), since only AO is toggled here.
+Both techniques close most of the gap to the reference and sit within 0.003 FLIP (9070 XT) and 0.005 (5070) of each other. The static metric cannot separate them well on Sponza. The visible difference is in the term above. The remaining 0.41 FLIP is mostly the rest of the lighting (shadows, reflections, GI), since only AO is toggled here.
 
 ## Cost
 
@@ -57,7 +57,7 @@ Source: committed baselines `Scripts/perf-baseline/<adapter>/{shadows,+ao,ssao}.
 | RT AO own passes (AO, AOTemporal, AODenoise0-2, AOUpsample) | 0.582 ms | 0.578 ms |
 | SSAO own passes (SSAO, SSAOBlur, AOUpsample) | 0.257 ms | 0.233 ms |
 
-The own-pass rows are the per-pass `avgMs` sums from the same files; the remainder of each delta lands mostly in `Forward`, which reads the AO slot. RT AO costs about 1.7x SSAO on the 9070 XT and 2.3x on the 5070, for a FLIP gain of 0.003 to 0.005 over SSAO. On this scene the choice is made by the occlusion the term shows off-screen and behind thin occluders, not by the static number.
+The own-pass rows are the per-pass `avgMs` sums from the same files. The remainder of each delta lands mostly in `Forward`, which reads the AO slot. RT AO costs about 1.7x SSAO on the 9070 XT and 2.3x on the 5070, for a FLIP gain of 0.003 to 0.005 over SSAO. On this scene the choice is made by the occlusion the term shows off-screen and behind thin occluders, not by the static number.
 
 ## Reproduce
 

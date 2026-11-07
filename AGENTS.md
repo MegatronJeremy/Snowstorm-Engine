@@ -9,7 +9,7 @@ an ImGui editor.
 > This repo is consumed as a git **submodule** of `MegatronJeremy/RG2`, but it has its own
 > independent history and `master` branch. Develop it as a standalone project. The working language
 > here is **English** for everything: code, comments, commit messages, issues, and chat. (The RG2
-> parent asks for Serbian commits and chat; that governs RG2's own contents, not this repo.)
+> parent asks for Serbian commits and chat. That governs RG2's own contents, not this repo.)
 
 ## Agent collaboration
 
@@ -28,16 +28,16 @@ any machine, driven by any agent, behaves the same.
 - **Review in chat before push, and push is gated on explicit approval.** For every change, show the
   diff or the key snippets with enough surrounding context to read like a real PR: what changed, why
   it was done that way, the tradeoffs, non-obvious invariants, and what remains unverified. A local
-  commit before that review is fine; the gate is on `git push`. The same gate applies to anything
+  commit before that review is fine. The gate is on `git push`. The same gate applies to anything
   else outward-facing or hard to reverse (issue comments, remote branches, force pushes).
 - **One increment per step.** Each step leaves the repo building and runnable. Small reviewable
   changes beat big batches.
-- **A change to a showcased feature updates its page.** `docs/showcase/` pages carry measured numbers and images for a feature; the PR that changes the feature updates the page, its numbers (GPU, commit, date) and its images in the same PR.
+- **A change to a showcased feature updates its page.** `docs/showcase/` pages carry measured numbers and images for a feature. The PR that changes the feature updates the page, its numbers (GPU, commit, date) and its images in the same PR.
 - **Prefer a short plan before touching a risky surface**: descriptor/binding layouts, serialization
   formats, shared or global state, public APIs. Two minutes of planning catches the class of bug that
   otherwise only surfaces after a full build and test cycle.
 - **Verify NUMBERS, not just actions.** Never state a measurement, benchmark, or quantitative result
-  that was not actually produced. If a measurement is unfinished, say so; a fabricated number is
+  that was not actually produced. If a measurement is unfinished, say so. A fabricated number is
   worse than "not measured yet". Every summary separates what was built, run, and measured from what
   is inference, and marks the inference as such.
 - **Flag conflicts of interest.** When reviewing work you produced earlier (your own code against an
@@ -51,7 +51,7 @@ any machine, driven by any agent, behaves the same.
   filler, no restating the obvious. Keep the quantitative (numbers, names, counts) and the
   qualitative (why, tradeoff), and cut the connective overhead between them.
 - **Committed artifacts state durable facts, not status.** No work log, no TODO, no "as of this
-  change" framing. Ephemeral status belongs in the issue tracker, where it is meant to change; in a
+  change" framing. Ephemeral status belongs in the issue tracker, where it is meant to change. In a
   file it rots and forces a churn commit to correct it.
 - **Comments: default to none.** Names carry WHAT. Comment only a non-obvious WHY that the code
   cannot express: a hidden constraint, a load-bearing invariant or ordering, a workaround, or domain
@@ -69,7 +69,7 @@ any machine, driven by any agent, behaves the same.
   Strip the other AI-writing tells on that pass (the "not just X, but Y" antithesis, rule-of-three
   lists, hollow puffery).
 - **Keep contributor workflow out of consumer-facing docs.** `README.md` is for someone using the
-  engine; build, test, and release process lives next to the code it concerns.
+  engine. Build, test, and release process lives next to the code it concerns.
 
 ## Where the rest lives
 
@@ -97,18 +97,18 @@ py Scripts/Generate-Solution.py --fresh         # also wipe vcpkg installed/buil
 ```
 
 **MSVC toolset is detected, not hardcoded.** vcpkg and CMake pick a toolset by different rules
-(vcpkg takes the latest installed minor version; a bare `-T v143` takes the VS instance default),
+(vcpkg takes the latest installed minor version, a bare `-T v143` the VS instance default),
 and when they diverge Catch2 fails to link with LNK2019 on vectorized-STL symbols. The script
 resolves the latest installed toolset once via `vswhere` and gives the same version to both: CMake
 via `-T v143,version=<ver>`, vcpkg via the overlay triplet in `Scripts/vcpkg-triplets/` (a copy of
 stock `x64-windows` plus `VCPKG_PLATFORM_TOOLSET_VERSION`, read from `SS_MSVC_TOOLSET_VERSION`). It
 also pins `CMAKE_GENERATOR_INSTANCE` so a multi-VS box can't resolve the version against a different
-install. Override with `SS_MSVC_TOOLSET=<ver>`; detection failure falls back to a bare `-T v143`
+install. Override with `SS_MSVC_TOOLSET=<ver>`. Detection failure falls back to a bare `-T v143`
 with a warning. Because the triplet feeds vcpkg's ABI hash, **changing the resolved toolset
 invalidates installed packages**: re-run with `--fresh` when a toolset change forces a rebuild.
 
-Then open `build/Snowstorm.sln` and build. **Snowstorm-Editor** is the default startup project;
-the debugger working directory is the repo root, so relative `Engine/...` and `Projects/...` paths
+Then open `build/Snowstorm.sln` and build. **Snowstorm-Editor** is the default startup project.
+The debugger working directory is the repo root, so relative `Engine/...` and `Projects/...` paths
 resolve. Vulkan
 validation layers are wired via the `VK_ADD_LAYER_PATH` env var (set by the script and in the VS
 debugger environment) pointing at the vcpkg `bin` dir.
@@ -184,7 +184,7 @@ from the source lingers until `build/stage` is deleted.
 `CookAllRegistryAssets`, the same function `--cook.assets` runs, so the two cannot disagree. Producing a
 stage stays a CMake target: it copies build output, so a button for it would have to guess which build
 directory produced the running executable and shell out to a generator that may not be installed.
-Unreal can offer *File > Package Project* because UAT is a first-class shipped tool; nothing here is.
+Unreal can offer *File > Package Project* because UAT is a first-class shipped tool. Nothing here is.
 
 **Gate the package, not just the build**: `py Scripts/smoke-test.py --staged` runs the executables out
 of the stage with the stage as the working directory. It is the only check that the PACKAGE works. The
@@ -217,13 +217,13 @@ fires when its target RELINKS: editing a scene and rebuilding would stage the ol
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc
-`std::getenv`. Declare engine-wide CVars in `Snowstorm/Core/EngineCVars.{hpp,cpp}`; each
+`std::getenv`. Declare engine-wide CVars in `Snowstorm/Core/EngineCVars.{hpp,cpp}`. Each
 self-registers and is resolved once at startup by `CVarRegistry::Initialize(argc, argv)` (called in
 `EntryPoint.hpp`) from, in increasing priority: **default → `<project>/Saved/Settings.cfg` →
 `SnowstormStartup.cfg` → environment → CLI**. The project settings file is per project (a switch
 never clobbers another project's tuning), gitignored, auto-saved by the editor on shutdown and holds
 persistent CVars only. It loads once the project is active (`LoadProjectSettings`), not in
-`Initialize`, because `startup.project` is itself a CVar; CVars set by the startup file, env or CLI
+`Initialize`, because `startup.project` is itself a CVar. CVars set by the startup file, env or CLI
 are skipped by that load so the order above holds. A project without one migrates once from the
 legacy root `SnowstormConfig.cfg`. `SnowstormStartup.cfg` is hand-authored, never written by
 the app, and can carry any CVar, so it is the safe place for machine-local toggles the auto-save
@@ -234,7 +234,7 @@ A CVar named `validation.extra` is set by env `SS_VALIDATION_EXTRA` **or** CLI `
 (dots→`_`, uppercased, `SS_` prefix for env). Bools accept presence (`--flag`, or env set to
 anything but `0`/`false`/`off`/`no`). Run any executable with `--list-cvars` (or `--help`) to print
 every CVar with its value, type, env name, and description. `EngineCVars.cpp` declares them
-(rendering technique modes, denoiser knobs, path tracer, benchmark hooks, validation); treat
+(rendering technique modes, denoiser knobs, path tracer, benchmark hooks, validation). Treat
 `--list-cvars` as the authoritative list rather than any enumeration here. Startup resolution runs
 once, but CVars can also be **edited live at runtime** from the editor's *Debug > Console Variables*
 panel (`CVarPanelSystem`): it lists every CVar with a type-appropriate widget (checkbox/int/float)
@@ -260,7 +260,7 @@ Scripts/             # build, smoke, perf, quality, shader-occupancy tooling + c
 Tools/dxc/           # DirectX Shader Compiler (HLSL -> SPIR-V)
 ```
 
-Core builds to a static lib holding code shared by multiple apps; executables (currently the Editor)
+Core builds to a static lib holding code shared by multiple apps. Executables (currently the Editor)
 link Core and add it to their include path. All targets are **C++20** (the root `CMakeLists.txt`
 sets C++17 globally, although every target overrides to 20, so treat the project as C++20).
 
@@ -268,7 +268,7 @@ sets C++17 globally, although every target overrides to 20, so treat the project
 Shortcuts* window (`EditorMenuSystem::DrawShortcutsWindow`) that documents every keyboard/mouse
 binding. It draws the data table in `Snowstorm-Editor/Source/Singletons/ShortcutTable.cpp`.
 Whenever you add, remove, or change a shortcut (camera controls, gizmo keys, framing, save,
-selection, hierarchy actions, …), edit that table in the same change; `ShortcutTableTests` pins
+selection, hierarchy actions, …), edit that table in the same change. `ShortcutTableTests` pins
 unique chords per section and the presence of the bindings the editor handles. It is the single source of truth users
 see, so treat it as part of the feature, not an afterthought.
 
@@ -279,15 +279,15 @@ see, so treat it as part of the feature, not an afterthought.
   and camera. A game passes its own `void(World&)` registration to the constructor, which runs
   immediately after `RegisterCoreSystems` so its systems land behind every engine system in the same
   phase. It is engine code rather than one executable's private layer because every shipping game needs
-  exactly this bootstrap; `Snowstorm-Runtime` and `Snowstorm-Doom` are both thin shells over it.
-- **Entry point:** clients define `Snowstorm::CreateApplication()`; `Core/EntryPoint.hpp` provides
+  exactly this bootstrap. `Snowstorm-Runtime` and `Snowstorm-Doom` are both thin shells over it.
+- **Entry point:** clients define `Snowstorm::CreateApplication()`. `Core/EntryPoint.hpp` provides
   `main` (inits logging, wraps `Run()` in profiler sessions). `Application` owns the window, the
   `LayerStack`, the `EventBus`, and the `ServiceManager` (singleton via `Application::Get()`).
 - **ECS:** EnTT-backed. `World`/`Entity` (`World/`), components in `Components/`, behavior in
   `Systems/` (managed by `SystemManager`), cross-cutting state in `Singletons/` (`SingletonManager`),
   and `Service/` for longer-lived services. Components self-register for reflection via **RTTR** plus
   the editor/serializer registry from a per-component static initializer (`RTTR_REGISTRATION { ... }` +
-  `AUTO_REGISTER_COMPONENT(T)` in each `Components/*.cpp`; see `Components/ComponentRegistry.hpp`).
+  `AUTO_REGISTER_COMPONENT(T)` in each `Components/*.cpp`. See `Components/ComponentRegistry.hpp`).
   Core is a static lib, so the executables link it `WHOLE_ARCHIVE` to keep those initializer TUs.
 - **Data-parallelism is a first-class option for systems: always consider it.** When adding a new
   system (or extending/reworking one), explicitly ask whether its per-entity work is *pure and
@@ -295,7 +295,7 @@ see, so treat it as part of the feature, not an afterthought.
   asset-manager/singleton calls, no `TrackedRegistry` mutation APIs in the loop) and would benefit from
   running across `JobSystem` workers. If so, use the existing primitives instead of a hand-rolled serial
   loop: `System::ParallelForEach<Read<T>/Write<T>...>` for in-place per-entity updates (the DOTS
-  IJobEntity model; RotatorSystem is the reference), or `JobSystem::ParallelGather<T>(count, body, emit)`
+  IJobEntity model. RotatorSystem is the reference), or `JobSystem::ParallelGather<T>(count, body, emit)`
   for parallel filter/collect into a list (VisibilitySystem's frustum cull is the reference). Both take
   a grain size, degrade to an inline serial pass for small N (parallel only when it pays), gate on the
   `ecs.parallel` CVar for a pure serial-vs-parallel A/B, and preserve deterministic (bit-identical)
@@ -309,32 +309,32 @@ see, so treat it as part of the feature, not an afterthought.
   components and resources (Singletons, Services, and the `TrackingMapResource` pseudo-resource for tracked
   mutators and `Init/Changed/FiniView`) it reads and writes, plus `Structural()` when it emplaces, removes or
   destroys. Undeclared means exclusive and main-thread-only. `SystemManager::DeclaredAccess()` lists them and
-  `SystemAccess::ConflictsWith` is the pairwise rule, and `BuildSchedule` (`ECS/SystemSchedule.hpp`) layers one phase into stages from it; `ecs.schedule` (default off) makes
+  `SystemAccess::ConflictsWith` is the pairwise rule, and `BuildSchedule` (`ECS/SystemSchedule.hpp`) layers one phase into stages from it. `ecs.schedule` (default off) makes
   `SystemManager` run each phase in `ScheduleOrder` (stage by stage, still serial, edit-mode skips applied before
-  staging); nothing runs in parallel yet (#85). A new core system needs a declaration (`SystemAccessTests` fails otherwise).
+  staging). Nothing runs in parallel yet (#85). A new core system needs a declaration (`SystemAccessTests` fails otherwise).
 - **Cluster grid math:** `Render/LightClusterMath.hpp` is the pure, GPU-free core of the planned clustered light cull (#66): exponential depth slices, analytic view-space cluster bounds, sphere-AABB overlap and a CPU reference cull (ascending index, fixed stride, overflow dropped). Nothing renders from it yet.
-`AssignClusterLights` builds fixed-stride per-cluster lists from it; `render.lights.cluster` (default off) runs it per frame for the presented view (point and spot range spheres) and publishes `RendererService::GetClusterStats()`. `render.lights.cluster.shade` (default off, implies the assignment) uploads the lists (`PackClusterLightLists`: counts, then fixed-stride indices) to a per-frame-in-flight storage buffer that DefaultLit reads through its device address (`vk::RawBufferLoad`, no descriptor change; address, grid and `ClusterViewDepthRow` ride a FrameCB tail). DefaultLit visits only the cluster's point and spot lights, in the same ascending order as the full loops, so pixels match unless a cluster overflows `render.lights.cluster.max`. Only the presented camera at a scene-target size equal to the viewport uses the lists (`render.scale != 1` and every other pass loop over all lights); `ClusterIndexFromPixel` is the tested mirror of the shader's cluster lookup. Not yet measured on a GPU.
+`AssignClusterLights` builds fixed-stride per-cluster lists from it. `render.lights.cluster` (default off) runs it per frame for the presented view (point and spot range spheres) and publishes `RendererService::GetClusterStats()`. `render.lights.cluster.shade` (default off, implies the assignment) uploads the lists (`PackClusterLightLists`: counts, then fixed-stride indices) to a per-frame-in-flight storage buffer that DefaultLit reads through its device address (`vk::RawBufferLoad`, no descriptor change, with address, grid and `ClusterViewDepthRow` riding a FrameCB tail). DefaultLit visits only the cluster's point and spot lights, in the same ascending order as the full loops, so pixels match unless a cluster overflows `render.lights.cluster.max`. Only the presented camera at a scene-target size equal to the viewport uses the lists (`render.scale != 1` and every other pass loop over all lights). `ClusterIndexFromPixel` is the tested mirror of the shader's cluster lookup. Not yet measured on a GPU.
 - **Rendering:** backend-agnostic interfaces in `Render/` (`RendererAPI`, `Renderer`, `Pipeline`,
   `Shader`, `Buffer`, `Texture`, `Material`, `RenderGraph`, ...). The concrete implementation lives
-  in `Platform/Vulkan/` (volk + Vulkan Memory Allocator + spirv-reflect; shaders compiled to SPIR-V
+  in `Platform/Vulkan/` (volk + Vulkan Memory Allocator + spirv-reflect, with shaders compiled to SPIR-V
   via `Tools/dxc`).
 - **Scenes:** serialized to/from JSON (`World/SceneSerializer.hpp`, nlohmann_json).
-  Every component serializes through its reflected properties (`JsonUtils.hpp`); the serializer holds no
+  Every component serializes through its reflected properties (`JsonUtils.hpp`). The serializer holds no
   type names. A shape that is not the property list sets `SerializeFn`/`DeserializeFn` in
   `ComponentRegisterOptions` (`MaterialOverridesComponent`), `Structural` keeps a component in the entity
   header (`IDComponent`, `TagComponent`), and property metadata `JsonAlias` names the key older files used.
 - **Render graph scheduling is CPU-testable:** `RenderGraph::BuildDependencies` and `BuildSchedule(swapchain)` need no
-  device (`RenderGraphScheduleTests`); only `Execute` (fork/join, ownership transfers) needs a GPU.
-- **Events:** `Events/` hierarchy dispatched through `EventBus`; input bridged in `Input/`.
+  device (`RenderGraphScheduleTests`). Only `Execute` (fork/join, ownership transfers) needs a GPU.
+- **Events:** `Events/` hierarchy dispatched through `EventBus`. Input bridged in `Input/`.
 
 ### Conventions
 
 - Namespace `Snowstorm`. Smart-pointer aliases `Ref<T>` (shared) / `Scope<T>` (unique) with
   `CreateRef` / `CreateScope`. Use these, not raw `std::shared_ptr`/`make_unique`, in engine code.
 - Macros from `Core/Base.hpp`: `SS_ASSERT` / `SS_CORE_ASSERT`, `BIT(x)`, `SS_BIND_EVENT_FN(fn)`,
-  `SS_DEBUGBREAK()`. Logging is `SS_CORE_*` / `SS_*` (spdlog). Asserts compile out unless `SS_DEBUG`;
-  use `SS_VERIFY` / `SS_CORE_VERIFY` for checks that must survive release builds.
-- Platform code goes behind `SS_PLATFORM_WINDOWS` (see `Core/PlatformDetection.hpp`); the engine
+  `SS_DEBUGBREAK()`. Logging is `SS_CORE_*` / `SS_*` (spdlog). Asserts compile out unless `SS_DEBUG`.
+  Use `SS_VERIFY` / `SS_CORE_VERIFY` for checks that must survive release builds.
+- Platform code goes behind `SS_PLATFORM_WINDOWS` (see `Core/PlatformDetection.hpp`). The engine
   currently `#error`s on non-Windows.
 - Headers are `.hpp`, translation units `.cpp`. Core globs all sources recursively, so a new file
   under `Snowstorm-Core/Source/` is picked up after re-running CMake (re-generate the solution).
@@ -366,12 +366,12 @@ see, so treat it as part of the feature, not an afterthought.
 assimp, EnTT, fmt, glew, glfw3, glm, imgui (vulkan+glfw bindings, docking), imguizmo, rttr, spdlog,
 stb, Vulkan SDK, vulkan-memory-allocator, volk, spirv-reflect, nlohmann-json, catch2, tracy, libsquish,
 miniaudio. The canonical list
-is `PACKAGES` in `Scripts/Generate-Solution.py`; the linkage is in `Snowstorm-Core/CMakeLists.txt`.
+is `PACKAGES` in `Scripts/Generate-Solution.py`. The linkage is in `Snowstorm-Core/CMakeLists.txt`.
 Keep those two in sync when adding a dependency.
 
 ## Git hygiene
 
-Work on a branch, merge through a pull request; see the branch/PR rule under Agent collaboration.
+Work on a branch, merge through a pull request. See the branch/PR rule under Agent collaboration.
 `.gitignore` excludes everything generated: `build/`, `vcpkg/`, `.vs/`, `Engine/cache`, the local
 config files (`Projects/*/Saved/`, `SnowstormConfig.cfg`, `SnowstormStartup.cfg`), captures and weights (`Dataset/`,
 `*.npy`, `*.ssnn`), downloaded tooling (`Tools/rga/`, `Tools/rdts/`), the PT reference cache
@@ -411,28 +411,28 @@ out. When the "real" way is genuinely cheap, just do it the real way.
 adding any new abstraction, base class, wrapper, config knob, or indirection, ask out loud: *does this
 earn its keep, or is it speculative?* An abstraction with one caller/subclass, a wrapper that only
 saves a few lines, a second way to do something the codebase already does: these are bloat, not
-rigor. Prefer the load-bearing primitive over sugar layered on top of it; prefer one clear way to do a
+rigor. Prefer the load-bearing primitive over sugar layered on top of it. Prefer one clear way to do a
 thing over two. On every new feature/implementation, explicitly weigh whether it *adds* surface area
 (a concept a future reader must learn, a decision they must make) against what it removes, and say so.
 When a proposed piece optimizes the rare case while taxing the common case, that's backwards, so cut it.
 The bias toward the production-grade design (above) and the bias against bloat are the same instinct:
 build the real shape, but only the parts that are actually load-bearing. When in doubt, leave it out:
-re-adding a thin wrapper later is cheap; ripping out an entangled one that grew callers is not. A
+re-adding a thin wrapper later is cheap. Ripping out an entangled one that grew callers is not. A
 worked example: a CRTP `EntitySystem` base was built to wrap the `ParallelForEach` primitive for
 single-query systems, then cut. It had one subclass, only fit the one-query case (multi-loop systems
 drop back to the primitive anyway), and added a "which base do I derive?" decision to every new
-system, all to save ~5 lines. The primitive was the real abstraction; the wrapper was bloat.
+system, all to save ~5 lines. The primitive was the real abstraction. The wrapper was bloat.
 
 Worked example, the **asset pipeline** (the engine's biggest deliberate simplification):
 
 - **Real engines separate source assets from cooked runtime assets.** The file you drop in
-  (`.obj`/`.png`/`.fbx`) is the *source*; an *importer* cooks it once into a GPU-ready artifact
-  (mesh → packed vertex/index buffers; texture → BC7/ASTC + mips; shader → SPIR-V/DXIL) plus a
+  (`.obj`/`.png`/`.fbx`) is the *source*. An *importer* cooks it once into a GPU-ready artifact
+  (mesh → packed vertex/index buffers, texture → BC7/ASTC + mips, shader → SPIR-V/DXIL) plus a
   sidecar `.meta` holding a stable GUID + import settings (cf. Unity's `foo.fbx.meta`). Scenes
   reference the **GUID**, never the path, so moving/renaming a file never breaks references.
-- An **asset database** maps `GUID → (source, cooked, dependencies, content hash)`; a **file
-  watcher** re-cooks only what changed (and its dependents) and hot-reloads it; the runtime
-  **streams** cooked assets asynchronously under a memory budget; builds cook only the transitive
+- An **asset database** maps `GUID → (source, cooked, dependencies, content hash)`. A **file
+  watcher** re-cooks only what changed (and its dependents) and hot-reloads it. The runtime
+  **streams** cooked assets asynchronously under a memory budget. Builds cook only the transitive
   closure of what scenes actually reference (no dead content shipped).
 - **What Snowstorm does instead, deliberately:** `Import` adds a `handle → path` row to a JSON registry,
   where the path is a mounted name (`/Game/...`) rather than wherever the file sat on the authoring
@@ -445,11 +445,11 @@ Worked example, the **asset pipeline** (the engine's biggest deliberate simplifi
   where that grows.
 
   **`AssetManagerSingleton::ImportFile` is the one way a file enters the project** (*File > Import Asset*).
-  It dispatches on `AssetTypeFromPath`; non-mesh types go through `PlanImport` into `<assets>/<type>/`
+  It dispatches on `AssetTypeFromPath`. Non-mesh types go through `PlanImport` into `<assets>/<type>/`
   (`DefaultImportFolder`), never overwriting (a different file at the same name takes `_N`, an identical
-  one is reused), and meshes go through `ImportModelAssets` (copy, `.ssmat` generation, registry rows; no entities).
+  one is reused), and meshes go through `ImportModelAssets` (copy, `.ssmat` generation, registry rows, but no entities).
   `InstantiateImportedModel` spawns the entities and runs only when `ImportFile(path, true)` asks (*Import Asset* and
-  the `--scene.bake` path through `ImportModel`); a Content Browser drop imports assets only, like Unity, Unreal and Godot.
+  the `--scene.bake` path through `ImportModel`). A Content Browser drop imports assets only, like Unity, Unreal and Godot.
   It does not save the registry.
 
   **An asset's identity is `AssetRegistry`'s `Canonicalize`, and it has exactly one spelling.** A path
@@ -491,7 +491,7 @@ buffers are released. Textures are not swept yet.
   didn't update the timestamp, the build failed silently, so fix that first. This is the #1 cause of
   "my change isn't taking effect."
 - **A running editor locks the exe.** `LNK1168: cannot open ... for writing` means a previous instance
-  is still alive; `taskkill //IM Snowstorm-Editor.exe //F` before rebuilding. A leftover process also
+  is still alive. `taskkill //IM Snowstorm-Editor.exe //F` before rebuilding. A leftover process also
   means you may be looking at an old build.
 - Strip all temporary debug probes (logs, on-screen text) before committing, and `git diff` each
   touched file to catch leftovers, since incremental edits during debugging are easy to forget.
@@ -502,7 +502,7 @@ buffers are released. Textures are not swept yet.
   reading source/state. Reserve "please click X and tell me what you see" for genuine final visual
   confirmation, not for diagnosing logic: a manual launch/click/report loop burns the user's time
   and stalls on build/timing artifacts.
-- **Keep effort proportional.** Time-box cosmetic/nice-to-have features; if one can't be made to work
+- **Keep effort proportional.** Time-box cosmetic/nice-to-have features. If one can't be made to work
   and verified in a couple of clean attempts, drop it rather than rabbit-holing. Commit the larger
   body of working, verified changes promptly instead of leaving it uncommitted while chasing a detail.
 
@@ -521,25 +521,25 @@ buffers are released. Textures are not swept yet.
   - The **frame-time watchdog** (`debug.max_frame_ms` CVar / `--max-frame-ms` smoke flag) turns a
     per-frame stall into a headless `[error]` naming the exact frame + duration.
   - The **profiler** (`SS_PROFILE_SCOPE` / `SS_PROFILE_FUNCTION`) for a full cross-thread timeline. Two
-    back-ends behind the same macros: **Tracy** (primary, live; connect the Tracy GUI to a running Debug
-    build over the network; `TRACY_ENABLE` is on in Debug) and a **headless JSON fallback**
+    back-ends behind the same macros: **Tracy** (primary, live: connect the Tracy GUI to a running Debug
+    build over the network, with `TRACY_ENABLE` on in Debug) and a **headless JSON fallback**
     (`profile.capture_frames` / `profile.capture_path` CVars dump a chrome://tracing / Perfetto file with
     no GUI, for automated/offline trace analysis). Instrumented spots: frame-loop phases, every ECS system,
     and JobSystem worker tasks. One `SS_PROFILE_SCOPE` per lexical scope (it declares a fixed-name RAII
-    object, so two in the same block is a redefinition; nest them).
+    object, so two in the same block is a redefinition. Nest them).
   Per-pass GPU scopes also reach Tracy as GPU zones (one context per queue, `VulkanTracyGpuZones`), so
   GPU passes sit under the CPU timeline once a Tracy GUI is connected.
   A whole debugging session was once burned scattering probes to find a load spike that the Performance
   panel would have pinned to `RenderSystem`/shadow-fit in one glance (and the fix, reading the panel, was
   already built). If the existing readouts genuinely don't cover the spot, ADD a permanent, toggleable
-  diagnostic there (extend the panel / add a scope / a CVar-gated log) rather than a throwaway probe;
-  see "Build the engine to be debuggable" below. Reserve ad-hoc probes for gaps the standing tools can't
+  diagnostic there (extend the panel / add a scope / a CVar-gated log) rather than a throwaway probe.
+  See "Build the engine to be debuggable" below. Reserve ad-hoc probes for gaps the standing tools can't
   reach, and strip them before committing.
 - **Bisect, don't guess.** When behavior contradicts the code, the bug is somewhere between "what I
   believe is true" and "what's observed." Add a probe that splits that gap in half and *prove* which
   side is wrong, rather than changing code speculatively and re-running. One well-placed probe beats
   five hopeful edits.
-- **One assumption per probe; isolate the variable.** Each test should answer exactly one yes/no
+- **One assumption per probe. Isolate the variable.** Each test should answer exactly one yes/no
   question. If a result is paradoxical (e.g. "metadata valid at registration but absent at render"),
   do not theorize further: put *both* readings in a *single build/run* and compare. Contradictions
   across separate runs usually mean the runs differed (stale exe, different selection), not that the
@@ -565,19 +565,19 @@ being proven, wasting three rounds. What actually found it: the user's observati
   Static camera or only in motion? Each answer eliminates a whole class of causes in one sentence.
 - **Static vs motion is the big discriminator.** Garbage/flicker *while the camera is static* ⇒ data
   changing per-frame: a race, sync gap, or undefined behaviour (e.g. non-uniform descriptor indexing).
-  Shimmer *only under motion* ⇒ aliasing / mip-LOD / depth precision. Pin this first; it splits the
+  Shimmer *only under motion* ⇒ aliasing / mip-LOD / depth precision. Pin this first. It splits the
   search space in half immediately.
 - **Bisect with temporary shader probes, not theory.** Force a flat color (geometry vs sampling),
   force texture index 0 (slot vs index), output a value as RGB (index magnitude, `SV_InstanceID`),
-  force a mip level (`SampleLevel`). Each probe is one yes/no that halves the space; 4 to 5 pin it. This
+  force a mip level (`SampleLevel`). Each probe is one yes/no that halves the space. 4 to 5 pin it. This
   is "bisect, don't guess" applied to the GPU. Strip every probe before committing.
 - **Don't "fix" before the probe proves the cause.** Prove with one probe, *then* change code.
 - **Bindless + instancing red flag:** when one draw renders many objects with *different*
   descriptor-array indices, the index is not dynamically uniform → wrap in `NonUniformResourceIndex()`
   and enable the matching `shader*ArrayNonUniformIndexing` device feature. Silent garbage/flicker
-  otherwise; it "works" pre-instancing only because each object was its own draw.
+  otherwise. It "works" pre-instancing only because each object was its own draw.
 - **A wrong fix that's independently useful can stay.** Misdiagnoses (mipmaps, near plane) were real
-  improvements on their own, so keep them; don't revert good changes just because they missed this bug.
+  improvements on their own, so keep them. Don't revert good changes just because they missed this bug.
 - **Color/hue/gamma bug → suspect the color space and pipeline STAGE before the formula.** On a color
   bug, if two fixes fail in the *same category*, stop tweaking the math and ask: wrong color space
   (linear vs display/sRGB, HDR vs tonemap-compressed, RGB vs signed-chroma like YCoCg) or wrong pipeline

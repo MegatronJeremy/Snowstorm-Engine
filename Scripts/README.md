@@ -23,17 +23,17 @@ py Scripts/smoke-test.py --staged        # run the PACKAGE in build/stage/<confi
 py Scripts/smoke-test.py --strict        # enable deeper Vulkan validation (see below)
 ```
 
-`--exe <path> [--cwd <dir>]` smoke-tests one executable built outside this repository (a game consuming the engine as a submodule, such as Snowstorm-Doom): same environment, settle rule, timeout, `--frames`, `--strict`, `--headless`, `--scene`/`--project` and log scan as a built-in target, named after the exe's stem. A relative `--exe` and `--cwd` resolve against the directory the script is run from, which is also the default working directory, since a game resolves its own `Projects/...` against its root. Validation layers still come from this repository's vcpkg tree (`--triplet`). It excludes `--only` and `--staged`. `Scripts/test_smoke_test_exe.py` covers the resolution and flag rules GPU-free; a real run of an external game is unverified.
+`--exe <path> [--cwd <dir>]` smoke-tests one executable built outside this repository (a game consuming the engine as a submodule, such as Snowstorm-Doom): same environment, settle rule, timeout, `--frames`, `--strict`, `--headless`, `--scene`/`--project` and log scan as a built-in target, named after the exe's stem. A relative `--exe` and `--cwd` resolve against the directory the script is run from, which is also the default working directory, since a game resolves its own `Projects/...` against its root. Validation layers still come from this repository's vcpkg tree (`--triplet`). It excludes `--only` and `--staged`. `Scripts/test_smoke_test_exe.py` covers the resolution and flag rules GPU-free. A real run of an external game is unverified.
 
 `--scene` and `--project` skip `Pong`, which boots its own project: forcing a Sandbox scene on it resolves the scene's handles against Pong's registry and fails with "mesh handle not found".
 
-`--project <.ssproj>` passes `--startup.project=` to each target it runs, the hand-off *Play Standalone* makes. Use it with `--only Runtime` and a project other than Sandbox; the settle rule below then fails on that project's assets that never resolve. `StandalonePlayTests` pin the full argument list GPU-free. The settle check's behaviour on a project's unresolved assets is unverified on a GPU.
+`--project <.ssproj>` passes `--startup.project=` to each target it runs, the hand-off *Play Standalone* makes. Use it with `--only Runtime` and a project other than Sandbox. The settle rule below then fails on that project's assets that never resolve. `StandalonePlayTests` pin the full argument list GPU-free. The settle check's behaviour on a project's unresolved assets is unverified on a GPU.
 
 `--strict` sets `SS_VALIDATION_EXTRA=1`, which enables **synchronization validation** (barrier/
 semaphore/fence hazards) and **best-practices** (perf/usage foot-guns) via `VkValidationFeaturesEXT`.
 These are off by default since they add overhead and best-practices is advisory/noisy. Strict findings
 are logged at `[warning]` level and shown as **notes**, not failures (a strict run still PASSes on
-them); add `--warnings-fail` to gate on them. Genuine validation **errors** are always `[error]`
+them). Add `--warnings-fail` to gate on them. Genuine validation **errors** are always `[error]`
 level and fail the run in either mode. **GPU-assisted validation** is separate and much heavier
 (it instruments shaders to catch out-of-bounds descriptor/buffer access at execution time): it sits
 behind its own `validation.gpu` CVar (`SS_VALIDATION_GPU=1`), off by default and not implied by
@@ -42,7 +42,7 @@ behind its own `validation.gpu` CVar (`SS_VALIDATION_GPU=1`), off by default and
 **Run it after any change substantial enough to affect runtime behavior** (engine/render/ECS/asset
 code, the frame loop, anything touching Vulkan), and not for docs/comment/build-script-only edits.
 Build first (`cmake --build build --config Debug`), then smoke-test. It needs a **real GPU/display**
-(Vulkan), so it is a **local** gate that cannot run on hosted CI; the GitHub `build` workflow
+(Vulkan), so it is a **local** gate that cannot run on hosted CI. The GitHub `build` workflow
 compiles and runs the GPU-free unit tests (`ctest --test-dir build -C Debug --output-on-failure`),
 nothing that needs a device. The harness sets `VK_ADD_LAYER_PATH` itself so validation layers load.
 
@@ -54,18 +54,18 @@ Set it yourself when debugging validation interactively. GPU resources are also 
 `SetVulkanObjectName` (`VK_EXT_debug_utils`), so validation/RenderDoc report e.g. `Swapchain[0]`
 instead of a raw `VkImage 0x...` handle.
 
-`Reflections` and `AlphaBlend` are the Runtime booted on the testbed scenes of the same names (`AlphaBlend` with `SS_RENDER_TRANSPARENT=1`), so a scene or flag that stops loading fails the gate (#282). A target whose scene file is missing fails before anything launches; `--scene` overrides every target's scene. Neither has run on a GPU yet.
+`Reflections` and `AlphaBlend` are the Runtime booted on the testbed scenes of the same names (`AlphaBlend` with `SS_RENDER_TRANSPARENT=1`), so a scene or flag that stops loading fails the gate (#282). A target whose scene file is missing fails before anything launches. `--scene` overrides every target's scene. Neither has run on a GPU yet.
 
 **Headless mode (`SS_HEADLESS=1`, or `--headless` on `smoke-test.py` and `perf-bench.py`) needs no unlocked desktop.** The `headless` CVar creates the GLFW window hidden (ImGui's GLFW backend and input still get a window handle), creates no `VkSurfaceKHR` or swapchain, and makes `VulkanContext` own four offscreen BGRA8 images in the swapchain's place. `BeginFrame` signals the image-available semaphore with an empty submit instead of acquiring, and the end of the frame consumes the render-finished semaphore with an empty wait-only submit instead of presenting. Device and queues, the frame graph, asset streaming and the settle check run as before. Both scripts print `Mode:` as `HEADLESS` or `windowed`. Headless perf numbers skip present, so capture committed perf baselines windowed.
 
-**A hung GPU must not take the machine with it.** The harness kills the process tree when the app prints nothing for `--stall-timeout` seconds (default 60; 0 = off) as well as at the wall-clock `--timeout`, and `VK_ERROR_DEVICE_LOST` / "device lost" anywhere in the log fails the run. On AMD a hung submission can end in a Windows bugcheck (0x133) instead of a device reset, so the earliest sign has to stop the run. `Scripts/test_smoke_test_watchdog.py` covers the watchdog and the marker GPU-free.
+**A hung GPU must not take the machine with it.** The harness kills the process tree when the app prints nothing for `--stall-timeout` seconds (default 60. 0 = off) as well as at the wall-clock `--timeout`, and `VK_ERROR_DEVICE_LOST` / "device lost" anywhere in the log fails the run. On AMD a hung submission can end in a Windows bugcheck (0x133) instead of a device reset, so the earliest sign has to stop the run. `Scripts/test_smoke_test_watchdog.py` covers the watchdog and the marker GPU-free.
 
-**Cached SPIR-V is validated before use.** `Engine/cache/shaders/<stem>_<key>.spv` has a sidecar `.spv.key` (key, size, content hash). `ValidateCachedSpirv` (`Render/SpirvBlobValidation.hpp`, `SpirvBlobValidationTests`) rejects a blob with a bad magic, a version outside 1.0-1.5, a size or hash that differs from its stamp, a stamp for another key, or no stamp; `VulkanShader` then deletes it and recompiles with dxc. A cache from before the sidecar existed is recompiled once, so a build shipping a warm cache without dxc must ship the sidecars too. A rejected blob is deleted even when dxc is missing, so that call then fails. Deletion happens only under the per-path compile lock; the unlocked pre-check never removes. The compiler publishes the stamp before renaming the blob into place, so a blob is never visible without its stamp. Unverified on a GPU.
+**Cached SPIR-V is validated before use.** `Engine/cache/shaders/<stem>_<key>.spv` has a sidecar `.spv.key` (key, size, content hash). `ValidateCachedSpirv` (`Render/SpirvBlobValidation.hpp`, `SpirvBlobValidationTests`) rejects a blob with a bad magic, a version outside 1.0-1.5, a size or hash that differs from its stamp, a stamp for another key, or no stamp. `VulkanShader` then deletes it and recompiles with dxc. A cache from before the sidecar existed is recompiled once, so a build shipping a warm cache without dxc must ship the sidecars too. A rejected blob is deleted even when dxc is missing, so that call then fails. Deletion happens only under the per-path compile lock. The unlocked pre-check never removes. The compiler publishes the stamp before renaming the blob into place, so a blob is never visible without its stamp. Unverified on a GPU.
 
 **A run passes only once assets settle.** After the frame budget the app keeps running until
 `AssetManagerSingleton::PendingLoadCount() == 0` and no bindless slot is still the placeholder
 (`UnsettledReason`, reached through `Layer::SmokeUnsettled`), until `smoke.settle.seconds` have passed since process start
-(the harness sets it to `--timeout` minus 10); otherwise it logs `[error]` and fails. A stuck cook
+(the harness sets it to `--timeout` minus 10). Otherwise it logs `[error]` and fails. A stuck cook
 used to pass because only the frame count was checked. `--cold --scene <Sponza.world>` covers the
 cook path, and needs a generous `--timeout`.
 
@@ -77,19 +77,19 @@ runs it and a green smoke run says nothing about it.
 
 ## Scene capture gate (does it LOOK right)
 
-Smoke proves a scene boots and settles; it cannot see a frame that is all magenta (the Runtime shown only a magenta sky on 2026-10-19 passed it). `Scripts/scene-capture-check.py` captures Sponza, Reflections, AlphaBlend and Pong headlessly and fails on two things: an error frame (one colour, magenta or black over most of the frame; no golden needed) and a FLIP above `--threshold` (0.10) against the committed golden `Scripts/scene-golden/<adapter-slug>/<scene>.npz`. A missing golden is exit 2 (SKIP), never a pass, though the error-frame check still runs. Each run writes PNGs to `Scripts/.scene-captures/`; `--update-golden` records new goldens, only after looking at those PNGs. `Scripts/test_scene_capture_check.py` covers the detector GPU-free. The gate has not run on a GPU yet and no golden is committed.
+Smoke proves a scene boots and settles. It cannot see a frame that is all magenta (the Runtime shown only a magenta sky on 2026-10-19 passed it). `Scripts/scene-capture-check.py` captures Sponza, Reflections, AlphaBlend and Pong headlessly and fails on two things: an error frame (one colour, magenta or black over most of the frame, which needs no golden) and a FLIP above `--threshold` (0.10) against the committed golden `Scripts/scene-golden/<adapter-slug>/<scene>.npz`. A missing golden is exit 2 (SKIP), never a pass, though the error-frame check still runs. Each run writes PNGs to `Scripts/.scene-captures/`. `--update-golden` records new goldens, only after looking at those PNGs. `Scripts/test_scene_capture_check.py` covers the detector GPU-free. The gate has not run on a GPU yet and no golden is committed.
 
 **A PR that changes rendering attaches before and after captures from the Z2** (the PNGs above, same scene, same adapter), and a showcase page shows a real capture of its scene, not a debug buffer.
 
-**The Runtime resolves `startup.project` and `startup.scene` against the working directory first, then the engine root** (`ResolveStartupPath`), so a double-click works. A project, registry or scene it cannot load logs `[error]`, shows a message box (headless runs only log) and exits; it never renders an engine default sky over an empty world.
+**The Runtime resolves `startup.project` and `startup.scene` against the working directory first, then the engine root** (`ResolveStartupPath`), so a double-click works. A project, registry or scene it cannot load logs `[error]`, shows a message box (headless runs only log) and exits. It never renders an engine default sky over an empty world.
 
 ## GPU perf benchmark (run before/after any render-path change)
 
 `Scripts/perf-bench.py` is the GPU analogue of the smoke test: a golden-file microbenchmark gate.
 It runs the Editor headlessly once per **RT-effect config** (via `perf.bench.frames` /
 `SS_PERF_BENCH_FRAMES`), each of which averages the render graph's per-pass GPU timings over a fixed
-frame budget and writes a JSON (`PerfBench.hpp` builds it; `Application::Run` drives it past a detected
-steady state, which also covers the 1-frame timestamp lag; see "Warmup is detected, not assumed" below).
+frame budget and writes a JSON (`PerfBench.hpp` builds it. `Application::Run` drives it past a detected
+steady state, which also covers the 1-frame timestamp lag. See "Warmup is detected, not assumed" below).
 The script parses each JSON, prints a per-pass
 table, and **diffs against a committed baseline** in `Scripts/perf-baseline/`, failing (exit 1) if any
 pass regresses beyond **both** `--threshold` (default 15%) and `--abs-threshold` (default 0.10 ms).
@@ -119,7 +119,7 @@ against `+refl`), and `shadows-stoch` repeats `shadows` with the stochastic aggr
 shadow pair as one point on a curve, not a verdict: inline cost grows per light while stochastic is
 constant, so the ranking flips with light count and a fixed scene cannot show that.
 
-**The stochastic producer is EXPERIMENTAL and off by default; inline RT is the supported path.** It
+**The stochastic producer is EXPERIMENTAL and off by default. Inline RT is the supported path.** It
 is more temporally stable on the gate (tFLIP 0.0131 against inline's 0.0154) and constant in light
 count, but it shows artifacts under camera motion where two point lights overlap, consistent with
 per-pixel light selection differing between neighbouring pixels, and it leans on the shadow a-trous
@@ -128,7 +128,7 @@ lit side aisles (#169). Treat its numbers as characterising a prototype, not a s
 `render.shadows.specular.demodulated`, which the rung leaves at its shipping default (on) and which
 adds a second denoise chain (the `ShadowSpec*` rows) the inline path has no analogue for. At Sponza's
 light count, in ms over `rt-off` from the committed baselines: 9070 XT inline 2.272, stochastic 1.723
-with that chain and 0.895 without; 5070 inline 1.294, stochastic 3.362 and 2.109. So the ranking
+with that chain and 0.895 without. 5070 inline 1.294, stochastic 3.362 and 2.109. So the ranking
 inverts across vendors rather than across configs: on AMD stochastic wins outright, on NVIDIA inline
 wins by 2.6x. The spec chain alone is 0.828 ms on the 9070 XT and 1.253 ms on the 5070. Sub-0.05 ms
 passes are ignored (timestamp noise).
@@ -184,7 +184,7 @@ but under floor`, so a small real shift stays visible without failing the run.
 config light enough (~2 ms/frame) to leave the GPU idle between frames in a Debug build, so the adapter
 downclocks and every pass inflates together. Measured: 8.3% run spread at `--repeat 5` against 0.2-2.2% for
 every other config, and the same config on the 5070 spreads 2.8%. A ~20% swing there is the config, not the
-change, and an interleaved `--compare-exe` A/B is the only way to read it; the golden-baseline path cannot.
+change, and an interleaved `--compare-exe` A/B is the only way to read it. The golden-baseline path cannot.
 
 **To measure a CHANGE, use the paired A/B, not the golden baseline.** `--compare-exe <ref-exe>` runs two
 builds interleaved (A,B,A,B,...) in one session and reports the median per-pair delta with the pair-to-pair
@@ -195,7 +195,7 @@ the pairs disagree and prints `inconclusive`. This needs no baseline, so it also
 has none. The golden-file path answers a different question ("did this drift from the committed numbers")
 and stays the right tool for regression gating.
 
-**On a machine that cannot pin clocks, the A/B against the base build is the gate; stored baselines are
+**On a machine that cannot pin clocks, the A/B against the base build is the gate. Stored baselines are
 references.** A re-run of the baseline's own commit on the Z2's 8060S fails with disjoint IQRs between
 sittings, so the stored-baseline gate cannot be trusted there. `--compare-exe <base-exe> --pairs 3 --gate`
 adds a verdict after the report: a config fails when the TOTAL or any pass is resolved (at least 2 pairs,
@@ -209,7 +209,7 @@ line per config and a closing PASS/FAIL. A failed run ends the log with `FAIL: a
 `--abs-threshold` as well as the statistical test: materiality. `print_ab` measures, so it asks only
 whether the pairs agree on size and sign: resolution. Giving the A/B a materiality floor would delete what
 it exists to find. d74cb76's stride tradeoff is +0.034 ms on GIDenoise0 and -0.047 ms on GIDenoise2, both
-under a 0.10 ms floor, and those two numbers ARE the finding; the full-res chains that survive such a
+under a 0.10 ms floor, and those two numbers ARE the finding. The full-res chains that survive such a
 floor needed no A/B to see. Both readouts do share the 0.05 ms `NOISE_FLOOR_MS`, below which a percentage
 means nothing either way.
 
@@ -229,7 +229,7 @@ mechanism, so there the flag prints `UNPINNED` in the header and changes nothing
 `clocksPinned`, and a diff against a baseline captured in the other state warns that the absolute numbers are
 not comparable (a baseline predating the field counts as unpinned). `Scripts/test_perf_bench_pin.py` covers
 the pure parts. Like
-smoke, it needs a **real GPU** (Vulkan timestamps) so it's a **local** gate, not CI; on a device
+smoke, it needs a **real GPU** (Vulkan timestamps) so it's a **local** gate, not CI. On a device
 without timestamp support the JSON sets `timestampsSupported:false` and the run counts as a SKIP
 (exit **2**), never a pass and never a false FAIL.
 
@@ -244,7 +244,7 @@ cross-config delta into effect-cost plus hardware difference. Missing set = the 
 numbers and exits **2** (SKIP), which is not a pass: it compared nothing, so it cannot claim one.
 On a multi-GPU machine `SS_CONFIG_IGNORE` also discards the persisted
 `render.gpu` pick, so selection falls back to auto and the adapter is whatever the driver enumerates
-first; `--gpu` pins it, taking a short all-digits value as a candidate **index** and anything else
+first. `--gpu` pins it, taking a short all-digits value as a candidate **index** and anything else
 (including a model number like `9070`) as a case-insensitive name substring. Re-baseline deliberately
 (with a commit) when a change *intends* to shift perf, never to paper over an unexplained regression.
 
@@ -259,16 +259,16 @@ local ImGui dock layout gives its viewport panel, so a committed baseline silent
 when someone rearranged their editor, and the gate then compared nothing while still looking like it
 ran. The committed sets had drifted to three different resolutions by accident of layout (1915x1064,
 1717x979, 1677x999). `render.resolution.width/height` forces the render target size on both hosts
-(0 = follow the window/panel, the default); the target is offscreen, so forcing a size needs no window
+(0 = follow the window/panel, the default). The target is offscreen, so forcing a size needs no window
 that big and the editor panel just displays the result scaled.
 
 Changing `BENCH_CAMERA` or `BENCH_RESOLUTION` invalidates every baseline, so re-capture all adapters
 in the same commit. A baseline predating these fields carries none of them and is compared without the
-check; the `amd-radeon-rx-7900-xtx` set is in that state. The `amd-radeon-rx-9060-xt` and
+check. The `amd-radeon-rx-7900-xtx` set is in that state. The `amd-radeon-rx-9060-xt` and
 `amd-radeon-tm-8060s-graphics` sets carry a 1717-wide stamp from before the pin, so they SKIP until re-captured.
 
 **Nondeterministic GPU numbers across runs point at the shader cache first.** Clear
-`Engine/cache/shaders/*.spv` and re-run before trusting any before/after comparison; a stale cache
+`Engine/cache/shaders/*.spv` and re-run before trusting any before/after comparison. A stale cache
 means the run measured a mixture of old and new shaders. If the numbers still move after a clean
 cache, that is a real race and a genuine finding.
 
@@ -277,7 +277,7 @@ cache, that is a real race and a genuine finding.
 `Scripts/rga-occupancy.py` is the static analogue of perf-bench: a golden-file gate on shader
 register/LDS pressure and spills, the determinants of GPU occupancy. It needs no GPU run. It feeds
 every compiled SPIR-V module in `Engine/cache/shaders/` through the Radeon GPU Analyzer offline
-compiler for a target ASIC (default `gfx1100`, the RX 7900 XTX; `--asic gfx1200` for RDNA4), parses the per-shader stats CSV
+compiler for a target ASIC (default `gfx1100`, the RX 7900 XTX. `--asic gfx1200` for RDNA4), parses the per-shader stats CSV
 (USED_VGPRs/SGPRs, USED_LDS_BYTES, VGPR/SGPR spills, SCRATCH_MEM, ISA_SIZE), collapses each shader's
 permutations to the worst case keyed by base name (so a source edit re-compares the same logical
 shader, not a churning content hash), and diffs against `Scripts/rga-baseline/occupancy-<asic>.json`.
@@ -304,10 +304,10 @@ disables the primary gate, so add a model before targeting a new family. It fail
 occupancy drops (fewer waves), a spill appears (0 to >0, hard fail), or LDS/ISA rises beyond
 `--threshold` (default 10%). Raw VGPR% is intentionally not gated -- a VGPR rise that doesn't cross a
 wave boundary costs nothing. The occupancy is *theoretical* and VGPR-only (LDS occupancy needs the
-workgroup size RGA offline reports as 0); measure achieved occupancy with RGP. Baselines are committed
+workgroup size RGA offline reports as 0). Measure achieved occupancy with RGP. Baselines are committed
 for `gfx1100` (RX 7900 XTX), `gfx1200` (RX 9060 XT) and `gfx1201`. On `gfx1200` exactly two of 52 shaders are
-occupancy-limited, `DefaultLit.frag[inlineshadow]` (130 VGPRs, 10/16) and `GI.comp[restir]` (103, 12/16);
-every other shader hits 16/16 and none carries scratch. `GIDenoise.comp` was the worst offender at 191 VGPRs / 8 waves until d74cb76 rolled its outer
+occupancy-limited, `DefaultLit.frag[inlineshadow]` (130 VGPRs, 10/16) and `GI.comp[restir]` (103, 12/16).
+Every other shader hits 16/16 and none carries scratch. `GIDenoise.comp` was the worst offender at 191 VGPRs / 8 waves until d74cb76 rolled its outer
 a-trous loop.
 
 **Occupancy is defined once, in `vgpr_occupancy()` here, and imported by anything else that needs it.**
@@ -344,9 +344,9 @@ spot check compares its one shader and stays a genuine pass.
 populated by any editor build+run. But a clean checkout / CI has no cache and no GPU, so
 `Scripts/cook-shaders.py` compiles every shader offline with the engine's exact dxc flags
 (`Tools/ShaderCook` includes `Render/ShaderCompile.hpp`, the same command-line builder the runtime
-calls; the script builds it on first use with plain CMake. Profiles `vs/ps/cs_6_5`, entry `main`, `SS_RAYTRACING`/`SS_FP16` permutations)
+calls. The script builds it on first use with plain CMake. Profiles `vs/ps/cs_6_5`, entry `main`, `SS_RAYTRACING`/`SS_FP16` permutations)
 into `Engine/cache/shaders-cook/`. The cook reproduces the runtime-cache numbers **bit-for-bit**, so
-both paths gate against the same committed baseline; the baseline is generated from the cook so it
+both paths gate against the same committed baseline. The baseline is generated from the cook so it
 also covers shaders never exercised in a run (`Metrics.comp`, the `Neural*.comp` passes). The
 baseline holds the worst case across **both** permutations, so reproduce it the way CI does, with
 both variants and the cook directory:
@@ -362,8 +362,8 @@ with CI. Pointing the gate at the runtime cache (`Engine/cache/shaders`, its def
 trap: a `--update-baseline` from there deletes the entries for shaders no editor run exercises. Call-site
 and dynamic permutations live in `Scripts/shader-permutations.txt`: add a line there when a call site
 starts passing a new define. The flags need no sync, since the runtime and the cook share
-`BuildDxcCommandLine`; `py Scripts/cook-shaders.py --dry-run` prints the planned command lines
-without dxc. The runtime cache key (`ComputeShaderKey`, flags tag `v5_...`) length-prefixes and chains its fields, so define order matters and a repeated define cannot cancel; the dxc version is not in it yet, so clear `Engine/cache/shaders` after upgrading `Tools/dxc`. `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
+`BuildDxcCommandLine`. `py Scripts/cook-shaders.py --dry-run` prints the planned command lines
+without dxc. The runtime cache key (`ComputeShaderKey`, flags tag `v5_...`) length-prefixes and chains its fields, so define order matters and a repeated define cannot cancel. The dxc version is not in it yet, so clear `Engine/cache/shaders` after upgrading `Tools/dxc`. `cook-shaders.py` also replaced the stale `check_shaders.py` (which still
 expected the old `#type` split and silently compiled nothing).
 
 **This gate runs in CI** (`.github/workflows/shaders.yml`): unlike smoke-test and perf-bench, RGA is
@@ -372,13 +372,13 @@ change. RGA is cached across runs (actions/cache) so only the first pays the dow
 
 ### Compiler feedback on shader PRs (information, not a gate)
 
-`py Scripts/shader-feedback.py report --asic gfx1151,gfx1200 --spv-dir Engine/cache/shaders-cook --out head.json` writes RGA's per-shader numbers as JSON (VGPRs, SGPRs, LDS, scratch, spills, ISA bytes, ISA instruction count, theoretical waves/SIMD; worst case over permutations) per ASIC; `diff base.json head.json --markdown c.md` lists what changed. `.github/workflows/shader-feedback.yml` cooks base and head on every PR that touches `Engine/Shaders` and posts the diff as one updating comment. It is a static proxy for shortlisting ideas, never a merge gate; confirm a candidate with `perf-bench.py --compare-exe`. gfx1151 (the Z2's 8060S) reuses the gfx11 occupancy model; that RGA 2.14.2 compiles for gfx1151, and that RDNA3.5 shares the 1536-VGPR file, are unverified: an ASIC RGA rejects is listed under `errors` in the report. `Scripts/test_shader_feedback.py` covers the pure logic; the RGA runs and the ISA instruction parse have not run on real RGA output.
+`py Scripts/shader-feedback.py report --asic gfx1151,gfx1200 --spv-dir Engine/cache/shaders-cook --out head.json` writes RGA's per-shader numbers as JSON (VGPRs, SGPRs, LDS, scratch, spills, ISA bytes, ISA instruction count, theoretical waves/SIMD, worst case over permutations) per ASIC. `diff base.json head.json --markdown c.md` lists what changed. `.github/workflows/shader-feedback.yml` cooks base and head on every PR that touches `Engine/Shaders` and posts the diff as one updating comment. It is a static proxy for shortlisting ideas, never a merge gate. Confirm a candidate with `perf-bench.py --compare-exe`. gfx1151 (the Z2's 8060S) reuses the gfx11 occupancy model. That RGA 2.14.2 compiles for gfx1151, and that RDNA3.5 shares the 1536-VGPR file, are unverified: an ASIC RGA rejects is listed under `errors` in the report. `Scripts/test_shader_feedback.py` covers the pure logic. The RGA runs and the ISA instruction parse have not run on real RGA output.
 
 ### Reading an RGP capture without the GUI
 
 `rgp-capture.py` writes a `.rgp` only RGP's GUI can open. `py Scripts/rgp-read.py capture.rgp -o out.json` reads the legacy SQTT container (layout: AMD's MIT-licensed `sqtt_file_format.h`, GPUOpen-Drivers/pal, spec 1.6) into JSON: chunk inventory, ASIC info (offsets verified by compiling the header's struct), API info, clock calibration, PSO names, and per-frame GPU time summed from the queue-event submits (`gpuMs`, converted with the ASIC chunk's timestamp frequency). `--diff base.json cur.json` compares median frame GPU ms (percent and `--abs-threshold` floor, exit 1 on a rise). The SQTT_DATA token stream (achieved occupancy, instruction timing) has no public decoder and is listed but not decoded. An RDF-container file (RGP 2.x) exits 2 as unsupported. `Scripts/test_rgp_read.py` uses synthetic captures built from the documented layout: no real `.rgp` has been read, and whether the pinned RDTS build writes the legacy or the RDF container is unverified.
 
-### Cross-vendor shader statistics (driver-reported; `--gate` is local and opt-in)
+### Cross-vendor shader statistics (driver-reported. `--gate` is local and opt-in)
 
 RGA is the *Radeon* GPU Analyzer, so the occupancy gate is structurally AMD-only and cannot see half of a
 cross-vendor comparison. `Scripts/shader-stats.py` is the other half: `VK_KHR_pipeline_executable_properties`
@@ -395,23 +395,23 @@ py Scripts/shader-stats.py --compare 9070 5070 --frames 400 --update-baseline
 only what the app compiled: two identical back-to-back runs on the 9070 XT gave 21 and 22 executables,
 the second additionally creating DefaultLit's `[noinlineshadow]` permutation. RGA cooks every shader and
 permutation offline and is deterministic, so **RGA stays the authority for AMD coverage and for anything
-gated**; use this for NVIDIA, where no offline analyser exists, and for the cross-vendor comparison on
-shaders present in both. `--frames 400` reliably builds the RT and denoise pipelines; the 90 default
+gated**. Use this for NVIDIA, where no offline analyser exists, and for the cross-vendor comparison on
+shaders present in both. `--frames 400` reliably builds the RT and denoise pipelines. The 90 default
 leaves `GI.comp` and `Reflection.comp` out entirely.
 
-`py Scripts/shader-stats.py --gate` (#168) diffs a capture, or `--json <path>`, against that baseline: exit 1 when a spill appears (0 to >0) or a register rise costs occupancy (AMD: fewer waves by `rga-occupancy.py`'s model; NVIDIA: over `--threshold` and at least 8 registers, an upper-bound model), exit 2 when nothing was compared. Withheld columns are never gated (so NVIDIA spills are not, today), and coverage drift is reported, not failed. Permutations share a (pipeline, stage) key and pair by sorted register count. `Scripts/test_shader_stats_gate.py` covers the pure logic; the gate has not run against a fresh GPU capture.
+`py Scripts/shader-stats.py --gate` (#168) diffs a capture, or `--json <path>`, against that baseline: exit 1 when a spill appears (0 to >0) or a register rise costs occupancy (AMD: fewer waves by `rga-occupancy.py`'s model, NVIDIA: over `--threshold` and at least 8 registers, an upper-bound model), exit 2 when nothing was compared. Withheld columns are never gated (so NVIDIA spills are not, today), and coverage drift is reported, not failed. Permutations share a (pipeline, stage) key and pair by sorted register count. `Scripts/test_shader_stats_gate.py` covers the pure logic. The gate has not run against a fresh GPU capture.
 
 `Scripts/shader-stats-baseline/<device-slug>.json` is the committed, citable record. Without it these
 numbers exist only in a gitignored `Engine/cache` file, which no reader can check.
 
 Driven by the `shader.stats` CVar, which gates both the device extension and
-`VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR`; that bit makes the driver retain compiler metadata and
+`VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR`. That bit makes the driver retain compiler metadata and
 slows pipeline creation, so a normal run never sets it and is unaffected (verified: perf `+gi` PASSes
 unchanged). It needs the device, so it is local, and it does **not** replace RGA, which is static, gated,
 and runs in CI on no GPU.
 
 **Vendors report different things, and only registers survive the comparison.** AMD gives
-`numUsedVgprs`/`numUsedSgprs`/`ldsUsageSizeInBytes`/`scratchMemUsageInBytes`; NVIDIA gives `Register
+`numUsedVgprs`/`numUsedSgprs`/`ldsUsageSizeInBytes`/`scratchMemUsageInBytes`. NVIDIA gives `Register
 Count`/`Binary Size`/`Local Memory Size`/`Stack Size`. Only the register count and the spill indicator
 mean the same thing, so only those are put side by side.
 
@@ -453,16 +453,16 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   for cost, and as a safety net against a host that ignores the override. The cached PT references
   are keyed with `_REF_CACHE_VERSION` (bumped to 2 with this change), so captures made at window
   size are not reused. Committed quality baselines were captured at window size: re-capture them
-  with `--update-baseline` on each reference machine; until then expect small metric shifts.
+  with `--update-baseline` on each reference machine. Until then expect small metric shifts.
   `quality-motion.py` pins the same resolution for its route frames (and has its own cache version,
   3), so its committed motion baselines need the same re-capture.
 - **Three Sponza viewpoints** (`atrium`, `floor`, `gallery`) share one position and vary orientation,
   covering content that stresses AO, GI and reflections differently. Two further candidate
-  orientations were dropped as degenerate (yaw+pi was 99.7% dark; the side yaw 78.7% dark, 0%
+  orientations were dropped as degenerate (yaw+pi was 99.7% dark, the side yaw 78.7% dark, 0%
   bright). Averaging across viewpoints is what `Scripts/quality-tune.py` minimizes, so a tuned
   parameter does not overfit one frame.
 - **LPIPS is reported, not gated.** When `torch` and `lpips` are importable (`pip install torch lpips`),
-  each technique line also prints LPIPS-AlexNet against the reference; otherwise a note says it is
+  each technique line also prints LPIPS-AlexNet against the reference. Otherwise a note says it is
   skipped. It is never auto-installed and not stored in the baselines, since it varies with the torch
   build and the weights download. In-engine LPIPS (#112) is not built: this is the offline path.
 - **HDR-FLIP is reported, not gated (#157).** When a capture leaves `<path>_hdr.npy` (linear scene radiance
@@ -471,17 +471,17 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   derived from the reference (`flipHdrParams`). Baselines without `flipHdr` are unaffected and the gate
   never reads it. LDR-FLIP stays: it is the image the user sees, including FXAA/CAS, which HDR excludes.
   Non-finite radiance is counted and zeroed with a warning. The HDR reference is cached beside the LDR one
-  (`_REF_CACHE_VERSION` 3); a reference cached without HDR is re-captured once after an engine rebuild, in case
+  (`_REF_CACHE_VERSION` 3). A reference cached without HDR is re-captured once after an engine rebuild, in case
   the new build writes it. `Scripts/test_quality_bench_hdr.py` covers the metric plumbing on synthetic
   arrays. The engine writes `_hdr.npy` (next bullet) but it has not run on a GPU, so no
   HDR-FLIP number exists and the ordering against LDR-FLIP is unmeasured.
-- **HDR-FLIP run-to-run spread (#157).** `py Scripts/hdr-flip-noise.py --ref <ref base> --runs <repeat bases...>` scores N repeat captures of one technique against one reference and prints the mean, stdev and range of `flipHdr`. That spread is the floor for any HDR-FLIP gate threshold; the script picks none and writes no baseline. `Scripts/test_hdr_flip_noise.py` covers it on synthetic arrays; no GPU capture has been measured with it.
-- **HDR-FLIP under motion (#157).** `quality-motion.py` reports `flipHdr` per probe frame and as a mean (`HDR-FLIP ... (not gated)`), pairing each moving frame's `_f<N>_hdr.npy` with the HDR twin of its frozen-frame reference (`motion-f<N>__<key>_hdr.npy` in `Scripts/.quality-ref-cache`, written when the reference is captured). A reference cached before HDR capture has no twin and reads n/a until `--fresh-ref`. `flipHdr` is stored in the motion baseline JSON but never compared. `Scripts/test_quality_motion_hdr.py` covers the plumbing with stubbed metrics; no HDR number from a GPU run exists.
-- **HDR capture (#157).** With capture on, the engine also writes `<path>_hdr.npy` beside `_ldr.npy` (motion frames: `_f<N>_hdr.npy`): `v.SceneColor` as the tonemap chain receives it, linear pre-exposure radiance, HxWx4, top-down, `<f2` for the RGBA16F real-time path and `<f4` for the RGBA32F path tracer. `render.exposure` is logged with it, not applied. It is a 1:1 copy into a texture the capture effect owns (`TransferSrc` on no hot target, no cost when capture is off) read back in the same pass as the LDR present, so the pair is one frame. It excludes everything after `SceneColor`: FXAA and CAS (TAA and the upscaler are included), so it cannot replace the LDR numbers. Not run on a GPU as of its PR; the pure format rules are `QualityCaptureFormat.hpp`, tested in `QualityCaptureFormatTests`.
-- **`render.pathtrace.sampler` (#156) changes only the PT's low-sample error.** 0 (default) is PCG white noise seeded with the frame counter; 1 is Owen-scrambled 2D Sobol padded per decision (`Include/PtSampler.hlsli`, mirrored in `Render/QmcSampler.hpp` and tested by `QmcSamplerTests`), seeded per pixel only, so a Reset replays the same sequence. Fixed pair ids per decision keep an early-terminated path from shifting later dimensions. Every decision draws from it (pixel jitter, sun/point/spot/env NEE, lobe choice, BSDF, Russian roulette); `QmcSamplerTests` also fail when an integer constant in the shader copy is missing from the C++ mirror. The estimator and pdfs are unchanged, so the converged reference (and every committed quality baseline) is unaffected while the default stays 0; switching it restarts accumulation. Not yet run on a GPU, and the fixed-spp error ratio against PCG (the stop rule in the design) is unmeasured. `py Scripts/pt-convergence.py` produces it: per viewpoint, PT captures at N accumulated spp (1/4/16/64, `render.pathtrace.spp=1`, exact window of N frames) for each sampler, scored (FLIP, MSE) against the cached converged sampler-0 reference of `quality-bench.py`, with the PCG/Sobol ratio, the MSE log-log slope, a converged-equality read (mean-luma difference at the reference length, heuristic 0.5% tolerance) and the stop rule (FLIP ratio >= 1.5 at 4 and 16 spp). It gates nothing and writes no baseline. `Scripts/test_pt_convergence.py` covers the pure parts; the script has not run on a GPU.
+- **HDR-FLIP run-to-run spread (#157).** `py Scripts/hdr-flip-noise.py --ref <ref base> --runs <repeat bases...>` scores N repeat captures of one technique against one reference and prints the mean, stdev and range of `flipHdr`. That spread is the floor for any HDR-FLIP gate threshold. The script picks none and writes no baseline. `Scripts/test_hdr_flip_noise.py` covers it on synthetic arrays. No GPU capture has been measured with it.
+- **HDR-FLIP under motion (#157).** `quality-motion.py` reports `flipHdr` per probe frame and as a mean (`HDR-FLIP ... (not gated)`), pairing each moving frame's `_f<N>_hdr.npy` with the HDR twin of its frozen-frame reference (`motion-f<N>__<key>_hdr.npy` in `Scripts/.quality-ref-cache`, written when the reference is captured). A reference cached before HDR capture has no twin and reads n/a until `--fresh-ref`. `flipHdr` is stored in the motion baseline JSON but never compared. `Scripts/test_quality_motion_hdr.py` covers the plumbing with stubbed metrics. No HDR number from a GPU run exists.
+- **HDR capture (#157).** With capture on, the engine also writes `<path>_hdr.npy` beside `_ldr.npy` (motion frames: `_f<N>_hdr.npy`): `v.SceneColor` as the tonemap chain receives it, linear pre-exposure radiance, HxWx4, top-down, `<f2` for the RGBA16F real-time path and `<f4` for the RGBA32F path tracer. `render.exposure` is logged with it, not applied. It is a 1:1 copy into a texture the capture effect owns (`TransferSrc` on no hot target, no cost when capture is off) read back in the same pass as the LDR present, so the pair is one frame. It excludes everything after `SceneColor`: FXAA and CAS (TAA and the upscaler are included), so it cannot replace the LDR numbers. Not run on a GPU as of its PR. The pure format rules are `QualityCaptureFormat.hpp`, tested in `QualityCaptureFormatTests`.
+- **`render.pathtrace.sampler` (#156) changes only the PT's low-sample error.** 0 (default) is PCG white noise seeded with the frame counter. 1 is Owen-scrambled 2D Sobol padded per decision (`Include/PtSampler.hlsli`, mirrored in `Render/QmcSampler.hpp` and tested by `QmcSamplerTests`), seeded per pixel only, so a Reset replays the same sequence. Fixed pair ids per decision keep an early-terminated path from shifting later dimensions. Every decision draws from it (pixel jitter, sun/point/spot/env NEE, lobe choice, BSDF, Russian roulette). `QmcSamplerTests` also fail when an integer constant in the shader copy is missing from the C++ mirror. The estimator and pdfs are unchanged, so the converged reference (and every committed quality baseline) is unaffected while the default stays 0. Switching it restarts accumulation. Not yet run on a GPU, and the fixed-spp error ratio against PCG (the stop rule in the design) is unmeasured. `py Scripts/pt-convergence.py` produces it: per viewpoint, PT captures at N accumulated spp (1/4/16/64, `render.pathtrace.spp=1`, exact window of N frames) for each sampler, scored (FLIP, MSE) against the cached converged sampler-0 reference of `quality-bench.py`, with the PCG/Sobol ratio, the MSE log-log slope, a converged-equality read (mean-luma difference at the reference length, heuristic 0.5% tolerance) and the stop rule (FLIP ratio >= 1.5 at 4 and 16 spp). It gates nothing and writes no baseline. `Scripts/test_pt_convergence.py` covers the pure parts. The script has not run on a GPU.
 - **Eleven techniques**: `raster`, `ssao`, `rtao`, `ssr`, `rtrefl`, `ssgi`, `rtgi`, `all-rt`, plus the
   shadow A/B `rtshadow`, `megalights` and `megalights-nospec`. Each is a full real-time render with that
-  one technique on, TAA enabled; only `all-rt` and the shadow entries override the shadow mode.
+  one technique on, TAA enabled. Only `all-rt` and the shadow entries override the shadow mode.
 - **FLIP is pinned** to `flip-evaluator==1.7` (a perceptual metric that drifts between versions makes
   a committed baseline meaningless, same reasoning as the clang-format and RGA pins). It is optional:
   without the package the gate still runs on PSNR/SSIM, although it then reports the primary metric
@@ -489,7 +489,7 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
 - The PT reference is cached under `Scripts/.quality-ref-cache/` (gitignored, per-machine). The cache
   key does **not** track engine/shader edits, so use `--fresh-ref` after a change that could move the
   reference itself. Real-time captures are frame-capped by `--tech-maxframes` (default 200) since
-  they never converge; the reference is uncapped because it does.
+  they never converge. The reference is uncapped because it does.
 - Needs a **real GPU** (Vulkan + the path tracer), so this is a **local** gate, not CI. **Baselines
   are keyed by adapter**, `Scripts/quality-baseline/<device-slug>/<viewpoint>__<technique>.json`, the
   same scheme perf-bench uses. The reference is a path trace on the local adapter, so a baseline
@@ -503,7 +503,7 @@ A/B: the engine's headless quality-capture (`quality.capture.frames`) dumps the 
   `SS_CAMERA_OVERRIDE`) exist for that reason and pin an arbitrary interior pose headlessly. Both
   hosts honour it: the Runtime applies it when it builds the authored camera, the Editor when it opens
   a scene, outranking the `<scene>.world.editor` sidecar. Measuring UNDER motion is a different gate
-  with a different protocol, `quality-motion.py` below; it is not this one with the path switched on.
+  with a different protocol, `quality-motion.py` below. It is not this one with the path switched on.
 
 **`Reflections.world` is the testbed for reflection changes.** Sponza cannot register any reflection
 change (#171): one low-contrast specular floor moves only 0.3% of pixels by more than 2/255. The scene
@@ -559,7 +559,7 @@ cannot separate stable distortion from flicker: two techniques with identical me
 the same whether one is steady and the other strobes. Four probes name route phases rather than
 spacing evenly, since each breaks reconstruction differently: `dolly` (forward translation, mostly
 history length), `strafe` (lateral motion past the colonnade, the canonical disocclusion generator),
-`reversal` (the U-turn; rapid direction change is a documented pathological case), and `static` (past
+`reversal` (the U-turn, since rapid direction change is a documented pathological case), and `static` (past
 the end of the open route, where it parks, so convergence once motion stops is measured too).
 
 **Metrics.** Per-frame FLIP/PSNR/SSIM against that frame's reference, plus **tFLIP**, gated. tFLIP is
@@ -614,7 +614,7 @@ substituting a different perceptual metric into that construction (they swapped 
 got near-identical results), which is what tFLIP is.
 
 **Ghosting has no published metric.** A-SVGF's headline contribution is "a significant reduction of
-lag and ghosting" and the paper contains no lag or ghosting number anywhere; AMD, NVIDIA and Intel all
+lag and ghosting" and the paper contains no lag or ghosting number anywhere. AMD, NVIDIA and Intel all
 describe ghosting qualitatively. motionPenalty is therefore closer to a ghosting number than anything
 shipped, which is a reason to report it carefully rather than confidently.
 
@@ -663,14 +663,14 @@ assumption the whole protocol rests on.
 
 `quality-tune.py --motion` flies the route and scores the probe frames instead of the static
 viewpoints, searching `MOTION_PARAM_SPACE`: the denoiser and temporal-blend knobs the static
-objective is measured blind to. `--objective jod` (default) minimises negated ColorVideoVDP;
+objective is measured blind to. `--objective jod` (default) minimises negated ColorVideoVDP.
 `--objective flip` is kept for comparison and is measurably the wrong choice.
 
 **FLIP is not a usable objective for a denoiser.** Tuning `all-rt`'s temporal knobs against motion
 FLIP boundary-clamped four of six knobs, pinning both `ao.denoise.iterations` and
 `reflections.denoise.iterations` at ZERO. Moving the camera does not fix that: FLIP rewards removing
 blur either way. This is the repo's own DLSS-selection lesson one metric up, where PSNR favours the
-blurry image so LPIPS decides; here FLIP favours the sharp noisy one, so a perceptual spatio-temporal
+blurry image so LPIPS decides. Here FLIP favours the sharp noisy one, so a perceptual spatio-temporal
 metric decides. Never optimise **motion penalty** either: it is the moving frame measured against this
 renderer's own still, so an optimiser can drive it to zero by degrading the still.
 
@@ -679,10 +679,10 @@ renderer's own still, so an optimiser can drive it to zero by degrading the stil
 `run_motion_capture` sets that to 1 purely to arm sequence mode, so the clear applies to the moving
 capture too. Before it, those frames inherited TAA and denoiser accumulation built up while assets were
 still streaming, which made them artificially smooth and therefore artificially close to a converged
-still; the penalty was suppressed roughly 4-10x as a result (`raster` dolly 0.0114 against 0.1197
+still. The penalty was suppressed roughly 4-10x as a result (`raster` dolly 0.0114 against 0.1197
 after). The frozen control was unaffected, since it converges over 400 held frames either way. The
 ORDERING across probes and techniques survived the rescale unchanged, which is what the metric is read
-for; the absolute values did not.
+for. The absolute values did not.
 
 **A scene without object motion cannot answer the denoiser question at all.** Measured on GI a-trous
 iterations by JOD, on static geometry versus with animated occluders:
@@ -693,7 +693,7 @@ iterations by JOD, on static geometry versus with animated occluders:
 | 3 (default) | **5.0905** | 4.3072 |
 | 5 | 5.0742 (turns over) | **4.3181** (ceiling) |
 
-On static content the curve peaks at the shipped default and degrades past it; with object
+On static content the curve peaks at the shipped default and degrades past it. With object
 disocclusion it climbs. So the filter earns its keep precisely where the old scene had nothing to
 measure, and a tuning run on static geometry would have deleted it.
 
@@ -703,7 +703,7 @@ Swept the full 0..5 range on the animated scene, the curve **plateaus at 4** (4 
 JOD is roughly a 75% population preference. **The default stays 3.**
 
 `kMaxDenoiseIterations` lives in `EngineCVars.hpp` because `GIDenoisePass`'s per-frame
-descriptor/uniform pool must have one slot per pass. They were separately-written 5s; raising only
+descriptor/uniform pool must have one slot per pass. They were separately-written 5s. Raising only
 the CVar clamp made iterations 6+ assert at runtime rather than fail to build.
 
 ### Why AO and reflections behave differently from GI
@@ -756,7 +756,7 @@ flown as a Catmull-Rom spline with arc-length reparameterisation, so world speed
 motion-vector magnitude stay uniform regardless of waypoint spacing. Empty falls back to the legacy
 circular orbit, which suits an open scene and nothing else: in Sponza that orbit is outside the clear
 nave for 86.7% of its loop and outside the atrium walls entirely for 58.1%, at a height that
-intersects the upper arcade. Its closest approach to geometry is 0.239 m, inside the west arcade; the
+intersects the upper arcade. Its closest approach to geometry is 0.239 m, inside the west arcade. The
 committed route's worst is 0.967 m.
 
 A waypoint carries a position **and a look-at target**, and both are splined, so orientation comes out
@@ -783,10 +783,10 @@ Two selection traps, both of which produced a wrong verdict here before being ca
   whose job is detail: a spatial refiner cannot beat bilinear on PSNR because the detail it must
   recover is temporal, not present in the input frame. Select on a perceptual metric (LPIPS here,
   which is also what DLSS is tuned against). Under LPIPS selection and LPIPS training, the temporal
-  network beats bilinear by 0.0314; under PSNR selection the same network looks like a loss.
+  network beats bilinear by 0.0314. Under PSNR selection the same network looks like a loss.
 
 Report both anyway. The point is which one decides.
 
 ### Speed tuning (cost-aware)
 
-`Scripts/speed-tune.py --technique <rtgi|rtao|rtrefl|megalights|all-rt>` minimises perf-bench's `totalGpuMs` (median of `--repeat` runs of the matching rung) over the cost knobs `quality-tune.py` leaves out (rays, internal scale, denoise iterations), subject to quality under motion: JOD within `--jod-margin` (0.02) and tFLIP within `--tflip-margin` (0.001) of the engine defaults, measured in the same session against the same cached references. Search is differential evolution with Deb's feasibility rules, seeded, member 0 is the defaults. Output is a proposed settings diff with its measurements (and `--out` JSON), never a change to a default; a Perf PR built from it still needs a resolved `perf-bench.py --compare-exe <base-exe> --gate` result and green quality gates. Needs a GPU and ColorVideoVDP; the pure parts are covered by `Scripts/test_speed_tune.py`. It has not run on a GPU.
+`Scripts/speed-tune.py --technique <rtgi|rtao|rtrefl|megalights|all-rt>` minimises perf-bench's `totalGpuMs` (median of `--repeat` runs of the matching rung) over the cost knobs `quality-tune.py` leaves out (rays, internal scale, denoise iterations), subject to quality under motion: JOD within `--jod-margin` (0.02) and tFLIP within `--tflip-margin` (0.001) of the engine defaults, measured in the same session against the same cached references. Search is differential evolution with Deb's feasibility rules, seeded, member 0 is the defaults. Output is a proposed settings diff with its measurements (and `--out` JSON), never a change to a default. A Perf PR built from it still needs a resolved `perf-bench.py --compare-exe <base-exe> --gate` result and green quality gates. Needs a GPU and ColorVideoVDP. The pure parts are covered by `Scripts/test_speed_tune.py`. It has not run on a GPU.

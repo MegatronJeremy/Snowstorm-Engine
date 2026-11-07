@@ -16,7 +16,7 @@ The renderer is a rasterized forward pass with four effects added through inline
 4. `Forward` (`DefaultLit`) runs after a depth prepass, so the lit shader executes once per visible pixel. It traces shadow rays inline and combines direct light with the three textures above.
 5. `TemporalResolve` (TAA) and tonemap.
 
-Shadows are the exception to "trace, then reconstruct": a visibility test is one bit, cheap to compute exactly and expensive to reconstruct, so for a handful of lights the shader answers it in place with no denoiser. The cost is linear growth in light count; see [RT shadows](rt-shadows.md).
+Shadows are the exception to "trace, then reconstruct": a visibility test is one bit, cheap to compute exactly and expensive to reconstruct, so for a handful of lights the shader answers it in place with no denoiser. The cost is linear growth in light count. See [RT shadows](rt-shadows.md).
 
 Effects that need only visibility (shadows, AO) stop at the first hit (`RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH`). Reflections and GI take the closest hit and shade it through `ShadeSurfaceHit` in `Engine/Shaders/Include/RTHitShading.hlsli`, which resolves the hit triangle through the bindless geometry table. Secondary hits get a Lambertian diffuse term, emissive and image-based ambient, with no specular lobe, so metal-on-metal interreflection is absent. The path tracer (`render.pathtrace`) does include it.
 
@@ -27,7 +27,7 @@ Effects that need only visibility (shadows, AO) stop at the first hit (`RAY_FLAG
 | Reflections | `render.reflections.mode` = 2 | SSR (1) | 1 | 1.0 |
 | GI | `render.gi.mode` = 2 | SSGI (1) | 2 | 0.5 |
 
-All effects default to off or the raster path in code; the benchmark ladder below enables them one at a time. On a device without ray-query support, mode 2 falls back to off.
+All effects default to off or the raster path in code. The benchmark ladder below enables them one at a time. On a device without ray-query support, mode 2 falls back to off.
 
 ## Cost per effect
 
@@ -43,7 +43,7 @@ Source: committed baselines in `Scripts/perf-baseline/<adapter>/`, commit `b253f
 | `+refl` | 7.274 ms | +1.749 | 4.742 ms | +1.121 |
 | `+gi` | 8.991 ms | +1.717 | 6.155 ms | +1.413 |
 
-Read these with the run spread in mind: between runs of the same configuration the 9070 XT `rt-off` rung spreads 14.5% (the GPU downclocks when the frame is this light), and the 5070 `shadows` and `+ao` rungs spread about 3.4%. Per-effect steps smaller than a few tenths of a millisecond are not resolved by a golden baseline; use the paired `--compare-exe` A/B described in `Scripts/README.md`.
+Read these with the run spread in mind: between runs of the same configuration the 9070 XT `rt-off` rung spreads 14.5% (the GPU downclocks when the frame is this light), and the 5070 `shadows` and `+ao` rungs spread about 3.4%. Per-effect steps smaller than a few tenths of a millisecond are not resolved by a golden baseline. Use the paired `--compare-exe` A/B described in `Scripts/README.md`.
 
 The thesis tables report 8.62 ms and 6.01 ms at `+gi` for the same two cards at 1915x1064 (September 2026). The committed baselines above were re-captured at the pinned 1920x1080 and are the numbers of record.
 
@@ -55,4 +55,4 @@ py Scripts/perf-bench.py --only +gi         # one rung
 py Scripts/quality-bench.py                 # FLIP/PSNR/SSIM of each technique against the path tracer
 ```
 
-Quality is measured against a converged path trace of the same view; see the image-quality section of `Scripts/README.md`.
+Quality is measured against a converged path trace of the same view. See the image-quality section of `Scripts/README.md`.

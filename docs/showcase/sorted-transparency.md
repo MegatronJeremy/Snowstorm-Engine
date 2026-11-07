@@ -6,7 +6,7 @@
 
 ## Alpha modes
 
-`MaterialAsset::Alpha` is `Opaque`, `Mask` or `Blend`, persisted as `"AlphaMode"` in `.ssmat`; the legacy boolean `"AlphaMask"` is read and never written. The GPU material layouts carry only the mask flag, set when the mode is `Mask`. `Blend` is therefore opaque in every shader consumer (shadow maps, the RT acceleration structure, the path tracer) and is told apart only on the CPU, by pipeline.
+`MaterialAsset::Alpha` is `Opaque`, `Mask` or `Blend`, persisted as `"AlphaMode"` in `.ssmat`. The legacy boolean `"AlphaMask"` is read and never written. The GPU material layouts carry only the mask flag, set when the mode is `Mask`. `Blend` is therefore opaque in every shader consumer (shadow maps, the RT acceleration structure, the path tracer) and is told apart only on the CPU, by pipeline.
 
 | Mode | Depth write | Sorted | Seen by shadows, RT, path tracer |
 | --- | --- | --- | --- |
@@ -26,7 +26,7 @@ With `render.transparent` on, an instance whose material is `Blend` and has a bu
 
 | CVar | Default | Effect |
 | --- | --- | --- |
-| `render.transparent` | off | Sorted Blend pass; off draws Blend as opaque |
+| `render.transparent` | off | Sorted Blend pass. Off draws Blend as opaque |
 
 `--list-cvars` is the authority if this table drifts.
 
@@ -46,6 +46,6 @@ Expected, to be confirmed by eye: each pane tints the ones behind it in depth or
 - **No velocity.** Blend writes none, so TAA and the neural upscaler smear glass over a moving background.
 - **Glass is a solid to shadows and RT.** Shadow maps, the RT acceleration structure and the path tracer treat it as opaque, so glass casts a full shadow and is invisible to traced reflections and GI as glass.
 - **No quality baselines.** `quality-bench` compares against a path tracer that renders `Blend` as opaque, so keep `Blend` out of scenes with committed quality baselines.
-- **Not order-independent.** Weighted blended OIT and per-pixel linked lists are not built; sorted alpha is the smaller subset of that design.
+- **Not order-independent.** Weighted blended OIT and per-pixel linked lists are not built. Sorted alpha is the smaller subset of that design.
 
 Related issues: #82, #305.

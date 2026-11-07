@@ -100,9 +100,9 @@ anything.
 py Scripts/Generate-Solution.py
 ```
 
-That bootstraps vcpkg, installs every dependency and writes `build/Snowstorm.sln`. Open it and build;
+That bootstraps vcpkg, installs every dependency and writes `build/Snowstorm.sln`. Open it and build.
 **Snowstorm-Editor** is the startup project. The first run is slow because vcpkg compiles the
-dependencies from source. Requires Windows, Visual Studio 2022 and a Vulkan-capable GPU; no Vulkan
+dependencies from source. Requires Windows, Visual Studio 2022 and a Vulkan-capable GPU. No Vulkan
 SDK installation is needed, since the loader, headers and validation layers all come from vcpkg.
 
 | Target | Output | |
