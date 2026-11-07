@@ -1730,3 +1730,21 @@ The deeper fix for "I couldn't verify without the user" is to make state inspect
 - **Treat "I had to add a temporary on-screen probe" as a missing feature.** It usually means that
   state should be permanently visible (a debug overlay / stats panel / CVar dump). Consider promoting
   the probe into a real, toggleable diagnostic instead of deleting it.
+
+## Settled questions
+
+Open questions live in GitHub issues. These were investigated and turned out false, recorded here so
+they are not raised again.
+
+- Reflections.world (#282) did not regress in the 2026-10-15/16 window. Its IBL disk cache had been
+  written all zero by a readback that was mapped before its fence retired, and every later run loaded
+  it. #535 fixed the race and makes `IBLCacheIO` refuse an all-zero file.
+- The jitter sign (#439) is not wrong. GI, AO and reflections render with the jittered
+  view-projection and are sampled at plain screen UV, so no compensation is applied. `FrameCB.JitterUv`
+  is written and read by no shader. Only the old comments claimed otherwise.
+- `render.pathtrace.validreflection` (#371) does not brighten the path tracer. An A/B that showed a
+  1.2-1.4x gain ran its first arm right after a build that changed `PathTrace.comp`, so the compile
+  landed inside the capture window. With a warm cache the means agree to 1.0000. Before #542 any capture
+  taken straight after a shader change could do this.
+- Editor Play Standalone (#281) works on master. The likely earlier cause, the Runtime booting without
+  `--startup.project`, was fixed by #280.
