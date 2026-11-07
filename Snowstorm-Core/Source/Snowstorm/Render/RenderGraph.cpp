@@ -5,6 +5,7 @@
 #include "Snowstorm/Render/Renderer.hpp"
 
 #include <algorithm>
+#include <numeric>
 #include <optional>
 #include <string>
 
@@ -113,6 +114,30 @@ namespace Snowstorm
 			return desc.DepthAttachment->View->GetTexture();
 		}
 
+		std::vector<uint32_t> DeclarationOrder(const size_t count)
+		{
+			std::vector<uint32_t> order(count);
+			std::iota(order.begin(), order.end(), 0u);
+			return order;
+		}
+
+		// Ends an async compute batch: the batch's textures go back to graphics ownership across the join.
+		// Returns the fresh graphics segment that recording continues on.
+		Ref<CommandContext> JoinAsyncBatch(CommandContext& asyncCtx, const std::vector<Ref<Texture>>& batch)
+		{
+			for (const Ref<Texture>& t : batch)
+			{
+				asyncCtx.ReleaseTextureToQueue(t, GpuQueue::AsyncCompute, GpuQueue::Graphics);
+			}
+			Renderer::JoinAsyncCompute();
+			Ref<CommandContext> graphics = Renderer::GetGraphicsCommandContext();
+			for (const Ref<Texture>& t : batch)
+			{
+				graphics->AcquireTextureFromQueue(t, GpuQueue::AsyncCompute, GpuQueue::Graphics);
+			}
+			return graphics;
+		}
+
 		const char* HazardName(const RenderGraph::Hazard h)
 		{
 			switch (h)
@@ -219,17 +244,12 @@ namespace Snowstorm
 	std::vector<uint32_t> RenderGraph::BuildSchedule(const Ref<RenderTarget>& swapchain) const
 	{
 		const size_t count = m_Passes.size();
-		std::vector<uint32_t> order;
-		order.reserve(count);
-
 		if (!CVars::GraphReorder.Get())
 		{
-			for (uint32_t i = 0; i < count; ++i)
-			{
-				order.push_back(i);
-			}
-			return order;
+			return DeclarationOrder(count);
 		}
+		std::vector<uint32_t> order;
+		order.reserve(count);
 
 		const std::vector<std::vector<Dependency>> deps = BuildDependencies();
 		std::vector<uint32_t> remaining(count, 0);
@@ -253,25 +273,12 @@ namespace Snowstorm
 			int fallbackTerminal = -1;
 			for (size_t i = 0; i < count; ++i)
 			{
-				if (scheduled[i] || remaining[i] != 0)
+				const bool ready = !scheduled[i] && remaining[i] == 0;
+				if (ready && terminal[i] && fallbackTerminal < 0)
 				{
-					continue;
+					fallbackTerminal = static_cast<int>(i);
 				}
-				if (terminal[i])
-				{
-					if (fallbackTerminal < 0)
-					{
-						fallbackTerminal = static_cast<int>(i);
-					}
-					continue;
-				}
-				if (pick < 0)
-				{
-					pick = static_cast<int>(i);
-					continue;
-				}
-				const bool candidateIsCompute = m_Passes[i].IsCompute;
-				if (const bool pickIsCompute = m_Passes[pick].IsCompute; candidateIsCompute && !pickIsCompute)
+				else if (ready && !terminal[i] && (pick < 0 || (m_Passes[i].IsCompute && !m_Passes[pick].IsCompute)))
 				{
 					pick = static_cast<int>(i);
 				}
@@ -286,28 +293,16 @@ namespace Snowstorm
 				// A cycle would mean the derived edges contradict the declaration order, which cannot happen
 				// while that order is itself topological. Fall back to it rather than emit a partial frame.
 				SS_CORE_ERROR("RenderGraph: dependency cycle, falling back to declaration order");
-				order.clear();
-				for (uint32_t i = 0; i < count; ++i)
-				{
-					order.push_back(i);
-				}
-				return order;
+				return DeclarationOrder(count);
 			}
 
 			scheduled[pick] = true;
 			order.push_back(static_cast<uint32_t>(pick));
 			for (size_t i = 0; i < count; ++i)
 			{
-				if (scheduled[i])
+				if (!scheduled[i])
 				{
-					continue;
-				}
-				for (const Dependency& d : deps[i])
-				{
-					if (d.Producer == static_cast<uint32_t>(pick))
-					{
-						--remaining[i];
-					}
+					remaining[i] -= static_cast<uint32_t>(std::ranges::count(deps[i], static_cast<uint32_t>(pick), &Dependency::Producer));
 				}
 			}
 		}
@@ -417,21 +412,10 @@ namespace Snowstorm
 			depthTargets[i] = DepthTargetOf(m_Passes[i]);
 		}
 		std::vector<bool> needsDepthBarrier(m_Passes.size(), false);
-		for (size_t s = 0; s < schedule.size(); ++s)
+		for (auto s = schedule.begin(); s != schedule.end(); ++s)
 		{
-			const uint32_t i = schedule[s];
-			if (!depthTargets[i])
-			{
-				continue;
-			}
-			for (size_t t = s; t-- > 0;)
-			{
-				if (depthTargets[schedule[t]] == depthTargets[i])
-				{
-					needsDepthBarrier[i] = true;
-					break;
-				}
-			}
+			needsDepthBarrier[*s] = depthTargets[*s] && std::any_of(schedule.begin(), s, [&](const uint32_t earlier)
+			                                                        { return depthTargets[earlier] == depthTargets[*s]; });
 		}
 
 		// Resolved once: neither the device capability nor the CVar changes mid-frame. False runs every
@@ -478,17 +462,8 @@ namespace Snowstorm
 				}
 				else
 				{
-					for (const Ref<Texture>& t : batchOwned)
-					{
-						current->ReleaseTextureToQueue(t, GpuQueue::AsyncCompute, GpuQueue::Graphics);
-					}
-					Renderer::JoinAsyncCompute();
-					owned = Renderer::GetGraphicsCommandContext();
+					owned = JoinAsyncBatch(*current, batchOwned);
 					current = owned.get();
-					for (const Ref<Texture>& t : batchOwned)
-					{
-						current->AcquireTextureFromQueue(t, GpuQueue::AsyncCompute, GpuQueue::Graphics);
-					}
 					batchOwned.clear();
 				}
 				inAsyncBatch = wantAsync;
@@ -551,16 +526,7 @@ namespace Snowstorm
 		// belong on graphics, and the in-flight fence only covers the compute batch through the join.
 		if (inAsyncBatch)
 		{
-			for (const Ref<Texture>& t : batchOwned)
-			{
-				current->ReleaseTextureToQueue(t, GpuQueue::AsyncCompute, GpuQueue::Graphics);
-			}
-			Renderer::JoinAsyncCompute();
-			const Ref<CommandContext> tail = Renderer::GetGraphicsCommandContext();
-			for (const Ref<Texture>& t : batchOwned)
-			{
-				tail->AcquireTextureFromQueue(t, GpuQueue::AsyncCompute, GpuQueue::Graphics);
-			}
+			JoinAsyncBatch(*current, batchOwned);
 		}
 	}
 }
