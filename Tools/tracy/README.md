@@ -1,10 +1,10 @@
 # Tracy profiler GUI
 
-`tracy-profiler.exe` is the Tracy **viewer** — the desktop app that connects to a running Snowstorm
+`tracy-profiler.exe` is the Tracy **viewer**, the desktop app that connects to a running Snowstorm
 build and shows the live, cross-thread, per-frame timeline. It is committed here (like `Tools/dxc/`)
 so the GUI version stays matched to the Tracy **client** the engine links.
 
-- **Version: 0.13.1** — must match the `tracy` vcpkg client version (see `Scripts/Generate-Solution.py`
+- **Version: 0.13.1**. It must match the `tracy` vcpkg client version (see `Scripts/Generate-Solution.py`
   and `vcpkg/ports/tracy/vcpkg.json`). If you bump the vcpkg client, replace this exe with the matching
   GUI from https://github.com/wolfpld/tracy/releases so the wire protocol versions agree.
 
