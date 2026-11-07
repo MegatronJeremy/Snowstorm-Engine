@@ -75,6 +75,12 @@ namespace Snowstorm
 			glm::vec3 Rot{};
 		};
 
+		// Record `present` (and `hdr`, when it matches the present size and has an HDR dtype) into the slot's
+		// readback buffers, growing them as needed. Fills the slot's size, formats and CopyFrame.
+		static void RecordCopy(CommandContext& ctx, const Ref<Texture>& present, const Ref<Texture>& hdr,
+		                       const std::string& basePath, uint64_t frame, PendingCopy& slot, const char* bufferName,
+		                       const char* hdrBufferName);
+
 		// Write one retired copy to <basePath>_f<NNNNNN>_ldr.npy and record its manifest entry.
 		void WritePending(PendingCopy& slot, const std::string& basePath);
 
@@ -84,14 +90,8 @@ namespace Snowstorm
 		static constexpr uint64_t kCheckEvery = 16; // frames between convergence checkpoints
 		bool m_ExactRecorded = false;               // exact mode records one copy, not a checkpoint series
 
-		Ref<Buffer> m_Buffer;        // single present readback (recorded, then mapped once retired)
-		std::vector<uint8_t> m_Prev; // previous checkpoint's bytes (CPU), for the delta
-		uint32_t m_W = 0, m_H = 0;
-		PixelFormat m_Fmt = PixelFormat::RGBA8_sRGB;
-		Ref<Buffer> m_HdrBuffer;
-		PixelFormat m_HdrFmt = PixelFormat::Unknown; // Unknown = the in-flight copy has no HDR half
-		float m_HdrExposure = 1.0f;
-		int64_t m_CopyFrame = -1;                // frame a copy was recorded (-1 = none in flight)
+		PendingCopy m_Copy;                      // the single checkpoint readback (recorded, then mapped once retired)
+		std::vector<uint8_t> m_Prev;             // previous checkpoint's bytes (CPU), for the delta
 		uint64_t m_StreamDoneFrame = UINT64_MAX; // frame streaming completed (reset while streaming)
 		uint64_t m_LastCheckFrame = 0;           // last checkpoint frame (throttles to kCheckEvery)
 		bool m_PrevValid = false;
