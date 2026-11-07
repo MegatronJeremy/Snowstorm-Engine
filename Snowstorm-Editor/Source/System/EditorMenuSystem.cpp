@@ -65,6 +65,50 @@ namespace Snowstorm
 			history.Redo(world);
 			status.SetMessage(label);
 		}
+
+		bool PushResult(EditorNotificationsSingleton& notify, const bool ok, std::string success, std::string failure)
+		{
+			notify.Push(ok ? std::move(success) : std::move(failure), ok ? EditorToastType::Success : EditorToastType::Error);
+			return ok;
+		}
+
+		bool OpenProject(const EditorCommandsSingleton& cmds, EditorNotificationsSingleton& notify, const std::filesystem::path& path)
+		{
+			return PushResult(notify, cmds.OpenProject(path), "Project opened", "Failed to open project");
+		}
+
+		std::vector<RecentProject> ExistingRecentProjects()
+		{
+			std::vector<RecentProject> recents = RecentProjects::Load(RecentProjects::StorePath());
+			RecentProjects::Prune(recents, [](const std::filesystem::path& p)
+			                      { return std::filesystem::exists(p); });
+			return recents;
+		}
+
+		std::string DisplayName(const RecentProject& r)
+		{
+			return r.Name.empty() ? r.Path.stem().string() : r.Name;
+		}
+
+		std::filesystem::path ScenesDirectory()
+		{
+			return Project::GetActive() ? Project::GetActive()->GetAssetDirectory() / "scenes" : std::filesystem::path{};
+		}
+
+		void CenterNextWindow()
+		{
+			ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+		}
+
+		// A menu closes on click, so a popup it asks for is opened outside it, the next time this runs.
+		void OpenRequestedPopup(bool& requested, const char* popup)
+		{
+			if (requested)
+			{
+				ImGui::OpenPopup(popup);
+				requested = false;
+			}
+		}
 	}
 
 	void EditorMenuSystem::Execute(Timestep)
@@ -78,49 +122,35 @@ namespace Snowstorm
 		const bool shiftDown =
 		    input.Down.test(Key::LeftShift) || input.Down.test(Key::RightShift);
 
-		// Scene file shortcuts (edge-triggered, suppressed while typing). Hazel's bindings:
-		// Ctrl+N new scene, Ctrl+O open scene, Ctrl+S save, Ctrl+Shift+S save as. Shared with the
-		// File menu below so behavior + toasts match. Keep DrawShortcutsWindow in sync (CLAUDE.md).
-		if (ctrlDown && !input.EditorKeysBlocked())
-		{
-			if (input.PressedThisFrame.test(Key::S) && !shiftDown)
-			{
-				SaveSceneAction(notify);
-			}
-			else if (input.PressedThisFrame.test(Key::S) && shiftDown)
-			{
-				SaveSceneAsAction(notify);
-			}
-			else if (input.PressedThisFrame.test(Key::N))
-			{
-				if (cmds.NewScene)
-				{
-					cmds.NewScene();
-					notify.Push("New scene", EditorToastType::Info);
-				}
-			}
-			else if (input.PressedThisFrame.test(Key::O))
-			{
-				OpenSceneAction(notify);
-			}
-		}
-
-		// Undo / Redo (edge-triggered, not while typing). Redo = Ctrl+Y or Ctrl+Shift+Z (Ctrl+R is the
-		// Scale-gizmo key, so it is deliberately not used here).
+		// Edge-triggered and suppressed while typing. Hazel's bindings, shared with the File and Edit menus
+		// so behaviour and toasts match. Redo is Ctrl+Y or Ctrl+Shift+Z, since Ctrl+R is the Scale-gizmo key.
+		// Keep ShortcutTable.cpp in sync.
 		auto& history = SingletonView<EditorHistorySingleton>();
 		auto& status = SingletonView<EditorStatusBarSingleton>();
-		if (ctrlDown && !input.EditorKeysBlocked())
+		const bool shortcuts = ctrlDown && !input.EditorKeysBlocked();
+		const auto chord = [&](const KeyCode key)
+		{ return shortcuts && input.PressedThisFrame.test(key); };
+		if (chord(Key::S))
 		{
-			const bool shift = input.Down.test(Key::LeftShift) || input.Down.test(Key::RightShift);
+			shiftDown ? SaveSceneAsAction(notify) : SaveSceneAction(notify);
+		}
+		else if (chord(Key::N) && cmds.NewScene)
+		{
+			cmds.NewScene();
+			notify.Push("New scene", EditorToastType::Info);
+		}
+		else if (chord(Key::O))
+		{
+			OpenSceneAction(notify);
+		}
 
-			if (input.PressedThisFrame.test(Key::Z) && !shift)
-			{
-				UndoAction(history, *m_World, status);
-			}
-			else if (input.PressedThisFrame.test(Key::Y) || (input.PressedThisFrame.test(Key::Z) && shift))
-			{
-				RedoAction(history, *m_World, status);
-			}
+		if (chord(Key::Z) && !shiftDown)
+		{
+			UndoAction(history, *m_World, status);
+		}
+		else if (chord(Key::Y) || (chord(Key::Z) && shiftDown))
+		{
+			RedoAction(history, *m_World, status);
 		}
 
 		// Backtick toggles the developer console (the classic Quake/Unreal console key). Edge-triggered and
@@ -131,241 +161,234 @@ namespace Snowstorm
 			ConsoleSystem::s_Open = !ConsoleSystem::s_Open;
 		}
 
-		// --- UI
-		if (ImGui::BeginMenuBar())
-		{
-			if (ImGui::BeginMenu("File"))
-			{
-				// New/Open hand off to EditorLayer via EditorCommandsSingleton — the menu only asks
-				// "where" (+ "what name" for New), never touches Project/World state directly.
-				if (ImGui::MenuItem("New Project..."))
-				{
-					// Opening must happen outside the menu (the menu closes on click) — see
-					// DrawNewProjectPopup, same flag-then-open pattern as the Import Model popup.
-					m_ShowNewProjectPopup = true;
-				}
-
-				if (ImGui::MenuItem("Open Project..."))
-				{
-					if (const std::filesystem::path ssprojPath = FileDialog::OpenFile({{"Snowstorm Project", "ssproj"}}); !ssprojPath.empty() && cmds.OpenProject)
-					{
-						const bool ok = cmds.OpenProject(ssprojPath);
-						notify.Push(ok ? "Project opened" : "Failed to open project", ok ? EditorToastType::Success : EditorToastType::Error);
-					}
-				}
-
-				if (ImGui::BeginMenu("Recent Projects", static_cast<bool>(cmds.OpenProject)))
-				{
-					std::vector<RecentProject> recents = RecentProjects::Load(RecentProjects::StorePath());
-					RecentProjects::Prune(recents, [](const std::filesystem::path& p)
-					                      { return std::filesystem::exists(p); });
-					if (recents.empty())
-						ImGui::TextDisabled("(none)");
-					for (const RecentProject& r : recents)
-					{
-						const std::string label = (r.Name.empty() ? r.Path.stem().string() : r.Name) + "##" + r.Path.generic_string();
-						if (ImGui::MenuItem(label.c_str()) && cmds.OpenProject)
-						{
-							const bool ok = cmds.OpenProject(r.Path);
-							notify.Push(ok ? "Project opened" : "Failed to open project", ok ? EditorToastType::Success : EditorToastType::Error);
-						}
-					}
-					ImGui::EndMenu();
-				}
-
-				if (ImGui::MenuItem("Save Project", nullptr, false, static_cast<bool>(cmds.SaveProject)))
-				{
-					if (cmds.SaveProject)
-					{
-						const bool ok = cmds.SaveProject();
-						notify.Push(ok ? "Project saved" : "Save failed", ok ? EditorToastType::Success : EditorToastType::Error);
-					}
-				}
-
-				ImGui::Separator();
-
-				if (ImGui::MenuItem("New Scene", "Ctrl+N", false, static_cast<bool>(cmds.NewScene)))
-				{
-					cmds.NewScene();
-					notify.Push("New scene", EditorToastType::Info);
-				}
-
-				if (ImGui::MenuItem("Open Scene...", "Ctrl+O", false, static_cast<bool>(cmds.OpenScene)))
-				{
-					OpenSceneAction(notify);
-				}
-
-				const bool canSave = static_cast<bool>(cmds.SaveScene);
-
-				// Show shortcut text, but action is handled by ECS input above too
-				if (ImGui::MenuItem("Save Scene", "Ctrl+S", false, canSave))
-				{
-					SaveSceneAction(notify);
-				}
-
-				if (ImGui::MenuItem("Save Scene As...", "Ctrl+Shift+S", false, static_cast<bool>(cmds.SaveSceneAs)))
-				{
-					SaveSceneAsAction(notify);
-				}
-
-				// Only enabled when the current scene has been saved (has a file path) — an untitled scene
-				// can't be a startup target. Empty arg = "the current scene" (the layer resolves it).
-				const bool canSetStartup = static_cast<bool>(cmds.SetStartupScene) && cmds.HasScenePath && cmds.HasScenePath();
-				if (ImGui::MenuItem("Set Current Scene as Startup", nullptr, false, canSetStartup))
-				{
-					const bool ok = cmds.SetStartupScene("");
-					notify.Push(ok ? "Startup scene set to the current scene" : "Failed to set startup scene",
-					            ok ? EditorToastType::Success : EditorToastType::Error);
-				}
-
-				ImGui::Separator();
-
-				if (ImGui::MenuItem("Import Model..."))
-				{
-					m_ShowImportPopup = true;
-				}
-
-				// Cooking, in the editor, because the editor is where you notice content is missing from a
-				// package. This is the same code --cook.assets runs, so the two cannot disagree.
-				//
-				// Packaging deliberately has NO menu item. Producing a stage is a build-system action
-				// (a CMake target that copies build output), and an editor button for it would have to
-				// guess which build directory produced the running executable and shell out to a
-				// generator that may not be installed. Unreal can offer File > Package Project because
-				// UAT is a first-class shipped tool; nothing here is.
-				if (ImGui::MenuItem("Cook Assets"))
-				{
-					auto& assets = SingletonView<AssetManagerSingleton>();
-					const CookRequest requested = CookAllRegistryAssets(*m_World);
-					SingletonView<EditorNotificationsSingleton>().Push(
-					    fmt::format("Cooking {} mesh(es), {} texture(s), {} material(s)...", requested.Meshes,
-					                requested.Textures, requested.Materials),
-					    EditorToastType::Info, 3.0f);
-					SS_CORE_INFO("Cook: requested {} mesh(es), {} texture(s), {} material(s); {} still in flight.",
-					             requested.Meshes, requested.Textures, requested.Materials,
-					             assets.PendingLoadCount());
-				}
-
-				ImGui::Separator();
-
-				if (ImGui::MenuItem("Exit"))
-				{
-					Application::Get().Close();
-				}
-
-				ImGui::EndMenu();
-			}
-
-			if (ImGui::BeginMenu("Edit"))
-			{
-				const char* undoName = history.PeekUndoName();
-				const char* redoName = history.PeekRedoName();
-				const std::string undoLabel = undoName ? (std::string("Undo ") + undoName) : "Undo";
-				const std::string redoLabel = redoName ? (std::string("Redo ") + redoName) : "Redo";
-
-				if (ImGui::MenuItem(undoLabel.c_str(), "Ctrl+Z", false, history.CanUndo()))
-				{
-					UndoAction(history, *m_World, status);
-				}
-				if (ImGui::MenuItem(redoLabel.c_str(), "Ctrl+Y", false, history.CanRedo()))
-				{
-					RedoAction(history, *m_World, status);
-				}
-
-				ImGui::EndMenu();
-			}
-
-			if (ImGui::BeginMenu("View"))
-			{
-				// Rebuild the default dock layout (panels back to their starting positions). Handy after
-				// dragging a panel somewhere unrecoverable, or when a stale imgui.ini has a broken layout.
-				if (ImGui::MenuItem("Reset Window Layout"))
-				{
-					DockspaceSetupSystem::RequestResetLayout();
-					notify.Push("Window layout reset", EditorToastType::Info);
-				}
-
-				ImGui::EndMenu();
-			}
-
-			if (ImGui::BeginMenu("Debug"))
-			{
-				if (ImGui::MenuItem("Console", "`", ConsoleSystem::s_Open))
-				{
-					ConsoleSystem::s_Open = !ConsoleSystem::s_Open;
-				}
-				if (ImGui::MenuItem("Console Variables", nullptr, CVarPanelSystem::s_Open))
-				{
-					CVarPanelSystem::s_Open = !CVarPanelSystem::s_Open;
-				}
-				ImGui::Separator();
-
-				// Chrome-tracing capture: records the next N frames (main thread + JobSystem workers) to a
-				// JSON openable in chrome://tracing / ui.perfetto.dev. Disabled while a capture is in flight.
-				const bool capturing = Instrumentor::Get().IsCapturing() || Instrumentor::Get().IsCapturePending();
-				if (ImGui::MenuItem("Capture 1 Frame", nullptr, false, !capturing))
-				{
-					Instrumentor::Get().RequestCapture(1, "SnowstormCapture.json");
-					notify.Push("Profiler: capturing 1 frame -> SnowstormCapture.json", EditorToastType::Info);
-				}
-				if (ImGui::MenuItem("Capture 10 Frames", nullptr, false, !capturing))
-				{
-					Instrumentor::Get().RequestCapture(10, "SnowstormCapture.json");
-					notify.Push("Profiler: capturing 10 frames -> SnowstormCapture.json", EditorToastType::Info);
-				}
-				if (capturing)
-				{
-					ImGui::TextDisabled("capturing...");
-				}
-
-				// GPU picker (multi-GPU boxes). Selecting a device writes the persisted render.gpu CVar; it applies
-				// on the NEXT launch (a live switch would mean recreating the whole Vulkan device + every resource).
-				ImGui::Separator();
-				if (ImGui::BeginMenu("Select GPU"))
-				{
-					const std::vector<std::string>& gpus = Renderer::GetGpuNames();
-					const int selectedGpu = Renderer::GetSelectedGpuIndex();
-					if (gpus.empty())
-					{
-						ImGui::TextDisabled("no GPU info");
-					}
-					for (int i = 0; i < static_cast<int>(gpus.size()); ++i)
-					{
-						if (ImGui::MenuItem(gpus[i].c_str(), nullptr, i == selectedGpu))
-						{
-							CVars::GpuSelect.Set(gpus[i]); // full name, substring-matched at startup
-							notify.Push("GPU set to '" + gpus[i] + "' - restart to apply.", EditorToastType::Info);
-						}
-					}
-					ImGui::Separator();
-					ImGui::TextDisabled("applies on restart");
-					ImGui::EndMenu();
-				}
-				ImGui::EndMenu();
-			}
-
-			for (IEditorExtension* extension : EditorExtensions::Active())
-			{
-				extension->OnMainMenuBar();
-			}
-
-			if (ImGui::BeginMenu("Help"))
-			{
-				if (ImGui::MenuItem("Keyboard & Mouse Shortcuts", nullptr, m_ShowShortcuts))
-				{
-					m_ShowShortcuts = !m_ShowShortcuts;
-				}
-
-				ImGui::EndMenu();
-			}
-
-			ImGui::EndMenuBar();
-		}
-
+		// The popups are their own windows, so drawing them first only delays a menu-requested popup by a frame.
 		DrawImportModelPopup(notify);
 		DrawNewProjectPopup(notify);
 		DrawStartScreen(notify);
 		DrawShortcutsWindow();
+
+		if (!ImGui::BeginMenuBar())
+		{
+			ImGui::End();
+			return;
+		}
+
+		if (ImGui::BeginMenu("File"))
+		{
+			// New/Open hand off to EditorLayer via EditorCommandsSingleton — the menu only asks
+			// "where" (+ "what name" for New), never touches Project/World state directly.
+			if (ImGui::MenuItem("New Project..."))
+			{
+				// Opening must happen outside the menu (the menu closes on click) — see
+				// DrawNewProjectPopup, same flag-then-open pattern as the Import Model popup.
+				m_ShowNewProjectPopup = true;
+			}
+
+			if (ImGui::MenuItem("Open Project..."))
+			{
+				if (const std::filesystem::path ssprojPath = FileDialog::OpenFile({{"Snowstorm Project", "ssproj"}}); !ssprojPath.empty() && cmds.OpenProject)
+				{
+					OpenProject(cmds, notify, ssprojPath);
+				}
+			}
+
+			if (ImGui::BeginMenu("Recent Projects", static_cast<bool>(cmds.OpenProject)))
+			{
+				// The menu is enabled only when OpenProject is bound.
+				const std::vector<RecentProject> recents = ExistingRecentProjects();
+				if (recents.empty())
+					ImGui::TextDisabled("(none)");
+				for (const RecentProject& r : recents)
+				{
+					if (ImGui::MenuItem((DisplayName(r) + "##" + r.Path.generic_string()).c_str()))
+					{
+						OpenProject(cmds, notify, r.Path);
+					}
+				}
+				ImGui::EndMenu();
+			}
+
+			// A disabled MenuItem never returns true, so the bound command is safe to call.
+			if (ImGui::MenuItem("Save Project", nullptr, false, static_cast<bool>(cmds.SaveProject)))
+			{
+				PushResult(notify, cmds.SaveProject(), "Project saved", "Save failed");
+			}
+
+			ImGui::Separator();
+
+			if (ImGui::MenuItem("New Scene", "Ctrl+N", false, static_cast<bool>(cmds.NewScene)))
+			{
+				cmds.NewScene();
+				notify.Push("New scene", EditorToastType::Info);
+			}
+
+			if (ImGui::MenuItem("Open Scene...", "Ctrl+O", false, static_cast<bool>(cmds.OpenScene)))
+			{
+				OpenSceneAction(notify);
+			}
+
+			const bool canSave = static_cast<bool>(cmds.SaveScene);
+
+			// Show shortcut text, but action is handled by ECS input above too
+			if (ImGui::MenuItem("Save Scene", "Ctrl+S", false, canSave))
+			{
+				SaveSceneAction(notify);
+			}
+
+			if (ImGui::MenuItem("Save Scene As...", "Ctrl+Shift+S", false, static_cast<bool>(cmds.SaveSceneAs)))
+			{
+				SaveSceneAsAction(notify);
+			}
+
+			// Only enabled when the current scene has been saved (has a file path) — an untitled scene
+			// can't be a startup target. Empty arg = "the current scene" (the layer resolves it).
+			const bool canSetStartup = static_cast<bool>(cmds.SetStartupScene) && cmds.HasScenePath && cmds.HasScenePath();
+			if (ImGui::MenuItem("Set Current Scene as Startup", nullptr, false, canSetStartup))
+			{
+				PushResult(notify, cmds.SetStartupScene(""), "Startup scene set to the current scene", "Failed to set startup scene");
+			}
+
+			ImGui::Separator();
+
+			if (ImGui::MenuItem("Import Model..."))
+			{
+				m_ShowImportPopup = true;
+			}
+
+			// Cooking, in the editor, because the editor is where you notice content is missing from a
+			// package. This is the same code --cook.assets runs, so the two cannot disagree.
+			//
+			// Packaging deliberately has NO menu item. Producing a stage is a build-system action
+			// (a CMake target that copies build output), and an editor button for it would have to
+			// guess which build directory produced the running executable and shell out to a
+			// generator that may not be installed. Unreal can offer File > Package Project because
+			// UAT is a first-class shipped tool; nothing here is.
+			if (ImGui::MenuItem("Cook Assets"))
+			{
+				auto& assets = SingletonView<AssetManagerSingleton>();
+				const CookRequest requested = CookAllRegistryAssets(*m_World);
+				SingletonView<EditorNotificationsSingleton>().Push(
+				    fmt::format("Cooking {} mesh(es), {} texture(s), {} material(s)...", requested.Meshes,
+				                requested.Textures, requested.Materials),
+				    EditorToastType::Info, 3.0f);
+				SS_CORE_INFO("Cook: requested {} mesh(es), {} texture(s), {} material(s); {} still in flight.",
+				             requested.Meshes, requested.Textures, requested.Materials,
+				             assets.PendingLoadCount());
+			}
+
+			ImGui::Separator();
+
+			if (ImGui::MenuItem("Exit"))
+			{
+				Application::Get().Close();
+			}
+
+			ImGui::EndMenu();
+		}
+
+		if (ImGui::BeginMenu("Edit"))
+		{
+			const char* undoName = history.PeekUndoName();
+			const char* redoName = history.PeekRedoName();
+			const std::string undoLabel = undoName ? (std::string("Undo ") + undoName) : "Undo";
+			const std::string redoLabel = redoName ? (std::string("Redo ") + redoName) : "Redo";
+
+			if (ImGui::MenuItem(undoLabel.c_str(), "Ctrl+Z", false, history.CanUndo()))
+			{
+				UndoAction(history, *m_World, status);
+			}
+			if (ImGui::MenuItem(redoLabel.c_str(), "Ctrl+Y", false, history.CanRedo()))
+			{
+				RedoAction(history, *m_World, status);
+			}
+
+			ImGui::EndMenu();
+		}
+
+		if (ImGui::BeginMenu("View"))
+		{
+			// Rebuild the default dock layout (panels back to their starting positions). Handy after
+			// dragging a panel somewhere unrecoverable, or when a stale imgui.ini has a broken layout.
+			if (ImGui::MenuItem("Reset Window Layout"))
+			{
+				DockspaceSetupSystem::RequestResetLayout();
+				notify.Push("Window layout reset", EditorToastType::Info);
+			}
+
+			ImGui::EndMenu();
+		}
+
+		if (ImGui::BeginMenu("Debug"))
+		{
+			if (ImGui::MenuItem("Console", "`", ConsoleSystem::s_Open))
+			{
+				ConsoleSystem::s_Open = !ConsoleSystem::s_Open;
+			}
+			if (ImGui::MenuItem("Console Variables", nullptr, CVarPanelSystem::s_Open))
+			{
+				CVarPanelSystem::s_Open = !CVarPanelSystem::s_Open;
+			}
+			ImGui::Separator();
+
+			// Chrome-tracing capture: records the next N frames (main thread + JobSystem workers) to a
+			// JSON openable in chrome://tracing / ui.perfetto.dev. Disabled while a capture is in flight.
+			const bool capturing = Instrumentor::Get().IsCapturing() || Instrumentor::Get().IsCapturePending();
+			for (const int frames : {1, 10})
+			{
+				const char* noun = frames == 1 ? "frame" : "frames";
+				if (ImGui::MenuItem(fmt::format("Capture {} {}", frames, noun).c_str(), nullptr, false, !capturing))
+				{
+					Instrumentor::Get().RequestCapture(frames, "SnowstormCapture.json");
+					notify.Push(fmt::format("Profiler: capturing {} {} -> SnowstormCapture.json", frames, noun), EditorToastType::Info);
+				}
+			}
+			if (capturing)
+			{
+				ImGui::TextDisabled("capturing...");
+			}
+
+			// GPU picker (multi-GPU boxes). Selecting a device writes the persisted render.gpu CVar; it applies
+			// on the NEXT launch (a live switch would mean recreating the whole Vulkan device + every resource).
+			ImGui::Separator();
+			if (ImGui::BeginMenu("Select GPU"))
+			{
+				const std::vector<std::string>& gpus = Renderer::GetGpuNames();
+				const int selectedGpu = Renderer::GetSelectedGpuIndex();
+				if (gpus.empty())
+				{
+					ImGui::TextDisabled("no GPU info");
+				}
+				for (int i = 0; i < static_cast<int>(gpus.size()); ++i)
+				{
+					if (ImGui::MenuItem(gpus[i].c_str(), nullptr, i == selectedGpu))
+					{
+						CVars::GpuSelect.Set(gpus[i]); // full name, substring-matched at startup
+						notify.Push("GPU set to '" + gpus[i] + "' - restart to apply.", EditorToastType::Info);
+					}
+				}
+				ImGui::Separator();
+				ImGui::TextDisabled("applies on restart");
+				ImGui::EndMenu();
+			}
+			ImGui::EndMenu();
+		}
+
+		for (IEditorExtension* extension : EditorExtensions::Active())
+		{
+			extension->OnMainMenuBar();
+		}
+
+		if (ImGui::BeginMenu("Help"))
+		{
+			if (ImGui::MenuItem("Keyboard & Mouse Shortcuts", nullptr, m_ShowShortcuts))
+			{
+				m_ShowShortcuts = !m_ShowShortcuts;
+			}
+
+			ImGui::EndMenu();
+		}
+
+		ImGui::EndMenuBar();
 
 		ImGui::End();
 	}
@@ -428,13 +451,10 @@ namespace Snowstorm
 	void EditorMenuSystem::OpenSceneAction(EditorNotificationsSingleton& notify)
 	{
 		auto& cmds = SingletonView<EditorCommandsSingleton>();
-		const std::filesystem::path scenesDir = Project::GetActive() ? Project::GetActive()->GetAssetDirectory() / "scenes" : std::filesystem::path{};
-		if (const std::filesystem::path path = FileDialog::OpenFile({{"Snowstorm Scene", "world"}}, scenesDir);
+		if (const std::filesystem::path path = FileDialog::OpenFile({{"Snowstorm Scene", "world"}}, ScenesDirectory());
 		    !path.empty() && cmds.OpenScene)
 		{
-			const bool ok = cmds.OpenScene(path.string());
-			notify.Push(ok ? "Opened " + path.filename().string() : "Failed to open scene",
-			            ok ? EditorToastType::Success : EditorToastType::Error);
+			PushResult(notify, cmds.OpenScene(path.string()), "Opened " + path.filename().string(), "Failed to open scene");
 		}
 	}
 
@@ -450,172 +470,147 @@ namespace Snowstorm
 		}
 		if (cmds.SaveScene)
 		{
-			const bool ok = cmds.SaveScene();
-			notify.Push(ok ? "Scene saved" : "Save failed", ok ? EditorToastType::Success : EditorToastType::Error);
+			PushResult(notify, cmds.SaveScene(), "Scene saved", "Save failed");
 		}
 	}
 
 	void EditorMenuSystem::SaveSceneAsAction(EditorNotificationsSingleton& notify)
 	{
 		auto& cmds = SingletonView<EditorCommandsSingleton>();
-		const std::filesystem::path scenesDir = Project::GetActive() ? Project::GetActive()->GetAssetDirectory() / "scenes" : std::filesystem::path{};
-		if (const std::filesystem::path path = FileDialog::SaveFile({{"Snowstorm Scene", "world"}}, scenesDir);
+		if (const std::filesystem::path path = FileDialog::SaveFile({{"Snowstorm Scene", "world"}}, ScenesDirectory());
 		    !path.empty() && cmds.SaveSceneAs)
 		{
-			const bool ok = cmds.SaveSceneAs(path.string());
-			notify.Push(ok ? "Saved " + path.filename().string() : "Save failed",
-			            ok ? EditorToastType::Success : EditorToastType::Error);
+			PushResult(notify, cmds.SaveSceneAs(path.string()), "Saved " + path.filename().string(), "Save failed");
 		}
 	}
 
 	void EditorMenuSystem::DrawImportModelPopup(EditorNotificationsSingleton& notify)
 	{
-		// Opening must happen outside the menu (the menu closes on click); flag-then-open here.
-		if (m_ShowImportPopup)
+		OpenRequestedPopup(m_ShowImportPopup, "Import Asset");
+		CenterNextWindow();
+		if (!ImGui::BeginPopupModal("Import Asset", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
 		{
-			ImGui::OpenPopup("Import Asset");
-			m_ShowImportPopup = false;
+			return;
+		}
+		ImGui::TextUnformatted("File to import into the project (model, texture, material, shader, audio):");
+		ImGui::SetNextItemWidth(420.0f);
+		ImGui::InputText("##importpath", m_ImportPathBuffer, sizeof(m_ImportPathBuffer));
+
+		ImGui::SameLine();
+		if (ImGui::Button("..."))
+		{
+			if (const std::filesystem::path picked = FileDialog::OpenFile(
+			        {{"Wavefront OBJ", "obj"},
+			         {"FBX", "fbx"},
+			         {"glTF", "gltf"},
+			         {"glTF Binary", "glb"},
+			         {"PNG", "png"},
+			         {"JPEG", "jpg"},
+			         {"JPEG", "jpeg"},
+			         {"TGA", "tga"},
+			         {"BMP", "bmp"},
+			         {"Material", "ssmat"},
+			         {"HLSL Shader", "hlsl"},
+			         {"WAV", "wav"},
+			         {"FLAC", "flac"},
+			         {"MP3", "mp3"}});
+			    !picked.empty())
+			{
+				const std::string pickedStr = picked.string();
+				strncpy_s(m_ImportPathBuffer, pickedStr.c_str(), sizeof(m_ImportPathBuffer) - 1);
+			}
 		}
 
-		// Center the modal.
-		const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-		ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+		ImGui::TextDisabled("Files from outside the project are copied into its assets/<type>/ folder; models bring their textures.");
 
-		if (ImGui::BeginPopupModal("Import Asset", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+		ImGui::Separator();
+
+		ImGui::BeginDisabled(m_ImportPathBuffer[0] == '\0');
+		if (ImGui::Button("Import", ImVec2(120.0f, 0.0f)))
 		{
-			ImGui::TextUnformatted("File to import into the project (model, texture, material, shader, audio):");
-			ImGui::SetNextItemWidth(420.0f);
-			ImGui::InputText("##importpath", m_ImportPathBuffer, sizeof(m_ImportPathBuffer));
-
-			ImGui::SameLine();
-			if (ImGui::Button("..."))
+			auto& assets = SingletonView<AssetManagerSingleton>();
+			const AssetManagerSingleton::ImportFileResult result = assets.ImportFile(m_ImportPathBuffer, true);
+			if (result.Ok())
 			{
-				if (const std::filesystem::path picked = FileDialog::OpenFile(
-				        {{"Wavefront OBJ", "obj"},
-				         {"FBX", "fbx"},
-				         {"glTF", "gltf"},
-				         {"glTF Binary", "glb"},
-				         {"PNG", "png"},
-				         {"JPEG", "jpg"},
-				         {"JPEG", "jpeg"},
-				         {"TGA", "tga"},
-				         {"BMP", "bmp"},
-				         {"Material", "ssmat"},
-				         {"HLSL Shader", "hlsl"},
-				         {"WAV", "wav"},
-				         {"FLAC", "flac"},
-				         {"MP3", "mp3"}});
-				    !picked.empty())
-				{
-					const std::string pickedStr = picked.string();
-					strncpy_s(m_ImportPathBuffer, pickedStr.c_str(), sizeof(m_ImportPathBuffer) - 1);
-				}
-			}
-
-			ImGui::TextDisabled("Files from outside the project are copied into its assets/<type>/ folder; models bring their textures.");
-
-			ImGui::Separator();
-
-			const bool hasPath = m_ImportPathBuffer[0] != '\0';
-			if (!hasPath)
-				ImGui::BeginDisabled();
-			if (ImGui::Button("Import", ImVec2(120.0f, 0.0f)))
-			{
-				auto& assets = SingletonView<AssetManagerSingleton>();
-				const AssetManagerSingleton::ImportFileResult result = assets.ImportFile(m_ImportPathBuffer, true);
-				if (result.Ok())
-				{
-					if (Project::GetActive())
-						assets.SaveRegistry(Project::GetActive()->GetAssetRegistryPath());
-					notify.Push(result.Entities.empty() ? "Imported " + std::filesystem::path(m_ImportPathBuffer).filename().string()
-					                                    : "Imported " + std::to_string(result.Entities.size()) + " parts",
-					            EditorToastType::Success);
-					m_ImportPathBuffer[0] = '\0';
-					ImGui::CloseCurrentPopup();
-				}
-				else
-				{
-					notify.Push("Import failed: " + result.Error, EditorToastType::Error);
-				}
-			}
-			if (!hasPath)
-				ImGui::EndDisabled();
-
-			ImGui::SameLine();
-			if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
-			{
+				if (Project::GetActive())
+					assets.SaveRegistry(Project::GetActive()->GetAssetRegistryPath());
+				notify.Push(result.Entities.empty() ? "Imported " + std::filesystem::path(m_ImportPathBuffer).filename().string()
+				                                    : "Imported " + std::to_string(result.Entities.size()) + " parts",
+				            EditorToastType::Success);
+				m_ImportPathBuffer[0] = '\0';
 				ImGui::CloseCurrentPopup();
 			}
-
-			ImGui::EndPopup();
+			else
+			{
+				notify.Push("Import failed: " + result.Error, EditorToastType::Error);
+			}
 		}
+		ImGui::EndDisabled();
+
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+		{
+			ImGui::CloseCurrentPopup();
+		}
+
+		ImGui::EndPopup();
 	}
 
 	void EditorMenuSystem::DrawNewProjectPopup(EditorNotificationsSingleton& notify)
 	{
-		if (m_ShowNewProjectPopup)
+		OpenRequestedPopup(m_ShowNewProjectPopup, "New Project");
+		CenterNextWindow();
+		if (!ImGui::BeginPopupModal("New Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
 		{
-			ImGui::OpenPopup("New Project");
-			m_ShowNewProjectPopup = false;
+			return;
+		}
+		ImGui::SetNextItemWidth(420.0f);
+		ImGui::InputTextWithHint("##new_project_name", "Project Name", m_NewProjectNameBuffer, sizeof(m_NewProjectNameBuffer));
+
+		ImGui::SetNextItemWidth(420.0f);
+		ImGui::InputTextWithHint("##new_project_location", "Project Location", m_NewProjectLocationBuffer, sizeof(m_NewProjectLocationBuffer));
+
+		ImGui::SameLine();
+		if (ImGui::Button("..."))
+		{
+			if (const std::filesystem::path picked = FileDialog::OpenFolder(); !picked.empty())
+			{
+				const std::string pickedStr = picked.string();
+				strncpy_s(m_NewProjectLocationBuffer, pickedStr.c_str(), sizeof(m_NewProjectLocationBuffer) - 1);
+			}
 		}
 
-		const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-		ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+		// Full path preview, same as Hazel's — the project directory Create actually scaffolds is
+		// Location/Name (a fresh subfolder), never the browsed folder itself.
+		const bool hasName = m_NewProjectNameBuffer[0] != '\0';
+		const bool hasLocation = m_NewProjectLocationBuffer[0] != '\0';
+		const std::filesystem::path fullProjectPath = hasLocation && hasName
+		                                                  ? std::filesystem::path(m_NewProjectLocationBuffer) / m_NewProjectNameBuffer
+		                                                  : std::filesystem::path{};
+		ImGui::TextDisabled("Full Project Path: %s", fullProjectPath.string().c_str());
 
-		if (ImGui::BeginPopupModal("New Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+		ImGui::Separator();
+
+		ImGui::BeginDisabled(!(hasName && hasLocation));
+		if (ImGui::Button("Create", ImVec2(120.0f, 0.0f)))
 		{
-			ImGui::SetNextItemWidth(420.0f);
-			ImGui::InputTextWithHint("##new_project_name", "Project Name", m_NewProjectNameBuffer, sizeof(m_NewProjectNameBuffer));
-
-			ImGui::SetNextItemWidth(420.0f);
-			ImGui::InputTextWithHint("##new_project_location", "Project Location", m_NewProjectLocationBuffer, sizeof(m_NewProjectLocationBuffer));
-
-			ImGui::SameLine();
-			if (ImGui::Button("..."))
+			auto& cmds = SingletonView<EditorCommandsSingleton>();
+			if (PushResult(notify, cmds.NewProject && cmds.NewProject(fullProjectPath, m_NewProjectNameBuffer), "Project created", "Failed to create project"))
 			{
-				if (const std::filesystem::path picked = FileDialog::OpenFolder(); !picked.empty())
-				{
-					const std::string pickedStr = picked.string();
-					strncpy_s(m_NewProjectLocationBuffer, pickedStr.c_str(), sizeof(m_NewProjectLocationBuffer) - 1);
-				}
-			}
-
-			// Full path preview, same as Hazel's — the project directory Create actually scaffolds is
-			// Location/Name (a fresh subfolder), never the browsed folder itself.
-			const bool hasName = m_NewProjectNameBuffer[0] != '\0';
-			const bool hasLocation = m_NewProjectLocationBuffer[0] != '\0';
-			const std::filesystem::path fullProjectPath = hasLocation && hasName
-			                                                  ? std::filesystem::path(m_NewProjectLocationBuffer) / m_NewProjectNameBuffer
-			                                                  : std::filesystem::path{};
-			ImGui::TextDisabled("Full Project Path: %s", fullProjectPath.string().c_str());
-
-			ImGui::Separator();
-
-			if (!(hasName && hasLocation))
-				ImGui::BeginDisabled();
-			if (ImGui::Button("Create", ImVec2(120.0f, 0.0f)))
-			{
-				auto& cmds = SingletonView<EditorCommandsSingleton>();
-				const bool ok = cmds.NewProject && cmds.NewProject(fullProjectPath, m_NewProjectNameBuffer);
-				notify.Push(ok ? "Project created" : "Failed to create project", ok ? EditorToastType::Success : EditorToastType::Error);
-				if (ok)
-				{
-					m_NewProjectNameBuffer[0] = '\0';
-					m_NewProjectLocationBuffer[0] = '\0';
-					ImGui::CloseCurrentPopup();
-				}
-			}
-			if (!(hasName && hasLocation))
-				ImGui::EndDisabled();
-
-			ImGui::SameLine();
-			if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
-			{
+				m_NewProjectNameBuffer[0] = '\0';
+				m_NewProjectLocationBuffer[0] = '\0';
 				ImGui::CloseCurrentPopup();
 			}
-
-			ImGui::EndPopup();
 		}
+		ImGui::EndDisabled();
+
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+		{
+			ImGui::CloseCurrentPopup();
+		}
+
+		ImGui::EndPopup();
 	}
 
 	void EditorMenuSystem::DrawStartScreen(EditorNotificationsSingleton& notify)
@@ -624,14 +619,11 @@ namespace Snowstorm
 		if (cmds.ShowStartScreen)
 		{
 			cmds.ShowStartScreen = false;
-			m_StartScreenRecents = RecentProjects::Load(RecentProjects::StorePath());
-			RecentProjects::Prune(m_StartScreenRecents, [](const std::filesystem::path& p)
-			                      { return std::filesystem::exists(p); });
+			m_StartScreenRecents = ExistingRecentProjects();
 			ImGui::OpenPopup("Start");
 		}
 
-		const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-		ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+		CenterNextWindow();
 		ImGui::SetNextWindowSize(ImVec2(520.0f, 0.0f), ImGuiCond_Appearing);
 
 		if (!ImGui::BeginPopupModal("Start", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
@@ -643,14 +635,10 @@ namespace Snowstorm
 
 		for (const RecentProject& r : m_StartScreenRecents)
 		{
-			const std::string name = r.Name.empty() ? r.Path.stem().string() : r.Name;
 			ImGui::PushID(r.Path.generic_string().c_str());
-			if (ImGui::Selectable(name.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick) && cmds.OpenProject)
+			if (ImGui::Selectable(DisplayName(r).c_str(), false, ImGuiSelectableFlags_AllowDoubleClick) && cmds.OpenProject && OpenProject(cmds, notify, r.Path))
 			{
-				const bool ok = cmds.OpenProject(r.Path);
-				notify.Push(ok ? "Project opened" : "Failed to open project", ok ? EditorToastType::Success : EditorToastType::Error);
-				if (ok)
-					ImGui::CloseCurrentPopup();
+				ImGui::CloseCurrentPopup();
 			}
 			ImGui::SameLine();
 			ImGui::TextDisabled("%s", r.Path.string().c_str());
@@ -666,12 +654,9 @@ namespace Snowstorm
 		ImGui::SameLine();
 		if (ImGui::Button("Open Project...", ImVec2(150.0f, 0.0f)) && cmds.OpenProject)
 		{
-			if (const std::filesystem::path p = FileDialog::OpenFile({{"Snowstorm Project", "ssproj"}}); !p.empty())
+			if (const std::filesystem::path p = FileDialog::OpenFile({{"Snowstorm Project", "ssproj"}}); !p.empty() && OpenProject(cmds, notify, p))
 			{
-				const bool ok = cmds.OpenProject(p);
-				notify.Push(ok ? "Project opened" : "Failed to open project", ok ? EditorToastType::Success : EditorToastType::Error);
-				if (ok)
-					ImGui::CloseCurrentPopup();
+				ImGui::CloseCurrentPopup();
 			}
 		}
 		ImGui::SameLine();
