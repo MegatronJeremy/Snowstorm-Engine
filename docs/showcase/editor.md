@@ -16,7 +16,7 @@ Screenshot of the editor on Sponza, the same image as the top-level README. Its 
 | Hierarchy | `// SCENE_HIERARCHY` | Entity tree; the amber `+ Create` button and the right-click menu create Empty, Directional Light, Point Light, Spot Light, Cube, Plane and Camera presets |
 | Inspector | `// PROPERTIES` | One section per component, drawn from the reflected (RTTR) properties, so a new component appears without editor code; `Add Component` at the bottom |
 | Content Browser | `// CONTENT_BROWSER` | Project assets by type; `Rescan` and `New Material` buttons; right-click a scene for `Open Scene` or `Set as Startup Scene` |
-| Settings | `// SETTINGS` | Two tabs: render controls (VSync, exposure, technique modes, ray counts, denoiser iterations, upscaler, `render.debugview`) and a read-only Performance tab |
+| Settings | `// SETTINGS` | Two tabs: render controls (VSync, auto exposure and compensation, technique modes, ray counts, denoiser iterations, upscaler, `render.debugview`) and a read-only Performance tab |
 | Console Variables | `// CONSOLE_VARIABLES` | Every CVar with a type-appropriate widget, a name filter and a tooltip carrying the description; startup-only CVars are disabled and say so |
 | Console | `// CONSOLE` | Developer console on the backtick key, with Tab autocomplete for commands and CVars and Up/Down history |
 

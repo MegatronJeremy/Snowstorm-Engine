@@ -77,11 +77,11 @@ namespace Snowstorm
 		                    uint32_t shadowSpecTextureIndex = 0);
 
 		// AddTonemapPass: tonemap an HDR scene-color view into an LDR target (exposure/ACES; hardware sRGB on
-		// write). Declares the HDR color (and, for the motion-vector debug view, the velocity target) as
-		// Sampled reads so the graph transitions them first. `params` carries the debug fields; this fills its
-		// scene-color bindless index.
+		// write). Declares the HDR color, the auto exposure texture (null = render.exposure alone) and, for the
+		// debug views, extraRead as Sampled reads so the graph transitions them first. `params` carries the debug
+		// fields; this fills its scene-color and exposure bindless indices.
 		void AddTonemapPass(FrameContext& fc, const Ref<TextureView>& hdrColorView, const Ref<RenderTarget>& dstTarget,
-		                    const std::string& name, RendererService::TonemapParams params,
+		                    const std::string& name, RendererService::TonemapParams params, const Ref<TextureView>& exposure,
 		                    const Ref<Texture>& extraRead = nullptr);
 
 		// Iterate the camera's visibility cache and invoke `draw` for each renderable mesh, skipping stale

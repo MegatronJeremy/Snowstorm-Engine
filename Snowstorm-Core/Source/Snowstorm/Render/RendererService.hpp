@@ -169,6 +169,7 @@ namespace Snowstorm
 			uint32_t DebugMode = 0;
 			uint32_t DebugTexIndex = 0;
 			float DebugScale = 1.0f;
+			uint32_t ExposureIndex = 0; // auto exposure texture (.r multiplier); 0 = render.exposure alone
 		};
 
 		// Post-process fullscreen draw: like DrawFullscreenTriangle but also binds the set=3 bindless table
@@ -311,6 +312,16 @@ namespace Snowstorm
 		// (#44); a general "which frame is this" primitive for any frame-phased effect. 64-bit, so it
 		// never wraps.
 		[[nodiscard]] uint64_t GetFrameCounter() const { return m_FrameCounter; }
+
+		// The adapted exposure of the last viewport that ran auto exposure, a few frames old (stops, log2 of the
+		// multiplier the tonemap applies before render.exposure). Meaningful while CVars::AutoExposureActive().
+		struct AutoExposureReadout
+		{
+			float ExposureLog2 = 0.0f;
+			float TargetLog2 = 0.0f;
+		};
+		void SetAutoExposureReadout(const AutoExposureReadout& readout) { m_AutoExposureReadout = readout; }
+		[[nodiscard]] const AutoExposureReadout& GetAutoExposureReadout() const { return m_AutoExposureReadout; }
 
 		// True when the device supports + enabled inline ray tracing (#118). Gates the RT shadow path; the RT
 		// systems/passes query this to decide whether to build AS / run the RT pass, and fall back to raster
@@ -602,6 +613,7 @@ namespace Snowstorm
 		uint32_t m_InstanceBufferCapacity = 0;      // in InstanceData elements
 		uint32_t m_InstanceWriteCursor = 0;         // elements written this frame
 
+		AutoExposureReadout m_AutoExposureReadout;
 		uint64_t m_FrameCounter = 0;      // monotonic; ++ per NewFrame() (temporal jitter index, #44)
 		float m_MipBias = 0.0f;           // texture mip-LOD bias for the current scene pass (TAA, #44)
 		glm::vec2 m_JitterUv{0.0f, 0.0f}; // TAA jitter (UV units) for the current pass; 0 unless jittered

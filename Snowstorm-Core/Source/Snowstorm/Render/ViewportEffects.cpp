@@ -18,6 +18,7 @@
 #include "Snowstorm/Render/Texture.hpp"
 
 // The per-effect-exclusive passes, each owned by the effect that drives it (see the class members below).
+#include "Snowstorm/Render/Passes/AutoExposurePass.hpp"
 #include "Snowstorm/Render/Passes/DatasetExportPass.hpp"
 #include "Snowstorm/Render/Passes/CameraDepthPrepass.hpp"
 #include "Snowstorm/Render/Passes/DepthNormalPass.hpp"
@@ -2043,6 +2044,76 @@ namespace Snowstorm
 			UpscalePass m_Copy; // reused as a 1:1 HDR fullscreen copy (#151); exclusive to this effect
 		};
 
+		// Histogram eye adaptation on the HDR scene colour as the tonemap receives it (after TAA and the upscaler). Each
+		// viewport adapts on its own. A scene cut and every frame while assets stream snap to the target, so a scene
+		// opens at its settled exposure instead of fading from the old scene or the half-loaded one.
+		class AutoExposureEffect final : public IViewportEffect
+		{
+		public:
+			[[nodiscard]] const char* Name() const override { return "AutoExposure"; }
+			[[nodiscard]] bool ShouldRun(const ViewportRenderContext& v) const override
+			{
+				return v.TonemapTarget != nullptr && v.SceneColor.Texture && CVars::AutoExposureActive();
+			}
+
+			void OnSceneCut() override
+			{
+				for (auto& [entity, state] : m_State)
+				{
+					state.Reset = true;
+				}
+			}
+
+			void Contribute(ViewportRenderContext& v) override
+			{
+				FrameContext& fc = v.Frame;
+				State& st = m_State[v.ViewportEntity];
+				const Ref<TextureView> exposure = st.Pass.ExposureView();
+				const Ref<TextureView> sceneColor = v.SceneColor.View;
+				const uint32_t w = v.SceneColor.Texture->GetWidth();
+				const uint32_t h = v.SceneColor.Texture->GetHeight();
+				const AutoExposurePass::Settings settings{.LowFraction = CVars::ExposureAutoLowPercent.Get() / 100.0f,
+				                                          .HighFraction = CVars::ExposureAutoHighPercent.Get() / 100.0f,
+				                                          .MinLog2 = CVars::ExposureAutoMinEv.Get(),
+				                                          .MaxLog2 = CVars::ExposureAutoMaxEv.Get(),
+				                                          .SpeedBrighten = CVars::ExposureAutoSpeedBrighten.Get(),
+				                                          .SpeedDarken = CVars::ExposureAutoSpeedDarken.Get()};
+				// Re-enabling after a stretch with the effect off would otherwise fade in from a stale value.
+				const uint64_t frame = fc.Renderer.GetFrameCounter();
+				const bool reset = st.Reset || v.PathTraceSceneSettling || st.LastFrame + 1 != frame;
+				st.Reset = false;
+				st.LastFrame = frame;
+
+				fc.Graph.AddPass({.Name = "AutoExposure" + v.Suffix,
+				                  .IsCompute = true,
+				                  .Reads = {{v.SceneColor.Texture, RenderGraph::AccessState::Sampled}},
+				                  .Writes = {{exposure->GetTexture(), RenderGraph::AccessState::Storage}},
+				                  .Execute = [&st, &fc, sceneColor, w, h, settings, reset](CommandContext& c)
+				                  {
+					                  st.Pass.Dispatch(BorrowContext(c), fc.FrameIndex, sceneColor, w, h, settings, fc.DeltaSeconds, reset);
+				                  }});
+
+				if (st.Pass.Ready())
+				{
+					v.Exposure = exposure;
+				}
+				if (const auto readout = st.Pass.LastReadout())
+				{
+					fc.Renderer.SetAutoExposureReadout({.ExposureLog2 = readout->ExposureLog2, .TargetLog2 = readout->TargetLog2});
+				}
+			}
+
+		private:
+			struct State
+			{
+				AutoExposurePass Pass;
+				uint64_t LastFrame = 0;
+				bool Reset = true;
+			};
+
+			std::unordered_map<entt::entity, State> m_State;
+		};
+
 		// Tonemap + LDR post filters (#44): the tail of the primary path. Tonemaps the resolved scene color into
 		// the LDR present chain (via the shared AddTonemapPass), then optional FXAA + CAS sharpen, ping-ponging
 		// so the last stage lands on Present. Runs only when the primary post-chain is active (a valid tonemap
@@ -2082,7 +2153,8 @@ namespace Snowstorm
 
 				// SceneColor now reflects the post-upscale, post-TAA image (TemporalEffect republished it when TAA
 				// is on). Tonemap is the shared builder (CompareEffect reuses it for the ground-truth present).
-				m_Owner.AddTonemapPass(fc, v.SceneColor.View, v.TonemapTarget, "PostProcess" + v.Suffix, v.PrimaryTonemap, v.DebugRead);
+				m_Owner.AddTonemapPass(fc, v.SceneColor.View, v.TonemapTarget, "PostProcess" + v.Suffix, v.PrimaryTonemap, v.Exposure,
+				                       v.DebugRead);
 
 				const glm::vec2 rcpFrame = {1.0f / static_cast<float>(v.UpWidth), 1.0f / static_cast<float>(v.UpHeight)};
 				int stageIndex = 0; // 0 = tonemap (already emitted into v.TonemapTarget)
@@ -2225,7 +2297,7 @@ namespace Snowstorm
 				}
 
 				m_Owner.AddTonemapPass(fc, vpRT.GroundTruthTarget->GetSampleableColorView(0), vpRT.GroundTruthPresentTarget,
-				                       "PostProcessGT" + passSuffix, RendererService::TonemapParams{}); // resolved under MSAA
+				                       "PostProcessGT" + passSuffix, RendererService::TonemapParams{}, v.Exposure); // resolved under MSAA
 
 				// ---- Metrics (#45): PSNR/SSIM of the upscaled present vs the ground-truth present. Runs after
 				// both were written (a compute reduction reading both, sampled). Gated on render.metrics; both
@@ -2501,6 +2573,7 @@ namespace Snowstorm
 		m_ViewportEffects.push_back(CreateScope<UpscaleEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<TemporalEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<PrevColorSnapshotEffect>(*this)); // #151: snapshot HDR color for next frame's SSR
+		m_ViewportEffects.push_back(CreateScope<AutoExposureEffect>());
 		m_ViewportEffects.push_back(CreateScope<LdrChainEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<CompareEffect>(*this));
 		m_ViewportEffects.push_back(CreateScope<QualityCaptureEffect>(*this)); // #153: last — captures the final present

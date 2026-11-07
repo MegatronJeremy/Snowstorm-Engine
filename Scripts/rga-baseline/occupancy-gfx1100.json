@@ -21,6 +21,26 @@
       "isa_size": 1652.0,
       "permutations": 2
     },
+    "AutoExposureAdapt.comp": {
+      "vgprs": 22.0,
+      "sgprs": 26.0,
+      "lds": 512.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 1680.0,
+      "permutations": 2
+    },
+    "AutoExposureHistogram.comp": {
+      "vgprs": 5.0,
+      "sgprs": 22.0,
+      "lds": 512.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 356.0,
+      "permutations": 2
+    },
     "DefaultLit.frag[inlineshadow]": {
       "vgprs": 135.0,
       "sgprs": 72.0,
@@ -482,13 +502,13 @@
       "permutations": 2
     },
     "Tonemap.frag": {
-      "vgprs": 11.0,
+      "vgprs": 13.0,
       "sgprs": 20.0,
       "lds": 0.0,
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 744.0,
+      "isa_size": 912.0,
       "permutations": 2
     },
     "Upscale.frag": {

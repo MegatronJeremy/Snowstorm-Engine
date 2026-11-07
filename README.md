@@ -54,7 +54,7 @@ variable, which is how the renderer gets debugged and how the figures above were
 `RenderGraph`) over a Vulkan 1.3 backend on volk, Vulkan Memory Allocator and SPIR-V reflection. The
 render graph derives its own barriers from resource reads and writes rather than having them placed
 by hand. Bindless textures, a dedicated transfer queue, per-pass GPU timestamps, and an HDR target
-through ACES tonemapping.
+through histogram auto exposure and ACES tonemapping.
 
 **Hybrid ray tracing.** TLAS and BLAS driving shadows, ambient occlusion, reflections and diffuse
 global illumination through `VK_KHR_ray_query`, so each effect drops into an ordinary compute or

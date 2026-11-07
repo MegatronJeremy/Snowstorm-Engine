@@ -39,6 +39,7 @@ namespace Snowstorm
 		RendererService& Renderer;
 		TrackedRegistry& Reg;
 		uint32_t FrameIndex;
+		float DeltaSeconds = 0.0f;
 	};
 
 	// Which double-buffered RT-output slot the chain writes this frame, and which the forward pass samples.
@@ -131,6 +132,10 @@ namespace Snowstorm
 		// the accumulated GIHistory[cur]; ForwardEffect reads whatever is current for the specular blend.
 		// Threaded like GIView. Null until ReflectionEffect runs.
 		Ref<TextureView> ReflectionView;
+
+		// The viewport's auto exposure texture, published by AutoExposureEffect once it holds a value (null = fixed
+		// render.exposure). Every tonemap of the viewport reads it, the compare ground truth included.
+		Ref<TextureView> Exposure;
 
 		// Whether the velocity pass runs this frame (debug view / TAA / neural-temporal / dataset export).
 		// The consumers (TAA, neural-temporal upscale, motion-vector debug tonemap, dataset) branch on it.

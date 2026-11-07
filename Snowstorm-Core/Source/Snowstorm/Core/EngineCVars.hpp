@@ -312,6 +312,23 @@ namespace Snowstorm::CVars
 	// brighten, lower to darken. Runtime-tweakable from the editor's Settings panel.
 	extern CVar<float> Exposure;
 
+	// Histogram eye adaptation (Unreal's Auto Exposure Histogram, AutoExposureMath.hpp): meters the HDR scene colour
+	// before tonemap and maps the mean log luminance between the low and high percentiles to middle grey, clamped to
+	// [min_ev, max_ev] stops of exposure, approached at the brighten/darken rates (per second, in stops). Exposure
+	// then multiplies the result as compensation.
+	extern CVar<bool> ExposureAuto;
+	extern CVar<float> ExposureAutoLowPercent;
+	extern CVar<float> ExposureAutoHighPercent;
+	extern CVar<float> ExposureAutoMinEv;
+	extern CVar<float> ExposureAutoMaxEv;
+	extern CVar<float> ExposureAutoSpeedBrighten;
+	extern CVar<float> ExposureAutoSpeedDarken;
+
+	// render.exposure.auto, except that a quality capture or a perf benchmark runs at fixed exposure unless the run
+	// set render.exposure.auto itself: the gates compare against baselines and a path-traced reference, and each
+	// image adapting to itself would put an exposure difference into every metric.
+	[[nodiscard]] bool AutoExposureActive();
+
 	// Anti-aliasing mode: 0 = None, 1 = FXAA (spatial post-process AA), 2 = TAA (classical temporal resolve),
 	// 3 = DLAA (the #98 neural temporal network run at NATIVE res as the temporal resolve, replacing TAA).
 	// A thesis baseline set for the AA comparison. Runtime-tweakable; read per-frame by RenderSystem.

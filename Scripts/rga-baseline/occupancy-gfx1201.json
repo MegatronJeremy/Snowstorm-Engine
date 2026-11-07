@@ -21,6 +21,26 @@
       "isa_size": 1692.0,
       "permutations": 2
     },
+    "AutoExposureAdapt.comp": {
+      "vgprs": 14.0,
+      "sgprs": 26.0,
+      "lds": 512.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 1772.0,
+      "permutations": 2
+    },
+    "AutoExposureHistogram.comp": {
+      "vgprs": 5.0,
+      "sgprs": 18.0,
+      "lds": 512.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 380.0,
+      "permutations": 2
+    },
     "DefaultLit.frag[inlineshadow]": {
       "vgprs": 135.0,
       "sgprs": 86.0,
@@ -488,7 +508,7 @@
       "scratch": 0.0,
       "vgpr_spills": 0.0,
       "sgpr_spills": 0.0,
-      "isa_size": 768.0,
+      "isa_size": 924.0,
       "permutations": 2
     },
     "Upscale.frag": {

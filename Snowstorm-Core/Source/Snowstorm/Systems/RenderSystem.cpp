@@ -63,7 +63,7 @@ namespace Snowstorm
 		}
 	}
 
-	void RenderSystem::Execute(const Timestep /*ts*/)
+	void RenderSystem::Execute(const Timestep ts)
 	{
 		auto& reg = m_World->GetRegistry();
 		auto& renderer = ServiceView<RendererService>();
@@ -148,7 +148,7 @@ namespace Snowstorm
 
 		RenderGraph graph;
 
-		FrameContext fc{.Graph = graph, .Renderer = renderer, .Reg = reg, .FrameIndex = frameIndex};
+		FrameContext fc{.Graph = graph, .Renderer = renderer, .Reg = reg, .FrameIndex = frameIndex, .DeltaSeconds = ts.GetSeconds()};
 
 		// Dynamic-texture uploads queued by systems this frame (EnqueueTextureUpload). First pass in the
 		// graph so the texels land before anything samples them, including the shadow and IBL passes below.
@@ -1008,9 +1008,10 @@ namespace Snowstorm
 
 	void RenderSystem::AddTonemapPass(FrameContext& fc, const Ref<TextureView>& hdrColorView, const Ref<RenderTarget>& dstTarget,
 	                                  const std::string& name, RendererService::TonemapParams params,
-	                                  const Ref<Texture>& extraRead)
+	                                  const Ref<TextureView>& exposure, const Ref<Texture>& extraRead)
 	{
 		params.SceneColorIndex = hdrColorView->GetGlobalBindlessIndex();
+		params.ExposureIndex = exposure ? exposure->GetGlobalBindlessIndex() : 0;
 		const PixelFormat dstFmt = dstTarget->GetDesc().ColorAttachments[0].View->GetTexture()->GetDesc().Format;
 		// The debug branch samples the velocity target (extraRead) via bindless, so declare it Sampled too:
 		// the graph then transitions it to shader-read before this pass, like the HDR scene color.
@@ -1018,6 +1019,10 @@ namespace Snowstorm
 		if (extraRead)
 		{
 			reads.push_back({extraRead, RenderGraph::AccessState::Sampled});
+		}
+		if (exposure)
+		{
+			reads.push_back({exposure->GetTexture(), RenderGraph::AccessState::Sampled});
 		}
 		fc.Graph.AddPass({.Name = name,
 		                  .Target = dstTarget,

@@ -605,14 +605,15 @@ namespace Snowstorm
 
 	void VulkanCommandContext::BarrierComputeStorage()
 	{
-		// Global compute-write -> compute-read barrier for chained dispatches that ping-pong storage buffers
-		// (neural conv stack: layer N writes a feature buffer layer N+1 reads). A single VkMemoryBarrier2 over
-		// the compute stage covers every storage resource, which is what we want between conv layers.
+		// Global compute-write -> compute-read/write barrier for chained dispatches that share storage buffers
+		// (neural conv stack: layer N writes a feature buffer layer N+1 reads; auto exposure: atomics into a
+		// histogram the previous dispatch cleared). A single VkMemoryBarrier2 over the compute stage covers every
+		// storage resource.
 		VkMemoryBarrier2 barrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
 		barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
 		barrier.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
 		barrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-		barrier.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+		barrier.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
 
 		VkDependencyInfo dep{.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
 		dep.memoryBarrierCount = 1;

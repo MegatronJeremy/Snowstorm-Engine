@@ -202,6 +202,9 @@ namespace Snowstorm
 		// CVars (validation, smoke, ...) are left untouched — they aren't user settings. Returns the count reset.
 		int ResetPersistentToDefaults();
 
+		// Whether the startup file, environment or CLI set this CVar (persisted settings do not count).
+		[[nodiscard]] bool WasOverridden(const std::string& name) const { return m_Overridden.contains(name); }
+
 	private:
 		std::vector<ICVar*> m_Ordered;
 		std::unordered_map<std::string, ICVar*> m_ByName;

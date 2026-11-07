@@ -65,16 +65,27 @@ namespace Snowstorm
 					CVars::VSync.Set(vsync);
 				}
 
-				// Exposure: linear multiplier applied before the filmic tonemap in DefaultLit. Read once per
-				// frame at flush, so dragging this updates the image live. Backs the render.exposure CVar.
-				// AlwaysClamp keeps a typed (Ctrl+Click) value within range.
-				if (float exposure = CVars::Exposure.Get(); ImGui::SliderFloat("Exposure", &exposure, 0.1f, 8.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
+				if (bool autoExposure = CVars::ExposureAuto.Get(); ImGui::Checkbox("Auto Exposure", &autoExposure))
+				{
+					CVars::ExposureAuto.Set(autoExposure);
+				}
+				if (CVars::AutoExposureActive())
+				{
+					const auto& ae = ServiceView<RendererService>().GetAutoExposureReadout();
+					ImGui::SameLine();
+					ImGui::TextDisabled("%+.2f EV (target %+.2f)", ae.ExposureLog2, ae.TargetLog2);
+				}
+
+				// render.exposure: the whole exposure when auto exposure is off, a compensation multiplier on top of
+				// it when on. AlwaysClamp keeps a typed (Ctrl+Click) value within range.
+				const char* exposureLabel = CVars::AutoExposureActive() ? "Compensation###Exposure" : "Exposure###Exposure";
+				if (float exposure = CVars::Exposure.Get(); ImGui::SliderFloat(exposureLabel, &exposure, 0.1f, 8.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
 				{
 					CVars::Exposure.Set(exposure);
 				}
 				if (ImGui::IsItemHovered())
 				{
-					ImGui::SetTooltip("Drag to adjust, or Ctrl+Click to type a value.");
+					ImGui::SetTooltip("Linear multiplier before the tonemap. Drag to adjust, or Ctrl+Click to type a value.");
 				}
 
 				ImGui::Spacing();
