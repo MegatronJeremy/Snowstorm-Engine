@@ -371,10 +371,10 @@ see, so treat it as part of the feature, not an afterthought.
   skeletons (one shared helper where the same loop or parse appears more than once). Do not split a
   function into helpers that are each called once just to meet the number. The logic then reads
   across several functions instead of one, which is harder to follow, not easier.
-- Functions over the limit when the rule came in are listed in `Scripts/complexity-baseline.json`
-  at their score then. They are left alone unless a change has another reason to touch them, since
-  refactoring for the number alone churns code without making it simpler. One brought back under
-  the limit leaves the baseline in the same PR.
+- Functions already over the limit are listed in `Scripts/complexity-baseline.json` at their
+  recorded score. They are left alone unless a change has another reason to touch them, since
+  refactoring for the number alone churns code without making it simpler. A change that lowers one
+  records the lower score, or removes the entry once it is back under the limit, in the same PR.
 
 ## Dependencies (vcpkg, x64-windows)
 
