@@ -195,7 +195,7 @@ def classify(doc: dict) -> tuple[set, set, dict]:
 # AMD: NOT reimplemented here. The model is imported from rga-occupancy.py, which is the GATED one, so
 # there is exactly one definition of AMD occupancy in the repo. This file previously carried its own
 # copy with an 8-VGPR allocation granularity, which disagreed with the gated model (12 on gfx11, 24 on
-# gfx12) and with AGENTS.md, and produced 12/16 for a shader the gate scores 10/16. Two tools disagreeing
+# gfx12) and with Scripts/README.md, and produced 12/16 for a shader the gate scores 10/16. Two tools disagreeing
 # about the same hardware is worse than either being wrong, so the duplicate is gone.
 #
 # Granularity matters most exactly where it is least visible: DefaultLit.frag[inlineshadow] at 127 VGPRs

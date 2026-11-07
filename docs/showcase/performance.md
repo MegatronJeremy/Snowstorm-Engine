@@ -29,7 +29,7 @@ Two configs sit outside the ladder and repeat one rung with a different producer
 | `ssao` | AO, screen-space | 5.171 | 3.181 |
 | `ssr` | reflections, screen-space | 6.038 | 4.083 |
 
-Stochastic shadows beat inline on AMD (4.111 against 4.666 ms) and lose on NVIDIA (4.660 against 2.845 ms), the cross-vendor inversion described in [`AGENTS.md`](../../AGENTS.md). Its own figures there (in ms over `rt-off`, 9070 XT inline 2.272, stochastic 1.723; 5070 inline 1.294, stochastic 3.362) are quoted separately and are not derived from the totals above.
+Stochastic shadows beat inline on AMD (4.111 against 4.666 ms) and lose on NVIDIA (4.660 against 2.845 ms), the cross-vendor inversion described in [`Scripts/README.md`](../../Scripts/README.md). Its own figures there (in ms over `rt-off`, 9070 XT inline 2.272, stochastic 1.723; 5070 inline 1.294, stochastic 3.362) are quoted separately and are not derived from the totals above.
 
 Other committed sets, different conditions: RX 9060 XT (last commit b65ffd8, 2026-08-24) and Radeon 8060S of the Z2 build machine (2a142bb, 2026-10-14) were captured at 1717 wide, and the RX 7900 XTX set (5b3176b, 2026-08-22) predates resolution stamping. Their totals at `+gi`: 16.713, 40.370 and 9.236 ms. They are not comparable with the 1920x1080 sets, and the gate reports SKIP rather than diffing across a resolution mismatch.
 
@@ -57,11 +57,11 @@ Builds A and B alternate (A,B,A,B,...) in one session, so common-mode drift canc
 | `gfx1200` | 49 | 130 (`DefaultLit.frag[inlineshadow]`) | 0 |
 | `gfx1100` | 49 | 135 (`DefaultLit.frag[inlineshadow]`) | 0 |
 
-These counts come from the baseline files as committed; the prose in `AGENTS.md` quotes older figures (47 shaders, 127 VGPRs) and the files are the record. Reproduce the CI input with `py Scripts/cook-shaders.py --variants rt,base` then `py Scripts/rga-occupancy.py --spv-dir Engine/cache/shaders-cook`. Occupancy is theoretical and VGPR-only; achieved occupancy needs RGP. RGA is AMD-only.
+These counts come from the baseline files as committed; the prose in `Scripts/README.md` quotes older figures (47 shaders, 127 VGPRs) and the files are the record. Reproduce the CI input with `py Scripts/cook-shaders.py --variants rt,base` then `py Scripts/rga-occupancy.py --spv-dir Engine/cache/shaders-cook`. Occupancy is theoretical and VGPR-only; achieved occupancy needs RGP. RGA is AMD-only.
 
 ## Driver-reported statistics
 
-`py Scripts/shader-stats.py --compare 9070 5070` asks each driver for `VK_KHR_pipeline_executable_properties` statistics, the only route to NVIDIA register counts. The committed `Scripts/shader-stats-baseline/amd-radeon-rx-9070-xt.json` holds 26 executables; coverage is whatever the run built, so RGA stays the authority for AMD coverage. `--gate` diffs against it locally; per `AGENTS.md` it has not run against a fresh GPU capture. The RTX 5070 reports `Local Memory Size` with a constant high 32 bits, so that column is withheld rather than masked.
+`py Scripts/shader-stats.py --compare 9070 5070` asks each driver for `VK_KHR_pipeline_executable_properties` statistics, the only route to NVIDIA register counts. The committed `Scripts/shader-stats-baseline/amd-radeon-rx-9070-xt.json` holds 26 executables; coverage is whatever the run built, so RGA stays the authority for AMD coverage. `--gate` diffs against it locally; per `Scripts/README.md` it has not run against a fresh GPU capture. The RTX 5070 reports `Local Memory Size` with a constant high 32 bits, so that column is withheld rather than masked.
 
 ## Reproduce
 

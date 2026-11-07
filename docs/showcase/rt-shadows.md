@@ -27,7 +27,7 @@ Cost grows linearly with light count.
 
 With `render.shadows.stochastic` on, each pixel importance-samples lights proportionally to their unshadowed contribution (`render.shadows.rays` rays per pixel, default 4, each picking a light independently), averages the visibility into one aggregate ratio, then reconstructs it with the shared SVGF chain: temporal accumulation, a-trous (`render.shadows.denoise.iterations`, default 3) and an upsample. Cost is nearly independent of light count. It is the same idea as the many-light technique in Unreal's MegaLights, at a prototype level. With `render.shadows.specular.demodulated` on (default) it adds a second denoised signal for specular.
 
-It is not production-ready. It shows artifacts under camera motion where two lights overlap, consistent with per-pixel light selection differing between neighbouring pixels, and it relies on the a-trous filter to hide them (#170). The motion gate did not find this, because its route never renders the lit side aisles (#169). It measures more temporally stable than inline on that gate (tFLIP 0.0131 against 0.0154, per `AGENTS.md`), which says nothing about those artifacts.
+It is not production-ready. It shows artifacts under camera motion where two lights overlap, consistent with per-pixel light selection differing between neighbouring pixels, and it relies on the a-trous filter to hide them (#170). The motion gate did not find this, because its route never renders the lit side aisles (#169). It measures more temporally stable than inline on that gate (tFLIP 0.0131 against 0.0154, per `Scripts/README.md`), which says nothing about those artifacts.
 
 ## Cost: the ranking depends on the GPU
 
@@ -43,9 +43,9 @@ On the 9070 XT the stochastic path is cheaper; on the 5070 inline is cheaper by 
 Two limits on the claim:
 
 - Five lights is one point on two curves. Inline grows with light count and stochastic does not, so they must cross somewhere on each card; this scene cannot show where.
-- The 5070 rungs spread about 2-3% run to run and the stochastic chain includes the `ShadowSpec*` specular denoise rows that inline has no analogue for; turning `render.shadows.specular.demodulated` off removes part of that cost. `AGENTS.md` records those variant numbers.
+- The 5070 rungs spread about 2-3% run to run and the stochastic chain includes the `ShadowSpec*` specular denoise rows that inline has no analogue for; turning `render.shadows.specular.demodulated` off removes part of that cost. `Scripts/README.md` records those variant numbers.
 
-`AGENTS.md` quotes slightly different deltas (9070 XT 2.272 and 1.723, 5070 1.294 and 3.362) from the same baseline directories; the table above is `totalGpuMs` differences recomputed from the JSON files at the commit named.
+`Scripts/README.md` quotes slightly different deltas (9070 XT 2.272 and 1.723, 5070 1.294 and 3.362) from the same baseline directories; the table above is `totalGpuMs` differences recomputed from the JSON files at the commit named.
 
 ## Reproduce
 
