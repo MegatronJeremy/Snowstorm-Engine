@@ -78,6 +78,35 @@ namespace Snowstorm
 			rt.View2D = !rt.View2D;
 		}
 
+		// Selects a click's hit (null deselects), and frames the camera on it for a double click.
+		void SelectHit(World* world, EditorSelectionSingleton& selection, const entt::entity hit, const bool frame)
+		{
+			const Entity picked{hit, world};
+			selection.SelectEntity(picked);
+			if (picked.IsValid() && frame)
+			{
+				FrameCameraOnEntity(*world, picked.Handle());
+			}
+		}
+
+		constexpr std::pair<KeyCode, ImGuizmo::OPERATION> kGizmoKeys[] = {
+		    {Key::W, ImGuizmo::TRANSLATE},
+		    {Key::E, ImGuizmo::ROTATE},
+		    {Key::R, ImGuizmo::SCALE},
+		};
+
+		// Indexed by ViewportDisplaySystem::PlayTarget.
+		struct PlayTargetText
+		{
+			const char* Menu;
+			const char* Tooltip;
+		};
+		constexpr PlayTargetText kPlayTargets[] = {
+		    {"In Editor (Simulate)", "Play (run the scene in the editor)"},
+		    {"In Editor (Possess)", "Play (possess: the game takes keyboard and mouse; Esc releases, Esc again stops)"},
+		    {"Standalone (Runtime)", "Play Standalone (launch Snowstorm-Runtime with this scene)"},
+		};
+
 		// Pick the light whose billboard ICON is under (px,py): a hit if the click lands within the icon's
 		// screen radius of the light's projected origin (Unity/Unreal icon picking). Lights have no mesh to
 		// raycast, so this is their only hitbox. Returns entt::null on miss; among candidates, the icon
@@ -459,20 +488,11 @@ namespace Snowstorm
 		// Deferred RT pick result: a GPU click-ray trace requested a frame or two ago has read back. Map
 		// the committed TLAS instance index to its entity via the build-order table and apply the selection
 		// (0xFFFFFFFF or an out-of-range index = a miss, i.e. clicked empty space -> deselect).
-		if (m_PickPending)
+		if (const std::optional<uint32_t> idx = m_PickPending ? ServiceView<RendererService>().TryConsumePickResult() : std::nullopt)
 		{
-			if (const std::optional<uint32_t> idx = ServiceView<RendererService>().TryConsumePickResult())
-			{
-				const auto& map = m_World->GetSingleton<TlasInstanceMapSingleton>().Instances;
-				const entt::entity hit = (*idx != 0xFFFFFFFFu && *idx < map.size()) ? map[*idx] : entt::null;
-				const Entity picked{hit, m_World};
-				selection.SelectEntity(picked);
-				if (picked.IsValid() && m_PickWasDoubleClick)
-				{
-					FrameCameraOnEntity(*m_World, picked.Handle());
-				}
-				m_PickPending = false;
-			}
+			const auto& map = m_World->GetSingleton<TlasInstanceMapSingleton>().Instances;
+			SelectHit(m_World, selection, *idx < map.size() ? map[*idx] : entt::null, m_PickWasDoubleClick);
+			m_PickPending = false;
 		}
 
 		// Capture the viewport content rect now (top-left + width) so the Play toolbar can be drawn as a
@@ -539,20 +559,14 @@ namespace Snowstorm
 				// single-image ImGui::Image path passes) — so a plain static_cast, not reinterpret_cast.
 				const auto asTexID = [](const uint64_t id)
 				{ return static_cast<ImTextureID>(id); };
-				// Left = upscaled: pixels [minX, splitX], U in [0, split]. V flipped: top=1, bottom=0.
-				if (split > 0.0f)
-				{
-					dl->AddImage(asTexID(textureID),
-					             imgMin, {splitX, imgMax.y},
-					             ImVec2{0.0f, 1.0f}, ImVec2{split, 0.0f}, white);
-				}
-				// Right = ground truth: pixels [splitX, maxX], U in [split, 1].
-				if (split < 1.0f)
-				{
-					dl->AddImage(asTexID(rt.GroundTruthPresentSampleView->GetUIID()),
-					             {splitX, imgMin.y}, imgMax,
-					             ImVec2{split, 1.0f}, ImVec2{1.0f, 0.0f}, white);
-				}
+				// Left = upscaled: pixels [minX, splitX], U in [0, split]. V flipped: top=1, bottom=0. Right = ground
+				// truth: pixels [splitX, maxX], U in [split, 1]. At a split of 0 or 1 one side is a zero-width quad.
+				dl->AddImage(asTexID(textureID),
+				             imgMin, {splitX, imgMax.y},
+				             ImVec2{0.0f, 1.0f}, ImVec2{split, 0.0f}, white);
+				dl->AddImage(asTexID(rt.GroundTruthPresentSampleView->GetUIID()),
+				             {splitX, imgMin.y}, imgMax,
+				             ImVec2{split, 1.0f}, ImVec2{1.0f, 0.0f}, white);
 
 				// Divider line + labels.
 				dl->AddLine({splitX, imgMin.y}, {splitX, imgMax.y}, IM_COL32(255, 220, 60, 220), 2.0f);
@@ -567,8 +581,7 @@ namespace Snowstorm
 				ImGui::InvisibleButton("##compareSplit", {handleHalf * 2.0f, vp.Size.y});
 				if (ImGui::IsItemActive() && vp.Size.x > 0.0f)
 				{
-					const float newSplit = (ImGui::GetIO().MousePos.x - imgMin.x) / vp.Size.x;
-					CVars::CompareSplit.Set(newSplit < 0.0f ? 0.0f : (newSplit > 1.0f ? 1.0f : newSplit));
+					CVars::CompareSplit.Set(std::clamp((ImGui::GetIO().MousePos.x - imgMin.x) / vp.Size.x, 0.0f, 1.0f));
 				}
 
 				// Advance the ImGui cursor over the whole image region so the gizmo/picking overlay that
@@ -594,12 +607,11 @@ namespace Snowstorm
 			// hotkeys mid-edit.
 			if (ImGui::IsWindowHovered() && !input.EditorKeysBlocked())
 			{
-				if (input.PressedThisFrame.test(Key::W))
-					m_GizmoOp = ImGuizmo::TRANSLATE;
-				if (input.PressedThisFrame.test(Key::E))
-					m_GizmoOp = ImGuizmo::ROTATE;
-				if (input.PressedThisFrame.test(Key::R))
-					m_GizmoOp = ImGuizmo::SCALE;
+				for (const auto& [key, op] : kGizmoKeys)
+				{
+					if (input.PressedThisFrame.test(key))
+						m_GizmoOp = op;
+				}
 				if (input.PressedThisFrame.test(Key::D2))
 					Toggle2DView(reg, camEntity);
 			}
@@ -683,52 +695,36 @@ namespace Snowstorm
 			// ---- Mouse picking: left-click in the viewport, not on the gizmo. Only consult ImGuizmo::IsOver()
 			// when a gizmo was actually drawn this frame (see gizmoDrawn) -- otherwise its stale cached value
 			// blocks picking.
-			if (ImGui::IsWindowHovered() && !usingGizmo && !(gizmoDrawn && ImGuizmo::IsOver()) &&
+			// Use ImGui's mouse position, NOT InputStateSingleton::MousePos: the latter is in a different
+			// Y origin (off by the title-bar height, ~23px) from the ImGui screen space that imageStart,
+			// the gizmo, and the light gizmos all live in. Mixing them put the pick point ~23px below the
+			// cursor -- invisible for large mesh AABBs, fatal for the small light icon hitbox.
+			const ImVec2 mouse = ImGui::GetIO().MousePos;
+			const float localX = mouse.x - imageStart.x;
+			const float localY = mouse.y - imageStart.y;
+			const bool onImage = localX >= 0.0f && localY >= 0.0f && localX <= vp.Size.x && localY <= vp.Size.y;
+			if (onImage && ImGui::IsWindowHovered() && !usingGizmo && !(gizmoDrawn && ImGuizmo::IsOver()) &&
 			    input.MousePressedThisFrame.test(0))
 			{
-				// Use ImGui's mouse position, NOT InputStateSingleton::MousePos: the latter is in a different
-				// Y origin (off by the title-bar height, ~23px) from the ImGui screen space that imageStart,
-				// the gizmo, and the light gizmos all live in. Mixing them put the pick point ~23px below the
-				// cursor -- invisible for large mesh AABBs, fatal for the small light icon hitbox.
-				const ImVec2 mouse = ImGui::GetIO().MousePos;
-				const float localX = mouse.x - imageStart.x;
-				const float localY = mouse.y - imageStart.y;
-				if (localX >= 0.0f && localY >= 0.0f && localX <= vp.Size.x && localY <= vp.Size.y)
-				{
-					const bool doubleClick = ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+				const bool doubleClick = ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
 
-					// Light icons are screen-space overlays and must beat any mesh under them, so test them on
-					// the CPU first regardless of technique — they have no BLAS for the RT path to hit anyway.
-					const entt::entity lightHit = PickLightIcon(reg, camRt.ViewProjection, localX, localY, vp.Size.x, vp.Size.y);
-					if (lightHit != entt::null)
-					{
-						const Entity picked{lightHit, m_World};
-						selection.SelectEntity(picked);
-						if (doubleClick)
-						{
-							FrameCameraOnEntity(*m_World, picked.Handle());
-						}
-					}
-					else if (CVars::ShadowsRTActive() || CVars::AoRTActive())
-					{
-						// RT is live (a TLAS exists): trace the click ray on the GPU for a pixel-accurate mesh
-						// pick. The result reads back a frame or two later — poll it below. Stash whether this
-						// click was a double so the deferred result can still frame the camera.
-						const Ray ray = ScreenPointToRay(localX, localY, vp.Size.x, vp.Size.y, camRt.ViewProjection);
-						ServiceView<RendererService>().RequestPick(ray.Origin, ray.Direction);
-						m_PickWasDoubleClick = doubleClick;
-						m_PickPending = true;
-					}
-					else
-					{
-						// No RT: coarse CPU AABB pick (resolves synchronously).
-						const Entity picked{PickEntity(reg, camRt.ViewProjection, localX, localY, vp.Size.x, vp.Size.y), m_World};
-						selection.SelectEntity(picked); // clears any Content-Browser asset selection
-						if (picked.IsValid() && doubleClick)
-						{
-							FrameCameraOnEntity(*m_World, picked.Handle());
-						}
-					}
+				// Light icons are screen-space overlays and must beat any mesh under them, so test them on
+				// the CPU first regardless of technique. They have no BLAS for the RT path to hit anyway.
+				const entt::entity lightHit = PickLightIcon(reg, camRt.ViewProjection, localX, localY, vp.Size.x, vp.Size.y);
+				if (lightHit == entt::null && (CVars::ShadowsRTActive() || CVars::AoRTActive()))
+				{
+					// A TLAS exists, so trace the click ray on the GPU for a pixel-accurate mesh pick. The result
+					// reads back a frame or two later and is applied above.
+					const Ray ray = ScreenPointToRay(localX, localY, vp.Size.x, vp.Size.y, camRt.ViewProjection);
+					ServiceView<RendererService>().RequestPick(ray.Origin, ray.Direction);
+					m_PickWasDoubleClick = doubleClick;
+					m_PickPending = true;
+				}
+				else
+				{
+					// Without RT, a coarse CPU AABB pick. Selecting clears any Content Browser asset selection.
+					const entt::entity hit = lightHit != entt::null ? lightHit : PickEntity(reg, camRt.ViewProjection, localX, localY, vp.Size.x, vp.Size.y);
+					SelectHit(m_World, selection, hit, doubleClick);
 				}
 			}
 
@@ -776,18 +772,23 @@ namespace Snowstorm
 			constexpr float kTopMargin = 8.0f;
 
 			ImGui::SetCursorScreenPos(ImVec2(contentMin.x + (contentWidth - kBtn) * 0.5f, contentMin.y + kTopMargin));
-			if (ImGui::InvisibleButton("##playstop", ImVec2(kBtn, kBtn)))
+			const bool clicked = ImGui::InvisibleButton("##playstop", ImVec2(kBtn, kBtn));
+			if (clicked && playing)
 			{
-				if (playing)
+				editorState.Current = SimulationStateSingleton::Mode::Edit;
+			}
+			else if (clicked)
+			{
+				switch (m_PlayTarget)
 				{
-					editorState.Current = SimulationStateSingleton::Mode::Edit;
-				}
-				else if (m_PlayPossess)
-				{
+				case PlayTarget::Simulate:
+					editorState.Current = SimulationStateSingleton::Mode::Play;
+					break;
+				case PlayTarget::Possess:
 					editorState.Current = SimulationStateSingleton::Mode::PlayGame;
 					input.GameCaptured = true;
-				}
-				else if (m_PlayStandalone)
+					break;
+				case PlayTarget::Standalone:
 				{
 					// The editor world is untouched: the Runtime gets a copy of the current (unsaved) scene.
 					auto& notify = SingletonView<EditorNotificationsSingleton>();
@@ -796,28 +797,15 @@ namespace Snowstorm
 					    project ? project->GetProjectDirectory() / project->GetProjectFileName() : std::filesystem::path{};
 					const StandalonePlay::LaunchPlan plan =
 					    StandalonePlay::PlanLaunch(ssproj, !ssproj.empty() && std::filesystem::exists(ssproj));
-					std::string error = plan.Error;
-					if (error.empty())
+					if (plan.Error.empty() && plan.SaveRegistry && !SingletonView<AssetManagerSingleton>().SaveRegistry(project->GetAssetRegistryPath()))
 					{
-						if (plan.SaveRegistry && !SingletonView<AssetManagerSingleton>().SaveRegistry(project->GetAssetRegistryPath()))
-						{
-							notify.Push("Could not save the asset registry; unsaved imports may not resolve in the Runtime",
-							            EditorToastType::Warning);
-						}
-						error = StandalonePlay::Launch(SceneSerializer::SerializeToString(*m_World), ssproj);
+						notify.Push("Could not save the asset registry; unsaved imports may not resolve in the Runtime",
+						            EditorToastType::Warning);
 					}
-					if (error.empty())
-					{
-						notify.Push("Launched standalone Runtime", EditorToastType::Info);
-					}
-					else
-					{
-						notify.Push(error, EditorToastType::Error);
-					}
+					const std::string error = plan.Error.empty() ? StandalonePlay::Launch(SceneSerializer::SerializeToString(*m_World), ssproj) : plan.Error;
+					notify.Push(error.empty() ? "Launched standalone Runtime" : error, error.empty() ? EditorToastType::Info : EditorToastType::Error);
+					break;
 				}
-				else
-				{
-					editorState.Current = SimulationStateSingleton::Mode::Play;
 				}
 			}
 			const bool hovered = ImGui::IsItemHovered();
@@ -835,6 +823,7 @@ namespace Snowstorm
 			{
 				const ImU32 amber = ImGui::GetColorU32(ImVec4(1.00f, 0.65f, 0.19f, 1.0f));
 				dl->AddRectFilled(ImVec2(c.x - r, c.y - r), ImVec2(c.x + r, c.y + r), amber, 1.0f);
+				EditorTheme::DrawStatusBlink(dl, ImVec2(bmin.x - 10.0f, c.y), "PLAY", true);
 			}
 			else
 			{
@@ -842,16 +831,9 @@ namespace Snowstorm
 				dl->AddTriangleFilled(ImVec2(c.x - r * 0.7f, c.y - r), ImVec2(c.x - r * 0.7f, c.y + r),
 				                      ImVec2(c.x + r, c.y), green);
 			}
-			if (playing)
-			{
-				EditorTheme::DrawStatusBlink(dl, ImVec2(bmin.x - 10.0f, c.y), "PLAY", true);
-			}
 			if (hovered)
 			{
-				ImGui::SetTooltip(playing            ? "Stop (return to Edit)"
-				                  : m_PlayPossess    ? "Play (possess: the game takes keyboard and mouse; Esc releases, Esc again stops)"
-				                  : m_PlayStandalone ? "Play Standalone (launch Snowstorm-Runtime with this scene)"
-				                                     : "Play (run the scene in the editor)");
+				ImGui::SetTooltip("%s", playing ? "Stop (return to Edit)" : kPlayTargets[static_cast<size_t>(m_PlayTarget)].Tooltip);
 			}
 
 			// Play-mode selector: a chevron right of the button. Disabled while playing (mode is fixed for
@@ -865,20 +847,13 @@ namespace Snowstorm
 			ImGui::EndDisabled();
 			if (ImGui::BeginPopup("##playmodepopup"))
 			{
-				if (ImGui::MenuItem("In Editor (Simulate)", nullptr, !m_PlayStandalone && !m_PlayPossess))
+				for (size_t i = 0; i < std::size(kPlayTargets); ++i)
 				{
-					m_PlayStandalone = false;
-					m_PlayPossess = false;
-				}
-				if (ImGui::MenuItem("In Editor (Possess)", nullptr, m_PlayPossess))
-				{
-					m_PlayStandalone = false;
-					m_PlayPossess = true;
-				}
-				if (ImGui::MenuItem("Standalone (Runtime)", nullptr, m_PlayStandalone))
-				{
-					m_PlayStandalone = true;
-					m_PlayPossess = false;
+					const auto target = static_cast<PlayTarget>(i);
+					if (ImGui::MenuItem(kPlayTargets[i].Menu, nullptr, m_PlayTarget == target))
+					{
+						m_PlayTarget = target;
+					}
 				}
 				ImGui::EndPopup();
 			}
