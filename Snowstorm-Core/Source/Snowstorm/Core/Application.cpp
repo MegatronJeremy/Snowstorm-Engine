@@ -13,11 +13,47 @@
 #include "Snowstorm/Render/RendererService.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
+#include <array>
 #include <chrono>
 #include <fstream>
 
 namespace Snowstorm
 {
+	namespace
+	{
+		// Averages N values over a fixed window of frames for the headless periodic logs.
+		template <size_t N>
+		class WindowAverage
+		{
+		public:
+			static constexpr int kWindowFrames = 60;
+
+			// True once a full window has been added, with its mean in `mean`. The next window starts empty.
+			bool Add(const std::array<double, N>& sample, std::array<double, N>& mean)
+			{
+				for (size_t i = 0; i < N; ++i)
+				{
+					m_Sum[i] += sample[i];
+				}
+				if (++m_Frames < kWindowFrames)
+				{
+					return false;
+				}
+				for (size_t i = 0; i < N; ++i)
+				{
+					mean[i] = m_Sum[i] / m_Frames;
+				}
+				m_Sum = {};
+				m_Frames = 0;
+				return true;
+			}
+
+		private:
+			std::array<double, N> m_Sum{};
+			int m_Frames = 0;
+		};
+	}
+
 	Application* Application::s_Instance = nullptr;
 
 	Application::Application(const std::string& name)
@@ -116,13 +152,11 @@ namespace Snowstorm
 		// editor Performance panel. CPU-submit = total frame - GPU present-wait (the fence stall folded
 		// into RenderSystem). Off unless the CVar is set.
 		const bool frameStats = CVars::FrameStats.Get();
-		double statAccumMs = 0.0, statWaitMs = 0.0, statGpuMs = 0.0;
-		int statFrames = 0;
+		WindowAverage<3> frameStatsWindow;
 
 		// Headless PSNR/SSIM windowed logging (render.metrics.log); see the log block below.
 		const bool metricsLog = CVars::MetricsLog.Get();
-		double metricsPsnrAccum = 0.0, metricsSsimAccum = 0.0;
-		int metricsFrames = 0;
+		WindowAverage<2> metricsWindow;
 
 		// Headless GPU perf benchmark (perf.bench.frames > 0): accumulate the per-pass GPU timings over a
 		// fixed frame budget (past warmup), write an averaged JSON, then exit. The GPU analogue of smoke mode
@@ -154,21 +188,21 @@ namespace Snowstorm
 		// exactly the case being detected) and refuse to capture instead.
 		if (CVars::QualityCaptureFrames.Get() > 0 && !Renderer::IsRayTracingSupported())
 		{
-			std::string rtRequested;
-			const auto note = [&rtRequested](const char* name)
-			{
-				rtRequested += rtRequested.empty() ? name : std::string(", ") + name;
+			const std::pair<bool, const char*> rtModes[] = {
+			    {CVars::ShadowsMode.Get() == 2, "render.shadows.mode"},
+			    {CVars::AoMode.Get() == 2, "render.ao.mode"},
+			    {CVars::ReflectionsMode.Get() == 2, "render.reflections.mode"},
+			    {CVars::GiMode.Get() == 2, "render.gi.mode"},
+			    {CVars::PathTrace.Get(), "render.pathtrace"},
 			};
-			if (CVars::ShadowsMode.Get() == 2)
-				note("render.shadows.mode");
-			if (CVars::AoMode.Get() == 2)
-				note("render.ao.mode");
-			if (CVars::ReflectionsMode.Get() == 2)
-				note("render.reflections.mode");
-			if (CVars::GiMode.Get() == 2)
-				note("render.gi.mode");
-			if (CVars::PathTrace.Get())
-				note("render.pathtrace");
+			std::string rtRequested;
+			for (const auto& [requested, name] : rtModes)
+			{
+				if (requested)
+				{
+					rtRequested += rtRequested.empty() ? name : std::string(", ") + name;
+				}
+			}
 			if (!rtRequested.empty())
 			{
 				SS_CORE_ERROR("Quality capture: ray tracing unsupported on {}; requested RT modes: {}. No capture written.",
@@ -230,67 +264,45 @@ namespace Snowstorm
 			}
 			++frameNo;
 
-			if (frameStats && frameNo > 3) // skip warmup frames
+			// Frames 0-3 are warmup and skipped. Mean order: frame, GPU wait, GPU exec.
+			if (std::array<double, 3> mean{};
+			    frameStats && frameNo > 3 &&
+			    frameStatsWindow.Add({(glfwGetTime() - frameStart) * 1000.0, Renderer::GetLastGpuWaitMs(), Renderer::GetLastGpuFrameMs()}, mean))
 			{
-				const double frameMs = (glfwGetTime() - frameStart) * 1000.0;
-				statAccumMs += frameMs;
-				statWaitMs += Renderer::GetLastGpuWaitMs();
-				statGpuMs += Renderer::GetLastGpuFrameMs();
-				if (++statFrames >= 60)
-				{
-					const double n = static_cast<double>(statFrames);
-					const double frame = statAccumMs / n;
-					const double wait = statWaitMs / n;
-					const double gpu = statGpuMs / n;
-					SS_CORE_INFO("FrameStats: frame={0:.2f}ms  cpu-submit={1:.2f}ms  gpu-wait={2:.2f}ms  gpu-exec={3:.2f}ms",
-					             frame, frame - wait, wait, gpu);
-					statAccumMs = statWaitMs = statGpuMs = 0.0;
-					statFrames = 0;
-				}
+				SS_CORE_INFO("FrameStats: frame={0:.2f}ms  cpu-submit={1:.2f}ms  gpu-wait={2:.2f}ms  gpu-exec={3:.2f}ms",
+				             mean[0], mean[0] - mean[1], mean[1], mean[2]);
 			}
 
 			// Metrics log (render.metrics.log): average PSNR/SSIM over a ~1s window and log it, so a headless
 			// scripted-camera benchmark (camera.path + render.compare + render.metrics) prints a comparable
 			// quality trace without the editor panel. Mirrors FrameStats. Only accumulates valid frames.
-			if (metricsLog && frameNo > 3)
+			const auto& metrics = m_ServiceManager->GetService<RendererService>().GetMetrics();
+			if (std::array<double, 2> mean{};
+			    metricsLog && frameNo > 3 && metrics.Valid && metricsWindow.Add({metrics.Psnr, metrics.Ssim}, mean))
 			{
-				if (const auto& m = m_ServiceManager->GetService<RendererService>().GetMetrics(); m.Valid)
-				{
-					metricsPsnrAccum += m.Psnr;
-					metricsSsimAccum += m.Ssim;
-					if (++metricsFrames >= 60)
-					{
-						const double mn = static_cast<double>(metricsFrames);
-						SS_CORE_INFO("Metrics: PSNR={0:.2f}dB  SSIM={1:.4f}  (avg over {2} frames)",
-						             metricsPsnrAccum / mn, metricsSsimAccum / mn, metricsFrames);
-						metricsPsnrAccum = metricsSsimAccum = 0.0;
-						metricsFrames = 0;
-					}
-				}
+				SS_CORE_INFO("Metrics: PSNR={0:.2f}dB  SSIM={1:.4f}  (avg over {2} frames)", mean[0], mean[1],
+				             WindowAverage<2>::kWindowFrames);
 			}
 
 			// GPU perf benchmark accumulation + exit. GetGpuPassTimes() returns the PREVIOUS frame's resolved
 			// scopes (1-frame lag), so the warmup skip also covers that lag. Accumulate past warmup; once the
 			// budget is met, write the averaged JSON and request shutdown (mirrors smoke mode).
-			if (perfBenchMode && !perfBenchSampling)
+			// While warming, feed the detector and start sampling only once it reports steady.
+			if (perfBenchMode && !perfBenchSampling && perfBenchWarmup.Update(Renderer::GetLastGpuFrameMs()))
 			{
-				// Still warming: feed the detector and start sampling only once it reports steady.
-				if (perfBenchWarmup.Update(Renderer::GetLastGpuFrameMs()))
+				perfBenchSampling = true;
+				if (perfBenchWarmup.TimedOut())
 				{
-					perfBenchSampling = true;
-					if (perfBenchWarmup.TimedOut())
-					{
-						SS_CORE_WARN("Perf bench: frame time never settled within {} frames; sampling anyway "
-						             "(results are NOT from a steady state).",
-						             perfBenchWarmup.FramesObserved());
-					}
-					else
-					{
-						SS_CORE_INFO("Perf bench: steady state after {} warmup frames.", perfBenchWarmup.FramesObserved());
-					}
+					SS_CORE_WARN("Perf bench: frame time never settled within {} frames; sampling anyway "
+					             "(results are NOT from a steady state).",
+					             perfBenchWarmup.FramesObserved());
+				}
+				else
+				{
+					SS_CORE_INFO("Perf bench: steady state after {} warmup frames.", perfBenchWarmup.FramesObserved());
 				}
 			}
-			else if (perfBenchMode)
+			else if (perfBenchMode && perfBenchSampling)
 			{
 				auto& renderer = m_ServiceManager->GetService<RendererService>();
 				perfBench.AddFrame(renderer.GetGpuPassTimes(), Renderer::GetLastGpuFrameMs());
