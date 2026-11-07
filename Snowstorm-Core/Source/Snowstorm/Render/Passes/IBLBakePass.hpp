@@ -8,6 +8,8 @@
 #include "Snowstorm/Render/Sampler.hpp"
 #include "Snowstorm/Render/Texture.hpp"
 
+#include <optional>
+
 namespace Snowstorm
 {
 	// Bake the split-sum IBL maps from the procedural sky on compute (#52): sky -> env cube ->
@@ -98,6 +100,10 @@ namespace Snowstorm
 		Ref<Sampler> m_Sampler; // linear clamp sampler for the convolution
 
 		bool m_Baked = false;
+
+		// The environment whose disk-cache lookup missed and whose bake is waiting for its compute shaders.
+		// AddBakePasses retries every frame until they compile, and the retries must not re-read the file.
+		std::optional<uint64_t> m_CacheMissedHash;
 
 		// Deferred cache-save state (#34, miss path only). After a bake, a readback pass copies the maps into
 		// these host-visible buffers; one frame later (fence retired) PumpCacheSave() maps them, assembles a

@@ -191,13 +191,17 @@ namespace Snowstorm
 		// ---- Disk-cache hit (#34): the maps for this exact sky+sun already exist on disk. Upload them and
 		// skip the whole GPU bake (compute + the 4 async shader compiles) — the ~300 ms cold-start saving. ----
 		const uint64_t envHash = HashIBLEnvironment(environment, lights);
-		if (const std::optional<CookedIBL> cached =
-		        IBLCacheIO::Load(envHash, kIrradianceCubeSize, kPrefilterCubeSize, kPrefilterMips, kBRDFLutSize))
+		if (m_CacheMissedHash != envHash)
 		{
-			EnsureOutputTextures();
-			UploadFromCache(*cached);
-			SS_CORE_INFO("[IBL] loaded maps from cache (hash={:016x}) -- skipped bake", envHash);
-			return;
+			if (const std::optional<CookedIBL> cached =
+			        IBLCacheIO::Load(envHash, kIrradianceCubeSize, kPrefilterCubeSize, kPrefilterMips, kBRDFLutSize))
+			{
+				EnsureOutputTextures();
+				UploadFromCache(*cached);
+				SS_CORE_INFO("[IBL] loaded maps from cache (hash={:016x}) -- skipped bake", envHash);
+				return;
+			}
+			m_CacheMissedHash = envHash;
 		}
 
 		// ---- Miss: bake on GPU as before, then read the maps back and save them for next time. ----
@@ -361,6 +365,7 @@ namespace Snowstorm
 
 		m_Baked = true;
 		m_OutputsBaked = true;
+		m_CacheMissedHash.reset(); // a later bake of this environment finds the file this one saves
 		SS_CORE_INFO("[IBL] baked all maps -- irradiance={} prefiltered={} (cube bindless) brdfLut={} (2d bindless)",
 		             m_IrradianceCubeView->GetGlobalBindlessIndex(),
 		             m_PrefilteredCubeView->GetGlobalBindlessIndex(),
