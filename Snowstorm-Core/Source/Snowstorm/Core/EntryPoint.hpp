@@ -9,7 +9,7 @@
 
 #ifdef SS_PLATFORM_WINDOWS
 
-inline int main(int argc, char** argv)
+int main(int argc, char** argv)
 {
 	Snowstorm::Log::Init();
 

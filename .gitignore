@@ -41,6 +41,8 @@ Tools/rdts/
 # See Scripts/shader-stats.py.
 !Scripts/shader-stats-baseline/
 !Scripts/shader-stats-baseline/*.json
+# Functions over the cognitive complexity limit. See Scripts/complexity-check.py.
+!Scripts/complexity-baseline.json
 *.DotSettings
 *.DotSettings.user
 *.ini
