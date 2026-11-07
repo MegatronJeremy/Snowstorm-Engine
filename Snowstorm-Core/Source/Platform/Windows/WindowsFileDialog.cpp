@@ -1,6 +1,7 @@
 #include "Snowstorm/Utility/FileDialog.hpp"
 
 #include <shobjidl.h>
+#include <wrl/client.h>
 
 #include <system_error>
 
@@ -8,6 +9,8 @@ namespace Snowstorm::FileDialog
 {
 	namespace
 	{
+		using Microsoft::WRL::ComPtr;
+
 		// SetFileTypes/SHCreateItemFromParsingName need wide strings; FileDialogFilter/paths are UTF-8 std::string.
 		std::wstring ToWide(const std::string& s)
 		{
@@ -34,383 +37,158 @@ namespace Snowstorm::FileDialog
 				return {};
 			return abs.make_preferred();
 		}
+
+		// COM for the dialog's lifetime. RPC_E_CHANGED_MODE means COM is already initialized on this thread with
+		// a different apartment model: the dialog still works, but what this did not initialize it must not
+		// uninitialize.
+		class ComScope
+		{
+		public:
+			ComScope()
+			    : m_Result(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE))
+			{
+			}
+			~ComScope()
+			{
+				if (m_Result == S_OK || m_Result == S_FALSE)
+				{
+					CoUninitialize();
+				}
+			}
+			ComScope(const ComScope&) = delete;
+			ComScope& operator=(const ComScope&) = delete;
+
+			[[nodiscard]] bool Usable() const { return SUCCEEDED(m_Result) || m_Result == RPC_E_CHANGED_MODE; }
+
+		private:
+			HRESULT m_Result;
+		};
+
+		bool AddOptions(IFileDialog& dialog, const FILEOPENDIALOGOPTIONS extra)
+		{
+			FILEOPENDIALOGOPTIONS options = 0;
+			return SUCCEEDED(dialog.GetOptions(&options)) && SUCCEEDED(dialog.SetOptions(options | extra));
+		}
+
+		// Returns whether a non-empty filter list was set.
+		bool SetFileTypes(IFileDialog& dialog, const std::vector<FileDialogFilter>& filters)
+		{
+			// COMDLG_FILTERSPEC only points into these strings, so they must outlive the SetFileTypes call.
+			std::vector<std::wstring> names;
+			std::vector<std::wstring> patterns;
+			std::vector<COMDLG_FILTERSPEC> specs;
+			names.reserve(filters.size());
+			patterns.reserve(filters.size());
+			specs.reserve(filters.size());
+			for (const FileDialogFilter& filter : filters)
+			{
+				names.push_back(ToWide(filter.Name));
+				patterns.push_back(L"*." + ToWide(filter.Extension));
+				specs.push_back({names.back().c_str(), patterns.back().c_str()});
+			}
+			return !specs.empty() && SUCCEEDED(dialog.SetFileTypes(static_cast<UINT>(specs.size()), specs.data()));
+		}
+
+		// SetDefaultFolder applies only when the user has no recent folder for this dialog, SetFolder always.
+		void SetStartFolder(IFileDialog& dialog, const std::filesystem::path& folder, const bool asDefault)
+		{
+			ComPtr<IShellItem> item;
+			if (folder.empty() || FAILED(SHCreateItemFromParsingName(folder.c_str(), nullptr, IID_PPV_ARGS(&item))))
+			{
+				return;
+			}
+			if (asDefault)
+			{
+				dialog.SetDefaultFolder(item.Get());
+			}
+			else
+			{
+				dialog.SetFolder(item.Get());
+			}
+		}
+
+		// Empty when the user cancelled or the pick is not a filesystem path.
+		std::filesystem::path ShowAndGetPath(IFileDialog& dialog)
+		{
+			ComPtr<IShellItem> item;
+			PWSTR rawPath = nullptr;
+			if (FAILED(dialog.Show(nullptr)) || FAILED(dialog.GetResult(&item)) ||
+			    FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &rawPath)) || rawPath == nullptr)
+			{
+				return {};
+			}
+			std::filesystem::path selected(rawPath);
+			CoTaskMemFree(rawPath);
+			return selected;
+		}
 	}
 
 	std::filesystem::path OpenFile(const std::vector<FileDialogFilter>& filters, const std::filesystem::path& defaultPath)
 	{
-		std::filesystem::path selectedPath;
-
-		const HRESULT initResult = CoInitializeEx(
-		    nullptr,
-		    COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
-
-		// RPC_E_CHANGED_MODE = COM is already initialized on this thread with a different apartment
-		// model; the dialog still works, we just must not CoUninitialize what we didn't init (same
-		// handling as SaveFile/OpenFolder).
-		if (FAILED(initResult) && initResult != RPC_E_CHANGED_MODE)
+		const ComScope com;
+		ComPtr<IFileOpenDialog> dialog;
+		if (!com.Usable() || FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&dialog))))
+		{
 			return {};
-
-		IFileOpenDialog* fileDialog = nullptr;
-
-		HRESULT hr = CoCreateInstance(
-		    CLSID_FileOpenDialog,
-		    nullptr,
-		    CLSCTX_ALL,
-		    IID_PPV_ARGS(&fileDialog));
-
-		if (SUCCEEDED(hr))
-		{
-			// Keep the wide strings alive for the SetFileTypes call — COMDLG_FILTERSPEC only stores
-			// pointers into them, it doesn't copy.
-			std::vector<std::wstring> names;
-			std::vector<std::wstring> patterns;
-			std::vector<COMDLG_FILTERSPEC> specs;
-			names.reserve(filters.size());
-			patterns.reserve(filters.size());
-			specs.reserve(filters.size());
-
-			for (const FileDialogFilter& filter : filters)
-			{
-				names.push_back(ToWide(filter.Name));
-				patterns.push_back(L"*." + ToWide(filter.Extension));
-			}
-			for (size_t i = 0; i < filters.size(); ++i)
-				specs.push_back({names[i].c_str(), patterns[i].c_str()});
-
-			if (!specs.empty())
-				fileDialog->SetFileTypes(static_cast<UINT>(specs.size()), specs.data());
-
-			if (const std::filesystem::path defaultDir = AbsoluteNative(defaultPath); !defaultDir.empty())
-			{
-				IShellItem* defaultFolder = nullptr;
-
-				hr = SHCreateItemFromParsingName(
-				    defaultDir.c_str(),
-				    nullptr,
-				    IID_PPV_ARGS(&defaultFolder));
-
-				if (SUCCEEDED(hr))
-				{
-					fileDialog->SetDefaultFolder(defaultFolder);
-
-					defaultFolder->Release();
-				}
-			}
-
-			hr = fileDialog->Show(nullptr);
-
-			if (SUCCEEDED(hr))
-			{
-				IShellItem* selectedItem = nullptr;
-
-				hr = fileDialog->GetResult(&selectedItem);
-
-				if (SUCCEEDED(hr))
-				{
-					PWSTR rawPath = nullptr;
-
-					hr = selectedItem->GetDisplayName(
-					    SIGDN_FILESYSPATH,
-					    &rawPath);
-
-					if (SUCCEEDED(hr) && rawPath != nullptr)
-					{
-						selectedPath = std::filesystem::path(rawPath);
-
-						CoTaskMemFree(rawPath);
-					}
-
-					selectedItem->Release();
-				}
-			}
-
-			fileDialog->Release();
 		}
-
-		if (initResult == S_OK || initResult == S_FALSE)
-		{
-			CoUninitialize();
-		}
-
-		return selectedPath;
+		SetFileTypes(*dialog.Get(), filters);
+		SetStartFolder(*dialog.Get(), AbsoluteNative(defaultPath), true);
+		return ShowAndGetPath(*dialog.Get());
 	}
 
-	std::filesystem::path SaveFile(
-	    const std::vector<FileDialogFilter>& filters,
-	    const std::filesystem::path& defaultPath)
+	std::filesystem::path SaveFile(const std::vector<FileDialogFilter>& filters, const std::filesystem::path& defaultPath)
 	{
-		std::filesystem::path selectedPath;
-
-		const HRESULT initializeResult = CoInitializeEx(
-		    nullptr,
-		    COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
-
-		// RPC_E_CHANGED_MODE tolerated, same as OpenFile/OpenFolder (see OpenFile).
-		if (FAILED(initializeResult) && initializeResult != RPC_E_CHANGED_MODE)
+		const ComScope com;
+		ComPtr<IFileSaveDialog> dialog;
+		if (!com.Usable() || FAILED(CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&dialog))))
+		{
 			return {};
-
-		IFileSaveDialog* dialog = nullptr;
-
-		HRESULT hr = CoCreateInstance(
-		    CLSID_FileSaveDialog,
-		    nullptr,
-		    CLSCTX_ALL,
-		    IID_PPV_ARGS(&dialog));
-
-		if (SUCCEEDED(hr))
-		{
-			FILEOPENDIALOGOPTIONS options = 0;
-
-			hr = dialog->GetOptions(&options);
-
-			if (SUCCEEDED(hr))
-			{
-				// FOS_FORCEFILESYSTEM: only real filesystem items, no virtual shell locations.
-				// FOS_PATHMUSTEXIST: the CONTAINING folder must exist (the file itself is new).
-				// FOS_OVERWRITEPROMPT: ask before silently replacing an existing file.
-				hr = dialog->SetOptions(
-				    options |
-				    FOS_FORCEFILESYSTEM |
-				    FOS_PATHMUSTEXIST |
-				    FOS_OVERWRITEPROMPT);
-			}
-
-			// Keep the wide strings alive for the SetFileTypes call below — COMDLG_FILTERSPEC only
-			// stores pointers into them, it doesn't copy (same constraint as in OpenFile).
-			std::vector<std::wstring> names;
-			std::vector<std::wstring> patterns;
-			std::vector<COMDLG_FILTERSPEC> specs;
-
-			names.reserve(filters.size());
-			patterns.reserve(filters.size());
-			specs.reserve(filters.size());
-
-			for (const FileDialogFilter& filter : filters)
-			{
-				names.push_back(ToWide(filter.Name));
-				patterns.push_back(L"*." + ToWide(filter.Extension));
-			}
-
-			for (std::size_t i = 0; i < filters.size(); ++i)
-			{
-				specs.push_back({names[i].c_str(),
-				                 patterns[i].c_str()});
-			}
-
-			if (!specs.empty())
-			{
-				hr = dialog->SetFileTypes(
-				    static_cast<UINT>(specs.size()),
-				    specs.data());
-
-				if (SUCCEEDED(hr))
-				{
-					// 1-based index into the specs array set above — pick the first filter as
-					// the dialog's initially-selected file type.
-					dialog->SetFileTypeIndex(1);
-
-					// Extension the dialog appends automatically if the user types a name with
-					// no extension — take it from the first (default-selected) filter.
-					const std::wstring defaultExtension =
-					    ToWide(filters.front().Extension);
-
-					dialog->SetDefaultExtension(
-					    defaultExtension.c_str());
-				}
-			}
-
-			// defaultPath can be either a folder to start in, or a full suggested save path
-			// (folder + filename) — detect which and set the dialog up accordingly. SHCreateItemFromParsingName
-			// needs an ABSOLUTE native path, so normalize first (a relative project path would silently fail).
-			if (const std::filesystem::path absDefault = AbsoluteNative(defaultPath); !absDefault.empty())
-			{
-				std::error_code errorCode;
-
-				if (std::filesystem::is_directory(
-				        absDefault,
-				        errorCode))
-				{
-					IShellItem* defaultFolder = nullptr;
-
-					hr = SHCreateItemFromParsingName(
-					    absDefault.c_str(),
-					    nullptr,
-					    IID_PPV_ARGS(&defaultFolder));
-
-					if (SUCCEEDED(hr))
-					{
-						dialog->SetFolder(defaultFolder);
-						defaultFolder->Release();
-					}
-				}
-				else
-				{
-					// Not a directory: treat absDefault as folder + suggested filename, and set
-					// each half separately (SetFolder only accepts an existing folder item).
-					const std::filesystem::path parentPath =
-					    absDefault.parent_path();
-
-					if (!parentPath.empty())
-					{
-						IShellItem* defaultFolder = nullptr;
-
-						hr = SHCreateItemFromParsingName(
-						    parentPath.c_str(),
-						    nullptr,
-						    IID_PPV_ARGS(&defaultFolder));
-
-						if (SUCCEEDED(hr))
-						{
-							dialog->SetFolder(defaultFolder);
-							defaultFolder->Release();
-						}
-					}
-
-					if (!absDefault.filename().empty())
-					{
-						dialog->SetFileName(
-						    absDefault.filename().c_str());
-					}
-				}
-			}
-
-			dialog->SetTitle(L"Save File");
-
-			hr = dialog->Show(nullptr);
-
-			if (SUCCEEDED(hr))
-			{
-				IShellItem* selectedItem = nullptr;
-
-				hr = dialog->GetResult(&selectedItem);
-
-				if (SUCCEEDED(hr))
-				{
-					PWSTR rawPath = nullptr;
-
-					hr = selectedItem->GetDisplayName(
-					    SIGDN_FILESYSPATH,
-					    &rawPath);
-
-					if (SUCCEEDED(hr) && rawPath != nullptr)
-					{
-						selectedPath =
-						    std::filesystem::path(rawPath);
-
-						CoTaskMemFree(rawPath);
-					}
-
-					selectedItem->Release();
-				}
-			}
-
-			dialog->Release();
 		}
 
-		// Only uninitialize what we initialized: on RPC_E_CHANGED_MODE the COM apartment belongs to
-		// someone else on this thread.
-		if (initializeResult == S_OK ||
-		    initializeResult == S_FALSE)
+		// FOS_FORCEFILESYSTEM: only real filesystem items, no virtual shell locations.
+		// FOS_PATHMUSTEXIST: the CONTAINING folder must exist (the file itself is new).
+		// FOS_OVERWRITEPROMPT: ask before silently replacing an existing file.
+		AddOptions(*dialog.Get(), FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_OVERWRITEPROMPT);
+
+		if (SetFileTypes(*dialog.Get(), filters))
 		{
-			CoUninitialize();
+			// The first filter is the initially selected type (1-based index), and its extension is the one
+			// appended to a name typed without one.
+			dialog->SetFileTypeIndex(1);
+			const std::wstring defaultExtension = ToWide(filters.front().Extension);
+			dialog->SetDefaultExtension(defaultExtension.c_str());
 		}
 
-		return selectedPath;
+		// defaultPath is either a folder to start in or a suggested save path (folder + filename). SetFolder
+		// accepts only an existing folder item, so a suggested path is split into the two halves.
+		if (const std::filesystem::path absDefault = AbsoluteNative(defaultPath); !absDefault.empty())
+		{
+			std::error_code ec;
+			const bool isFolder = std::filesystem::is_directory(absDefault, ec);
+			SetStartFolder(*dialog.Get(), isFolder ? absDefault : absDefault.parent_path(), false);
+			if (!isFolder && !absDefault.filename().empty())
+			{
+				dialog->SetFileName(absDefault.filename().c_str());
+			}
+		}
+
+		dialog->SetTitle(L"Save File");
+		return ShowAndGetPath(*dialog.Get());
 	}
 
-	std::filesystem::path OpenFolder(
-	    const std::filesystem::path& defaultPath)
+	std::filesystem::path OpenFolder(const std::filesystem::path& defaultPath)
 	{
-		std::filesystem::path selectedPath;
-
-		const HRESULT initializeResult = CoInitializeEx(
-		    nullptr,
-		    COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
-
-		// RPC_E_CHANGED_MODE tolerated, same as OpenFile/SaveFile (see OpenFile).
-		if (FAILED(initializeResult) &&
-		    initializeResult != RPC_E_CHANGED_MODE)
+		const ComScope com;
+		ComPtr<IFileOpenDialog> dialog;
+		if (!com.Usable() || FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&dialog))))
 		{
 			return {};
 		}
-
-		IFileOpenDialog* dialog = nullptr;
-
-		HRESULT hr = CoCreateInstance(
-		    CLSID_FileOpenDialog,
-		    nullptr,
-		    CLSCTX_ALL,
-		    IID_PPV_ARGS(&dialog));
-
-		if (SUCCEEDED(hr))
+		if (AddOptions(*dialog.Get(), FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST))
 		{
-			FILEOPENDIALOGOPTIONS options = 0;
-
-			hr = dialog->GetOptions(&options);
-
-			if (SUCCEEDED(hr))
-			{
-				hr = dialog->SetOptions(
-				    options |
-				    FOS_PICKFOLDERS |
-				    FOS_FORCEFILESYSTEM |
-				    FOS_PATHMUSTEXIST);
-			}
-
-			if (const std::filesystem::path defaultDir = AbsoluteNative(defaultPath); SUCCEEDED(hr) && !defaultDir.empty())
-			{
-				IShellItem* defaultFolder = nullptr;
-
-				hr = SHCreateItemFromParsingName(
-				    defaultDir.c_str(),
-				    nullptr,
-				    IID_PPV_ARGS(&defaultFolder));
-
-				if (SUCCEEDED(hr))
-				{
-					dialog->SetFolder(defaultFolder);
-
-					defaultFolder->Release();
-				}
-			}
-
-			dialog->SetTitle(L"Select Folder");
-
-			hr = dialog->Show(nullptr);
-
-			if (SUCCEEDED(hr))
-			{
-				IShellItem* selectedItem = nullptr;
-
-				hr = dialog->GetResult(&selectedItem);
-
-				if (SUCCEEDED(hr))
-				{
-					PWSTR rawPath = nullptr;
-
-					hr = selectedItem->GetDisplayName(
-					    SIGDN_FILESYSPATH,
-					    &rawPath);
-
-					if (SUCCEEDED(hr) && rawPath != nullptr)
-					{
-						selectedPath = std::filesystem::path(rawPath);
-						CoTaskMemFree(rawPath);
-					}
-
-					selectedItem->Release();
-				}
-			}
-
-			dialog->Release();
+			SetStartFolder(*dialog.Get(), AbsoluteNative(defaultPath), false);
 		}
-
-		if (initializeResult == S_OK ||
-		    initializeResult == S_FALSE)
-		{
-			CoUninitialize();
-		}
-
-		return selectedPath;
+		dialog->SetTitle(L"Select Folder");
+		return ShowAndGetPath(*dialog.Get());
 	}
 }
