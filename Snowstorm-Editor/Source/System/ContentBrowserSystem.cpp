@@ -178,12 +178,8 @@ namespace Snowstorm
 		for (const Entry& entry : m_Entries)
 		{
 			// Scenes are opened by path (double-click), not referenced by handle, so they are not
-			// registry assets — don't auto-import them.
-			if (entry.Type == AssetType::Scene)
-			{
-				continue;
-			}
-			if (assets.FindHandle(entry.Path, entry.Type) == 0)
+			// registry assets and are not auto-imported.
+			if (entry.Type != AssetType::Scene && assets.FindHandle(entry.Path, entry.Type) == 0)
 			{
 				assets.Import(entry.Path, entry.Type);
 				importedAny = true;
@@ -259,7 +255,11 @@ namespace Snowstorm
 			auto& notify = SingletonView<EditorNotificationsSingleton>();
 			const std::filesystem::path root = Project::GetActive()->GetAssetDirectory();
 			std::error_code ec;
-			if (std::filesystem::exists(root, ec) || std::filesystem::create_directories(root, ec))
+			if (!std::filesystem::exists(root, ec) && !std::filesystem::create_directories(root, ec))
+			{
+				notify.Push("Asset directory missing; can't create material", EditorToastType::Error);
+			}
+			else
 			{
 				// Pick a non-clobbering name: NewMaterial.ssmat, then NewMaterial_1.ssmat, ...
 				std::filesystem::path target = root / "NewMaterial.ssmat";
@@ -267,19 +267,12 @@ namespace Snowstorm
 				{
 					target = root / ("NewMaterial_" + std::to_string(i) + ".ssmat");
 				}
-				if (MaterialAssetIO::Save(target, MaterialAsset{}))
+				const bool saved = MaterialAssetIO::Save(target, MaterialAsset{});
+				if (saved)
 				{
 					Rescan(); // auto-imports + registers the new .ssmat
-					notify.Push("Created " + target.filename().string(), EditorToastType::Success);
 				}
-				else
-				{
-					notify.Push("Failed to write " + target.filename().string(), EditorToastType::Error);
-				}
-			}
-			else
-			{
-				notify.Push("Asset directory missing; can't create material", EditorToastType::Error);
+				notify.PushResult(saved, "Created " + target.filename().string(), "Failed to write " + target.filename().string());
 			}
 		}
 		ImGui::SameLine();
@@ -314,28 +307,18 @@ namespace Snowstorm
 
 		ImGui::Separator();
 
-		// Lowercase search needle for case-insensitive matching.
-		std::string needle = m_Search;
-		std::ranges::transform(needle, needle.begin(), [](const unsigned char c)
-		                       { return static_cast<char>(std::tolower(c)); });
-
+		// Case-insensitive filename match.
+		const auto lowered = [](std::string text)
+		{
+			std::ranges::transform(text, text.begin(), [](const unsigned char c)
+			                       { return static_cast<char>(std::tolower(c)); });
+			return text;
+		};
+		const std::string needle = lowered(m_Search);
 		const auto passesFilter = [&](const Entry& e)
 		{
-			if (m_Filter != AssetType::None && e.Type != m_Filter)
-			{
-				return false;
-			}
-			if (!needle.empty())
-			{
-				std::string name = e.DisplayName;
-				std::ranges::transform(name, name.begin(), [](const unsigned char c)
-				                       { return static_cast<char>(std::tolower(c)); });
-				if (name.find(needle) == std::string::npos)
-				{
-					return false;
-				}
-			}
-			return true;
+			return (m_Filter == AssetType::None || e.Type == m_Filter) &&
+			       (needle.empty() || lowered(e.DisplayName).find(needle) != std::string::npos);
 		};
 
 		if (ImGui::BeginChild("##content_list"))
@@ -370,52 +353,41 @@ namespace Snowstorm
 				                             selection.SelectedAsset != 0 &&
 				                             assets.FindHandle(entry.Path, entry.Type) == selection.SelectedAsset;
 
-				if (ImGui::Selectable(entry.DisplayName.c_str(), isSelectedAsset))
+				// Single-click selects the asset for the Properties inspector. Only handle-referenced asset types
+				// (materials, textures, ...): scenes are opened by path, not selected. The handle already exists
+				// (auto-import ran on scan). Materials are the only type with an inspector today; others just
+				// record the selection harmlessly.
+				if (ImGui::Selectable(entry.DisplayName.c_str(), isSelectedAsset) && entry.Type != AssetType::Scene)
 				{
-					// Single-click selects the asset for the Properties inspector. Only handle-referenced
-					// asset types (materials, textures, ...) — scenes are opened by path, not selected.
-					// The handle already exists (auto-import ran on scan). Materials are the only type with
-					// an inspector today; others just record the selection harmlessly.
-					if (entry.Type != AssetType::Scene)
+					if (const AssetHandle h = assets.FindHandle(entry.Path, entry.Type); h != 0)
 					{
-						if (const AssetHandle h = assets.FindHandle(entry.Path, entry.Type); h != 0)
-						{
-							selection.SelectAsset(h, entry.Type);
-						}
+						selection.SelectAsset(h, entry.Type);
 					}
 				}
 
+				auto& cmds = SingletonView<EditorCommandsSingleton>();
+				auto& notify = SingletonView<EditorNotificationsSingleton>();
+				const auto openScene = [&]
+				{ notify.PushResult(cmds.OpenScene(entry.Path), "Opened " + entry.DisplayName, "Failed to open " + entry.DisplayName); };
+
 				if (entry.Type == AssetType::Scene && ImGui::IsItemHovered() &&
-				    ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+				    ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && cmds.OpenScene)
 				{
-					auto& cmds = SingletonView<EditorCommandsSingleton>();
-					auto& notify = SingletonView<EditorNotificationsSingleton>();
-					if (cmds.OpenScene)
-					{
-						const bool ok = cmds.OpenScene(entry.Path);
-						notify.Push(ok ? "Opened " + entry.DisplayName : "Failed to open " + entry.DisplayName,
-						            ok ? EditorToastType::Success : EditorToastType::Error);
-					}
+					openScene();
 				}
 
 				// Right-click a scene -> context menu. "Set as Startup Scene" writes the project's StartScene
-				// (Godot's "Set as Main Scene" model). entry.Path is project-relative; the layer stores it as
-				// the StartScene and re-saves the .ssproj.
+				// (Godot's "Set as Main Scene" model). entry.Path is project-relative, and the layer stores it
+				// as the StartScene and re-saves the .ssproj.
 				if (entry.Type == AssetType::Scene && ImGui::BeginPopupContextItem("scene_ctx"))
 				{
-					auto& cmds = SingletonView<EditorCommandsSingleton>();
-					auto& notify = SingletonView<EditorNotificationsSingleton>();
 					if (ImGui::MenuItem("Open Scene") && cmds.OpenScene)
 					{
-						const bool ok = cmds.OpenScene(entry.Path);
-						notify.Push(ok ? "Opened " + entry.DisplayName : "Failed to open " + entry.DisplayName,
-						            ok ? EditorToastType::Success : EditorToastType::Error);
+						openScene();
 					}
 					if (ImGui::MenuItem("Set as Startup Scene") && cmds.SetStartupScene)
 					{
-						const bool ok = cmds.SetStartupScene(entry.Path);
-						notify.Push(ok ? entry.DisplayName + " is now the startup scene" : "Failed to set startup scene",
-						            ok ? EditorToastType::Success : EditorToastType::Error);
+						notify.PushResult(cmds.SetStartupScene(entry.Path), entry.DisplayName + " is now the startup scene", "Failed to set startup scene");
 					}
 					ImGui::EndPopup();
 				}

@@ -66,15 +66,9 @@ namespace Snowstorm
 			status.SetMessage(label);
 		}
 
-		bool PushResult(EditorNotificationsSingleton& notify, const bool ok, std::string success, std::string failure)
-		{
-			notify.Push(ok ? std::move(success) : std::move(failure), ok ? EditorToastType::Success : EditorToastType::Error);
-			return ok;
-		}
-
 		bool OpenProject(const EditorCommandsSingleton& cmds, EditorNotificationsSingleton& notify, const std::filesystem::path& path)
 		{
-			return PushResult(notify, cmds.OpenProject(path), "Project opened", "Failed to open project");
+			return notify.PushResult(cmds.OpenProject(path), "Project opened", "Failed to open project");
 		}
 
 		std::vector<RecentProject> ExistingRecentProjects()
@@ -211,7 +205,7 @@ namespace Snowstorm
 			// A disabled MenuItem never returns true, so the bound command is safe to call.
 			if (ImGui::MenuItem("Save Project", nullptr, false, static_cast<bool>(cmds.SaveProject)))
 			{
-				PushResult(notify, cmds.SaveProject(), "Project saved", "Save failed");
+				notify.PushResult(cmds.SaveProject(), "Project saved", "Save failed");
 			}
 
 			ImGui::Separator();
@@ -245,7 +239,7 @@ namespace Snowstorm
 			const bool canSetStartup = static_cast<bool>(cmds.SetStartupScene) && cmds.HasScenePath && cmds.HasScenePath();
 			if (ImGui::MenuItem("Set Current Scene as Startup", nullptr, false, canSetStartup))
 			{
-				PushResult(notify, cmds.SetStartupScene(""), "Startup scene set to the current scene", "Failed to set startup scene");
+				notify.PushResult(cmds.SetStartupScene(""), "Startup scene set to the current scene", "Failed to set startup scene");
 			}
 
 			ImGui::Separator();
@@ -454,7 +448,7 @@ namespace Snowstorm
 		if (const std::filesystem::path path = FileDialog::OpenFile({{"Snowstorm Scene", "world"}}, ScenesDirectory());
 		    !path.empty() && cmds.OpenScene)
 		{
-			PushResult(notify, cmds.OpenScene(path.string()), "Opened " + path.filename().string(), "Failed to open scene");
+			notify.PushResult(cmds.OpenScene(path.string()), "Opened " + path.filename().string(), "Failed to open scene");
 		}
 	}
 
@@ -470,7 +464,7 @@ namespace Snowstorm
 		}
 		if (cmds.SaveScene)
 		{
-			PushResult(notify, cmds.SaveScene(), "Scene saved", "Save failed");
+			notify.PushResult(cmds.SaveScene(), "Scene saved", "Save failed");
 		}
 	}
 
@@ -480,7 +474,7 @@ namespace Snowstorm
 		if (const std::filesystem::path path = FileDialog::SaveFile({{"Snowstorm Scene", "world"}}, ScenesDirectory());
 		    !path.empty() && cmds.SaveSceneAs)
 		{
-			PushResult(notify, cmds.SaveSceneAs(path.string()), "Saved " + path.filename().string(), "Save failed");
+			notify.PushResult(cmds.SaveSceneAs(path.string()), "Saved " + path.filename().string(), "Save failed");
 		}
 	}
 
@@ -595,7 +589,7 @@ namespace Snowstorm
 		if (ImGui::Button("Create", ImVec2(120.0f, 0.0f)))
 		{
 			auto& cmds = SingletonView<EditorCommandsSingleton>();
-			if (PushResult(notify, cmds.NewProject && cmds.NewProject(fullProjectPath, m_NewProjectNameBuffer), "Project created", "Failed to create project"))
+			if (notify.PushResult(cmds.NewProject && cmds.NewProject(fullProjectPath, m_NewProjectNameBuffer), "Project created", "Failed to create project"))
 			{
 				m_NewProjectNameBuffer[0] = '\0';
 				m_NewProjectLocationBuffer[0] = '\0';
