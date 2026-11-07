@@ -11,7 +11,7 @@ so the GUI version stays matched to the Tracy **client** the engine links.
 ## Use
 
 1. Build and run **Snowstorm-Editor in Debug** (Tracy is compiled in only when `TRACY_ENABLE` is set,
-   which the CMake enables for the Debug config; Release has zero profiler overhead).
+   which the CMake enables for the Debug config. Release has zero profiler overhead).
 2. Run `Tools/tracy/tracy-profiler.exe` and click **Connect** (defaults to `127.0.0.1`). It latches onto
    the running editor and streams live.
 3. The frame-time graph is driven by `SS_PROFILE_FRAME_MARK` (end of the run loop). Zones come from

@@ -21,9 +21,9 @@ The IBL maps (irradiance, prefiltered specular, BRDF LUT) are convolved from the
 
 `Invalidate()` followed by a new bake is the full monolithic path, not an incremental update: `RenderSystem` calls `Renderer::WaitIdle()` before appending the bake passes, so every re-bake stalls the GPU once. The disk cache (`Engine/cache/ibl/<hash>.ssibl`) is keyed by a hash of the sky and the lights, so a sun position that was baked before is uploaded instead of re-computed. Inference from the code, not observed: a continuous sweep hashes to a new key at nearly every re-bake, so it mostly misses and writes one cache file per baked angle.
 
-Every re-bake after the first logs one `[info]` line from `RenderSystem`: `IBL re-bake #N (sun|environment, sun moved X deg): WaitIdle stall Y ms (mean, max, sun-triggered count)`. The stall is the wall-clock time of `Renderer::WaitIdle()` only, not the bake dispatches, which run later in the graph. Read the sweep's cost from these lines (run `SunSweep.world`, filter on `IBL re-bake`); `IBLRebakeStats` and `SunAngleDeg` hold the arithmetic and are unit tested. The line format and stall values have not been observed on a GPU.
+Every re-bake after the first logs one `[info]` line from `RenderSystem`: `IBL re-bake #N (sun|environment, sun moved X deg): WaitIdle stall Y ms (mean, max, sun-triggered count)`. The stall is the wall-clock time of `Renderer::WaitIdle()` only, not the bake dispatches, which run later in the graph. Read the sweep's cost from these lines (run `SunSweep.world`, filter on `IBL re-bake`). `IBLRebakeStats` and `SunAngleDeg` hold the arithmetic and are unit tested. The line format and stall values have not been observed on a GPU.
 
-The quantum is the whole budget control. At 2 degrees, a sun turning at 6 degrees per second re-bakes about three times a second (arithmetic, not a measured rate). Raising the quantum trades ambient accuracy for fewer stalls; the right value for a given scene is not measured.
+The quantum is the whole budget control. At 2 degrees, a sun turning at 6 degrees per second re-bakes about three times a second (arithmetic, not a measured rate). Raising the quantum trades ambient accuracy for fewer stalls. The right value for a given scene is not measured.
 
 ## Testbed: SunSweep.world
 
@@ -34,11 +34,11 @@ Snowstorm-Runtime --startup.scene=Projects/Sandbox/assets/scenes/SunSweep.world 
   --camera.path --camera.path.file=Projects/Sandbox/assets/camera-paths/sun-sweep.json
 ```
 
-Add `--render.ibl.sun_quantum_deg=30` for a visibly stale ambient (re-bake every 5 s at this speed, arithmetic), or `--render.ibl.sun_quantum_deg=0` for the per-change extreme. Expected, not observed: with a small quantum the shadowed side's ambient follows the sun; with a large one it lags in steps. The scene has no baselines and is not wired into any gate.
+Add `--render.ibl.sun_quantum_deg=30` for a visibly stale ambient (re-bake every 5 s at this speed, arithmetic), or `--render.ibl.sun_quantum_deg=0` for the per-change extreme. Expected, not observed: with a small quantum the shadowed side's ambient follows the sun. With a large one it lags in steps. The scene has no baselines and is not wired into any gate.
 
 | CVar | Default | Effect |
 | --- | --- | --- |
-| `render.ibl` | on | Bake and use IBL from the sky; off falls back to analytic hemisphere ambient |
+| `render.ibl` | on | Bake and use IBL from the sky. Off falls back to analytic hemisphere ambient |
 | `render.ibl.sun_quantum_deg` | 2 | Degrees of sun movement from the baked sun before a re-bake |
 | `render.ibl.intensity` | 0.75 | Multiplier on the IBL ambient |
 
@@ -53,7 +53,7 @@ Not checked: that the sweep re-bakes at the expected rate in a running engine, t
 ## Limits
 
 - **Stall per re-bake.** The full bake plus `WaitIdle` is a hitch, not a streamed update.
-- **One sun.** Only `Lights[0]` is keyed; moving a secondary directional re-bakes nothing.
+- **One sun.** Only `Lights[0]` is keyed. Moving a secondary directional re-bakes nothing.
 - **Sky is not time-of-day driven.** The procedural sky colours are authored values that nothing ties to the sun (read from the scene and environment component, not tested), so a sweeping sun re-lights an unchanged sky.
 - **Cache growth.** Every distinct sun key can leave a cache file (see above, unverified).
 

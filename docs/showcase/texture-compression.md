@@ -11,8 +11,8 @@ The role comes from the material slot a texture is referenced through (`AssetMan
 | Role | Format | Why |
 | --- | --- | --- |
 | albedo, opaque | BC1, 4 bpp (BC7 at `cook.textures.quality=1`) | 8:1 against RGBA8 |
-| albedo, alpha | BC3, 8 bpp (BC7 at `cook.textures.quality>=1`) | BC1's 1-bit alpha decodes to transparent black and bleeds halos; exhaustive BC7 took minutes per 2K texture |
-| tangent normal | BC5, 8 bpp | two independent 8-bit planes; z reconstructed in the shader |
+| albedo, alpha | BC3, 8 bpp (BC7 at `cook.textures.quality>=1`) | BC1's 1-bit alpha decodes to transparent black and bleeds halos. Exhaustive BC7 took minutes per 2K texture |
+| tangent normal | BC5, 8 bpp | two independent 8-bit planes, z reconstructed in the shader |
 | metallic-roughness, AO | BC1, 4 bpp | measured adequate: 44.7 dB on roughness, 44.0 dB on metallic |
 
 Mips are filtered in the role's colour space (`MipSpaceFor`): albedo in linear light, normals and masks as byte averages, alpha always linear. The cache blob header carries role, mip space, compress flag with quality tier, and an encoder revision, so a mismatch re-cooks. BC7 is an opt-in tier: it doubles opaque albedo to 8 bpp (51 MB to 102 MB on Sponza), and its FLIP delta is not measured.
@@ -32,7 +32,7 @@ Source, BC1 round trip and 4x absolute error, 128 px crop at 3x:
 | ![Normal map, its BC1 round trip and 4x error: the error is dense and chromatic](images/bc1_normal_map.jpg) | ![Colour texture, its BC1 round trip and 4x error: the error is nearly black](images/bc1_colour.jpg) |
 | 28.25 dB over the full 1024x1024 texture | 42.45 dB over the full 1024x1024 texture |
 
-Produced by `py Scripts/showcase-bc1-figure.py <texture> <out.jpg>` on 2026-10-17. This is an **offline numpy encoder** (PCA-axis fit), not the engine's libsquish cluster fit, and the PSNR is RGB against the source, not a render. It illustrates the mechanism and is not engine output or a GPU capture. There is no rendered before/after frame of compressed against uncompressed; the whole-frame cost is the FLIP figure below.
+Produced by `py Scripts/showcase-bc1-figure.py <texture> <out.jpg>` on 2026-10-17. This is an **offline numpy encoder** (PCA-axis fit), not the engine's libsquish cluster fit, and the PSNR is RGB against the source, not a render. It illustrates the mechanism and is not engine output or a GPU capture. There is no rendered before/after frame of compressed against uncompressed. The whole-frame cost is the FLIP figure below.
 
 ## Measured effect
 
@@ -52,7 +52,7 @@ The encoder asks libsquish for `kColourIterativeClusterFit` rather than `kColour
 
 ## Not measured
 
-- No re-measurement was made for this page; every number is from `AGENTS.md` at the commit above, and the GPU numbers have not been re-run on the current master.
+- No re-measurement was made for this page. Every number is from `AGENTS.md` at the commit above, and the GPU numbers have not been re-run on the current master.
 - BC7 (`cook.textures.quality=1`) FLIP delta.
 - Release-build GPU time (the figures are Debug).
 

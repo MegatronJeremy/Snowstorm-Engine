@@ -3,7 +3,7 @@
 ## Games
 
 `Games/` holds games built on the engine, not parts of it. The engine has no knowledge of anything
-there; a host opts in by linking a game and calling its one registration function, and both
+there. A host opts in by linking a game and calling its one registration function, and both
 `Snowstorm-Editor` and `Snowstorm-Runtime` link both games so either scene can be authored and played.
 
 **`Games/Pong` is the example.** It is the whole of what building on
@@ -31,6 +31,6 @@ joins that frame's render graph after the texture uploads and ahead of IBL, shad
 once per frame. A texture it writes that a material samples through bindless goes in the pass's `PublishSampled`: the graph
 transitions it to Sampled right after the pass (graphics queue only), since it transitions only declared
 accesses and a bindless read is undeclared. `PublishSampled` counts as a write in `BuildDependencies`, so a
-declared reader still orders after the writer; the ordering of an undeclared bindless reader (the material
+declared reader still orders after the writer. The ordering of an undeclared bindless reader (the material
 draw in `Forward`) still rests on graphics passes keeping their order. `RenderGraphScheduleTests` pin the
-edge; the transition itself has not run on a GPU.
+edge. The transition itself has not run on a GPU.

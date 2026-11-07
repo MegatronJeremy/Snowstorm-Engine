@@ -2,7 +2,7 @@
 
 Feature pages for the engine, each with images and measured numbers. Adapted from [Vuk Đorđević's master's thesis (ETF Belgrade, 2026)](https://github.com/MegatronJeremy/RG2/tree/master/master-rad/teza), updated to the engine as it is now.
 
-Every measured number names its GPU, the commit that holds it and the date. Pages describe the current engine; [`AGENTS.md`](../../AGENTS.md) and the area READMEs it indexes are the authority where they differ.
+Every measured number names its GPU, the commit that holds it and the date. Pages describe the current engine. [`AGENTS.md`](../../AGENTS.md) and the area READMEs it indexes are the authority where they differ.
 
 | Page | What it shows | Status |
 | --- | --- | --- |
@@ -12,7 +12,7 @@ Every measured number names its GPU, the commit that holds it and the date. Page
 | [Reflections](reflections.md) | SSR and RT reflections, roughness cutoff, why the denoiser is off | written |
 | [RT global illumination](rt-global-illumination.md) | Traced and screen-space GI: quality against the path tracer, cost, the ReSTIR experiment | written |
 | [SVGF-style denoising](svgf-denoising.md) | The shared temporal plus a-trous chain: what it buys, where it hurts, per-pass cost | written |
-| [Path-traced reference and quality benches](path-traced-reference.md) | The converged path tracer as ground truth; FLIP, tFLIP and JOD gates, static and under motion | written |
+| [Path-traced reference and quality benches](path-traced-reference.md) | The converged path tracer as ground truth. FLIP, tFLIP and JOD gates, static and under motion | written |
 | [Asset pipeline](asset-pipeline.md) | Content-hash cook cache, mounted virtual paths, role-based BCn texture compression: sizes, GPU time, quality cost | written |
 | [Texture block compression](texture-compression.md) | Role-based BC1/BC3/BC5 (BC7 opt-in), why normals are not BC1, cache, VRAM, Forward-pass and FLIP cost | written |
 | [Editor](editor.md) | Panels, Play and Play Standalone, content browser, material editor, CVar panel, NERV theme | written |
@@ -25,7 +25,7 @@ Every measured number names its GPU, the commit that holds it and the date. Page
 
 ## Gallery
 
-Sponza on a Radeon RX 9070 XT unless a caption says otherwise. Every image is under 500 KB; the pages above carry the numbers.
+Sponza on a Radeon RX 9070 XT unless a caption says otherwise. Every image is under 500 KB. The pages above carry the numbers.
 
 | | |
 | --- | --- |
@@ -38,4 +38,4 @@ Sponza on a Radeon RX 9070 XT unless a caption says otherwise. Every image is un
 | ![Isolated indirect diffuse term](../images/debug-gi.jpg) | ![Raw half-res GI irradiance before denoising](images/gi_irradiance_raw.jpg) |
 | GI term ([RT global illumination](rt-global-illumination.md)) | Raw GI buffer before the denoiser ([SVGF-style denoising](svgf-denoising.md)) |
 
-Images shared with the top-level README live in `docs/images`; images specific to one page live in `docs/showcase/images`.
+Images shared with the top-level README live in `docs/images`. Images specific to one page live in `docs/showcase/images`.

@@ -8,7 +8,7 @@ Real-time lighting is judged against ground truth, not against the previous buil
 
 ## Static gate: `quality-bench.py`
 
-Per viewpoint it captures the converged path trace once (cached under `Scripts/.quality-ref-cache/`), then each technique as a full real-time render with TAA on, and reports FLIP (perceptual, lower is better), PSNR and SSIM after a bilinear downscale to 1024x576. Captures are forced to 1920x1080 by `render.resolution.width/height`, and every run sets `SS_CONFIG_IGNORE=1`, so a result is code defaults plus the technique's overrides. Three Sponza viewpoints (`atrium`, `floor`, `gallery`) share one position and vary orientation; the numbers below are their mean.
+Per viewpoint it captures the converged path trace once (cached under `Scripts/.quality-ref-cache/`), then each technique as a full real-time render with TAA on, and reports FLIP (perceptual, lower is better), PSNR and SSIM after a bilinear downscale to 1024x576. Captures are forced to 1920x1080 by `render.resolution.width/height`, and every run sets `SS_CONFIG_IGNORE=1`, so a result is code defaults plus the technique's overrides. Three Sponza viewpoints (`atrium`, `floor`, `gallery`) share one position and vary orientation. The numbers below are their mean.
 
 Source: committed baselines `Scripts/quality-baseline/amd-radeon-rx-9070-xt/` (commit 1fab18e, 2026-08-30) on the RX 9070 XT, Sponza, mean of three viewpoints. These are the stored baseline values, not a re-run for this page.
 
@@ -25,9 +25,9 @@ Source: committed baselines `Scripts/quality-baseline/amd-radeon-rx-9070-xt/` (c
 | `rtgi` | 0.1395 | 25.36 | 0.721 |
 | `all-rt` | 0.0857 | 30.83 | 0.871 |
 
-Reading it: each technique is one rung on its own, so AO, reflections and shadows each move FLIP by 0.01 to 0.02 from the raster row, while GI moves it by 0.30 (`rtgi`) because missing bounce light dominates the error on Sponza. `all-rt` combines them and lands at 0.0857. Note that only `all-rt` overrides the shadow mode; every other technique renders with the default shadow map. The per-effect pages ([RT ambient occlusion](rt-ambient-occlusion.md), [Reflections](reflections.md), [RT global illumination](rt-global-illumination.md), [RT shadows](rt-shadows.md)) break these rows down.
+Reading it: each technique is one rung on its own, so AO, reflections and shadows each move FLIP by 0.01 to 0.02 from the raster row, while GI moves it by 0.30 (`rtgi`) because missing bounce light dominates the error on Sponza. `all-rt` combines them and lands at 0.0857. Note that only `all-rt` overrides the shadow mode. Every other technique renders with the default shadow map. The per-effect pages ([RT ambient occlusion](rt-ambient-occlusion.md), [Reflections](reflections.md), [RT global illumination](rt-global-illumination.md), [RT shadows](rt-shadows.md)) break these rows down.
 
-**Other adapters.** The RTX 5070 baselines (`nvidia-geforce-rtx-5070/`, commit 188818e, 2026-08-25) agree with the 9070 XT to within 0.003 FLIP on every technique (`raster` 0.4345, `rtgi` 0.1409, `all-rt` 0.0861). Baselines are keyed by adapter because the reference is a path trace on the local card; a directory copied from another machine is refused (exit 2).
+**Other adapters.** The RTX 5070 baselines (`nvidia-geforce-rtx-5070/`, commit 188818e, 2026-08-25) agree with the 9070 XT to within 0.003 FLIP on every technique (`raster` 0.4345, `rtgi` 0.1409, `all-rt` 0.0861). Baselines are keyed by adapter because the reference is a path trace on the local card. A directory copied from another machine is refused (exit 2).
 
 **Additional metrics.** LPIPS (needs `torch` and `lpips`) and HDR-FLIP are printed when available and never gated. FLIP is pinned to `flip-evaluator==1.7` so a committed baseline stays meaningful.
 
@@ -41,7 +41,7 @@ The protocol follows BMFR (Koskela et al. 2019): a converged per-frame reference
 | --- | --- | --- |
 | FLIP, PSNR, SSIM | Spatial accuracy of the frames under motion | yes |
 | tFLIP | How much more the technique changes between consecutive frames than the reference does (tLP's construction with FLIP substituted for LPIPS) | yes |
-| motionPenalty | The moving frame against a static capture at the same recorded pose; a lag measure | reported with baseline |
+| motionPenalty | The moving frame against a static capture at the same recorded pose. A lag measure | reported with baseline |
 | ColorVideoVDP, in JOD (higher better) | Spatio-temporal perceived quality, per probe pair | no |
 
 Source: committed baselines `Scripts/quality-motion-baseline/amd-radeon-rx-9070-xt/` (commit dc8ec1f, 2026-08-25), RX 9070 XT, not re-run for this page.
@@ -59,7 +59,7 @@ Source: committed baselines `Scripts/quality-motion-baseline/amd-radeon-rx-9070-
 | `rtgi` | 0.2081 | 0.0081 | 0.1189 | 3.89 |
 | `all-rt` | 0.1726 | 0.0082 | 0.1041 | 4.81 |
 
-The two temporal metrics disagree usefully: `rtgi` has the best tFLIP (0.0081, tied with `all-rt`'s 0.0082) while `all-rt` has the best JOD (4.81 against 3.89). tFLIP isolates stability; JOD is spatio-temporal and `all-rt` is far more accurate spatially. Read tFLIP for stability and JOD for overall quality.
+The two temporal metrics disagree usefully: `rtgi` has the best tFLIP (0.0081, tied with `all-rt`'s 0.0082) while `all-rt` has the best JOD (4.81 against 3.89). tFLIP isolates stability. JOD is spatio-temporal and `all-rt` is far more accurate spatially. Read tFLIP for stability and JOD for overall quality.
 
 ## What the protocol learned
 
@@ -73,7 +73,7 @@ The two temporal metrics disagree usefully: `rtgi` has the best tFLIP (0.0081, t
 
 - Coverage is thin by published standards: one scene, one route (two since #169), four adjacent frame pairs, against SVGF's 5 scenes and A-SVGF's 4. An artifact off the route is the predicted outcome, not bad luck.
 - The motion `static` probe does not read zero, because the props keep rotating while the control freezes the world. Treat its penalty as the noise floor.
-- Both gates need a real GPU and run locally, not in CI. Absolute motionPenalty values changed by roughly 4 to 10 times when the capture protocol cleared temporal history on entering steady state (60d154d); never compare numbers across that boundary.
+- Both gates need a real GPU and run locally, not in CI. Absolute motionPenalty values changed by roughly 4 to 10 times when the capture protocol cleared temporal history on entering steady state (60d154d). Never compare numbers across that boundary.
 - The motion baselines exist for the 9070 XT only.
 - The reference is unbiased but finite: after enough accumulation frames it is converged for these scenes, not exact. `--ref-frames` sets it, and `--fresh-ref` is needed after a change that could move the reference itself.
 - `render.pathtrace.emissivenee` (off by default) samples emissive triangles directly and MIS-weights them against BSDF hits, which changes convergence of emitter-lit regions only, not the converged image. No convergence or baseline numbers exist for it yet.

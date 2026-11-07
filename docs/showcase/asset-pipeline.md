@@ -6,9 +6,9 @@ Source files (`.obj`, `.png`, `.jpg`, shaders) are cooked once into GPU-ready ar
 
 ## Cook cache
 
-Meshes, textures, shaders and IBL cook to `Engine/cache`, keyed on a **content hash**; mtime is only a cheap pre-gate, so touching a file without changing it re-cooks nothing. The cache blob header of a texture carries its role, mip space, compress flag and an encoder revision; a mismatch re-cooks, so changing the encoder or the quality tier invalidates exactly the textures it affects (`TextureCookKey`).
+Meshes, textures, shaders and IBL cook to `Engine/cache`, keyed on a **content hash**, with mtime only a cheap pre-gate, so touching a file without changing it re-cooks nothing. The cache blob header of a texture carries its role, mip space, compress flag and an encoder revision. A mismatch re-cooks, so changing the encoder or the quality tier invalidates exactly the textures it affects (`TextureCookKey`).
 
-Cooking is loading: `CookAllRegistryAssets` (`--cook.assets`, or *File > Cook Assets*) loads every mesh, texture and material the registry names through the same path a running scene uses, so the two cannot disagree. A lazy cache holds only what some run touched; a full cook is what a package needs.
+Cooking is loading: `CookAllRegistryAssets` (`--cook.assets`, or *File > Cook Assets*) loads every mesh, texture and material the registry names through the same path a running scene uses, so the two cannot disagree. A lazy cache holds only what some run touched. A full cook is what a package needs.
 
 ```
 cmake --build build --config Debug --target stage   # package: cooked cache is generated, not staged
@@ -67,7 +67,7 @@ All on Sponza's 72 textures, Radeon RX 9070 XT, Debug build, recorded in `AGENTS
 | VMA allocation | 1373.3 MiB | 1074.8 MiB | -298.5 MiB, reproducible to the byte |
 | Forward pass GPU time (per-run minimum) | 0.376 ms | 0.292 ms | -22% |
 
-The Forward figure is an interleaved A/B on one binary with only the cache swapped: per-run ranges 0.005 and 0.003 ms, no overlap, all four paired deltas the same sign. The cost is quality: whole-frame FLIP against uncompressed is **0.026-0.028** across three viewpoints (0.045 before the role split and the encoder fix); for scale, `all-rt` sits 0.103 from the path tracer. Default-on followed eyes-on confirmation on Sponza. BC7 (`cook.textures.quality=1`) doubles opaque albedo to 8 bpp (51 MB to 102 MB on Sponza); its FLIP delta is not measured.
+The Forward figure is an interleaved A/B on one binary with only the cache swapped: per-run ranges 0.005 and 0.003 ms, no overlap, all four paired deltas the same sign. The cost is quality: whole-frame FLIP against uncompressed is **0.026-0.028** across three viewpoints (0.045 before the role split and the encoder fix). For scale, `all-rt` sits 0.103 from the path tracer. Default-on followed eyes-on confirmation on Sponza. BC7 (`cook.textures.quality=1`) doubles opaque albedo to 8 bpp (51 MB to 102 MB on Sponza). Its FLIP delta is not measured.
 
 The encoder asks libsquish for `kColourIterativeClusterFit`, worth about +2 dB on every role at byte-identical output over `kColourRangeFit`. Sampling a BCn image needs `textureCompressionBC` enabled, not merely supported.
 

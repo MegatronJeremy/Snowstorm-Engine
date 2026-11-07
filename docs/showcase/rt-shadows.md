@@ -38,14 +38,14 @@ Source: committed baselines `Scripts/perf-baseline/<adapter>/{rt-off,shadows,sha
 | Inline, per light (default) | +2.292 ms | +1.526 ms |
 | Stochastic, RIS + denoiser | +1.737 ms | +3.340 ms |
 
-On the 9070 XT the stochastic path is cheaper; on the 5070 inline is cheaper by about 2.2x. The ordering inverts across vendors, so neither strategy is right for both. A plausible reason is that ray traversal driven from shader instructions competes with shading for the same execution resources, which makes rays relatively more expensive on one architecture; two whole-frame timings per card cannot separate that from clocks, caches or driver scheduling, so the mechanism is an expectation, not a finding.
+On the 9070 XT the stochastic path is cheaper. On the 5070 inline is cheaper by about 2.2x. The ordering inverts across vendors, so neither strategy is right for both. A plausible reason is that ray traversal driven from shader instructions competes with shading for the same execution resources, which makes rays relatively more expensive on one architecture. Two whole-frame timings per card cannot separate that from clocks, caches or driver scheduling, so the mechanism is an expectation, not a finding.
 
 Two limits on the claim:
 
-- Five lights is one point on two curves. Inline grows with light count and stochastic does not, so they must cross somewhere on each card; this scene cannot show where.
-- The 5070 rungs spread about 2-3% run to run and the stochastic chain includes the `ShadowSpec*` specular denoise rows that inline has no analogue for; turning `render.shadows.specular.demodulated` off removes part of that cost. `Scripts/README.md` records those variant numbers.
+- Five lights is one point on two curves. Inline grows with light count and stochastic does not, so they must cross somewhere on each card. This scene cannot show where.
+- The 5070 rungs spread about 2-3% run to run and the stochastic chain includes the `ShadowSpec*` specular denoise rows that inline has no analogue for. Turning `render.shadows.specular.demodulated` off removes part of that cost. `Scripts/README.md` records those variant numbers.
 
-`Scripts/README.md` quotes slightly different deltas (9070 XT 2.272 and 1.723, 5070 1.294 and 3.362) from the same baseline directories; the table above is `totalGpuMs` differences recomputed from the JSON files at the commit named.
+`Scripts/README.md` quotes slightly different deltas (9070 XT 2.272 and 1.723, 5070 1.294 and 3.362) from the same baseline directories. The table above is `totalGpuMs` differences recomputed from the JSON files at the commit named.
 
 ## Reproduce
 
