@@ -2,7 +2,12 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <regex>
 #include <set>
+#include <sstream>
+#include <string>
 #include <utility>
 
 #include "Snowstorm/Render/DDGIMath.hpp"
@@ -163,4 +168,22 @@ TEST_CASE("ddgi: Chebyshev visibility is 1 in front of the mean and falls off be
 	REQUIRE(near < 1.0f);
 	REQUIRE(far < near);
 	REQUIRE(ChebyshevWeight(3.0f, 9.0f, 50.0f) == 0.05f);
+}
+
+TEST_CASE("ddgi: the shader and the C++ mirror use the same tile sizes", "[render][ddgi]")
+{
+	const std::filesystem::path root = SS_REPO_ROOT;
+	std::ifstream in(root / "Engine/Shaders/Include/DDGI.hlsli");
+	REQUIRE(in.good());
+	std::stringstream ss;
+	ss << in.rdbuf();
+	const std::string text = ss.str();
+	auto define = [&](const std::string& name)
+	{
+		std::smatch m;
+		REQUIRE(std::regex_search(text, m, std::regex("#define " + name + R"( ([0-9]+))")));
+		return static_cast<uint32_t>(std::stoul(m[1]));
+	};
+	REQUIRE(define("DDGI_IRRADIANCE_TEXELS") == kIrradianceTexels);
+	REQUIRE(define("DDGI_DISTANCE_TEXELS") == kDistanceTexels);
 }
