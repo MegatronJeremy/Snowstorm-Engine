@@ -21,6 +21,46 @@
       "isa_size": 1692.0,
       "permutations": 2
     },
+    "DDGIBlendDistance.comp": {
+      "vgprs": 16.0,
+      "sgprs": 32.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 1368.0,
+      "permutations": 2
+    },
+    "DDGIBlendIrradiance.comp": {
+      "vgprs": 20.0,
+      "sgprs": 31.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 1336.0,
+      "permutations": 2
+    },
+    "DDGIBorder.comp": {
+      "vgprs": 8.0,
+      "sgprs": 18.0,
+      "lds": 0.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 656.0,
+      "permutations": 2
+    },
+    "DDGITrace.comp": {
+      "vgprs": 72.0,
+      "sgprs": 58.0,
+      "lds": 2048.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 16916.0,
+      "permutations": 2
+    },
     "DefaultLit.frag[inlineshadow]": {
       "vgprs": 130.0,
       "sgprs": 86.0,

@@ -245,21 +245,20 @@ float3 RTHitLocalLights(uint64_t tableAddr, float3 P, float3 N)
 
 #endif // RTHIT_LOCAL_LIGHTS
 
-// Shade a committed hit as LIT surface radiance. Resolve it and re-light cheaply: sun (from the
-// includer's CB) with a shadow ray, one importance-picked local light with a shadow ray, the surface's own
-// emissive, and an IBL/flat ambient fill (so a hit on a shadowed surface still contributes its ambient, not
-// black). ONE bounce: the shaded hit does NOT itself trace beyond those shadow rays. `hitPos` = world hit
-// position (caller: rayOrigin + rayDir * CommittedRayT).
-//
-// ambientScale (#39) attenuates the un-occluded IBL ambient at THIS hit. Reflections pass 1.0 (a reflected
-// surface should look fully lit). The GI gather passes render.gi.bounce_ambient (< 1): the GI is itself the
-// indirect-diffuse estimator, so a full un-occluded ambient injected at every secondary hit double-counts
-// the sky and floods shadowed nooks with second-hand un-occluded ambient (the residual over-brightness the
-// path-traced reference exposed after #163; the PT injects no free ambient per bounce). Sun direct is
-// unaffected (it carries its own shadow ray).
-float3 ShadeSurfaceHit(uint64_t tableAddr, uint instanceId, uint prim, float2 bary, float3 hitPos, float ambientScale)
+// The un-occluded sky irradiance (E/PI) along the hit normal, the ambient ShadeSurfaceHit scales.
+float3 HitSkyAmbient(HitSurface s)
 {
-	const HitSurface s = ResolveHit(tableAddr, instanceId, prim, bary);
+	if (IrradianceCubeIndex != 0)
+	{
+		return Cubemaps[NonUniformResourceIndex(IrradianceCubeIndex)].SampleLevel(LinearSampler, s.Nw, 0).rgb * IBLIntensity;
+	}
+	return float3(0.03, 0.03, 0.03); // faint fill so shadowed/indirect areas aren't crushed to black
+}
+
+// ShadeSurfaceHit's lighting for an already resolved hit, with the indirect irradiance (E/PI) it receives
+// supplied by the caller: the sky cube for one bounce, a radiance cache for more.
+float3 ShadeResolvedHit(uint64_t tableAddr, HitSurface s, float3 hitPos, float3 ambient)
+{
 
 	float3 direct = float3(0, 0, 0);
 	if (LightCount > 0)
@@ -284,16 +283,6 @@ float3 ShadeSurfaceHit(uint64_t tableAddr, uint instanceId, uint prim, float2 ba
 	}
 #endif
 
-	float3 ambient;
-	if (IrradianceCubeIndex != 0)
-	{
-		ambient = Cubemaps[NonUniformResourceIndex(IrradianceCubeIndex)].SampleLevel(LinearSampler, s.Nw, 0).rgb * IBLIntensity;
-	}
-	else
-	{
-		ambient = float3(0.03, 0.03, 0.03); // faint fill so shadowed/indirect areas aren't crushed to black
-	}
-
 	// (1 - Metallic) on the diffuse albedo, matching DefaultLit's kd and PathTrace's diffuse lobe. A conductor
 	// therefore returns black here rather than a bright diffuse reflector: this pass carries no specular lobe,
 	// so under-estimating a metal bounce is the honest error, and it is the one the forward already makes.
@@ -301,7 +290,25 @@ float3 ShadeSurfaceHit(uint64_t tableAddr, uint instanceId, uint prim, float2 ba
 	// the 1/PI Lambert factor, exactly as PathTrace.comp adds h.emissive on hit. ambientScale must not touch it:
 	// that knob compensates for missing bounces in the *reflected* term, and an emitter's own output is not a
 	// bounce.
-	return s.Emissive + s.Albedo * (1.0 - s.Metallic) * (direct + ambient * ambientScale);
+	return s.Emissive + s.Albedo * (1.0 - s.Metallic) * (direct + ambient);
+}
+
+// Shade a committed hit as LIT surface radiance. Resolve it and re-light cheaply: sun (from the
+// includer's CB) with a shadow ray, one importance-picked local light with a shadow ray, the surface's own
+// emissive, and an IBL/flat ambient fill (so a hit on a shadowed surface still contributes its ambient, not
+// black). ONE bounce: the shaded hit does NOT itself trace beyond those shadow rays. `hitPos` = world hit
+// position (caller: rayOrigin + rayDir * CommittedRayT).
+//
+// ambientScale (#39) attenuates the un-occluded IBL ambient at THIS hit. Reflections pass 1.0 (a reflected
+// surface should look fully lit). The GI gather passes render.gi.bounce_ambient (< 1): the GI is itself the
+// indirect-diffuse estimator, so a full un-occluded ambient injected at every secondary hit double-counts
+// the sky and floods shadowed nooks with second-hand un-occluded ambient (the residual over-brightness the
+// path-traced reference exposed after #163; the PT injects no free ambient per bounce). Sun direct is
+// unaffected (it carries its own shadow ray).
+float3 ShadeSurfaceHit(uint64_t tableAddr, uint instanceId, uint prim, float2 bary, float3 hitPos, float ambientScale)
+{
+	const HitSurface s = ResolveHit(tableAddr, instanceId, prim, bary);
+	return ShadeResolvedHit(tableAddr, s, hitPos, HitSkyAmbient(s) * ambientScale);
 }
 
 #endif // SNOWSTORM_RT_HIT_SHADING_HLSLI

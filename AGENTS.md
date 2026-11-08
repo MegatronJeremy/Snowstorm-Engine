@@ -1313,6 +1313,12 @@ A directional light that also has a `RotatorComponent` and a `TransformComponent
 
 `vulkan.caps` (+ `vulkan.caps.path`) logs and writes what the driver advertises for `VK_KHR_cooperative_matrix` (every M/N/K, type and scope shape), shader float16/int8 and subgroup size control (`VulkanDeviceCaps`). It queries the physical device without enabling any extension, so it describes the adapter, not the engine's choices. `py Scripts/vulkan-caps.py --gpu <name>` runs it per adapter and prints the table; `Scripts/test_vulkan_caps.py` covers the formatting. Unrun on a GPU as of its PR, and no engine path uses cooperative matrix.
 
+## DDGI probe volume
+
+`render.ddgi` (default off, RT devices only) maintains a scene-wide DDGI volume (Majercik et al. 2019, NVIDIA RTXGI) in `Render/Passes/DDGIPass`: a probe grid fitted to `ComputeWorldRenderableAABB` at `render.ddgi.spacing` (2 m, grown to fit `.max_probes`, 4096), refitted while the scene streams and on a scene cut. Each frame four graph compute passes run after the IBL bake and shadows: `DDGITrace` (`.rays` per probe, 128, a Fibonacci set under a random per-frame rotation, into a ray buffer), `DDGIBlendIrradiance` and `DDGIBlendDistance` (6x6 and 14x14 octahedral tiles, blended with `.hysteresis` 0.97), and `DDGIBorder`. A trace hit is shaded by `ShadeResolvedHit` with the volume's own previous irradiance as its indirect light, so bounces accumulate over frames; a backface hit stores no light and a negative distance. Irradiance texels are cosine-weighted mean radiance, E/PI, the irradiance cube's units. `DDGIIrradiance` in `Include/DDGI.hlsli` samples the eight surrounding probes with the paper's trilinear, backface and Chebyshev weights and surface bias. `Render/DDGIMath.hpp` mirrors the layout, octahedral and border rules, and `DDGIMathTests` pin them and the tile sizes against the shader.
+
+Nothing consumes the volume yet except its own bounces and debug view 10 (the irradiance atlas). Probes inside geometry see only backfaces and stay black; there is no probe relocation or classification. On Sponza it fits 16x8x11 = 1408 probes and costs 0.26 ms on the RX 9070 XT and 0.28 ms on the RTX 5070 (`+gi` rung, 1920x1080, median of 3), of which the distance blend is 0.106 and 0.157 ms.
+
 ## Console variables (CVars)
 
 Engine flags go through a small CVar registry (`Snowstorm/Utility/CVar.hpp`) instead of ad-hoc

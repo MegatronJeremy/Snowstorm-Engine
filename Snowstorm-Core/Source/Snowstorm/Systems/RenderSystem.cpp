@@ -105,6 +105,7 @@ namespace Snowstorm
 				rtc.AODenoiser.HistoryValid = false; // #130
 				rtc.GIReservoir.HistoryValid = false;
 			}
+			m_DDGIPass.Invalidate();
 		}
 
 		const auto viewportView = View<const ViewportComponent, const RenderTargetComponent>();
@@ -200,6 +201,12 @@ namespace Snowstorm
 		{
 			SetupIBL(fc, env);
 			m_ShadowRenderer.RenderShadows(fc);
+			// After the IBL bake (its sky cube is the probes' miss radiance) and only with a geometry table, which
+			// is how every hit resolves. Refit while the scene is still streaming in, since its bounds grow.
+			if (CVars::DDGIActive() && renderer.GetReflectionGeometryAddress() != 0)
+			{
+				m_DDGIPass.AddPasses(fc, *m_World, streaming);
+			}
 		}
 		else
 		{
@@ -675,6 +682,17 @@ namespace Snowstorm
 			primaryTonemap.DebugScale = static_cast<float>(vpRT.ShadowTarget->GetDesc().Width) /
 			                            static_cast<float>(vpRT.GBufferNormalTarget->GetDesc().Width);
 			debugRead = liveShadow->GetTexture();
+		}
+		else if (debugView == 10 && m_DDGIPass.Ready())
+		{
+			// The DDGI irradiance atlas, scaled to fit the viewport (DebugMode 3's point-fetch readout).
+			const Ref<Texture>& atlas = m_DDGIPass.IrradianceView()->GetTexture();
+			const auto& sceneDesc = vpRT.Target->GetDesc();
+			primaryTonemap.DebugMode = 3;
+			primaryTonemap.DebugTexIndex = m_DDGIPass.IrradianceView()->GetGlobalBindlessIndex();
+			primaryTonemap.DebugScale = std::max(static_cast<float>(atlas->GetWidth()) / static_cast<float>(sceneDesc.Width),
+			                                     static_cast<float>(atlas->GetHeight()) / static_cast<float>(sceneDesc.Height));
+			debugRead = atlas;
 		}
 
 		// Post-tonemap LDR filter sizing (#44), derived up front so the effect chain (UpscaleEffect /

@@ -219,7 +219,7 @@ namespace Snowstorm::CVars
 
 	CVar<int> Msaa{"render.msaa", 1, "Forward MSAA sample count: 1 = off, 2/4/8 = multisample the forward color+depth for geometric-edge AA, resolved before post. Does NOT cover the RT effects (single-sample G-buffer) or shader/specular aliasing. Applies live (targets + pipelines rebuilt on change); clamped to the device max.", CVarFlags::Persist};
 
-	CVar<int> DebugView{"render.debugview", 0, "Viewport debug overlay: 0 = Normal (tonemapped scene), 1 = Motion Vectors (per-pixel screen-space velocity as color; drives the velocity pass + tonemap debug branch, #44), 2 = Ambient Occlusion (DefaultLit outputs the isolated grayscale AO term for tuning RTAO, #118), 3 = Reflections (raw reflected albedo from the RT reflection trace, for verifying hit resolution, #118), 4 = Global Illumination (raw RT GI indirect term, for tuning intensity/range, #118), 5 = World Normals (the depth+normal prepass G-buffer, [-1,1] normal mapped to RGB, for verifying the half-res GI substrate, #124), 6 = Half-res GI raw (the raw half-res GI irradiance buffer, tonemapped, before the bilateral upsample, #124), 7 = Half-res GI denoised (the same buffer AFTER temporal accumulation + à-trous, the A/B against view 6 that shows what the denoiser did, #125), 8 = Half-res RT shadow raw (the noisy 1-ray/pixel stochastic aggregate shadow ratio before temporal+denoise), 9 = Half-res RT shadow denoised (the same buffer AFTER temporal + à-trous, the A/B against view 8)", CVarFlags::Persist};
+	CVar<int> DebugView{"render.debugview", 0, "Viewport debug overlay: 0 = Normal (tonemapped scene), 1 = Motion Vectors (per-pixel screen-space velocity as color; drives the velocity pass + tonemap debug branch, #44), 2 = Ambient Occlusion (DefaultLit outputs the isolated grayscale AO term for tuning RTAO, #118), 3 = Reflections (raw reflected albedo from the RT reflection trace, for verifying hit resolution, #118), 4 = Global Illumination (raw RT GI indirect term, for tuning intensity/range, #118), 5 = World Normals (the depth+normal prepass G-buffer, [-1,1] normal mapped to RGB, for verifying the half-res GI substrate, #124), 6 = Half-res GI raw (the raw half-res GI irradiance buffer, tonemapped, before the bilateral upsample, #124), 7 = Half-res GI denoised (the same buffer AFTER temporal accumulation + à-trous, the A/B against view 6 that shows what the denoiser did, #125), 8 = Half-res RT shadow raw (the noisy 1-ray/pixel stochastic aggregate shadow ratio before temporal+denoise), 9 = Half-res RT shadow denoised (the same buffer AFTER temporal + à-trous, the A/B against view 8), 10 = DDGI irradiance atlas (render.ddgi)", CVarFlags::Persist};
 
 	CVar<float> TaaBlend{"render.taa.blend", 0.9f, "TAA base history weight while moving (higher = smoother/more lag). Live-tunable (#44)", CVarFlags::Persist};
 
@@ -295,6 +295,12 @@ namespace Snowstorm::CVars
 	CVar<float> GISpecAmbientFade{"render.gi.spec_ambient_fade", 1.0f, "When RT GI is active, fade the un-occluded env-cube SPECULAR ambient by roughness (0 = off/old behavior, 1 = full linear roughness fade). Rough surfaces' wide env-specular lobe otherwise acts as a second un-occluded ambient overlapping the occluded diffuse GI, over-filling shadows vs the path-traced reference.", CVarFlags::Persist};
 
 	CVar<float> GIBounceAmbient{"render.gi.bounce_ambient", 0.5f, "#39: scale on the un-occluded IBL ambient added at each RT-GI secondary hit (0..1; 1 = old behavior). The GI gather is itself the indirect-diffuse estimator, so a full un-occluded ambient at every bounce double-counts the sky and floods shadowed nooks (residual over-brightness vs the path-traced reference after #163). Default 0.5 measured to improve FLIP AND SSIM on all viewpoints vs the reference; the path tracer injects no free ambient per bounce.", CVarFlags::Persist};
+
+	CVar<bool> DDGI{"render.ddgi", false, "DDGI probe volume: a scene-wide grid of ray-traced irradiance probes (needs an RT device). Nothing samples it yet except its own bounces and debug view 10.", CVarFlags::Persist};
+	CVar<float> DDGISpacing{"render.ddgi.spacing", 2.0f, "DDGI probe spacing in metres; grows until the grid fits render.ddgi.max_probes. Read when the volume is fitted (scene load).", CVarFlags::Persist};
+	CVar<int> DDGIMaxProbes{"render.ddgi.max_probes", 4096, "DDGI probe budget. Read when the volume is fitted (scene load).", CVarFlags::Persist};
+	CVar<int> DDGIRays{"render.ddgi.rays", 128, "DDGI rays per probe per frame, clamped to [32, 256].", CVarFlags::Persist};
+	CVar<float> DDGIHysteresis{"render.ddgi.hysteresis", 0.97f, "DDGI temporal blend: the weight kept from the previous frame (0 = no history).", CVarFlags::Persist};
 
 	CVar<bool> RTHitLights{"render.rt.hit_lights", true, "Shade RT GI secondary hits with the scene's point/spot lights in addition to the sun, closing the bias against the reference path tracer's full NEE. Picks ONE light per hit in proportion to its unshadowed contribution and traces one extra shadow ray (the UE5 MegaLights estimator), so the cost is constant in the light count. Measured on Sponza: +0.7 to +0.9 dB PSNR vs the path tracer for ~+40% on the GI pass. GI only, since the same estimator in the reflection pass measured no gain at twice the cost.", CVarFlags::Persist};
 
@@ -733,6 +739,11 @@ namespace Snowstorm::CVars
 	{
 		// render.gi.mode == SSGI. Screen-space, so no device-support check: it runs on any GPU (#151).
 		return GiMode.Get() == 1;
+	}
+
+	bool DDGIActive()
+	{
+		return DDGI.Get() && Renderer::IsRayTracingSupported();
 	}
 
 	bool GIRTActive()

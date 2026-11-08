@@ -73,7 +73,7 @@ namespace Snowstorm
 		// alpha-test cutout (glTF MASK) geometry through it (Inc 2: masked instances are FORCE_NON_OPAQUE and
 		// the traversal samples the albedo alpha at the hit UV). So table-need is exactly rt-active.
 		const bool rtActive = CVars::ShadowsRTActive() || CVars::AoRTActive() || CVars::ReflectionsRTActive() ||
-		                      CVars::GIRTActive() || CVars::PathTraceActive();
+		                      CVars::GIRTActive() || CVars::PathTraceActive() || CVars::DDGIActive();
 		TlasRebuildRule::RebuildState state;
 		state.RtActive = rtActive;
 		state.WasRtActive = m_WasRTActive;

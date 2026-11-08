@@ -757,6 +757,19 @@ namespace Snowstorm::CVars
 	// the shader branch + the TLAS build gate + the geometry-table build. False on a non-RT GPU.
 	[[nodiscard]] bool GIRTActive();
 
+	// DDGI probe volume (Majercik et al. 2019, RTXGI): a scene-wide grid of probes, each holding irradiance and
+	// hit-distance moments in octahedral atlas tiles, traced and blended every frame. `spacing` is the probe
+	// distance in metres (grown until the grid fits `max_probes`), `rays` per probe per frame, `hysteresis` the
+	// weight kept from the previous frame.
+	extern CVar<bool> DDGI;
+	extern CVar<float> DDGISpacing;
+	extern CVar<int> DDGIMaxProbes;
+	extern CVar<int> DDGIRays;
+	extern CVar<float> DDGIHysteresis;
+
+	// render.ddgi on an RT-capable device.
+	[[nodiscard]] bool DDGIActive();
+
 	// True when EITHER GI technique is live (SSGI or RT). The gate the shared tail (GI temporal + à-trous +
 	// bilateral upsample + forward consumption + the G-buffer prepass) uses, so both converge on the same
 	// forward slot (#151).

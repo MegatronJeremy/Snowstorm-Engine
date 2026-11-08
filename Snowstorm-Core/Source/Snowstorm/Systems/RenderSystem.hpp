@@ -6,6 +6,7 @@
 // PostProcess builders back the AddForwardPass/AddTonemapPass helpers). Each per-effect-exclusive pass is
 // included by ViewportEffects.cpp, where its effect lives — not pulled through this header.
 #include "Snowstorm/Render/IBLInvalidation.hpp"
+#include "Snowstorm/Render/Passes/DDGIPass.hpp"
 #include "Snowstorm/Render/Passes/IBLBakePass.hpp"
 #include "Snowstorm/Render/Passes/PostProcessPass.hpp"
 #include "Snowstorm/Render/Passes/PresentPass.hpp"
@@ -125,6 +126,7 @@ namespace Snowstorm
 		// EXCLUSIVE pass now lives on that effect. Persist across frames; torn down before the device dies via
 		// Application's WaitIdle. The renderer is a shared context they operate against.
 		IBLBakePass m_IBLBakePass;
+		DDGIPass m_DDGIPass; // scene-wide probe volume, frame-global like the IBL bake
 		SkyPass m_SkyPass;
 		PostProcessPass m_PostProcessPass;
 
