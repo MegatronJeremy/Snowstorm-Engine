@@ -47,6 +47,8 @@ namespace Snowstorm
 		void Execute(Timestep ts) override;
 		void DeclareAccess(SystemAccess& a) const override;
 
+		[[nodiscard]] const DDGIPass& GetDDGI() const { return m_DDGIPass; }
+
 		// The shared render-phase vocabulary (FrameContext / CameraPick / GraphResource /
 		// ViewportRenderContext / IViewportEffect) now lives in RenderPhaseContext.hpp so collaborators can
 		// name it without depending on RenderSystem.

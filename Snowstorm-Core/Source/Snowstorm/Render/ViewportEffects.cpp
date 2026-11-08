@@ -406,6 +406,13 @@ namespace Snowstorm
 				std::vector<RenderGraph::ResourceAccess> giReads{
 				    {gbufView->GetTexture(), RenderGraph::AccessState::Sampled},
 				    {depthView->GetTexture(), RenderGraph::AccessState::Sampled}};
+				const DDGIPass& volume = m_Owner.GetDDGI();
+				const DDGIPass* ddgi = CVars::GIUseDDGI.Get() && CVars::DDGIActive() && volume.Ready() ? &volume : nullptr;
+				if (ddgi)
+				{
+					giReads.push_back({ddgi->IrradianceView()->GetTexture(), RenderGraph::AccessState::Sampled});
+					giReads.push_back({ddgi->DistanceView()->GetTexture(), RenderGraph::AccessState::Sampled});
+				}
 				if (resHistoryValid)
 				{
 					giReads.push_back({resSamplePrev->GetTexture(), RenderGraph::AccessState::Sampled});
@@ -422,7 +429,7 @@ namespace Snowstorm
 				                             {resSample->GetTexture(), RenderGraph::AccessState::Storage},
 				                             {resRadiance->GetTexture(), RenderGraph::AccessState::Storage},
 				                             {resNormal->GetTexture(), RenderGraph::AccessState::Storage}},
-				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, depthView, giView, giW, giH, resSample, resRadiance, resNormal, resSamplePrev, resRadiancePrev, resNormalPrev, resVelocity, resHistoryValid, resNear, resFar](CommandContext& c)
+				                  .Execute = [this, &fc, frameData, tableAddr, frameCounter, gbufView, depthView, giView, giW, giH, resSample, resRadiance, resNormal, resSamplePrev, resRadiancePrev, resNormalPrev, resVelocity, resHistoryValid, resNear, resFar, ddgi](CommandContext& c)
 				                  {
 					                  m_Pass.Dispatch(BorrowContext(c), fc.FrameIndex, frameData, tableAddr, frameCounter,
 					                                  gbufView, depthView, giView, giW, giH,
@@ -431,7 +438,7 @@ namespace Snowstorm
 					                                  resHistoryValid ? resRadiancePrev : nullptr,
 					                                  resHistoryValid ? resNormalPrev : nullptr,
 					                                  resHistoryValid ? resVelocity : nullptr,
-					                                  resHistoryValid, resNear, resFar);
+					                                  resHistoryValid, resNear, resFar, ddgi);
 				                  }});
 
 				// Spatial reuse overwrites the GI pass's own resolve: it reads the reservoir that pass just wrote

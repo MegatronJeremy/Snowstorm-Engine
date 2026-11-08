@@ -770,6 +770,10 @@ namespace Snowstorm::CVars
 	// render.ddgi on an RT-capable device.
 	[[nodiscard]] bool DDGIActive();
 
+	// RT GI shades each hit's indirect light from the DDGI volume instead of render.gi.bounce_ambient times the
+	// un-occluded sky cube. Needs render.ddgi.
+	extern CVar<bool> GIUseDDGI;
+
 	// True when EITHER GI technique is live (SSGI or RT). The gate the shared tail (GI temporal + à-trous +
 	// bilateral upsample + forward consumption + the G-buffer prepass) uses, so both converge on the same
 	// forward slot (#151).

@@ -10,6 +10,8 @@
 
 namespace Snowstorm
 {
+	class DDGIPass;
+
 	class CommandContext;
 	class DescriptorSet;
 	class Buffer;
@@ -39,13 +41,16 @@ namespace Snowstorm
 		              const Ref<TextureView>& resNormal, const Ref<TextureView>& resSamplePrev,
 		              const Ref<TextureView>& resRadiancePrev, const Ref<TextureView>& resNormalPrev,
 		              const Ref<TextureView>& velocity, bool reservoirHistoryValid,
-		              float nearPlane, float farPlane);
+		              float nearPlane, float farPlane, const DDGIPass* ddgi);
 
 	private:
 		void EnsureResources();
+		bool EnsureDDGIPipeline();
 
 		Ref<Pipeline> m_Pipeline;
-		bool m_HasReservoirBindings = false; // SS_GI_RESTIR variant only
+		Ref<Pipeline> m_DDGIPipeline;               // SS_GI_DDGI variant, built the first time a volume is ready
+		std::vector<Ref<DescriptorSet>> m_DDGISets; // its own sets: the variants' set-0 layouts are separate objects
+		bool m_HasReservoirBindings = false;        // SS_GI_RESTIR variant only
 		Ref<Sampler> m_Sampler;
 		std::vector<Ref<Buffer>> m_ParamBuffers; // one per frame-in-flight
 		std::vector<Ref<DescriptorSet>> m_Sets;  // one per frame-in-flight
