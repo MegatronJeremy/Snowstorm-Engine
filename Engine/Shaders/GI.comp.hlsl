@@ -81,6 +81,15 @@ cbuffer GICB : register(b3, space0)
 	float4 HitLightPosRange[16];
 	float4 HitLightColor[16];
 	float4 HitLightDirCos[16];
+	float3 DDGIOrigin;
+	float DDGISpacing;
+	uint3 DDGICounts;
+	uint DDGITilesPerRow;
+	uint2 DDGIIrradianceSize;
+	uint2 DDGIDistanceSize;
+	uint DDGIIrradianceIndex; // bindless atlases; 0 = no volume, hits keep the sky cube times GIBounceAmbient
+	uint DDGIDistanceIndex;
+	float2 _DDGIPad;
 };
 
 // Set 3 bindless (Textures/Cubemaps/SceneTLAS) + the geometry-table read + one-bounce hit shading
@@ -91,6 +100,34 @@ cbuffer GICB : register(b3, space0)
 #define RTHIT_LOCAL_LIGHTS // the CB above carries HitLightCount + the three packed arrays
 #include "Include/RTHitShading.hlsli"
 #include "Include/GBufferEncode.hlsli" // oct-normal decode + IsSky (#129 Inc 1b)
+// SS_GI_DDGI is its own permutation: the eight-probe sampling costs the default path about 20 VGPRs and up to
+// four waves when compiled in, like the reservoir path.
+#if defined(SS_GI_DDGI)
+#include "Include/DDGI.hlsli"
+#endif
+
+// A hit's indirect light: from the DDGI volume when there is one, which carries every earlier bounce and the
+// occlusion the hit actually has, else the un-occluded sky cube scaled by GIBounceAmbient.
+float3 ShadeGIHit(uint64_t tableAddr, uint instanceId, uint prim, float2 bary, float3 hitPos, float3 dir)
+{
+#if !defined(SS_GI_DDGI)
+	return ShadeSurfaceHit(tableAddr, instanceId, prim, bary, hitPos, GIBounceAmbient);
+#else
+	if (DDGIIrradianceIndex == 0)
+	{
+		return ShadeSurfaceHit(tableAddr, instanceId, prim, bary, hitPos, GIBounceAmbient);
+	}
+	DDGIVolume volume;
+	volume.Origin = DDGIOrigin;
+	volume.Spacing = DDGISpacing;
+	volume.Counts = DDGICounts;
+	volume.TilesPerRow = DDGITilesPerRow;
+	const HitSurface hit = ResolveHit(tableAddr, instanceId, prim, bary);
+	const float3 indirect = DDGIIrradiance(volume, Textures[NonUniformResourceIndex(DDGIIrradianceIndex)], Textures[NonUniformResourceIndex(DDGIDistanceIndex)],
+	                                       LinearSampler, float2(DDGIIrradianceSize), float2(DDGIDistanceSize), hitPos, hit.Nw, -dir);
+	return ShadeResolvedHit(tableAddr, hit, hitPos, indirect);
+#endif
+}
 
 #if defined(SS_GI_RESTIR)
 // Uniform [0,1) from an integer seed (PCG-style bit mix). The reservoir's accept test needs an independent
@@ -236,7 +273,7 @@ void main(uint3 id : SV_DispatchThreadID)
 		if (q.CommittedStatus() == COMMITTED_TRIANGLE_HIT && tableAddr != 0)
 		{
 			hitPos = origin + dir * q.CommittedRayT();
-			candidate = ShadeSurfaceHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos, GIBounceAmbient);
+			candidate = ShadeGIHit(tableAddr, q.CommittedInstanceID(), q.CommittedPrimitiveIndex(), q.CommittedTriangleBarycentrics(), hitPos, dir);
 		}
 		else if (PrefilteredCubeIndex != 0)
 		{

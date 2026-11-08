@@ -16,6 +16,8 @@ DefaultLit.frag | noinlineshadow |
 # render.gi.restir selects a permutation at startup; the reservoir path is compiled out when off.
 GI.comp | restir   | SS_GI_RESTIR=1
 GI.comp | norestir |
+# render.gi.ddgi with a ready render.ddgi volume selects this per frame (not with render.gi.restir).
+GI.comp | ddgi     | SS_GI_DDGI=1
 
 GIDenoise.comp | gi     |
 GIDenoise.comp | ao     | SS_DENOISE_HITDIST=1

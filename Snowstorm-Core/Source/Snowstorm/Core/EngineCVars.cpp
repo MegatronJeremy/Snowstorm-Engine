@@ -301,6 +301,7 @@ namespace Snowstorm::CVars
 	CVar<int> DDGIMaxProbes{"render.ddgi.max_probes", 4096, "DDGI probe budget. Read when the volume is fitted (scene load).", CVarFlags::Persist};
 	CVar<int> DDGIRays{"render.ddgi.rays", 128, "DDGI rays per probe per frame, clamped to [32, 256].", CVarFlags::Persist};
 	CVar<float> DDGIHysteresis{"render.ddgi.hysteresis", 0.97f, "DDGI temporal blend: the weight kept from the previous frame (0 = no history).", CVarFlags::Persist};
+	CVar<bool> GIUseDDGI{"render.gi.ddgi", true, "RT GI: light each hit's indirect term from the DDGI volume (render.ddgi) instead of render.gi.bounce_ambient times the un-occluded sky cube. Not with render.gi.restir.", CVarFlags::Persist};
 
 	CVar<bool> RTHitLights{"render.rt.hit_lights", true, "Shade RT GI secondary hits with the scene's point/spot lights in addition to the sun, closing the bias against the reference path tracer's full NEE. Picks ONE light per hit in proportion to its unshadowed contribution and traces one extra shadow ray (the UE5 MegaLights estimator), so the cost is constant in the light count. Measured on Sponza: +0.7 to +0.9 dB PSNR vs the path tracer for ~+40% on the GI pass. GI only, since the same estimator in the reflection pass measured no gain at twice the cost.", CVarFlags::Persist};
 

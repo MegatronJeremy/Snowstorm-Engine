@@ -8,6 +8,7 @@
 #include "Snowstorm/Render/DescriptorSet.hpp"
 #include "Snowstorm/Render/FrameData.hpp"
 #include "Snowstorm/Render/Renderer.hpp"
+#include "Snowstorm/Render/Passes/DDGIPass.hpp"
 #include "Snowstorm/Render/Passes/RTHitLights.hpp"
 #include "Snowstorm/Render/Shader.hpp"
 #include "Snowstorm/Render/WorkgroupSize.hpp"
@@ -58,12 +59,21 @@ namespace Snowstorm
 			glm::vec4 HitLightPosRange[kRTHitMaxLights]{};
 			glm::vec4 HitLightColor[kRTHitMaxLights]{};
 			glm::vec4 HitLightDirCos[kRTHitMaxLights]{};
+			glm::vec3 DDGIOrigin{0.0f};
+			float DDGISpacing = 1.0f;
+			glm::uvec3 DDGICounts{0u};
+			uint32_t DDGITilesPerRow = 1;
+			glm::uvec2 DDGIIrradianceSize{0u};
+			glm::uvec2 DDGIDistanceSize{0u};
+			uint32_t DDGIIrradianceIndex = 0; // 0 = no volume
+			uint32_t DDGIDistanceIndex = 0;
+			glm::vec2 _DDGIPad{0.0f};
 		};
 
 		// The shader's own cbuffer rows sum to this. Catches the whole-struct half of a drift at compile time
 		// (a per-field offset shuffle that preserves the total still slips through, so read the shader when
 		// reordering).
-		static_assert(sizeof(GICB) == 1008, "GICB no longer matches GICB in GI.comp.hlsl");
+		static_assert(sizeof(GICB) == 1072, "GICB no longer matches GICB in GI.comp.hlsl");
 
 		// Binding indices in GI.comp.hlsl set 0 (G-buffer color: .xy normal, .z roughness; depth is a separate SRV).
 		constexpr uint32_t kGBufferBinding = 0;
@@ -143,6 +153,28 @@ namespace Snowstorm
 		}
 	}
 
+	bool GIPass::EnsureDDGIPipeline()
+	{
+		if (m_DDGIPipeline)
+		{
+			return true;
+		}
+		ShaderDefines defines{"SS_GI_DDGI=1"};
+		AppendWorkgroupDefines(defines, CVars::WgGi.Get());
+		const Ref<Shader> cs = Application::Get().GetServiceManager().GetService<ShaderLibrary>().Load("Engine/Shaders/GI.comp.hlsl", defines);
+		if (!cs || !cs->IsReady())
+		{
+			return false;
+		}
+		PipelineDesc p{};
+		p.Type = PipelineType::Compute;
+		p.Shader = cs;
+		p.DebugName = "GIDDGIPipeline";
+		m_DDGIPipeline = Pipeline::Create(p);
+		m_DDGISets.resize(Renderer::GetFramesInFlight());
+		return m_DDGIPipeline != nullptr;
+	}
+
 	void GIPass::Dispatch(const Ref<CommandContext>& ctx, const uint32_t frameIndex, const FrameData& frame,
 	                      const uint64_t tableAddr, const uint32_t frameCounter,
 	                      const Ref<TextureView>& gbuffer, const Ref<TextureView>& depth,
@@ -151,7 +183,7 @@ namespace Snowstorm
 	                      const Ref<TextureView>& resNormal, const Ref<TextureView>& resSamplePrev,
 	                      const Ref<TextureView>& resRadiancePrev, const Ref<TextureView>& resNormalPrev,
 	                      const Ref<TextureView>& velocity, const bool reservoirHistoryValid,
-	                      const float nearPlane, const float farPlane)
+	                      const float nearPlane, const float farPlane, const DDGIPass* ddgi)
 	{
 		if (!ctx || !gbuffer || !depth || !output || outW == 0 || outH == 0)
 		{
@@ -191,6 +223,22 @@ namespace Snowstorm
 		cb.ReflGeoTableAddrHi = static_cast<uint32_t>(tableAddr >> 32);
 		cb.RayCount = static_cast<uint32_t>(CVars::ClampedGIRayCount());
 		cb.GIBounceAmbient = CVars::GIBounceAmbient.Get();
+		// The reservoir variant has no DDGI path, so render.gi.restir keeps the sky-cube hit ambient.
+		const bool useDDGI = ddgi && !m_HasReservoirBindings && EnsureDDGIPipeline();
+		const Ref<Pipeline>& pipeline = useDDGI ? m_DDGIPipeline : m_Pipeline;
+		std::vector<Ref<DescriptorSet>>& sets = useDDGI ? m_DDGISets : m_Sets;
+		if (useDDGI)
+		{
+			const DDGI::Volume& v = ddgi->GetVolume();
+			cb.DDGIOrigin = v.Origin;
+			cb.DDGISpacing = v.Spacing;
+			cb.DDGICounts = v.Counts;
+			cb.DDGITilesPerRow = DDGI::TilesPerRow(v);
+			cb.DDGIIrradianceSize = DDGI::AtlasSize(v, DDGI::kIrradianceTexels);
+			cb.DDGIDistanceSize = DDGI::AtlasSize(v, DDGI::kDistanceTexels);
+			cb.DDGIIrradianceIndex = ddgi->IrradianceView()->GetGlobalBindlessIndex();
+			cb.DDGIDistanceIndex = ddgi->DistanceView()->GetGlobalBindlessIndex();
+		}
 
 		if (CVars::RTHitLights.Get())
 		{
@@ -206,39 +254,39 @@ namespace Snowstorm
 
 		m_ParamBuffers[frameIndex]->SetData(&cb, sizeof(GICB), 0);
 
-		const auto& layouts = m_Pipeline->GetSetLayouts();
+		const auto& layouts = pipeline->GetSetLayouts();
 		SS_CORE_ASSERT(!layouts.empty() && layouts[0], "GI pipeline missing set=0 layout");
-		if (!m_Sets[frameIndex])
+		if (!sets[frameIndex])
 		{
 			DescriptorSetDesc dsd{};
 			dsd.DebugName = "GISet";
-			m_Sets[frameIndex] = DescriptorSet::Create(layouts[0], dsd);
+			sets[frameIndex] = DescriptorSet::Create(layouts[0], dsd);
 		}
-		m_Sets[frameIndex]->SetTexture(kGBufferBinding, gbuffer); // .xy normal, .z roughness
-		m_Sets[frameIndex]->SetTexture(kDepthBinding, depth);     // fp32 D32 depth SRV
-		m_Sets[frameIndex]->SetTexture(kOutputBinding, output);   // storage image (UAV)
+		sets[frameIndex]->SetTexture(kGBufferBinding, gbuffer); // .xy normal, .z roughness
+		sets[frameIndex]->SetTexture(kDepthBinding, depth);     // fp32 D32 depth SRV
+		sets[frameIndex]->SetTexture(kOutputBinding, output);   // storage image (UAV)
 		// The reservoir bindings exist only in the SS_GI_RESTIR variant; SetTexture asserts on a missing one.
 		if (m_HasReservoirBindings)
 		{
-			m_Sets[frameIndex]->SetTexture(kResSampleBinding, resSample);
-			m_Sets[frameIndex]->SetTexture(kResRadianceBinding, resRadiance);
-			m_Sets[frameIndex]->SetTexture(kResNormalBinding, resNormal);
+			sets[frameIndex]->SetTexture(kResSampleBinding, resSample);
+			sets[frameIndex]->SetTexture(kResRadianceBinding, resRadiance);
+			sets[frameIndex]->SetTexture(kResNormalBinding, resNormal);
 			// The descriptor must be populated even with no history; the shader will not read it (UseReSTIR < 2).
-			m_Sets[frameIndex]->SetTexture(kResSamplePrevBinding, resSamplePrev ? resSamplePrev : resSample);
-			m_Sets[frameIndex]->SetTexture(kResRadiancePrevBinding, resRadiancePrev ? resRadiancePrev : resRadiance);
-			m_Sets[frameIndex]->SetTexture(kResNormalPrevBinding, resNormalPrev ? resNormalPrev : resNormal);
-			m_Sets[frameIndex]->SetTexture(kVelocityBinding, velocity ? velocity : depth);
+			sets[frameIndex]->SetTexture(kResSamplePrevBinding, resSamplePrev ? resSamplePrev : resSample);
+			sets[frameIndex]->SetTexture(kResRadiancePrevBinding, resRadiancePrev ? resRadiancePrev : resRadiance);
+			sets[frameIndex]->SetTexture(kResNormalPrevBinding, resNormalPrev ? resNormalPrev : resNormal);
+			sets[frameIndex]->SetTexture(kVelocityBinding, velocity ? velocity : depth);
 		}
-		m_Sets[frameIndex]->SetSampler(kSamplerBinding, m_Sampler);
+		sets[frameIndex]->SetSampler(kSamplerBinding, m_Sampler);
 		const BufferBinding cbBB{.Buffer = m_ParamBuffers[frameIndex], .Offset = 0, .Range = sizeof(GICB)};
-		m_Sets[frameIndex]->SetBuffer(kParamsBinding, cbBB);
-		m_Sets[frameIndex]->Commit();
+		sets[frameIndex]->SetBuffer(kParamsBinding, cbBB);
+		sets[frameIndex]->Commit();
 
 		// Layout transitions are graph-managed (#129 Inc 4): the effect declares this output in the pass's
 		// .Writes (-> Storage/GENERAL before the dispatch), and the next consumer declares it in .Reads
 		// (-> Sampled). No hand-called transitions here.
-		ctx->BindPipeline(m_Pipeline);
-		ctx->BindDescriptorSet(m_Sets[frameIndex], 0);
+		ctx->BindPipeline(pipeline);
+		ctx->BindDescriptorSet(sets[frameIndex], 0);
 		ctx->BindGlobalResources(); // set 3 = bindless textures/cubemaps + SceneTLAS (written by TlasBuildSystem)
 		ctx->Dispatch(WorkgroupCount(outW, CVars::WgGi.Get()), WorkgroupCount(outH, CVars::WgGi.Get()), 1);
 	}

@@ -131,6 +131,16 @@
       "isa_size": 1048.0,
       "permutations": 2
     },
+    "GI.comp[ddgi]": {
+      "vgprs": 106.0,
+      "sgprs": 54.0,
+      "lds": 4096.0,
+      "scratch": 0.0,
+      "vgpr_spills": 0.0,
+      "sgpr_spills": 0.0,
+      "isa_size": 24036.0,
+      "permutations": 2
+    },
     "GI.comp[norestir]": {
       "vgprs": 85.0,
       "sgprs": 49.0,
