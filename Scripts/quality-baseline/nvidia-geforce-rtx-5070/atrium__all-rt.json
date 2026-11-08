@@ -2,7 +2,14 @@
   "device": "NVIDIA GeForce RTX 5070",
   "viewpoint": "atrium",
   "technique": "all-rt",
-  "flip": 0.10311833024024963,
-  "psnr": 29.545100654708733,
-  "ssim": 0.8702583448711864
+  "flip": 0.10496791452169418,
+  "psnr": 29.68746332779453,
+  "ssim": 0.8671385714635717,
+  "flipHdr": 0.45262616872787476,
+  "flipHdrParams": {
+    "startExposure": -1.457192063331604,
+    "stopExposure": 7.649746894836426,
+    "numExposures": 10.0,
+    "tonemapper": "aces"
+  }
 }

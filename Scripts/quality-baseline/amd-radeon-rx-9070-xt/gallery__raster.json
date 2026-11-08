@@ -2,7 +2,14 @@
   "device": "AMD Radeon RX 9070 XT",
   "viewpoint": "gallery",
   "technique": "raster",
-  "flip": 0.5342965722084045,
-  "psnr": 12.387539179624882,
-  "ssim": 0.2778161334890514
+  "flip": 0.5487610101699829,
+  "psnr": 12.106367995810768,
+  "ssim": 0.2734654619421194,
+  "flipHdr": 0.8325052857398987,
+  "flipHdrParams": {
+    "startExposure": 0.04417196288704872,
+    "stopExposure": 8.362326622009277,
+    "numExposures": 9.0,
+    "tonemapper": "aces"
+  }
 }
