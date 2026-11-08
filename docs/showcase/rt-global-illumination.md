@@ -18,7 +18,7 @@ The raw trace is then cleaned by the SVGF-style tail shared with SSGI:
 2. a-trous denoise (`render.gi.denoise.iterations`, default 3, variance-guided by `render.gi.denoise.variance`);
 3. depth-aware bilateral upsample to full resolution (`render.gi.scale`, default 0.5).
 
-`render.gi.spec_ambient_fade` (default 1) fades the un-occluded environment specular by roughness while GI is on, so rough surfaces do not carry a second unoccluded ambient over the occluded diffuse GI.
+While GI is on, the environment-cube specular is occluded by the GI itself: it is scaled by the ratio of the traced irradiance to the sky irradiance along the normal (both E/π, capped at 1), which is the share of the sky the point actually receives, so a surface under a roof stops reflecting open sky. `render.gi.spec_ambient_fade` (default 1) also fades it by roughness.
 
 ### SSGI
 
@@ -26,18 +26,18 @@ The raw trace is then cleaned by the SVGF-style tail shared with SSGI:
 
 ## Quality against the path tracer
 
-Source: committed baselines `Scripts/quality-baseline/<adapter>/{atrium,floor,gallery}__{raster,ssgi,rtgi}.json`, commit `b253f91`, 2026-09-08. Mean over the three Sponza viewpoints; FLIP lower is better, PSNR and SSIM higher. Only GI is toggled, so the rest of the lighting is the same on every row.
+Source: committed baselines `Scripts/quality-baseline/<adapter>/{atrium,floor,gallery}__{raster,ssgi,rtgi}.json`, code at commit `5ed03bc`, 2026-11-08, 1920x1080 captures, each adapter scored against its own path trace. Mean over the three Sponza viewpoints; FLIP lower is better, PSNR and SSIM higher. Only GI is toggled, so the rest of the lighting is the same on every row.
 
 | Technique | GPU | FLIP | PSNR (dB) | SSIM |
 | --- | --- | --- | --- | --- |
-| raster (no GI) | RX 9070 XT | 0.4352 | 15.14 | 0.3823 |
-| SSGI | RX 9070 XT | 0.3373 | 17.65 | 0.4599 |
-| RT GI | RX 9070 XT | 0.1395 | 25.36 | 0.7212 |
-| raster (no GI) | RTX 5070 | 0.4345 | 15.18 | 0.3835 |
-| SSGI | RTX 5070 | 0.3405 | 17.58 | 0.4579 |
-| RT GI | RTX 5070 | 0.1409 | 25.22 | 0.7191 |
+| raster (no GI) | RX 9070 XT | 0.4428 | 14.93 | 0.3802 |
+| SSGI | RX 9070 XT | 0.3418 | 17.39 | 0.4647 |
+| RT GI | RX 9070 XT | 0.1459 | 24.47 | 0.7247 |
+| raster (no GI) | RTX 5070 | 0.4423 | 14.94 | 0.3814 |
+| SSGI | RTX 5070 | 0.3417 | 17.39 | 0.4659 |
+| RT GI | RTX 5070 | 0.1457 | 24.47 | 0.7270 |
 
-Per viewpoint FLIP on the 9070 XT (atrium, floor, gallery): raster 0.3631, 0.4081, 0.5343; SSGI 0.2352, 0.3065, 0.4701; RT GI 0.1436, 0.1296, 0.1452. Indirect light is the largest single term missing from the raster frame: RT GI removes about two thirds of the FLIP error against the path tracer, SSGI about a fifth. The two GPUs agree within 0.004 FLIP, as expected for a technique measured against a path trace on the same card.
+Per viewpoint FLIP on the 9070 XT (atrium, floor, gallery): raster 0.3705, 0.4092, 0.5488; SSGI 0.2374, 0.3028, 0.4852; RT GI 0.1365, 0.1378, 0.1634. Indirect light is the largest single term missing from the raster frame: RT GI removes about two thirds of the FLIP error against the path tracer, SSGI under a quarter. The two GPUs agree within 0.0012 FLIP, as expected for a technique measured against a path trace on the same card.
 
 ## Cost
 
@@ -63,6 +63,7 @@ It is not a shipping path: it measures worse than the average it replaces at eve
 ## Limits
 
 - One bounce, Lambertian hits only; metal-on-metal interreflection is absent (the path tracer has it).
+- Off-screen bounce light is approximated. A hit's own indirect light is the sky cube times `render.gi.bounce_ambient`, unoccluded, which stands in for every bounce past the second: about right under open sky, too bright under a roof. In Sponza's side colonnade with the torches off, shaded pixels are 11.5x the path tracer (19x before the specular occlusion above); with the torches on, 0.92x. The structural fix is a world-space radiance cache for those hits.
 - Range-limited: a ray that exhausts `render.gi.range` lands in the sky miss branch, so too short a range leaks unoccluded sky into closed interiors. 17 improved FLIP on all three viewpoints (mean -9.6%) over the earlier default.
 - Half-resolution trace; thin features rely on the depth-aware upsample.
 

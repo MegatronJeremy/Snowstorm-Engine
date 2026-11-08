@@ -2,7 +2,14 @@
   "device": "AMD Radeon RX 9070 XT",
   "viewpoint": "atrium",
   "technique": "rtgi",
-  "flip": 0.14362183213233948,
-  "psnr": 24.74835172264564,
-  "ssim": 0.7415787181356562
+  "flip": 0.1365225911140442,
+  "psnr": 24.263756236388524,
+  "ssim": 0.7668856844204981,
+  "flipHdr": 0.4787551164627075,
+  "flipHdrParams": {
+    "startExposure": -1.3551865816116333,
+    "stopExposure": 7.649359703063965,
+    "numExposures": 10.0,
+    "tonemapper": "aces"
+  }
 }

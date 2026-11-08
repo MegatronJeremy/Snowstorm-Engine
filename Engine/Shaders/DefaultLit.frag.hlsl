@@ -424,7 +424,7 @@ float3 FresnelSchlickRoughness(float cosTheta, float3 F0, float roughness)
 // traced 1-bounce GI): the diffuse indirect becomes scene-derived instead of the constant sky
 // approximation (Lumen/RTXGI model). Specular (env cube + RT reflection) is unaffected. giDiffuse already
 // carries the receiver albedo + GIIntensity; kd (metal energy) and ao still modulate it here.
-float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness, float metallic, float ao, float3 positionWS, float3 Ng, float2 pixelPos, uint useGIDiffuse, float3 giDiffuse)
+float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness, float metallic, float ao, float3 positionWS, float3 Ng, float2 pixelPos, uint useGIDiffuse, float3 giDiffuse, float3 giIrradiance)
 {
 	if (IrradianceCubeIndex == 0)
 	{
@@ -476,6 +476,13 @@ float3 ComputeIBL(float3 N, float3 V, float3 albedo, float3 F0, float roughness,
 	if (useGIDiffuse != 0)
 	{
 		specular *= 1.0 - GISpecAmbientFade * saturate(roughness);
+
+		// The env cube is the open sky. The traced GI irradiance is what the scene actually delivers here, in the
+		// same E/PI units as the irradiance cube, so their ratio is the share of the sky this point sees: about 1
+		// under open sky, about 0 under a roof. It occludes the env specular the way a sky-visibility term would.
+		const float3 skyIrradiance = Cubemaps[NonUniformResourceIndex(IrradianceCubeIndex)].SampleLevel(LinearSampler, N, 0).rgb * IBLIntensity;
+		const float3 lumaWeights = float3(0.2126, 0.7152, 0.0722);
+		specular *= saturate(dot(giIrradiance, lumaWeights) / max(dot(skyIrradiance, lumaWeights) * max(GIIntensity, 1e-3), 1e-6));
 	}
 
 	// RT reflections (#129): for smooth surfaces, blend in the traced reflection of the ACTUAL scene. The
@@ -627,10 +634,11 @@ float4 main(PSInput i) : SV_Target0
 	// half-res buffer so the upsample can't blur albedo edges). 0 index = GI off this frame -> no indirect.
 	// Replaces the old inline per-pixel RayTraceGI (deleted): GI no longer traces in the forward shader.
 	float3 giIndirect = float3(0, 0, 0);
+	float3 giIrradiance = float3(0, 0, 0);
 	if (GITextureIndex != 0)
 	{
 		const float2 giUv = i.PositionCS.xy / max(RenderTargetSize, float2(1.0, 1.0)); // plain UV: effects jittered like geometry now
-		const float3 giIrradiance = Textures[NonUniformResourceIndex(GITextureIndex)].SampleLevel(LinearSampler, giUv, 0).rgb;
+		giIrradiance = Textures[NonUniformResourceIndex(GITextureIndex)].SampleLevel(LinearSampler, giUv, 0).rgb;
 		giIndirect = giIrradiance * albedo; // irradiance * receiver albedo = diffuse indirect response
 	}
 	// Debug view 4 = GI: output the (upsampled) indirect term for tuning intensity/range against the raw
@@ -848,7 +856,7 @@ float4 main(PSInput i) : SV_Target0
 	// Ambient: prefer split-sum IBL (baked from the sky) when available, since metals reflect the
 	// environment and specular picks up sky color. Falls back to the analytic hemisphere ambient (same
 	// zenith/horizon/ground colors the sky shows) when IBL isn't baked, so the look degrades gracefully.
-	float3 ambient = ComputeIBL(N, V, albedo, F0, roughness, metallic, ao, i.PositionWS, normalize(i.NormalWS), i.PositionCS.xy, useGI, giDiffuse);
+	float3 ambient = ComputeIBL(N, V, albedo, F0, roughness, metallic, ao, i.PositionWS, normalize(i.NormalWS), i.PositionCS.xy, useGI, giDiffuse, giIrradiance);
 	if (IrradianceCubeIndex == 0)
 	{
 		// No baked IBL: analytic hemisphere diffuse, OR the traced GI diffuse when GI replaces it.
